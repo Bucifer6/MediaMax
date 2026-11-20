@@ -150,6 +150,7 @@ export function updateMe(userId: string, req: UpdateMeRequest): User {
   if (req.password !== undefined) {
     if (cur.password_hash && !verifySecret(req.currentPassword ?? '', cur.password_hash)) throw forbidden('Current password is incorrect');
     if (req.password && req.password.length < 4) throw badRequest('Password must be at least 4 characters');
+    if (!req.password && cur.is_admin && !cur.oidc_sub) throw badRequest('Administrators must keep a password');
     patch.password_hash = req.password ? hashSecret(req.password) : null;
   }
   if (req.pin !== undefined) {
@@ -233,14 +234,39 @@ export function authenticate(token: string | undefined | null): AuthContext | nu
   };
 }
 
+/* Per-account lockout: 5 failures → 15 minutes, independent of client IP (which can't be trusted). */
+const failures = new Map<string, { n: number; until: number }>();
+function assertNotLocked(key: string) {
+  const f = failures.get(key);
+  if (f && f.n >= 5 && f.until > Date.now()) {
+    throw Object.assign(unauthorized(`Too many failed attempts. Try again in ${Math.ceil((f.until - Date.now()) / 60000)} minute(s).`), { statusCode: 429 });
+  }
+}
+function recordFailure(key: string) {
+  const f = failures.get(key);
+  if (!f || f.until < Date.now()) failures.set(key, { n: 1, until: Date.now() + 15 * 60000 });
+  else f.n++;
+}
+const clearFailures = (key: string) => failures.delete(key);
+
+/**
+ * Accounts that may sign in without any secret: Plex-Home style kids/family profiles only.
+ * Never administrators, never SSO-created accounts.
+ */
+export const passwordlessAllowed = (r: Row) => !r.password_hash && !r.pin_hash && !r.is_admin && !r.oidc_sub && getSettings().allowPasswordlessProfiles;
+
 export function login(username: string, password: string, device: Partial<DeviceInfo>, remoteAddr?: string): AuthResponse {
+  const key = `u:${String(username ?? '').trim().toLowerCase()}`;
+  assertNotLocked(key);
   const row = db.get('SELECT * FROM users WHERE username = ?', (username ?? '').trim());
   // Constant-ish time: always run a hash compare.
-  const ok = row ? (row.password_hash ? verifySecret(password ?? '', row.password_hash) : !password && getSettings().allowPasswordlessProfiles) : verifySecret('x', hashSecret('y'));
+  const ok = row ? (row.password_hash ? verifySecret(password ?? '', row.password_hash) : !password && passwordlessAllowed(row)) : verifySecret('x', hashSecret('y'));
   if (!row || !ok) {
+    recordFailure(key);
     logActivity('user.login.failed', `Failed sign-in for "${username}" from ${remoteAddr ?? 'unknown'}`, { severity: 'warning' });
     throw unauthorized('Invalid username or password');
   }
+  clearFailures(key);
   return issueToken(row.id, device, remoteAddr);
 }
 
@@ -253,7 +279,7 @@ export function publicProfiles(): PublicProfile[] {
     avatarUrl: imageUrl(r.avatar),
     hasPin: !!r.pin_hash,
     pinLength: r.pin_hash ? r.pin_length ?? null : null,
-    requiresPassword: !!r.password_hash && !r.pin_hash,
+    requiresPassword: !r.pin_hash && !passwordlessAllowed(r),
   }));
 }
 
@@ -261,14 +287,18 @@ export function publicProfiles(): PublicProfile[] {
 export function profileLogin(userId: string, pin: string | undefined, device: Partial<DeviceInfo>, remoteAddr?: string): AuthResponse {
   if (!getBranding().features.profilePicker) throw forbidden('Profile sign-in is disabled');
   const row = getUserRow(userId);
+  const key = `p:${userId}`;
+  assertNotLocked(key);
   if (row.pin_hash) {
     if (!verifySecret(pin ?? '', row.pin_hash)) {
+      recordFailure(key);
       logActivity('user.login.failed', `Wrong PIN for ${row.display_name}`, { severity: 'warning' });
       throw unauthorized('Incorrect PIN');
     }
-  } else if (row.password_hash || !getSettings().allowPasswordlessProfiles) {
+  } else if (!passwordlessAllowed(row)) {
     throw unauthorized('This profile requires a password');
   }
+  clearFailures(key);
   return issueToken(userId, device, remoteAddr);
 }
 

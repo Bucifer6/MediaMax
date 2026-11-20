@@ -11,8 +11,6 @@ import { getSettings } from './settings.js';
 
 /* ----------------------------- access ------------------------------ */
 
-const ALL_RATINGS = ['G', 'TV-Y', 'TV-G', 'U', 'TV-Y7', 'TV-Y7-FV', 'PG', 'TV-PG', '12', '12A', 'PG-13', 'TV-14', '15', 'R', 'TV-MA', 'NC-17', '18', 'R18', 'X'];
-
 export function allowedLibraryIds(user: User): string[] {
   const feats = getBranding().features;
   let rows = db.all<{ id: string; type: string }>('SELECT id, type FROM libraries');
@@ -33,15 +31,14 @@ export function accessClause(user: User, alias = 'i'): { sql: string; params: Pa
   parts.push(`(${libSql} OR ${alias}.type = 'collection' OR (${alias}.type = 'playlist' AND ${alias}.owner_id = ?))`);
   params.push(...libs, user.id);
   const max = ratingLevel(user.maxContentRating);
-  if (max !== null) {
-    const blocked = ALL_RATINGS.filter((r) => (ratingLevel(r) ?? 0) > max);
-    if (blocked.length) {
-      const eff = `COALESCE(${alias}.content_rating, (SELECT x.content_rating FROM items x WHERE x.id = COALESCE(${alias}.grandparent_id, ${alias}.parent_id)))`;
-      // Unrated: allowed by default; optionally blocked (containers like collections/playlists are always visible).
-      const unrated = getSettings().blockUnratedForRestricted ? `${alias}.type IN ('collection','playlist','season','artist','album','track','photo')` : `${eff} IS NULL`;
-      parts.push(`((${eff} IS NULL AND (${unrated})) OR (${eff} IS NOT NULL AND UPPER(${eff}) NOT IN (${blocked.map(() => '?').join(',')})))`);
-      params.push(...blocked);
-    }
+  if (max !== null && max >= 0) {
+    // Effective rating: the item's own, else its show's/parent's. mm_rating_level() → age, NULL (unrated) or -1 (unknown).
+    const lvl = `mm_rating_level(COALESCE(${alias}.content_rating, (SELECT x.content_rating FROM items x WHERE x.id = COALESCE(${alias}.grandparent_id, ${alias}.parent_id))))`;
+    // Unrated and unrecognised ratings are allowed by default, or hidden when blockUnratedForRestricted is on
+    // (containers like collections/playlists and music stay visible).
+    const unratedOk = getSettings().blockUnratedForRestricted ? `${alias}.type IN ('collection','playlist','season','artist','album','track','photo')` : '1';
+    parts.push(`(CASE WHEN ${lvl} IS NULL OR ${lvl} < 0 THEN (${unratedOk}) ELSE ${lvl} <= ? END)`);
+    params.push(max);
   }
   return { sql: parts.join(' AND '), params };
 }

@@ -45,21 +45,23 @@ interface Pending {
 const pending = new Map<string, Pending>();
 const b64url = (b: Buffer) => b.toString('base64url');
 
-/** Only send tokens to our own web origin(s) or the MediaMax app scheme. */
-export function validateRedirect(redirect: string, requestOrigin: string): string {
-  const pub = getSettings().publicUrl?.replace(/\/+$/, '');
+/**
+ * Only send tokens to the server's own origin or the MediaMax app scheme. `serverOrigin` must be the
+ * same origin used for the IdP redirect_uri (publicUrl when configured), so a forged Host header
+ * either fails here or produces a redirect_uri the provider rejects.
+ */
+export function validateRedirect(redirect: string, serverOrigin: string): string {
   try {
-    if (/^mediamax:\/\//i.test(redirect)) return redirect;
+    if (/^mediamax:\/\/[\w./-]*$/i.test(redirect)) return redirect;
     const u = new URL(redirect);
-    const allowed = [requestOrigin, pub].filter(Boolean).map((o) => new URL(o!).origin);
-    if (allowed.includes(u.origin)) return redirect;
+    if (u.origin === new URL(serverOrigin).origin) return redirect;
   } catch {
     /* invalid */
   }
   throw badRequest('Redirect URL is not allowed');
 }
 
-export async function startLogin(baseUrl: string, redirect: string, device: Partial<DeviceInfo>): Promise<string> {
+export async function startLogin(baseUrl: string, redirect: string, device: Partial<DeviceInfo>): Promise<{ url: string; state: string }> {
   if (!oidcEnabled()) throw forbidden('Single sign-on is not enabled');
   const d = await discover();
   for (const [k, v] of pending) if (v.expires < Date.now()) pending.delete(k);
@@ -79,7 +81,7 @@ export async function startLogin(baseUrl: string, redirect: string, device: Part
   u.searchParams.set('nonce', nonce);
   u.searchParams.set('code_challenge', b64url(crypto.createHash('sha256').update(verifier).digest()));
   u.searchParams.set('code_challenge_method', 'S256');
-  return u.toString();
+  return { url: u.toString(), state };
 }
 
 function decodeJwtPayload(jwt: string): Record<string, any> {
@@ -102,7 +104,9 @@ function uniqueUsername(base: string): string {
 }
 
 /** Complete the authorization-code exchange and return where to send the browser. */
-export async function finishLogin(state: string, code: string, remoteAddr?: string): Promise<string> {
+export async function finishLogin(state: string, code: string, cookieState: string | null, remoteAddr?: string): Promise<string> {
+  // The state must match the cookie set on the browser that started sign-in (prevents login CSRF / link hijacking).
+  if (!cookieState || cookieState !== state) throw badRequest('Sign-in must be completed in the same browser that started it. Please try again.');
   const p = pending.get(state);
   pending.delete(state);
   if (!p || p.expires < Date.now()) throw badRequest('This sign-in link has expired. Please try again.');

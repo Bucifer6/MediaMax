@@ -9,9 +9,10 @@ import { config } from '../config.js';
 import { newId, stableId } from '../util/ids.js';
 import { badRequest, conflict, HttpError, notFound } from '../util/errors.js';
 import { nowIso, sortTitle } from '../util/misc.js';
-import { registerImage, imageUrl } from './images.js';
+import { registerRemoteImage, imageUrl } from './images.js';
 import { events, bus } from './events.js';
 import { logger } from '../util/log.js';
+import { safeFetch } from '../util/net.js';
 
 const log = logger('podcasts');
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', isArray: (n) => n === 'item' || n === 'category' || n === 'itunes:category' || n === 'outline' });
@@ -105,10 +106,13 @@ const extFor = (url: string, type: string | null) => {
 };
 
 async function fetchFeed(url: string, etag?: string | null): Promise<{ xml: string | null; etag: string | null }> {
-  const res = await fetch(url, { headers: { 'User-Agent': `MediaMax/${config.version} (podcast client)`, Accept: 'application/rss+xml, application/xml, text/xml, */*', ...(etag ? { 'If-None-Match': etag } : {}) }, signal: AbortSignal.timeout(30000), redirect: 'follow' });
+  const res = await safeFetch(url, { headers: { 'User-Agent': `MediaMax/${config.version} (podcast client)`, Accept: 'application/rss+xml, application/xml, text/xml, */*', ...(etag ? { 'If-None-Match': etag } : {}) }, signal: AbortSignal.timeout(30000) });
   if (res.status === 304) return { xml: null, etag: etag ?? null };
-  if (!res.ok) throw new HttpError(502, `Feed returned HTTP ${res.status}`, 'feed_error');
-  return { xml: await res.text(), etag: res.headers.get('etag') };
+  if (!res.ok) throw new HttpError(502, 'Could not download that feed', 'feed_error');
+  if (Number(res.headers.get('content-length') ?? 0) > 20 * 1024 * 1024) throw new HttpError(502, 'Feed is too large', 'feed_error');
+  const xml = await res.text();
+  if (xml.length > 20 * 1024 * 1024) throw new HttpError(502, 'Feed is too large', 'feed_error');
+  return { xml, etag: res.headers.get('etag') };
 }
 
 function syncFeed(feedRow: Row, feed: ParsedFeed): string[] {
@@ -119,7 +123,7 @@ function syncFeed(feedRow: Row, feed: ParsedFeed): string[] {
   db.tx(() => {
     const fields = {
       library_id: libId, type: 'podcast', title: feed.title, sort_title: sortTitle(feed.title), overview: feed.description,
-      poster: registerImage(feed.image), genres: JSON.stringify(feed.categories), remote_ref: feedRow.feed_url,
+      poster: registerRemoteImage(feed.image, { untrusted: true }), genres: JSON.stringify(feed.categories), remote_ref: feedRow.feed_url,
       people: JSON.stringify(feed.author ? [{ name: feed.author, role: 'Host', kind: 'producer', imageUrl: null }] : []),
       extra: JSON.stringify({ parentTitle: feed.author }), updated_at: now,
     };
@@ -131,7 +135,7 @@ function syncFeed(feedRow: Row, feed: ParsedFeed): string[] {
       const f = {
         library_id: libId, type: 'podcastepisode', title: ep.title, sort_title: sortTitle(ep.title), overview: ep.description, parent_id: podId,
         release_date: ep.pubDate, year: ep.pubDate ? +ep.pubDate.slice(0, 4) : null, duration_ms: ep.durationMs, idx: ep.episode, parent_idx: ep.season,
-        thumb: registerImage(ep.image), remote_ref: ep.guid, updated_at: now,
+        thumb: registerRemoteImage(ep.image, { untrusted: true }), remote_ref: ep.guid, updated_at: now,
       };
       if (db.get('SELECT 1 FROM items WHERE id = ?', id)) db.update('items', id, f);
       else {
@@ -226,7 +230,7 @@ export async function downloadNew(feedId: string, count: number) {
   for (const e of eps) {
     const dest = path.join(dir, `${e.id}.${e.container || 'mp3'}`);
     try {
-      const res = await fetch(e.remote_url, { headers: { 'User-Agent': `MediaMax/${config.version}` }, signal: AbortSignal.timeout(30 * 60000) });
+      const res = await safeFetch(e.remote_url, { headers: { 'User-Agent': `MediaMax/${config.version}` }, signal: AbortSignal.timeout(30 * 60000) });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       await pipeline(Readable.fromWeb(res.body as any), fs.createWriteStream(dest + '.part'));
       fs.renameSync(dest + '.part', dest);
@@ -264,5 +268,5 @@ export function parseOpml(xml: string): string[] {
   };
   const doc = parser.parse(xml);
   walk(doc?.opml?.body?.outline ?? []);
-  return [...new Set(urls)];
+  return [...new Set(urls)].filter((u) => /^https?:\/\//i.test(u)).slice(0, 200);
 }

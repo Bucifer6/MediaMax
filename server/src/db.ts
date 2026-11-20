@@ -1,6 +1,7 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { config } from './config.js';
 import { logger } from './util/log.js';
+import { ratingLevel } from './util/misc.js';
 
 const log = logger('db');
 
@@ -240,6 +241,9 @@ const MIGRATIONS: string[] = [
     pending_token TEXT, scrobble INTEGER NOT NULL DEFAULT 1
   );
   `,
+  /* 6: mark images that came from untrusted feeds */ `
+  ALTER TABLE images ADD COLUMN untrusted INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 function migrate(db: Database) {
@@ -258,4 +262,6 @@ function migrate(db: Database) {
 }
 
 export const db = new Database(process.env.MEDIAMAX_DB ?? config.dbPath);
+// SQL helper used by parental-control filters.
+db.raw.function('mm_rating_level', { deterministic: true }, (r: unknown) => ratingLevel(r == null ? null : String(r)));
 migrate(db);

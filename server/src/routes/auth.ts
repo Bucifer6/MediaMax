@@ -70,18 +70,21 @@ export default async function authRoutes(app: FastifyInstance) {
   /* Single sign-on (OpenID Connect). Clients open /auth/oidc/start in a browser;
      the server redirects back to `redirect` with #token=… or #error=…. */
   app.get<{ Querystring: { redirect?: string; deviceId?: string; deviceName?: string; platform?: string } }>('/auth/oidc/start', async (req, reply) => {
-    const proto = (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0] ?? req.protocol;
-    const origin = `${proto}://${req.headers['x-forwarded-host'] ?? req.headers.host}`;
-    const base = getSettings().publicUrl?.replace(/\/+$/, '') || origin;
-    const redirect = oidc.validateRedirect(req.query.redirect || `${origin}/login`, origin);
-    const url = await oidc.startLogin(base, redirect, deviceFromRequest(req, req.query as any));
+    // One origin for both the IdP callback and the allowed token redirect.
+    const base = getSettings().publicUrl?.replace(/\/+$/, '') || `${req.protocol}://${req.host}`;
+    const redirect = oidc.validateRedirect(req.query.redirect || `${base}/login`, base);
+    const { url, state } = await oidc.startLogin(base, redirect, deviceFromRequest(req, req.query as any));
+    const secure = base.startsWith('https:') ? '; Secure' : '';
+    reply.header('Set-Cookie', `mm_oidc_state=${state}; Path=/api/v1/auth/oidc; HttpOnly; SameSite=Lax; Max-Age=600${secure}`);
     return reply.redirect(url);
   });
   app.get<{ Querystring: { state?: string; code?: string; error?: string; error_description?: string } }>('/auth/oidc/callback', async (req, reply) => {
     if (req.query.error || !req.query.code || !req.query.state) {
       return reply.type('text/html').send(`<p>Sign-in was cancelled: ${String(req.query.error_description ?? req.query.error ?? 'missing code').replace(/[<>&]/g, '')}</p>`);
     }
-    return reply.redirect(await oidc.finishLogin(req.query.state, req.query.code, remoteAddr(req) ?? undefined));
+    const cookieState = /(?:^|;\s*)mm_oidc_state=([^;]+)/.exec(req.headers.cookie ?? '')?.[1] ?? null;
+    reply.header('Set-Cookie', 'mm_oidc_state=; Path=/api/v1/auth/oidc; HttpOnly; SameSite=Lax; Max-Age=0');
+    return reply.redirect(await oidc.finishLogin(req.query.state, req.query.code, cookieState, remoteAddr(req) ?? undefined));
   });
 
   app.post('/auth/link/request', async (req) => auth.requestLinkCode(deviceFromRequest(req, (req.body ?? {}) as any)));

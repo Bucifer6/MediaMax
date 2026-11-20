@@ -22,13 +22,21 @@ import dlnaRoutes from './routes/dlna.js';
 const log = logger('http');
 
 export async function buildApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false, trustProxy: true, bodyLimit: 50 * 1024 * 1024, routerOptions: { maxParamLength: 500 } });
+  // Only honour X-Forwarded-* from proxies on loopback/private networks (or an explicit list), so
+  // internet clients can't spoof their address. Override with MEDIAMAX_TRUSTED_PROXIES (comma list / CIDRs).
+  const trustProxy = process.env.MEDIAMAX_TRUSTED_PROXIES?.split(',').map((s) => s.trim()).filter(Boolean) ?? ['loopback', 'linklocal', 'uniquelocal'];
+  const app = Fastify({ logger: false, trustProxy, bodyLimit: 50 * 1024 * 1024, routerOptions: { maxParamLength: 500 } });
   await app.register(cors, { origin: true, credentials: true, exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'] });
   await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
   await app.register(websocket);
 
   app.decorateRequest('auth', null);
   app.addHook('onRequest', authHook);
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('Referrer-Policy', 'same-origin');
+    if (!reply.hasHeader('X-Frame-Options')) reply.header('X-Frame-Options', 'SAMEORIGIN');
+  });
 
   app.setErrorHandler((err: any, req, reply) => {
     if (err instanceof HttpError) return reply.status(err.statusCode).send({ error: err.code, message: err.message, statusCode: err.statusCode });

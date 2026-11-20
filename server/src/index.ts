@@ -35,6 +35,10 @@ async function main() {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
 
+// Never let one bad request/socket take the whole server down.
+process.on('uncaughtException', (e) => log.error('Uncaught exception', e));
+process.on('unhandledRejection', (e) => log.error('Unhandled rejection', e));
+
 main().catch((e) => {
   log.error('Fatal startup error', e);
   process.exit(1);

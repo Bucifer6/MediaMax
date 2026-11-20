@@ -92,7 +92,8 @@ export default async function extraRoutes(app: FastifyInstance) {
     return podcasts.updateSubscription(req.params.id, req.body ?? {});
   });
   app.post<{ Params: { id: string } }>('/podcasts/:id/refresh', async (req) => {
-    requireUser(req);
+    const { user } = requireUser(req);
+    canManage(user.id, user.isAdmin, req.params.id);
     return { newEpisodes: await podcasts.refreshFeed(req.params.id) };
   });
   app.delete<{ Params: { id: string } }>('/podcasts/:id', async (req) => {

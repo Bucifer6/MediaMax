@@ -317,9 +317,9 @@ export function ServerSettingsAdmin() {
               <Field label="Friendly name" hint="What TVs show in their source list.">
                 <input className="input" value={dl.friendlyName ?? ''} onChange={(e) => setDl({ friendlyName: e.target.value || null })} placeholder={s.serverName || 'MediaMax'} />
               </Field>
-              <Field label="Browse as user" hint="Library access and rating limits of this user apply.">
+              <Field label="Browse as user" hint="Required. DLNA has no login, so it serves exactly what this user may see — library access and rating limits apply.">
                 <select className="select" value={dl.userId ?? ''} onChange={(e) => setDl({ userId: e.target.value || null })}>
-                  <option value="">First administrator</option>
+                  <option value="">Choose a user… (DLNA serves nothing until set)</option>
                   {(users.data ?? []).filter((u) => !u.disabled || u.id === dl.userId).map((u) => (
                     <option key={u.id} value={u.id}>{u.displayName || u.username}{u.isAdmin ? ' (admin)' : ''}{u.maxContentRating ? ` · up to ${u.maxContentRating}` : ''}</option>
                   ))}

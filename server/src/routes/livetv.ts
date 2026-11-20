@@ -69,14 +69,18 @@ export default async function liveRoutes(app: FastifyInstance) {
   /** Raw MPEG-TS restream through the server (hides provider credentials). */
   app.get<{ Params: { channelId: string }; Querystring: { session?: string; catchupStart?: string; duration?: string } }>('/livetv/stream/:channelId', async (req, reply) => {
     const a = requireUser(req);
-    if (!a.user.allowLiveTv && !a.user.isAdmin) throw forbidden();
-    const r = db.get('SELECT * FROM channels WHERE id = ?', req.params.channelId);
-    if (!r) throw notFound('Channel not found');
+    const r = live.accessibleChannelRow(a.user, req.params.channelId);
     if (req.query.session) {
       const s = getSession(req.query.session);
       if (s && s.ctx.user.id !== a.user.id) throw forbidden();
     }
-    const url = live.channelStreamUrl(r, req.query.catchupStart ? { start: new Date(req.query.catchupStart), durationMin: toInt(req.query.duration, 60, 1, 600) } : undefined);
+    if (req.query.catchupStart && !r.has_archive) throw forbidden('This channel does not support catch-up');
+    const src = live.getSourceRow(r.source_id);
+    if (!src.proxy_streams) throw forbidden('This source is not restreamed by the server');
+    live.checkConnectionLimit(src);
+    const start = req.query.catchupStart ? new Date(req.query.catchupStart) : null;
+    if (start && (Number.isNaN(start.getTime()) || start.getTime() > Date.now())) throw forbidden('Invalid catch-up time');
+    const url = live.channelStreamUrl(r, start ? { start, durationMin: toInt(req.query.duration, 60, 1, 600) } : undefined);
     const ctrl = new AbortController();
     const res = await fetch(url, { headers: { 'User-Agent': live.channelUserAgent(r) }, signal: ctrl.signal, redirect: 'follow' });
     if (!res.ok || !res.body) throw notFound(`Provider returned ${res.status}`);

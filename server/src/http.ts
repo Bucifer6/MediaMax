@@ -51,7 +51,8 @@ function guessDevice(ua: string): string {
   return os ? `${browser} on ${os}` : browser;
 }
 
-export const remoteAddr = (req: FastifyRequest) => (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0].trim() ?? req.ip ?? null;
+/** Client address as resolved by Fastify's trusted-proxy rules (never the raw, spoofable header). */
+export const remoteAddr = (req: FastifyRequest) => req.ip ?? null;
 
 export function noCache(reply: FastifyReply) {
   reply.header('Cache-Control', 'no-store');

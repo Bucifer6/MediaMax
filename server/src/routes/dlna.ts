@@ -14,7 +14,10 @@ const MIME: Record<string, string> = { mp4: 'video/mp4', m4v: 'video/mp4', mkv: 
 
 function guard(req: FastifyRequest) {
   if (!getSettings().dlna.enabled) throw notFound('DLNA is disabled');
-  if (!isLocalAddress(req.ip)) throw forbidden('DLNA is only available on the local network');
+  // Use the real TCP peer and refuse anything relayed by a proxy: DLNA has no login, so it must
+  // only ever answer devices that are directly on the LAN.
+  if (req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.headers.forwarded) throw forbidden('DLNA is not available through a proxy');
+  if (!isLocalAddress(req.socket.remoteAddress)) throw forbidden('DLNA is only available on the local network');
 }
 
 const xml = (reply: FastifyReply, body: string) => reply.type('text/xml; charset="utf-8"').header('Cache-Control', 'no-cache').send(body);
@@ -90,6 +93,10 @@ export default async function dlnaRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { mediaId: string; file: string } }>('/dlna/subtitle/:mediaId/:file', async (req, reply) => {
     guard(req);
+    const user = dlnaUser();
+    const media = db.get('SELECT item_id FROM media WHERE id = ?', req.params.mediaId);
+    if (!user || !media) throw notFound();
+    assertCanSee(user, media.item_id);
     const vtt = fs.readFileSync(await subtitleVtt(req.params.mediaId, parseInt(req.params.file, 10)), 'utf8');
     // Convert WebVTT → SRT (most DLNA renderers want SRT).
     let n = 0;

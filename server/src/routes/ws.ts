@@ -41,8 +41,13 @@ export default async function wsRoutes(app: FastifyInstance) {
       } catch {
         return;
       }
+      if (!ev || typeof ev !== 'object' || typeof (ev as any).type !== 'string') return;
       if (ev.type === 'ping') return;
-      if (ev.type.startsWith('syncplay.')) handleSyncPlay(client, ev);
+      try {
+        if (ev.type.startsWith('syncplay.')) handleSyncPlay(client, ev);
+      } catch {
+        client.send({ type: 'error', message: 'Invalid message' });
+      }
     });
     socket.on('close', () => {
       clearInterval(ping);

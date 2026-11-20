@@ -963,7 +963,7 @@ export interface ServerSettings {
     enabled: boolean;
     /** Name shown on TVs; defaults to the server name. */
     friendlyName: string | null;
-    /** Browse as this user (library access & rating limits apply). Null = first admin. */
+    /** Browse as this user (library access & rating limits apply). Required — DLNA serves nothing until set. */
     userId: string | null;
   };
   sessionTimeoutDays: number;

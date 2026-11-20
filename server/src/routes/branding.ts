@@ -31,7 +31,7 @@ export default async function brandingRoutes(app: FastifyInstance) {
     const name = path.basename(req.params.file);
     const p = path.join(config.assetsDir, name);
     if (!fs.existsSync(p)) throw notFound();
-    reply.header('Cache-Control', 'public, max-age=31536000, immutable').type(mimeFor(p));
+    reply.header('Cache-Control', 'public, max-age=31536000, immutable').header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox").type(mimeFor(p));
     return fs.createReadStream(p);
   });
   app.post<{ Body: Theme }>('/branding/themes', async (req) => {
