@@ -48,7 +48,7 @@ const DEFAULTS: StoredBranding = {
 };
 
 const DEFAULT_FEATURES: Branding['features'] = {
-  liveTv: true, iptvVod: true, music: true, photos: true, downloads: true, syncPlay: true, dvr: true, profilePicker: true, linkCodes: true,
+  liveTv: true, iptvVod: true, music: true, photos: true, downloads: true, syncPlay: true, dvr: true, profilePicker: true, linkCodes: true, requests: true,
 };
 
 function stored(): StoredBranding {

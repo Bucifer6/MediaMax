@@ -4,7 +4,7 @@ import { logger } from '../../util/log.js';
 import { sleep } from '../../util/misc.js';
 
 const log = logger('tmdb');
-const API = 'https://api.themoviedb.org/3';
+const API = process.env.MEDIAMAX_TMDB_API_BASE ?? 'https://api.themoviedb.org/3'; // override only for tests
 const IMG = 'https://image.tmdb.org/t/p/';
 
 export interface RemoteMeta {
@@ -210,4 +210,46 @@ export async function seasonDetails(tvId: string, season: number): Promise<{ pos
       people: (e.guest_stars ?? []).slice(0, 8).map((g: any) => ({ name: g.name, role: g.character ?? null, kind: 'actor' as const, imageUrl: img(g.profile_path, 'w185') })),
     })),
   };
+}
+
+/* ----------------------------- discover ---------------------------- */
+
+export interface TmdbListResult {
+  id: string;
+  mediaType: 'movie' | 'show';
+  title: string;
+  year: number | null;
+  overview: string | null;
+  poster: string | null;
+  backdrop: string | null;
+  rating: number | null;
+}
+
+function mapListItem(r: any, forced?: 'movie' | 'show'): TmdbListResult | null {
+  const mt = forced ?? (r.media_type === 'tv' ? 'show' : r.media_type === 'movie' ? 'movie' : null);
+  if (!mt) return null;
+  const date = r.release_date || r.first_air_date || '';
+  return {
+    id: String(r.id), mediaType: mt, title: r.title ?? r.name ?? 'Untitled', year: date ? +date.slice(0, 4) : null,
+    overview: r.overview || null, poster: img(r.poster_path, 'w500'), backdrop: img(r.backdrop_path, 'w1280'), rating: r.vote_average ? Math.round(r.vote_average * 10) / 10 : null,
+  };
+}
+
+/** Search movies + TV (or trending when the query is empty). */
+export async function discover(query: string, type: 'movie' | 'show' | 'all', page: number): Promise<{ results: TmdbListResult[]; page: number; totalPages: number }> {
+  const q = query.trim();
+  let r: any;
+  if (q) r = await call<any>(type === 'movie' ? '/search/movie' : type === 'show' ? '/search/tv' : '/search/multi', { query: q, page, include_adult: 'false' });
+  else r = await call<any>(type === 'movie' ? '/trending/movie/week' : type === 'show' ? '/trending/tv/week' : '/trending/all/week', { page });
+  const forced = type === 'movie' ? 'movie' : type === 'show' ? 'show' : undefined;
+  return {
+    results: (r?.results ?? []).map((x: any) => mapListItem(x, forced)).filter(Boolean) as TmdbListResult[],
+    page: r?.page ?? page,
+    totalPages: Math.min(r?.total_pages ?? 1, 50),
+  };
+}
+
+export async function tvExternalIds(id: string): Promise<{ tvdb: string | null; imdb: string | null }> {
+  const r = await call<any>(`/tv/${id}/external_ids`);
+  return { tvdb: r?.tvdb_id ? String(r.tvdb_id) : null, imdb: r?.imdb_id ?? null };
 }

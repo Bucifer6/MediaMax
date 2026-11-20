@@ -244,6 +244,16 @@ const MIGRATIONS: string[] = [
   /* 6: mark images that came from untrusted feeds */ `
   ALTER TABLE images ADD COLUMN untrusted INTEGER NOT NULL DEFAULT 0;
   `,
+  /* 7: media requests and smart lists */ `
+  CREATE TABLE media_requests (
+    id TEXT PRIMARY KEY, tmdb_id TEXT NOT NULL, media_type TEXT NOT NULL, title TEXT NOT NULL, year INTEGER, poster TEXT,
+    seasons TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL, requested_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    requested_at TEXT NOT NULL, decided_by TEXT, decided_at TEXT, note TEXT, item_id TEXT, error TEXT
+  );
+  CREATE INDEX media_requests_tmdb ON media_requests(media_type, tmdb_id);
+  CREATE INDEX media_requests_status ON media_requests(status);
+  ALTER TABLE items ADD COLUMN smart TEXT;
+  `,
 ];
 
 function migrate(db: Database) {

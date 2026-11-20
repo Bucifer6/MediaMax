@@ -49,4 +49,6 @@ export function initWebhooks() {
   bus.on('user.login', ({ user, device }: any) => dispatch('user.login', { user: { id: user.id, name: user.displayName }, device }));
   bus.on('recording.completed', (r: any) => dispatch('recording.completed', { recording: r }));
   bus.on('recording.failed', (r: any) => dispatch('recording.failed', { recording: r }));
+  bus.on('request.created', (r: any) => dispatch('request.created', { request: r }));
+  bus.on('request.available', (r: any) => dispatch('request.available', { request: r }));
 }

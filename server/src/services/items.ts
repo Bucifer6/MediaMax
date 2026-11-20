@@ -120,6 +120,7 @@ export function rowToItem(r: Row): Item {
     externalIds: parseJson(r.external_ids, {}),
     userData: userData(r),
     trailerUrl: r.trailer_url ?? null,
+    ...(r.smart ? { smart: parseJson(r.smart, null) } : {}),
   };
 }
 
@@ -217,6 +218,21 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
   return { items: rows.map(rowToItem), total, limit, offset };
 }
 
+/** Paged query with a caller-built WHERE (values must be bound params). Used by smart lists. */
+export function queryWhere(user: User, whereSql: string, params: Param[], sort: ItemSort, order: 'asc' | 'desc', limit: number, offset: number, maxTotal: number | null = null): Paged<Item> {
+  const a = accessClause(user);
+  const where = `${a.sql} AND (${whereSql})`;
+  let total = db.get<{ n: number }>(`SELECT COUNT(*) n FROM items i LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ? WHERE ${where}`, user.id, ...a.params, ...params)!.n;
+  if (maxTotal) total = Math.min(total, maxTotal);
+  const lim = Math.max(0, Math.min(limit, total - offset));
+  if (lim <= 0) return { items: [], total, limit, offset };
+  const s = SORTS[sort] ?? SORTS.title;
+  const dir = order === 'desc' ? 'DESC' : 'ASC';
+  const rows = db.all(`${SELECT()} WHERE ${where} ORDER BY ${s.map((x) => `${x} ${dir}`).join(', ')}, i.sort_title LIMIT ? OFFSET ?`,
+    user.id, user.id, user.id, ...a.params, ...params, lim, offset);
+  return { items: rows.map(rowToItem), total, limit, offset };
+}
+
 function selectItems(user: User, whereSql: string, params: Param[], tail = ''): Item[] {
   const a = accessClause(user);
   return db.all(`${SELECT()} WHERE ${a.sql} AND (${whereSql}) ${tail}`, user.id, user.id, user.id, ...a.params, ...params).map(rowToItem);
@@ -226,6 +242,7 @@ export function getItem(user: User, id: string, withMedia = true): Item {
   const items = selectItems(user, 'i.id = ?', [id]);
   if (!items.length) throw notFound('Item not found');
   const item = items[0];
+  if (item.smart && smartHooks.evaluate) item.childCount = smartHooks.evaluate(user, item.smart, 1, 0).total;
   if (withMedia) {
     item.media = db.all('SELECT * FROM media WHERE item_id = ? ORDER BY COALESCE(width,0) DESC', id).map(mediaRowToSource);
     const row = db.get('SELECT markers, locked_fields FROM items WHERE id = ?', id);
@@ -241,10 +258,14 @@ export function getItem(user: User, id: string, withMedia = true): Item {
   return item;
 }
 
+/** Set by services/smart.ts (avoids a circular import). */
+export const smartHooks: { evaluate?: (user: User, filter: any, limit: number, offset: number) => Paged<Item> } = {};
+
 export function getChildren(user: User, id: string, q: { sort?: ItemSort; order?: 'asc' | 'desc'; limit?: number; offset?: number }): Paged<Item> {
   const parent = assertCanSee(user, id);
   const limit = toInt(q.limit, 500, 1, 2000);
   const offset = toInt(q.offset, 0, 0);
+  if (parent.smart && smartHooks.evaluate) return smartHooks.evaluate(user, parseJson(parent.smart, null), limit, offset);
   if (parent.type === 'collection' || parent.type === 'playlist') {
     const a = accessClause(user);
     const rows = db.all(
@@ -462,9 +483,11 @@ export function getContainer(id: string, type: 'collection' | 'playlist', user: 
 }
 
 export function listContainers(user: User, type: 'collection' | 'playlist'): Item[] {
-  return type === 'collection'
+  const items = type === 'collection'
     ? selectItems(user, "i.type = 'collection'", [], 'ORDER BY i.sort_title')
     : selectItems(user, "i.type = 'playlist' AND i.owner_id = ?", [user.id], 'ORDER BY i.sort_title');
+  for (const it of items) if (it.smart && smartHooks.evaluate) it.childCount = smartHooks.evaluate(user, it.smart, 1, 0).total;
+  return items;
 }
 
 /* ------------------------------- home ------------------------------ */
