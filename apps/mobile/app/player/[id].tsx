@@ -4,14 +4,14 @@ import { VideoPlayerScreen, type IntroChain } from '@/player/VideoPlayerScreen';
 import { Loading } from '@/components/States';
 import { useApi, useSession } from '@/state/session';
 
-type Params = { id: string; start?: string; then?: string; intros?: string; nointro?: string };
+type Params = { id: string; start?: string; then?: string; intros?: string; nointro?: string; media?: string; thenMedia?: string };
 
 /**
  * Video player route. Cinema mode: a movie started from the beginning first plays the server's intros
  * (trailers, then a pre-roll), chained as /player/<intro>?then=<movie>&intros=<rest>.
  */
 export default function PlayerRoute() {
-  const { id, start, then, intros, nointro } = useLocalSearchParams<Params>();
+  const { id, start, then, intros, nointro, media, thenMedia } = useLocalSearchParams<Params>();
   const api = useApi();
   const { user } = useSession();
   const wantsIntros = !then && !nointro && start == null && user?.preferences.cinemaMode !== false;
@@ -28,7 +28,7 @@ export default function PlayerRoute() {
         if (!alive) return;
         if (list.length) {
           const [first, ...rest] = list.map((x) => x.id);
-          router.replace({ pathname: '/player/[id]', params: { id: first, then: id, ...(rest.length ? { intros: rest.join(',') } : {}) } } as never);
+          router.replace({ pathname: '/player/[id]', params: { id: first, then: id, ...(media ? { thenMedia: media } : {}), ...(rest.length ? { intros: rest.join(',') } : {}) } } as never);
           return;
         }
       } catch {
@@ -47,15 +47,15 @@ export default function PlayerRoute() {
 
   let chain: IntroChain | undefined;
   if (then) {
-    const toMovie = () => router.replace({ pathname: '/player/[id]', params: { id: then, start: '0', nointro: '1' } } as never);
+    const toMovie = () => router.replace({ pathname: '/player/[id]', params: { id: then, start: '0', nointro: '1', ...(thenMedia ? { media: thenMedia } : {}) } } as never);
     chain = {
       skip: toMovie,
       next: () => {
         const [n, ...rest] = (intros ?? '').split(',').filter(Boolean);
         if (!n) return toMovie();
-        router.replace({ pathname: '/player/[id]', params: { id: n, then, ...(rest.length ? { intros: rest.join(',') } : {}) } } as never);
+        router.replace({ pathname: '/player/[id]', params: { id: n, then, ...(thenMedia ? { thenMedia } : {}), ...(rest.length ? { intros: rest.join(',') } : {}) } } as never);
       },
     };
   }
-  return <VideoPlayerScreen key={id} target={{ kind: 'vod', itemId: id, startMs: start ? Number(start) : then ? 0 : undefined }} intro={chain} />;
+  return <VideoPlayerScreen key={id} target={{ kind: 'vod', itemId: id, startMs: start ? Number(start) : then ? 0 : undefined, mediaId: then ? undefined : media }} intro={chain} />;
 }

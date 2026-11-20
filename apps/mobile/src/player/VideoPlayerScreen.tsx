@@ -48,7 +48,7 @@ import { WatchTogetherSheet } from './WatchTogether';
 import { activeCues, parseVtt, type Cue } from './vtt';
 
 export type PlayerTarget =
-  | { kind: 'vod'; itemId: string; startMs?: number }
+  | { kind: 'vod'; itemId: string; startMs?: number; mediaId?: string }
   | { kind: 'live'; channelId: string; catchupStart?: string; durationMin?: number; categoryId?: string };
 
 type SubChoice = { kind: 'off' } | { kind: 'server'; track: SubtitleTrack } | { kind: 'embedded'; track: NativeSubtitleTrack };
@@ -226,6 +226,7 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
         target.kind === 'live'
           ? await api.playChannel(channelId, { ...(catchup ? { catchupStart: catchup.start, catchupDurationMin: catchup.durationMin } : {}), forceHls: true })
           : await api.playback(target.itemId, {
+              mediaId: target.mediaId,
               startMs: Math.round(startMs),
               audioStreamIndex: opts.audio,
               subtitleStreamIndex: null, // sidecar WebVTT tracks are sent to the receiver instead
@@ -279,6 +280,7 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
           uri = api.absolute(pi.url);
         } else {
           pi = await api.playback(target.itemId, {
+            mediaId: target.mediaId,
             startMs: Math.round(startMs),
             audioStreamIndex: opts.audio,
             subtitleStreamIndex: null, // we render sidecar subtitles ourselves

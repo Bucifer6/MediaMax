@@ -320,6 +320,10 @@ export class MediaMaxClient {
   item(id: string) {
     return this.get<Item>(`/items/${encodeURIComponent(id)}`);
   }
+  /** Local trailers, featurettes, deleted scenes… attached to a movie. */
+  extras(id: string) {
+    return this.get<Item[]>(`/items/${encodeURIComponent(id)}/extras`);
+  }
   /** Cinema mode: trailers / pre-roll to play before a movie ([] when off). */
   intros(id: string) {
     return this.get<Item[]>(`/items/${encodeURIComponent(id)}/intros`);
