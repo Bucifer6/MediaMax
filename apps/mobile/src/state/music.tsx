@@ -7,10 +7,14 @@
  * While a Chromecast session is connected the queue plays on the receiver
  * instead: the local player is paused, transport controls are mirrored to the
  * cast session and progress is reported from the receiver's media status.
+ *
+ * Spoken audio also gets a sleep timer (minutes / end of chapter, with a short
+ * fade-out) and remembers its playback speed per book or show (AsyncStorage).
  */
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { audioDeviceProfile, castDeviceProfile } from '@/api/profiles';
+import { getJSON, setJSON } from '@/api/storage';
 import { syncCarRemoteCommands } from '@/car/remote';
 import { castMediaInfo, isOurMedia, useCast } from '@/cast';
 import type { Chapter, Item, PlaybackInfo } from '@/api/types';
@@ -20,6 +24,18 @@ import { useSession } from './session';
 
 export type RepeatMode = 'off' | 'all' | 'one';
 export const SPEEDS = [0.8, 1, 1.1, 1.25, 1.5, 1.75, 2];
+
+/** Sleep timer: pause after some minutes, at the end of the current chapter, or at the end of the current part/track. */
+export type SleepTimer =
+  | { mode: 'time'; minutes: number; endsAt: number }
+  | { mode: 'chapter'; itemId: string; endMs: number }
+  | { mode: 'part'; itemId: string };
+/** `'chapter'` falls back to the end of the current part when the item has no (further) chapters. */
+export type SleepOption = { minutes: number } | 'chapter';
+/** How long the volume fades out before the sleep timer pauses (local playback only). */
+const SLEEP_FADE_MS = 10000;
+/** Playback speed is remembered per book (parent of a part) or per podcast show. */
+const speedKey = (item: Item) => `mediamax.speed.${item.parentId ?? item.id}`;
 
 interface MusicValue {
   queue: Item[];
@@ -50,12 +66,20 @@ interface MusicValue {
   next: () => void;
   previous: () => void;
   seek: (ms: number) => void;
-  jumpTo: (index: number) => void;
+  /** `startMs` starts that queue entry at a position (e.g. a bookmark) instead of its resume point. */
+  jumpTo: (index: number, startMs?: number) => void;
   stop: () => void;
   setShuffle: (v: boolean) => void;
   cycleRepeat: () => void;
   /** Name of the Chromecast the queue is playing on, or null when playing locally. */
   castingTo: string | null;
+  /** 0–1 (local player, or the receiver's stream volume while casting). */
+  volume: number;
+  setVolume: (v: number) => void;
+  sleep: SleepTimer | null;
+  /** Wall-clock time left on the sleep timer (null when off or unknown). */
+  sleepRemainingMs: number | null;
+  setSleep: (opt: SleepOption | null) => void;
 }
 
 const Ctx = createContext<MusicValue | null>(null);
@@ -81,6 +105,15 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [rate, setRateState] = useState(1);
   const [chapters, setChapters] = useState<Chapter[]>([]);
+  const chaptersRef = useRef<Chapter[]>(chapters);
+  chaptersRef.current = chapters;
+  const [volume, setVolumeState] = useState(1);
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
+  const [sleep, setSleepState] = useState<SleepTimer | null>(null);
+  const sleepRef = useRef<SleepTimer | null>(sleep);
+  sleepRef.current = sleep;
+  const [sleepRemainingMs, setSleepRemaining] = useState<number | null>(null);
   const session = useRef<PlaybackInfo | null>(null);
   const loadedId = useRef<string | null>(null);
   /** Resume position to apply once the source has loaded (spoken audio). */
@@ -174,6 +207,15 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       const saved = local?.state === 'done' && local.positionMs ? local.positionMs : current.userData.positionMs;
       let startMs = override ?? (isSpoken ? (dur && saved > dur * 0.95 ? 0 : saved) : 0);
       setChapters([]);
+      // Remembered speed for this book / show (read in parallel with the playback request).
+      const savedSpeed = isSpoken ? getJSON<number | null>(speedKey(current), null) : Promise.resolve(null);
+      const applySavedSpeed = async () => {
+        const r = await savedSpeed;
+        if (alive && typeof r === 'number' && r >= 0.5 && r <= 3) {
+          rateRef.current = r;
+          setRateState(r);
+        }
+      };
       if (isSpoken) {
         api
           .item(current.id)
@@ -191,6 +233,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
         }
         try {
           const info = await api.playback(current.id, { deviceProfile: castDeviceProfile('audio'), startMs: startMs > 0 ? Math.round(startMs) : undefined });
+          await applySavedSpeed();
           if (!alive) return;
           session.current = info;
           const from = info.startMs || startMs;
@@ -217,7 +260,14 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
           return;
         }
       }
+      await applySavedSpeed();
+      if (!alive) return;
       player.replace({ uri, headers: api.headers(false) });
+      try {
+        player.volume = volumeRef.current;
+      } catch {
+        /* ignore */
+      }
       pendingSeek.current = startMs > 1000 ? startMs : null;
       try {
         player.setPlaybackRate(isSpoken ? rateRef.current : 1);
@@ -303,6 +353,11 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       finishedRef.current = true;
       report('stopped');
       session.current = null;
+      if (sleepRef.current?.mode === 'part') {
+        // Sleep timer "end of part": move on, but load the next part paused.
+        loadPaused.current = true;
+        setSleepState(null);
+      }
       advance(1, true);
     } else if (!status.didJustFinish) finishedRef.current = false;
   }, [status.didJustFinish, advance, report]);
@@ -329,6 +384,97 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     },
     [player],
   );
+
+  /** Pause whichever player is active. */
+  const pauseAny = useCallback(() => {
+    const client = castClientRef.current;
+    if (castModeRef.current && client) {
+      if (castPlayingRef.current) {
+        void client.pause().catch(() => undefined);
+        report('paused');
+      }
+      return;
+    }
+    if (player.playing) {
+      player.pause();
+      report('paused');
+    }
+  }, [player, report]);
+
+  // ----- Sleep timer -----
+  const setSleep = useCallback(
+    (opt: SleepOption | null) => {
+      try {
+        if (!castModeRef.current) player.volume = volumeRef.current;
+      } catch {
+        /* ignore */
+      }
+      if (!opt) {
+        setSleepState(null);
+        setSleepRemaining(null);
+        return;
+      }
+      if (opt === 'chapter') {
+        const cur = currentRef.current;
+        if (!cur) return;
+        const pos = castModeRef.current ? castPosRef.current : player.currentTime * 1000;
+        const nextStart = chaptersRef.current.find((c) => c.startMs > pos + 500)?.startMs;
+        setSleepState(nextStart != null ? { mode: 'chapter', itemId: cur.id, endMs: nextStart } : { mode: 'part', itemId: cur.id });
+        return;
+      }
+      setSleepState({ mode: 'time', minutes: opt.minutes, endsAt: Date.now() + opt.minutes * 60000 });
+    },
+    [player],
+  );
+
+  useEffect(() => {
+    if (!sleep) return;
+    const fire = () => {
+      setSleepState(null);
+      setSleepRemaining(null);
+      pauseAny();
+      setTimeout(() => {
+        try {
+          player.volume = volumeRef.current;
+        } catch {
+          /* ignore */
+        }
+      }, 300);
+    };
+    const tick = () => {
+      const remote = castModeRef.current;
+      const pos = remote ? castPosRef.current : player.currentTime * 1000;
+      const isPlaying = remote ? castPlayingRef.current : player.playing;
+      const cur = currentRef.current;
+      let remaining: number;
+      if (sleep.mode === 'time') remaining = sleep.endsAt - Date.now();
+      else {
+        if (!cur) {
+          setSleepState(null);
+          setSleepRemaining(null);
+          return;
+        }
+        // The chapter/part we were waiting for has ended and the queue moved on.
+        if (cur.id !== sleep.itemId) return fire();
+        const endMs = sleep.mode === 'chapter' ? sleep.endMs : (remote ? cur.durationMs ?? 0 : player.duration * 1000) || (cur.durationMs ?? 0);
+        remaining = endMs > 0 ? (endMs - pos) / (spokenRef.current ? rateRef.current : 1) : NaN;
+      }
+      setSleepRemaining(Number.isFinite(remaining) ? Math.max(0, Math.ceil(remaining / 1000) * 1000) : null);
+      if (sleep.mode !== 'time' && !isPlaying) return;
+      if (remaining <= 0 && sleep.mode !== 'part') return fire();
+      // Fade out over the last few seconds (local playback; "end of part" is handled when the track finishes).
+      if (!remote && isPlaying && sleep.mode !== 'part' && Number.isFinite(remaining)) {
+        try {
+          player.volume = volumeRef.current * Math.max(0, Math.min(1, remaining / SLEEP_FADE_MS));
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+    tick();
+    const timer = setInterval(tick, 500);
+    return () => clearInterval(timer);
+  }, [sleep, player, pauseAny]);
 
   const playQueue = useCallback((items: Item[], startIndex = 0, opts: { shuffle?: boolean; startMs?: number } = {}) => {
     const wanted = items[startIndex];
@@ -366,6 +512,8 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       rate,
       setRate: (r) => {
         setRateState(r);
+        const cur = currentRef.current;
+        if (cur && spokenRef.current) void setJSON(speedKey(cur), r).catch(() => undefined);
         try {
           if (spokenRef.current && castModeRef.current) void castClientRef.current?.setPlaybackRate(r).catch(() => undefined);
           else if (spokenRef.current) player.setPlaybackRate(r);
@@ -400,29 +548,20 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
           report('paused');
         } else player.play();
       },
-      pause: () => {
-        const client = castClientRef.current;
-        if (castModeRef.current && client) {
-          if (castPlayingRef.current) {
-            void client.pause().catch(() => undefined);
-            report('paused');
-          }
-          return;
-        }
-        if (player.playing) {
-          player.pause();
-          report('paused');
-        }
-      },
+      pause: pauseAny,
       next: () => advance(1),
       previous: () => {
         if ((castModeRef.current ? castPosRef.current / 1000 : player.currentTime) > 4) seekAny(0);
         else advance(-1);
       },
       seek: seekAny,
-      jumpTo: (i) => {
+      jumpTo: (i, startMs) => {
+        const target = queue[i];
+        if (target && startMs != null) startOverride.current = { id: target.id, ms: startMs };
         loadedId.current = null;
         setIndex(i);
+        // Same entry: the load effect would not re-run, so reload it.
+        if (i === index) setReloadTick((n) => n + 1);
       },
       stop: () => {
         if (castModeRef.current) void castClientRef.current?.stop().catch(() => undefined);
@@ -435,6 +574,8 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
           /* ignore */
         }
         syncCarRemoteCommands(false);
+        setSleepState(null);
+        setSleepRemaining(null);
         loadedId.current = null;
         setQueue([]);
         setIndex(0);
@@ -450,8 +591,23 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       },
       cycleRepeat: () => setRepeat((r) => (r === 'off' ? 'all' : r === 'all' ? 'one' : 'off')),
       castingTo: castOn ? cast.deviceName ?? 'Chromecast' : null,
+      volume,
+      setVolume: (v) => {
+        const vol = Math.max(0, Math.min(1, v));
+        setVolumeState(vol);
+        volumeRef.current = vol;
+        try {
+          if (castModeRef.current) void castClientRef.current?.setStreamVolume(vol).catch(() => undefined);
+          else player.volume = vol;
+        } catch {
+          /* ignore */
+        }
+      },
+      sleep,
+      sleepRemainingMs,
+      setSleep,
     }),
-    [queue, index, current, status, shuffle, repeat, error, spoken, rate, chapters, playQueue, player, report, advance, playing, castOn, castState, ours, cast.positionMs, cast.mediaStatus, cast.deviceName, seekAny],
+    [queue, index, current, status, shuffle, repeat, error, spoken, rate, chapters, playQueue, player, report, advance, playing, castOn, castState, ours, cast.positionMs, cast.mediaStatus, cast.deviceName, seekAny, pauseAny, volume, sleep, sleepRemainingMs, setSleep],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

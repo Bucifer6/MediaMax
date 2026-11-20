@@ -54,6 +54,7 @@ export function ShowDetail({ show, initialSeasonId, onUserData }: { show: Item; 
     <ActionBar
       item={show}
       onPlay={play}
+      playOn={{ itemId: show.id, title: show.title }}
       playLabel={playLabel}
       togglePlayed={togglePlayed}
       toggleFavorite={toggleFavorite}

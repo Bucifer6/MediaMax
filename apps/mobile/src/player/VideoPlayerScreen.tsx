@@ -7,6 +7,11 @@
  * Chromecast (phones): while a cast session is connected the stream is requested
  * with a Chromecast profile and loaded on the receiver; the local player pauses,
  * the controls drive the receiver and progress is reported from its status.
+ *
+ * Remote control: the player registers with src/state/remote.tsx while mounted,
+ * so its state is reported to the user's other devices and their commands
+ * (pause, seek, volume, stop…) are applied here. "Play on…" hands the current
+ * item or channel to another device.
  */
 import { useEventListener } from 'expo';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,10 +29,12 @@ import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
 import { Img } from '@/components/Img';
 import { OptionSheet, type SheetOption } from '@/components/OptionSheet';
+import { PlayOnSheet } from '@/components/PlayOnSheet';
 import { ProgressBar } from '@/components/ProgressBar';
 import { T } from '@/components/Text';
 import { useDownloads } from '@/state/downloads';
 import { useMusic } from '@/state/music';
+import { useRemote, type RemoteCommand } from '@/state/remote';
 import { useApi, useCapabilities, useSession } from '@/state/session';
 import { useSyncPlay } from '@/state/syncplay';
 import { useTheme } from '@/theme';
@@ -45,7 +52,7 @@ export type PlayerTarget =
   | { kind: 'live'; channelId: string; catchupStart?: string; durationMin?: number; categoryId?: string };
 
 type SubChoice = { kind: 'off' } | { kind: 'server'; track: SubtitleTrack } | { kind: 'embedded'; track: NativeSubtitleTrack };
-type SheetKind = 'audio' | 'subs' | 'online' | 'quality' | 'channels' | 'together' | null;
+type SheetKind = 'audio' | 'subs' | 'online' | 'quality' | 'channels' | 'together' | 'playon' | null;
 
 const langMatch = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.slice(0, 2).toLowerCase() === b.slice(0, 2).toLowerCase();
 
@@ -60,9 +67,12 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
   const prefs = user?.preferences;
   const isLive = target.kind === 'live';
   const sync = useSyncPlay();
+  const remote = useRemote();
 
   // ----- what we're playing -----
   const [channelId, setChannelId] = useState(target.kind === 'live' ? target.channelId : '');
+  const channelIdRef = useRef(channelId);
+  channelIdRef.current = channelId;
   const [catchup, setCatchup] = useState(target.kind === 'live' && target.catchupStart ? { start: target.catchupStart, durationMin: target.durationMin } : null);
   const offlineRec = target.kind === 'vod' ? downloads.get(target.itemId) : undefined;
   const offlineUri = offlineRec?.state === 'done' && offlineRec.fileUri ? offlineRec.fileUri : null;
@@ -821,6 +831,79 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
   const subtitleText = sub.kind === 'server' && !casting ? activeCues(cues, pos).map((c) => c.text).join('\n') : '';
   const title = info?.title ?? offlineItem?.title ?? channel?.name ?? '';
   const subtitle = isLive ? (catchup ? `Catch-up · ${formatTime(catchup.start)}` : channel?.nowPlaying?.title ?? null) : info?.subtitle ?? null;
+  // ----- remote control (other devices) -----
+  const remoteInfo = useRef({ title, subtitle, poster: null as string | null });
+  remoteInfo.current = { title, subtitle, poster: info?.posterUrl ?? offlineItem?.posterUrl ?? channel?.logoUrl ?? null };
+  const remoteHandle = useRef<(cmd: RemoteCommand) => void>(() => undefined);
+  remoteHandle.current = (cmd) => {
+    switch (cmd.action) {
+      case 'play':
+        playAny();
+        if (inRoom) sync.broadcast('play', posRef.current);
+        break;
+      case 'pause':
+        pauseAny();
+        if (inRoom) sync.broadcast('pause', posRef.current);
+        break;
+      case 'togglePause':
+        togglePlay();
+        break;
+      case 'stop':
+        exit();
+        break;
+      case 'seek':
+        if (typeof cmd.positionMs === 'number') userSeek(cmd.positionMs);
+        break;
+      case 'next':
+        if (isLive) zap(1);
+        else if (nextId) goNext(nextId);
+        break;
+      case 'previous':
+        if (isLive) zap(-1);
+        else userSeek(0);
+        break;
+      case 'setVolume':
+        if (typeof cmd.volume === 'number') {
+          const v = Math.max(0, Math.min(1, cmd.volume / 100));
+          if (castingRef.current) void castClientRef.current?.setStreamVolume(v).catch(() => undefined);
+          else player.volume = v;
+          flash(`Volume ${Math.round(v * 100)}%`);
+        }
+        break;
+    }
+    if (cmd.fromDeviceName && cmd.action !== 'setVolume' && cmd.action !== 'stop') flash(`${cmd.fromDeviceName}: ${cmd.action === 'togglePause' ? (playingRef.current ? 'pause' : 'play') : cmd.action}`);
+  };
+  const { registerPlayer } = remote;
+  useEffect(
+    () =>
+      registerPlayer({
+        getState: () => {
+          const ri = remoteInfo.current;
+          let volume: number | null = null;
+          try {
+            volume = castingRef.current ? null : Math.round(player.volume * 100);
+          } catch {
+            /* released */
+          }
+          return {
+            itemId: vodItemId,
+            channelId: isLive ? channelIdRef.current : null,
+            title: ri.title || null,
+            subtitle: ri.subtitle,
+            posterUrl: ri.poster,
+            positionMs: Math.round(posRef.current),
+            durationMs: durRef.current > 0 ? Math.round(durRef.current) : null,
+            paused: !playingRef.current,
+            volume,
+          };
+        },
+        handle: (cmd) => remoteHandle.current(cmd),
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [registerPlayer, player],
+  );
+  const canPlayOn = remote.enabled && status === 'signed-in' && (isLive ? !catchup : !!vodItemId && !offlineUri);
+
   const pipSupported = !t.isTV && !casting && isPictureInPictureSupported();
   // The receiver is the screen while casting: keep the remote-control UI up.
   const showControls = (controls || casting) && !error;
@@ -909,6 +992,11 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
                 </T>
               </View>
             ) : null}
+            {canPlayOn && !t.isTV ? (
+              <Focusable onPress={() => setSheet('playon')} style={{ padding: 6 }} accessibilityLabel="Play on another device">
+                <Icon name="phone-portrait-outline" color="#fff" />
+              </Focusable>
+            ) : null}
             {canCast ? <CastButton tint={casting ? t.colors.primary : '#fff'} /> : null}
             {Platform.OS === 'ios' && !t.isTV && !casting ? <VideoAirPlayButton tint="#fff" activeTint={t.colors.primary} style={{ width: 34, height: 34 }} /> : null}
             {pipSupported ? (
@@ -988,6 +1076,7 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
               {isLive && caps.dvr && channel?.nowPlaying && !catchup ? <CtrlButton icon="radio-button-on" label={t.isTV || t.wide ? 'Record' : undefined} onPress={recordNow} size={iconSize} color={t.colors.danger} /> : null}
               {syncOn ? <CtrlButton icon={inRoom ? 'people' : 'people-outline'} label={t.isTV || t.wide ? (inRoom ? `Together · ${sync.room!.members.length}` : 'Watch together') : undefined} onPress={() => setSheet('together')} size={iconSize} color={inRoom ? t.colors.primary : undefined} /> : null}
               {nextId && !isLive ? <CtrlButton icon="play-skip-forward" label={t.isTV || t.wide ? 'Next' : undefined} onPress={() => goNext(nextId)} size={iconSize} /> : null}
+              {canPlayOn && t.isTV ? <CtrlButton icon="phone-portrait-outline" label="Play on…" onPress={() => setSheet('playon')} size={iconSize} /> : null}
             </View>
           </LinearGradient>
         </View>
@@ -1041,6 +1130,14 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
       <OptionSheet visible={sheet === 'audio'} title="Audio" options={audioOptions} onSelect={selectAudio} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'subs'} title="Subtitles" sections={subSections} onSelect={selectSub} onClose={() => setSheet(null)} />
       {onlineVod && vodItemId ? <OnlineSubtitlesSheet visible={sheet === 'online'} itemId={vodItemId} onClose={() => setSheet(null)} onDownloaded={onSubtitleDownloaded} /> : null}
+      {canPlayOn ? (
+        <PlayOnSheet
+          visible={sheet === 'playon'}
+          what={isLive ? { channelId, title: channel?.name } : { itemId: vodItemId ?? undefined, positionMs: posRef.current, title }}
+          onClose={() => setSheet(null)}
+          onSent={() => pauseAny()}
+        />
+      ) : null}
       {syncOn && vodItemId ? <WatchTogetherSheet visible={sheet === 'together'} itemId={vodItemId} onClose={() => setSheet(null)} /> : null}
       <OptionSheet visible={sheet === 'quality'} title="Quality" options={qualityOptions} onSelect={selectQuality} onClose={() => setSheet(null)} />
       <OptionSheet

@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ApiError } from '@/api/client';
-import type { LinkCodeResponse, PublicProfile } from '@/api/types';
+import type { AuthResponse, LinkCodeResponse, PublicProfile } from '@/api/types';
 import { Button } from '@/components/Button';
 import { Chip } from '@/components/Chip';
 import { Focusable } from '@/components/Focusable';
@@ -38,6 +38,8 @@ function parseFragment(url: string): Record<string, string> {
 
 type Mode = 'profiles' | 'pin' | 'password' | 'link';
 
+const isTotpRequired = (e: unknown) => e instanceof ApiError && e.status === 401 && e.code === 'totp_required';
+
 export default function LoginScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -51,6 +53,8 @@ export default function LoginScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const passwordRef = useRef<TextInputRef>(null);
+  /** Set when the server asks for a second factor: resends the same sign-in with the code. */
+  const [totp, setTotp] = useState<{ retry: (code: string) => Promise<AuthResponse> } | null>(null);
 
   // Load profiles and choose the default mode (link code on TV).
   useEffect(() => {
@@ -85,7 +89,8 @@ export default function LoginScreen() {
       await completeLogin(auth);
       router.replace('/(tabs)');
     } catch (e) {
-      fail(e);
+      if (isTotpRequired(e)) setTotp({ retry: (code) => api.profileLogin(p.id, pinValue, code) });
+      else fail(e);
       setPin('');
     } finally {
       setBusy(false);
@@ -112,7 +117,10 @@ export default function LoginScreen() {
       await completeLogin(auth);
       router.replace('/(tabs)');
     } catch (e) {
-      fail(e);
+      const u = username.trim();
+      const pw = password;
+      if (isTotpRequired(e)) setTotp({ retry: (code) => api.login(u, pw, code) });
+      else fail(e);
     } finally {
       setBusy(false);
     }
@@ -141,15 +149,26 @@ export default function LoginScreen() {
     }
   };
 
+  const cancelTotp = () => {
+    setTotp(null);
+    setPassword('');
+    setPin('');
+    setError(null);
+  };
+
   // Back on the remote steps back through the modes.
   useBackHandler(() => {
+    if (totp) {
+      cancelTotp();
+      return true;
+    }
     if (mode === 'pin' || (mode === 'password' && selected)) {
       setMode('profiles');
       setSelected(null);
       return true;
     }
     return false;
-  }, mode === 'pin' || (mode === 'password' && !!selected));
+  }, !!totp || mode === 'pin' || (mode === 'password' && !!selected));
 
   const logo = branding?.logoWideUrl ?? branding?.logoUrl;
   const panelWidth = t.isTV ? t.s(760) : Math.min(t.width - 32, 480);
@@ -192,6 +211,17 @@ export default function LoginScreen() {
 
           {!mode ? (
             <ActivityIndicator color={t.colors.primary} size="large" />
+          ) : totp ? (
+            <View style={{ width: panelWidth }}>
+              <TotpStep
+                onSubmit={async (code) => {
+                  const auth = await totp.retry(code);
+                  await completeLogin(auth);
+                  router.replace('/(tabs)');
+                }}
+                onBack={cancelTotp}
+              />
+            </View>
           ) : (
             <View style={{ width: mode === 'profiles' ? Math.min(t.width - 32, t.isTV ? t.s(1100) : 640) : panelWidth, alignItems: 'center', gap: t.space.lg }}>
               {mode === 'profiles' && profiles ? <ProfileGrid profiles={profiles} onPick={chooseProfile} busyId={busy ? selected?.id : undefined} /> : null}
@@ -253,6 +283,101 @@ export default function LoginScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+/** Second sign-in step for accounts with two-factor authentication (6-digit code or a recovery code). */
+function TotpStep({ onSubmit, onBack }: { onSubmit: (code: string) => Promise<void>; onBack: () => void }) {
+  const t = useTheme();
+  const [recovery, setRecovery] = useState(false);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<TextInputRef>(null);
+  const ready = recovery ? code.trim().length >= 6 : code.length === 6;
+
+  const submit = async (value = code) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onSubmit(value.trim());
+    } catch (e) {
+      setError(
+        e instanceof ApiError && e.code === 'totp_invalid'
+          ? recovery
+            ? 'That recovery code is not valid.'
+            : 'That code is not valid. Check the time on your phone and try again.'
+          : e instanceof Error && e.message
+            ? e.message
+            : 'Could not sign in',
+      );
+      setCode('');
+      setTimeout(() => inputRef.current?.focus(), 0);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={{ width: '100%', gap: t.space.md, padding: t.space.lg, borderRadius: t.radius * 1.4, backgroundColor: t.alpha(t.colors.surface, 0.9), borderWidth: 1, borderColor: t.colors.border }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.sm }}>
+        <Icon name="shield-checkmark-outline" size={t.isTV ? t.s(30) : 24} color={t.colors.primary} />
+        <T variant="heading">Two-factor authentication</T>
+      </View>
+      <T tone="muted">{recovery ? 'Enter one of the recovery codes you saved when you turned on two-factor.' : 'Enter the 6-digit code from your authenticator app.'}</T>
+      {recovery ? (
+        <Input
+          key="rec"
+          ref={inputRef}
+          label="Recovery code"
+          value={code}
+          onChangeText={setCode}
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoFocus
+          placeholder="xxxxx-xxxxx"
+          returnKeyType="go"
+          onSubmitEditing={() => ready && void submit()}
+          icon="key-outline"
+        />
+      ) : (
+        <Input
+          key="otp"
+          ref={inputRef}
+          label="Authentication code"
+          value={code}
+          onChangeText={(text) => {
+            const v = text.replace(/\D/g, '').slice(0, 6);
+            setCode(v);
+            if (v.length === 6) void submit(v);
+          }}
+          keyboardType="number-pad"
+          textContentType="oneTimeCode"
+          autoComplete="one-time-code"
+          maxLength={6}
+          autoFocus
+          placeholder="123456"
+          icon="keypad-outline"
+          style={{ letterSpacing: 6, fontVariant: ['tabular-nums'] }}
+        />
+      )}
+      {error ? <T tone="danger">{error}</T> : null}
+      <Button label="Verify" onPress={() => void submit()} loading={busy} block size="lg" disabled={!ready} />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: t.space.sm }}>
+        <Button label="Back" icon="arrow-back" variant="ghost" size="sm" onPress={onBack} />
+        <Button
+          label={recovery ? 'Use an authenticator code' : 'Use a recovery code'}
+          variant="ghost"
+          size="sm"
+          onPress={() => {
+            setRecovery((r) => !r);
+            setCode('');
+            setError(null);
+          }}
+        />
+      </View>
     </View>
   );
 }

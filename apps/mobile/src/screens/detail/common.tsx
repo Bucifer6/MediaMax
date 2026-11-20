@@ -9,6 +9,7 @@ import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
 import { MetaLine } from '@/components/Hero';
 import { OptionSheet } from '@/components/OptionSheet';
+import { PlayOnSheet, type PlayOnWhat } from '@/components/PlayOnSheet';
 import { Img } from '@/components/Img';
 import { ProgressBar } from '@/components/ProgressBar';
 import { RowHeader } from '@/components/Row';
@@ -16,7 +17,8 @@ import { SmartBadge } from '@/components/SmartBadge';
 import { BackButton } from '@/components/Screen';
 import { T } from '@/components/Text';
 import { DOWNLOAD_QUALITIES, effectiveQuality, useDownloads } from '@/state/downloads';
-import { useApi, useCapabilities } from '@/state/session';
+import { useRemote } from '@/state/remote';
+import { useApi, useCapabilities, useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 import { formatClock, progressFraction } from '@/utils/format';
 
@@ -192,6 +194,7 @@ export function ActionBar({
   downloadItems,
   onRate,
   playlistItems,
+  playOn,
 }: {
   item: Item;
   onPlay?: () => void;
@@ -207,9 +210,15 @@ export function ActionBar({
   onRate?: (rating: number | null) => void;
   /** Show "Add to playlist"; resolves the item ids to add (default: this item). */
   playlistItems?: true | (() => Promise<string[]>);
+  /** Show "Play on…" (remote control): what to send to another of the user's devices. */
+  playOn?: PlayOnWhat;
 }) {
   const t = useTheme();
   const caps = useCapabilities();
+  const remote = useRemote();
+  const { status } = useSession();
+  const [playOnSheet, setPlayOnSheet] = useState(false);
+  const canPlayOn = !!playOn && remote.enabled && status === 'signed-in';
   const downloads = useDownloads();
   const rec = downloads.get(item.id);
   const [busy, setBusy] = useState(false);
@@ -257,6 +266,7 @@ export function ActionBar({
         {canDownload ? <Button icon={dlIcon} label={dlLabel} variant="secondary" size="lg" onPress={onDownload} loading={busy} accessibilityLabel="Download" /> : null}
         {item.trailerUrl ? <Button icon="film-outline" label={t.isTV ? 'Trailer' : undefined} variant="secondary" size="lg" onPress={() => Linking.openURL(item.trailerUrl!)} accessibilityLabel="Trailer" /> : null}
         {playlistItems ? <Button icon="list-outline" label={t.isTV ? 'Playlist' : undefined} variant="secondary" size="lg" onPress={() => setPlaylistSheet(true)} accessibilityLabel="Add to playlist" /> : null}
+        {canPlayOn ? <Button icon="phone-portrait-outline" label={t.isTV ? 'Play on…' : undefined} variant="secondary" size="lg" onPress={() => setPlayOnSheet(true)} accessibilityLabel="Play on another device" /> : null}
         {extra}
         {canDownload ? (
           <OptionSheet
@@ -274,6 +284,7 @@ export function ActionBar({
         ) : null}
       </View>
       {onRate ? <RatingStars rating={item.userData.rating} onRate={onRate} /> : null}
+      {canPlayOn && playOn ? <PlayOnSheet visible={playOnSheet} what={playOn} onClose={() => setPlayOnSheet(false)} /> : null}
       {playlistItems ? (
         <AddToPlaylistSheet visible={playlistSheet} title={item.title} getItemIds={playlistItems === true ? () => [item.id] : playlistItems} onClose={() => setPlaylistSheet(false)} />
       ) : null}

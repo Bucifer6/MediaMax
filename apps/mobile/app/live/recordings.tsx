@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, View } from 'react-native';
-import type { Recording, RecordingStatus } from '@/api/types';
+import type { Recording, RecordingRule, RecordingStatus } from '@/api/types';
 import { useQuery } from '@/api/useQuery';
 import { Button } from '@/components/Button';
 import { Chip } from '@/components/Chip';
@@ -15,6 +15,23 @@ import { formatBytes, formatDay, formatTime } from '@/utils/format';
 import { on } from '@/utils/events';
 import { playItem } from '@/utils/nav';
 
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Rule filters (priority, weekdays, time window, repeats) in one line. */
+function ruleFilters(rule: RecordingRule): string {
+  const parts: string[] = [`Priority ${rule.priority}`];
+  const days = rule.daysOfWeek;
+  if (days && days.length && days.length < 7) {
+    const sorted = [...days].sort((a, b) => a - b);
+    const key = sorted.join(',');
+    parts.push(key === '1,2,3,4,5' ? 'Weekdays' : key === '0,6' ? 'Weekends' : sorted.map((d) => DAY_NAMES[d] ?? '?').join(', '));
+  } else parts.push('Any day');
+  if (rule.timeFrom || rule.timeTo) parts.push(`${rule.timeFrom ?? '00:00'}–${rule.timeTo ?? '24:00'}`);
+  else parts.push('Any time');
+  parts.push(rule.skipRepeats ? 'Skips repeats' : 'Records repeats');
+  return parts.join(' · ');
+}
+
 const GROUPS: { status: RecordingStatus; title: string }[] = [
   { status: 'recording', title: 'Recording now' },
   { status: 'scheduled', title: 'Scheduled' },
@@ -28,6 +45,22 @@ export default function RecordingsScreen() {
   const recs = useQuery('dvr:recordings', (a) => a.recordings());
   const rules = useQuery('dvr:rules', (a) => a.rules());
   const [tab, setTab] = useState<'recordings' | 'rules'>('recordings');
+  const [prioritizing, setPrioritizing] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  /** PATCH priority 100: always wins a tuner conflict. The server re-plans, so reload the list. */
+  const makeTopPriority = async (r: Recording) => {
+    setPrioritizing(r.id);
+    setActionError(null);
+    try {
+      await api.updateRecording(r.id, { priority: 100 });
+      await recs.refresh();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Could not change the priority');
+    } finally {
+      setPrioritizing(null);
+    }
+  };
 
   const setRecs = recs.setData;
   useEffect(
@@ -78,34 +111,50 @@ export default function RecordingsScreen() {
           <EmptyState icon="recording-outline" title="No recordings" message="Open the TV guide and choose Record on any programme." />
         ) : (
           <ScrollView contentContainerStyle={{ paddingHorizontal: t.space.gutter, paddingBottom: t.space.xxl * 2, gap: t.space.lg }} refreshControl={t.isTV ? undefined : <RefreshControl refreshing={recs.refreshing} onRefresh={recs.refresh} tintColor={t.colors.primary} />}>
+            {actionError ? <T tone="danger">{actionError}</T> : null}
             {grouped.map((g) => (
               <View key={g.status} style={{ gap: t.space.sm }}>
                 <T variant="heading">{g.title}</T>
                 {g.items.map((r) => (
-                  <View key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.sm }}>
-                    <Focusable
-                      onPress={() => (r.itemId ? playItem(r.itemId) : undefined)}
-                      containerStyle={{ flex: 1 }}
-                      focusScale={t.isTV ? 1.02 : 1}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.md, padding: t.space.md, borderRadius: t.radius, backgroundColor: t.colors.surface }}
-                    >
-                      <Icon name={r.status === 'recording' ? 'radio-button-on' : r.status === 'completed' ? 'play-circle' : r.status === 'failed' ? 'alert-circle' : 'time-outline'} color={r.status === 'recording' || r.status === 'failed' ? t.colors.danger : t.colors.primary} />
-                      <View style={{ flex: 1 }}>
-                        <T weight="700" numberOfLines={1}>
-                          {r.title}
-                        </T>
-                        <T variant="small" tone="muted" numberOfLines={1}>
-                          {r.channelName} · {formatDay(r.start)} {formatTime(r.start)}–{formatTime(r.end)}
-                          {r.sizeBytes ? ` · ${formatBytes(r.sizeBytes)}` : ''}
-                        </T>
-                        {r.error ? (
-                          <T variant="small" tone="danger" numberOfLines={2}>
-                            {r.error}
+                  <View key={r.id} style={{ gap: t.space.xs }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.sm }}>
+                      <Focusable
+                        onPress={() => (r.itemId ? playItem(r.itemId) : undefined)}
+                        containerStyle={{ flex: 1 }}
+                        focusScale={t.isTV ? 1.02 : 1}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.md, padding: t.space.md, borderRadius: t.radius, backgroundColor: t.colors.surface }}
+                      >
+                        <Icon name={r.status === 'recording' ? 'radio-button-on' : r.status === 'completed' ? 'play-circle' : r.status === 'failed' ? 'alert-circle' : 'time-outline'} color={r.status === 'recording' || r.status === 'failed' ? t.colors.danger : t.colors.primary} />
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.sm }}>
+                            <T weight="700" numberOfLines={1} style={{ flexShrink: 1 }}>
+                              {r.title}
+                            </T>
+                            {r.conflict ? <Badge label="Conflict" color={t.colors.danger} /> : null}
+                            {r.priority >= 100 && r.status === 'scheduled' ? <Badge label="Top priority" color={t.colors.primary} /> : null}
+                          </View>
+                          <T variant="small" tone="muted" numberOfLines={1}>
+                            {r.channelName} · {formatDay(r.start)} {formatTime(r.start)}–{formatTime(r.end)}
+                            {r.sizeBytes ? ` · ${formatBytes(r.sizeBytes)}` : ''}
                           </T>
-                        ) : null}
+                          {r.error ? (
+                            <T variant="small" tone="danger" numberOfLines={2}>
+                              {r.error}
+                            </T>
+                          ) : null}
+                        </View>
+                      </Focusable>
+                      <Button icon={r.status === 'completed' || r.status === 'failed' ? 'trash-outline' : 'close'} variant="secondary" onPress={() => remove(r)} accessibilityLabel="Remove" />
+                    </View>
+                    {r.conflict && r.status === 'scheduled' ? (
+                      <View style={{ gap: t.space.sm, padding: t.space.md, borderRadius: t.radius, backgroundColor: t.alpha(t.colors.danger, 0.1), borderWidth: 1, borderColor: t.alpha(t.colors.danger, 0.35) }}>
+                        <T variant="small">
+                          Not enough tuners or provider connections are free at this time, so this won't record unless another recording is cancelled
+                          {r.priority < 100 ? ' or you make it top priority (another recording may then miss out instead).' : '. Other top-priority recordings already take every slot.'}
+                        </T>
+                        {r.priority < 100 ? <Button label="Make top priority" icon="arrow-up-circle-outline" size="sm" onPress={() => void makeTopPriority(r)} loading={prioritizing === r.id} /> : null}
                       </View>
-                    </Focusable>
-                    <Button icon={r.status === 'completed' || r.status === 'failed' ? 'trash-outline' : 'close'} variant="secondary" onPress={() => remove(r)} accessibilityLabel="Remove" />
+                    ) : null}
                   </View>
                 ))}
               </View>
@@ -125,6 +174,9 @@ export default function RecordingsScreen() {
                   {rule.keepLatest ? ` · keep ${rule.keepLatest}` : ''}
                   {!rule.enabled ? ' · paused' : ''}
                 </T>
+                <T variant="small" tone="muted">
+                  {ruleFilters(rule)}
+                </T>
               </View>
               <Button
                 icon="trash-outline"
@@ -140,5 +192,16 @@ export default function RecordingsScreen() {
         </ScrollView>
       )}
     </Screen>
+  );
+}
+
+function Badge({ label, color }: { label: string; color: string }) {
+  const t = useTheme();
+  return (
+    <View style={{ backgroundColor: t.alpha(color, 0.18), borderRadius: 999, paddingHorizontal: t.isTV ? t.s(10) : 8, paddingVertical: 2 }}>
+      <T variant="caption" weight="800" color={color} style={{ letterSpacing: 0 }}>
+        {label}
+      </T>
+    </View>
   );
 }

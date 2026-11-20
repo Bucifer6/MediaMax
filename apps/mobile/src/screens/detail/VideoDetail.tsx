@@ -26,7 +26,7 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
     ) : null;
 
   const actions = (
-    <ActionBar item={item} onPlay={play} onRestart={restart} playLabel={resumable ? 'Resume' : 'Play'} togglePlayed={togglePlayed} toggleFavorite={toggleFavorite} downloadable extra={showLink} onRate={setRating} playlistItems />
+    <ActionBar item={item} onPlay={play} onRestart={restart} playLabel={resumable ? 'Resume' : 'Play'} togglePlayed={togglePlayed} toggleFavorite={toggleFavorite} downloadable extra={showLink} onRate={setRating} playlistItems playOn={{ itemId: item.id, positionMs: resumable ? item.userData.positionMs : undefined, title: item.title }} />
   );
 
   const below = (
