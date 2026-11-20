@@ -75,6 +75,7 @@ export default function LiveTvPage() {
         </div>
         <div className="row-gap">
           <Link to="/livetv/guide" className="btn"><Icon name="guide" size={16} /> TV Guide</Link>
+          <Link to="/watch/multiview" className="btn"><Icon name="grid" size={16} /> Multiview</Link>
           <Link to="/dvr" className="btn btn-ghost"><Icon name="recordOutline" size={16} /> Recordings</Link>
         </div>
       </header>

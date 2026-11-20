@@ -41,6 +41,7 @@ function lazyPage<T extends { default: React.ComponentType<any> }>(load: () => P
 
 const VideoPlayer = lazyPage(() => import('./player/VideoPlayer'));
 const LivePlayer = lazyPage(() => import('./player/LivePlayer'));
+const Multiview = lazyPage(() => import('./player/Multiview'));
 const LiveTvPage = lazyPage(() => import('./pages/LiveTv'));
 const GuidePage = lazyPage(() => import('./pages/Guide'));
 const DvrPage = lazyPage(() => import('./pages/Dvr'));
@@ -127,6 +128,7 @@ function Gate() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/play/:itemId" element={<RequireAuth><VideoPlayer /></RequireAuth>} />
+        <Route path="/watch/multiview" element={<RequireAuth><Multiview /></RequireAuth>} />
         <Route path="/watch/live/:channelId" element={<RequireAuth><LivePlayer /></RequireAuth>} />
         <Route element={<RequireAuth><Layout /></RequireAuth>}>
           <Route index element={<Home />} />

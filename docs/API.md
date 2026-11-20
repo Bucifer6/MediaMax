@@ -301,3 +301,9 @@ A live source's `epgUrl` may contain up to 10 XMLTV URLs, separated by commas or
 
 - **Sidecar EDL:** a Kodi/MythTV/comskip `.edl` file next to any video (same base name) is imported on every scan. Each line is `start end action`, in seconds. Actions `0` (cut) and `3` (commercial) become `commercial` markers.
 - **DVR:** with `settings.dvr.commercialDetection` on, finished recordings are passed to comskip (`dvr.comskipPath`, default `comskip` on PATH). If `dvr.comskipIni` is not set, MediaMax supplies an EDL-only ini. The resulting `.edl` is imported straight away and deleted along with the recording.
+
+## IPTV multiview
+
+`POST /livetv/channels/:id/play` with `{"multiview": true}` starts a multiview tile. Normally a new playback on a device replaces that device's previous one. Multiview tiles from the same device run side by side instead, up to 4 (the oldest is stopped beyond that). Any normal playback on the device still replaces them all. Each tile counts toward the user's `maxStreams`. It uses a provider connection only when nobody else is already watching that channel, because tuners are shared. Catch-up streams cannot be multiview tiles.
+
+The web app's multiview is at `/watch/multiview?ch=<id>,<id>,…`. Click a tile (or press 1–4 or Tab) to move the sound to it, double-click a tile to open it in the full player, and press F for full screen.

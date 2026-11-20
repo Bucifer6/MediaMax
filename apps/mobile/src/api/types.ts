@@ -852,6 +852,8 @@ export interface LivePlayRequest {
   catchupDurationMin?: number;
   /** Force remux to HLS (useful for browsers that can't play MPEG-TS). */
   forceHls?: boolean;
+  /** Multiview tile: keep this device's other multiview sessions running (max 4 per device; each counts toward stream limits). */
+  multiview?: boolean;
 }
 
 /* ------------------------------------------------------------------ */

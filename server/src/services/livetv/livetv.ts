@@ -725,7 +725,7 @@ export function channelUserAgent(r: Row): string {
 
 export async function playChannel(ctx: AuthContext, channelId: string, req: LivePlayRequest & { deviceProfile?: { containers?: string[] } }, remoteAddr: string | null): Promise<PlaybackInfo> {
   const r = accessibleChannelRow(ctx.user, channelId);
-  assertCanStartSession(ctx, remoteAddr);
+  assertCanStartSession(ctx, remoteAddr, !!req.multiview && !req.catchupStart);
   const src = getSourceRow(r.source_id);
   const channel = getChannel(ctx.user, channelId);
   let catchup: { start: Date; durationMin: number } | undefined;
@@ -742,7 +742,7 @@ export async function playChannel(ctx: AuthContext, channelId: string, req: Live
   const now = channel.nowPlaying;
   const base = {
     ctx, itemId: null, channelId, mediaId: null, title: channel.name, subtitle: catchup ? `Catch-up · ${catchup.start.toLocaleString()}` : now?.title ?? null,
-    posterUrl: channel.logoUrl, durationMs: catchup ? catchup.durationMin * 60000 : null, remoteAddr,
+    posterUrl: channel.logoUrl, durationMs: catchup ? catchup.durationMin * 60000 : null, remoteAddr, multiview: !!req.multiview && !catchup,
   };
   const info = (session: PlaySession, url: string, mimeType: string, isHls: boolean): PlaybackInfo => ({
     sessionId: session.id, itemId: null, channelId, method: 'live', url, mimeType, isHls, startMs: 0, streamStartMs: 0, durationMs: base.durationMs,
