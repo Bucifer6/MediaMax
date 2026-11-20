@@ -28,7 +28,7 @@ jobs:
       run:
         working-directory: apps/mobile
     env:
-      EXPO_TV: ${{ matrix.tv && '1' || '' }}
+      EXPO_TV: ${{ matrix.tv && '1' || '0' }}
       CI: '1'
       NODE_OPTIONS: --max-old-space-size=6144
     steps:
@@ -73,7 +73,7 @@ jobs:
       run:
         working-directory: apps/mobile
     env:
-      EXPO_TV: ${{ matrix.tv && '1' || '' }}
+      EXPO_TV: ${{ matrix.tv && '1' || '0' }}
       CI: '1'
     steps:
       - uses: actions/checkout@v4
@@ -95,7 +95,7 @@ jobs:
         run: |
           ws=$(ls -d ios/*.xcworkspace | head -1)
           scheme=$(basename "$ws" .xcworkspace)
-          if [ -n "$EXPO_TV" ]; then sdk=appletvsimulator; dest='generic/platform=tvOS Simulator'; else sdk=iphonesimulator; dest='generic/platform=iOS Simulator'; fi
+          if [ "$EXPO_TV" = 1 ]; then sdk=appletvsimulator; dest='generic/platform=tvOS Simulator'; else sdk=iphonesimulator; dest='generic/platform=iOS Simulator'; fi
           echo "Building $scheme for $sdk"
           set -o pipefail
           xcodebuild -workspace "$ws" -scheme "$scheme" -configuration Release -sdk "$sdk" -destination "$dest" \
