@@ -27,7 +27,7 @@ export function GuideAdmin() {
   const liveSources = useAsync(() => api.livetv.sources().catch(() => [] as LiveSource[]), []);
   return (
     <div className="epg-admin">
-      <AdminHeader title="TV guide" subtitle="Guide (EPG) providers and how your channels are matched to them." />
+      <AdminHeader help="admin-tv-guide" title="TV guide" subtitle="Guide (EPG) providers and how your channels are matched to them." />
       <Tabs className="plugin-tabs" value={tab} onChange={setTab} tabs={[{ value: 'sources', label: 'Guide sources' }, { value: 'matching', label: 'Guide matching' }]} />
       {tab === 'sources' ? <SourcesTab liveSources={liveSources.data ?? []} /> : <MatchingTab liveSources={liveSources.data ?? []} />}
     </div>

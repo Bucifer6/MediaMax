@@ -33,6 +33,7 @@ import { useAdaptive } from './useAdaptive';
 import { initialBandwidth } from './bandwidth';
 import { formatBps } from './abr';
 import { VideoPair, whenPlayable } from './videoPair';
+import { helpForReason, helpPath } from '../utils/helpLinks';
 
 /** Subtitle formats our own renderer draws (SubtitleOverlay). VobSub/DVB still need server burn-in. */
 const SUBTITLE_FORMATS: SubtitleFormat[] = ['srt', 'vtt', 'ass', 'pgs'];
@@ -88,8 +89,8 @@ interface Stats {
   extra: string;
   /** HDR format and how it reaches this device (e.g. "Dolby Vision 8.1 → HDR10 base layer"). */
   range?: string;
-  /** Why the server remuxes / transcodes. */
-  why?: string;
+  /** Why the server remuxes / transcodes (each reason links to its Help Centre explanation). */
+  why?: string[];
   /** Adaptive quality: mode, level, estimated bandwidth. */
   abr?: string;
   /** Subtitle renderer in use. */
@@ -852,7 +853,7 @@ export default function VideoPlayer() {
         dropped,
         extra: `${rate}× · subs ${formatDelay(subDelayRef.current)} · audio ${formatDelay(audioDelayMs)}`,
         range: pi?.videoRange ? rangeDeliveryText(pi.videoRange, pi.dolbyVision) : media?.videoRange?.label ?? (media?.hdr ? 'HDR' : 'SDR'),
-        why: pi?.reasons?.length ? pi.reasons.join('; ') : undefined,
+        why: pi?.reasons?.length ? pi.reasons : undefined,
       });
     };
     tick();
@@ -1313,7 +1314,11 @@ export default function VideoPlayer() {
             <dt>Resolution</dt><dd>{stats.resolution}</dd>
             <dt>Video codec</dt><dd>{stats.videoCodec}</dd>
             {stats.range && <><dt>Dynamic range</dt><dd>{info?.videoRange && <RangeBadge format={info.videoRange.source} label={info.videoRange.label} />} {stats.range}</dd></>}
-            {stats.why && <><dt>Why</dt><dd>{stats.why}</dd></>}
+            {stats.why && (
+              <><dt>Why</dt><dd className="stats-why">{stats.why.map((r, i) => (
+                <span key={i}>{i > 0 && '; '}<a href={helpPath(helpForReason(r))} target="_blank" rel="noopener" title="What does this mean?">{r}</a></span>
+              ))}</dd></>
+            )}
             <dt>Audio</dt><dd>{(() => { const a = info?.audioStreams.find((x) => x.index === (optsRef.current.audioIndex ?? currentAudio)); return a ? <AudioBadges stream={a} channels={false} /> : null; })()} {stats.audioCodec}</dd>
             {stats.audioFx && <><dt>Audio effects</dt><dd>{stats.audioFx}</dd></>}
             <dt>Bitrate</dt><dd>{stats.bitrate}</dd>

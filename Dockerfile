@@ -40,6 +40,7 @@ COPY --from=build /src/shared/package.json shared/package.json
 COPY --from=build /src/shared/dist shared/dist
 COPY --from=build /src/server/package.json server/package.json
 COPY --from=build /src/server/dist server/dist
+COPY --from=build /src/server/help server/help
 COPY --from=build /src/web/dist web/dist
 COPY --from=caddy:2 /usr/bin/caddy /usr/local/bin/caddy
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/mediamax-entrypoint

@@ -24,6 +24,7 @@ import { RenderersAdmin } from './Renderers';
 import { SmartHomeAdmin } from './SmartHome';
 import { StorageAdmin } from './Storage';
 import WrappedPage from '../pages/Wrapped';
+import { HelpLink } from '../components/HelpLink';
 
 const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/admin', label: 'Overview', icon: 'activity', end: true },
@@ -94,11 +95,11 @@ export default function AdminRoutes() {
   );
 }
 
-export function AdminHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: React.ReactNode }) {
+export function AdminHeader({ title, subtitle, actions, help }: { title: string; subtitle?: string; actions?: React.ReactNode; /** Help Centre article slug for the "?" button. */ help?: string }) {
   return (
     <header className="admin-head">
       <div>
-        <h1>{title}</h1>
+        <h1>{title}{help && <HelpLink slug={help} label={title} />}</h1>
         {subtitle && <p className="muted">{subtitle}</p>}
       </div>
       {actions && <div className="row-gap">{actions}</div>}

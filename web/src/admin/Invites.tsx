@@ -164,7 +164,7 @@ export function InvitesAdmin() {
 
   return (
     <div>
-      <AdminHeader title="Invites" subtitle="Share a link so friends and family can create their own account, with the permissions you choose." actions={<button className="btn btn-primary" onClick={() => setCreating(true)}><Icon name="plus" size={16} /> New invite</button>} />
+      <AdminHeader help="admin-users" title="Invites" subtitle="Share a link so friends and family can create their own account, with the permissions you choose." actions={<button className="btn btn-primary" onClick={() => setCreating(true)}><Icon name="plus" size={16} /> New invite</button>} />
       {invites.loading && !invites.data ? <Skeleton h={200} /> : invites.error ? <ErrorState message={invites.error} onRetry={invites.reload} /> : !invites.data?.length ? (
         <EmptyState icon="link" title="No invites yet" message="Create an invite link and send it to someone. They pick their own username and password." action={<button className="btn btn-primary" onClick={() => setCreating(true)}><Icon name="plus" size={16} /> New invite</button>} />
       ) : (

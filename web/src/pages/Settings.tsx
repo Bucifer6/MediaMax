@@ -18,6 +18,7 @@ import { LinkDeviceForm } from './LinkDevice';
 import { ApiKeysCard, SubsonicCard, TwoFactorCard } from './SecuritySettings';
 import { BrowsingSettings } from './BrowsingSettings';
 import ProfilesSettings from './ProfilesSettings';
+import { HelpLink } from '../components/HelpLink';
 
 const LANGS = [
   ['', 'Default'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'],
@@ -134,7 +135,7 @@ function Security() {
   return (
     <>
       <form className="settings-card" onSubmit={savePw}>
-        <h2>Password</h2>
+        <h2>Password <HelpLink slug="account-security" label="Account security" /></h2>
         {user.hasPassword && <Field label="Current password"><input className="input" type="password" value={cur} onChange={(e) => setCur(e.target.value)} autoComplete="current-password" /></Field>}
         <div className="form-row">
           <Field label="New password"><input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" /></Field>
@@ -196,7 +197,7 @@ function Playback() {
   const { prefs, save } = usePrefs();
   return (
     <div className="settings-card">
-      <h2>Playback</h2>
+      <h2>Playback <HelpLink slug="streaming-quality" label="Playback" /></h2>
       <div className="form-row">
         <Field label="Preferred audio language">
           <select className="select" value={prefs.audioLanguage ?? ''} onChange={(e) => save({ audioLanguage: e.target.value || null })}>
@@ -245,7 +246,7 @@ function SubtitleSettings() {
   const isDefault = (Object.keys(DEFAULT_SUBTITLE_STYLE) as (keyof SubtitleStyle)[]).every((k) => style[k] === DEFAULT_SUBTITLE_STYLE[k]);
   return (
     <div className="settings-card" id="subtitles">
-      <h2>Subtitles</h2>
+      <h2>Subtitles <HelpLink slug="subtitles" label="Subtitles" /></h2>
       <div className={`subtitle-preview ${style.position === 'raised' ? 'raised' : ''}`} aria-label="Subtitle preview" role="img">
         <span className="subtitle-preview-label">Preview</span>
         <span className="subtitle-preview-text" style={subtitlePreviewStyle(style, 22)}>{'I never said she stole my money.\nSomeone else did.'}</span>
@@ -279,7 +280,7 @@ function MusicSettings() {
   useEffect(() => setDraft(xf), [xf]);
   return (
     <div className="settings-card" id="music">
-      <h2>Music</h2>
+      <h2>Music <HelpLink slug="music" label="Music" /></h2>
       <div className="form-row">
         <Field label={`Crossfade · ${draft ? `${draft} s` : 'off (gapless)'}`} hint="Blend the end of one song into the next. Albums played in order stay gapless.">
           <input
@@ -601,7 +602,7 @@ function Services() {
 function LinkTab() {
   return (
     <div className="settings-card">
-      <h2>Link a device</h2>
+      <h2>Link a device <HelpLink slug="apps-and-devices" label="Signing in with a code" /></h2>
       <LinkDeviceForm />
     </div>
   );

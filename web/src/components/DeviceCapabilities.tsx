@@ -3,6 +3,7 @@ import { dolbyVisionOverride, initCapabilities, setDolbyVisionOverride, type Dol
 import { detectDeviceProfile } from '../player/deviceProfile';
 import { REMOTE_HELP } from '../tv/spatial';
 import { RangeBadge } from './HdrBadge';
+import { HelpLink } from './HelpLink';
 
 /** Settings → Playback: what this device's player (our hls.js/MSE engine) can play, and the TV remote keys. */
 export function DeviceCapabilitiesCard() {
@@ -23,7 +24,7 @@ export function DeviceCapabilitiesCard() {
   const tv = typeof document !== 'undefined' && document.documentElement.classList.contains('tv');
   return (
     <div className="settings-card">
-      <h2>This device</h2>
+      <h2>This device <HelpLink slug="hdr-dolby-vision" label="HDR and Dolby Vision" /></h2>
       {!caps ? <p className="muted">Checking what this device can play…</p> : (
         <dl className="kv">
           <dt>HDR</dt>
@@ -61,7 +62,7 @@ export function DeviceCapabilitiesCard() {
       )}
       {tv && (
         <>
-          <h3>Remote control</h3>
+          <h3>Remote control <HelpLink slug="remote-buttons" label="Remote control buttons" /></h3>
           <dl className="kv remote-help">
             {REMOTE_HELP.map((k) => <Fragment key={k.keys}><dt>{k.keys}</dt><dd>{k.action}</dd></Fragment>)}
           </dl>

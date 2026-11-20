@@ -17,6 +17,7 @@ import { DOWNLOAD_QUALITIES, qualityLabel, useDownloads } from '@/state/download
 import { useCapabilities, useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 import { formatBytes } from '@/utils/format';
+import { webBrowser } from '@/utils/browser';
 
 type ImagePickerModule = typeof import('expo-image-picker');
 
@@ -102,6 +103,15 @@ export default function SettingsScreen() {
     ]);
   };
 
+  // The server's Help Centre (/help works without signing in): in-app browser on phones; TVs have no browser.
+  const helpUrl = `${(info?.publicUrl ?? server?.url ?? '').replace(/\/+$/, '')}/help`;
+  const openHelp = () => {
+    const wb = webBrowser();
+    if (wb) return void wb.openBrowserAsync(helpUrl).catch(() => Linking.openURL(helpUrl));
+    if (t.isTV) return Alert.alert('Help Centre', `On your phone or computer, open:\n\n${helpUrl}`);
+    void Linking.openURL(helpUrl).catch(() => Alert.alert('Help Centre', helpUrl));
+  };
+
   const maxW = t.isTV ? t.s(820) : undefined;
   return (
     <Screen padTop={!t.isTV}>
@@ -173,7 +183,8 @@ export default function SettingsScreen() {
             <SettingRow label="Address" value={server?.url} chevron={false} />
             <SettingRow label="App" value={`${Constants.expoConfig?.name ?? 'MediaMax'} ${appVersion()} · ${device?.platform ?? Platform.OS}`} chevron={false} />
             <SettingRow label="Device" value={device?.deviceName} chevron={false} />
-            {branding?.supportUrl ? <SettingRow icon="help-buoy-outline" label="Help & support" onPress={() => Linking.openURL(branding.supportUrl!)} /> : null}
+            <SettingRow icon="help-circle-outline" label="Help" value="Guides and troubleshooting" onPress={openHelp} />
+            {branding?.supportUrl ? <SettingRow icon="help-buoy-outline" label="Contact support" onPress={() => Linking.openURL(branding.supportUrl!)} /> : null}
           </SettingSection>
           {branding?.footerText ? (
             <T variant="small" tone="muted" center style={{ marginTop: t.space.sm }}>

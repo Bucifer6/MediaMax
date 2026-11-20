@@ -153,7 +153,7 @@ export function LiveSourcesAdmin() {
 
   return (
     <div>
-<AdminHeader title="Live TV sources" subtitle="Xtream Codes, M3U playlists, HDHomeRun, TVHeadend, SAT>IP and Enigma2 receivers." actions={<button className="btn btn-primary" onClick={() => setEdit('new')}><Icon name="plus" size={16} /> Add source</button>} />
+<AdminHeader help="admin-live-tv" title="Live TV sources" subtitle="Xtream Codes, M3U playlists, HDHomeRun, TVHeadend, SAT>IP and Enigma2 receivers." actions={<button className="btn btn-primary" onClick={() => setEdit('new')}><Icon name="plus" size={16} /> Add source</button>} />
       {sources.loading && !sources.data ? <Skeleton h={200} /> : sources.error ? <ErrorState message={sources.error} onRetry={sources.reload} /> : !sources.data?.length ? (
         <EmptyState icon="antenna" title="No Live TV sources" message="Connect an IPTV provider to get channels, a TV guide, catch-up, VOD and DVR." action={<button className="btn btn-primary" onClick={() => setEdit('new')}>Add source</button>} />
       ) : (

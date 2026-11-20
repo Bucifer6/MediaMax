@@ -59,6 +59,12 @@ function Ext({ href, children }: { href: string; children: ReactNode }) {
 
 const PRESETS: ServerSettings['transcoding']['preset'][] = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium'];
 
+/** Help Centre article for each tab ("?" next to the title). */
+const SETTINGS_HELP: Partial<Record<string, string>> = {
+  transcoding: 'admin-transcoding', metadata: 'admin-metadata', requests: 'admin-requests', arr: 'admin-requests', notifications: 'admin-requests',
+  dvr: 'admin-live-tv', sso: 'admin-users', aidj: 'dj-mode', dlna: 'play-to-devices', webhooks: 'admin-home-assistant',
+};
+
 export function ServerSettingsAdmin() {
   const toast = useToast();
   const { refreshSystem } = useApp();
@@ -149,7 +155,7 @@ export function ServerSettingsAdmin() {
 
   return (
     <div>
-      <AdminHeader title="Server settings" actions={<button className="btn btn-primary" onClick={() => void save()} disabled={!dirty || saving}>{saving ? <Spinner size={18} /> : 'Save changes'}</button>} />
+      <AdminHeader help={SETTINGS_HELP[tab] ?? 'admin-setup'} title="Server settings" actions={<button className="btn btn-primary" onClick={() => void save()} disabled={!dirty || saving}>{saving ? <Spinner size={18} /> : 'Save changes'}</button>} />
       <Tabs<Tab> value={tab} onChange={setTab} tabs={[
         { value: 'general', label: 'General' },
         { value: 'metadata', label: 'Metadata' },

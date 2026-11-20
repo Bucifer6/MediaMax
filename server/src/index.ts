@@ -14,6 +14,7 @@ import { loadAll as loadPlugins } from './services/plugins.js';
 import { initHomeAssistant, stopHomeAssistant } from './services/smarthome/homeassistant.js';
 import { initStorage } from './services/storage/storage.js';
 import { startRenderers, stopRenderers } from './services/renderers/index.js';
+import { helpArticleCount } from './services/help.js';
 
 const log = logger('main');
 
@@ -28,6 +29,7 @@ async function main() {
   await app.listen({ port: config.port, host: config.host });
   log.info(`MediaMax ${config.version} (server ${serverId()}) listening on http://${config.host}:${config.port}`);
   log.info(`Data directory: ${config.dataDir}`);
+  log.info(`Help Centre: ${helpArticleCount()} articles from ${config.helpDir}`);
   if (process.env.MEDIAMAX_NO_SCHEDULER !== '1') startScheduler();
   syncDlna();
   startRemoteAccess();

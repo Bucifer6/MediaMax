@@ -197,6 +197,7 @@ More, including the security dashboard and integration variables, is in [docs/IN
 
 | | |
 |---|---|
+| **Help Centre** | Built into every server: open **Help** in the sidebar (`/help`). Articles live in [`server/help`](server/help); see [docs/HELP.md](docs/HELP.md) to edit them |
 | [docs/INSTALL.md](docs/INSTALL.md) | Install on Docker, NAS, Windows and Linux; NAS disk spin-down; upgrades, backups, hardware transcoding |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | One-command secure deployment: Caddy/Nginx, CrowdSec, fail2ban, Cloudflare Tunnel, Tailscale |
 | [docs/FEATURES.md](docs/FEATURES.md) | Feature-by-feature comparison with Plex, Jellyfin and Emby |

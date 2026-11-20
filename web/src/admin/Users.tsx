@@ -247,7 +247,7 @@ export function UsersAdmin() {
 
   return (
     <div>
-      <AdminHeader title="Users" subtitle="Accounts, Plex-Home-style profiles, parental controls and permissions." actions={<><button className="btn" onClick={() => setProfileSettingsOpen(true)}><Icon name="users" size={16} /> Profile settings</button><button className="btn" onClick={() => setDefaultsOpen(true)}><Icon name="settings" size={16} /> Default permissions</button><Link className="btn" to="/admin/invites"><Icon name="link" size={16} /> Invites</Link><button className="btn btn-primary" onClick={() => setEdit('new')}><Icon name="plus" size={16} /> Add user</button></>} />
+      <AdminHeader help="admin-users" title="Users" subtitle="Accounts, Plex-Home-style profiles, parental controls and permissions." actions={<><button className="btn" onClick={() => setProfileSettingsOpen(true)}><Icon name="users" size={16} /> Profile settings</button><button className="btn" onClick={() => setDefaultsOpen(true)}><Icon name="settings" size={16} /> Default permissions</button><Link className="btn" to="/admin/invites"><Icon name="link" size={16} /> Invites</Link><button className="btn btn-primary" onClick={() => setEdit('new')}><Icon name="plus" size={16} /> Add user</button></>} />
       {users.loading && !users.data ? <Skeleton h={200} /> : users.error ? <ErrorState message={users.error} onRetry={users.reload} /> : !users.data?.length ? <EmptyState icon="users" title="No users" /> : (
         <>
         {selected.size > 0 && (

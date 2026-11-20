@@ -238,6 +238,8 @@ async function main() {
 
   // 4. Web app, ffmpeg, helpers, docs.
   copyDir(webDist, path.join(stage, 'web'));
+  // Help Centre articles (read from disk at startup, like the web app; config.helpDir = help/ next to the binary).
+  copyDir(path.join(root, 'server', 'help'), path.join(stage, 'help'));
   if (args['ffmpeg-dir']) {
     const ffDir = path.resolve(args['ffmpeg-dir']);
     for (const tool of ['ffmpeg', 'ffprobe']) {
