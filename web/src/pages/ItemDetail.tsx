@@ -15,6 +15,7 @@ import { SmartListModal } from '../components/SmartListModal';
 import { BookmarksSection } from '../components/Bookmarks';
 import { AddToContainerModal, EditMetadataModal, UploadArtworkModal } from '../components/ItemModals';
 import { RatingBadges } from '../components/RatingBadges';
+import { ArrItemActions } from '../components/ArrItemActions';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
 import { episodeCode, hasAudioResume, isAudio, isResumable, isVideo, itemLink, playLink, progressPct } from '../utils/items';
@@ -647,6 +648,7 @@ export function ItemPage() {
               />
             )}
           </div>
+          <ArrItemActions item={item} />
 
           {resumable && (
             <div className="detail-progress">
