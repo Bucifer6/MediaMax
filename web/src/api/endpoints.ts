@@ -7,7 +7,7 @@ import type {
   RecordingRule, RecordingStatus, RemoteSubtitle, ScheduledTask, SearchResponse, ServerSettings, ServerStats, SetupRequest, SystemInfo,
   TestSourceResponse, Theme, TraktDeviceCode, TraktStatus, TrickplayInfo, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
   UpdateUserRequest, User, UserItemData, UserStats,
-  ArrOptions, CreateMediaRequest, DjMix, DjMixRequest, DjStatus, TrackAnalysis, DjHostRequest, DjHostLine, DjFeedback, ApiKey, CreatedApiKey, TotpSetup, TotpEnabled, Invite, CreateInviteRequest, InvitePreview, AcceptInviteRequest,
+  ArrOptions, CreateMediaRequest, DjMix, DjMixRequest, DjStatus, TrackAnalysis, DjHostRequest, DjHostLine, DjFeedback, StarterLook, ApiKey, CreatedApiKey, TotpSetup, TotpEnabled, Invite, CreateInviteRequest, InvitePreview, AcceptInviteRequest,
   BackupInfo, RemoteAccessStatus, Bookmark, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
 import { http, request, upload } from './client';
@@ -33,6 +33,8 @@ export const api = {
     createTheme: (theme: Omit<Theme, 'id'> & { id?: string }) => http.post<Branding>('/branding/themes', theme),
     updateTheme: (theme: Theme) => http.put<Branding>(`/branding/themes/${enc(theme.id)}`, theme),
     deleteTheme: (id: string) => http.del<Branding>(`/branding/themes/${enc(id)}`),
+    looks: () => http.get<StarterLook[]>('/branding/looks'),
+    applyLook: (id: string) => http.post<Branding>(`/branding/looks/${enc(id)}/apply`),
   },
 
   auth: {

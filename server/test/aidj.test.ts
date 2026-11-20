@@ -75,3 +75,26 @@ test('OpenAI-compatible base URLs from popular free/cheap providers', () => {
   assert.equal(c('https://api.openai.com/v1/chat/completions'), 'https://api.openai.com/v1/chat/completions');
   assert.equal(openaiUrl('http://nas:8880/v1', 'audio/speech'), 'http://nas:8880/v1/audio/speech'); // Kokoro-FastAPI
 });
+
+import { BUILTIN_THEMES } from '../src/services/themes.ts';
+import { STARTER_LOOKS } from '../src/services/looks.ts';
+test('every built-in theme meets WCAG AA contrast for text and buttons', () => {
+  const lum = (hex: string) => {
+    const h = hex.replace('#', '');
+    const c = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const cr = (a: string, b: string) => {
+    const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+    return (x + 0.05) / (y + 0.05);
+  };
+  assert.ok(BUILTIN_THEMES.length >= 24);
+  assert.equal(new Set(BUILTIN_THEMES.map((t) => t.id)).size, BUILTIN_THEMES.length, 'unique ids');
+  for (const t of BUILTIN_THEMES) {
+    const c = t.colors;
+    for (const [name, a, b] of [['text', c.text, c.background], ['text on cards', c.text, c.surface], ['muted text', c.textMuted, c.background], ['button text', c.primaryText, c.primary]] as const) {
+      assert.ok(cr(a, b) >= 4.5, `${t.id}: ${name} contrast ${cr(a, b).toFixed(2)} < 4.5`);
+    }
+  }
+  for (const l of STARTER_LOOKS) assert.ok(BUILTIN_THEMES.some((t) => t.id === l.themeId), l.id);
+});

@@ -1818,3 +1818,13 @@ export interface DjStatus {
   /** AI DJ availability for clients. */
   ai: { enabled: boolean; llm: boolean; serverVoice: boolean; hostName: string; chattiness: AiDjSettings['chattiness'] };
 }
+
+/** A one-click starting point for the whole server's look: theme + home screen rows + feature toggles. */
+export interface StarterLook {
+  id: string;
+  name: string;
+  description: string;
+  themeId: string;
+  homeRows: HomeRowConfig[];
+  features: Partial<FeatureFlags>;
+}
