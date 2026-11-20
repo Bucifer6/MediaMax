@@ -153,7 +153,7 @@ export async function tvInfo(tmdbId: string): Promise<RequestTvInfo> {
 
 /* ------------------------------ blacklist ------------------------------ */
 
-const blKey = (type: string, id: string) => `${type === 'album' || type === 'artist' ? type : type}:${id}`;
+const blKey = (type: string, id: string) => `${type}:${id}`;
 const blacklistSet = () => new Set(db.all('SELECT media_type, external_id FROM request_blacklist').map((r) => blKey(r.media_type, r.external_id)));
 export const isBlacklisted = (type: RequestMediaType, id: string) => !!db.get('SELECT 1 FROM request_blacklist WHERE media_type = ? AND external_id = ?', type, String(id));
 
@@ -172,7 +172,7 @@ export function addToBlacklist(user: User, b: { mediaType: RequestMediaType; ext
   db.upsert('request_blacklist', {
     media_type: b.mediaType, external_id: id, title: String(b.title ?? '').trim().slice(0, 300) || id, reason: b.reason ? String(b.reason).slice(0, 500) : null,
     created_by: user.id, created_at: nowIso(),
-  }, ['media_type', 'external_id']);
+  }, 'media_type,external_id');
   logActivity('request.blacklist', `${user.displayName} blacklisted ${b.title ?? id}`, { userId: user.id, userName: user.displayName });
   return listBlacklist(user).find((x) => x.mediaType === b.mediaType && x.externalId === id)!;
 }
@@ -215,7 +215,7 @@ export function decorate(user: User, list: tmdb.TmdbListResult[], opts: { hideAv
     if (blacklisted && !manager) continue;
     const req = open.get(`${m.mediaType}:${m.id}`);
     const availableItemId = findAvailable(m.id, m.mediaType);
-    if (opts.hideAvailable && availableItemId && m.mediaType === 'movie') continue;
+    if (opts.hideAvailable && availableItemId) continue;
     outList.push({
       tmdbId: m.id, externalId: m.id, mediaType: m.mediaType, title: m.title, year: m.year, overview: m.overview, rating: m.rating,
       posterUrl: imageUrl(registerImage(m.poster)), backdropUrl: imageUrl(registerImage(m.backdrop)),
