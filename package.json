@@ -3,14 +3,21 @@
   "private": true,
   "version": "0.1.0",
   "description": "MediaMax - all-in-one self-hosted media server with Xtream IPTV, live TV, DVR and fully server-driven branding.",
-  "workspaces": ["shared", "server", "web"],
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
   "scripts": {
     "build": "npm run build -w shared && npm run build -w server && npm run build -w web",
     "dev:server": "npm run dev -w server",
     "dev:web": "npm run dev -w web",
     "start": "npm run start -w server",
     "test": "npm test -w server",
-    "sync-types": "node scripts/sync-types.mjs"
+    "sync-types": "node scripts/sync-types.mjs",
+    "test:e2e": "node scripts/e2e-smoke.cjs"
   },
-  "engines": { "node": ">=22.5" }
+  "engines": {
+    "node": ">=22.5"
+  }
 }
