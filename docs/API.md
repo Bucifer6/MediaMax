@@ -286,3 +286,11 @@ Rules (`POST /dvr/rules`) accept these optional fields:
 | `priority` | rule priority, passed on to the recordings it schedules |
 
 Every change to the schedule (create, cancel, rule delete, rule run) re-checks each live source's `maxConnections`. Recordings are given slots in order: recordings already in progress first, then by priority, then oldest first. A recording that cannot get a slot has `conflict: true`, and a `recording.updated` event is sent. If it is still in conflict at start time, it fails with a clear error. Cancelling another recording frees its slot straight away.
+
+## Multiple EPG sources
+
+A live source's `epgUrl` may contain up to 10 XMLTV URLs, separated by commas or newlines, highest priority first. On refresh, every guide is downloaded and merged:
+
+- Each channel takes its programmes from the first guide that covers it.
+- The provider's own guide (the Xtream `xmltv.php`, or the M3U `url-tvg` list) is always appended last, so it fills any gaps.
+- A guide that fails is skipped and logged. Existing programmes are replaced only once at least one guide has loaded, so a broken guide never empties the EPG.

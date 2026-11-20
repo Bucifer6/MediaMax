@@ -729,6 +729,7 @@ export interface LiveSource {
   /** Never returned in full; masked as "••••" when set. */
   password: string | null;
   /** Optional XMLTV URL. Xtream sources default to their xmltv.php. */
+  /** One or more XMLTV URLs (newline-separated), highest priority first; the provider's own guide fills gaps. */
   epgUrl: string | null;
   enabled: boolean;
   /** Restream through MediaMax (hides provider creds, allows remux/transcode). */
