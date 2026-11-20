@@ -84,15 +84,16 @@ jobs:
   e2e:
     name: Browser smoke test (server + web)
     runs-on: ubuntu-latest
+    # Official Playwright image: Chromium + its system libraries preinstalled (much faster than installing per run).
+    container: mcr.microsoft.com/playwright:v1.63.0-noble
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: apt-get update && apt-get install -y --no-install-recommends ffmpeg
       - run: npm ci
       - run: npm run build
-      - name: Install Playwright Chromium
-        run: npm install --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
+      - run: npm install --no-save playwright@1.63.0
       - run: node scripts/e2e-smoke.cjs
