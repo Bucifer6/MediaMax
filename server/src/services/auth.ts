@@ -313,6 +313,10 @@ export function deleteUser(id: string, actorId: string) {
   if (cur.is_admin && adminCount() <= 1) throw badRequest('Cannot delete the last administrator');
   // Deleting an account deletes its profiles (also enforced by the foreign key).
   db.tx(() => {
+    // Series rules and still-scheduled recordings of the account and its profiles (finished recordings stay).
+    const members = 'SELECT id FROM users WHERE id = ? OR parent_user_id = ?';
+    db.run(`DELETE FROM recording_rules WHERE created_by IN (${members})`, id, id);
+    db.run(`UPDATE recordings SET status = 'cancelled' WHERE status = 'scheduled' AND created_by IN (${members})`, id, id);
     db.run('DELETE FROM users WHERE parent_user_id = ?', id);
     db.run('DELETE FROM users WHERE id = ?', id);
   });

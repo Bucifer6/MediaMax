@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-process.env.MEDIAMAX_DATA = (await import('node:os')).tmpdir() + '/mediamax-test-' + process.pid;
+process.env.MEDIAMAX_DATA ??= (await import('node:os')).tmpdir() + '/mediamax-test-' + process.pid;
 const { decide } = await import('../src/services/playback.ts');
 const { targetHeight } = await import('../src/services/transcoder.ts');
 
