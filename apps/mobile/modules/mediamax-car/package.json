@@ -1,0 +1,9 @@
+{
+  "name": "mediamax-car",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Apple CarPlay (audio) and Android Auto (Media3 MediaLibraryService) bridge for the MediaMax app",
+  "main": "index.ts",
+  "types": "index.ts",
+  "license": "MIT"
+}

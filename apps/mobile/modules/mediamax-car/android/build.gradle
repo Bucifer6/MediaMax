@@ -1,0 +1,26 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'tv.mediamax.car'
+version = '1.0.0'
+
+android {
+  namespace "tv.mediamax.car"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  // Same Media3 version as expo-audio 58 (node_modules/expo-audio/android/build.gradle), so Gradle
+  // resolves a single copy of the library.
+  def media3Version = "1.9.1"
+  implementation "androidx.media3:media3-session:$media3Version"
+  implementation "androidx.media3:media3-common:$media3Version"
+}

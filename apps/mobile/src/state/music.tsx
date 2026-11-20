@@ -11,6 +11,7 @@
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { audioDeviceProfile, castDeviceProfile } from '@/api/profiles';
+import { syncCarRemoteCommands } from '@/car/remote';
 import { castMediaInfo, isOurMedia, useCast } from '@/cast';
 import type { Chapter, Item, PlaybackInfo } from '@/api/types';
 import { isAudioItem, isSpokenAudio } from '@/utils/library';
@@ -228,7 +229,17 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       const artwork = api.image(current.posterUrl ?? current.thumbUrl, 600) ?? undefined;
       const meta = { title: current.title, artist: current.grandparentTitle ?? current.parentTitle ?? undefined, albumTitle: current.parentTitle ?? undefined, artworkUrl: artwork };
       try {
-        player.setActiveForLockScreen(true, meta, { showNextTrack: !isSpoken || queue.length > 1, showPreviousTrack: !isSpoken || queue.length > 1, showSeekForward: isSpoken, showSeekBackward: isSpoken });
+        player.setActiveForLockScreen(true, meta, {
+          showNextTrack: !isSpoken || queue.length > 1,
+          showPreviousTrack: !isSpoken || queue.length > 1,
+          showSeekForward: isSpoken,
+          showSeekBackward: isSpoken,
+          // Same ±15/30 s as the now-playing screen (also used by CarPlay / Android Auto).
+          seekForwardIntervalSeconds: 30,
+          seekBackwardIntervalSeconds: 15,
+        });
+        // iOS: route next/previous track (lock screen, CarPlay) to this queue; see src/car/remote.ts.
+        syncCarRemoteCommands(!isSpoken);
       } catch {
         /* not supported on this platform */
       }
@@ -423,6 +434,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
         } catch {
           /* ignore */
         }
+        syncCarRemoteCommands(false);
         loadedId.current = null;
         setQueue([]);
         setIndex(0);

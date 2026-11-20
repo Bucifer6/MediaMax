@@ -5,6 +5,7 @@ import * as SystemUI from 'expo-system-ui';
 import React, { useEffect, useMemo } from 'react';
 import { Platform, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CarBridge } from '@/car/CarBridge';
 import { CastProvider } from '@/cast';
 import { BrandSplash } from '@/components/BrandSplash';
 import { MiniPlayer } from '@/components/MiniPlayer';
@@ -35,6 +36,8 @@ function ThemedApp() {
       <CastProvider>
         <DownloadsProvider>
           <MusicProvider>
+            {/* CarPlay / Android Auto (renders nothing; absent in Expo Go and TV builds) */}
+            <CarBridge />
             <SyncPlayProvider>
               <Navigation />
             </SyncPlayProvider>
