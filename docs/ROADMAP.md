@@ -8,7 +8,7 @@ Channels DVR, TiviMate, Audiobookshelf, Navidrome, Infuse and Kodi. It was resea
 1. ⏳ **Better native playback.** Use an mpv/VLCKit-class engine in the apps, *or* add a Jellyfin-compatible API so Infuse, Swiftfin
    and Kodi can connect. Add frame-rate/range matching and Dolby Vision profile awareness on TV apps. (L)
 2. ✅ (UPnP + status; relay later) **Easy remote access**: UPnP/NAT-PMP port mapping, a reachability status and HTTPS guidance. A relay can follow. (S→L)
-3. **Smart-TV reach**: a Fire TV store build, then Samsung Tizen and LG webOS apps built from the web app. Roku comes later. (M–L)
+3. ⏳ (Fire TV profile ✅) **Smart-TV reach**: a Fire TV store build, then Samsung Tizen and LG webOS apps built from the web app. Roku comes later. (M–L)
 4. ✅ (API) **Subsonic/OpenSubsonic API** so Symfonium, Feishin, Sonos and similar apps work. Plus gapless playback and loudness levelling. (M)
 5. ✅ (built; needs device testing + Apple entitlement) **CarPlay & Android Auto**, with offline downloads playable in the car, audiobook/podcast controls, voice search and an in-app car mode. (M)
 6. ✅ **Backup & restore** of the database, settings, branding and plugins. (S)

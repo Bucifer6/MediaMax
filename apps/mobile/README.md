@@ -64,6 +64,18 @@ eas build --profile tvos         # Apple TV
 eas build --profile androidtv    # Android TV (AAB); androidtv-apk for sideloading
 ```
 
+**Amazon Fire TV.** Fire OS is Android, so the Android TV build runs there unchanged. TV builds already leave out
+Google-only pieces such as Chromecast, and the D-pad/remote focus handling is shared. Use the `firetv` profile to
+build a store APK for the Amazon Appstore:
+
+```bash
+eas build --profile firetv       # Amazon Appstore APK (sideload with: adb connect <fire-tv-ip> && adb install app.apk)
+```
+
+When you submit, choose the Fire TV device targets in the Amazon Developer Console and upload the TV banner (`androidTVBanner`
+in the brand file, 320×180). Test on a real Fire TV Stick with developer options enabled; the Android TV emulator is
+close enough for layout checks.
+
 ### How the TV UI differs
 
 The app checks `Platform.isTV` at runtime and switches layouts. It is not a separate code tree.
