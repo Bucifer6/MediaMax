@@ -8,7 +8,7 @@
   "icon": "icon.png",
   "largeIcon": "largeIcon.png",
   "bgImage": "splash.png",
-  "iconColor": "#0b0d12",
+  "iconColor": "#0A0F22",
   "resolution": "1920x1080",
   "disableBackHistoryAPI": true,
   "requiredPermissions": ["time.query"]

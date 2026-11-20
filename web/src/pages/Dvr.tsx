@@ -7,6 +7,7 @@ import { useAsync, useServerEvent } from '../hooks';
 import { Badge, EmptyState, ErrorState, Field, Modal, Skeleton, Switch, Tabs, useConfirm } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { formatBytes, formatTime, relativeTime } from '../utils/format';
+import { HelpLink } from '../components/HelpLink';
 
 type Tab = 'upcoming' | 'completed' | 'rules';
 
@@ -164,7 +165,7 @@ export default function DvrPage() {
       <header className="page-head">
         <div className="page-title-wrap">
           <Icon name="recordOutline" size={28} className="page-icon" />
-          <h1>Recordings</h1>
+          <h1>Recordings <HelpLink slug="recordings" label="Recordings" /></h1>
         </div>
         <Link to="/livetv/guide" className="btn"><Icon name="guide" size={16} /> Schedule from guide</Link>
       </header>

@@ -14,6 +14,7 @@ import '../styles/arr.css';
 import '../styles/requests.css';
 import { formatDateTime, relativeTime } from '../utils/format';
 import { canManageRequests, notifyRequestsChanged, REQUEST_STATUS_TONE } from '../utils/requests';
+import { HelpLink } from '../components/HelpLink';
 
 const STATUSES: RequestStatus[] = ['pending', 'approved', 'processing', 'available', 'declined', 'failed'];
 const TYPE_LABEL: Record<RequestMediaType, string> = { movie: 'Movie', show: 'TV', artist: 'Artist', album: 'Album', book: 'Book' };
@@ -455,7 +456,7 @@ export default function RequestsPage() {
       <header className="page-head">
         <div className="page-title-wrap">
           <Icon name="inbox" size={28} className="page-icon" />
-          <h1>{manager ? 'Requests' : 'My requests'}</h1>
+          <h1>{manager ? 'Requests' : 'My requests'} <HelpLink slug="requesting" label="Requests" /></h1>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Link to="/issues" className="btn"><Icon name="flag" size={16} /> Issues</Link>

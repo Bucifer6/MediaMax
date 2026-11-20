@@ -24,6 +24,9 @@ const DEFAULT_BASE: Record<string, string> = {
   omdb: 'https://www.omdbapi.com',
   musicbrainz: 'https://musicbrainz.org/ws/2',
   coverart: 'https://coverartarchive.org',
+  listenbrainz: 'https://api.listenbrainz.org',
+  listenbrainzLabs: 'https://labs.api.listenbrainz.org',
+  acoustid: 'https://api.acoustid.org',
 };
 
 /** Env overrides, e.g. MEDIAMAX_TVDB_API_BASE (used by tests and for self-hosted mirrors). */
@@ -39,6 +42,9 @@ const ENV: Record<string, string> = {
   omdb: 'MEDIAMAX_OMDB_API_BASE',
   musicbrainz: 'MEDIAMAX_MUSICBRAINZ_API_BASE',
   coverart: 'MEDIAMAX_COVERART_API_BASE',
+  listenbrainz: 'MEDIAMAX_LISTENBRAINZ_API_BASE',
+  listenbrainzLabs: 'MEDIAMAX_LISTENBRAINZ_LABS_BASE',
+  acoustid: 'MEDIAMAX_ACOUSTID_API_BASE',
 };
 
 /** Minimum gap between two requests to the same service (client-side rate limit). */
@@ -53,6 +59,8 @@ const MIN_INTERVAL_MS: Record<string, number> = {
   omdb: 100, // plus the 1,000 requests/day cap below
   musicbrainz: 1100, // MusicBrainz: max 1 request/second per client
   coverart: 250,
+  listenbrainzLabs: 500,
+  acoustid: 334, // AcoustID: max 3 requests/second
 };
 
 /** Hard daily caps of free tiers (counted per server process). */

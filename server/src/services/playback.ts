@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type {
-  ActiveSession, AudioStream, DeviceProfile, MediaSource, PlayMethod, PlaybackInfo, PlaybackRequest, SubtitleStream, SubtitleTrack, Marker,
+  ActiveSession, AudioComforts, AudioStream, DeviceProfile, MediaSource, PlayMethod, PlaybackInfo, PlaybackRequest, SubtitleStream, SubtitleTrack, Marker,
 } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { config } from '../config.js';
@@ -10,7 +10,7 @@ import { newId } from '../util/ids.js';
 import { HttpError, badRequest, forbidden, notFound } from '../util/errors.js';
 import { nowIso, parseJson, REMOTE_PROTOCOLS } from '../util/misc.js';
 import { logger } from '../util/log.js';
-import { TranscodeJob, encoderWorks, type TranscodeOptions } from './transcoder.js';
+import { TranscodeJob, encoderWorks, hasEncoder, type TranscodeOptions } from './transcoder.js';
 import { chooseVideoCodec } from './hwaccel.js';
 import { getSettings } from './settings.js';
 import { assertCanSee, getItem, mediaRowToSource, nextItem, reportProgress } from './items.js';
@@ -19,8 +19,10 @@ import { events, bus } from './events.js';
 import { TEXT_SUB_CODECS } from './probe.js';
 import { isLocalAddress } from './dlna.js';
 import { outputRange, rangeDecision, type RangeDecision } from './hdr.js';
+import { doviCodecStyle, doviMuxCapability, doviMuxSupported, doviSignal, type DoviSignal } from './dovi.js';
 import { refreshVideoRange } from './hdrBackfill.js';
 import { subtitleTrackList } from './subtitles.js';
+import { anyComfort, decisionInfo, masterAudioFor, normalizeComforts, planAudio, refreshAudioStreams, type AudioPlan } from './audio.js';
 import { bitrateCaps, buildLadder, createRenditionManager, pickStartRendition, streamingSettings, type RenditionManager } from './abr.js';
 
 const log = logger('playback');
@@ -203,9 +205,19 @@ export interface Decision {
   videoBsf?: string | null;
   /** How the source's dynamic range reaches the client. */
   range?: RangeDecision;
+  /** Remux keeps real Dolby Vision (DV configuration box + DV codec strings in the master playlist). See dovi.ts. */
+  dolbyVision?: DoviSignal | null;
+  /** Audio delivery for the selected track (audio.ts); null for audio-only items and files without audio. */
+  audio?: AudioPlan | null;
 }
 
-export function decide(media: MediaSource, profile: DeviceProfile | undefined, opts: { audio: AudioStream | null; burnSubs: boolean; forceTranscode: boolean; allowTranscode: boolean; userMaxBitrate: number | null; isAudioOnly: boolean }): Decision {
+export function decide(media: MediaSource, profile: DeviceProfile | undefined, opts: {
+  audio: AudioStream | null; burnSubs: boolean; forceTranscode: boolean; allowTranscode: boolean; userMaxBitrate: number | null; isAudioOnly: boolean;
+  /** FFmpeg keeps Dolby Vision configuration when remuxing (dovi.ts doviMuxSupported); defaults to the cached check. */
+  doviMux?: boolean;
+  /** Listening comforts to apply when the audio is encoded; with `forceAudioProcessing` the audio is re-encoded for them. */
+  audioProcessing?: AudioComforts | null; forceAudioProcessing?: boolean;
+}): Decision {
   const p = { ...DEFAULT_PROFILE, ...(profile ?? {}) };
   const norm = (c: string | null) => (c ?? '').toLowerCase().replace('h265', 'hevc').replace('avc', 'h264');
   const vcodecs = (p.videoCodecs ?? []).map(norm);
@@ -227,8 +239,13 @@ export function decide(media: MediaSource, profile: DeviceProfile | undefined, o
   const videoPlayable = videoOk && rangeOk && tenBitOk && heightOk;
   // Formats the client bitstreams to an AV receiver count as supported audio.
   for (const a of p.audioPassthrough ?? []) if (!acodecs.includes(norm(a))) acodecs.push(norm(a));
-  const audioOk = !opts.audio || acodecs.includes(norm(opts.audio.codec));
-  if (!audioOk) reasons.push(`audio codec ${opts.audio?.codec} not supported`);
+  // Audio decision (audio.ts): copy / DTS core / E-AC-3 / AAC 7.1·5.1·stereo. Music keeps the plain codec check.
+  const comforts = normalizeComforts(opts.audioProcessing);
+  const planOpts = { comforts, forceProcessing: !!opts.forceAudioProcessing && anyComfort(comforts), hasEncoder };
+  let audioPlan = opts.audio && !opts.isAudioOnly ? planAudio(opts.audio, p, planOpts) : null;
+  const audioOk = !opts.audio || (audioPlan ? audioPlan.copyOk : acodecs.includes(norm(opts.audio.codec)));
+  // Smart clients (and processing requests) get the specific reason, e.g. "TrueHD Atmos → E-AC-3 5.1: device can't play TrueHD".
+  if (!audioOk) reasons.push(audioPlan?.reason && (p.maxAudioChannels || planOpts.forceProcessing) ? audioPlan.reason : `audio codec ${opts.audio?.codec} not supported`);
   const containerOk = !!media.container && containers.includes(media.container.toLowerCase());
   if (!containerOk) reasons.push(`container ${media.container} not supported`);
   const bitrateOk = !media.bitrate || media.bitrate <= maxBitrate;
@@ -246,19 +263,37 @@ export function decide(media: MediaSource, profile: DeviceProfile | undefined, o
   // Transcoding an HDR source: the transcoder outputs 8-bit SDR, so tone-map (legacy clients: admin setting decides).
   const toneMap = range.legacy ? undefined : !opts.isAudioOnly && range.delivery !== 'sdr';
   if (!opts.forceTranscode && !opts.burnSubs && videoPlayable && !needsRemux && audioOk && containerOk && bitrateOk && widthOk && audioTrackOk) {
-    return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [], range };
+    return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [], range, audio: audioPlan };
   }
   if (!canTranscode) {
     // Best effort: direct play even if probably unsupported.
-    return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [...reasons, 'transcoding not permitted'], range };
+    return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [...reasons, 'transcoding not permitted'], range, audio: audioPlan };
   }
   // Remux when only the container (or audio) is the problem and HLS is available.
   if (!opts.forceTranscode && !opts.burnSubs && videoPlayable && bitrateOk && widthOk && p.supportsHls !== false && !opts.isAudioOnly) {
-    return { method: 'remux', videoCopy: true, audioCopy: audioOk, reasons, range, videoBsf: range.videoBsf };
+    const dv = media.videoRange?.dolbyVision;
+    if (range.delivery !== 'passthrough' || !dv || !p.videoRange) {
+      return { method: 'remux', videoCopy: true, audioCopy: audioOk, reasons, range, videoBsf: range.videoBsf, audio: audioPlan };
+    }
+    // Dolby Vision to a DV client through a remux: keep the DV configuration box and announce the DV codec (dovi.ts).
+    const signal = doviSignal(dv, { videoCodec: media.videoCodec, height: media.height, frameRate: media.videoRange?.frameRate, transfer: media.videoRange?.colorTransfer });
+    if (signal && (opts.doviMux ?? doviMuxCapability() ?? false)) {
+      return { method: 'remux', videoCopy: true, audioCopy: audioOk, reasons, range, videoBsf: null, dolbyVision: signal, audio: audioPlan };
+    }
+    // This FFmpeg can't carry Dolby Vision through the remux: decide as for a device without Dolby Vision.
+    const base = rangeDecision(media.videoRange, media.hdr, { ...p.videoRange, dolbyVision: false });
+    const why = `Dolby Vision ${signal?.profile ?? ''} can't be remuxed with its Dolby Vision signalling by this FFmpeg`.replace('  ', ' ');
+    if (base.ok) return { method: 'remux', videoCopy: true, audioCopy: audioOk, reasons: [...reasons, why], range: base, videoBsf: base.videoBsf, audio: audioPlan };
+    reasons.push(why, ...base.reasons);
+    const tm: RangeDecision = { ...base, delivery: 'tonemap', toneMap: true };
+    return { method: 'transcode', videoCopy: false, audioCopy: audioOk && !opts.forceTranscode, reasons, toneMap: true, range: tm, audio: audioPlan };
   }
   const willToneMap = toneMap ?? (range.delivery !== 'sdr' && !opts.isAudioOnly && getSettings().transcoding.toneMapHdr);
   const tmRange: RangeDecision = willToneMap ? { ...range, delivery: 'tonemap', toneMap: true } : range;
-  return { method: 'transcode', videoCopy: false, audioCopy: audioOk && !opts.forceTranscode && !opts.isAudioOnly ? true : false, reasons, toneMap, range: tmRange };
+  const audioCopy = audioOk && !opts.forceTranscode && !opts.isAudioOnly;
+  // Forced transcodes re-encode the audio too (as before), with the same target choice.
+  if (audioPlan && !audioCopy && audioPlan.delivery === 'copy') audioPlan = planAudio(opts.audio!, p, { ...planOpts, noCopy: true });
+  return { method: 'transcode', videoCopy: false, audioCopy, reasons, toneMap, range: tmRange, audio: audioPlan };
 }
 
 /** Output codec for a transcode: HEVC/AV1 with the hardware encoder when the client plays it (see chooseVideoCodec). */
@@ -314,6 +349,15 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
       /* keep the plain HDR flag */
     }
   }
+  // Files scanned before audio-format detection: read profiles / layouts / Atmos flags now (one quick ffprobe, stored).
+  if (item.type !== 'track' && mediaRow.path && mediaRow.video_codec !== null && parseJson<AudioStream[]>(mediaRow.audio, []).some((a) => a.formatLabel === undefined)) {
+    try {
+      const streams = await refreshAudioStreams(mediaRow.id);
+      if (streams) mediaRow.audio = JSON.stringify(streams);
+    } catch {
+      /* keep what was stored */
+    }
+  }
   const media = mediaRowToSource(mediaRow);
   const rawSubs = parseJson<(SubtitleStream & { path?: string })[]>(mediaRow.subs, []);
   const prefs = ctx.user.preferences;
@@ -335,9 +379,12 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
   const isLocal = !!remoteAddr && isLocalAddress(remoteAddr);
   const caps = bitrateCaps({ profileMax: req.deviceProfile?.maxBitrate, userMax: prefs.maxBitrate, isLocal, measuredKbps: req.measuredBandwidth, remoteMax: streamingSettings().remoteMaxBitrate });
   const decideProfile = Number.isFinite(caps.decisionKbps) ? { ...(req.deviceProfile ?? {}), maxBitrate: Math.round(caps.decisionKbps) } : req.deviceProfile;
+  // Real Dolby Vision through a remux depends on this FFmpeg build (checked once, ~100 ms; dovi.ts).
+  if (media.videoRange?.dolbyVision && req.deviceProfile?.videoRange?.dolbyVision) await doviMuxSupported().catch(() => false);
+  const audioProcessing = req.audioProcessing ? normalizeComforts(req.audioProcessing) : null;
   const decision = decide(media, decideProfile, {
     audio, burnSubs: !!effectiveBurn, forceTranscode: !!req.forceTranscode, allowTranscode: ctx.user.allowTranscode,
-    userMaxBitrate: prefs.maxBitrate, isAudioOnly,
+    userMaxBitrate: prefs.maxBitrate, isAudioOnly, audioProcessing, forceAudioProcessing: !!req.forceAudioProcessing,
   });
   if (decision.method !== 'direct' && transcodeCount() >= getSettings().transcoding.maxConcurrent && decision.method === 'transcode') {
     throw new HttpError(503, 'The server is busy transcoding other streams. Try again shortly or choose original quality.', 'transcoder_busy');
@@ -393,8 +440,15 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     if (!decision.videoCopy && !isAudioOnly) opts.videoCodec = transcodeCodecFor(req.deviceProfile);
     if (decision.toneMap !== undefined) opts.toneMap = decision.toneMap;
     if (decision.videoCopy && decision.videoBsf) opts.videoBsf = decision.videoBsf;
+    if (decision.videoCopy && decision.dolbyVision) {
+      opts.dolbyVision = {
+        ...decision.dolbyVision, style: doviCodecStyle(req.deviceProfile?.player),
+        bandwidthKbps: media.bitrate ?? null, width: media.width, height: media.height, frameRate: media.videoRange?.frameRate ?? null,
+      };
+    }
+    if (decision.audio) opts.audioPlan = decision.audio;
     const ladder = adaptive
-      ? buildLadder({ sourceWidth: media.width, sourceHeight: media.height, sourceKbps: media.bitrate, capKbps: caps.capKbps, maxHeight: opts.maxHeight, audioKbps: opts.audioCopy ? 320 : (audio?.channels ?? 2) > 2 ? 384 : 192 })
+      ? buildLadder({ sourceWidth: media.width, sourceHeight: media.height, sourceKbps: media.bitrate, capKbps: caps.capKbps, maxHeight: opts.maxHeight, audioKbps: decision.audio?.bitrateKbps ?? (opts.audioCopy ? 320 : (audio?.channels ?? 2) > 2 ? 384 : 192) })
       : [];
     let job: TranscodeJob;
     if (ladder.length > 1) {
@@ -403,6 +457,7 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
       const holder: { s: PlaySession | null } = { s: null };
       abr = createRenditionManager(newId(), opts, ladder, startRendition, startSegment, {
         otherEncoders: () => [...sessions.values()].filter((x) => x.job && !x.abr && x.method !== 'direct' && !x.job.exited).length,
+        masterAudio: masterAudioFor(decision.audio, audio),
         onActiveChange: (j) => {
           if (!holder.s) return;
           holder.s.job = j as TranscodeJob;
@@ -462,6 +517,7 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     bandwidthLimited: decision.method === 'transcode' && caps.bandwidthLimited && !!media.bitrate && media.bitrate > caps.decisionKbps
       && decide(media, Number.isFinite(caps.capKbps) ? { ...(req.deviceProfile ?? {}), maxBitrate: caps.capKbps } : req.deviceProfile, {
         audio, burnSubs: !!effectiveBurn, forceTranscode: !!req.forceTranscode, allowTranscode: ctx.user.allowTranscode, userMaxBitrate: prefs.maxBitrate, isAudioOnly,
+        audioProcessing, forceAudioProcessing: !!req.forceAudioProcessing,
       }).method !== 'transcode',
     markers,
     nextItemId: next?.id ?? null,
@@ -470,12 +526,30 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     posterUrl: item.posterUrl,
     backdropUrl: item.backdropUrl,
     reasons: decision.reasons,
+    audio: decisionInfo(decision.audio ?? null, decision.method),
     videoRange: !isAudioOnly && (media.hdr || media.videoRange) && decision.range
       ? {
           source: media.videoRange?.hdrFormat ?? 'hdr10', label: media.videoRange?.label ?? 'HDR', delivery: decision.range.delivery,
           output: outputRange(media.videoRange, media.hdr, decision.range.delivery), frameRate: media.videoRange?.frameRate ?? null,
         }
       : null,
+    dolbyVision: !isAudioOnly && media.videoRange?.dolbyVision && decision.range ? dolbyVisionPlayback(media, decision) : null,
+  };
+}
+
+/** How a Dolby Vision source reaches this client (player info overlay). */
+export function dolbyVisionPlayback(media: MediaSource, d: Decision): PlaybackInfo['dolbyVision'] {
+  const dv = media.videoRange?.dolbyVision;
+  if (!dv || !d.range) return null;
+  const range = media.videoRange!;
+  const profile = range.label.replace(/^Dolby Vision\s*/, '').replace(/\s*\+.*$/, '') || null;
+  const delivery = d.range.delivery;
+  const native = delivery === 'passthrough' && (d.method === 'direct' || !!d.dolbyVision);
+  return {
+    profile, level: dv.level,
+    mode: native ? 'native' : delivery === 'strip-dovi' ? 'stripped' : delivery === 'tonemap' ? 'tonemap' : 'base-layer',
+    baseLayer: range.fallback === 'hdr10' || range.fallback === 'hlg' || range.fallback === 'sdr' ? range.fallback : null,
+    codec: d.dolbyVision?.dvCodec ?? null,
   };
 }
 

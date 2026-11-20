@@ -8,8 +8,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, StyleSheet } from 'react-native';
 import { useSession } from '@/state/session';
 import { isValidColor, useTheme } from '@/theme';
+import { BrandWordmark } from './BrandWordmark';
 import { Img } from './Img';
-import { T } from './Text';
 
 export function BrandSplash() {
   const t = useTheme();
@@ -50,7 +50,7 @@ export function BrandSplash() {
         {logo ? (
           <Img path={logo} width={t.s(240)} contentFit="contain" style={{ width: t.isTV ? t.s(320) : 200, height: t.isTV ? t.s(160) : 100 }} transition={0} />
         ) : (
-          <T variant="hero">{branding?.serverName ?? 'MediaMax'}</T>
+          <BrandWordmark name={branding?.serverName} width={t.isTV ? t.s(420) : 260} />
         )}
         <ActivityIndicator color={t.colors.primary} />
       </Animated.View>

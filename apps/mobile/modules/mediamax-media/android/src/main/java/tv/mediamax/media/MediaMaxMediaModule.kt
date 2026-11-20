@@ -83,7 +83,7 @@ class MediaMaxMediaModule : Module() {
       "audioPassthrough" to passthrough(ctx),
       "maxDecodeHeight" to codecs.maxHeight,
       "displayHeight" to physicalHeight,
-    )
+    ) + AudioCaps.capabilities(ctx)
   }
 
   /** Encoded formats the current audio route (HDMI / eARC / optical) takes as a bitstream. */
@@ -164,6 +164,8 @@ internal object DecoderScan {
           if (profiles.contains(CodecProfileLevel.DolbyVisionProfileDvheDtb)) r.dolbyVisionProfiles.add("7")
           if (profiles.contains(CodecProfileLevel.DolbyVisionProfileDvheSt)) r.dolbyVisionProfiles.addAll(listOf("8.1", "8.2", "8.4"))
           if (profiles.contains(CodecProfileLevel.DolbyVisionProfileDvavSe)) r.dolbyVisionProfiles.add("9")
+          // AV1 Dolby Vision (profile 10, Android 11+ constant; the value is inlined at compile time).
+          if (profiles.contains(CodecProfileLevel.DolbyVisionProfileDvav110)) r.dolbyVisionProfiles.add("10")
           continue
         }
         r.video.add(name)

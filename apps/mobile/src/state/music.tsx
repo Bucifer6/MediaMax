@@ -13,8 +13,10 @@
  */
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { audioDeviceProfile, castDeviceProfile } from '@/api/profiles';
 import { getJSON, setJSON } from '@/api/storage';
+import { lockScreenOptions, transportMode, type LockScreenOptions } from '@/car/policy';
 import { syncCarRemoteCommands } from '@/car/remote';
 import { castMediaInfo, isOurMedia, useCast } from '@/cast';
 import type { Chapter, Item, PlaybackInfo } from '@/api/types';
@@ -50,6 +52,11 @@ interface MusicValue {
   error: string | null;
   /** Current item is an audiobook part / podcast episode. */
   spoken: boolean;
+  /**
+   * Current item is a music track longer than LONG_TRACK_MS (src/car/policy.ts): DJ mix, live set,
+   * concert… It gets ±15/30 s skips in addition to next/previous.
+   */
+  longTrack: boolean;
   /** Spoken-word playback speed (music always plays at 1x). */
   rate: number;
   setRate: (rate: number) => void;
@@ -128,6 +135,8 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   rateRef.current = rate;
   const currentRef = useRef<Item | null>(current);
   currentRef.current = current;
+  /** What the lock screen was last set up with (re-applied when a long track's duration shows up late). */
+  const lockScreen = useRef<{ itemId: string; meta: Record<string, string | undefined>; options: LockScreenOptions } | null>(null);
 
   // ReplayGain: lower loud tracks to a common loudness (local playback only; we never amplify past 1×).
   const rgMode = user?.preferences.replayGain ?? 'auto';
@@ -302,16 +311,12 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       else player.play();
       const artwork = api.image(current.posterUrl ?? current.thumbUrl, 600) ?? undefined;
       const meta = { title: current.title, artist: current.grandparentTitle ?? current.parentTitle ?? undefined, albumTitle: current.parentTitle ?? undefined, artworkUrl: artwork };
+      // Same ±15/30 s as the now-playing screen (also used by CarPlay / Android Auto). Long music
+      // tracks add them on Android; see lockScreenOptions for why iOS keeps next/previous only.
+      const options = lockScreenOptions(transportMode(isSpoken, dur || null), Platform.OS, queue.length);
+      lockScreen.current = { itemId: current.id, meta, options };
       try {
-        player.setActiveForLockScreen(true, meta, {
-          showNextTrack: !isSpoken || queue.length > 1,
-          showPreviousTrack: !isSpoken || queue.length > 1,
-          showSeekForward: isSpoken,
-          showSeekBackward: isSpoken,
-          // Same ±15/30 s as the now-playing screen (also used by CarPlay / Android Auto).
-          seekForwardIntervalSeconds: 30,
-          seekBackwardIntervalSeconds: 15,
-        });
+        player.setActiveForLockScreen(true, meta, options);
         // iOS: route next/previous track (lock screen, CarPlay) to this queue; see src/car/remote.ts.
         syncCarRemoteCommands(!isSpoken);
       } catch {
@@ -339,6 +344,27 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     const timer = setInterval(() => report('playing'), 10000);
     return () => clearInterval(timer);
   }, [playing, report]);
+
+  // Long-track buttons depend on the duration. When the item had none in its metadata, the player
+  // reports it once loaded: set the lock screen up again if that changes its buttons.
+  const durationMs = castOn
+    ? Math.round((ours && cast.mediaStatus?.mediaInfo?.streamDuration ? cast.mediaStatus.mediaInfo.streamDuration * 1000 : 0) || (current?.durationMs ?? 0))
+    : Math.round((status.duration || (current?.durationMs ?? 0) / 1000) * 1000);
+  const mode = transportMode(spoken, durationMs);
+  useEffect(() => {
+    const applied = lockScreen.current;
+    const cur = currentRef.current;
+    if (!applied || !cur || applied.itemId !== cur.id || loadedId.current !== cur.id || castModeRef.current) return;
+    const options = lockScreenOptions(transportMode(spokenRef.current, durationMs), Platform.OS, queue.length);
+    if (JSON.stringify(options) === JSON.stringify(applied.options)) return;
+    lockScreen.current = { ...applied, options };
+    try {
+      player.setActiveForLockScreen(true, applied.meta, options);
+      syncCarRemoteCommands(!spokenRef.current);
+    } catch {
+      /* not supported on this platform */
+    }
+  }, [mode.longTrack, player]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const advance = useCallback(
     (dir: 1 | -1, auto = false) => {
@@ -526,13 +552,12 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       playing,
       buffering: castOn ? castState === 'buffering' || castState === 'loading' : status.isBuffering,
       positionMs: castOn ? (ours ? cast.positionMs : 0) : Math.round((status.currentTime ?? 0) * 1000),
-      durationMs: castOn
-        ? Math.round((ours && cast.mediaStatus?.mediaInfo?.streamDuration ? cast.mediaStatus.mediaInfo.streamDuration * 1000 : 0) || (current?.durationMs ?? 0))
-        : Math.round((status.duration || (current?.durationMs ?? 0) / 1000) * 1000),
+      durationMs,
       shuffle,
       repeat,
       error,
       spoken,
+      longTrack: mode.longTrack,
       rate,
       setRate: (r) => {
         setRateState(r);
@@ -598,6 +623,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
           /* ignore */
         }
         syncCarRemoteCommands(false);
+        lockScreen.current = null;
         setSleepState(null);
         setSleepRemaining(null);
         loadedId.current = null;
@@ -631,7 +657,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       sleepRemainingMs,
       setSleep,
     }),
-    [queue, index, current, status, shuffle, repeat, error, spoken, rate, chapters, playQueue, player, report, advance, playing, castOn, castState, ours, cast.positionMs, cast.mediaStatus, cast.deviceName, seekAny, pauseAny, volume, sleep, sleepRemainingMs, setSleep],
+    [queue, index, current, status, durationMs, mode.longTrack, shuffle, repeat, error, spoken, rate, chapters, playQueue, player, report, advance, playing, castOn, castState, ours, cast.positionMs, cast.mediaStatus, cast.deviceName, seekAny, pauseAny, volume, sleep, sleepRemainingMs, setSleep],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -78,7 +78,7 @@ export function RemoteAccessAdmin() {
   const st = status.data;
   return (
     <div>
-      <AdminHeader
+      <AdminHeader help="admin-network"
         title="Remote access"
         subtitle="Reach your server from outside your home network."
         actions={

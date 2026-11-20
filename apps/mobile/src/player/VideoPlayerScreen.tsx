@@ -22,6 +22,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { QUALITY_OPTIONS, castDeviceProfile, videoDeviceProfile } from '@/api/profiles';
+import { comfortRequest, deviceComforts } from '@/api/audio';
 import type { Channel, Item, Marker, PlaybackInfo, ProgressReport, RemoteSubtitle, SubtitleTrack } from '@/api/types';
 import { CastButton, castMediaInfo, isOurMedia, useCast } from '@/cast';
 import { Button } from '@/components/Button';
@@ -76,6 +77,8 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
   const music = useMusic();
   const downloads = useDownloads();
   const prefs = user?.preferences;
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
   const isLive = target.kind === 'live';
   const sync = useSyncPlay();
   const remote = useRemote();
@@ -301,6 +304,8 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
             ...(burn != null ? { burnSubtitles: true } : {}),
             subtitleFormats: ['srt', 'vtt', 'ass'],
             deviceProfile: videoDeviceProfile(auto ? null : opts.bitrate === undefined ? maxBitrate : opts.bitrate),
+            // Night mode / dialogue boost / normalise / lip-sync: applied by the server (audio-only re-encode).
+            ...comfortRequest(deviceComforts(prefsRef.current)),
             ...(auto ? { adaptive: true, measuredBandwidth: measured ? Math.round(measured / 1000) : null } : {}),
           });
           uri = api.absolute(pi.url);

@@ -243,7 +243,7 @@ export function DownloadsAdmin() {
 
   return (
     <div className="arr-dashboard">
-      <AdminHeader
+      <AdminHeader help="admin-requests"
         title="Downloads"
         subtitle="Queue, upcoming releases and missing titles across your Radarr, Sonarr, Lidarr and Readarr instances."
         actions={

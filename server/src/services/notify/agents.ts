@@ -4,7 +4,7 @@
  * effort can add events or agents here.
  */
 import type { NotificationAgent, NotificationTestResult, NotifyEvent } from '@mediamax/shared';
-import { getSettings } from '../settings.js';
+import { getKv, getSettings } from '../settings.js';
 import { config } from '../../config.js';
 import { logger } from '../../util/log.js';
 import { sendMail } from './smtp.js';
@@ -43,6 +43,14 @@ const COLORS: Partial<Record<NotifyEvent, number>> = {
 const plain = (m: NotifyMessage) => [m.body, ...(m.fields ?? []).map((f) => `${f.name}: ${f.value}`), m.url ?? ''].filter(Boolean).join('\n');
 const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+/** The server's app icon (uploaded in Branding, else the stock MediaMax icon) as an absolute URL, when the public URL is known. */
+function avatarUrl(): string | null {
+  const base = getSettings().publicUrl?.replace(/\/+$/, '');
+  if (!base) return null;
+  const icon = getKv<{ appIconUrl?: string | null }>('branding', {}).appIconUrl;
+  return icon ? (/^https?:/.test(icon) ? icon : base + icon) : `${base}/icon-192.png`;
+}
+
 /** Send one message through one agent (throws on failure). */
 export async function sendWith(agent: NotificationAgent, m: NotifyMessage): Promise<void> {
   const c = agent.config ?? {};
@@ -50,8 +58,9 @@ export async function sendWith(agent: NotificationAgent, m: NotifyMessage): Prom
     case 'discord':
       return post(c.webhookUrl, {
         username: c.username || getSettings().serverName || 'MediaMax',
+        ...(avatarUrl() ? { avatar_url: avatarUrl() } : {}),
         embeds: [{
-          title: m.title, description: m.body, url: m.url || undefined, color: COLORS[m.event] ?? 0x7c5cff,
+          title: m.title, description: m.body, url: m.url || undefined, color: COLORS[m.event] ?? 0x1fb6f5,
           fields: (m.fields ?? []).slice(0, 10).map((f) => ({ name: f.name, value: f.value.slice(0, 1000) || '—', inline: true })),
           ...(m.imageUrl ? { thumbnail: { url: m.imageUrl } } : {}), timestamp: new Date().toISOString(),
         }],

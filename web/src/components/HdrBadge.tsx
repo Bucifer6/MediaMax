@@ -33,10 +33,21 @@ export function rangeDetails(r: VideoRangeInfo): string {
 }
 
 /** How the range reaches this device, for the player's info overlay. */
-export function rangeDeliveryText(v: NonNullable<PlaybackInfo['videoRange']>): string {
+export function rangeDeliveryText(v: NonNullable<PlaybackInfo['videoRange']>, dv?: PlaybackInfo['dolbyVision']): string {
+  const base = (b: string | null | undefined) => (b === 'hlg' ? 'HLG' : b === 'sdr' ? 'SDR' : 'HDR10');
+  if (dv) {
+    // "Dolby Vision 8.1 (native)" vs "Dolby Vision 8.1 → HDR10 base layer"
+    const name = `Dolby Vision${dv.profile ? ` ${dv.profile}` : ''}`;
+    switch (dv.mode) {
+      case 'native': return `${name} (native)`;
+      case 'base-layer': return `${name} → ${base(dv.baseLayer)} base layer`;
+      case 'stripped': return `${name} → HDR10 base layer (Dolby Vision layers removed)`;
+      case 'tonemap': return `${name} → tone-mapped to SDR`;
+    }
+  }
   switch (v.delivery) {
     case 'passthrough': return `${v.label} (native)`;
-    case 'base-layer': return `${v.label} → played as its HDR base layer`;
+    case 'base-layer': return v.source === 'dolbyvision' ? `${v.label} → ${base(v.output)} base layer` : `${v.label} → played as its HDR base layer`;
     case 'strip-dovi': return `${v.label} → HDR10 base layer (Dolby Vision layers removed)`;
     case 'tonemap': return `${v.label} → tone-mapped to SDR`;
     default: return v.label;

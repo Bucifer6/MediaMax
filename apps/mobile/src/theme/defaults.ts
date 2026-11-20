@@ -1,29 +1,38 @@
 import Constants from 'expo-constants';
 import type { Branding, FeatureFlags, Theme } from '@/api/types';
 
-const primary = (Constants.expoConfig?.extra?.fallbackPrimaryColor as string | undefined) ?? '#7C5CFF';
+const primary = (Constants.expoConfig?.extra?.fallbackPrimaryColor as string | undefined) ?? '#1FB6F5';
 
-/** Used until /branding arrives (and when the server's theme is malformed). */
+/** Dark or white button text, whichever reads better on `hex` (#rrggbb). */
+function onColor(hex: string): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return '#FFFFFF';
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return 1.05 / (l + 0.05) >= (l + 0.05) / 0.05 ? '#FFFFFF' : '#04101F';
+}
+
+/** Used until /branding arrives (and when the server's theme is malformed): the MediaMax brand theme. */
 export const FALLBACK_THEME: Theme = {
-  id: 'mediamax-midnight',
-  name: 'Midnight',
+  id: 'mediamax',
+  name: 'MediaMax',
   mode: 'dark',
   colors: {
     primary,
-    primaryText: '#FFFFFF',
-    background: '#0B0B12',
-    surface: '#15151F',
-    surfaceAlt: '#1F1F2C',
-    text: '#F4F4F8',
-    textMuted: '#9A9AB0',
-    accent: '#22D3EE',
-    border: '#2A2A3A',
-    success: '#22C55E',
-    warning: '#F59E0B',
-    danger: '#EF4444',
-    overlay: '#0B0B12',
+    primaryText: onColor(primary),
+    background: '#0A0F22',
+    surface: '#121936',
+    surfaceAlt: '#1A2247',
+    text: '#F2F5FF',
+    textMuted: '#9AA6CC',
+    accent: '#E040F0',
+    border: '#27315C',
+    success: '#2FD07F',
+    warning: '#F5B014',
+    danger: '#FF5C7A',
+    overlay: '#0A0F22',
   },
-  radius: 12,
+  radius: 14,
   fontFamily: 'System',
   fontUrl: null,
   posterShape: 'rounded',

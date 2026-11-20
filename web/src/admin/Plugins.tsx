@@ -68,7 +68,7 @@ export function PluginsAdmin() {
   if (viewing?.adminPageUrl) {
     return (
       <div>
-        <AdminHeader
+        <AdminHeader help="admin-plugins"
           title={viewing.manifest.name}
           subtitle={`Admin page provided by the plugin · v${viewing.manifest.version}`}
           actions={<button className="btn" onClick={() => setViewing(null)}><Icon name="arrowLeft" size={16} /> Back to plugins</button>}
@@ -85,7 +85,7 @@ export function PluginsAdmin() {
 
   return (
     <div>
-      <AdminHeader title="Plugins" subtitle="Extend the server with notifications, metadata providers, scheduled jobs and more." />
+      <AdminHeader help="admin-plugins" title="Plugins" subtitle="Extend the server with notifications, metadata providers, scheduled jobs and more." />
       <div className="callout-warning plugin-warning" role="note">
         <Icon name="alert" size={18} />
         <p><strong>Plugins run inside the server with full access</strong> to your media, users and network. Only install plugins from authors and repositories you trust.</p>

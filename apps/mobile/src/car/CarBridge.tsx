@@ -5,9 +5,11 @@
  *  - answers the car's browse and search requests from `CarTree` (REST API, current session),
  *  - plays what is picked in the car through the existing queue (`useMusic().playQueue`), so the
  *    phone's mini player, lock screen, Chromecast hand-off and progress reporting stay in charge,
- *  - applies transport commands from the car (play/pause, skip, ±15/30 s, speed),
+ *  - applies transport commands from the car (play/pause, skip, ±15/30 s, speed, voice seeks),
+ *  - plays voice requests (Google Assistant / Android Auto "play …", Siri "Play … in MediaMax"),
+ *    waiting for the session to be restored when the app was cold-started by the request,
  *  - mirrors the player state to the car (`updateNowPlaying`; Android Auto shows it as its Now
- *    Playing screen, CarPlay uses it for the Up Next and speed buttons).
+ *    Playing screen, CarPlay uses it for the Up Next, speed and long-track ±15/30 s buttons).
  *
  * Renders nothing, and is not mounted at all where the native module does not exist (Expo Go, web,
  * TV builds, builds made without the config plugin).
@@ -15,7 +17,8 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { SPEEDS, useMusic } from '@/state/music';
 import { useCapabilities, useSession } from '@/state/session';
-import { MediaMaxCar, type CarCommand, type CarNowPlaying, type MediaMaxCarNativeModule } from '../../modules/mediamax-car';
+import { MediaMaxCar, type CarCommand, type CarNowPlaying, type CarPlayFromSearch, type MediaMaxCarNativeModule } from '../../modules/mediamax-car';
+import { nextSpeed, normalizeSpeed, type VoiceSearchHints } from './policy';
 import { CarTree, type PlayRequest } from './tree';
 
 export function CarBridge() {
@@ -47,6 +50,11 @@ function CarBridgeInner({ car }: { car: MediaMaxCarNativeModule }) {
   );
   const treeRef = useRef(tree);
   treeRef.current = tree;
+  const statusRef = useRef(status);
+  statusRef.current = status;
+  /** A voice request that arrived while the session was still being restored (cold start). */
+  const pendingSearch = useRef<CarPlayFromSearch | null>(null);
+  const playFromSearchRef = useRef<(e: CarPlayFromSearch) => void>(() => undefined);
 
   // The native side waits for this before asking for the browse tree.
   useEffect(() => {
@@ -100,10 +108,33 @@ function CarBridgeInner({ car }: { car: MediaMaxCarNativeModule }) {
         case 'seekBy':
           if (typeof value === 'number') m.skip(value);
           break;
-        case 'rate':
-          if (m.spoken) m.setRate(SPEEDS.find((s) => s > m.rate + 0.001) ?? SPEEDS[0]);
+        case 'rate': {
+          // Music always plays at 1x. No value: the speed button (next speed); a value: the speed
+          // the system asked for (e.g. Assistant "play at 1.5x speed").
+          if (!m.spoken) break;
+          const r = typeof value === 'number' ? normalizeSpeed(value, SPEEDS) : nextSpeed(m.rate, SPEEDS);
+          if (r != null) m.setRate(r);
           break;
+        }
       }
+    };
+
+    playFromSearchRef.current = (e: CarPlayFromSearch) => {
+      const m = musicRef.current;
+      const query = e.query ?? '';
+      const hints: VoiceSearchHints = { type: e.type ?? null, artist: e.artist ?? null, album: e.album ?? null };
+      const empty = !query.trim() && !hints.artist && !hints.album;
+      // "Play MediaMax" with something already queued: just resume it.
+      if (empty && m.current) {
+        if (!m.playing) m.toggle();
+        return;
+      }
+      // Cold start from a voice request: wait until the saved session has been restored.
+      if (statusRef.current === 'booting') {
+        pendingSearch.current = e;
+        return;
+      }
+      play(() => treeRef.current.resolveSearchPlay(query, hints));
     };
 
     const subs = [
@@ -120,27 +151,26 @@ function CarBridgeInner({ car }: { car: MediaMaxCarNativeModule }) {
         );
       }),
       car.addListener('onPlay', ({ mediaId }) => play(() => treeRef.current.resolvePlay(mediaId))),
-      car.addListener('onPlayFromSearch', ({ query }) => {
-        const m = musicRef.current;
-        // "Play MediaMax" with something already queued: just resume it.
-        if (!query.trim() && m.current) {
-          if (!m.playing) m.toggle();
-          return;
-        }
-        play(() => treeRef.current.resolveSearchPlay(query));
-      }),
+      car.addListener('onPlayFromSearch', (e) => playFromSearchRef.current(e)),
       car.addListener('onCommand', ({ command: name, value }) => command(name, value)),
     ];
     return () => subs.forEach((s) => s.remove());
   }, [car]);
 
+  useEffect(() => {
+    if (status === 'booting' || !pendingSearch.current) return;
+    const e = pendingSearch.current;
+    pendingSearch.current = null;
+    playFromSearchRef.current(e);
+  }, [status, tree]);
+
   // Mirror the player into the car. Positions are extrapolated natively while playing, so only
   // send on changes and when the position jumps (seek, buffering).
-  const { current, playing, buffering, positionMs, durationMs, spoken, rate, queue, index, error } = music;
+  const { current, playing, buffering, positionMs, durationMs, spoken, longTrack, rate, queue, index, error } = music;
   const artworkUrl = current && api ? api.image(current.posterUrl ?? current.thumbUrl, 600) : null;
   const lastSent = useRef<{ at: number; positionMs: number; key: string } | null>(null);
   useEffect(() => {
-    const key = JSON.stringify([current?.id ?? null, playing, buffering, Math.round(durationMs / 1000), spoken, rate, queue.length, index, error, artworkUrl]);
+    const key = JSON.stringify([current?.id ?? null, playing, buffering, Math.round(durationMs / 1000), spoken, longTrack, rate, queue.length, index, error, artworkUrl]);
     const now = Date.now();
     const prev = lastSent.current;
     if (prev && prev.key === key) {
@@ -160,6 +190,7 @@ function CarBridgeInner({ car }: { car: MediaMaxCarNativeModule }) {
           playing,
           buffering,
           spoken,
+          longTrack,
           rate: spoken ? rate : 1,
           hasNext: index < queue.length - 1,
           hasPrevious: index > 0,
@@ -172,7 +203,7 @@ function CarBridgeInner({ car }: { car: MediaMaxCarNativeModule }) {
     } catch {
       /* ignore */
     }
-  }, [car, current, playing, buffering, positionMs, durationMs, spoken, rate, queue.length, index, error, artworkUrl]);
+  }, [car, current, playing, buffering, positionMs, durationMs, spoken, longTrack, rate, queue.length, index, error, artworkUrl]);
 
   return null;
 }

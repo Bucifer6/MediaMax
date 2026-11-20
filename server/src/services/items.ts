@@ -1,5 +1,5 @@
 import type {
-  HomeRow, HomeRowConfig, Item, SubtitleStream, Chapter, ItemQuery, ItemSort, MediaSource, Marker, Paged, Person, User, UserItemData, UpdateItemRequest, VideoRangeInfo,
+  HomeRow, HomeRowConfig, Item, MusicInfo, SubtitleStream, Chapter, ItemQuery, ItemSort, MediaSource, Marker, Paged, Person, User, UserItemData, UpdateItemRequest, VideoRangeInfo,
 } from '@mediamax/shared';
 import { db, type Param, type Row } from '../db.js';
 import { imageUrl } from './images.js';
@@ -8,6 +8,7 @@ import { nowIso, parseJson, ratingLevel, resolutionLabel, sortTitle, toInt } fro
 import { getBranding } from './branding.js';
 import { events, bus } from './events.js';
 import { getSettings } from './settings.js';
+import { creditsFor } from './music/credits.js';
 
 /* ----------------------------- access ------------------------------ */
 
@@ -134,6 +135,7 @@ export function rowToItem(r: Row): Item {
     ...((extra as any).replayGain ? { replayGain: (extra as any).replayGain } : {}),
     ...(!(extra as any).series && r.provider_meta && r.provider_meta !== '{}' && parseJson<any>(r.provider_meta, {}).series ? { series: parseJson<any>(r.provider_meta, {}).series } : {}),
     ...(r.ratings ? { ratings: parseJson(r.ratings, null) } : {}),
+    ...(r.type === 'album' || r.type === 'track' ? musicInfo(r, extra) : {}),
     ...(r.type === 'show' ? { episodeOrder: (extra as any).episodeOrder === 'dvd' || (extra as any).episodeOrder === 'absolute' ? (extra as any).episodeOrder : 'aired' } : {}),
   };
 }
@@ -273,10 +275,45 @@ export function itemsByIds(user: User, ids: string[]): Item[] {
   return ids.map((id) => out.get(id)).filter((x): x is Item => !!x);
 }
 
+/** Release facts (albums) and the tagged artist string (tracks); credits are attached separately (withCredits). */
+function musicInfo(r: Row, extra: Record<string, any>): Pick<Item, 'music'> {
+  const pm = r.provider_meta && r.provider_meta !== '{}' ? parseJson<Record<string, any>>(r.provider_meta, {}) : {};
+  if (r.type === 'album') {
+    const m = extra.music ?? {};
+    const mb = pm.mb ?? {};
+    const music: MusicInfo = {
+      releaseTypes: m.releaseTypes?.length ? m.releaseTypes : mb.types ?? [],
+      releaseStatus: m.releaseStatus ?? mb.status ?? null,
+      originalYear: m.originalYear ?? mb.firstYear ?? null,
+      originalDate: m.originalDate ?? mb.firstDate ?? null,
+      label: m.label ?? mb.label ?? null,
+      catalogNumber: m.catalogNumber ?? mb.catalogNumber ?? null,
+      barcode: m.barcode ?? mb.barcode ?? null,
+      compilation: !!(m.compilation || (mb.types ?? []).includes('compilation')),
+      ...(m.discTitles ? { discTitles: m.discTitles } : {}),
+    };
+    return { music };
+  }
+  return { music: { displayArtist: extra.tags?.artist || pm.identified?.artist || null, ...(pm.identified ? { identified: true } : {}) } };
+}
+
+/** Attach multi-artist credits to the tracks of a list (one query). */
+export function withCredits(items: Item[]): Item[] {
+  const ids = items.filter((i) => i.type === 'track').map((i) => i.id);
+  if (!ids.length) return items;
+  const map = creditsFor(ids);
+  for (const it of items) {
+    const c = map.get(it.id);
+    if (c?.length) it.music = { ...(it.music ?? {}), credits: c };
+  }
+  return items;
+}
+
 export function getItem(user: User, id: string, withMedia = true): Item {
   const items = selectItems(user, 'i.id = ?', [id]);
   if (!items.length) throw notFound('Item not found');
   const item = items[0];
+  if (item.type === 'track') withCredits([item]);
   if (item.smart && smartHooks.evaluate) item.childCount = smartHooks.evaluate(user, item.smart, 1, 0).total;
   if (withMedia) {
     item.media = db.all('SELECT * FROM media WHERE item_id = ? ORDER BY COALESCE(width,0) DESC', id).map(mediaRowToSource);
@@ -312,9 +349,11 @@ export function getChildren(user: User, id: string, q: { sort?: ItemSort; order?
       `${SELECT()} JOIN collection_items ci ON ci.item_id = i.id AND ci.collection_id = ? WHERE ${a.sql} ORDER BY ci.sort, i.sort_title LIMIT ? OFFSET ?`,
       ...userParams(user), id, ...a.params, limit, offset);
     const total = db.get<{ n: number }>('SELECT COUNT(*) n FROM collection_items WHERE collection_id = ?', id)!.n;
-    return { items: rows.map(rowToItem), total, limit, offset };
+    return { items: withCredits(rows.map(rowToItem)), total, limit, offset };
   }
-  return queryItems(user, { parentId: id, sort: q.sort ?? 'index', order: q.order, limit, offset, type: undefined });
+  const res = queryItems(user, { parentId: id, sort: q.sort ?? 'index', order: q.order, limit, offset, type: undefined });
+  if (parent.type === 'album') withCredits(res.items);
+  return res;
 }
 
 export function similarItems(user: User, id: string, limit = 12): Item[] {
@@ -722,9 +761,10 @@ export function searchItems(user: User, q: string, limit = 30): Item[] {
   const term = q.trim();
   if (!term) return [];
   const like = `%${term}%`;
-  return selectItems(user,
-    `(i.title LIKE ? OR i.original_title LIKE ? OR EXISTS (SELECT 1 FROM json_each(i.people) WHERE json_extract(json_each.value,'$.name') LIKE ?)) AND i.type IN ('movie','show','episode','artist','album','track','collection','video','audiobook','podcast','podcastepisode') AND NOT (i.type = 'video' AND i.parent_id IS NOT NULL)`,
-    [like, like, like, term, `${term}%`],
-    `ORDER BY CASE WHEN i.title LIKE ? THEN 0 WHEN i.title LIKE ? THEN 1 ELSE 2 END, CASE i.type WHEN 'movie' THEN 0 WHEN 'show' THEN 0 WHEN 'artist' THEN 1 ELSE 2 END, i.sort_title LIMIT ${toInt(limit, 30, 1, 200)}`)
+  // Tracks are also found by their featured / credited artists (track_artists, position > 0).
+  return withCredits(selectItems(user,
+    `(i.title LIKE ? OR i.original_title LIKE ? OR EXISTS (SELECT 1 FROM json_each(i.people) WHERE json_extract(json_each.value,'$.name') LIKE ?) OR (i.type = 'track' AND EXISTS (SELECT 1 FROM track_artists ta WHERE ta.track_id = i.id AND ta.position > 0 AND ta.name LIKE ?))) AND i.type IN ('movie','show','episode','artist','album','track','collection','video','audiobook','podcast','podcastepisode') AND NOT (i.type = 'video' AND i.parent_id IS NOT NULL)`,
+    [like, like, like, like, term, `${term}%`],
+    `ORDER BY CASE WHEN i.title LIKE ? THEN 0 WHEN i.title LIKE ? THEN 1 ELSE 2 END, CASE i.type WHEN 'movie' THEN 0 WHEN 'show' THEN 0 WHEN 'artist' THEN 1 ELSE 2 END, i.sort_title LIMIT ${toInt(limit, 30, 1, 200)}`))
 
 }

@@ -79,7 +79,7 @@ export function RenderersAdmin() {
 
   return (
     <div>
-      <AdminHeader
+      <AdminHeader help="play-to-devices"
         title="Play to devices"
         subtitle="Send movies, shows and music from MediaMax to TVs, speakers and Kodi boxes on your network."
         actions={

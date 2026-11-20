@@ -20,7 +20,7 @@ struct CarNode: Record {
 
 /// Mirror of the phone player (`CarNowPlaying` in JS). On iOS the Now Playing screen itself is filled
 /// by expo-audio through MPNowPlayingInfoCenter / MPRemoteCommandCenter; this only drives the extra
-/// CarPlay buttons (Up Next, playback rate).
+/// CarPlay buttons (Up Next, playback rate, ±15/30 s for long music tracks).
 struct CarNowPlayingRecord: Record {
   @Field var id: String? = nil
   @Field var title: String = ""
@@ -32,6 +32,8 @@ struct CarNowPlayingRecord: Record {
   @Field var playing: Bool = false
   @Field var buffering: Bool = false
   @Field var spoken: Bool = false
+  /// Music longer than LONG_TRACK_MS (src/car/policy.ts): ±15/30 s as extra Now Playing buttons.
+  @Field var longTrack: Bool = false
   @Field var rate: Double = 1
   @Field var hasNext: Bool = false
   @Field var hasPrevious: Bool = false
@@ -94,6 +96,13 @@ final class CarEventEmitter {
 /// every time `setActiveForLockScreen` runs. The MediaMax queue lives in JS (`src/state/music.tsx`),
 /// so after each of those calls JS asks us to replace the handlers with ones that forward to JS.
 /// Both calls dispatch to the main queue in call order, so ours always lands last.
+///
+/// Skip interval commands (±15/30 s) stay expo-audio's: enabled for spoken audio, disabled for music.
+/// Long music tracks deliberately do not enable them: the lock screen, Control Centre and the CarPlay
+/// main controls show skip *instead of* next/previous whenever skip is enabled, and AirPods / steering
+/// wheel buttons would then skip 30 s instead of changing track. Their ±15/30 s live on extra CarPlay
+/// Now Playing buttons (CarPlayController) and the phone's now-playing screen; Siri's "skip ahead /
+/// go back N seconds" and the scrubber use changePlaybackPositionCommand, which expo-audio keeps on.
 final class CarRemoteCommands {
   static let shared = CarRemoteCommands()
 

@@ -1,11 +1,15 @@
 <div align="center">
 
-# MediaMax
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="branding/mediamax/wordmark-tagline-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="branding/mediamax/wordmark-tagline-light.svg">
+  <img alt="MediaMax: Stream without limits." src="branding/mediamax/wordmark-tagline-light.svg" width="460">
+</picture>
 
 **One self-hosted server for movies, TV, music, audiobooks, podcasts, photos, live TV and IPTV, with apps that wear *your* brand.**
 
 [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-D97757?logo=anthropic&logoColor=white)](https://claude.com/claude-code)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-2362FA.svg)](LICENSE)
 [![CI](https://github.com/Bucifer6/MediaMax/actions/workflows/ci.yml/badge.svg)](https://github.com/Bucifer6/MediaMax/actions/workflows/ci.yml)
 [![Native apps](https://github.com/Bucifer6/MediaMax/actions/workflows/apps.yml/badge.svg)](https://github.com/Bucifer6/MediaMax/actions/workflows/apps.yml)
 
@@ -55,6 +59,8 @@ MediaMax brings together the features people love in **Plex, Jellyfin and Emby**
 - Gapless playback, crossfade, ReplayGain, synced lyrics, song and artist radio
 - **DJ mode**: BPM, key and energy analysis, harmonic auto-mixes and beat-matched two-deck crossfades
 - **AI DJ**: ask in plain words ("chilled 90s house, 1 hour"); a voice host talks between songs. Free by default; can use local models (Ollama) or free and cheap hosted APIs
+- MusicBrainz Picard tags, multi-artist credits, discography with missing albums, AcoustID "identify by sound"
+- Last.fm and ListenBrainz scrobbling, ListenBrainz weekly playlists
 - Subsonic/OpenSubsonic API for Symfonium, Feishin, Sonos and more
 - CarPlay and Android Auto
 
@@ -110,15 +116,16 @@ The full comparison with Plex, Jellyfin and Emby is in **[docs/FEATURES.md](docs
 
 ## Themes
 
-24 built-in themes, each with its own colours, font, card shape and hero style, and every one meets **WCAG AA contrast**. Admins pick the default, can let people choose their own, or design new ones in the Branding Studio. **Starter looks** (Home Cinema, Family & Kids, Music Lover, Live TV & IPTV, Minimal, Easy to See) set the theme, home rows and features in one click.
+26 built-in themes, each with its own colours, font, card shape and hero style, and every one meets **WCAG AA contrast**. New servers start on the **MediaMax** theme (the brand's cyan, blue and magenta with Plus Jakarta Sans); admins pick the default, can let people choose their own, or design new ones in the Branding Studio. **Starter looks** (Home Cinema, Family & Kids, Music Lover, Live TV & IPTV, Minimal, Easy to See) set the theme, home rows and features in one click.
 
 ![Theme gallery](docs/screenshots/themes-grid.jpg)
 
 <details>
-<summary>All 24 themes</summary>
+<summary>All 26 themes</summary>
 
 | Dark | | | Light & special |
 |---|---|---|---|
+| **MediaMax** (default) | | | **MediaMax Light** |
 | Midnight | Cinema Gold | Oceanic | Daylight |
 | Crimson | Emerald | Pure OLED | Paper White |
 | Synthwave | Nordic Frost | Velvet Night | Sakura |
@@ -188,7 +195,7 @@ More, including the security dashboard and integration variables, is in [docs/IN
 | **Samsung (Tizen) & LG (webOS)** | ✅ Wrapper apps in [`tv/`](tv) that load the web app in TV mode (D-pad navigation, remote keys) |
 | **iOS / iPadOS, Android** | 🧪 Built from [`apps/mobile`](apps/mobile) with Expo. Compiled in CI ([Native apps](https://github.com/Bucifer6/MediaMax/actions/workflows/apps.yml)); store release needs your developer accounts |
 | **Apple TV, Android TV, Fire TV** | 🧪 Same codebase, TV builds compiled in CI; installable Android TV/Fire TV APKs are produced on every change |
-| **CarPlay, Android Auto** | 🧪 Native module in the mobile app; CarPlay needs Apple's audio entitlement |
+| **CarPlay, Android Auto** | 🧪 Native module in the mobile app: browse, search, ±15/30 s for audiobooks, podcasts and long mixes, speed, Assistant voice commands, opt-in Siri "Play … in MediaMax"; CarPlay needs Apple's audio entitlement |
 | **Subsonic apps, DLNA players** | ✅ Through the built-in Subsonic API and DLNA server |
 
 🧪 means it compiles and is ready for device testing and store submission; it hasn't been through store review yet. Debug-signed Android APKs can be downloaded from the latest [Native apps](https://github.com/Bucifer6/MediaMax/actions/workflows/apps.yml) run. White-labelling (your own name, icon and colours in the store) is one command; see [apps/mobile/README.md](apps/mobile/README.md).
@@ -197,6 +204,7 @@ More, including the security dashboard and integration variables, is in [docs/IN
 
 | | |
 |---|---|
+| **Help Centre** | Built into every server: open **Help** in the sidebar (`/help`). Articles live in [`server/help`](server/help); see [docs/HELP.md](docs/HELP.md) to edit them |
 | [docs/INSTALL.md](docs/INSTALL.md) | Install on Docker, NAS, Windows and Linux; NAS disk spin-down; upgrades, backups, hardware transcoding |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | One-command secure deployment: Caddy/Nginx, CrowdSec, fail2ban, Cloudflare Tunnel, Tailscale |
 | [docs/FEATURES.md](docs/FEATURES.md) | Feature-by-feature comparison with Plex, Jellyfin and Emby |
@@ -240,7 +248,7 @@ Profiles never have more access than their owner: library access is the owner's 
 **Admin → Branding studio** controls everything the apps show:
 
 - server name, tagline, login message, footer and support link;
-- logo, wide logo, favicon, app icon, splash and login background;
+- logo, wide logo, favicon, app icon, splash and login background (until you upload your own, the MediaMax logo from [`branding/mediamax/`](branding/mediamax/README.md) is used);
 - themes, starter looks, and your own themes (13 colour tokens, radius, font, poster shape, card size, hero style);
 - the home screen rows and their order;
 - feature toggles that hide areas in every app;

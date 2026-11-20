@@ -27,8 +27,11 @@ final class CarPlayController: NSObject {
   private var pending: [String: (Result<[CarNode], CarError>) -> Void] = [:]
   private var sequence = 0
   private var nowPlaying: CarNowPlayingRecord?
-  private var rateButtonShown: Bool?
+  /// Which extra Now Playing buttons are shown ("spoken", "long", "none"); nil = not set up yet.
+  private var nowPlayingButtons: String?
   private var observingNowPlaying = false
+  /// A Siri "play …" request that arrived before JS was ready (cold launch by Siri).
+  private var pendingPlayFromSearch: [String: Any?]?
   private let images = NSCache<NSString, UIImage>()
 
   // MARK: - Scene life cycle
@@ -46,7 +49,7 @@ final class CarPlayController: NSObject {
     }
     template.upNextTitle = "Up Next"
     template.isAlbumArtistButtonEnabled = false
-    rateButtonShown = nil
+    nowPlayingButtons = nil
     applyNowPlaying()
 
     if jsReady {
@@ -71,6 +74,10 @@ final class CarPlayController: NSObject {
   func setReady(_ ready: Bool) {
     guard ready != jsReady else { return }
     jsReady = ready
+    if ready, let search = pendingPlayFromSearch {
+      pendingPlayFromSearch = nil
+      CarEventEmitter.shared.emit("onPlayFromSearch", search)
+    }
     guard interfaceController != nil else { return }
     if ready {
       loadRoot()
@@ -90,6 +97,16 @@ final class CarPlayController: NSObject {
   func updateNowPlaying(_ state: CarNowPlayingRecord?) {
     nowPlaying = state
     applyNowPlaying()
+  }
+
+  /// Siri (`SiriIntents.swift`): play a voice search now, or as soon as the JS bridge is ready.
+  func playFromSearch(_ body: [String: Any?]) {
+    if jsReady {
+      CarEventEmitter.shared.emit("onPlayFromSearch", body)
+    } else {
+      pendingPlayFromSearch = body
+      startReactNativeIfNeeded()
+    }
   }
 
   func invalidate(_ parentId: String?) {
@@ -288,17 +305,39 @@ final class CarPlayController: NSObject {
     guard interfaceController != nil else { return }
     let template = CPNowPlayingTemplate.shared
     template.isUpNextButtonEnabled = (nowPlaying?.queueLength ?? 0) > 1
-    let spoken = nowPlaying?.spoken ?? false
-    if rateButtonShown != spoken {
-      rateButtonShown = spoken
-      // Spoken audio: a playback-speed button (JS cycles through the app's speeds).
-      let buttons: [CPNowPlayingButton] = spoken
-        ? [CPNowPlayingPlaybackRateButton(handler: { _ in
-            CarEventEmitter.shared.emit("onCommand", ["command": "rate"])
-          })]
-        : []
-      template.updateNowPlayingButtons(buttons)
+    let mode = nowPlaying?.spoken == true ? "spoken" : nowPlaying?.longTrack == true ? "long" : "none"
+    if nowPlayingButtons != mode {
+      nowPlayingButtons = mode
+      template.updateNowPlayingButtons(Self.buttons(for: mode))
     }
+  }
+
+  /// Extra Now Playing buttons, under the system transport controls.
+  /// * Spoken audio: a playback-speed button (JS cycles through the app's speeds). The system
+  ///   controls already show ±15/30 s (expo-audio's skip commands).
+  /// * Long music (mixes, live sets): back 15 s / forward 30 s, so the system controls keep
+  ///   previous/next track.
+  private static func buttons(for mode: String) -> [CPNowPlayingButton] {
+    switch mode {
+    case "spoken":
+      return [CPNowPlayingPlaybackRateButton(handler: { _ in
+        CarEventEmitter.shared.emit("onCommand", ["command": "rate"])
+      })]
+    case "long":
+      return [
+        skipButton(symbol: "gobackward.15", deltaMs: -15_000),
+        skipButton(symbol: "goforward.30", deltaMs: 30_000),
+      ]
+    default:
+      return []
+    }
+  }
+
+  private static func skipButton(symbol: String, deltaMs: Double) -> CPNowPlayingButton {
+    let image = UIImage(systemName: symbol) ?? UIImage(systemName: deltaMs < 0 ? "gobackward" : "goforward") ?? UIImage()
+    return CPNowPlayingImageButton(image: image, handler: { _ in
+      CarEventEmitter.shared.emit("onCommand", ["command": "seekBy", "value": deltaMs])
+    })
   }
 
   // MARK: - Requests to JS

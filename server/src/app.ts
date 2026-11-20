@@ -87,11 +87,14 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register((await import('./routes/smarthome.js')).default);
     await api.register((await import('./routes/renderers.js')).default);
     await api.register((await import('./routes/profiles.js')).default);
+    await api.register((await import('./routes/help.js')).default);
+    await api.register((await import('./routes/music.js')).default);
   }, { prefix: '/api/v1' });
 
   await app.register(dlnaRoutes);
   await app.register(subsonicRoutes);
   app.get('/health', async () => ({ ok: true }));
+  app.get('/manifest.webmanifest', async (_req, reply) => reply.type('application/manifest+json').header('Cache-Control', 'no-cache').send(JSON.stringify((await import('./services/branding.js')).webManifest())));
 
   // Web client (SPA) — served if built.
   if (fs.existsSync(path.join(config.webDir, 'index.html'))) {

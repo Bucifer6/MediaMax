@@ -1,7 +1,11 @@
 import type { DeviceProfile } from '@mediamax/shared';
-import { platformTag, videoCaps } from './capabilities';
+import { onCapabilitiesReset, platformTag, videoCaps } from './capabilities';
+import { audioCaps } from './audioCaps';
 
 let cached: DeviceProfile | null = null;
+onCapabilitiesReset(() => {
+  cached = null;
+});
 
 function mse(type: string): boolean {
   try {
@@ -78,9 +82,16 @@ export function detectDeviceProfile(): DeviceProfile {
     maxWidth: maxWidth >= 3000 ? 3840 : maxWidth >= 1800 ? 1920 : maxWidth >= 1200 ? 1280 : 854,
     player: tv ? `${platformTag()}-mse` : 'html5',
   };
+  // Audio channels / Atmos / multichannel decode (audioCaps.ts): opts into the server's smart audio decisions.
+  const ac = audioCaps();
+  if (ac) {
+    base.audioCodecs = [...new Set([...audioCodecs, ...ac.audioCodecs])];
+    base.maxAudioChannels = ac.maxAudioChannels;
+    base.multichannelAudioCodecs = ac.multichannelAudioCodecs;
+  }
   // HDR / 10-bit capabilities arrive asynchronously (capabilities.ts); only cache the profile once they're known.
   const vc = videoCaps();
-  if (!vc) return base;
+  if (!vc || !ac) return base;
   cached = {
     ...base,
     videoRange: vc.videoRange,

@@ -92,7 +92,7 @@ export function ChannelsAdmin() {
 
   return (
     <div>
-      <AdminHeader title="Channels" subtitle={`${total.toLocaleString()} channels — renumber, rename, hide or fix guide mapping.`} actions={<Link className="btn" to="/admin/guide?tab=matching"><Icon name="guide" size={16} /> Guide matching</Link>} />
+      <AdminHeader help="admin-tv-guide" title="Channels" subtitle={`${total.toLocaleString()} channels — renumber, rename, hide or fix guide mapping.`} actions={<Link className="btn" to="/admin/guide?tab=matching"><Icon name="guide" size={16} /> Guide matching</Link>} />
       <div className="toolbar">
         <div className="search-mini"><Icon name="search" size={16} /><input className="input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search channels" /></div>
         <select className="select" value={sourceId} onChange={(e) => { setSourceId(e.target.value); setCategoryId(''); }}>

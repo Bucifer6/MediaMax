@@ -151,8 +151,8 @@ export function NetworkAdmin() {
 
   const dirty = useMemo(() => !!draft && !!data && JSON.stringify(draft) !== JSON.stringify(data.settings), [draft, data]);
 
-  if (error && !data) return <div><AdminHeader title="Network" /><ErrorState message={error} onRetry={() => void load()} /></div>;
-  if (!data || !draft) return <div><AdminHeader title="Network" /><Skeleton h={180} /><Skeleton h={260} style={{ marginTop: 16 }} /></div>;
+  if (error && !data) return <div><AdminHeader help="admin-network" title="Network" /><ErrorState message={error} onRetry={() => void load()} /></div>;
+  if (!data || !draft) return <div><AdminHeader help="admin-network" title="Network" /><Skeleton h={180} /><Skeleton h={260} style={{ marginTop: 16 }} /></div>;
 
   const set = (p: Partial<NetworkSettings>) => setDraft({ ...draft, ...p });
   const setB = (p: Partial<NetworkSettings['builtinHttps']>) => setDraft({ ...draft, builtinHttps: { ...draft.builtinHttps, ...p } });
@@ -192,7 +192,7 @@ export function NetworkAdmin() {
 
   return (
     <div className="net-page">
-      <AdminHeader
+      <AdminHeader help="admin-network"
         title="Network"
         subtitle="How people reach this server. The built-in reverse proxy is off unless you turn it on here, so MediaMax runs happily behind your existing setup."
         actions={<button className="btn btn-primary" onClick={() => void save()} disabled={!dirty || saving}>{saving ? <Spinner size={16} /> : 'Save'}</button>}

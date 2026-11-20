@@ -50,6 +50,8 @@ export const config = {
   logDir: dir(path.join(dataDir, 'logs')),
   recordingsDir: process.env.MEDIAMAX_RECORDINGS ?? path.join(dataDir, 'recordings'),
   webDir: process.env.MEDIAMAX_WEB_DIR ?? (standalone ? path.join(exeDir, 'web') : path.resolve(here, '../../web/dist')),
+  /** Help Centre articles (Markdown, server/help in the repo; `help/` next to a standalone binary). */
+  helpDir: process.env.MEDIAMAX_HELP_DIR ?? (standalone ? path.join(exeDir, 'help') : path.resolve(here, '../help')),
   ffmpeg: process.env.MEDIAMAX_FFMPEG ?? bundledTool('ffmpeg'),
   ffprobe: process.env.MEDIAMAX_FFPROBE ?? bundledTool('ffprobe'),
   logLevel: process.env.MEDIAMAX_LOG_LEVEL ?? 'info',

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -32,6 +33,14 @@ import com.google.common.util.concurrent.SettableFuture
  * * Browse: every `onGetChildren` / search is answered by JS (`src/car/tree.ts`) through [CarBridge].
  * * Playback: the session's player is a [CarProxyPlayer]; playing an item or pressing a transport
  *   button is forwarded to JS, which drives the existing expo-audio queue (`src/state/music.tsx`).
+ * * Buttons (media button preferences, shown by Android Auto as custom actions):
+ *   - spoken audio: back 15 s / forward 30 s in the prev/next slots, plus a playback-speed button
+ *     whose icon and label show the current speed (tapping cycles through the app's speeds);
+ *   - music longer than LONG_TRACK_MS (`longTrack`): back 15 s / forward 30 s in the secondary /
+ *     overflow slots, so previous/next track keep the main slots.
+ * * Voice: Assistant "play …" requests reach [handlePlayRequest] with a search query and, when the
+ *   Assistant understood more, MediaStore extras (focus = artist/album/song/playlist, artist, album),
+ *   which are passed to JS as search hints.
  * * Notifications: expo-audio's own service already shows the phone's media notification and holds
  *   the foreground state, so this service never posts one ([onUpdateNotification] is a no-op). It is
  *   only bound by Android Auto and stops when Android Auto unbinds.
@@ -43,10 +52,34 @@ class MediaMaxCarService : MediaLibraryService() {
     private const val ROOT_ID = "root"
     private const val ACTION_SEEK_BACK = "tv.mediamax.car.SEEK_BACK"
     private const val ACTION_SEEK_FORWARD = "tv.mediamax.car.SEEK_FORWARD"
+    private const val ACTION_SPEED = "tv.mediamax.car.SPEED"
     private const val MAX_CACHED_ITEMS = 2000
     private const val PLAY_SUPPRESS_MS = 2500L
     private val SEEK_BACK_COMMAND = SessionCommand(ACTION_SEEK_BACK, Bundle.EMPTY)
     private val SEEK_FORWARD_COMMAND = SessionCommand(ACTION_SEEK_FORWARD, Bundle.EMPTY)
+    private val SPEED_COMMAND = SessionCommand(ACTION_SPEED, Bundle.EMPTY)
+
+    /** Media3's speed icons, for the speeds that have one; others use the generic speed icon. */
+    private fun speedIcon(rate: Double): Int =
+      when {
+        near(rate, 0.5) -> CommandButton.ICON_PLAYBACK_SPEED_0_5
+        near(rate, 0.8) -> CommandButton.ICON_PLAYBACK_SPEED_0_8
+        near(rate, 1.0) -> CommandButton.ICON_PLAYBACK_SPEED_1_0
+        near(rate, 1.2) -> CommandButton.ICON_PLAYBACK_SPEED_1_2
+        near(rate, 1.5) -> CommandButton.ICON_PLAYBACK_SPEED_1_5
+        near(rate, 1.8) -> CommandButton.ICON_PLAYBACK_SPEED_1_8
+        near(rate, 2.0) -> CommandButton.ICON_PLAYBACK_SPEED_2_0
+        else -> CommandButton.ICON_PLAYBACK_SPEED
+      }
+
+    private fun near(a: Double, b: Double) = kotlin.math.abs(a - b) < 0.01
+
+    /** "1.25×", "2×". */
+    private fun speedLabel(rate: Double): String {
+      val rounded = Math.round(rate * 100) / 100.0
+      val text = if (rounded == Math.floor(rounded)) rounded.toLong().toString() else rounded.toString()
+      return "$text\u00D7"
+    }
   }
 
   private var session: MediaLibrarySession? = null
@@ -54,7 +87,8 @@ class MediaMaxCarService : MediaLibraryService() {
   private val items = HashMap<String, MediaItem>()
   private val searchResults = HashMap<String, List<MediaItem>>()
   private val carControllers = HashSet<String>()
-  private var spokenButtons: Boolean? = null
+  /** What the current media button preferences were built for (rebuilt only when it changes). */
+  private var buttonsKey: String? = null
 
   private val seekBackButton: CommandButton by lazy {
     CommandButton.Builder(CommandButton.ICON_SKIP_BACK_15)
@@ -71,6 +105,33 @@ class MediaMaxCarService : MediaLibraryService() {
       .setSlots(CommandButton.SLOT_FORWARD)
       .build()
   }
+
+  // Long music: the same commands, but previous/next track keep SLOT_BACK / SLOT_FORWARD. Media3 UIs
+  // use the secondary slots; legacy controllers (Android Auto) get them as custom actions (overflow),
+  // shown next to the previous/next buttons.
+  private val longSeekBackButton: CommandButton by lazy {
+    CommandButton.Builder(CommandButton.ICON_SKIP_BACK_15)
+      .setDisplayName("Back 15 seconds")
+      .setSessionCommand(SEEK_BACK_COMMAND)
+      .setSlots(CommandButton.SLOT_BACK_SECONDARY, CommandButton.SLOT_OVERFLOW)
+      .build()
+  }
+
+  private val longSeekForwardButton: CommandButton by lazy {
+    CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_30)
+      .setDisplayName("Forward 30 seconds")
+      .setSessionCommand(SEEK_FORWARD_COMMAND)
+      .setSlots(CommandButton.SLOT_FORWARD_SECONDARY, CommandButton.SLOT_OVERFLOW)
+      .build()
+  }
+
+  /** Spoken audio: shows the current speed; tapping asks JS for the next of the app's speeds. */
+  private fun speedButton(rate: Double): CommandButton =
+    CommandButton.Builder(speedIcon(rate))
+      .setDisplayName("Playback speed ${speedLabel(rate)}")
+      .setSessionCommand(SPEED_COMMAND)
+      .setSlots(CommandButton.SLOT_OVERFLOW)
+      .build()
 
   override fun onCreate() {
     super.onCreate()
@@ -120,9 +181,9 @@ class MediaMaxCarService : MediaLibraryService() {
   fun onNowPlayingChanged() {
     val state = CarBridge.nowPlaying
     player.update(state, ArtworkProvider.contentUri(this, state?.artworkUrl))
-    val spoken = state?.spoken == true
-    if (spoken != spokenButtons) {
-      spokenButtons = spoken
+    val key = buttonsKey(state)
+    if (key != buttonsKey) {
+      buttonsKey = key
       session?.setMediaButtonPreferences(buttons())
     }
   }
@@ -135,8 +196,22 @@ class MediaMaxCarService : MediaLibraryService() {
 
   // endregion
 
-  private fun buttons(): List<CommandButton> =
-    if (CarBridge.nowPlaying?.spoken == true) listOf(seekBackButton, seekForwardButton) else emptyList()
+  private fun buttonsKey(state: NowPlayingRecord?): String =
+    when {
+      state == null -> "none"
+      state.spoken -> "spoken:${Math.round(state.rate * 100)}"
+      state.longTrack -> "long"
+      else -> "none"
+    }
+
+  private fun buttons(): List<CommandButton> {
+    val state = CarBridge.nowPlaying ?: return emptyList()
+    return when {
+      state.spoken -> listOf(seekBackButton, seekForwardButton, speedButton(state.rate))
+      state.longTrack -> listOf(longSeekBackButton, longSeekForwardButton)
+      else -> emptyList()
+    }
+  }
 
   private fun launchIntent(): PendingIntent? {
     val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return null
@@ -238,10 +313,33 @@ class MediaMaxCarService : MediaLibraryService() {
     val query = first.requestMetadata.searchQuery
     player.suppressPlayUntilMs = SystemClock.elapsedRealtime() + PLAY_SUPPRESS_MS
     if (query != null) {
-      CarBridge.emit("onPlayFromSearch", mapOf("query" to query))
+      CarBridge.emit("onPlayFromSearch", searchPayload(query, first.requestMetadata.extras))
     } else if (first.mediaId.isNotEmpty() && first.mediaId != MediaItem.DEFAULT_MEDIA_ID) {
       CarBridge.emit("onPlay", mapOf("mediaId" to first.mediaId))
     }
+  }
+
+  /**
+   * Assistant's structured voice search ("play the album Discovery by Daft Punk"): MediaStore extras
+   * on the play-from-search request. The free-text query is always there; the rest are hints.
+   */
+  private fun searchPayload(query: String, extras: Bundle?): Map<String, Any?> {
+    val type =
+      when (extras?.getString(MediaStore.EXTRA_MEDIA_FOCUS)) {
+        MediaStore.Audio.Artists.ENTRY_CONTENT_TYPE -> "artist"
+        MediaStore.Audio.Albums.ENTRY_CONTENT_TYPE -> "album"
+        MediaStore.Audio.Media.ENTRY_CONTENT_TYPE -> "track"
+        MediaStore.Audio.Playlists.ENTRY_CONTENT_TYPE -> "playlist"
+        MediaStore.Audio.Genres.ENTRY_CONTENT_TYPE -> "music"
+        else -> null
+      }
+    return mapOf(
+      "query" to query,
+      "type" to type,
+      "artist" to extras?.getString(MediaStore.EXTRA_MEDIA_ARTIST)?.takeIf { it.isNotBlank() },
+      "album" to extras?.getString(MediaStore.EXTRA_MEDIA_ALBUM)?.takeIf { it.isNotBlank() },
+      "source" to "assistant",
+    )
   }
 
   private fun searchNodes(query: String, onResult: (List<MediaItem>?, String?) -> Unit) {
@@ -265,6 +363,7 @@ class MediaMaxCarService : MediaLibraryService() {
       val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
         .add(SEEK_BACK_COMMAND)
         .add(SEEK_FORWARD_COMMAND)
+        .add(SPEED_COMMAND)
         .build()
       return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
         .setAvailableSessionCommands(sessionCommands)
@@ -401,6 +500,11 @@ class MediaMaxCarService : MediaLibraryService() {
       customCommand: SessionCommand,
       args: Bundle,
     ): ListenableFuture<SessionResult> {
+      if (customCommand.customAction == ACTION_SPEED) {
+        // No value: JS moves to the next of the app's speeds and reports it back (new icon).
+        CarBridge.emit("onCommand", mapOf("command" to "rate", "value" to null))
+        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+      }
       val value = when (customCommand.customAction) {
         ACTION_SEEK_BACK -> -CarProxyPlayer.SEEK_BACK_MS.toDouble()
         ACTION_SEEK_FORWARD -> CarProxyPlayer.SEEK_FORWARD_MS.toDouble()

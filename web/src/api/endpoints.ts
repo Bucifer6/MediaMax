@@ -13,6 +13,9 @@ import type {
 } from '@mediamax/shared';
 import type { ManualRendererRequest, Renderer, RendererAction, RendererAdminView, RendererCommandRequest, RendererPlayRequest, RendererSettings, RendererState } from '@mediamax/shared';
 import type { ApplyMatchRequest, MatchSearchResponse, MetadataProviderId, MetadataSettings, MetadataSettingsResponse, MetadataTestResult } from '@mediamax/shared';
+import type {
+  AcoustIdCandidate, DiscographyResponse, IdentifyResponse, LbRecommendations, ListenBrainzStatus, ListenBrainzUpdate, MusicSettings, MusicSettingsResponse, RelatedArtistsResponse,
+} from '@mediamax/shared';
 import { http, request, upload } from './client';
 import { deviceInfo } from './device';
 
@@ -294,6 +297,26 @@ export const api = {
     clearCache: (provider?: MetadataProviderId) => http.del<Ok>('/admin/metadata/cache', { provider }),
     searchMatch: (itemId: string, q: { provider?: MetadataProviderId; q?: string; year?: number | '' }) => http.get<MatchSearchResponse>(`/items/${enc(itemId)}/match`, q),
     applyMatch: (itemId: string, body: ApplyMatchRequest) => http.post<Item>(`/items/${enc(itemId)}/match`, body),
+  },
+
+  /** MusicBrainz discography / related artists, AcoustID "Identify by sound", ListenBrainz. */
+  music: {
+    discography: (artistId: string) => http.get<DiscographyResponse>(`/music/artists/${enc(artistId)}/discography`),
+    related: (artistId: string) => http.get<RelatedArtistsResponse>(`/music/artists/${enc(artistId)}/related`),
+    identifyStored: (itemId: string) => http.get<IdentifyResponse>(`/items/${enc(itemId)}/identify`),
+    identify: (itemId: string) => http.post<IdentifyResponse>(`/items/${enc(itemId)}/identify`),
+    applyIdentify: (itemId: string, candidate: AcoustIdCandidate) => http.post<Item>(`/items/${enc(itemId)}/identify/apply`, { candidate }),
+    settings: () => http.get<MusicSettingsResponse>('/admin/music'),
+    saveSettings: (s: Partial<MusicSettings>) => http.put<MusicSettingsResponse>('/admin/music', s),
+    identifyUntagged: () => http.post<Ok>('/admin/music/identify-untagged'),
+  },
+  listenbrainz: {
+    status: () => http.get<ListenBrainzStatus>('/listenbrainz'),
+    save: (body: ListenBrainzUpdate) => http.put<ListenBrainzStatus>('/listenbrainz', body),
+    disconnect: () => http.del<ListenBrainzStatus>('/listenbrainz'),
+    flush: () => http.post<ListenBrainzStatus>('/listenbrainz/flush'),
+    recommendations: (refresh = false) => http.get<LbRecommendations>('/listenbrainz/recommendations', refresh ? { refresh: '1' } : undefined),
+    saveAsPlaylist: (listId: string) => http.post<{ id: string; count: number }>(`/listenbrainz/recommendations/${enc(listId)}/playlist`),
   },
 
   /** "Play to" network renderers (DLNA/UPnP TVs, Sonos, Kodi). */

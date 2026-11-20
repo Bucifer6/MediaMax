@@ -1,0 +1,8 @@
+[
+  { "id": "getting-started", "title": "Getting started", "description": "Accounts, profiles and the apps.", "icon": "sparkles", "audience": "everyone" },
+  { "id": "watching", "title": "Watching & listening", "description": "Playback, subtitles, audio, music and live TV.", "icon": "play", "audience": "everyone" },
+  { "id": "requests", "title": "Requests & issues", "description": "Ask for new titles and report problems.", "icon": "inbox", "audience": "everyone" },
+  { "id": "tv", "title": "TV & remotes", "description": "Using a TV and its remote control.", "icon": "tv", "audience": "everyone" },
+  { "id": "admin", "title": "For admins", "description": "Setting up and running the server.", "icon": "shield", "audience": "admin" },
+  { "id": "troubleshooting", "title": "Troubleshooting", "description": "When something doesn’t work as expected.", "icon": "alert", "audience": "everyone" }
+]

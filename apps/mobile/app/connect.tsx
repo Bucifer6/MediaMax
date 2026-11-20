@@ -7,6 +7,7 @@ import { Button } from '@/components/Button';
 import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
 import { Input } from '@/components/Input';
+import { BrandMarkImage } from '@/components/BrandWordmark';
 import { BackButton } from '@/components/Screen';
 import { T } from '@/components/Text';
 import { useSession, type SavedServer } from '@/state/session';
@@ -57,9 +58,7 @@ export default function ConnectScreen() {
           ) : null}
           <View style={{ width: contentWidth, gap: t.space.lg }}>
             <View style={{ alignItems: 'center', gap: t.space.sm, marginBottom: t.space.md }}>
-              <View style={{ width: t.s(72), height: t.s(72), borderRadius: t.s(20), backgroundColor: t.colors.primary, alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="play" size={t.s(38)} color={t.colors.primaryText} />
-              </View>
+              <BrandMarkImage size={t.s(72)} />
               <T variant="hero" center>
                 {servers.length ? 'Your servers' : 'Connect to your server'}
               </T>

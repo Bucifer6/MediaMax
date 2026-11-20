@@ -96,8 +96,8 @@ export function SecurityAdmin() {
     }
   };
 
-  if (error && !data) return <div><AdminHeader title="Security" /><ErrorState message={error} onRetry={() => void load()} /></div>;
-  if (!data) return <div><AdminHeader title="Security" /><Skeleton h={480} /></div>;
+  if (error && !data) return <div><AdminHeader help="admin-security" title="Security" /><ErrorState message={error} onRetry={() => void load()} /></div>;
+  if (!data) return <div><AdminHeader help="admin-security" title="Security" /><Skeleton h={480} /></div>;
 
   const d = data;
   const activeBans = (d.crowdsec?.decisions.length ?? 0) + (d.fail2ban?.jails.reduce((n, j) => n + j.currentlyBanned, 0) ?? 0);
@@ -106,7 +106,7 @@ export function SecurityAdmin() {
 
   return (
     <div className="sec-page">
-      <AdminHeader
+      <AdminHeader help="admin-security"
         title="Security"
         subtitle="Sign-in attempts, your reverse proxy, HTTPS certificate, CrowdSec and fail2ban — in one place."
         actions={<>

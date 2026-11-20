@@ -1,6 +1,10 @@
 import type { ItemType, MatchCandidate } from '@mediamax/shared';
 import { baseUrl, norm, providerFetch, url } from '../http.js';
 import type { BuiltinProvider, ProviderItem, ProviderResult } from './types.js';
+import { db } from '../../../db.js';
+import { parseJson } from '../../../util/misc.js';
+import { isMbid } from '../../music/tags.js';
+import { fillRecordingsFromRelease, releaseFacts } from '../../music/musicbrainz.js';
 
 /**
  * MusicBrainz (no key; max 1 request/second, enforced by the shared gate in ../http.ts) + Cover Art Archive.
@@ -41,6 +45,21 @@ async function artist(item: ProviderItem): Promise<ProviderResult | null> {
 
 async function album(item: ProviderItem): Promise<ProviderResult | null> {
   let rg = item.ids.musicbrainzReleaseGroup;
+  // A tagged release MBID (Picard): no search. One request gives the release group, label and the tracklist, which
+  // fills recording MBIDs and artist credits of tracks that don't have them — skipped when everything is already known.
+  const rel = item.ids.musicbrainzRelease;
+  let release: any = null;
+  if (rel && isMbid(rel)) {
+    const missingRec = db.get<{ n: number }>("SELECT COUNT(*) n FROM items WHERE parent_id = ? AND type = 'track' AND json_extract(external_ids, '$.musicbrainzRecording') IS NULL", item.id)!.n;
+    const pm = parseJson<{ mb?: Record<string, unknown> }>(item.row.provider_meta, {});
+    if (!rg || missingRec > 0 || !pm.mb || item.replace) {
+      release = await mb(`/release/${encodeURIComponent(rel)}`, { inc: 'recordings artist-credits release-groups labels' });
+      if (release) {
+        if (!rg && isMbid(release['release-group']?.id)) rg = release['release-group'].id as string;
+        fillRecordingsFromRelease(item.id, release);
+      }
+    }
+  }
   if (!rg) {
     const parts = [`releasegroup:"${q(item.title)}"`];
     if (item.parentTitle) parts.push(`artist:"${q(item.parentTitle)}"`);
@@ -52,7 +71,7 @@ async function album(item: ProviderItem): Promise<ProviderResult | null> {
   }
   const g = await mb(`/release-group/${encodeURIComponent(rg)}`, { inc: 'genres tags' });
   if (!g) return null;
-  const out: ProviderResult = { fields: { genres: genresOf(g) }, ids: { musicbrainzReleaseGroup: rg } };
+  const out: ProviderResult = { fields: { genres: genresOf(g) }, ids: { musicbrainzReleaseGroup: rg }, meta: { mb: releaseFacts(release, g) } };
   const year = Number(String(g['first-release-date'] ?? '').slice(0, 4));
   if (year) out.fields!.year = year;
   // Cover Art Archive answers with a redirect to the image (404 when there is no front cover). Only asked when the album has no cover.
@@ -72,7 +91,7 @@ export const musicbrainz: BuiltinProvider = {
   homepage: 'https://musicbrainz.org',
   keyUrl: null,
   cost: 'Free, no key.',
-  description: 'Artist and album (release-group) MBIDs and genres; album covers from the Cover Art Archive when an album has none. MBIDs let fanart.tv and TheAudioDB find exact matches.',
+  description: 'Artist and album (release-group) MBIDs and genres; album covers from the Cover Art Archive when an album has none. MBIDs from Picard tags are used directly (no search), and a tagged release fills its tracks\' recording MBIDs and artist credits. MBIDs let fanart.tv and TheAudioDB find exact matches.',
   rateLimit: '1 request/second (MusicBrainz policy, enforced); responses are cached.',
   artwork: ['album'],
   fetch: async (item) => (item.type === 'artist' ? artist(item) : item.type === 'album' ? album(item) : null),

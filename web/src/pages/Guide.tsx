@@ -7,6 +7,7 @@ import { EmptyState, ErrorState, Img, Spinner } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { ProgramModal } from '../components/ProgramModal';
 import { formatTime } from '../utils/format';
+import { HelpLink } from '../components/HelpLink';
 
 const HOURS = 12;
 const PAGE = 60;
@@ -134,7 +135,7 @@ export default function GuidePage() {
       <header className="page-head guide-head">
         <div className="page-title-wrap">
           <Icon name="guide" size={28} className="page-icon" />
-          <h1>TV Guide</h1>
+          <h1>TV Guide <HelpLink slug="live-tv" label="TV guide" /></h1>
         </div>
         <div className="guide-controls">
           <select className="select" value={dayOf(start)} onChange={(e) => {

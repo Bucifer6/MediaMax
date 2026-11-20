@@ -31,6 +31,10 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | ReplayGain / R128 loudness levelling (track & album) | ✅ (Plexamp) | 🟡 | 🟡 | ✅ |
 | DJ mode: BPM/key/energy analysis, automatic beat-matched crossfades, harmonic auto-playlists, non-stop mixes | 🟡 (Plexamp sweet fades) | ❌ | ❌ | ✅ |
 | Anime (AniList) and MusicBrainz/Cover Art Archive metadata | 🟡 | Plugin | Plugin | ✅ (MusicBrainz built in; AniList plugin) |
+| MusicBrainz Picard tags (recording/release/release-group/artist MBIDs): MBID-based album/artist grouping, recording ids filled from the release, release types | 🟡 | ✅ | ✅ | ✅ |
+| Multi-artist credits ("A feat. B & C" with each artist linked, "Appears on", search by featured artist) | 🟡 | ✅ | 🟡 | ✅ |
+| Artist discography by release type, missing albums from MusicBrainz with one-click Lidarr request, members / related / similar artists | 🟡 (no missing) | Plugin | 🟡 | ✅ |
+| AcoustID "Identify by sound" for untagged tracks (DB only, files untouched; optional auto-apply) | ❌ | ❌ | Plugin | ✅ |
 | Audiobooks (multi-file & .m4b, chapters, author/narrator, resume) | 🟡 | ✅ | ✅ | ✅ |
 | Podcasts (RSS, iTunes directory search, OPML import, auto-download) | ✅ | Plugin? | Plugin? | ✅ |
 
@@ -47,7 +51,20 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | HDR format detection: HDR10, HDR10+, HLG, Dolby Vision profile/level/fallback layer ([docs/HDR.md](HDR.md)) | 🟡 | ✅ | 🟡 | ✅ |
 | Per-device HDR decisions (direct play when the device supports the range, DV 8.x → HDR10/HLG base layer, tone-map otherwise) | 🟡 | ✅ | 🟡 | ✅ |
 | Dolby Vision profile 7 (dual-layer) → HDR10 base layer by stream copy, no re-encode | ❌ | 🟡 | ❌ | ✅ |
+| Real Dolby Vision through remuxed HLS (fMP4 with `dvcC`/`dvvC`, `dvh1`/`hvc1` sample entry, DV `CODECS` / `SUPPLEMENTAL-CODECS` / `VIDEO-RANGE` in the master playlist): profiles 5, 8.1, 8.4, 10 (AV1), and 7 for devices that list it | 🟡 | ✅ | 🟡 | ✅ |
+| Dolby Vision on LG webOS TVs and DV-capable browsers (MediaMax: through its own hls.js/MSE engine, detected with `MediaSource.isTypeSupported`/`MediaCapabilities`, with an Auto / Yes / No override per device) | ✅ | ✅ | 🟡 | ✅ |
 | HDR10 / HDR10+ / HLG / Dolby Vision badges in item info and the player's info overlay | ✅ | ✅ | ✅ | ✅ |
+| Audio format detection: Dolby Atmos (TrueHD / E-AC-3 JOC), DTS:X, DTS-HD MA, lossless, channel layout ([docs/AUDIO.md](AUDIO.md)) | 🟡 | 🟡 | 🟡 | ✅ |
+| Dolby Atmos / DTS:X / DTS-HD MA / TrueHD / 7.1 badges in item info, the player's audio menu and stats | ✅ | 🟡 | 🟡 | ✅ |
+| Per-device audio decisions: passthrough when the device or its receiver takes the format, else the best target it plays | 🟡 | 🟡 | 🟡 | ✅ |
+| DTS-HD MA / DTS:X → DTS core by stream copy (no re-encode) for DTS-only soundbars | ❌ | ❌ | ❌ | ✅ |
+| TrueHD (Atmos) / DTS → E-AC-3 5.1 for TVs + soundbars (ARC) and Apple TV | 🟡 | 🟡 | 🟡 | ✅ |
+| AAC 7.1 / 5.1 transcodes by output channels; Dolby-style stereo downmix that keeps dialogue clear (level-tested) | 🟡 | 🟡 (downmix options) | 🟡 | ✅ |
+| Audio-only re-encode when only the audio is the problem (video copied) | ✅ | ✅ | ✅ | ✅ |
+| Night mode (dynamic range compression) and dialogue boost: server-side, or in the browser during direct play | 🟡 (boost voices, Plexamp-style loudness) | 🟡 (downmix "night mode") | ❌ | ✅ |
+| Loudness normalisation for video (EBU R128) | 🟡 | 🟡 | ❌ | ✅ |
+| Audio delay / lip-sync per device (browser delay during direct play, server shift for negative offsets) | 🟡 | ✅ (client) | 🟡 | ✅ |
+| HLS master playlists list E-AC-3 as `ec-3`, Atmos as `CHANNELS="16/JOC"` | ✅ | 🟡 | ❓ | ✅ |
 | Apple TV display matching (range + frame rate) | ✅ | ✅ | ✅ | ✅ (tvOS 17+) |
 | TV remote keys: media, channel ±, digits, colour keys, Info/Guide (Tizen, webOS, Android TV) | ✅ | 🟡 | 🟡 | ✅ |
 | "Hardware failed, used software" shown on the session | ❌ | ❌ | ❌ | ✅ |
@@ -160,8 +177,8 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | Feature | Plex | Jellyfin | Emby | MediaMax |
 |---|:-:|:-:|:-:|:-:|
 | Web, iOS, Android, Apple TV, Android TV apps | ✅ | ✅ | ✅ | ✅ |
-| Apple CarPlay (music, audiobooks, podcasts) | Plexamp | Third-party | Premiere | ✅ |
-| Android Auto (music, audiobooks, podcasts) | Plexamp | ✅ (no audiobooks) | Premiere | ✅ |
+| Apple CarPlay (music, audiobooks, podcasts) | Plexamp | Third-party | Premiere | ✅ (±15/30 s for audiobooks, podcasts and long mixes alongside next/previous, speed button; Siri "Play … in MediaMax" opt-in) |
+| Android Auto (music, audiobooks, podcasts) | Plexamp | ✅ (no audiobooks) | Premiere | ✅ (±15/30 s for audiobooks, podcasts and long mixes alongside next/previous, speed button; Google Assistant "play …", seek and speed by voice) |
 | Samsung Tizen, LG webOS (wrapper apps + web TV mode with D-pad navigation) | ✅ | ✅ | ✅ | ✅ |
 | Amazon Fire TV | ✅ | ✅ | ✅ | ✅ (Android TV build) |
 | Roku, Xbox | ✅ | 🟡 | ✅ | 🗺️ |
@@ -202,6 +219,7 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | DLNA / UPnP media server (smart TVs, consoles, VLC) | ✅ | ✅ | ✅ | ✅ (LAN-only, per-user access) |
 | Trakt scrobbling & watched sync | Plugin | Plugin | Plugin | ✅ built in |
 | Last.fm scrobbling | ✅ | Plugin | Plugin | ✅ built in |
+| ListenBrainz scrobbling (MBIDs, offline queue, love/hate feedback) + weekly playlists & recommendations matched to the library | ❌ | Plugin | Plugin | ✅ built in |
 | Viewing statistics & yearly "Wrapped" | Pass | Plugin | Plugin | ✅ |
 | User avatars | ✅ | ✅ | ✅ | ✅ |
 | Hide unrated content from restricted users | ✅ | ✅ | ✅ | ✅ |

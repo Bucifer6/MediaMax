@@ -68,7 +68,7 @@ export function SetupWizard() {
 
         {step === 0 && (
           <div className="setup-body fade-in">
-            <BrandMark size={64} />
+            <BrandMark size={60} />
             <h1>Welcome to MediaMax</h1>
             <p className="muted">Movies, shows, music, photos, live TV, IPTV and DVR — all on your own server, styled your way. Let's get you set up in under a minute.</p>
             <Field label="Server name" hint="Shown on every device and the login screen. You can change it any time in Branding.">

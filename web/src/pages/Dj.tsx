@@ -10,6 +10,7 @@ import { djEngine, type DeckState, type DjState } from '../player/djEngine';
 import { Icon } from '../components/Icon';
 import { Badge, Field, Img, Spinner, Switch } from '../components/ui';
 import { formatClock, formatDuration } from '../utils/format';
+import { HelpLink } from '../components/HelpLink';
 
 const CURVES: { value: DjEnergyCurve; label: string; hint: string }[] = [
   { value: 'steady', label: 'Steady', hint: 'Holds the vibe of the first track' },
@@ -293,7 +294,7 @@ export default function DjPage() {
       <header className="page-head">
         <div className="page-title-wrap">
           <Icon name="music" size={28} className="page-icon" />
-          <h1>DJ</h1>
+          <h1>DJ <HelpLink slug="dj-mode" label="DJ mode" /></h1>
         </div>
         {active && (
           <div className="row-gap">

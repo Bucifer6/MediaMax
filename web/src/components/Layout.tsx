@@ -196,13 +196,14 @@ export function Layout() {
           <NavItem to="/podcasts" icon="podcast" label="Podcasts" />
           <NavItem to="/playlists" icon="playlist" label="Playlists" />
           <NavItem to="/collections" icon="collection" label="Collections" />
+          <NavItem to="/help" icon="help" label="Help" />
           {user?.isAdmin && <NavItem to="/admin" icon="shield" label="Admin" />}
         </nav>
         <div className="sidebar-foot">
           {branding.footerText && <p className="footer-text">{branding.footerText}</p>}
           {branding.supportUrl && (
             <a href={branding.supportUrl} target="_blank" rel="noreferrer" className="footer-link">
-              <Icon name="info" size={14} /> Help & support
+              <Icon name="info" size={14} /> Contact support
             </a>
           )}
           <span className={`ws-status ${wsOpen ? 'on' : ''}`} title={wsOpen ? 'Live updates connected' : 'Live updates disconnected'}>

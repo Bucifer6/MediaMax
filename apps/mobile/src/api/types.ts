@@ -561,7 +561,12 @@ export interface Item {
   childCount: number;
   addedAt: string;
   releaseDate: string | null;
-  externalIds: { tmdb?: string; imdb?: string; tvdb?: string; xtream?: string };
+  externalIds: {
+    tmdb?: string; imdb?: string; tvdb?: string; xtream?: string;
+    /** MusicBrainz ids (from Picard tags or MusicBrainz lookups) and AcoustID. */
+    musicbrainzArtist?: string; musicbrainzReleaseGroup?: string; musicbrainzRelease?: string; musicbrainzRecording?: string;
+    musicbrainzReleaseTrack?: string; musicbrainzWork?: string; acoustid?: string;
+  };
   userData: UserItemData;
   /** Populated on GET /items/:id only. */
   media?: MediaSource[];
@@ -587,6 +592,8 @@ export interface Item {
   extraArt?: { clearArtUrl?: string | null; discArtUrl?: string | null; bannerUrl?: string | null };
   /** Artists, GET /items/:id only: facts from TheAudioDB. */
   artistInfo?: { formedYear?: number | null; country?: string | null; mood?: string | null; style?: string | null };
+  /** Albums and tracks: release facts from tags / MusicBrainz (see MusicInfo). */
+  music?: MusicInfo;
 }
 
 export type ExtraType = 'trailer' | 'featurette' | 'behindthescenes' | 'deleted' | 'interview' | 'scene' | 'short' | 'other';
@@ -786,6 +793,8 @@ export interface ActiveSession {
     hwFallback?: string | null;
     /** HDR → SDR tone-mapping path in use, when tone-mapping. */
     toneMap?: string | null;
+    /** Audio output, e.g. "E-AC-3 5.1 (TrueHD Atmos → E-AC-3 5.1: device can't play TrueHD)". */
+    audioDetail?: string | null;
   } | null;
 }
 
@@ -2738,6 +2747,26 @@ export interface PlaybackInfo {
   } | null;
 }
 
+/** How a Dolby Vision source reaches the client (shown in the player's info overlay). */
+export interface DolbyVisionPlayback {
+  /** "5", "7", "8.1", "8.4", "10.1" … (null when the profile is unknown). */
+  profile: string | null;
+  level: number | null;
+  /**
+   * `native`: real Dolby Vision (direct play, or a remux that keeps the DV configuration box and announces the DV codec);
+   * `base-layer`: its HDR10/HLG/SDR base layer; `stripped`: remuxed with the DV layers removed (profile 7 → HDR10);
+   * `tonemap`: transcoded to SDR.
+   */
+  mode: 'native' | 'base-layer' | 'stripped' | 'tonemap';
+  baseLayer: 'hdr10' | 'hlg' | 'sdr' | null;
+  /** DV codec string announced in the HLS master playlist for a native remux, e.g. "dvh1.08.06". */
+  codec: string | null;
+}
+
+export interface PlaybackInfo {
+  dolbyVision?: DolbyVisionPlayback | null;
+}
+
 /* ------------------------------------------------------------------ */
 /* Requests: Overseerr/Jellyseerr parity (permissions, quotas, issues)  */
 /* ------------------------------------------------------------------ */
@@ -3716,4 +3745,336 @@ export interface UpdateMeRequest {
   avatarId?: string | null;
   /** Profile colour (#rrggbb); null clears it. */
   profileColor?: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Audio: format detection, smart delivery, listening comforts         */
+/* ------------------------------------------------------------------ */
+
+/** Extra audio-stream details from ffprobe (media scanned before audio detection gets them the first time it is played). */
+export interface AudioStream {
+  /** ffprobe codec profile, e.g. "Dolby TrueHD + Dolby Atmos", "DTS-HD MA + DTS:X", "Dolby Digital Plus + Dolby Atmos", "LC". */
+  profile?: string | null;
+  /** e.g. "5.1(side)", "7.1", "stereo". */
+  channelLayout?: string | null;
+  sampleRate?: number | null;
+  /** Bits per sample for lossless / PCM streams. */
+  bitDepth?: number | null;
+  /** kbps, when the container reports it. */
+  bitrate?: number | null;
+  /** Dolby Atmos: TrueHD with Atmos metadata, or E-AC-3 JOC (Dolby Digital Plus + Atmos). */
+  atmos?: boolean;
+  /** DTS:X (object-based DTS, carried in a DTS-HD MA stream). */
+  dtsX?: boolean;
+  /** DTS-HD Master Audio (lossless; plays as its DTS core on DTS-only devices). */
+  dtsHdMa?: boolean;
+  /** Lossless format (TrueHD, DTS-HD MA, FLAC, ALAC, PCM). */
+  lossless?: boolean;
+  /** Short format name for badges and menus, e.g. "TrueHD Atmos", "DTS:X", "DTS-HD MA", "E-AC-3 Atmos", "AAC". */
+  formatLabel?: string;
+}
+
+/** Listening comforts. Applied by the server when it encodes the audio; web players apply some of them locally (Web Audio) during direct play. */
+export interface AudioComforts {
+  /** Dynamic range compression ("night mode"): quiet scenes louder, explosions softer. */
+  nightMode?: boolean;
+  /** Clearer dialogue: centre channel lifted before the downmix, speech-band EQ on stereo sources. */
+  dialogueBoost?: boolean;
+  /** EBU R128 loudness normalisation (single-pass loudnorm). */
+  normalize?: boolean;
+  /** Lip-sync offset in ms: positive delays the sound, negative plays it earlier. */
+  delayMs?: number;
+}
+
+export interface UserPreferences {
+  /** Listening comforts, user-wide defaults. */
+  audio?: AudioComforts;
+  /** Per-device overrides (keyed by the client's deviceId), mostly the lip-sync delay of a TV / soundbar setup. */
+  audioDevices?: Record<string, AudioComforts>;
+}
+
+export interface DeviceProfile {
+  /**
+   * Speaker channels the client can output from decoded (PCM) audio, e.g. 2 for a laptop, 6 / 8 for an AV receiver
+   * over HDMI. Sending it opts the client into the smart audio decisions (E-AC-3 / DTS core / AAC 7.1 targets).
+   * Omitted = legacy client: audio is copied when its codec is listed, otherwise transcoded to AAC (up to 5.1).
+   */
+  maxAudioChannels?: number;
+  /** Codecs decoded with more than two channels, e.g. ["aac","ac3","eac3"]. Omitted = every listed codec. */
+  multichannelAudioCodecs?: string[];
+}
+
+export interface PlaybackRequest {
+  /** Listening comforts the server should apply when it encodes the audio. */
+  audioProcessing?: AudioComforts;
+  /** Re-encode the audio (cheap: the video is still copied) so `audioProcessing` is applied even when the audio could be copied. */
+  forceAudioProcessing?: boolean;
+}
+
+/** How the chosen audio track reaches the client. */
+export type AudioDelivery = 'direct' | 'copy' | 'dts-core' | 'transcode';
+
+export interface AudioDecisionInfo {
+  /** Source stream label, e.g. "TrueHD Atmos 7.1". */
+  source: string;
+  /** What the client receives, e.g. "E-AC-3 5.1". */
+  output: string;
+  delivery: AudioDelivery;
+  /** Output codec ("copy" when the source bitstream is passed on as is). */
+  codec: string;
+  channels: number | null;
+  bitrateKbps: number | null;
+  /** Why the audio isn't delivered as is, e.g. "TrueHD Atmos → E-AC-3 5.1: device can't play TrueHD". */
+  reason: string | null;
+  /** Atmos / DTS:X object audio: kept, lost (converted to plain channels), or not applicable. */
+  objects: 'kept' | 'lost' | null;
+  /** Comforts the server applied to this stream; the client must not apply them again. */
+  applied: (keyof AudioComforts)[];
+}
+
+export interface PlaybackInfo {
+  /** Audio delivery decision for the selected track (absent from older servers). */
+  audio?: AudioDecisionInfo | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Help Centre                                                         */
+/* ------------------------------------------------------------------ */
+
+export type HelpAudience = 'everyone' | 'admin';
+
+export interface HelpArticleSummary {
+  slug: string;
+  title: string;
+  summary: string;
+  section: string;
+  audience: HelpAudience;
+}
+
+export interface HelpSection {
+  id: string;
+  title: string;
+  description: string;
+  /** Web icon name (the app's Icon set). */
+  icon: string;
+  audience: HelpAudience;
+  articles: HelpArticleSummary[];
+}
+
+/** GET /help: sections and articles the caller may read (no bodies). */
+export interface HelpIndex {
+  product: string;
+  version: string;
+  sections: HelpSection[];
+}
+
+export interface HelpHeading {
+  level: 2 | 3;
+  text: string;
+  id: string;
+}
+
+/** GET /help/:slug */
+export interface HelpArticle extends HelpArticleSummary {
+  sectionTitle: string;
+  keywords: string[];
+  /** Markdown (a small subset: headings, lists, tables, links, bold/italic, code, <kbd>), placeholders filled in. */
+  markdown: string;
+  headings: HelpHeading[];
+  related: HelpArticleSummary[];
+}
+
+export interface HelpSearchResult extends HelpArticleSummary {
+  sectionTitle: string;
+  /** Plain-text excerpt around the first match. */
+  snippet: string;
+  score: number;
+}
+
+/** GET /help/search?q= */
+export interface HelpSearchResponse {
+  query: string;
+  results: HelpSearchResult[];
+}
+
+/** GET /help/whats-new: release notes for the running server version. */
+export interface HelpWhatsNew {
+  version: string;
+  title: string;
+  markdown: string;
+}
+
+export interface UserPreferences {
+  /** Server version whose "What's new" card this user dismissed. */
+  whatsNewSeen?: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* MusicBrainz / ListenBrainz / AcoustID                               */
+/* ------------------------------------------------------------------ */
+
+/** One credited artist of a track, in order, with the join phrase that follows it ("A" + " feat. " + "B"). */
+export interface ArtistCredit {
+  name: string;
+  /** Library artist item, when the credited artist is in the library. */
+  artistId: string | null;
+  mbid: string | null;
+  joinPhrase: string;
+}
+
+export interface MusicInfo {
+  /** Album: primary type first, then secondary types (lower-case MusicBrainz names: album, ep, single, live, compilation…). */
+  releaseTypes?: string[];
+  releaseStatus?: string | null;
+  originalYear?: number | null;
+  originalDate?: string | null;
+  label?: string | null;
+  catalogNumber?: string | null;
+  barcode?: string | null;
+  compilation?: boolean;
+  /** Album: disc subtitles (disc number → title) from tags. */
+  discTitles?: Record<string, string>;
+  /** Track: the artist string as tagged ("A feat. B & C"). */
+  displayArtist?: string | null;
+  /** Track: parsed credits (GET /items/:id, album children, search). */
+  credits?: ArtistCredit[];
+  /** Track identified by sound (AcoustID). */
+  identified?: boolean;
+}
+
+export interface MissingRelease {
+  releaseGroupMbid: string;
+  title: string;
+  year: number | null;
+  primaryType: string | null;
+  secondaryTypes: string[];
+  coverUrl: string;
+  /** Status of an open request for it, if any. */
+  requestStatus: string | null;
+}
+
+export interface DiscographySection {
+  /** Release type key (album, ep, single, live, compilation, soundtrack, remix, demo, other). */
+  type: string;
+  label: string;
+  items: Item[];
+}
+
+export interface DiscographyResponse {
+  artistMbid: string | null;
+  sections: DiscographySection[];
+  /** Release groups on MusicBrainz that aren't in the library (needs an artist MBID). */
+  missing: MissingRelease[];
+  missingError: string | null;
+  /** Types hidden from "missing" by the admin. */
+  hiddenTypes: string[];
+  /** Tracks by other album artists that credit this artist (features, collaborations). */
+  appearsOn: Item[];
+  /** The viewer may request music (Lidarr). */
+  canRequest: boolean;
+}
+
+export interface RelatedArtist {
+  name: string;
+  mbid: string | null;
+  /** Library artist, when present. */
+  itemId: string | null;
+  posterUrl: string | null;
+  /** e.g. "member of band, 1991–2003". */
+  detail: string | null;
+}
+
+export interface RelatedArtistsResponse {
+  members: RelatedArtist[];
+  memberOf: RelatedArtist[];
+  collaborations: RelatedArtist[];
+  related: RelatedArtist[];
+  /** ListenBrainz similar artists (no token needed). */
+  similar: RelatedArtist[];
+  error: string | null;
+}
+
+export interface ListenBrainzStatus {
+  connected: boolean;
+  username: string | null;
+  /** "••••" when a token is stored (write-only). */
+  token: string | null;
+  /** Self-hosted ListenBrainz API URL (null = api.listenbrainz.org). */
+  serverUrl: string | null;
+  scrobble: boolean;
+  /** Send favourites / 4★+ ratings as "love" feedback. */
+  feedback: boolean;
+  /** Listens waiting to be sent (offline queue). */
+  pending: number;
+  lastError: string | null;
+}
+
+export interface ListenBrainzUpdate {
+  token?: string | null;
+  serverUrl?: string | null;
+  scrobble?: boolean;
+  feedback?: boolean;
+}
+
+export interface LbRecommendedTrack {
+  recordingMbid: string | null;
+  title: string;
+  artist: string;
+  artistMbids: string[];
+  album: string | null;
+  /** Library track when matched. */
+  item: Item | null;
+  match: 'mbid' | 'fuzzy' | null;
+}
+
+export interface LbRecommendationList {
+  id: string;
+  title: string;
+  kind: 'weekly-exploration' | 'weekly-jams' | 'daily-jams' | 'cf' | 'other';
+  tracks: LbRecommendedTrack[];
+}
+
+export interface LbRecommendations {
+  connected: boolean;
+  lists: LbRecommendationList[];
+  error: string | null;
+  /** The viewer may request music (Lidarr). */
+  canRequest: boolean;
+}
+
+export interface AcoustIdCandidate {
+  score: number;
+  acoustid: string;
+  recordingMbid: string | null;
+  title: string | null;
+  artists: { name: string; mbid: string | null; joinPhrase: string }[];
+  releaseGroup: { mbid: string; title: string; type: string | null } | null;
+  durationSec: number | null;
+}
+
+export interface IdentifyResponse {
+  available: boolean;
+  /** Why identifying isn't possible (no key, no fpcalc / chromaprint). */
+  reason: string | null;
+  candidates: AcoustIdCandidate[];
+}
+
+export interface MusicSettings {
+  acoustid: {
+    /** Application client key (write-only, "••••"). */
+    apiKey: string | null;
+    /** Automatically identify tracks with no MBID and missing artist/title tags after scans. */
+    autoIdentify: boolean;
+    /** Apply the best match without asking when its score is at least this (0 = never). */
+    autoApplyScore: number;
+  };
+  /** Release types left out of "Missing from your library". */
+  missingHide: { singles: boolean; eps: boolean; compilations: boolean; live: boolean; other: boolean };
+}
+
+export interface MusicSettingsResponse {
+  settings: MusicSettings;
+  fingerprinter: { available: boolean; tool: 'fpcalc' | 'ffmpeg' | null; detail: string };
+  /** Tracks without an MBID and without artist/title tags. */
+  untagged: number;
 }

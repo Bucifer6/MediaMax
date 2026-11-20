@@ -9,6 +9,7 @@ import { Icon } from '../components/Icon';
 import { programProgress } from '../components/Cards';
 import { ProgramModal } from '../components/ProgramModal';
 import { formatTime } from '../utils/format';
+import { HelpLink } from '../components/HelpLink';
 
 const PAGE = 80;
 
@@ -69,7 +70,7 @@ export default function LiveTvPage() {
         <div className="page-title-wrap">
           <Icon name="tv" size={28} className="page-icon" />
           <div>
-            <h1>Live TV</h1>
+            <h1>Live TV <HelpLink slug="live-tv" label="Live TV" /></h1>
             <p className="muted">{total ? `${total.toLocaleString()} channels` : ' '}</p>
           </div>
         </div>

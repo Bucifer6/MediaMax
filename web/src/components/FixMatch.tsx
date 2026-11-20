@@ -4,6 +4,7 @@ import { api } from '../api/endpoints';
 import { useToast } from '../state/toast';
 import { Spinner } from './ui';
 import { Icon } from './Icon';
+import { IdentifyBySound } from './MusicBits';
 import '../styles/metadata.css';
 
 const NAMES: Record<MetadataProviderId, string> = {
@@ -12,13 +13,18 @@ const NAMES: Record<MetadataProviderId, string> = {
 };
 
 /** Items whose match can be fixed (seasons/episodes follow their show). */
-export const canFixMatch = (item: Item) => ['movie', 'show', 'artist', 'album', 'audiobook'].includes(item.type);
+export const canFixMatch = (item: Item) => ['movie', 'show', 'artist', 'album', 'audiobook', 'track'].includes(item.type);
+
+/** Tracks are identified by sound (AcoustID); everything else by a provider search. */
+export function FixMatchPanel(props: { item: Item; onDone: (i: Item) => void; onCancel: () => void }) {
+  return props.item.type === 'track' ? <IdentifyBySound {...props} /> : <ProviderMatchPanel {...props} />;
+}
 
 /**
  * "Fix match": search the provider for this type (TMDB / TheTVDB / MusicBrainz / Audnexus…), pick the right result,
  * and the server re-fetches the item from it, replacing unlocked fields that came from the wrong match.
  */
-export function FixMatchPanel({ item, onDone, onCancel }: { item: Item; onDone: (i: Item) => void; onCancel: () => void }) {
+function ProviderMatchPanel({ item, onDone, onCancel }: { item: Item; onDone: (i: Item) => void; onCancel: () => void }) {
   const toast = useToast();
   const isBook = item.type === 'audiobook';
   const [provider, setProvider] = useState<MetadataProviderId | undefined>(undefined);
