@@ -312,3 +312,49 @@ export function chooseVideoCodec(i: CodecChoiceInput): TranscodeVideoCodec {
 
 /** HEVC/AV1 need fragmented-MP4 HLS segments (Safari, Chrome/Edge via hls.js, AVPlayer); H.264 stays on MPEG-TS. */
 export const needsFmp4 = (codec: string | null) => codec === 'hevc' || codec === 'av1';
+
+/* ------------------------- per-rendition helper ------------------------ */
+
+export interface RenditionInput {
+  target: HwTarget;
+  codec: TranscodeVideoCodec;
+  /** Output height (null keeps the source height; never upscales). */
+  height: number | null;
+  sourceHeight: number | null;
+  /** H.264-equivalent target bitrate; scaled for HEVC/AV1 with codecBitrate(). */
+  bitrateKbps: number;
+  toneMap: ToneMapPath | null;
+  preset: string;
+  threads: number;
+  /** Keyframe interval in seconds, aligned across renditions (forced keyframes at n × segmentSeconds). */
+  segmentSeconds: number;
+  swFilters?: string[];
+  decode?: boolean;
+}
+
+/**
+ * Everything ffmpeg needs for one video rendition at a given resolution/bitrate: input (device) args, the filter
+ * chain, and encoder + rate-control + aligned-keyframe args. Call once per rendition (adaptive streaming ladders).
+ */
+export function buildRenditionVideoArgs(r: RenditionInput): { inputArgs: string[]; filters: string[]; videoArgs: string[]; encoder: string; bitrateKbps: number; toneMap: ToneMapPath | null } {
+  const pipe = buildVideoPipeline({ target: r.target, codec: r.codec, height: r.height, sourceHeight: r.sourceHeight, toneMap: r.toneMap, swFilters: r.swFilters, decode: r.decode ?? true });
+  const kbps = codecBitrate(r.bitrateKbps, r.codec);
+  const videoArgs = [
+    ...encoderArgs(pipe.encoder, { bitrate: kbps, preset: r.preset, threads: r.threads }), ...rateArgs(kbps),
+    '-force_key_frames', `expr:gte(t,n_forced*${r.segmentSeconds})`, '-sc_threshold', '0',
+  ];
+  return { inputArgs: pipe.inputArgs, filters: pipe.filters, videoArgs, encoder: pipe.encoder, bitrateKbps: kbps, toneMap: pipe.toneMap };
+}
+
+/**
+ * Concurrent hardware encode sessions the device allows, or null when the driver sets no fixed limit
+ * (VA-API, QSV, AMF, VideoToolbox: bounded by throughput instead). NVIDIA GeForce/consumer cards are capped by
+ * the driver (8 sessions since driver 551.x, 5 before, 3 on very old drivers); Quadro/RTX A/Tesla/data-centre cards are not.
+ * This is the documented driver policy, not a measured value.
+ */
+export function maxEncoderSessions(hw: HwAccel, deviceName: string | null = null): number | null {
+  if (hw === 'nvenc') return deviceName && /quadro|tesla|rtx a\d|rtx \d000 ada|\b[ahlt]\d{1,3}\b|grid/i.test(deviceName) ? null : 8;
+  if (hw === 'v4l2m2m') return 1; // Raspberry Pi 4 bcm2835 encoder: effectively one 1080p30 stream
+  if (hw === 'rkmpp') return null;
+  return null;
+}

@@ -428,3 +428,14 @@ test('job: HEVC remux produces fMP4 HLS with an init segment', { skip: !has('lib
     job.stop();
   }
 });
+
+test('per-rendition video args (adaptive streaming) and encoder session limits', () => {
+  const r = hwa.buildRenditionVideoArgs({ target: T('nvenc'), codec: 'hevc', height: 720, sourceHeight: 1080, bitrateKbps: 4000, toneMap: null, preset: 'veryfast', threads: 0, segmentSeconds: 4 });
+  assert.deepEqual(r.inputArgs, hwInputArgs(T('nvenc'), 'full', true));
+  assert.deepEqual(r.filters, ['format=nv12|p010le|cuda', 'hwupload', 'scale_cuda=w=-2:h=720:format=nv12']);
+  assert.deepEqual(r.videoArgs, ['-c:v', 'hevc_nvenc', '-preset', 'p4', '-forced-idr', '1', '-tag:v', 'hvc1', '-b:v', '2600k', '-maxrate', '2600k', '-bufsize', '5200k', '-force_key_frames', 'expr:gte(t,n_forced*4)', '-sc_threshold', '0']);
+  assert.equal(r.bitrateKbps, 2600);
+  assert.equal(hwa.maxEncoderSessions('nvenc', 'NVIDIA GeForce RTX 3060'), 8);
+  assert.equal(hwa.maxEncoderSessions('nvenc', 'Quadro P2000'), null);
+  assert.equal(hwa.maxEncoderSessions('vaapi'), null);
+});
