@@ -131,6 +131,30 @@ function writeZip(zipPath, dir) {
   fs.writeFileSync(zipPath, Buffer.concat([...chunks, cenBuf, end]));
 }
 
+/**
+ * Removes the Authenticode signature from a PE file (what `signtool remove /s` does). node.exe is signed by
+ * the Node.js project; injecting the app would leave a broken signature, which Windows treats worse than
+ * none. The certificate table is always the last thing in the file, so drop it and clear its directory entry.
+ */
+function stripAuthenticode(file) {
+  const buf = fs.readFileSync(file);
+  const pe = buf.readUInt32LE(0x3c);
+  if (buf.toString('latin1', pe, pe + 4) !== 'PE\0\0') throw new Error(`${file} is not a PE file`);
+  const opt = pe + 24;
+  const magic = buf.readUInt16LE(opt);
+  const dirs = opt + (magic === 0x20b ? 112 : 96); // PE32+ : PE32
+  const entry = dirs + 4 * 8; // IMAGE_DIRECTORY_ENTRY_SECURITY
+  const offset = buf.readUInt32LE(entry);
+  const size = buf.readUInt32LE(entry + 4);
+  if (!offset || !size) return false;
+  if (offset + size !== buf.length) throw new Error('Unexpected PE layout: the signature is not at the end of the file');
+  buf.writeUInt32LE(0, entry);
+  buf.writeUInt32LE(0, entry + 4);
+  buf.writeUInt32LE(0, opt + 64); // header checksum: optional for user-mode programs
+  fs.writeFileSync(file, buf.subarray(0, offset));
+  return true;
+}
+
 function sha256(file) {
   return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
@@ -207,6 +231,7 @@ async function main() {
   const exePath = path.join(stage, exeName);
   fs.copyFileSync(nodeBin, exePath);
   fs.chmodSync(exePath, 0o755);
+  if (isWin && stripAuthenticode(exePath)) log('removed the Node.js signature from the copy (the result is unsigned)');
   const { inject } = require('postject');
   await inject(exePath, 'NODE_SEA_BLOB', fs.readFileSync(blob), { sentinelFuse: SEA_FUSE });
   log(`built ${exeName} (${Math.round(fs.statSync(exePath).size / 1048576)} MB, from Node ${process.version})`);

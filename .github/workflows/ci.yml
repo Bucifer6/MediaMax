@@ -105,10 +105,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/smoke" && tar -xzf release/mediamax-*-linux-x64.tar.gz -C "$RUNNER_TEMP/smoke"
           app=$(echo "$RUNNER_TEMP"/smoke/mediamax-*-linux-x64)
           MEDIAMAX_DATA="$RUNNER_TEMP/data" "$app/mediamax" &
+          pid=$!
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8484/api/v1/system/info && break; sleep 1; done
           curl -sf http://127.0.0.1:8484/api/v1/system/info | grep -q setupRequired
           curl -sf http://127.0.0.1:8484/ | grep -qi '<div id="root"'
-          kill %1
+          kill $pid
 
   e2e:
     name: Browser smoke test (server + web)

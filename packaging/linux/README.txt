@@ -1,5 +1,6 @@
-MediaMax @VERSION@ for Linux
-===========================
+MediaMax for Linux
+==================
+Version @VERSION@
 
 This folder holds everything MediaMax needs. Nothing else has to be installed.
 

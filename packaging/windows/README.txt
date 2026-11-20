@@ -1,5 +1,6 @@
-MediaMax @VERSION@ for Windows (64-bit)
-======================================
+MediaMax for Windows (64-bit)
+=============================
+Version @VERSION@
 
 Everything MediaMax needs is in this folder. Nothing else has to be installed.
 
