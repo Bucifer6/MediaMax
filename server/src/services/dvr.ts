@@ -85,7 +85,7 @@ function emit(id: string) {
   if (r) events.broadcast({ type: 'recording.updated', recording: toRecording(r) });
 }
 
-export function scheduleRecording(user: User, req: CreateRecordingRequest, ruleId: string | null = null, priority = 100): Recording {
+export function scheduleRecording(user: User, req: CreateRecordingRequest, ruleId: string | null = null, priority = 90): Recording {
   if (ruleId === null) assertDvr(user);
   const ch = ruleId === null ? accessibleChannelRow(user, req.channelId) : db.get('SELECT * FROM channels WHERE id = ?', req.channelId);
   if (!ch) throw notFound('Channel not found');
@@ -126,6 +126,21 @@ export function scheduleRecording(user: User, req: CreateRecordingRequest, ruleI
 }
 
 const active = new Map<string, ChildProcess>();
+
+/** Change a scheduled recording's priority (0–100); tuner conflicts are re-checked straight away. */
+export function updateRecording(user: User, id: string, req: { priority?: number }): Recording {
+  assertDvr(user);
+  const r = db.get('SELECT * FROM recordings WHERE id = ?', id);
+  if (!r) throw notFound('Recording not found');
+  if (r.created_by !== user.id && !user.isAdmin) throw forbidden();
+  if (req.priority !== undefined) {
+    if (!Number.isFinite(Number(req.priority))) throw badRequest('Priority must be a number');
+    db.run('UPDATE recordings SET priority = ? WHERE id = ?', Math.max(0, Math.min(100, Math.round(Number(req.priority)))), id);
+    recomputeConflicts();
+    emit(id);
+  }
+  return toRecording(db.get('SELECT * FROM recordings WHERE id = ?', id)!);
+}
 
 export function cancelRecording(user: User, id: string) {
   assertDvr(user);

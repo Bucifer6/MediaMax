@@ -274,7 +274,7 @@ getScanStatus, stream (raw or `format=mp3|opus&maxBitRate=`), download, getCover
 
 ## DVR priorities, rule filters and tuner conflicts
 
-Recordings and rules carry a `priority` (0–100, higher wins). Manual recordings default to 100 and rules to 50.
+Recordings and rules carry a `priority` (0–100, higher wins). Manual recordings default to 90 and rules to 50 (0–99), so `PATCH /dvr/recordings/:id {"priority":100}` always makes a recording win. "Make top priority" in the apps does this.
 
 Rules (`POST /dvr/rules`) accept these optional fields:
 

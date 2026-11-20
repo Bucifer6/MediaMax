@@ -902,7 +902,7 @@ export interface Recording {
   error: string | null;
   sizeBytes: number | null;
   createdBy: string;
-  /** Higher wins when tuners/provider connections run out (manual recordings: 100). */
+  /** Higher wins when tuners/provider connections run out (manual: 90, rules: 0–99, 100 = top priority). */
   priority: number;
   /** Scheduled but would exceed the source's tuner/connection limit; won't record unless something else is cancelled. */
   conflict: boolean;

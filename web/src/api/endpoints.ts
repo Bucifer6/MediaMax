@@ -209,6 +209,7 @@ export const api = {
     removeRecording: (id: string) => http.del<Ok>(`/dvr/recordings/${enc(id)}`),
     rules: () => http.get<RecordingRule[]>('/dvr/rules'),
     createRule: (body: CreateRecordingRuleRequest) => http.post<RecordingRule>('/dvr/rules', body),
+    updateRecording: (id: string, body: { priority?: number }) => http.patch<Recording>(`/dvr/recordings/${enc(id)}`, body),
     updateRule: (id: string, body: Partial<RecordingRule>) => http.patch<RecordingRule>(`/dvr/rules/${enc(id)}`, body),
     removeRule: (id: string) => http.del<Ok>(`/dvr/rules/${enc(id)}`),
   },
