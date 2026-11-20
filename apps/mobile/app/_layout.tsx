@@ -10,6 +10,7 @@ import { CastProvider } from '@/cast';
 import { BrandSplash } from '@/components/BrandSplash';
 import { MiniPlayer } from '@/components/MiniPlayer';
 import { T } from '@/components/Text';
+import { DjProvider } from '@/state/dj';
 import { DownloadsProvider } from '@/state/downloads';
 import { MusicProvider } from '@/state/music';
 import { RemoteProvider, useRemote } from '@/state/remote';
@@ -38,14 +39,17 @@ function ThemedApp() {
       <CastProvider>
         <DownloadsProvider>
           <MusicProvider>
-            {/* CarPlay / Android Auto (renders nothing; absent in Expo Go and TV builds) */}
-            <CarBridge />
-            {/* Remote control ("Play on…"): reports player state, applies commands from your other devices */}
-            <RemoteProvider>
-              <SyncPlayProvider>
-                <Navigation />
-              </SyncPlayProvider>
-            </RemoteProvider>
+            {/* DJ mode: two-deck automatic mixes (phone / TV; CarPlay and Android Auto stay on MusicProvider) */}
+            <DjProvider>
+              {/* CarPlay / Android Auto (renders nothing; absent in Expo Go and TV builds) */}
+              <CarBridge />
+              {/* Remote control ("Play on…"): reports player state, applies commands from your other devices */}
+              <RemoteProvider>
+                <SyncPlayProvider>
+                  <Navigation />
+                </SyncPlayProvider>
+              </RemoteProvider>
+            </DjProvider>
           </MusicProvider>
         </DownloadsProvider>
       </CastProvider>
@@ -156,6 +160,7 @@ function FloatingMiniPlayer() {
     PUBLIC.has(first) ||
     first === 'player' ||
     first === 'music' ||
+    first === 'dj' ||
     first === 'photo' ||
     (first === 'settings' && segments[1] === 'wrapped') ||
     (first === 'live' && segments[1] === '[id]');

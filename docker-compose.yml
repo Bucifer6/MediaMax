@@ -1,13 +1,15 @@
 services:
   mediamax:
     build: .
-    image: mediamax:latest
+    image: mediamax:latest                  # or use the published image: ghcr.io/bucifer6/mediamax:latest
     container_name: mediamax
     restart: unless-stopped
     ports:
       - "8484:8484"
     environment:
       - TZ=Europe/London
+      # - PUID=1000                         # run as this user/group instead of root, so files written to
+      # - PGID=1000                         #   /config and /recordings get your owner (set both)
       # - TMDB_API_KEY=your_tmdb_key        # or set it in Admin → Settings
       # - MEDIAMAX_HWACCEL=vaapi            # none | vaapi | qsv | nvenc | videotoolbox | v4l2m2m
     volumes:

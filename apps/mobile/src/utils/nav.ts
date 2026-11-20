@@ -27,3 +27,10 @@ export function playChannel(ch: Pick<Channel, 'id'>, opts: { catchupStart?: stri
   const qs = q.toString();
   router.push(`/live/${ch.id}${qs ? `?${qs}` : ''}` as never);
 }
+
+/** Open DJ mode, optionally seeded from an item (album / artist / playlist / track). */
+export function openDj(seed?: Pick<Item, 'id' | 'title' | 'type'>) {
+  if (!seed) return router.push('/dj' as never);
+  const q = new URLSearchParams({ seed: seed.id, seedTitle: seed.title, seedType: seed.type });
+  router.push(`/dj?${q.toString()}` as never);
+}

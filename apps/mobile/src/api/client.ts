@@ -17,6 +17,9 @@ import type {
   Device,
   DeviceInfo,
   DiscoverResponse,
+  DjMix,
+  DjMixRequest,
+  DjStatus,
   DownloadQuality,
   DvrDefaults,
   GuideResponse,
@@ -52,6 +55,7 @@ import type {
   SearchResponse,
   SmartFilter,
   SystemInfo,
+  TrackAnalysis,
   TraktDeviceCode,
   TraktStatus,
   TrickplayInfo,
@@ -462,6 +466,20 @@ export class MediaMaxClient {
   /** 404 (ApiError.status) when the track has no lyrics. */
   lyrics(itemId: string, signal?: AbortSignal) {
     return this.get<Lyrics>(`/items/${encodeURIComponent(itemId)}/lyrics`, undefined, signal);
+  }
+
+  /* ------------------------------ DJ mode ----------------------------- */
+  /** Build a beat/key-aware mix (one-off), or the next `count` tracks after `history` (continuous). */
+  djMix(body: DjMixRequest) {
+    return this.post<DjMix>('/dj/mix', body, { timeoutMs: 60000 });
+  }
+  /** How much of the music library has been analysed. */
+  djStatus() {
+    return this.get<DjStatus>('/dj/status');
+  }
+  /** BPM / key / energy / cue points of one track (analysed on demand). */
+  trackAnalysis(itemId: string, signal?: AbortSignal) {
+    return this.request<TrackAnalysis>('GET', `/items/${encodeURIComponent(itemId)}/analysis`, { signal, timeoutMs: 30000 });
   }
 
   /* ------------------------------- SSO ------------------------------ */

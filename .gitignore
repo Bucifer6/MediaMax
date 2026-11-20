@@ -9,3 +9,5 @@ apps/mobile/android/
 .DS_Store
 coverage/
 tv/dist/
+release/
+build/

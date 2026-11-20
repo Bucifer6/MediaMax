@@ -35,6 +35,8 @@ See the full [feature matrix](docs/FEATURES.md) and the [API reference](docs/API
 - **Requests built in** — users discover trending titles and request them; approvals go straight to
   Radarr/Sonarr and the request flips to *available* when the title lands.
 - **Smart collections & playlists** — rule-based lists (genre, decade, unwatched, recently added, 4K…).
+- **DJ mode** — every track is analysed for tempo, key and energy. MediaMax then builds harmonic,
+  beat-matched mixes along an energy curve and plays them non-stop on two decks with automatic crossfades.
 - **In the car** — Apple CarPlay and Android Auto for music, audiobooks and podcasts, with continue
   listening, search and voice on Android Auto.
 - **Serious live TV** — multiview (up to four channels at once), several merged EPG sources, DVR with
@@ -43,15 +45,20 @@ See the full [feature matrix](docs/FEATURES.md) and the [API reference](docs/API
 - **Plays well with others** — Trakt and Last.fm scrobbling, OpenSubtitles, DLNA for smart TVs and
   consoles, webhooks for Home Assistant/Discord.
 
-## Quick start
+## Install
 
-### Docker (recommended)
-```bash
-docker compose up -d --build
-```
-Edit the media paths in `docker-compose.yml` first. Then open `http://<server>:8484` and follow the setup wizard.
-For Intel/AMD hardware transcoding, uncomment `devices: /dev/dri`. For NVIDIA, uncomment the GPU reservation,
-then choose the accelerator in **Admin → Settings → Transcoding**.
+Pick the build for your system from the [latest release](https://github.com/Bucifer6/MediaMax/releases/latest).
+FFmpeg is included in every option.
+
+| Platform | Install |
+|---|---|
+| **Docker** (amd64, arm64) | `docker run -d -p 8484:8484 -v "$PWD/config:/config" -v /path/to/media:/media:ro ghcr.io/bucifer6/mediamax` |
+| **Synology, QNAP, Unraid, TrueNAS SCALE, OpenMediaVault** | ready-made templates in [`nas/`](nas) |
+| **Windows** x64 | `mediamax-<version>-windows-x64.zip`: run `MediaMax.cmd`, or `install-service.ps1` to start at boot |
+| **Linux** x64 / arm64 | `mediamax-<version>-linux-<arch>.tar.gz`: run `./mediamax`, or install the included systemd unit |
+
+Then open `http://<server>:8484` and follow the setup wizard. Step-by-step guides, hardware transcoding, upgrades
+and backups: **[docs/INSTALL.md](docs/INSTALL.md)**.
 
 ### From source
 Requires **Node.js 22.5+** and **FFmpeg** on the PATH.
@@ -78,10 +85,10 @@ npm run dev:web
 | Variable | Default | Purpose |
 |---|---|---|
 | `MEDIAMAX_PORT` | `8484` | HTTP port |
-| `MEDIAMAX_DATA` | `./data` | Database, caches, branding assets, logs |
+| `MEDIAMAX_DATA` | `./data` ([binaries and Docker](docs/INSTALL.md#where-your-data-lives-and-backups) differ) | Database, caches, branding assets, logs |
 | `MEDIAMAX_TRANSCODE_DIR` | `$DATA/transcodes` | HLS segment scratch space (a RAM disk is ideal) |
 | `MEDIAMAX_RECORDINGS` | `$DATA/recordings` | DVR output folder |
-| `MEDIAMAX_FFMPEG` / `MEDIAMAX_FFPROBE` | `ffmpeg` / `ffprobe` | Custom binaries (e.g. jellyfin-ffmpeg) |
+| `MEDIAMAX_FFMPEG` / `MEDIAMAX_FFPROBE` | bundled copy (release binaries), else `ffmpeg` / `ffprobe` on the PATH | Custom binaries (e.g. jellyfin-ffmpeg) |
 | `MEDIAMAX_HWACCEL` | `none` | Initial hardware accelerator |
 | `TMDB_API_KEY` | | Online metadata (also settable in the admin UI) |
 | `MEDIAMAX_LOG_LEVEL` | `info` | `debug` for verbose logs |
@@ -142,7 +149,10 @@ shared/         API contract (TypeScript types used by every client)
 server/         MediaMax server (Fastify, node:sqlite, FFmpeg)
 web/            Web app and admin dashboard (React + Vite)
 apps/mobile/    iOS, Android, tvOS and Android TV apps (Expo / React Native)
-docs/           API reference and feature matrix
+docs/           API reference, feature matrix and install guide
+nas/            Docker templates for Synology, QNAP, Unraid, TrueNAS SCALE and OpenMediaVault
+packaging/      Files shipped in the Windows and Linux release archives
+scripts/        Release packaging (single executable, FFmpeg download), e2e smoke test
 ```
 
 ## Testing

@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, Loading } from '@/components/States';
 import { useApi } from '@/state/session';
 import { useTheme } from '@/theme';
 import { browseTypes } from '@/utils/library';
+import { openDj } from '@/utils/nav';
 
 const SORTS: { key: ItemSort; label: string; order: 'asc' | 'desc' }[] = [
   { key: 'title', label: 'Title', order: 'asc' },
@@ -111,6 +112,7 @@ export default function LibraryScreen() {
         <Chip label={`${sortLabel} ${order === 'asc' ? '↑' : '↓'}`} icon="swap-vertical" onPress={() => setSheet('sort')} hasTVPreferredFocus={tabs.length <= 1} />
         <Chip label={genre ?? 'All genres'} icon="pricetags-outline" selected={!!genre} onPress={() => setSheet('genre')} />
         <Chip label={{ all: 'All', unplayed: 'Unwatched', played: 'Watched', favorites: 'Favourites' }[filter]} icon="filter" selected={filter !== 'all'} onPress={() => setSheet('filter')} />
+        {lib.type === 'music' ? <Chip label="DJ" icon="disc-outline" onPress={() => openDj()} /> : null}
       </ScrollView>
 
       {loading && !items.length ? (

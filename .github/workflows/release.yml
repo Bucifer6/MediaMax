@@ -1,0 +1,336 @@
+name: Release
+
+# Tag push (v1.2.3) -> standalone binaries for Windows x64 / Linux x64 / Linux arm64 with a bundled FFmpeg,
+# smoke-tested on their own OS, attached to a GitHub Release; and a multi-arch Docker image on GHCR.
+# Manual runs build and test everything; they publish only when "publish" is ticked.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the GitHub Release and push the Docker image
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        shell: bash
+        run: |
+          pkg=$(node -p "require('./package.json').version")
+          srv=$(sed -n "s/^ *version: '\(.*\)',$/\1/p" server/src/config.ts)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            publish=true
+          else
+            version="$pkg"
+            publish="${{ inputs.publish && 'true' || 'false' }}"
+          fi
+          # The server reports config.version, so a release must not ship a different number.
+          if [[ "$version" != "$pkg" || "$version" != "$srv" ]]; then
+            echo "::error::Version mismatch: release $version, package.json $pkg, server/src/config.ts $srv. Bump them together."
+            exit 1
+          fi
+          [[ "$version" == *-* ]] && prerelease=true || prerelease=false
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "Version $version (prerelease: $prerelease, publish: $publish)"
+
+  binaries:
+    name: Binary (${{ matrix.target }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows-x64
+            os: windows-latest
+          - target: linux-x64
+            os: ubuntu-24.04
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Fetch static FFmpeg (pinned in scripts/ffmpeg.json, SHA-256 verified)
+        run: node scripts/fetch-ffmpeg.mjs --target ${{ matrix.target }} --out build/ffmpeg
+      - name: Build single executable and archive
+        run: node scripts/package.mjs --target ${{ matrix.target }} --version ${{ env.VERSION }} --ffmpeg-dir build/ffmpeg
+
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/smoke"; mkdir -p "$dir"
+          tar -xzf "release/mediamax-$VERSION-${{ matrix.target }}.tar.gz" -C "$dir"
+          app="$dir/mediamax-$VERSION-${{ matrix.target }}"
+          file "$app/mediamax" "$app/ffmpeg"
+          "$app/ffmpeg" -hide_banner -version | head -1
+          # No MEDIAMAX_DATA: must default to ~/.local/share/mediamax and use the bundled ffmpeg.
+          (cd / && MEDIAMAX_PORT=18484 "$app/mediamax" > "$dir/server.log" 2>&1 &)
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:18484/api/v1/system/info && break; sleep 1; done
+          echo
+          curl -sf http://127.0.0.1:18484/api/v1/system/info | grep -q '"setupRequired":true'
+          curl -sf http://127.0.0.1:18484/api/v1/system/info | grep -q "\"version\":\"$VERSION\""
+          curl -sf http://127.0.0.1:18484/ | grep -qi '<div id="root"'
+          asset=$(curl -sf http://127.0.0.1:18484/ | grep -o '/assets/index-[^"]*\.js' | head -1)
+          curl -sf -o /dev/null "http://127.0.0.1:18484$asset"
+          test -f "$HOME/.local/share/mediamax/mediamax.db"
+          pkill -f "$app/mediamax" || true
+          cat "$dir/server.log"
+          if grep -q 'ffmpeg was not found' "$dir/server.log"; then echo "::error::bundled ffmpeg not used"; exit 1; fi
+          if grep -q 'ExperimentalWarning' "$dir/server.log"; then echo "::error::ExperimentalWarning not hidden"; exit 1; fi
+
+      - name: Smoke test systemd unit (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/smoke/mediamax-$VERSION-${{ matrix.target }}"
+          sudo mkdir -p /opt/mediamax && sudo cp -r "$app"/* /opt/mediamax/
+          sudo useradd --system --home-dir /var/lib/mediamax --shell /usr/sbin/nologin mediamax
+          sudo cp /opt/mediamax/mediamax.service /etc/systemd/system/
+          sudo systemd-analyze verify /etc/systemd/system/mediamax.service
+          sudo systemctl daemon-reload
+          sudo systemctl start mediamax
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8484/api/v1/system/info && break; sleep 1; done
+          echo
+          curl -sf http://127.0.0.1:8484/api/v1/system/info | grep -q setupRequired
+          sudo test -f /var/lib/mediamax/mediamax.db
+          test "$(sudo stat -c %U /var/lib/mediamax/mediamax.db)" = mediamax
+          sudo systemctl stop mediamax
+          sudo journalctl -u mediamax --no-pager | tail -20
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'smoke'
+          Expand-Archive "release/mediamax-$env:VERSION-windows-x64.zip" -DestinationPath $dir
+          Get-ChildItem $dir | Format-Table Name, Length
+          foreach ($f in 'mediamax.exe','ffmpeg.exe','ffprobe.exe','MediaMax.cmd','install-service.ps1','README.txt','web\index.html') {
+            if (-not (Test-Path (Join-Path $dir $f))) { throw "$f missing from the zip" }
+          }
+          & (Join-Path $dir 'ffmpeg.exe') -hide_banner -version | Select-Object -First 1
+          # No MEDIAMAX_DATA: must default to %ProgramData%\MediaMax and use the bundled ffmpeg.exe.
+          $env:MEDIAMAX_PORT = '18484'
+          $p = Start-Process -FilePath (Join-Path $dir 'mediamax.exe') -WorkingDirectory $env:SystemRoot -PassThru `
+            -RedirectStandardOutput "$dir\out.log" -RedirectStandardError "$dir\err.log"
+          $info = $null
+          for ($i = 0; $i -lt 30 -and -not $info; $i++) {
+            try { $info = Invoke-RestMethod http://127.0.0.1:18484/api/v1/system/info } catch { Start-Sleep 1 }
+          }
+          if (-not $info) { Get-Content "$dir\out.log","$dir\err.log"; throw 'server did not start' }
+          $info | ConvertTo-Json -Compress
+          if ($info.setupRequired -ne $true) { throw 'setupRequired should be true' }
+          if ($info.version -ne $env:VERSION) { throw "version $($info.version) != $env:VERSION" }
+          $html = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18484/).Content
+          if ($html -notmatch '<div id="root"') { throw 'web app not served' }
+          $asset = [regex]::Match($html, '/assets/index-[^"]*\.js').Value
+          Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:18484$asset" | Out-Null
+          if (-not (Test-Path "$env:ProgramData\MediaMax\mediamax.db")) { throw 'database not created in %ProgramData%\MediaMax' }
+          Stop-Process -Id $p.Id -Force
+          Start-Sleep 2
+          $log = (Get-Content -Raw "$dir\out.log") + (Get-Content -Raw "$dir\err.log")
+          $log
+          if ($log -match 'ffmpeg was not found') { throw 'bundled ffmpeg.exe was not used' }
+          if ($log -match 'ExperimentalWarning') { throw 'ExperimentalWarning should be hidden' }
+
+      - name: Smoke test install-service.ps1 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'smoke'
+          Remove-Item Env:\MEDIAMAX_PORT -ErrorAction SilentlyContinue
+          & powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\install-service.ps1"
+          if ($LASTEXITCODE) { throw "install failed ($LASTEXITCODE)" }
+          $task = Get-ScheduledTask -TaskName MediaMax
+          $task.Principal | Format-List UserId, LogonType, RunLevel
+          if ($task.Principal.UserId -notmatch 'SYSTEM') { throw 'task should run as SYSTEM' }
+          if (-not (Get-NetFirewallRule -DisplayName 'MediaMax (HTTP 8484)')) { throw 'firewall rule missing' }
+          $info = $null
+          for ($i = 0; $i -lt 30 -and -not $info; $i++) {
+            try { $info = Invoke-RestMethod http://127.0.0.1:8484/api/v1/system/info } catch { Start-Sleep 1 }
+          }
+          if (-not $info) { throw 'scheduled task did not start MediaMax' }
+          (Get-Process mediamax).Path
+          & powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\install-service.ps1" -Uninstall
+          if ($LASTEXITCODE) { throw "uninstall failed ($LASTEXITCODE)" }
+          if (Get-ScheduledTask -TaskName MediaMax -ErrorAction SilentlyContinue) { throw 'task still registered' }
+          if (Get-NetFirewallRule -DisplayName 'MediaMax*' -ErrorAction SilentlyContinue) { throw 'firewall rules left behind' }
+          if (Test-Path "$env:ProgramFiles\MediaMax") { throw 'install folder left behind' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mediamax-${{ matrix.target }}
+          path: release/mediamax-*
+          if-no-files-found: error
+
+  github-release:
+    name: GitHub Release
+    needs: [version, binaries, docker]
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: mediamax-*
+          merge-multiple: true
+      - name: Combined checksums
+        working-directory: release
+        run: |
+          cat *.sha256 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          name: MediaMax ${{ needs.version.outputs.version }}
+          prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
+          generate_release_notes: true
+          body: |
+            ## Downloads
+            | Platform | File |
+            |---|---|
+            | Windows 10/11, Server 2019+ (x64) | `mediamax-${{ needs.version.outputs.version }}-windows-x64.zip` |
+            | Linux x64 (glibc 2.28+) | `mediamax-${{ needs.version.outputs.version }}-linux-x64.tar.gz` |
+            | Linux arm64 (Raspberry Pi 4/5 64-bit, ARM servers) | `mediamax-${{ needs.version.outputs.version }}-linux-arm64.tar.gz` |
+            | Docker / NAS (amd64, arm64) | `docker pull ghcr.io/${{ github.repository_owner }}/mediamax:${{ needs.version.outputs.version }}` (lower-case the owner) |
+
+            Each archive includes FFmpeg. Install guides for Windows, Linux, Docker, Synology, QNAP, Unraid, TrueNAS SCALE
+            and OpenMediaVault: [docs/INSTALL.md](https://github.com/${{ github.repository }}/blob/v${{ needs.version.outputs.version }}/docs/INSTALL.md).
+            Verify downloads against `SHA256SUMS.txt`.
+          files: |
+            release/*.zip
+            release/*.tar.gz
+            release/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+
+  docker:
+    name: Docker image (amd64 + arm64)
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image name (GHCR needs a lower-case owner)
+        shell: bash
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "IMAGE=ghcr.io/$owner/mediamax" >> "$GITHUB_ENV"
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+
+      # Test the amd64 image before anything is pushed.
+      - name: Build amd64 image for testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: mediamax:release-test
+          cache-from: type=gha,scope=release
+          cache-to: type=gha,scope=release,mode=max
+      - name: Smoke test image (incl. PUID/PGID)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/config"
+          docker run -d --name mm -p 8484:8484 -e PUID=1234 -e PGID=2345 -v "$RUNNER_TEMP/config:/config" mediamax:release-test
+          for i in $(seq 1 30); do curl -sf http://localhost:8484/api/v1/system/info && break; sleep 2; done
+          echo
+          curl -sf http://localhost:8484/api/v1/system/info | grep -q setupRequired
+          curl -sf http://localhost:8484/ | grep -qi '<html'
+          test "$(stat -c %u:%g "$RUNNER_TEMP/config/mediamax.db")" = "1234:2345"
+          test "$(docker exec mm sh -c 'stat -c %u /proc/1')" = "1234"
+          docker exec mm ffmpeg -version | head -1
+          docker logs mm | tail -20
+
+      - name: Build arm64 image (emulated) for testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          load: true
+          tags: mediamax:release-test-arm64
+          cache-from: type=gha,scope=release
+      - name: Smoke test arm64 image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --platform linux/arm64 --name mm-arm -p 8485:8484 mediamax:release-test-arm64
+          for i in $(seq 1 60); do curl -sf http://localhost:8485/api/v1/system/info && break; sleep 2; done
+          echo
+          curl -sf http://localhost:8485/api/v1/system/info | grep -q setupRequired
+          docker exec mm-arm uname -m
+          docker exec mm-arm ffmpeg -version | head -1
+
+      - uses: docker/login-action@v3
+        if: needs.version.outputs.publish == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tags
+        if: needs.version.outputs.publish == 'true'
+        shell: bash
+        run: |
+          tags="$IMAGE:$VERSION"
+          # Pre-releases (1.2.0-beta.1) never move "latest".
+          if [[ "${{ needs.version.outputs.prerelease }}" != "true" ]]; then tags="$tags,$IMAGE:latest"; fi
+          echo "TAGS=$tags" >> "$GITHUB_ENV"
+          echo "$tags"
+      - name: Build and push multi-arch image
+        if: needs.version.outputs.publish == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.TAGS }}
+          labels: |
+            org.opencontainers.image.title=MediaMax
+            org.opencontainers.image.description=Self-hosted media server with IPTV, live TV, DVR and server-driven branding
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha,scope=release
+          cache-to: type=gha,scope=release,mode=max
