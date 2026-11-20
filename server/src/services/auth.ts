@@ -11,6 +11,7 @@ import { getSettings } from './settings.js';
 import { getBranding } from './branding.js';
 import { logActivity } from './activity.js';
 import { bus } from './events.js';
+import { imageUrl, registerImage } from './images.js';
 
 /* ----------------------------- hashing ----------------------------- */
 
@@ -41,8 +42,9 @@ export function toUser(r: Row): User {
     username: r.username,
     displayName: r.display_name,
     isAdmin: !!r.is_admin,
-    avatarUrl: r.avatar ?? null,
+    avatarUrl: imageUrl(r.avatar),
     hasPin: !!r.pin_hash,
+    pinLength: r.pin_hash ? r.pin_length ?? null : null,
     hasPassword: !!r.password_hash,
     maxContentRating: r.max_rating ?? null,
     libraryIds: parseJson<string[] | null>(r.library_ids, null),
@@ -84,6 +86,7 @@ export function createUser(req: CreateUserRequest): User {
     display_name: req.displayName?.trim() || username,
     password_hash: req.password ? hashSecret(req.password) : null,
     pin_hash: req.pin ? hashSecret(req.pin) : null,
+    pin_length: req.pin ? req.pin.length : null,
     is_admin: !!req.isAdmin,
     max_rating: req.maxContentRating ?? null,
     library_ids: req.libraryIds ? JSON.stringify(req.libraryIds) : null,
@@ -111,6 +114,7 @@ export function updateUser(id: string, req: UpdateUserRequest, actorId: string):
   if (req.pin !== undefined) {
     if (req.pin) validatePin(req.pin);
     patch.pin_hash = req.pin ? hashSecret(req.pin) : null;
+    patch.pin_length = req.pin ? req.pin.length : null;
   }
   if (req.isAdmin !== undefined) {
     if (!req.isAdmin && cur.is_admin && adminCount() <= 1) throw badRequest('Cannot remove the last administrator');
@@ -151,6 +155,7 @@ export function updateMe(userId: string, req: UpdateMeRequest): User {
   if (req.pin !== undefined) {
     if (req.pin) validatePin(req.pin);
     patch.pin_hash = req.pin ? hashSecret(req.pin) : null;
+    patch.pin_length = req.pin ? req.pin.length : null;
   }
   if (req.preferences) {
     const prefs = { ...DEFAULT_PREFS, ...parseJson(cur.preferences, {}), ...req.preferences };
@@ -245,8 +250,9 @@ export function publicProfiles(): PublicProfile[] {
     id: r.id,
     username: r.username,
     displayName: r.display_name,
-    avatarUrl: r.avatar ?? null,
+    avatarUrl: imageUrl(r.avatar),
     hasPin: !!r.pin_hash,
+    pinLength: r.pin_hash ? r.pin_length ?? null : null,
     requiresPassword: !!r.password_hash && !r.pin_hash,
   }));
 }
@@ -332,4 +338,11 @@ export function approveLinkCode(ctx: AuthContext, code: string, remoteAddr?: str
   if (!l) throw notFound('That code is invalid or has expired');
   l.result = issueToken(ctx.user.id, l.device, remoteAddr);
   return { ok: true, deviceName: l.device.deviceName };
+}
+
+/** Set or clear a user's avatar (image file already saved on disk). */
+export function setAvatar(userId: string, file: string | null): User {
+  getUserRow(userId);
+  db.run('UPDATE users SET avatar = ? WHERE id = ?', file ? registerImage(file) : null, userId);
+  return getUser(userId);
 }

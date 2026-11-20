@@ -215,6 +215,9 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX play_history_user ON play_history(user_id, started_at);
   `,
+  /* 2: PIN length for PIN pads */ `
+  ALTER TABLE users ADD COLUMN pin_length INTEGER;
+  `,
 ];
 
 function migrate(db: Database) {

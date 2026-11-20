@@ -149,6 +149,10 @@ export interface Branding {
   footerText: string;
   supportUrl: string | null;
   splash: { backgroundColor: string; logoUrl: string | null };
+  /** Android TV launcher banner. */
+  tvBannerUrl: string | null;
+  /** Apple TV top shelf artwork. */
+  topShelfUrl: string | null;
   /** The default theme applied to everyone. */
   defaultThemeId: string;
   /** All themes available (presets + admin-made). */
@@ -169,7 +173,11 @@ export type BrandingAssetKind =
   | 'favicon'
   | 'appIcon'
   | 'loginBackground'
-  | 'splashLogo';
+  | 'splashLogo'
+  /** Android TV launcher banner (320x180). */
+  | 'tvBanner'
+  /** Apple TV top shelf image (1920x720 / 2320x720). */
+  | 'topShelf';
 
 /* ------------------------------------------------------------------ */
 /* Auth & users                                                        */
@@ -206,6 +214,8 @@ export interface PublicProfile {
   displayName: string;
   avatarUrl: string | null;
   hasPin: boolean;
+  /** Number of digits in the PIN (so PIN pads can auto-submit). */
+  pinLength: number | null;
   /** If false the profile can be entered with the PIN alone (or nothing). */
   requiresPassword: boolean;
 }
@@ -241,6 +251,7 @@ export interface User {
   isAdmin: boolean;
   avatarUrl: string | null;
   hasPin: boolean;
+  pinLength: number | null;
   /** Profiles without a password can be entered from the profile picker. */
   hasPassword: boolean;
   /** Max content rating allowed (e.g. "PG-13", "TV-14"); null = unrestricted. */
@@ -451,6 +462,8 @@ export interface Item {
   media?: MediaSource[];
   markers?: Marker[];
   trailerUrl?: string | null;
+  /** Populated on GET /items/:id only: fields protected from metadata refreshes. */
+  lockedFields?: string[];
 }
 
 export type ItemSort =
@@ -466,6 +479,8 @@ export type ItemSort =
 export interface ItemQuery {
   libraryId?: string;
   parentId?: string;
+  /** Items whose parent OR grandparent is this id (e.g. all tracks of an artist, all episodes of a show). */
+  ancestorId?: string;
   /** Comma separated list allowed. */
   type?: ItemType | string;
   genre?: string;
@@ -768,6 +783,14 @@ export interface LivePlayRequest {
 /* DVR                                                                 */
 /* ------------------------------------------------------------------ */
 
+export interface DvrDefaults {
+  paddingBeforeMin: number;
+  paddingAfterMin: number;
+}
+
+/** Quality for `/stream/download/:itemId?quality=`. `original` = the untouched file. */
+export type DownloadQuality = 'original' | '1080p' | '720p' | '480p';
+
 export type RecordingStatus = 'scheduled' | 'recording' | 'completed' | 'failed' | 'cancelled';
 
 export interface Recording {
@@ -846,6 +869,8 @@ export interface ServerSettings {
   webhooks: Webhook[];
   /** Allow sign-in from the public profile picker without a password. */
   allowPasswordlessProfiles: boolean;
+  /** Hide items with no content rating from users who have a rating limit. */
+  blockUnratedForRestricted: boolean;
   sessionTimeoutDays: number;
 }
 

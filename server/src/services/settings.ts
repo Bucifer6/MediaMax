@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   dvr: { recordingsPath: config.recordingsDir, paddingBeforeMin: 1, paddingAfterMin: 5 },
   webhooks: [],
   allowPasswordlessProfiles: true,
+  blockUnratedForRestricted: false,
   sessionTimeoutDays: 90,
 };
 
