@@ -200,7 +200,7 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 |---|:-:|:-:|:-:|:-:|
 | Server name, logo, wide logo, favicon, splash, login background | ❌ | 🟡 (CSS) | 🟡 | ✅ |
 | Full theme engine (13 colour tokens, radius, font, poster shape, card size, hero style) | ❌ | CSS only | ❌ | ✅ |
-| Built-in theme presets + admin-made themes | ❌ | ❌ | ❌ | ✅ (8 presets) |
+| Built-in theme presets + admin-made themes | ❌ | ❌ | ❌ | ✅ (26 themes, all WCAG AA) |
 | Users pick from admin-approved themes | ❌ | ✅ | ❌ | ✅ |
 | Server-driven home screen rows (order, type, library, genre, collection) | 🟡 | 🟡 | 🟡 | ✅ |
 | Personal recommendations (taste profile + "viewers like you", local only) | ✅ | ❌ | ❌ | ✅ |

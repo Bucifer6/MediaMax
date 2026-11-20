@@ -84,7 +84,9 @@ keys through the `mediamax-media` module (`apps/mobile/modules/mediamax-media`).
 - **Automatic quality:** the player measures the connection and switches quality levels itself (hls.js variants, or
   direct play ↔ transcode), as in browsers.
 - **HDR:** Samsung plays HDR10, HLG and (when MSE reports it) HDR10+. Samsung has no Dolby Vision, so DV 8.1 plays as
-  HDR10. LG plays HDR10 and HLG; DV 8.x plays as its base layer. See [docs/HDR.md](../docs/HDR.md).
+  HDR10. LG plays HDR10 and HLG, and real Dolby Vision where its player reports the Dolby Vision codecs (the server
+  remuxes the stream with its Dolby Vision signalling); otherwise DV 8.x plays as its base layer. See
+  [docs/HDR.md](../docs/HDR.md).
 - **Samsung native player (AVPlay):** not included. It could be added later only as an opt-in, per-device fallback
   that is off by default.
 - **Changing the server:** the wrapper reconnects to the saved server on launch. To switch servers, clear the app's data on the TV, or add `?change=1` to the wrapper URL when testing in a browser.
