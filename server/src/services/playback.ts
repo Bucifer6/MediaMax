@@ -323,7 +323,8 @@ export function outputMaxHeight(p: Pick<DeviceProfile, 'maxWidth' | 'maxHeight'>
   // Narrower-than-16:9 sources keep the old 16:9 assumption (maxWidth usually describes a 16:9 screen).
   const limits = [p.maxHeight, p.maxWidth ? Math.round(p.maxWidth / Math.max(aspect, 16 / 9)) : null]
     .filter((x): x is number => typeof x === 'number' && x > 0);
-  return limits.length ? Math.min(...limits) : null;
+  // Even: 4:2:0 encoders reject odd frame heights.
+  return limits.length ? Math.max(2, Math.floor(Math.min(...limits) / 2) * 2) : null;
 }
 
 /** Output codec for a transcode: HEVC/AV1 with the hardware encoder when the client plays it (see chooseVideoCodec). */

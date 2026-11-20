@@ -41,7 +41,7 @@ test('a transcode does not claim the DV profile 7 HDR10 base-layer remux in its 
 test('transcode output height honours maxHeight and the source aspect ratio', () => {
   assert.equal(outputMaxHeight({ maxHeight: 1080 }, 3840, 2160), 1080);
   assert.equal(outputMaxHeight({ maxWidth: 1920 }, 3840, 2160), 1080);
-  assert.equal(outputMaxHeight({ maxWidth: 1920 }, 3840, 1606), 803);
+  assert.equal(outputMaxHeight({ maxWidth: 1920 }, 3840, 1606), 802, 'even height for 4:2:0 encoders');
   assert.equal(outputMaxHeight({ maxWidth: 1920 }, 1440, 1080), 1080);
   assert.equal(outputMaxHeight({ maxWidth: 3840, maxHeight: 1080 }, 3840, 2160), 1080);
   assert.equal(outputMaxHeight({}, 3840, 2160), null);
