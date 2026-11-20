@@ -52,6 +52,8 @@ const PodcastsPage = lazyPage(() => import('./pages/Podcasts'));
 const DjPage = lazyPage(() => import('./pages/Dj'));
 const DiscoverPage = lazyPage(() => import('./pages/Discover'));
 const RequestsPage = lazyPage(() => import('./pages/Requests'));
+const DiscoverPersonPage = lazyPage(() => import('./pages/DiscoverPerson'));
+const IssuesPage = lazyPage(() => import('./pages/Issues'));
 const AdminRoutes = lazyPage(() => import('./admin/AdminRoutes'));
 const InvitePage = lazyPage(() => import('./pages/Invite'));
 const MyListPage = lazyPage(() => import('./pages/MyList'));
@@ -152,6 +154,9 @@ function Gate() {
           <Route path="dj" element={<DjPage />} />
           <Route path="discover" element={<DiscoverPage />} />
           <Route path="requests" element={<RequestsPage />} />
+          <Route path="discover/person/:personId" element={<DiscoverPersonPage />} />
+          <Route path="issues" element={<IssuesPage />} />
+          <Route path="issues/:issueId" element={<IssuesPage />} />
           <Route path="my-list" element={<MyListPage />} />
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="settings/*" element={<SettingsPage />} />

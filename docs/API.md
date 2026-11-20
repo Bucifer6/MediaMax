@@ -438,6 +438,25 @@ getScanStatus, stream (raw or `format=mp3|opus&maxBitRate=`), download, getCover
   receives `remote.command` (with `fromDeviceName`) and applies it. Everyone gets `remote.targets` pushes when devices come and go.
   Only the same user's devices can be controlled.
 
+## Play to devices (DLNA / UPnP renderers, Sonos, Kodi)
+The server discovers renderers on the LAN (SSDP `MediaRenderer:1` / Sonos `ZonePlayer:1`, mDNS `_xbmc-jsonrpc-h._tcp`), controls them
+(AVTransport / RenderingControl SOAP, Kodi JSON-RPC) and tracks the playback as a normal session (watch progress, scrobbling,
+dashboard, stream limits). Types: `Renderer`, `RendererState`, `RendererPlayRequest`, `RendererCommandRequest`, `RendererSettings`.
+* 🔑 `GET /renderers` → `Renderer[]` (cached; a stale cache starts a background search). Empty when the feature is off.
+* 🔑 `POST /renderers/discover` → `Renderer[]` — search now (SSDP + mDNS, ~3 s; at most every 10 s).
+* 🔑 `POST /renderers/:id/play` `RendererPlayRequest` → `RendererState` — `{ itemId, startMs?, mediaId?, audioStreamIndex?, subtitleStreamIndex?, queueItemIds? }`.
+  An album / playlist / season id plays its children. `startMs` defaults to the resume point. 409 `renderer_busy` when the device is
+  playing for another user; 403 when a transcode is needed and the user may not transcode; 400 for video on an audio-only device.
+* 🔑 `POST /renderers/:id/{pause|resume|stop|next|previous}`, `POST /renderers/:id/seek` `{ positionMs }`,
+  `POST /renderers/:id/volume` `{ volume?: 0–100, muted? }` → `RendererState`. Only the user who started playback (or an admin).
+* 🔑 `GET /renderers/:id/state` → `RendererState` (poll ~1.5 s while playing). `GET /renderers/:id/icon` proxies the device icon.
+* 🛡️ `GET /admin/renderers` → `RendererAdminView`; `PUT /admin/renderers/settings` `Partial<RendererSettings>`;
+  `POST /admin/renderers/manual` `ManualRendererRequest` (`{ kind: 'kodi', host, port?, username?, password? }` or
+  `{ kind: 'dlna', descriptionUrl }`, private addresses only unless `allowPublicHosts`); `DELETE /admin/renderers/manual/:id`.
+* 🔓 `GET /renderers/stream/:key/:token.:ext` — what devices fetch. The token is an HMAC-signed claim (one media file, format,
+  start offset, expiry); it is refused from non-LAN addresses and stops working when the playback ends. `.srt` tokens serve
+  subtitles (also announced via DIDL `sec:CaptionInfoEx` and the `CaptionInfo.sec` header for Samsung / LG).
+
 ## Editions & extras
 * `MediaSource.edition` — e.g. "Director's Cut" (from `{edition-…}` or `Movie (2010) - Director's Cut.mkv`); several editions are
   several `media` entries on one movie.

@@ -2,7 +2,7 @@ import { AiDjSettingsPanel } from './AiDjSettings';
 import { HardwareDetect } from './HardwareDetect';
 import { MetadataSettingsPanel } from './MetadataSettings';
 import { useEffect, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { HwAccel, ServerSettings, TranscodeVideoCodec, User, Webhook, WebhookEvent } from '@mediamax/shared';
 import { ArrSettingsPanel } from './ArrSettings';
 import { ARR_ICON, ARR_NAME } from './Downloads';
@@ -13,8 +13,10 @@ import { useToast } from '../state/toast';
 import { ErrorState, Field, Skeleton, Spinner, Switch, Tabs } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { AdminHeader } from './AdminRoutes';
+import { NotificationAgentsPanel } from './NotificationAgents';
+import { QuotaEditor, DEFAULT_QUOTAS } from './RequestPermissionsEditor';
 
-type Tab = 'general' | 'transcoding' | 'cinema' | 'aidj' | 'dvr' | 'requests' | 'arr' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks' | 'metadata';
+type Tab = 'general' | 'transcoding' | 'cinema' | 'aidj' | 'dvr' | 'requests' | 'notifications' | 'arr' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks' | 'metadata';
 const HW: { value: HwAccel; label: string }[] = [
   { value: 'none', label: 'None (CPU)' },
   { value: 'vaapi', label: 'VA-API (Intel/AMD, Linux)' },
@@ -33,7 +35,7 @@ const CODEC_ORDERS: { value: string; label: string }[] = [
   { value: 'hevc,av1,h264', label: 'HEVC, then AV1, then H.264' },
   { value: 'h264', label: 'H.264 only' },
 ];
-const EVENTS: WebhookEvent[] = ['playback.start', 'playback.pause', 'playback.resume', 'playback.stop', 'playback.scrobble', 'library.new', 'user.login', 'recording.completed', 'recording.failed', 'request.created', 'request.available'];
+const EVENTS: WebhookEvent[] = ['playback.start', 'playback.pause', 'playback.resume', 'playback.stop', 'playback.scrobble', 'library.new', 'user.login', 'recording.completed', 'recording.failed', 'request.created', 'request.approved', 'request.declined', 'request.available', 'request.failed', 'issue.created', 'issue.resolved'];
 const TRICKPLAY_DEFAULTS: ServerSettings['trickplay'] = { enabled: false, intervalSeconds: 10, width: 320 };
 const OPENSUBS_DEFAULTS: ServerSettings['openSubtitles'] = { apiKey: null, username: null, password: null, autoLanguages: [] };
 const TRAKT_DEFAULTS: ServerSettings['trakt'] = { clientId: null, clientSecret: null };
@@ -63,7 +65,7 @@ export function ServerSettingsAdmin() {
   const [s, setS] = useState<ServerSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [params] = useSearchParams();
-  const [tab, setTab] = useState<Tab>(() => (params.get('tab') === 'arr' ? 'arr' : params.get('tab') === 'requests' ? 'requests' : 'general'));
+  const [tab, setTab] = useState<Tab>(() => (params.get('tab') === 'arr' ? 'arr' : params.get('tab') === 'requests' ? 'requests' : params.get('tab') === 'notifications' ? 'notifications' : 'general'));
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
@@ -154,6 +156,7 @@ export function ServerSettingsAdmin() {
         { value: 'aidj', label: 'AI DJ' },
         { value: 'dvr', label: 'DVR' },
         { value: 'requests', label: 'Requests' },
+        { value: 'notifications', label: 'Notifications' },
         { value: 'arr', label: 'Media automation (*arr)' },
         { value: 'sso', label: 'SSO' },
         { value: 'trickplay', label: 'Trickplay' },
@@ -272,29 +275,28 @@ export function ServerSettingsAdmin() {
               TMDB API key (General tab){s.tmdbApiKey ? '' : ' — none is set yet'}; music and books use Lidarr’s and Readarr’s own search.
             </p>
             <Switch checked={rq.enabled} onChange={(v) => setRq({ enabled: v })} label="Enable requests" hint="The Discover tab also has to be on in Branding → Features." />
-            <div className="form-row">
-              <Field label="Weekly limit per user" hint="Requests per user in any 7 days. 0 = unlimited. Admins are never limited.">
-                <input className="input" type="number" min={0} max={1000} value={rq.weeklyLimit} onChange={(e) => setRq({ weeklyLimit: Math.max(0, Math.round(Number(e.target.value) || 0)) })} />
-              </Field>
+            <div className="callout-info" style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <Icon name="users" size={18} />
+              <p style={{ margin: 0 }}>
+                Who can request what — movies, shows, 4K, music, books — and whose requests are approved automatically is set per user in{' '}
+                <Link className="link-strong" to="/admin/users">Users</Link> (with bulk edit and default permissions for new users). Users with “Manage requests” can approve requests without being admins.
+                {rq.autoApproveUserIds.length > 0 && <> {rq.autoApproveUserIds.length} user{rq.autoApproveUserIds.length === 1 ? ' was' : 's were'} auto-approved by the old setting and keep{rq.autoApproveUserIds.length === 1 ? 's' : ''} that until edited.</>}
+              </p>
             </div>
             <fieldset className="settings-fieldset">
-              <legend className="field-label">Auto-approve requests from</legend>
-              <small className="field-hint">Admins’ requests are always approved automatically.</small>
-              {users.loading && !users.data ? <Skeleton h={36} /> : (
-                <div className="event-chips user-chips">
-                  {(users.data ?? []).filter((u) => !u.isAdmin && (!u.disabled || rq.autoApproveUserIds.includes(u.id))).map((u) => {
-                    const on = rq.autoApproveUserIds.includes(u.id);
-                    return (
-                      <label key={u.id} className={`check-chip ${on ? 'on' : ''}`}>
-                        <input type="checkbox" checked={on} onChange={(e) => setRq({ autoApproveUserIds: e.target.checked ? [...rq.autoApproveUserIds, u.id] : rq.autoApproveUserIds.filter((x) => x !== u.id) })} />
-                        {u.displayName || u.username}
-                      </label>
-                    );
-                  })}
-                  {!(users.data ?? []).some((u) => !u.isAdmin) && <span className="muted">No non-admin users yet.</span>}
-                </div>
-              )}
+              <legend className="field-label">Default quota</legend>
+              <small className="field-hint">For users without their own quota (set in Users). Admins are never limited.</small>
+              <QuotaEditor value={rq.defaultQuotas ?? (rq.weeklyLimit ? { movie: { limit: rq.weeklyLimit, days: 7 }, show: { limit: rq.weeklyLimit, days: 7 }, music: { limit: rq.weeklyLimit, days: 7 }, book: { limit: rq.weeklyLimit, days: 7 } } : DEFAULT_QUOTAS)} onChange={(q) => setRq({ defaultQuotas: q })} />
             </fieldset>
+            <Switch checked={rq.quotaExemptManagers !== false} onChange={(v) => setRq({ quotaExemptManagers: v })} label="Request managers have no quota" />
+            <Switch checked={!!rq.quotaExemptAutoApprove} onChange={(v) => setRq({ quotaExemptAutoApprove: v })} label="No quota for auto-approved kinds" hint="Users with “Auto” for movies (say) aren't counted against the movie quota." />
+            <div className="form-row">
+              <Field label="Auto-approve highly rated titles" hint="Approve any movie/show request rated at least this on TMDB (0 = off). Permissions and quotas still apply.">
+                <input className="input" type="number" min={0} max={10} step={0.1} value={rq.autoApproveMinRating ?? 0} onChange={(e) => setRq({ autoApproveMinRating: Math.max(0, Math.min(10, Number(e.target.value) || 0)) })} />
+              </Field>
+            </div>
+            <Switch checked={!!rq.hideAvailable} onChange={(v) => setRq({ hideAvailable: v })} label="Hide titles already in the library on Discover by default" />
+            <p className="muted" style={{ margin: 0 }}>Blacklisted titles are managed on the <Link className="link-strong" to="/requests">Requests</Link> page; notifications in the <button type="button" className="link-strong" style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit', color: 'inherit' }} onClick={() => setTab('notifications')}>Notifications</button> tab.</p>
             <div className="arr-card">
               <div className="arr-head">
                 <strong><Icon name="download" size={18} /> Where requests go</strong>
@@ -319,6 +321,7 @@ export function ServerSettingsAdmin() {
             </div>
           </div>
         )}
+        {tab === 'notifications' && <NotificationAgentsPanel value={s.notificationAgents ?? []} onChange={(notificationAgents) => set({ notificationAgents })} />}
         {tab === 'arr' && <ArrSettingsPanel value={s.arr ?? []} onChange={(arr) => set({ arr })} publicUrl={s.publicUrl} />}
         {tab === 'trickplay' && (
           <div className="form-grid">

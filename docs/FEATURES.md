@@ -64,6 +64,10 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Downloads for offline | Pass | ✅ | Premiere | ✅ (mobile apps) |
 | Watch together | ✅ | ✅ | Plugin? | ✅ SyncPlay rooms with join codes |
 | Chromecast (web + phone apps) | ✅ | ✅ | ✅ | ✅ |
+| Play to DLNA / UPnP TVs and receivers (server-controlled, one cast menu with Chromecast) | ❌ | 🟡 (DLNA plugin) | ✅ | ✅ (transcodes to MPEG-TS / MP3 / FLAC when the device needs it) |
+| Play to Sonos (queue playback, group volume) | ✅ | 🟡 (as DLNA) | 🟡 (as DLNA) | ✅ |
+| Play to Kodi (JSON-RPC, mDNS discovery) | ❌ | 🟡 (as DLNA) | 🟡 (as DLNA) | ✅ |
+| AirPlay from the web player (Safari) and iOS app | ✅ | ✅ | ✅ | ✅ |
 | Seek-bar preview thumbnails (trickplay) | ✅ | ✅ | ✅ | ✅ |
 | Online subtitle search & auto-download (OpenSubtitles, hash matching) | ✅ | Plugin | ✅ | ✅ |
 | Converted downloads (device-friendly MP4 at 1080p/720p/480p) | Pass | ✅ | Premiere | ✅ |

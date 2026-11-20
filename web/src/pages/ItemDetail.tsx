@@ -17,6 +17,7 @@ import { AddToContainerModal, EditMetadataModal, UploadArtworkModal } from '../c
 import { RatingBadges } from '../components/RatingBadges';
 import { MediaRangeBadge, rangeDetails } from '../components/HdrBadge';
 import { ArrItemActions } from '../components/ArrItemActions';
+import { ReportIssueButton } from '../components/ReportIssue';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
 import { episodeCode, hasAudioResume, isAudio, isResumable, isVideo, itemLink, playLink, progressPct } from '../utils/items';
@@ -649,6 +650,7 @@ export function ItemPage() {
                 ]}
               />
             )}
+            <ReportIssueButton item={item} round />
           </div>
           <ArrItemActions item={item} />
 

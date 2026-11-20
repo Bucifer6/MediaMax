@@ -443,6 +443,22 @@ Environment variables (Docker `environment:`, `systemctl edit mediamax`, or Wind
 
 The full list is in the [README](../README.md#configuration-environment-variables).
 
+## Play to devices
+
+Every player's cast menu lists Chromecast, AirPlay (Safari / iOS) and the TVs, AV receivers, Sonos speakers and Kodi boxes on your
+network. Pick one and MediaMax streams straight to it: the original file when the device supports it, otherwise a converted
+stream (H.264/AAC MPEG-TS for video, FLAC or MP3 for music). Your browser or phone becomes a remote (pause, seek, volume, stop),
+and progress is saved as usual. Configure it in **Admin → Play to devices**.
+
+* **Discovery** uses SSDP (UPnP) and mDNS on the local network, so in Docker use `network_mode: host`, like DLNA. If MediaMax has
+  several network cards or runs behind port mapping, set *Stream address for devices* to the URL devices should fetch from.
+* **Kodi**: enable *Settings → Services → Control → Allow remote control via HTTP*. It is found automatically (mDNS) or can be
+  added by host, port and the username/password set there.
+* **Sonos** plays music only. Albums and playlists go to the Sonos queue; volume controls the whole group. Send to the group's
+  coordinator if the speakers are grouped.
+* **Security**: devices get signed, expiring, single-item links that only work from private addresses and only while that
+  playback runs. Only admins can add devices by hand, and only on private addresses unless they allow otherwise.
+
 ## TV tuners and set-top boxes
 
 Under **Admin → Live TV sources → Add source** you can also add your own broadcast hardware: a **TVHeadend** server, a **SAT>IP** server (Octopus NET, minisatip, AVM FRITZ!Box Cable…) or an **Enigma2** receiver (Vu+, Dreambox… with OpenWebif). Each has a *Test connection* button that shows the device, its tuner count and the channel count; TVHeadend and Enigma2 bring their own guide. Network discovery of SAT>IP servers and HDHomeRun tuners, and RTSP over UDP (FRITZ!Box), need host networking in Docker (`network_mode: host`). Details: [TUNERS.md](TUNERS.md).

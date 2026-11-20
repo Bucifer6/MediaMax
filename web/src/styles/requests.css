@@ -108,3 +108,5 @@
   .disc-track { grid-auto-columns: minmax(120px, 130px); gap: 10px; }
   .person-photo { width: 110px; }
 }
+.callout-info { padding: 14px 16px; border-radius: var(--radius); background: color-mix(in srgb, var(--c-accent) 10%, var(--c-surface)); border: 1px solid color-mix(in srgb, var(--c-accent) 35%, transparent); font-size: 0.9rem; }
+.callout-info > .icon { color: var(--c-accent); flex: none; margin-top: 2px; }

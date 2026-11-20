@@ -12,7 +12,8 @@ import { isTypingTarget } from '../hooks';
 import { useSpatialNav } from '../hooks/spatialNav';
 import { isIptvLibrary, libraryIcon } from '../utils/items';
 import { api } from '../api/endpoints';
-import { REQUESTS_CHANGED } from '../utils/requests';
+import { canManageRequests, ISSUES_CHANGED, REQUESTS_CHANGED } from '../utils/requests';
+import { seerrApi } from '../api/seerr';
 import { NotificationBell } from './NotificationBell';
 
 function NavItem({ to, icon, label, end, badge }: { to: string; icon: IconName; label: ReactNode; end?: boolean; badge?: ReactNode }) {
@@ -75,6 +76,27 @@ function usePendingRequests(enabled: boolean): number {
   return n;
 }
 
+/** Open issues (all for managers, own for others); refreshed on an interval and whenever issues change. */
+function useOpenIssues(enabled: boolean): number {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (!enabled) return setN(0);
+    let alive = true;
+    const load = () => {
+      seerrApi.issueCount().then((r) => alive && setN(r.open)).catch(() => undefined);
+    };
+    load();
+    const t = window.setInterval(load, 120000);
+    window.addEventListener(ISSUES_CHANGED, load);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+      window.removeEventListener(ISSUES_CHANGED, load);
+    };
+  }, [enabled]);
+  return n;
+}
+
 export function Layout() {
   const { user, libraries, features, branding, wsOpen } = useApp();
   // Live dot on the DJ nav item while a mix plays in the background.
@@ -112,7 +134,9 @@ export function Layout() {
   const iptv = features.iptvVod ? libraries.filter((l) => isIptvLibrary(l.type)) : [];
   const liveTv = features.liveTv && (user?.allowLiveTv ?? true);
   const dvr = features.dvr && (user?.allowDvr ?? true);
-  const pending = usePendingRequests(!!user?.isAdmin && features.requests);
+  const manager = canManageRequests(user);
+  const pending = usePendingRequests(manager && features.requests);
+  const openIssues = useOpenIssues(!!user);
 
   return (
     <div className={`app-shell ${drawer ? 'drawer-open' : ''} ${music.current ? 'has-mini' : ''}`}>
@@ -128,8 +152,16 @@ export function Layout() {
             <NavItem
               to="/requests"
               icon="inbox"
-              label={user?.isAdmin ? 'Requests' : 'My requests'}
+              label={manager ? 'Requests' : 'My requests'}
               badge={pending > 0 ? <span className="nav-count" aria-label={`${pending} pending`}>{pending > 99 ? '99+' : pending}</span> : undefined}
+            />
+          )}
+          {(manager ? openIssues > 0 || features.requests : openIssues > 0) && (
+            <NavItem
+              to="/issues"
+              icon="flag"
+              label={manager ? 'Issues' : 'My issues'}
+              badge={manager && openIssues > 0 ? <span className="nav-count" aria-label={`${openIssues} open`}>{openIssues > 99 ? '99+' : openIssues}</span> : undefined}
             />
           )}
           {local.length > 0 && <div className="nav-section">Libraries</div>}

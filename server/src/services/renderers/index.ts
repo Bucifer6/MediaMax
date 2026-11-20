@@ -6,7 +6,7 @@ import { db, type Row } from '../../db.js';
 import { config } from '../../config.js';
 import { getKv, getSettings, setKv } from '../settings.js';
 import { assertCanSee, getChildren, getItem } from '../items.js';
-import { getSession, registerSession, sessionProgress, stopSession, touchSession, transcodeCount, type PlaySession } from '../playback.js';
+import { getSession, listSessions, registerSession, sessionProgress, stopSession, touchSession, transcodeCount, type PlaySession } from '../playback.js';
 import type { AuthContext } from '../auth.js';
 import { HttpError, badRequest, forbidden, notFound } from '../../util/errors.js';
 import { parseJson } from '../../util/misc.js';
@@ -530,6 +530,11 @@ export async function playOnRenderer(ctx: AuthContext, id: string, req: Renderer
   assertTranscodeAllowed(ctx, queue[startIndex]);
 
   if (existing) await endSession(existing, null, false, true);
+  // Hand-off: the sending device's own stream of this item ends (so it doesn't count twice against stream limits).
+  for (const a of listSessions()) {
+    const ps = getSession(a.id);
+    if (ps && ps.ctx.deviceRowId === ctx.deviceRowId && ids.includes(ps.itemId ?? '')) stopSession(ps.id, 'replaced', false);
+  }
 
   const userData = db.get<{ position_ms: number }>('SELECT position_ms FROM user_data WHERE user_id = ? AND item_id = ?', ctx.user.id, req.itemId);
   const startMs = Math.max(0, Math.round(req.startMs ?? userData?.position_ms ?? 0));

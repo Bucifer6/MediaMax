@@ -18,7 +18,7 @@ export const ISSUE_KINDS: { value: IssueKind; label: string; icon: IconName }[] 
 const REPORTABLE = new Set(['movie', 'show', 'season', 'episode', 'album', 'track', 'audiobook', 'book', 'video']);
 
 /** "Report an issue" button + dialog for an item page (Overseerr-style). Hidden without the permission. */
-export function ReportIssueButton({ item, className = 'btn' }: { item: Pick<Item, 'id' | 'type' | 'title'>; className?: string }) {
+export function ReportIssueButton({ item, className = 'btn', round }: { item: Pick<Item, 'id' | 'type' | 'title'>; className?: string; round?: boolean }) {
   const { user } = useApp();
   const toast = useToast();
   const navigate = useNavigate();
@@ -51,7 +51,9 @@ export function ReportIssueButton({ item, className = 'btn' }: { item: Pick<Item
   };
   return (
     <>
-      <button className={className} onClick={() => setOpen(true)} title="Report a problem with this title"><Icon name="flag" size={16} /> Report issue</button>
+      {round
+        ? <button className="btn-round" onClick={() => setOpen(true)} title="Report an issue" aria-label="Report an issue" data-nav><Icon name="flag" /></button>
+        : <button className={className} onClick={() => setOpen(true)} title="Report a problem with this title"><Icon name="flag" size={16} /> Report issue</button>}
       <Modal open={open} onClose={() => setOpen(false)} size="md" title={`Report a problem with “${item.title}”`}
         footer={<><button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button><button className="btn btn-primary" onClick={() => void submit()} disabled={busy || !message.trim()}>{busy ? <Spinner size={16} /> : <Icon name="flag" size={16} />} Report</button></>}>
         <div className="form-grid">
