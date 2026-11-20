@@ -1,5 +1,5 @@
 import {
-  createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState,
+  createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState,
   type CSSProperties, type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -176,6 +176,7 @@ export function Modal({
   container?: Element | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   useEffect(() => {
@@ -185,6 +186,23 @@ export function Modal({
       if (e.key === 'Escape') {
         e.stopPropagation();
         onCloseRef.current();
+      } else if (e.key === 'Tab' && ref.current) {
+        // Keep keyboard focus inside the dialog (the page behind is inert for the user); only the top-most one traps.
+        const all = document.querySelectorAll('.modal');
+        if (all[all.length - 1] !== ref.current) return;
+        const els = [...ref.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+          .filter((el) => el.offsetParent !== null || el === document.activeElement);
+        if (!els.length) return;
+        const first = els[0];
+        const last = els[els.length - 1];
+        const inside = ref.current.contains(document.activeElement);
+        if (e.shiftKey && (document.activeElement === first || !inside)) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
     window.addEventListener('keydown', key, true);
@@ -202,10 +220,10 @@ export function Modal({
   if (!open) return null;
   return createPortal(
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal modal-${size} ${className ?? ''}`} ref={ref} role="dialog" aria-modal="true" tabIndex={-1}>
+      <div className={`modal modal-${size} ${className ?? ''}`} ref={ref} role="dialog" aria-modal="true" aria-labelledby={title !== undefined ? titleId : undefined} tabIndex={-1}>
         {title !== undefined && (
           <div className="modal-head">
-            <h2>{title}</h2>
+            <h2 id={titleId}>{title}</h2>
             <button className="btn-icon modal-close" onClick={onClose} aria-label="Close">
               <Icon name="x" />
             </button>

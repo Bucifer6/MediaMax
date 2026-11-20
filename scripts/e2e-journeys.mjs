@@ -450,6 +450,11 @@ async function admin() {
     await go(page, '/admin/users');
     await page.getByRole('button', { name: 'Add user' }).click();
     const dlg = page.locator('.modal');
+    await page.getByRole('dialog', { name: /user/i }).waitFor();
+    for (let i = 0; i < 30; i++) {
+      await page.keyboard.press('Tab');
+      assert(await page.evaluate(() => !!document.activeElement?.closest('.modal')), `Tab #${i + 1} left the open dialog`);
+    }
     await dlg.getByLabel('Username').fill('viewer');
     await dlg.getByLabel('Display name').fill('Val Viewer');
     await dlg.getByLabel(/^Password/).fill(PASS.viewer);
@@ -1117,13 +1122,13 @@ async function unreachable(page) {
       }
     }
   }
-  return page.evaluate((ids) => ids.map((id) => {
-    const el = document.querySelector(`[data-e2e-f="${id}"]`);
+  return page.evaluate((ids) => ids.map((id) => document.querySelector(`[data-e2e-f="${id}"]`)).filter(Boolean).map((el) => {
     return `${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]} "${(el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 40)}"`;
   }), all.filter((id) => !seen.has(id)));
 }
 
 async function tv() {
+  await seenWhatsNew(S.viewer);
   const page = await open({ token: S.viewer.token, width: 1920, height: 1080, label: 'tv' });
   const channels = S.channels;
 
@@ -1193,12 +1198,15 @@ async function tv() {
     assert(!lost.length, `unreachable on home: ${lost.slice(0, 8).join(', ')}${lost.length > 8 ? ` … (+${lost.length - 8})` : ''}`);
   });
 
-  await step('no focusable element on an item page is unreachable by D-pad', async () => {
-    await go(page, `/item/${S.movie('Neon Meridian').id}`);
-    await sleep(400);
-    const lost = await unreachable(page);
-    assert(!lost.length, `unreachable on the item page: ${lost.slice(0, 8).join(', ')}${lost.length > 8 ? ` … (+${lost.length - 8})` : ''}`);
-  });
+  for (const [what, p] of [['an item page', `/item/${S.movie('Neon Meridian').id}`], ['a show page', `/item/${S.shows[0].id}`], ['Live TV', '/livetv'], ['playback settings', '/settings/playback'], ['the movie library', `/library/${(await S.viewer.get('/libraries')).find((l) => l.type === 'movies').id}`]]) {
+    await step(`no focusable element on ${what} is unreachable by D-pad`, async () => {
+      await go(page, p);
+      await sleep(400);
+      if (!(await active(page))) await page.keyboard.press('ArrowDown');
+      const lost = await unreachable(page);
+      assert(!lost.length, `unreachable on ${what}: ${lost.slice(0, 8).join(', ')}${lost.length > 8 ? ` … (+${lost.length - 8})` : ''}`);
+    });
+  }
 
   await step('Live TV: channel up/down, digits, guide key', async () => {
     await go(page, '/livetv');
