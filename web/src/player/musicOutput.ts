@@ -44,6 +44,13 @@ export function isAlbumInOrder(queue: Item[], current: Item | null, shuffle: boo
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 /**
+ * iOS suspends Web Audio when the page is in the background or the phone is locked, which would silence music routed
+ * through it. There the graph is only used once the listener turns crossfade on.
+ */
+export const SUSPENDS_WEB_AUDIO_IN_BACKGROUND =
+  typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
+/**
  * Two audio elements routed through Web Audio: per-deck gain (ReplayGain × fade) into a master gain (volume × mute ×
  * sleep fade). Falls back to element volume (no boost, stepped fades) where Web Audio isn't available.
  */
@@ -84,9 +91,12 @@ export class MusicOutput {
     return !!this.ctx;
   }
 
-  /** Create / resume the audio graph. Call from a user gesture where possible (autoplay rules). */
-  prime() {
-    if (!this.ctx && !this.failed) {
+  /**
+   * Create / resume the audio graph. Call from a user gesture where possible (autoplay rules).
+   * `create` = false only resumes an existing graph.
+   */
+  prime(create = true) {
+    if (create && !this.ctx && !this.failed) {
       try {
         const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
         if (!Ctx) throw new Error('no Web Audio');

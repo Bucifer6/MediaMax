@@ -623,7 +623,8 @@ export function buildHome(user: User): HomeRow[] {
     try {
       switch (cfg.type) {
         case 'hero': {
-          const items = selectItems(user, "i.type IN ('movie','show') AND i.backdrop IS NOT NULL AND COALESCE(ud.played,0) = 0",
+          // Never feature what the viewer said they don't want (not interested / thumbs down).
+          const items = selectItems(user, "i.type IN ('movie','show') AND i.backdrop IS NOT NULL AND COALESCE(ud.played,0) = 0 AND COALESCE(ud.not_interested,0) = 0 AND COALESCE(ud.rating, 10) > 4",
             [], `ORDER BY (i.added_at > '${new Date(Date.now() - 30 * 86400000).toISOString()}') DESC, RANDOM() LIMIT ${limit}`);
           if (items.length) rows.push({ id: cfg.id, type: 'hero', title, items });
           break;

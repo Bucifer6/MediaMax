@@ -47,6 +47,12 @@ const ROW_TYPES: { value: HomeRowType; label: string; hint: string }[] = [
   { value: 'live-now', label: 'Live now', hint: 'Channels with current programme' },
   { value: 'favorite-channels', label: 'Favourite channels', hint: 'Viewer favourites' },
   { value: 'recordings', label: 'Recordings', hint: 'Latest DVR recordings' },
+  { value: 'recommended', label: 'Recommended for you', hint: "Picked from the viewer's history, favourites, ratings and what similar viewers watched" },
+  { value: 'because', label: 'Because you watched…', hint: 'Titles like one the viewer recently finished. Use {title} in a custom title' },
+  { value: 'top10', label: 'Top 10 this week', hint: 'Most-played titles on this server in the last 7 days, with big rank numbers. {server} = server name' },
+  { value: 'trending', label: 'Popular right now', hint: 'Recent plays across the server, newest weighted most' },
+  { value: 'watchlist', label: 'My List', hint: "The viewer's watchlist" },
+  { value: 'upcoming', label: 'Coming soon', hint: 'Next airing episodes of shows in the libraries (needs a TMDB key)' },
 ];
 
 const FEATURE_LABELS: { key: keyof FeatureFlags; label: string; hint: string; icon: IconName }[] = [

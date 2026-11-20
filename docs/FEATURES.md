@@ -108,6 +108,13 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Built-in theme presets + admin-made themes | ❌ | ❌ | ❌ | ✅ (8 presets) |
 | Users pick from admin-approved themes | ❌ | ✅ | ❌ | ✅ |
 | Server-driven home screen rows (order, type, library, genre, collection) | 🟡 | 🟡 | 🟡 | ✅ |
+| Personal recommendations (taste profile + "viewers like you", local only) | ✅ | ❌ | ❌ | ✅ |
+| "Because you watched…" and Top 10 / trending rows | 🟡 | ❌ | ❌ | ✅ |
+| My List (watchlist) with home row | ✅ | 🟡 (favourites) | 🟡 | ✅ |
+| 👍/👎 ratings and "Not interested" | 🟡 | ❌ | ❌ | ✅ |
+| Upcoming-episodes calendar (TMDB air dates + new arrivals) | 🟡 | 🟡 (plugin) | ✅ | ✅ |
+| In-app new-episode notifications (live over WebSocket) | ✅ | 🟡 | ✅ | ✅ |
+| Muted trailer previews in the hero and on card hover | ✅ | ❌ | ❌ | ✅ (web) |
 | Feature toggles that hide areas in every app | ❌ | ❌ | ❌ | ✅ |
 | **Native apps re-skin live from the server** (no rebuild) | ❌ | ❌ | ❌ | ✅ |
 | Custom CSS for the web client | ❌ | ✅ | ✅ | ✅ |

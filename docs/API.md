@@ -67,11 +67,13 @@ the WebSocket emits `branding.updated`.
 | GET 🔑 | `/items` | `ItemQuery` as query string | `Paged<Item>` |
 | GET 🔑 | `/items/:id` | | `Item` (with `media`, `markers`) |
 | GET 🔑 | `/items/:id/children` | `sort`, `order`, `limit`, `offset` | `Paged<Item>` (seasons of a show, episodes of a season, albums, tracks, collection/playlist members) |
-| GET 🔑 | `/items/:id/similar?limit=12` | | `Item[]` |
+| GET 🔑 | `/items/:id/similar?limit=12` | | `Item[]` (movies/shows: the recommendation engine's similarity, see Discovery) |
 | GET 🔑 | `/items/:id/next` | | `Item \| null` (next episode/track) |
 | POST/DELETE 🔑 | `/items/:id/played` | | `UserItemData` (cascades to children) |
 | POST/DELETE 🔑 | `/items/:id/favorite` | | `UserItemData` |
-| POST 🔑 | `/items/:id/rating` | `{ rating: number \| null }` | `UserItemData` |
+| POST 🔑 | `/items/:id/rating` | `{ rating: number \| null }` | `UserItemData` (👍 = 10, 👎 = 2) |
+| POST/DELETE 🔑 | `/items/:id/watchlist` | | `UserItemData` (My List) |
+| POST/DELETE 🔑 | `/items/:id/not-interested` | | `UserItemData` |
 | POST 🔑 | `/items/:id/progress` | `ProgressReport` | `UserItemData` (≥90% ⇒ marked played) |
 | PATCH 🛡️ | `/items/:id` | `UpdateItemRequest` | `Item` |
 | POST 🛡️ | `/items/:id/refresh` | | `Item` (re-fetch metadata) |
@@ -138,6 +140,42 @@ browse, search, resume and play exactly like local media through `/items` and `/
 * `GET /tasks` 🛡️ `ScheduledTask[]` · `POST /tasks/:id/run` 🛡️
 * `GET /activity?limit=&offset=` 🛡️ `Paged<ActivityEntry>`
 * `POST /settings/webhooks/test` 🛡️ `{ url }`
+
+## Discovery: recommendations, My List, calendar, notifications
+| Method | Path | Body / Query | Returns |
+|---|---|---|---|
+| GET 🔑 | `/watchlist?limit=100&offset=` | | `Paged<Item>` (newest first) |
+| POST/DELETE 🔑 | `/items/:id/watchlist` | | `UserItemData` (adding clears "not interested") |
+| POST/DELETE 🔑 | `/items/:id/not-interested` | | `UserItemData` (also removes it from My List) |
+| GET 🔑 | `/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD` | default: last 7 days → next 30, max 120 days | `CalendarResponse` |
+| GET 🔑 | `/notifications?limit=50&unread=true` | | `NotificationsResponse` |
+| POST 🔑 | `/notifications/read` | `{ ids?: string[] }` (omit for all) | `{ unread }` |
+
+* `UserItemData.inWatchlist` and `UserItemData.notInterested` come with every item.
+* **Home row types** (`HomeRowType`, set in `Branding.homeRows`): `recommended`, `because` (row has `seedItemId`; title placeholder
+  `{title}`), `top10` (`{server}` placeholder; clients show big rank numbers), `trending`, `watchlist` (`link.page = 'watchlist'`), and
+  `upcoming` (`calendar: CalendarEntry[]`, one per item, `link.page = 'calendar'`). Rows with too little data are left out.
+* **How recommendations are scored.** Each movie/show is a weighted feature vector: genres (shared weight, so many-genre titles
+  aren't favoured), the first 8 billed actors, directors/creators, studios/networks and decade. A viewer's taste profile sums the
+  vectors of their titles, weighted by signal: watched (1, or up to 1.5 for many episodes; older plays fade over ~4 months), in
+  progress 0.5, favourite +1.5, 👍/rating ≥ 8 +1.5, My List +0.4, 👎/rating ≤ 4 → −2, "not interested" → negative. Candidates
+  (capped at a few hundred) come from SQL: titles sharing top genres, the top people (indexed `item_people` table), titles watched by
+  viewers with overlapping history (cosine similarity of watch sets on this server, episodes rolled up to shows), and popular titles.
+  Score = profile match (normalised) + 0.6 × collaborative + 0.15 × community rating + a small freshness bonus. Watched, in-progress
+  and "not interested" titles are excluded, and every query applies library access and parental limits.
+* **Because you watched** picks one of the viewer's 3 most recent finished movies (or shows with ≥ 3 finished episodes), rotating
+  daily, and ranks by the same similarity (cosine of feature vectors) plus "people who watched X also watched Y".
+* **Top 10**: distinct viewers over the last 7 days (plays break ties), episodes roll up to their show, plays under 2 minutes
+  ignored. **Trending**: plays in the last 14 days, each worth e^(−age / 72 h); hides the viewer's "not interested" titles.
+* Results are cached per viewer for 10 minutes and dropped when they play, rate, favourite or change My List.
+* **Calendar**: when a show's TMDB metadata refreshes, its `next_episode_to_air`, status, `in_production` and `last_air_date` are
+  stored; the daily **Refresh TV schedules** task keeps them current. `CalendarResponse.tmdbConfigured` is false without a TMDB key
+  (recently added episodes still appear). `CalendarEntry.following` = the viewer watched the show or has it on My List.
+* **Notifications**: when a scan adds episodes of a show you've watched (or have on My List), you get one notification per show
+  ("3 new episodes of …"), pushed live as the `notification` WebSocket event.
+* **Trailer previews**: `POST /playback/:trailerId` with `{ preview: true }` (trailer extras only) starts a muted-preview session that
+  runs beside other playback on the device, isn't in history/stats, the admin dashboard, scrobbles or webhooks. Stop it with
+  `DELETE /playback/sessions/:id`. Users can turn previews off with the `autoplayPreviews` preference.
 
 ## WebSocket
 `GET /api/v1/ws?token=` — server sends `ServerEvent` JSON frames, client may send `ClientEvent`.

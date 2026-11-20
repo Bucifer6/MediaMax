@@ -6,30 +6,69 @@ import { Img } from './ui';
 import { usePlayItem } from '../player/music';
 import { formatDuration } from '../utils/format';
 import { isResumable, itemLink } from '../utils/items';
+import { TrailerPreview, usePreviewsEnabled } from './Preview';
+import { WatchlistButton } from './Cards';
+
+/** Delay before a slide's trailer starts playing in the background. */
+const PREVIEW_DELAY_MS = 3000;
 
 export function Hero({ items, style = 'carousel' }: { items: Item[]; style?: HeroStyle }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const play = usePlayItem();
   const list = style === 'static' ? items.slice(0, 1) : items.slice(0, 8);
+  const previews = usePreviewsEnabled();
+  // Background trailer: armed ~3 s after a slide appears; while it plays the carousel waits for it to finish.
+  const [armed, setArmed] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [muted, setMuted] = useState(true);
+  const current = list[Math.min(index, list.length - 1)];
 
   useEffect(() => {
-    if (style !== 'carousel' || paused || list.length < 2) return;
+    setArmed(false);
+    setPreviewing(false);
+    if (!previews || !current || (current.type !== 'movie' && current.type !== 'show')) return;
+    const t = window.setTimeout(() => setArmed(true), PREVIEW_DELAY_MS);
+    return () => window.clearTimeout(t);
+  }, [current?.id, previews]);
+
+  useEffect(() => {
+    if (style !== 'carousel' || paused || previewing || list.length < 2) return;
     const t = window.setTimeout(() => setIndex((i) => (i + 1) % list.length), 9000);
     return () => window.clearTimeout(t);
-  }, [index, paused, list.length, style]);
+  }, [index, paused, previewing, list.length, style]);
 
   if (!list.length || style === 'none') return null;
   const item = list[Math.min(index, list.length - 1)];
 
   return (
-    <section className="hero" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} aria-roledescription="carousel">
+    <section className={`hero ${previewing ? 'hero-previewing' : ''}`} onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} aria-roledescription="carousel">
       {list.map((it, i) => (
         <div key={it.id} className={`hero-bg ${i === index ? 'active' : ''}`} aria-hidden={i !== index}>
           <Img src={it.backdropUrl ?? it.thumbUrl ?? it.posterUrl} width={1920} />
         </div>
       ))}
+      {armed && current && (
+        <TrailerPreview
+          key={current.id}
+          itemId={current.id}
+          active={armed}
+          muted={muted}
+          maxBitrate={8000}
+          className="hero-trailer"
+          onPlaying={setPreviewing}
+          onEnded={() => {
+            setArmed(false);
+            if (list.length > 1 && style === 'carousel') setIndex((i) => (i + 1) % list.length);
+          }}
+        />
+      )}
       <div className="hero-shade" />
+      {previewing && (
+        <button className="btn-round hero-mute" onClick={() => setMuted((m) => !m)} aria-label={muted ? 'Unmute trailer' : 'Mute trailer'} title={muted ? 'Unmute' : 'Mute'}>
+          <Icon name={muted ? 'mute' : 'volume'} size={20} />
+        </button>
+      )}
       <div className="hero-content" key={item.id}>
         {item.logoUrl ? (
           <Img src={item.logoUrl} width={600} className="hero-logo" alt={item.title} fallback={<h1 className="hero-title">{item.title}</h1>} />
@@ -59,13 +98,14 @@ export function Hero({ items, style = 'carousel' }: { items: Item[]; style?: Her
           <Link className="btn btn-glass btn-lg" to={itemLink(item)} data-nav>
             <Icon name="info" size={20} /> More info
           </Link>
+          {(item.type === 'movie' || item.type === 'show') && <WatchlistButton item={item} variant="hero" />}
         </div>
       </div>
       {list.length > 1 && (
         <div className="hero-dots">
           {list.map((it, i) => (
             <button key={it.id} className={`hero-dot ${i === index ? 'active' : ''}`} onClick={() => setIndex(i)} aria-label={`Show ${it.title}`} tabIndex={-1}>
-              {i === index && !paused && style === 'carousel' && <span className="hero-dot-fill" />}
+              {i === index && !paused && !previewing && style === 'carousel' && <span className="hero-dot-fill" />}
             </button>
           ))}
         </div>

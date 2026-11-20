@@ -5,7 +5,7 @@ import { useApp } from '../state/app';
 import { useAsync, useServerEvent } from '../hooks';
 import { Hero, HeroSkeleton } from '../components/Hero';
 import { Row } from '../components/Row';
-import { CardSkeleton, ChannelCard, LandscapeCard, PosterCard } from '../components/Cards';
+import { CardSkeleton, ChannelCard, LandscapeCard, PosterCard, RankedCard, UpcomingCard } from '../components/Cards';
 import { EmptyState, ErrorState } from '../components/ui';
 import { Icon } from '../components/Icon';
 
@@ -14,6 +14,8 @@ function rowLink(row: HomeRow): string | undefined {
   if (row.type === 'live-now' || row.type === 'favorite-channels') return '/livetv';
   if (row.type === 'recordings') return '/dvr';
   if (!l) return undefined;
+  if (l.page === 'watchlist') return '/my-list';
+  if (l.page === 'calendar') return '/calendar';
   if (l.itemId) return `/item/${l.itemId}`;
   if (l.libraryId) {
     const p = new URLSearchParams();
@@ -38,6 +40,20 @@ function HomeRowView({ row }: { row: HomeRow }) {
     );
   }
   if (!row.items.length) return null;
+  if (row.type === 'top10') {
+    return (
+      <Row title={row.title} className="row-top10">
+        {row.items.slice(0, 10).map((it, i) => <RankedCard key={it.id} item={it} rank={i + 1} />)}
+      </Row>
+    );
+  }
+  if (row.type === 'upcoming' && row.calendar?.length) {
+    return (
+      <Row title={row.title} link={rowLink(row)} className="row-wide row-upcoming">
+        {row.calendar.map((e) => <UpcomingCard key={`${e.show.id}-${e.date}`} entry={e} />)}
+      </Row>
+    );
+  }
   const wide = row.type === 'continue' || row.type === 'nextup' || row.type === 'recordings';
   return (
     <Row title={row.title} link={rowLink(row)} className={wide ? 'row-wide' : ''}>
@@ -54,7 +70,16 @@ export function Home() {
     if (ev.type === 'userdata.updated') {
       home.setData((d) =>
         d
-          ? { rows: d.rows.map((r) => ({ ...r, items: r.items.map((i) => (i.id === ev.itemId ? { ...i, userData: ev.userData } : i)) })) }
+          ? {
+              rows: d.rows
+                .map((r) => ({ ...r, items: r.items.map((i) => (i.id === ev.itemId ? { ...i, userData: ev.userData } : i)) }))
+                // "Not interested" takes a title out of the discovery rows straight away.
+                .map((r) =>
+                  (ev.userData.notInterested && ['recommended', 'because', 'trending'].includes(r.type)) || (r.type === 'watchlist' && !ev.userData.inWatchlist)
+                    ? { ...r, items: r.items.filter((i) => i.id !== ev.itemId) }
+                    : r,
+                ),
+            }
           : d,
       );
     }

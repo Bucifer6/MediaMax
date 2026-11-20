@@ -8,6 +8,7 @@ import type {
   TestSourceResponse, Theme, TraktDeviceCode, TraktStatus, TrickplayInfo, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
   UpdateUserRequest, User, UserItemData, UserStats,
   ArrOptions, CreateMediaRequest, DjMix, DjMixRequest, DjStatus, TrackAnalysis, DjHostRequest, DjHostLine, DjFeedback, StarterLook, ApiKey, CreatedApiKey, TotpSetup, TotpEnabled, Invite, CreateInviteRequest, InvitePreview, AcceptInviteRequest,
+  CalendarResponse, NotificationsResponse,
   BackupInfo, RemoteAccessStatus, Bookmark, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
 import { http, request, upload } from './client';
@@ -115,6 +116,17 @@ export const api = {
     bookmarks: (id: string, signal?: AbortSignal) => http.get<Bookmark[]>(`/items/${enc(id)}/bookmarks`, undefined, signal),
     addBookmark: (id: string, body: { positionMs: number; note?: string }) => http.post<Bookmark>(`/items/${enc(id)}/bookmarks`, body),
     removeBookmark: (id: string, bookmarkId: string) => http.del<Ok>(`/items/${enc(id)}/bookmarks/${enc(bookmarkId)}`),
+    setWatchlist: (id: string, on: boolean) =>
+      on ? http.post<UserItemData>(`/items/${enc(id)}/watchlist`) : http.del<UserItemData>(`/items/${enc(id)}/watchlist`),
+    setNotInterested: (id: string, on: boolean) =>
+      on ? http.post<UserItemData>(`/items/${enc(id)}/not-interested`) : http.del<UserItemData>(`/items/${enc(id)}/not-interested`),
+  },
+
+  discovery: {
+    watchlist: (q: { limit?: number; offset?: number } = {}) => http.get<Paged<Item>>('/watchlist', q),
+    calendar: (q: { from?: string; to?: string } = {}, signal?: AbortSignal) => http.get<CalendarResponse>('/calendar', q, signal),
+    notifications: (limit = 30) => http.get<NotificationsResponse>('/notifications', { limit }),
+    markRead: (ids?: string[]) => http.post<{ unread: number }>('/notifications/read', ids ? { ids } : {}),
   },
 
   subtitles: {

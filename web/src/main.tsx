@@ -10,6 +10,7 @@ import './styles/player.css';
 import './styles/admin.css';
 import './styles/stats.css';
 import './styles/tv.css';
+import './styles/discovery.css';
 import { detectTv, installTvMode } from './tv/spatial';
 
 if (detectTv()) installTvMode();

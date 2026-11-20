@@ -12,6 +12,7 @@ import { useSpatialNav } from '../hooks/spatialNav';
 import { isIptvLibrary, libraryIcon } from '../utils/items';
 import { api } from '../api/endpoints';
 import { REQUESTS_CHANGED } from '../utils/requests';
+import { NotificationBell } from './NotificationBell';
 
 function NavItem({ to, icon, label, end, badge }: { to: string; icon: IconName; label: ReactNode; end?: boolean; badge?: ReactNode }) {
   return (
@@ -148,6 +149,8 @@ export function Layout() {
             <NavItem key={l.id} to={`/library/${l.id}`} icon={libraryIcon(l.type)} label={l.name} badge={<span className="nav-tag">IPTV</span>} />
           ))}
           <div className="nav-section">You</div>
+          <NavItem to="/my-list" icon="plus" label="My List" />
+          <NavItem to="/calendar" icon="calendar" label="Calendar" />
           {features.music && <NavItem to="/dj" icon="music" label="DJ" badge={djLive ? <span className="live-dot" aria-label="Mix playing" /> : undefined} />}
           <NavItem to="/podcasts" icon="podcast" label="Podcasts" />
           <NavItem to="/playlists" icon="playlist" label="Playlists" />
@@ -181,6 +184,7 @@ export function Layout() {
             <span>Search</span>
             <kbd>/</kbd>
           </button>
+          <NotificationBell />
           <UserMenu />
         </header>
         <main className="main" id="main">

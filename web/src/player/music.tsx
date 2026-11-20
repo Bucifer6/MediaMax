@@ -6,7 +6,7 @@ import { errorMessage } from '../api/client';
 import { attachStream } from './engine';
 import { profileWithBitrate } from './deviceProfile';
 import { absoluteUrl, CAST_OWNER_EVENT, castContentType, castDeviceProfile, castOwner, claimCast, useCast, type CastHandle, type CastOwner } from './cast';
-import { isAlbumInOrder, MusicOutput, replayGainFactor, type Deck } from './musicOutput';
+import { isAlbumInOrder, MusicOutput, replayGainFactor, SUSPENDS_WEB_AUDIO_IN_BACKGROUND, type Deck } from './musicOutput';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { findNextEpisode, shuffled, tracksFor } from '../utils/playback';
@@ -140,6 +140,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const playingRef = useRef(playing);
   playingRef.current = playing;
 
+  /** Route audio through Web Audio (gain ramps, ReplayGain boost) — except on iOS unless crossfade is on. */
+  const wantGraph = () => !SUSPENDS_WEB_AUDIO_IN_BACKGROUND || stateRef.current.crossfadeSec > 0;
   /** The live deck's element (null during SSR). */
   const liveEl = () => out?.active.el ?? null;
 
@@ -439,7 +441,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const next = useCallback(() => {
-    out?.prime();
+    out?.prime(wantGraph());
     const n = nextIndexOf();
     if (n >= 0) setIndex(n);
     else {
@@ -450,7 +452,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, [nextIndexOf, cancelHandover, out]);
 
   const prev = useCallback(() => {
-    out?.prime();
+    out?.prime(wantGraph());
     const a = liveEl();
     if (castingRef.current) {
       const pos = castOffsetRef.current + castRef.current.remote.currentTime * 1000;
@@ -813,7 +815,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       takeOverCast();
       return;
     }
-    out.prime();
+    out.prime(wantGraph());
     const a = out.active.el;
     if (a.paused) void a.play();
     else {
@@ -911,7 +913,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const radioFetching = useRef(false);
   const radioReq = useRef<DjMixRequest>({});
   const startRadio = useCallback(async (seedId: string, title: string) => {
-    out?.prime();
+    out?.prime(wantGraph());
     const label = `Radio based on ${title}`;
     try {
       radioReq.current = { harmonic: true, curve: 'steady' };
@@ -973,7 +975,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters,
       playQueue: (items, start = 0, startMs) => {
         if (!items.length) return;
-        out?.prime();
+        out?.prime(wantGraph());
         setRadio(null);
         startAtRef.current = startMs != null && items[start] ? { id: items[start]!.id, ms: startMs } : null;
         const list = shuffle && !hasAudioResume(items[start]!) ? [items[start]!, ...shuffled(items.filter((_, i) => i !== start))] : items;
@@ -984,7 +986,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       enqueue: (items, playNext) => {
         setQueue((q) => {
           if (!q.length) {
-            out?.prime();
+            out?.prime(wantGraph());
             window.setTimeout(() => setIndex(0), 0);
             return items;
           }
@@ -1003,7 +1005,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       jump: (i, startMs) => {
         const item = stateRef.current.queue[i];
         if (!item) return;
-        out?.prime();
+        out?.prime(wantGraph());
         if (i === stateRef.current.index) {
           if (startMs != null) seekRef.current(startMs);
           return;

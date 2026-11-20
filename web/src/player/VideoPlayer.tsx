@@ -669,8 +669,9 @@ export default function VideoPlayer() {
         resolution: v.videoWidth ? `${v.videoWidth}×${v.videoHeight}${media?.width && media.width !== v.videoWidth ? ` (source ${media.width}×${media.height})` : ''}` : '—',
         videoCodec: es.videoCodec || (direct ? media?.videoCodec : null) || (pi?.method === 'transcode' ? 'h264 (transcoded)' : '—'),
         audioCodec: es.audioCodec || (audio ? `${audio.codec}${audio.channels ? ` · ${audio.channels}ch` : ''}` : '—'),
-        bitrate: kbps(es.bitrate ?? (direct ? (media?.bitrate ?? null) : null)),
-        bandwidth: kbps(es.bandwidth),
+        // MediaSource.bitrate is in kbps.
+        bitrate: kbps(es.bitrate ?? (direct && media?.bitrate ? media.bitrate * 1000 : null)),
+        bandwidth: es.bandwidth ? kbps(es.bandwidth) : attached.current?.engine === 'native' ? 'n/a (progressive download)' : '—',
         buffer: `${ahead.toFixed(1)} s`,
         dropped,
         extra: `${rate}× · subs ${formatDelay(subDelayRef.current)} · audio ${formatDelay(audioDelayMs)}`,

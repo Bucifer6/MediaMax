@@ -14,6 +14,7 @@ import { DEFAULT_SUBTITLE_STYLE, SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtit
 import { relativeTime } from '../utils/format';
 import { LinkDeviceForm } from './LinkDevice';
 import { ApiKeysCard, SubsonicCard, TwoFactorCard } from './SecuritySettings';
+import { BrowsingSettings } from './BrowsingSettings';
 
 const LANGS = [
   ['', 'Default'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'],
@@ -601,6 +602,7 @@ export default function SettingsPage() {
     { to: 'security', label: 'Security', icon: 'lock' },
     { to: 'appearance', label: 'Appearance', icon: 'palette' },
     { to: 'playback', label: 'Playback', icon: 'play' },
+    { to: 'browsing', label: 'Browsing', icon: 'compass' },
     { to: 'devices', label: 'Devices', icon: 'device' },
     { to: 'services', label: 'Connected services', icon: 'globe' },
     { to: '/wrapped', label: 'Your year', icon: 'sparkles' },
@@ -625,6 +627,7 @@ export default function SettingsPage() {
             <Route path="profile" element={<Profile />} />
             <Route path="security" element={<Security />} />
             <Route path="appearance" element={<Appearance />} />
+            <Route path="browsing" element={<BrowsingSettings />} />
             <Route path="playback" element={<><Playback /><SubtitleSettings /><MusicSettings /></>} />
             <Route path="devices" element={<Devices />} />
             <Route path="services" element={<Services />} />
