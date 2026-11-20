@@ -213,4 +213,61 @@ export async function seedServer({ base, media, data, mockBase, avatars, log }) 
   };
 }
 
+/**
+ * Everything the feature screenshots need on top of seedServer: profiles, requests (some waiting for approval) and
+ * issues, *arr instances with a download queue, Home Assistant over MQTT, disk spin-down, Play to devices, trickplay.
+ * `mocks` is scripts/e2e/mocks.mjs (TMDB, Radarr, Sonarr); `devices` and `mqtt` come from lib/devices.mjs.
+ */
+export async function seedFeatures({ base, admin, alex, kids, alexId, M, S, mocks, devices, mqtt, arrKey, log }) {
+  const version = (await (await fetch(`${base}/api/v1/system/info`)).json()).version;
+  for (const c of [admin, alex, kids]) await c.patch('/auth/me', { preferences: { whatsNewSeen: version } });
+
+  log('Requests, issues and downloads…');
+  await admin.put('/settings', {
+    tmdbApiKey: 'demo-tmdb-key',
+    requests: { enabled: true },
+    arr: [
+      { id: 'radarr-demo', kind: 'radarr', name: 'Radarr', url: `${mocks.base}/radarr`, apiKey: arrKey, enabled: true, qualityProfileId: 1, rootFolderPath: '/radarr', tags: [] },
+      { id: 'sonarr-demo', kind: 'sonarr', name: 'Sonarr', url: `${mocks.base}/sonarr`, apiKey: arrKey, enabled: true, qualityProfileId: 1, rootFolderPath: '/sonarr', languageProfileId: 2, tags: [] },
+    ],
+  });
+  await admin.patch(`/users/${alexId}`, { requestPermissions: { movie: 'request', show: 'request', reportIssues: true } });
+  const req = (c, body) => c.post('/requests', body).catch((e) => log('  request skipped: ' + e.message));
+  await req(admin, { mediaType: 'movie', tmdbId: '9004', title: 'Parallel Postcards' });
+  const copper = await req(alex, { mediaType: 'movie', tmdbId: '9002', title: 'Copper Tide' });
+  if (copper?.id) await admin.post(`/requests/${copper.id}/approve`).catch((e) => log('  approve skipped: ' + e.message));
+  await req(alex, { mediaType: 'show', tmdbId: '9502', title: 'Midnight Cartographers', seasonMode: 'all' });
+  await req(alex, { mediaType: 'movie', tmdbId: '9001', title: 'The Glass Orchard', note: 'Saw the trailer, looks beautiful!' });
+  await req(alex, { mediaType: 'movie', tmdbId: '9008', title: 'Gravity Garden' });
+
+  const issue = await alex.post('/issues', { itemId: M['crimson-freight'], kind: 'audio', message: 'The dialogue drifts out of sync after about twenty minutes.' }).catch((e) => log('  issue skipped: ' + e.message));
+  if (issue?.id) await admin.post(`/issues/${issue.id}/comments`, { body: 'Thanks! Re-muxing the file tonight, I will let you know.' }).catch(() => undefined);
+  const ep = (await admin.get(`/items?ancestorId=${S['harbor-lights']}&type=episode&sort=index&limit=10`)).items[1];
+  if (ep) await alex.post('/issues', { itemId: ep.id, kind: 'subtitle', message: 'English subtitles are missing for this episode.' }).catch(() => undefined);
+  const resolved = await alex.post('/issues', { itemId: M['velvet-ledger'], kind: 'video', message: 'Picture freezes at 1:02:10.' }).catch(() => null);
+  if (resolved?.id) await admin.post(`/issues/${resolved.id}/resolve`).catch(() => undefined);
+
+  log('Profiles…');
+  for (const p of [{ displayName: 'Jamie', avatarId: 'robot' }, { displayName: 'Robin', avatarId: 'owl' }, { displayName: 'Mia', avatarId: 'panda', isKids: true, pin: '2468', kidsTheme: true }]) {
+    await admin.post('/profiles', p).catch((e) => log('  profile skipped: ' + e.message));
+  }
+
+  log('Smart home, storage and Play to devices…');
+  await admin.put('/integrations/home-assistant', { mqtt: { enabled: true, brokerUrl: mqtt.url, username: 'homeassistant', password: 'demo-mqtt', baseTopic: 'mediamax', discoveryPrefix: 'homeassistant', perDeviceSensors: true, tls: false, tlsInsecure: false } });
+  await waitFor(async () => (await admin.get('/integrations/home-assistant')).status?.mqtt?.state === 'connected', 15000, 'MQTT connection').catch((e) => log('  ' + e.message));
+  await admin.post('/integrations/home-assistant/discovery').catch((e) => log('  discovery skipped: ' + e.message));
+  await admin.put('/storage', { diskFriendly: true, windowStart: '02:00', windowEnd: '06:00', piggyback: true, checkDiskState: true, watchMode: 'native' });
+  await admin.put('/admin/renderers/settings', { enabled: true, mdns: false });
+  for (const d of [
+    { kind: 'dlna', descriptionUrl: `${devices.base}/tv/desc.xml` },
+    { kind: 'kodi', host: '127.0.0.1', port: devices.port, name: 'Den Kodi' },
+    { kind: 'dlna', descriptionUrl: `${devices.base}/speaker/desc.xml` },
+  ]) await admin.post('/admin/renderers/manual', d).catch((e) => log('  device skipped: ' + e.message));
+
+  log('Trickplay thumbnails…');
+  await admin.put('/settings', { trickplay: { enabled: true, intervalSeconds: 10, width: 320 } });
+  await admin.post('/tasks/trickplay/run').catch((e) => log('  trickplay task: ' + e.message));
+  await waitFor(async () => !!(await admin.get(`/items/${M['crimson-freight']}/trickplay`).catch(() => null))?.sheets, 240000, 'trickplay thumbnails').catch((e) => log('  ' + e.message));
+}
+
 export { sleep };

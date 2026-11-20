@@ -5,7 +5,7 @@ import { sleep } from '../../util/misc.js';
 
 const log = logger('tmdb');
 const API = process.env.MEDIAMAX_TMDB_API_BASE ?? 'https://api.themoviedb.org/3'; // override only for tests
-const IMG = 'https://image.tmdb.org/t/p/';
+const IMG = process.env.MEDIAMAX_TMDB_IMAGE_BASE ?? 'https://image.tmdb.org/t/p/'; // override only for tests and screenshots
 
 export interface RemoteMeta {
   tmdbId: string;

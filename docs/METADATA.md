@@ -227,4 +227,4 @@ Each service's base URL can be overridden with an env var (used by the test suit
 `MEDIAMAX_LRCLIB_API_BASE`, `MEDIAMAX_OMDB_API_BASE`, `MEDIAMAX_MUSICBRAINZ_API_BASE`, `MEDIAMAX_COVERART_API_BASE`,
 `MEDIAMAX_LISTENBRAINZ_API_BASE` (default for users without their own server URL), `MEDIAMAX_LISTENBRAINZ_LABS_BASE`,
 `MEDIAMAX_ACOUSTID_API_BASE`
-(and `MEDIAMAX_TMDB_API_BASE` for TMDB).
+(and `MEDIAMAX_TMDB_API_BASE` / `MEDIAMAX_TMDB_IMAGE_BASE` for TMDB's API and image server).

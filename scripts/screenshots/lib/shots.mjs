@@ -146,6 +146,34 @@ export class Shooter {
   }
 }
 
+/** Open the video player and wait until the picture is moving. */
+async function playVideo(s, page, id, name) {
+  await page.goto(`${s.base}/play/${id}`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => {
+    const v = document.querySelector('video');
+    return v && v.readyState >= 2 && v.currentTime > 1;
+  }, null, { timeout: 45000 }).catch(() => s.problems.push(`${name}: video never started`));
+  await sleep(2500);
+}
+
+/** Wake the auto-hiding player controls with a pointer move. */
+async function wakeControls(page) {
+  await page.mouse.move(700, 500);
+  await page.mouse.move(720, 520);
+  await sleep(400);
+}
+
+/** Play the album with word-timed lyrics and open the full-screen player. */
+async function openNowPlaying(s, page) {
+  const album = s.state.albums.find((a) => a.title === 'Afterglow Avenue');
+  await s.goto(page, `/item/${album.id}`, 800);
+  await page.getByRole('button', { name: /^Play/ }).first().click();
+  await page.waitForSelector('.eq', { timeout: 20000 }).catch(() => s.problems.push('now playing: playback never started'));
+  await page.getByRole('button', { name: 'Open the full-screen player' }).click();
+  await page.getByRole('dialog', { name: 'Now playing' }).waitFor();
+  await sleep(800);
+}
+
 /* ------------------------------------------------------------------ */
 /* The shot list                                                       */
 /* ------------------------------------------------------------------ */
@@ -320,6 +348,169 @@ export const SHOTS = {
     const { ctx, page } = await s.context({ width: 390, height: 844, dsf: 3, mobile: true });
     await s.goto(page, '/', 1500);
     await s.capture(page, 'mobile-home.jpg', 780);
+    await ctx.close();
+  },
+
+  /* ---------------------------- feature shots ---------------------------- */
+
+  async profiles(s) {
+    const { ctx, page } = await s.context();
+    await s.goto(page, '/profiles', 1000);
+    await s.capture(page, 'profiles.jpg');
+    await ctx.close();
+  },
+
+  async discover(s) {
+    const { ctx, page } = await s.context({ height: 1100 });
+    await s.goto(page, '/discover', 2000);
+    await s.capture(page, 'discover.jpg');
+    await ctx.close();
+  },
+
+  async requests(s) {
+    const { ctx, page } = await s.context();
+    await s.goto(page, '/requests', 1200);
+    await s.capture(page, 'requests.jpg');
+    await ctx.close();
+  },
+
+  async issues(s) {
+    const { ctx, page } = await s.context();
+    const list = await s.state.admin.get('/issues?status=open');
+    const issue = (list.items ?? list).find((i) => /drifts/.test(i.message));
+    await s.goto(page, issue ? `/issues/${issue.id}` : '/issues', 1200);
+    await s.capture(page, 'issues.jpg');
+    await ctx.close();
+  },
+
+  async 'admin-network'(s) {
+    const { ctx, page } = await s.context();
+    await s.goto(page, '/admin/network', 1200);
+    await s.capture(page, 'admin-network.jpg');
+    await ctx.close();
+  },
+
+  async 'admin-smarthome'(s) {
+    const { ctx, page } = await s.context();
+    await s.goto(page, '/admin/smarthome', 1200);
+    await s.capture(page, 'admin-smarthome.jpg');
+    await ctx.close();
+  },
+
+  async 'admin-storage'(s) {
+    const { ctx, page } = await s.context();
+    await s.goto(page, '/admin/storage', 1200);
+    await s.capture(page, 'admin-storage.jpg');
+    await ctx.close();
+  },
+
+  async 'admin-downloads'(s) {
+    const { ctx, page } = await s.context();
+    await s.goto(page, '/admin/downloads', 1500);
+    await s.capture(page, 'admin-downloads.jpg');
+    await ctx.close();
+  },
+
+  async 'guide-matching'(s) {
+    const { ctx, page } = await s.context({ extraCss: '.toasts{display:none!important}' });
+    await s.goto(page, '/admin/guide', 800);
+    await page.getByRole('tab', { name: 'Guide matching' }).click();
+    await page.getByRole('button', { name: /Re-run matching/ }).click();
+    await page.locator('.epg-match-table tbody tr').first().waitFor({ timeout: 15000 });
+    await s.settle(page, 800);
+    await s.capture(page, 'guide-matching.jpg');
+    await ctx.close();
+  },
+
+  async help(s) {
+    const { ctx, page } = await s.context();
+    await s.goto(page, '/help', 1000);
+    await s.capture(page, 'help.jpg');
+    await ctx.close();
+  },
+
+  // Dolby Vision 8.1 film (lib/showcase.mjs) with the stats overlay: source range, how it reaches this browser, audio.
+  async 'player-hdr'(s) {
+    const { ctx, page } = await s.context();
+    await playVideo(s, page, s.state.M['last-lighthouse-kepler'], 'player-hdr');
+    await page.keyboard.press('i');
+    await page.getByRole('dialog', { name: 'Playback statistics' }).waitFor({ timeout: 10000 });
+    await sleep(2500);
+    await s.capture(page, 'player-hdr.jpg', 1440, { mouseX: 1100, mouseY: 400 });
+    await ctx.close();
+  },
+
+  async 'play-to'(s) {
+    const { ctx, page } = await s.context();
+    await playVideo(s, page, s.state.M['neon-meridian'], 'play-to');
+    await wakeControls(page);
+    await page.getByRole('button', { name: 'Play to…' }).click();
+    await page.locator('.cast-popover .cast-option').first().waitFor({ timeout: 10000 });
+    await sleep(600);
+    await s.capture(page, 'play-to.jpg', 1440, { mouseX: 1180, mouseY: 560, keepPointer: true });
+    await ctx.close();
+  },
+
+  async trickplay(s) {
+    const { ctx, page } = await s.context();
+    await playVideo(s, page, s.state.M['crimson-freight'], 'trickplay');
+    await wakeControls(page);
+    const seek = page.locator('.seekbar').first();
+    const box = await seek.boundingBox();
+    const x = box.x + box.width * 0.42;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.locator('.seek-tooltip').first().waitFor();
+    await page.waitForFunction(() => {
+      const t = document.querySelector('.trickplay-thumb');
+      return t && getComputedStyle(t).backgroundImage !== 'none';
+    }, null, { timeout: 15000 }).catch(() => s.problems.push('trickplay: no thumbnail on the seek preview'));
+    await sleep(1200);
+    await s.capture(page, 'trickplay.jpg', 1440, { mouseX: x, mouseY: y, keepPointer: true });
+    await ctx.close();
+  },
+
+  // Word-by-word lyrics (lib/showcase.mjs writes the enhanced LRC) and a visualiser, in the full-screen player.
+  async lyrics(s) {
+    const { ctx, page } = await s.context();
+    await openNowPlaying(s, page);
+    const np = page.getByRole('dialog', { name: 'Now playing' });
+    await np.getByRole('tab', { name: /Lyrics/ }).click();
+    await page.waitForFunction(() => {
+      const cur = document.querySelector('.lyric-line.current');
+      if (!cur || cur.getBoundingClientRect().top < 40) return false;
+      const fills = [...cur.querySelectorAll('.kw')].map((w) => parseFloat(w.style.getPropertyValue('--fill')) || 0);
+      return fills.some((f) => f >= 1) && fills.some((f) => f < 0.5);
+    }, null, { timeout: 25000, polling: 50 }).catch(() => s.problems.push('lyrics: no line half-way through'));
+    await s.capture(page, 'lyrics.jpg', 1440, { animations: 'allow' });
+    await ctx.close();
+  },
+
+  async visualiser(s) {
+    const { ctx, page } = await s.context();
+    await openNowPlaying(s, page);
+    const np = page.getByRole('dialog', { name: 'Now playing' });
+    await np.getByRole('tab', { name: /Visuali/ }).click();
+    await sleep(3000);
+    await s.capture(page, 'visualiser.jpg', 1440, { animations: 'allow' });
+    await ctx.close();
+  },
+
+  // The DJ set list: every transition labelled with its style, the phrase it lands on and the tempo change.
+  async 'dj-mix'(s) {
+    const { ctx, page } = await s.context();
+    await s.goto(page, '/dj', 800);
+    await page.getByLabel('Describe your mix').fill('upbeat synthwave and house, about half an hour');
+    await page.getByRole('button', { name: 'Play it' }).click();
+    await page.waitForFunction(() => window.mediamaxDj?.snapshot().status === 'playing', null, { timeout: 30000 });
+    await page.locator('.dj-transition .dj-style').first().waitFor({ timeout: 30000 });
+    await sleep(2500);
+    await page.evaluate(() => {
+      const q = document.querySelector('.dj-queue');
+      if (q) window.scrollTo(0, Math.max(0, q.getBoundingClientRect().top + scrollY - 90));
+    });
+    await sleep(800);
+    await s.capture(page, 'dj-mix.jpg', 1440, { animations: 'allow' });
     await ctx.close();
   },
 
