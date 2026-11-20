@@ -16,6 +16,7 @@ import { reapSessions, listSessions } from './playback.js';
 import { tick as dvrTick, applyRules } from './dvr.js';
 import { detectAll } from './introdetect.js';
 import { enrichLibrary } from './metadata/index.js';
+import { syncWatchers } from './watcher.js';
 
 const log = logger('tasks');
 
@@ -178,6 +179,10 @@ export function startScheduler() {
   // Fast housekeeping loops.
   timers.push(setInterval(() => void dvrTick().catch((e) => log.error('DVR tick failed', e)), 15000));
   timers.push(setInterval(() => reapSessions(), 30000));
+  if (process.env.MEDIAMAX_NO_WATCH !== '1') {
+    syncWatchers();
+    timers.push(setInterval(() => syncWatchers(), 60000));
+  }
   // Interval tasks: check every minute which are due.
   const check = () => {
     for (const d of DEFS) {

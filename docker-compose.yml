@@ -1,0 +1,31 @@
+services:
+  mediamax:
+    build: .
+    image: mediamax:latest
+    container_name: mediamax
+    restart: unless-stopped
+    ports:
+      - "8484:8484"
+    environment:
+      - TZ=Europe/London
+      # - TMDB_API_KEY=your_tmdb_key        # or set it in Admin → Settings
+      # - MEDIAMAX_HWACCEL=vaapi            # none | vaapi | qsv | nvenc | videotoolbox | v4l2m2m
+    volumes:
+      - ./config:/config                    # database, artwork cache, branding assets
+      - ./recordings:/recordings            # DVR recordings
+      - /path/to/movies:/media/movies:ro
+      - /path/to/tv:/media/tv:ro
+      - /path/to/music:/media/music:ro
+    tmpfs:
+      - /transcode:size=8G                  # fast RAM disk for HLS segments
+    # Intel / AMD hardware transcoding:
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # NVIDIA hardware transcoding:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu, video]
