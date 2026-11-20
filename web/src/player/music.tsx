@@ -5,6 +5,8 @@ import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import { attachStream, type Attached } from './engine';
 import { profileWithBitrate } from './deviceProfile';
+import { absoluteUrl, CAST_OWNER_EVENT, castContentType, castDeviceProfile, castOwner, claimCast, useCast, type CastHandle, type CastOwner } from './cast';
+import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { findNextEpisode, shuffled, tracksFor } from '../utils/playback';
 import { hasAudioResume, isAudio, isResumable, isVideo, playLink } from '../utils/items';
@@ -40,6 +42,10 @@ interface MusicApi {
   setMuted: (m: boolean) => void;
   setShuffle: (s: boolean) => void;
   setRepeat: (r: Repeat) => void;
+  /** Google Cast state (button shown when `cast.available`). */
+  cast: CastHandle;
+  /** The current track is playing on a Cast device. */
+  casting: boolean;
 }
 
 const Ctx = createContext<MusicApi | null>(null);
@@ -86,6 +92,61 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef({ queue, index, repeat, durationMs });
   stateRef.current = { queue, index, repeat, durationMs };
   const current = index >= 0 ? queue[index] ?? null : null;
+  const { system } = useApp();
+
+  /* ---------------- Google Cast ---------------- */
+  // The SDK is only loaded once something is playing.
+  const cast = useCast(!!current);
+  const castRef = useRef(cast);
+  castRef.current = cast;
+  const castingRef = useRef(false);
+  const castSidRef = useRef<string | null>(null);
+  const castOffsetRef = useRef(0);
+  const [casting, setCasting] = useState(false);
+  const castEndHandled = useRef<string | null>(null);
+
+  const reportCast = useCallback((state: 'playing' | 'paused' | 'stopped', keepalive = false) => {
+    const sid = castSidRef.current;
+    if (!sid) return;
+    const pos = castOffsetRef.current + castRef.current.remote.currentTime * 1000;
+    api.playback.progress(sid, { positionMs: Math.round(pos), durationMs: stateRef.current.durationMs || undefined, state, sessionId: sid }, keepalive).catch(() => {});
+  }, []);
+  const endCastSession = useCallback((keepalive = false) => {
+    const sid = castSidRef.current;
+    if (!sid) return;
+    reportCast('stopped', keepalive);
+    api.playback.stop(sid, keepalive).catch(() => {});
+    castSidRef.current = null;
+  }, [reportCast]);
+
+  /** Play `item` on the Cast device from `startMs`. */
+  const castTrackRef = useRef<(item: Item, startMs: number) => Promise<void>>(async () => {});
+  castTrackRef.current = async (item: Item, startMs: number) => {
+    endCastSession();
+    const pi = await api.playback.start(item.id, { startMs: startMs || undefined, deviceProfile: castDeviceProfile(null, true) });
+    if (!castingRef.current) {
+      api.playback.stop(pi.sessionId).catch(() => {});
+      return;
+    }
+    castSidRef.current = pi.sessionId;
+    castOffsetRef.current = pi.streamStartMs ?? 0;
+    castEndHandled.current = null;
+    setInfo(pi);
+    setPosition(startMs);
+    const base = system?.publicUrl;
+    claimCast('music');
+    await castRef.current.load({
+      url: absoluteUrl(pi.url, base)!,
+      contentType: castContentType(pi.mimeType, pi.isHls),
+      kind: item.type === 'track' ? 'music' : 'generic',
+      title: pi.title || item.title,
+      subtitle: pi.subtitle ?? item.grandparentTitle ?? item.parentTitle ?? null,
+      album: item.type === 'track' ? item.parentTitle : null,
+      imageUrl: absoluteUrl(pi.posterUrl ?? item.posterUrl ?? item.thumbUrl, base),
+      startSeconds: Math.max(0, (startMs - castOffsetRef.current) / 1000),
+    });
+    reportCast('playing');
+  };
 
   const report = useCallback((state: 'playing' | 'paused' | 'stopped', keepalive = false) => {
     const a = audioRef.current;
@@ -112,6 +173,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       attached.current?.destroy();
       attached.current = null;
       stopSession();
+      if (castingRef.current && castSidRef.current) castRef.current.stop();
+      endCastSession();
       setInfo(null);
       setPlaying(false);
       return;
@@ -137,8 +200,13 @@ export function MusicProvider({ children }: { children: ReactNode }) {
             if (!cancelled && fresh.chapters) setChapters(fresh.chapters);
           }
         }
+        if (castingRef.current) {
+          endCastSession();
+          if (!cancelled) await castTrackRef.current(current, startMs);
+          return;
+        }
         const pi = await api.playback.start(current.id, { startMs: startMs || undefined, deviceProfile: profileWithBitrate(null) });
-        if (cancelled) {
+        if (cancelled || castingRef.current) {
           api.playback.stop(pi.sessionId).catch(() => {});
           return;
         }
@@ -183,6 +251,11 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const a = audioRef.current;
     const cur = stateRef.current.queue[stateRef.current.index];
     if (!a || !cur) return;
+    if (castingRef.current) {
+      castRef.current.seek(Math.max(0, (ms - castOffsetRef.current) / 1000));
+      setPosition(ms);
+      return;
+    }
     const local = (ms - offsetRef.current) / 1000;
     if (local >= 0 && (!info?.isHls || (a.seekable.length && local <= a.seekable.end(a.seekable.length - 1) + 1))) {
       a.currentTime = local;
@@ -223,6 +296,12 @@ export function MusicProvider({ children }: { children: ReactNode }) {
 
   const prev = useCallback(() => {
     const a = audioRef.current;
+    if (castingRef.current) {
+      const pos = castOffsetRef.current + castRef.current.remote.currentTime * 1000;
+      if (pos > 4000 || stateRef.current.index <= 0) seekRef.current(0);
+      else setIndex(stateRef.current.index - 1);
+      return;
+    }
     if (a && offsetRef.current + a.currentTime * 1000 > 4000) {
       if (offsetRef.current) seekRef.current(0);
       else a.currentTime = 0;
@@ -291,7 +370,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, [next, report, stopSession]);
 
   useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = volume;
+    if (castingRef.current) castRef.current.setVolume(volume);
+    else if (audioRef.current) audioRef.current.volume = volume;
     try {
       localStorage.setItem(VOL_KEY, String(volume));
     } catch {
@@ -299,22 +379,159 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     }
   }, [volume]);
   useEffect(() => {
-    if (audioRef.current) audioRef.current.muted = muted;
+    if (castingRef.current) castRef.current.setMuted(muted);
+    else if (audioRef.current) audioRef.current.muted = muted;
   }, [muted]);
+
+  /** Start local playback of the current track at `ms` (after casting ends). */
+  const resumeLocal = useCallback(async (ms: number, autoplay: boolean) => {
+    const a = audioRef.current;
+    const cur = stateRef.current.queue[stateRef.current.index];
+    if (!a || !cur) return;
+    try {
+      stopSession();
+      attached.current?.destroy();
+      const pi = await api.playback.start(cur.id, { startMs: Math.round(ms) || undefined, deviceProfile: profileWithBitrate(null) });
+      if (castingRef.current) {
+        api.playback.stop(pi.sessionId).catch(() => {});
+        return;
+      }
+      sessionRef.current = pi.sessionId;
+      offsetRef.current = pi.streamStartMs ?? 0;
+      pendingSeek.current = ms > 0 ? ms : null;
+      setInfo(pi);
+      attached.current = await attachStream(a, pi, { onFatal: (_k, msg) => toast.error(msg) });
+      a.volume = volume;
+      a.muted = muted;
+      if (autoplay) await a.play().catch(() => setPlaying(false));
+    } catch (e) {
+      toast.error(e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopSession, toast]);
+
+  /** Move the current track to the Cast device. */
+  const takeOverCast = useCallback(() => {
+    const a = audioRef.current;
+    const cur = stateRef.current.queue[stateRef.current.index];
+    castingRef.current = true;
+    setCasting(true);
+    if (!cur) return;
+    const pos = a ? offsetRef.current + a.currentTime * 1000 : 0;
+    a?.pause();
+    stopSession();
+    attached.current?.destroy();
+    attached.current = null;
+    setLoading(true);
+    castTrackRef.current(cur, pos)
+      .catch((e) => toast.error(`Cast failed: ${errorMessage(e)}`))
+      .finally(() => setLoading(false));
+  }, [stopSession, toast]);
+
+  // Hand over to / back from the Cast device. Music only claims a new Cast session when it's the
+  // active player (not while a video or live channel is open, which cast themselves).
+  useEffect(() => {
+    if (cast.connected && !castingRef.current) {
+      const onPlayerPage = /^\/(play|watch)\//.test(window.location.pathname);
+      if (!onPlayerPage && stateRef.current.index >= 0) takeOverCast();
+    } else if (!cast.connected && castingRef.current) {
+      const pos = castOffsetRef.current + castRef.current.remote.currentTime * 1000;
+      castingRef.current = false;
+      setCasting(false);
+      endCastSession();
+      // Resume locally, paused: don't suddenly start playing out of this device's speakers.
+      void resumeLocal(pos, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cast.connected]);
+
+  // Another player took the Cast device: stop mirroring it.
+  useEffect(() => {
+    const h = (e: Event) => {
+      if ((e as CustomEvent<CastOwner>).detail === 'music' || !castingRef.current) return;
+      castingRef.current = false;
+      setCasting(false);
+      endCastSession();
+      setPlaying(false);
+    };
+    window.addEventListener(CAST_OWNER_EVENT, h);
+    return () => window.removeEventListener(CAST_OWNER_EVENT, h);
+  }, [endCastSession]);
+
+  // Mirror the remote player.
+  const remote = cast.remote;
+  useEffect(() => {
+    if (!casting || castOwner() !== 'music') return;
+    setPosition(castOffsetRef.current + remote.currentTime * 1000);
+    if (remote.duration > 0) setDuration((d) => Math.max(d, castOffsetRef.current + remote.duration * 1000));
+  }, [casting, remote.currentTime, remote.duration]);
+  useEffect(() => {
+    if (!casting || castOwner() !== 'music' || !castSidRef.current) return;
+    const sid = castSidRef.current;
+    if (remote.playerState === 'IDLE' && remote.idleReason === 'FINISHED') {
+      if (castEndHandled.current === sid) return;
+      castEndHandled.current = sid;
+      setPlaying(false);
+      reportCast('stopped');
+      const { repeat: r, queue: q, index: i } = stateRef.current;
+      if (r === 'one' && q[i]) void castTrackRef.current(q[i]!, 0).catch(() => undefined);
+      else next();
+      return;
+    }
+    const isPlaying = remote.playerState === 'PLAYING' || remote.playerState === 'BUFFERING';
+    setPlaying(isPlaying && !remote.isPaused);
+    if (remote.playerState === 'PLAYING' || remote.playerState === 'PAUSED') reportCast(remote.isPaused ? 'paused' : 'playing');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [casting, remote.playerState, remote.isPaused, remote.idleReason]);
+  useEffect(() => {
+    if (!casting) return;
+    const iv = window.setInterval(() => {
+      if (castOwner() === 'music' && !castRef.current.remote.isPaused) reportCast('playing');
+    }, 10000);
+    const unload = () => endCastSession(true);
+    window.addEventListener('pagehide', unload);
+    return () => {
+      window.clearInterval(iv);
+      window.removeEventListener('pagehide', unload);
+    };
+  }, [casting, reportCast, endCastSession]);
+
+  const togglePlayback = useCallback(() => {
+    const a = audioRef.current;
+    if (!a || stateRef.current.index < 0) return;
+    if (castingRef.current) {
+      castRef.current.playOrPause();
+      return;
+    }
+    if (castRef.current.connected) {
+      // Connected but another player had the device: bring the music back to it.
+      takeOverCast();
+      return;
+    }
+    if (a.paused) void a.play();
+    else a.pause();
+  }, [takeOverCast]);
+  const pausePlayback = useCallback(() => {
+    if (castingRef.current) {
+      if (!castRef.current.remote.isPaused) castRef.current.playOrPause();
+      return;
+    }
+    audioRef.current?.pause();
+  }, []);
 
   // Media session controls.
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
     const ms = navigator.mediaSession;
     try {
-      ms.setActionHandler('play', () => void audioRef.current?.play());
-      ms.setActionHandler('pause', () => audioRef.current?.pause());
+      ms.setActionHandler('play', () => (castingRef.current ? togglePlayback() : void audioRef.current?.play()));
+      ms.setActionHandler('pause', pausePlayback);
       ms.setActionHandler('nexttrack', next);
       ms.setActionHandler('previoustrack', prev);
     } catch {
       /* unsupported action */
     }
-  }, [next, prev]);
+  }, [next, prev, togglePlayback, pausePlayback]);
 
   const value = useMemo<MusicApi>(
     () => ({
@@ -339,13 +556,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
           return [...q, ...items];
         });
       },
-      toggle: () => {
-        const a = audioRef.current;
-        if (!a || !current) return;
-        if (a.paused) void a.play();
-        else a.pause();
-      },
-      pause: () => audioRef.current?.pause(),
+      toggle: togglePlayback,
+      pause: pausePlayback,
       next,
       prev,
       seek: (ms) => seekRef.current(ms),
@@ -356,6 +568,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       },
       clear: () => {
         audioRef.current?.pause();
+        if (castingRef.current) castRef.current.stop();
         setQueue([]);
         setIndex(-1);
       },
@@ -371,8 +584,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         }
       },
       setRepeat,
+      cast,
+      casting,
     }),
-    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto],
+    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto, togglePlayback, pausePlayback, cast, casting],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

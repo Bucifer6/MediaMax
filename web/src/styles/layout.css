@@ -21,6 +21,7 @@
 .nav-item.active::before { content: ''; position: absolute; left: -12px; top: 9px; bottom: 9px; width: 4px; border-radius: 0 4px 4px 0; background: var(--c-primary); }
 .nav-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-primary); }
+.nav-count { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center; font-size: 0.7rem; font-weight: 800; background: var(--c-primary); color: var(--c-primary-text); }
 .nav-tag { font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em; padding: 2px 5px; border-radius: 4px; background: color-mix(in srgb, var(--c-accent) 20%, transparent); color: var(--c-accent); }
 .sidebar-foot { padding: 14px 12px 0; border-top: 1px solid var(--c-line); margin-top: 10px; display: flex; flex-direction: column; gap: 8px; font-size: 0.78rem; }
 .footer-text { color: var(--c-text-muted); line-height: 1.4; }
@@ -111,6 +112,7 @@
   .nav-item { justify-content: center; padding: 0; height: 46px; }
   .nav-item.active::before { left: -10px; }
   .nav-dot { position: absolute; top: 8px; right: 12px; }
+  .nav-count { position: absolute; top: 3px; right: 6px; min-width: 18px; height: 18px; font-size: 0.64rem; padding: 0 4px; }
 }
 @media (max-width: 900px) {
   :root { --sidebar-w: 0px; --topbar-h: 58px; }

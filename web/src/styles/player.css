@@ -146,3 +146,14 @@
 .chapters-popover .chapter-list { padding: 0; }
 .chapters-popover .chapter-item:hover { background: rgb(255 255 255 / 0.1); }
 .chapters-popover .chapter-num, .chapters-popover .chapter-item small { color: rgb(255 255 255 / 0.55); }
+
+/* Google Cast */
+.cast-overlay { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: #000; pointer-events: none; }
+.cast-overlay-bg { position: absolute; inset: 0; opacity: 0.35; filter: blur(18px); transform: scale(1.08); }
+.cast-overlay-bg .img, .cast-overlay-bg .img-fallback { width: 100%; height: 100%; object-fit: cover; }
+.cast-overlay-body { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 24px; color: #fff; max-width: min(90vw, 520px); }
+.cast-overlay-body .icon { color: var(--c-primary); margin-bottom: 6px; }
+.cast-overlay-body small { text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.72rem; font-weight: 700; color: rgb(255 255 255 / 0.65); }
+.cast-overlay-body strong { font-size: clamp(1.2rem, 3vw, 1.7rem); }
+.cast-overlay-body .btn { margin-top: 12px; pointer-events: auto; }
+.mini-casting { display: inline-flex; align-items: center; gap: 5px; color: var(--c-primary); font-weight: 600; }

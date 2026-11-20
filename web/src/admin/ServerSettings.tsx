@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { HwAccel, ServerSettings, User, Webhook, WebhookEvent } from '@mediamax/shared';
+import type { ArrOptions, ArrService, HwAccel, ServerSettings, User, Webhook, WebhookEvent } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useAsync } from '../hooks';
@@ -7,8 +7,9 @@ import { useToast } from '../state/toast';
 import { ErrorState, Field, Skeleton, Spinner, Switch, Tabs } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { AdminHeader } from './AdminRoutes';
+import { formatBytes } from '../utils/format';
 
-type Tab = 'general' | 'transcoding' | 'dvr' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks';
+type Tab = 'general' | 'transcoding' | 'dvr' | 'requests' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks';
 const HW: { value: HwAccel; label: string }[] = [
   { value: 'none', label: 'None (CPU)' },
   { value: 'vaapi', label: 'VA-API (Intel/AMD, Linux)' },
@@ -27,6 +28,8 @@ const OIDC_DEFAULTS: ServerSettings['oidc'] = {
   autoCreateUsers: true, groupsClaim: 'groups', adminGroup: null, allowedGroup: null,
 };
 const DLNA_DEFAULTS: ServerSettings['dlna'] = { enabled: false, friendlyName: null, userId: null };
+const REQUESTS_DEFAULTS: ServerSettings['requests'] = { enabled: true, autoApproveUserIds: [], weeklyLimit: 10, radarr: null, sonarr: null };
+const ARR_DEFAULTS: ArrService = { url: '', apiKey: '', qualityProfileId: null, rootFolder: null, searchOnAdd: true };
 
 /** "en, fr ,de" → ["en","fr","de"] */
 function parseLanguages(text: string): string[] {
@@ -51,7 +54,8 @@ export function ServerSettingsAdmin() {
   const [testing, setTesting] = useState<string | null>(null);
   const [langText, setLangText] = useState<string | null>(null);
   const [runningTp, setRunningTp] = useState(false);
-  const users = useAsync(async () => (tab === 'dlna' ? api.users.list() : ([] as User[])), [tab === 'dlna']);
+  const needUsers = tab === 'dlna' || tab === 'requests';
+  const users = useAsync(async () => (needUsers ? api.users.list() : ([] as User[])), [needUsers]);
 
   const load = () => {
     setError(null);
@@ -71,6 +75,8 @@ export function ServerSettingsAdmin() {
   const dl = { ...DLNA_DEFAULTS, ...(s.dlna ?? {}) };
   const lf = { ...LASTFM_DEFAULTS, ...(s.lastfm ?? {}) };
   const oi = { ...OIDC_DEFAULTS, ...(s.oidc ?? {}) };
+  const rq = { ...REQUESTS_DEFAULTS, ...(s.requests ?? {}) };
+  const setRq = (p: Partial<ServerSettings['requests']>) => set({ requests: { ...rq, ...p } });
   const setLf = (p: Partial<ServerSettings['lastfm']>) => set({ lastfm: { ...lf, ...p } });
   const setOi = (p: Partial<ServerSettings['oidc']>) => set({ oidc: { ...oi, ...p } });
   const callbackUrl = `${(s.publicUrl || window.location.origin).replace(/\/+$/, '')}/api/v1/auth/oidc/callback`;
@@ -128,6 +134,7 @@ export function ServerSettingsAdmin() {
         { value: 'general', label: 'General' },
         { value: 'transcoding', label: 'Transcoding' },
         { value: 'dvr', label: 'DVR' },
+        { value: 'requests', label: 'Requests' },
         { value: 'sso', label: 'SSO' },
         { value: 'trickplay', label: 'Trickplay' },
         { value: 'subtitles', label: 'OpenSubtitles' },
@@ -192,6 +199,40 @@ export function ServerSettingsAdmin() {
               <Field label="Default start padding (min)"><input className="input" type="number" min={0} value={s.dvr.paddingBeforeMin} onChange={(e) => setD({ paddingBeforeMin: Number(e.target.value) })} /></Field>
               <Field label="Default end padding (min)"><input className="input" type="number" min={0} value={s.dvr.paddingAfterMin} onChange={(e) => setD({ paddingAfterMin: Number(e.target.value) })} /></Field>
             </div>
+          </div>
+        )}
+        {tab === 'requests' && (
+          <div className="form-grid">
+            <p className="muted">
+              People can request movies and shows from the <strong>Discover</strong> page. Approved requests are sent to Radarr (movies) or Sonarr (shows) and
+              marked available once the title shows up in a library. Discover needs a TMDB API key (General tab){s.tmdbApiKey ? '' : ' — none is set yet'}.
+            </p>
+            <Switch checked={rq.enabled} onChange={(v) => setRq({ enabled: v })} label="Enable requests" hint="The Discover tab also has to be on in Branding → Features." />
+            <div className="form-row">
+              <Field label="Weekly limit per user" hint="Requests per user in any 7 days. 0 = unlimited. Admins are never limited.">
+                <input className="input" type="number" min={0} max={1000} value={rq.weeklyLimit} onChange={(e) => setRq({ weeklyLimit: Math.max(0, Math.round(Number(e.target.value) || 0)) })} />
+              </Field>
+            </div>
+            <fieldset className="settings-fieldset">
+              <legend className="field-label">Auto-approve requests from</legend>
+              <small className="field-hint">Admins’ requests are always approved automatically.</small>
+              {users.loading && !users.data ? <Skeleton h={36} /> : (
+                <div className="event-chips user-chips">
+                  {(users.data ?? []).filter((u) => !u.isAdmin && (!u.disabled || rq.autoApproveUserIds.includes(u.id))).map((u) => {
+                    const on = rq.autoApproveUserIds.includes(u.id);
+                    return (
+                      <label key={u.id} className={`check-chip ${on ? 'on' : ''}`}>
+                        <input type="checkbox" checked={on} onChange={(e) => setRq({ autoApproveUserIds: e.target.checked ? [...rq.autoApproveUserIds, u.id] : rq.autoApproveUserIds.filter((x) => x !== u.id) })} />
+                        {u.displayName || u.username}
+                      </label>
+                    );
+                  })}
+                  {!(users.data ?? []).some((u) => !u.isAdmin) && <span className="muted">No non-admin users yet.</span>}
+                </div>
+              )}
+            </fieldset>
+            <ArrCard kind="radarr" value={rq.radarr} onChange={(v) => setRq({ radarr: v })} />
+            <ArrCard kind="sonarr" value={rq.sonarr} onChange={(v) => setRq({ sonarr: v })} />
           </div>
         )}
         {tab === 'trickplay' && (
@@ -358,6 +399,79 @@ export function ServerSettingsAdmin() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Radarr / Sonarr connection card. `null` = not configured. */
+function ArrCard({ kind, value, onChange }: { kind: 'radarr' | 'sonarr'; value: ArrService | null; onChange: (v: ArrService | null) => void }) {
+  const toast = useToast();
+  const [opts, setOpts] = useState<ArrOptions | null>(null);
+  const [testing, setTesting] = useState(false);
+  const name = kind === 'radarr' ? 'Radarr' : 'Sonarr';
+  const v = { ...ARR_DEFAULTS, ...(value ?? {}) };
+  const set = (p: Partial<ArrService>) => {
+    const next = { ...v, ...p };
+    onChange(!next.url.trim() && !next.apiKey.trim() ? null : next);
+  };
+  const test = async () => {
+    setTesting(true);
+    try {
+      const r = await api.requests.testArr(v.url.trim(), v.apiKey.trim());
+      setOpts(r);
+      if (!r.ok) {
+        toast.show(`${name}: ${r.message || 'connection failed'}`, 'error');
+        return;
+      }
+      toast.success(`${name} connected${r.message ? ` — ${r.message}` : ''}`);
+      // Fill in sensible defaults when nothing valid is chosen yet.
+      const p: Partial<ArrService> = {};
+      if (!r.qualityProfiles.some((q) => q.id === v.qualityProfileId)) p.qualityProfileId = r.qualityProfiles[0]?.id ?? null;
+      if (!r.rootFolders.some((f) => f.path === v.rootFolder)) p.rootFolder = r.rootFolders[0]?.path ?? null;
+      if (Object.keys(p).length) set(p);
+    } catch (e) {
+      setOpts(null);
+      toast.error(e);
+    } finally {
+      setTesting(false);
+    }
+  };
+  const profiles = opts?.ok ? opts.qualityProfiles : v.qualityProfileId != null ? [{ id: v.qualityProfileId, name: `Profile #${v.qualityProfileId}` }] : [];
+  const folders = opts?.ok ? opts.rootFolders : v.rootFolder ? [{ path: v.rootFolder, freeSpace: null }] : [];
+  return (
+    <div className="arr-card">
+      <div className="arr-head">
+        <strong><Icon name={kind === 'radarr' ? 'film' : 'shows'} size={18} /> {name}</strong>
+        <span className="muted">{kind === 'radarr' ? 'Movies' : 'TV shows'}</span>
+        {value ? (opts?.ok ? <span className="badge badge-success">Connected</span> : <span className="badge badge-muted">Not tested</span>) : <span className="badge badge-muted">Off</span>}
+      </div>
+      <div className="form-row">
+        <Field label="URL"><input className="input mono" value={v.url} onChange={(e) => set({ url: e.target.value })} placeholder={kind === 'radarr' ? 'http://radarr:7878' : 'http://sonarr:8989'} spellCheck={false} /></Field>
+        <Field label="API key" hint={`${name} → Settings → General → Security.`}>
+          <input className="input mono" type="password" value={v.apiKey} onChange={(e) => set({ apiKey: e.target.value.trim() })} autoComplete="new-password" spellCheck={false} />
+        </Field>
+      </div>
+      <div>
+        <button className="btn btn-sm" onClick={() => void test()} disabled={!v.url.trim() || !v.apiKey.trim() || testing}>
+          {testing ? <Spinner size={14} /> : <Icon name="zap" size={14} />} Test & load options
+        </button>
+        {opts && !opts.ok && <span className="form-error" style={{ marginLeft: 12 }}>{opts.message}</span>}
+      </div>
+      <div className="form-row">
+        <Field label="Quality profile">
+          <select className="select" value={v.qualityProfileId ?? ''} onChange={(e) => set({ qualityProfileId: e.target.value ? Number(e.target.value) : null })} disabled={!profiles.length}>
+            <option value="">{profiles.length ? 'Choose…' : 'Test the connection first'}</option>
+            {profiles.map((q) => <option key={q.id} value={q.id}>{q.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Root folder">
+          <select className="select" value={v.rootFolder ?? ''} onChange={(e) => set({ rootFolder: e.target.value || null })} disabled={!folders.length}>
+            <option value="">{folders.length ? 'Choose…' : 'Test the connection first'}</option>
+            {folders.map((f) => <option key={f.path} value={f.path}>{f.path}{f.freeSpace != null ? ` (${formatBytes(f.freeSpace)} free)` : ''}</option>)}
+          </select>
+        </Field>
+      </div>
+      <Switch checked={v.searchOnAdd} onChange={(c) => set({ searchOnAdd: c })} label="Search on add" hint={`Ask ${name} to start searching as soon as a request is approved.`} disabled={!value} />
     </div>
   );
 }

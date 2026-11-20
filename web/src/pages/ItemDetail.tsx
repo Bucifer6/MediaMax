@@ -11,6 +11,7 @@ import { Icon } from '../components/Icon';
 import { Badge, Dropdown, EmptyState, ErrorState, Img, Modal, ProgressBar, Skeleton, StarRating, Tabs, useConfirm, type MenuItem } from '../components/ui';
 import { Row } from '../components/Row';
 import { PosterCard } from '../components/Cards';
+import { SmartListModal } from '../components/SmartListModal';
 import { AddToContainerModal, EditMetadataModal, UploadArtworkModal } from '../components/ItemModals';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
@@ -344,7 +345,7 @@ export function ItemPage() {
   const navigate = useNavigate();
   const play = usePlayItem();
   const res = useAsync(() => api.items.get(itemId), [itemId]);
-  const [modal, setModal] = useState<null | 'edit' | 'art' | 'playlist' | 'collection' | 'trailer' | 'photo' | 'subs'>(null);
+  const [modal, setModal] = useState<null | 'edit' | 'art' | 'playlist' | 'collection' | 'trailer' | 'photo' | 'subs' | 'smart'>(null);
   const item = res.data;
   const isSeries = item?.id === itemId && (item.type === 'show' || item.type === 'season' || item.type === 'audiobook' || item.type === 'podcast');
   // Next-up episode of a show/season (server: in progress → next unwatched → first).
@@ -519,6 +520,7 @@ export function ItemPage() {
             {item.type === 'audiobook' && item.childCount > 1 && <span>{item.childCount} parts</span>}
             {item.type === 'podcast' && item.childCount > 0 && <span>{item.childCount} episodes</span>}
             {item.type === 'podcastepisode' && item.releaseDate && <span>{formatDate(item.releaseDate)}</span>}
+            {item.smart && <Badge tone="accent"><Icon name="wand" size={12} /> Smart</Badge>}
             {item.communityRating != null && (
               <span className="detail-rating"><Icon name="starFill" size={14} /> {item.communityRating.toFixed(1)}</span>
             )}
@@ -546,6 +548,11 @@ export function ItemPage() {
             {(item.type === 'album' || item.type === 'artist' || item.type === 'playlist') && (
               <button className="btn btn-glass btn-lg" onClick={() => play(item, { shuffle: true })} data-nav>
                 <Icon name="shuffle" size={18} /> Shuffle
+              </button>
+            )}
+            {item.smart && containerOwned && (
+              <button className="btn btn-glass btn-lg" onClick={() => setModal('smart')} data-nav>
+                <Icon name="wand" size={18} /> Edit rules
               </button>
             )}
             {item.trailerUrl && (
@@ -623,14 +630,17 @@ export function ItemPage() {
         {item.type === 'podcast' && <PodcastEpisodes podcast={item} />}
         {item.type === 'audiobook' && item.childCount !== 1 && <TrackList parent={item} />}
         {(item.chapters?.length ?? 0) > 0 && <ChaptersSection item={item} />}
-        {(item.type === 'album' || item.type === 'playlist') && <TrackList parent={item} removable={item.type === 'playlist'} onRemove={removeFromContainer} />}
+        {(item.type === 'album' || item.type === 'playlist') && <TrackList key={item.smart ? JSON.stringify(item.smart) : 'manual'} parent={item} removable={item.type === 'playlist' && !item.smart} onRemove={removeFromContainer} />}
         {item.type === 'artist' && <ChildrenGrid parent={item} title="Albums" />}
-        {item.type === 'collection' && <ChildrenGrid parent={item} removable={isAdmin} onRemove={removeFromContainer} />}
+        {item.type === 'collection' && <ChildrenGrid key={item.smart ? JSON.stringify(item.smart) : 'manual'} parent={item} removable={isAdmin && !item.smart} onRemove={removeFromContainer} />}
         <CastRow item={item} />
         {item.media && item.media.length > 0 && <MediaInfo media={item.media} />}
         {!['playlist', 'collection', 'track', 'photo', 'season', 'bookpart', 'podcastepisode'].includes(item.type) && <SimilarRow item={item} />}
       </div>
 
+      {item.smart && containerOwned && (item.type === 'collection' || item.type === 'playlist') && (
+        <SmartListModal open={modal === 'smart'} onClose={() => setModal(null)} kind={item.type} item={item} onSaved={(i) => res.setData((d) => (d ? { ...d, ...i, userData: i.userData ?? d.userData } : i))} />
+      )}
       <AddToContainerModal open={modal === 'playlist'} onClose={() => setModal(null)} items={[item]} kind="playlist" />
       <AddToContainerModal open={modal === 'collection'} onClose={() => setModal(null)} items={[item]} kind="collection" />
       {isAdmin && <EditMetadataModal open={modal === 'edit'} onClose={() => setModal(null)} item={item} onUpdated={(i) => res.setData({ ...item, ...i })} />}

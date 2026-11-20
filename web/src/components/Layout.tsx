@@ -9,6 +9,8 @@ import { useMusic } from '../player/music';
 import { isTypingTarget } from '../hooks';
 import { useSpatialNav } from '../hooks/spatialNav';
 import { isIptvLibrary, libraryIcon } from '../utils/items';
+import { api } from '../api/endpoints';
+import { REQUESTS_CHANGED } from '../utils/requests';
 
 function NavItem({ to, icon, label, end, badge }: { to: string; icon: IconName; label: ReactNode; end?: boolean; badge?: ReactNode }) {
   return (
@@ -46,6 +48,30 @@ export function UserMenu() {
   );
 }
 
+/** Pending request count for admins; refreshed on an interval and whenever requests change. */
+function usePendingRequests(enabled: boolean): number {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (!enabled) {
+      setN(0);
+      return;
+    }
+    let alive = true;
+    const load = () => {
+      api.requests.list({ status: 'pending' }).then((l) => alive && setN(l.length)).catch(() => undefined);
+    };
+    load();
+    const t = window.setInterval(load, 60000);
+    window.addEventListener(REQUESTS_CHANGED, load);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+      window.removeEventListener(REQUESTS_CHANGED, load);
+    };
+  }, [enabled]);
+  return n;
+}
+
 export function Layout() {
   const { user, libraries, features, branding, wsOpen } = useApp();
   const music = useMusic();
@@ -80,6 +106,7 @@ export function Layout() {
   const iptv = features.iptvVod ? libraries.filter((l) => isIptvLibrary(l.type)) : [];
   const liveTv = features.liveTv && (user?.allowLiveTv ?? true);
   const dvr = features.dvr && (user?.allowDvr ?? true);
+  const pending = usePendingRequests(!!user?.isAdmin && features.requests);
 
   return (
     <div className={`app-shell ${drawer ? 'drawer-open' : ''} ${music.current ? 'has-mini' : ''}`}>
@@ -90,6 +117,15 @@ export function Layout() {
         <nav className="sidebar-nav">
           <NavItem to="/" end icon="home" label="Home" />
           <NavItem to="/search" icon="search" label="Search" />
+          {features.requests && <NavItem to="/discover" icon="compass" label="Discover" />}
+          {(features.requests || pending > 0) && (
+            <NavItem
+              to="/requests"
+              icon="inbox"
+              label={user?.isAdmin ? 'Requests' : 'My requests'}
+              badge={pending > 0 ? <span className="nav-count" aria-label={`${pending} pending`}>{pending > 99 ? '99+' : pending}</span> : undefined}
+            />
+          )}
           {local.length > 0 && <div className="nav-section">Libraries</div>}
           {local.map((l) => (
             <NavItem
