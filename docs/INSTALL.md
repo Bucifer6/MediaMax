@@ -7,6 +7,7 @@ setup wizard creates the first administrator.
 | You have | Use | Section |
 |---|---|---|
 | Synology, QNAP, Unraid, TrueNAS SCALE, OpenMediaVault | the Docker image | [NAS units](#nas-units) |
+| A Linux server with Docker, reachable from the internet (HTTPS, CrowdSec/fail2ban) | the installer | [DEPLOY.md](DEPLOY.md) |
 | Any Linux server with Docker | the Docker image | [Docker](#docker) |
 | A Windows PC or server | the Windows zip | [Windows](#windows) |
 | Linux without Docker (x64, or arm64 such as a Raspberry Pi 4/5 with a 64-bit OS) | the Linux archive | [Linux](#linux) |
@@ -24,6 +25,10 @@ Contents: [Docker](#docker) · [Windows](#windows) · [Linux](#linux) · [Synolo
 ---
 
 ## Docker
+
+> **Exposing MediaMax to the internet?** `deploy/install.sh` sets up all of this plus HTTPS (Caddy or Nginx),
+> CrowdSec or fail2ban and hardened defaults in one command; see **[DEPLOY.md](DEPLOY.md)**:
+> `curl -fsSL https://raw.githubusercontent.com/Bucifer6/MediaMax/main/deploy/install.sh | sudo bash`
 
 ```yaml
 # docker-compose.yml
@@ -275,14 +280,125 @@ Upgrade: select the file and press **Pull**, then **Up**. Hardware transcoding: 
 
 ---
 
+### NAS & disk spin-down
+
+MediaMax can leave NAS hard drives asleep while nobody is watching. Settings live in **Admin → Storage & disks**.
+
+1. **Put MediaMax's own files on an SSD.** The data folder (database, artwork cache, thumbnails, scrub previews, downloaded subtitles, backups) and the transcode folder are written all the time; keep them off the spinning array.
+   * **Synology:** map `/config` (and `MEDIAMAX_TRANSCODE_DIR`) to a folder on an SSD volume, or at least a different volume from the media.
+   * **Unraid:** use the cache pool — `/mnt/cache/appdata/mediamax`, *not* `/mnt/user/appdata` (the FUSE user share can wake array disks). Set the appdata share to *Use cache pool: Only/Prefer*.
+   * **TrueNAS SCALE:** put the app's config/transcode datasets on an SSD pool (or the apps pool), and media on the HDD pool.
+   * **QNAP / OMV:** the same idea — config on the system SSD / cache volume.
+2. **Don't poll.** File-change detection uses inotify on directories (no per-file watches, no polling) and never touches a sleeping disk. Only choose *Poll folder timestamps* for NFS/SMB mounts whose changes inotify cannot see, and keep the interval long (minimum 60 minutes). If inotify runs out of watches (very large libraries), raise `fs.inotify.max_user_watches` on the host (e.g. `sysctl fs.inotify.max_user_watches=524288`); the Storage page shows the error.
+3. **Turn on disk-friendly mode** and pick a maintenance window (e.g. 02:00–05:00, server time — set `TZ` on Docker containers). Scheduled library scans, thumbnail and scrub-preview generation, intro detection, DJ analysis, OpenSubtitles matching and HDR detection then only start in the window (one at a time, scan first). Manual *Run now*, playback, the Home Assistant *Scan libraries* button and scans triggered by real file changes are never held back.
+4. **Piggybacking** (on by default): when someone starts playing a file from a disk — or files change on it — MediaMax runs that disk's share of the postponed work while the disk is spinning anyway. With disk-state checks, a disk something else woke up counts too.
+5. **Disk-state awareness (Linux, optional):** MediaMax maps each library folder to its block devices via `/proc/self/mountinfo` and `/sys` (partitions, md/Unraid array devices, LVM/LUKS). If `hdparm` or `smartctl` is installed and allowed (root, or `--device /dev/sdX` + `--cap-add SYS_RAWIO` in Docker), it asks `hdparm -C` / `smartctl -n standby`, which answer **without waking** the drive. Outside disk-friendly mode, scheduled work then skips sleeping disks and catches up when they wake. Without those tools the Storage page shows *Idle* (no I/O for 10 minutes, read from `/sys`) or *Unknown*; nothing breaks. ZFS pools, mergerfs/Unraid user shares and network shares are shown as one "disk" each with unknown state.
+6. **Artwork next to media** (`poster.jpg`, `folder.jpg`…) is copied into the data folder the first time it is shown, so browsing never reads the media disk; rescans refresh the copy when the original changes.
+
+Limits: a library scan walks the whole library (all of its folders), so on an Unraid user share a scan in the window spins up every disk the share spans — point libraries at `/mnt/user/...` only if you accept that, or use per-disk paths. Background jobs that are already running when the window ends are allowed to finish. Plugin tasks are not held to the window.
+
 ## Hardware transcoding
 
-Software transcoding works everywhere. To use the GPU: give MediaMax the device (Docker: `/dev/dri` for
-Intel/AMD, or the NVIDIA runtime; Linux service: `render`/`video` groups; Windows: nothing to do), then choose the
-accelerator in **Admin → Settings → Transcoding** (`vaapi`, `qsv`, `nvenc`, `v4l2m2m`). MediaMax falls back to
-software when the GPU fails. The Docker image includes Intel's iHD and i965 drivers (amd64) and Mesa (all
-architectures). The Windows and Linux archives ship BtbN's static FFmpeg builds with NVENC/QSV/VA-API/D3D11
-support; the system drivers must be installed.
+Software transcoding works everywhere. To use the GPU, give MediaMax the device (see your platform below), then
+open **Admin → Settings → Transcoding** and press **Detect hardware**. MediaMax lists the GPUs it can see and the
+encoders in its FFmpeg build, then runs a 2-second test transcode with every method: H.264, HEVC and AV1 encoding,
+hardware decoding, 10-bit HEVC decoding and HDR → SDR tone mapping. Each card says what works (with the speed in fps)
+or shows FFmpeg's error. Press **Use this** on the recommended card and **Save changes**. Results are kept until the
+server restarts; press **Re-run detection** after changing drivers or devices.
+
+| Method | Platform | Hardware | Notes |
+|---|---|---|---|
+| `vaapi` | Linux | Intel (iHD/i965) and **AMD** (Mesa radeonsi) | AMD on Linux uses VA-API; the detect card says "VA-API (AMD Radeon)". Pick the render node if there are several. |
+| `qsv` | Linux, Windows | Intel iGPU / Arc | Linux: through VA-API (`/dev/dri/renderD*`). Windows: through D3D11 (GPU index). |
+| `nvenc` | Linux, Windows | NVIDIA GTX 10-series and newer | GPU index selects the card. GeForce drivers allow 8 encode sessions at once. |
+| `amf` | Windows | AMD Radeon | `h264_amf` / `hevc_amf` / `av1_amf` with D3D11 decoding. |
+| `videotoolbox` | macOS | Apple Silicon / Intel Macs | |
+| `v4l2m2m` | Linux ARM | Raspberry Pi 4 | H.264 only, about one 1080p stream. The Pi 5 has **no** hardware encoder: use software. |
+| `rkmpp` | Linux ARM | Rockchip RK3588/RK3568 | Needs an FFmpeg built with rkmpp/RGA ([ffmpeg-rockchip](https://github.com/nyanmisaka/ffmpeg-rockchip) or jellyfin-ffmpeg); stock FFmpeg is detect-only. |
+
+**HEVC and AV1 output.** With a hardware encoder, clients that can play HEVC (Safari, Chrome/Edge with HEVC
+decoding, the iOS and Android apps) or AV1 get it instead of H.264, at about 65% (HEVC) / 60% (AV1) of the H.264
+bitrate for the same quality. Those streams use fragmented-MP4 HLS segments, which these players need for HEVC/AV1;
+H.264 stays on MPEG-TS. HEVC and AV1 are never encoded on the CPU. Set the order and turn them on or off under
+**Preferred output codecs**, **Allow HEVC encoding** and **Allow AV1 encoding** (AV1 is off by default and needs
+Intel Arc, NVIDIA RTX 40 or AMD RX 7000).
+
+**HDR tone mapping on the GPU.** HDR sources are tone-mapped with `tonemap_vaapi` (VA-API, Intel only),
+`vpp_qsv` (Quick Sync), `tonemap_cuda` (NVIDIA, jellyfin-ffmpeg builds) or `tonemap_opencl`, when the FFmpeg build
+and driver support it, otherwise on the CPU (`zscale` + `tonemap`). The detect step shows which path works.
+
+**Automatic fallback.** If a hardware transcode fails to start or dies in the first seconds, MediaMax retries once,
+first with CPU tone mapping (if GPU tone mapping was used) and then fully in software, and logs why. The session
+shows "Hardware transcoding failed, used software" on the admin dashboard.
+
+### Docker (Intel / AMD)
+
+```yaml
+services:
+  mediamax:
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "render"   # or the numeric id: stat -c %g /dev/dri/renderD128
+      - "video"
+```
+
+With `PUID`/`PGID` set, the container joins the group that owns `/dev/dri/renderD*` at start by itself (see
+PUID/PGID above), so `group_add` is only needed when you run it with Docker's own `user:`. Use the numeric group id
+there if the host's render group name does not exist in the image. The image includes Intel's iHD and i965
+drivers (amd64) and Mesa (all architectures), so Intel and AMD work without anything installed on the host besides the
+kernel driver.
+
+### Docker (NVIDIA)
+
+Install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+on the host, then:
+
+```yaml
+services:
+  mediamax:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, video]
+```
+
+(`docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all …` with plain Docker.) `nvidia-smi` must work inside the
+container for detection to find the GPU; the `video` capability is what enables NVENC/NVDEC.
+
+### Linux service
+
+`sudo usermod -aG render,video mediamax && sudo systemctl restart mediamax`. Install the VA-API driver
+(`intel-media-va-driver-non-free` or `mesa-va-drivers`) and optionally `vainfo` so detection can show the driver
+name. NVIDIA: the proprietary driver (`nvidia-smi` must work).
+
+### Synology, Unraid and other NAS units
+
+- **Synology** (Intel models with an iGPU): map `/dev/dri` (see [Synology](#synology)). If the test says
+  `permission denied` on `/dev/dri/renderD128`, run `sudo chmod 666 /dev/dri/renderD128` once (DSM resets it on
+  reboot; add it as a boot-up Task). AMD Ryzen models have no GPU.
+- **Unraid**: install **Intel GPU TOP** (Intel) or **Radeon TOP** (AMD), add the device `/dev/dri` to the
+  container; for NVIDIA install the **Nvidia Driver** plugin, add `--runtime=nvidia` to Extra Parameters and set
+  `NVIDIA_VISIBLE_DEVICES` (the GPU UUID) and `NVIDIA_DRIVER_CAPABILITIES=all`.
+- **QNAP / TrueNAS / OpenMediaVault**: pass `/dev/dri` as above.
+
+### Windows
+
+Install the current GPU driver from NVIDIA, AMD (Adrenalin) or Intel (Arc & Iris Xe driver). The bundled FFmpeg
+(BtbN build) includes NVENC, QSV, AMF and D3D11; nothing else is needed. With several GPUs, set the **GPU index**
+(the order Windows lists them in Device Manager → Display adapters; Detect hardware shows each one).
+
+### macOS
+
+VideoToolbox works out of the box with Homebrew's FFmpeg.
+
+### Raspberry Pi
+
+Pi 4: `v4l2m2m` (H.264 encode, about one 1080p30 stream). In Docker add `--device /dev/video11` (encoder) and
+`/dev/video10` (decoder) and the `video` group. Pi 5: software only (no hardware encoder); prefer direct play.
 
 ## Where your data lives and backups
 
@@ -326,6 +442,58 @@ Environment variables (Docker `environment:`, `systemctl edit mediamax`, or Wind
 | `PUID` / `PGID` / `MEDIAMAX_EXTRA_GIDS` | unset (root) | Docker only: user, group and extra groups to run as |
 
 The full list is in the [README](../README.md#configuration-environment-variables).
+
+## Play to devices
+
+Every player's cast menu lists Chromecast, AirPlay (Safari / iOS) and the TVs, AV receivers, Sonos speakers and Kodi boxes on your
+network. Pick one and MediaMax streams straight to it: the original file when the device supports it, otherwise a converted
+stream (H.264/AAC MPEG-TS for video, FLAC or MP3 for music). Your browser or phone becomes a remote (pause, seek, volume, stop),
+and progress is saved as usual. Configure it in **Admin → Play to devices**.
+
+* **Discovery** uses SSDP (UPnP) and mDNS on the local network, so in Docker use `network_mode: host`, like DLNA. If MediaMax has
+  several network cards or runs behind port mapping, set *Stream address for devices* to the URL devices should fetch from.
+* **Kodi**: enable *Settings → Services → Control → Allow remote control via HTTP*. It is found automatically (mDNS) or can be
+  added by host, port and the username/password set there.
+* **Sonos** plays music only. Albums and playlists go to the Sonos queue; volume controls the whole group. Send to the group's
+  coordinator if the speakers are grouped.
+* **Security**: devices get signed, expiring, single-item links that only work from private addresses and only while that
+  playback runs. Only admins can add devices by hand, and only on private addresses unless they allow otherwise.
+
+## TV tuners and set-top boxes
+
+Under **Admin → Live TV sources → Add source** you can also add your own broadcast hardware: a **TVHeadend** server, a **SAT>IP** server (Octopus NET, minisatip, AVM FRITZ!Box Cable…) or an **Enigma2** receiver (Vu+, Dreambox… with OpenWebif). Each has a *Test connection* button that shows the device, its tuner count and the channel count; TVHeadend and Enigma2 bring their own guide. Network discovery of SAT>IP servers and HDHomeRun tuners, and RTSP over UDP (FRITZ!Box), need host networking in Docker (`network_mode: host`). Details: [TUNERS.md](TUNERS.md).
+
+## TV guide setup
+
+Live TV needs a programme guide (EPG). Open **Admin → TV guide**:
+
+1. **Guide sources → Add guide.** Pick one:
+   - **XMLTV:** any guide URL or a file on the server (`.xml`, `.xml.gz`, `.xml.xz`). Most IPTV providers already include a guide; it appears here automatically as the provider guide.
+   - **Free community guide:** iptv-org or epg.pw guides by country. These are free, volunteer-run services and their URLs can change.
+   - **Schedules Direct:** a paid service (about $35 a year) with accurate listings, used by Plex, Channels DVR and MythTV. Enter your username and password, then add your lineup by country and postcode.
+   - **HDHomeRun:** free guide data for HDHomeRun owners. Add the tuner as a Live TV source first, then pick it here.
+   - TVHeadend and Enigma2 sources add their own guide automatically; SAT>IP sources need one of the guides above (an iptv-org guide for your country works well).
+2. Set **priority** if you use more than one guide. The higher guide wins for each channel, and lower ones fill the gaps.
+3. **Guide matching** shows how each channel was matched and how confident the match is. Accept the suggestions, or click the pencil icon to search every guide, preview now/next, and set a time shift for channels whose guide runs early or late. A whole guide in the wrong time zone has a time-zone override in its settings.
+
+Channels without guide data get a **Missing guide** badge under Admin → Channels. Details: [EPG.md](EPG.md).
+
+## Requests (replacing Overseerr / Jellyseerr)
+MediaMax has request management built in — you don't need a separate Overseerr or Jellyseerr.
+
+1. **Admin → Server settings → General**: add a TMDB API key (movies/shows). **Media automation (*arr)**: add Radarr/Sonarr
+   (and Lidarr/Readarr for music/books), press **Test**, pick quality profile and root folder. Mark a second Radarr/Sonarr as
+   **4K** to offer 4K requests.
+2. **Admin → Users → Default permissions**: choose what new users may request — per kind *No*, *Request* (needs approval) or
+   *Auto* — and the default quota (e.g. 5 movies / 7 days, 6 seasons / 14 days). Change existing users individually or select
+   several and use **Edit permissions**. Give trusted people **Manage requests** so they can approve without being admins.
+3. **Admin → Server settings → Notifications**: add Discord, Telegram, ntfy, Gotify, Pushover, Slack, email or a JSON webhook,
+   tick the events, press **Test**, then **Save changes**. Set the *Public URL* (General tab) so messages link back to MediaMax.
+4. People use **Discover** to request; managers approve on **Requests** (with **Edit** to change the server, profile, folder,
+   tags or seasons first). Problems with a title are reported with the flag button on its page and handled under **Issues**.
+
+Coming from Overseerr: the old per-server "auto-approve users" list and the 4K switch keep working for existing users until
+you edit them; the old weekly limit becomes the default quota.
 
 ## Building the release archives yourself
 

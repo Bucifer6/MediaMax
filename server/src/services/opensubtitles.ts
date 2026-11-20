@@ -145,11 +145,11 @@ export function deleteDownloadedSubtitle(mediaId: string, index: number) {
 }
 
 /** Auto-download preferred languages for media that lack them. */
-export async function autoDownload(progress: (p: number) => void): Promise<number> {
+export async function autoDownload(progress: (p: number) => void, filter?: (mediaPath: string) => boolean): Promise<number> {
   const s = getSettings().openSubtitles;
   if (!s.apiKey || !s.autoLanguages.length) return 0;
-  const rows = db.all(`SELECT i.id, m.id mid, m.subs FROM items i JOIN media m ON m.item_id = i.id
-    WHERE i.type IN ('movie','episode') AND m.path IS NOT NULL ORDER BY i.added_at DESC LIMIT 300`);
+  const rows = db.all(`SELECT i.id, m.id mid, m.subs, m.path FROM items i JOIN media m ON m.item_id = i.id
+    WHERE i.type IN ('movie','episode') AND m.path IS NOT NULL ORDER BY i.added_at DESC LIMIT 300`).filter((r) => !filter || filter(r.path));
   let n = 0;
   for (let i = 0; i < rows.length; i++) {
     const subs = parseJson<SubtitleStream[]>(rows[i].subs, []);

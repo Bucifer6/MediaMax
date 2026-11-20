@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
-import type { AudioStream, Chapter, SubtitleStream } from '@mediamax/shared';
+import type { AudioStream, Chapter, SubtitleStream, VideoRangeInfo } from '@mediamax/shared';
 import { config } from '../config.js';
+import { parseVideoRange, wantsFrameProbe } from './hdr.js';
 
 export interface ProbeResult {
   container: string | null;
@@ -11,6 +12,8 @@ export interface ProbeResult {
   height: number | null;
   videoCodec: string | null;
   hdr: boolean;
+  /** HDR format / Dolby Vision details (null without video). */
+  videoRange: VideoRangeInfo | null;
   audio: AudioStream[];
   subs: SubtitleStream[];
   tags: Record<string, string>;
@@ -33,13 +36,33 @@ export function ffprobeJson(input: string, extraArgs: string[] = [], timeoutMs =
       clearTimeout(t);
       reject(e);
     });
-    p.on('exit', (code) => {
+    // 'close', not 'exit': 'exit' can fire before stdout is fully read (truncated JSON under load).
+    p.on('close', (code) => {
       clearTimeout(t);
       if (code !== 0) return reject(new Error(err.trim() || `ffprobe exited ${code}`));
       try {
         resolve(JSON.parse(out));
       } catch (e) {
         reject(e);
+      }
+    });
+  });
+}
+
+/** Side data of a video stream's first frame (cheap: one frame is decoded). */
+export async function firstFrameSideData(input: string, streamIndex: number): Promise<any[]> {
+  return new Promise((resolve) => {
+    const p = spawn(config.ffprobe, ['-v', 'error', '-print_format', 'json', '-select_streams', String(streamIndex), '-show_frames', '-read_intervals', '%+#1', '-show_entries', 'frame=side_data_list', input]);
+    let out = '';
+    const t = setTimeout(() => p.kill('SIGKILL'), 15000);
+    p.stdout.on('data', (d) => (out += d));
+    p.on('error', () => { clearTimeout(t); resolve([]); });
+    p.on('close', () => {
+      clearTimeout(t);
+      try {
+        resolve(JSON.parse(out).frames?.[0]?.side_data_list ?? []);
+      } catch {
+        resolve([]);
       }
     });
   });
@@ -74,7 +97,10 @@ export async function probe(input: string, filePath?: string): Promise<ProbeResu
     startMs: Math.round(parseFloat(c.start_time ?? '0') * 1000),
     endMs: Math.round(parseFloat(c.end_time ?? '0') * 1000),
   })).filter((c: Chapter) => c.endMs > c.startMs);
-  const hdr = !!video && (['smpte2084', 'arib-std-b67'].includes(video.color_transfer) || (video.side_data_list ?? []).some((s: any) => /DOVI/i.test(s.side_data_type ?? '')));
+  // PQ streams: read the first frame's side data too (HDR10+ dynamic metadata, mastering display, MaxCLL).
+  const frameSd = video && wantsFrameProbe(video) ? await firstFrameSideData(input, video.index).catch(() => []) : [];
+  const videoRange = video ? parseVideoRange(video, frameSd) : null;
+  const hdr = !!videoRange && videoRange.hdrFormat !== 'sdr';
   const audio: AudioStream[] = streams.filter((s) => s.codec_type === 'audio').map((s) => ({
     index: s.index,
     codec: s.codec_name ?? 'unknown',
@@ -103,6 +129,7 @@ export async function probe(input: string, filePath?: string): Promise<ProbeResu
     height: video?.height ?? null,
     videoCodec: video?.codec_name ?? null,
     hdr,
+    videoRange,
     audio,
     subs,
     // Ogg/Opus/FLAC-in-Ogg keep their tags on the audio stream; container tags win when both exist.

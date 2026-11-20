@@ -45,13 +45,16 @@ import { OnlineSubtitlesSheet } from './OnlineSubtitlesSheet';
 import { Scrubber } from './Scrubber';
 import { useTrickplay } from './Trickplay';
 import { WatchTogetherSheet } from './WatchTogether';
+import { createNumberEntry, matchDisplayFor, useNativeRemoteKeys } from './remoteKeys';
 import { activeCues, parseVtt, type Cue } from './vtt';
+import { measureBandwidth } from './bandwidth';
 
 export type PlayerTarget =
   | { kind: 'vod'; itemId: string; startMs?: number; mediaId?: string }
   | { kind: 'live'; channelId: string; catchupStart?: string; durationMin?: number; categoryId?: string };
 
-type SubChoice = { kind: 'off' } | { kind: 'server'; track: SubtitleTrack } | { kind: 'embedded'; track: NativeSubtitleTrack };
+/** Server tracks are drawn by our own overlay; `embedded` (the platform renderer) is only offered offline / for live captions; `burn` = bitmap subtitles burned in by the server. */
+type SubChoice = { kind: 'off' } | { kind: 'server'; track: SubtitleTrack } | { kind: 'embedded'; track: NativeSubtitleTrack } | { kind: 'burn'; index: number };
 type SheetKind = 'audio' | 'subs' | 'online' | 'quality' | 'channels' | 'together' | 'playon' | null;
 
 const langMatch = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.slice(0, 2).toLowerCase() === b.slice(0, 2).toLowerCase();
@@ -89,6 +92,11 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [maxBitrate, setMaxBitrate] = useState<number | null>(prefs?.maxBitrate ?? null);
+  /** Auto quality (default): bandwidth probe + adaptive master playlist that AVPlayer / ExoPlayer adapt over natively. */
+  const [autoQuality, setAutoQuality] = useState(prefs?.maxBitrate == null && prefs?.autoQuality !== false);
+  const autoRef = useRef(autoQuality);
+  /** Bitmap subtitle stream burned in by the server (VobSub / DVB / PGS on native), kept across reloads. */
+  const burnRef = useRef<number | null>(null);
   const [audioIndex, setAudioIndex] = useState<number | undefined>(undefined);
   const [sub, setSub] = useState<SubChoice>({ kind: 'off' });
   const [embeddedSubs, setEmbeddedSubs] = useState<NativeSubtitleTrack[]>([]);
@@ -154,6 +162,8 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
     p.keepScreenOnWhilePlaying = true;
     p.showNowPlayingNotification = !Platform.isTV;
     p.staysActiveInBackground = !Platform.isTV;
+    // AirPlay: the route picker (VideoAirPlayButton) needs external playback allowed.
+    p.allowsExternalPlayback = true;
   });
 
   const flash = useCallback((text: string) => {
@@ -261,7 +271,7 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
 
   // ----- loading -----
   const load = useCallback(
-    async (startMs: number, opts: { audio?: number; bitrate?: number | null; paused?: boolean } = {}) => {
+    async (startMs: number, opts: { audio?: number; bitrate?: number | null; paused?: boolean; auto?: boolean; burn?: number | null } = {}) => {
       if (castingRef.current) return castLoadRef.current(startMs, opts);
       setLoading(true);
       setError(null);
@@ -279,12 +289,19 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
           pi = await api.playChannel(channelId, catchup ? { catchupStart: catchup.start, catchupDurationMin: catchup.durationMin } : {});
           uri = api.absolute(pi.url);
         } else {
+          const auto = opts.auto ?? autoRef.current;
+          const burn = opts.burn !== undefined ? opts.burn : burnRef.current;
+          const measured = auto ? await measureBandwidth(api) : null;
           pi = await api.playback(target.itemId, {
             mediaId: target.mediaId,
             startMs: Math.round(startMs),
             audioStreamIndex: opts.audio,
-            subtitleStreamIndex: null, // we render sidecar subtitles ourselves
-            deviceProfile: videoDeviceProfile(opts.bitrate === undefined ? maxBitrate : opts.bitrate),
+            // Text subtitles are fetched and drawn by our overlay; only bitmap tracks are burned in, on request.
+            subtitleStreamIndex: burn ?? null,
+            ...(burn != null ? { burnSubtitles: true } : {}),
+            subtitleFormats: ['srt', 'vtt', 'ass'],
+            deviceProfile: videoDeviceProfile(auto ? null : opts.bitrate === undefined ? maxBitrate : opts.bitrate),
+            ...(auto ? { adaptive: true, measuredBandwidth: measured ? Math.round(measured / 1000) : null } : {}),
           });
           uri = api.absolute(pi.url);
         }
@@ -734,6 +751,50 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
     poke();
   });
 
+  // ----- extra remote keys (Android TV: digits, colour keys, Info, Guide, channel/track keys) -----
+  const lastZap = useRef(0);
+  const zapOnce = useCallback((dir: 1 | -1) => {
+    // Channel keys can arrive both from react-native-tvos and from the native key hook.
+    if (Date.now() - lastZap.current < 300) return;
+    lastZap.current = Date.now();
+    zap(dir);
+  }, [zap]);
+  const numberEntry = useMemo(() => createNumberEntry(
+    (num) => {
+      const ch = channelList.find((c) => String(c.number) === num);
+      if (ch) {
+        setCatchup(null);
+        setChannelId(ch.id);
+        flash(`${ch.number}  ${ch.name}`);
+      } else flash(`No channel ${num}`);
+    },
+    (typed) => flash(`${typed}_`),
+  ), [channelList, flash]);
+  useEffect(() => () => numberEntry.cancel(), [numberEntry]);
+  useNativeRemoteKeys((key) => {
+    if (/^[0-9]$/.test(key)) {
+      if (isLive) numberEntry.push(key);
+      else if (canSeek && dur) userSeek((Number(key) / 10) * dur);
+      return;
+    }
+    switch (key) {
+      case 'ChannelUp': return zapOnce(1);
+      case 'ChannelDown': return zapOnce(-1);
+      case 'MediaTrackNext': return isLive ? zapOnce(1) : nextId ? goNext(nextId) : undefined;
+      case 'MediaTrackPrevious': return isLive ? zapOnce(-1) : canSeek ? seekBy(-30000) : undefined;
+      case 'MediaStop': return exit();
+      case 'Info': case 'ColorF3Blue': return isLive && key === 'ColorF3Blue' && channelList.length > 1 ? setSheet('channels') : poke();
+      case 'Guide': return router.push('/live/guide' as never);
+      case 'ColorF0Red': case 'ClosedCaptionToggle': return setSheet('subs');
+      case 'ColorF1Green': case 'AudioTrack': return audioStreams.length > 1 ? setSheet('audio') : undefined;
+      case 'ColorF2Yellow':
+        if (activeMarker) userSeek(activeMarker.endMs);
+        return;
+    }
+  }, Platform.isTV);
+  // Apple TV: match the display's range / frame rate to the content while it plays.
+  useEffect(() => (Platform.isTV ? matchDisplayFor(info) : undefined), [info?.sessionId]);
+
   useBackHandler(() => {
     if (sheet) {
       setSheet(null);
@@ -789,7 +850,20 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
           selected: sub.kind === 'server' && sub.track.index === s.index,
         })),
       });
-    if (embeddedSubs.length && !casting)
+    // Bitmap formats our overlay can't draw: an explicit burn-in choice (the server transcodes).
+    const burnable = info?.burnInSubtitles ?? [];
+    if (burnable.length && !casting)
+      sections.push({
+        title: 'Burned in (bitmap)',
+        options: burnable.map((s) => ({
+          key: `b:${s.index}`,
+          label: s.title ?? languageName(s.language),
+          description: [(s.format ?? s.codec ?? 'bitmap').toUpperCase(), 'drawn into the video by the server'].join(' · '),
+          selected: sub.kind === 'burn' && sub.index === s.index,
+        })),
+      });
+    // The platform's own subtitle renderer is only used without a server (offline downloads) and for live captions.
+    if (embeddedSubs.length && !casting && (!info || isLive))
       sections.push({
         title: 'In stream',
         options: embeddedSubs.map((s, i) => ({ key: `e:${i}`, label: s.label || languageName(s.language), selected: sub.kind === 'embedded' && sub.track.id === s.id && sub.track.language === s.language })),
@@ -800,9 +874,17 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
   const selectSub = (key: string) => {
     if (key === 'online') return setSheet('online');
     setSheet(null);
-    if (key === 'off') return setSub({ kind: 'off' });
     const [kind, idx] = key.split(':');
-    if (kind === 's') {
+    // Leaving or entering burn-in needs a new stream.
+    const wantBurn = kind === 'b' ? Number(idx) : null;
+    if (wantBurn !== burnRef.current) {
+      burnRef.current = wantBurn;
+      void load(posRef.current, { audio: audioIndex, burn: wantBurn });
+    }
+    if (key === 'off') return setSub({ kind: 'off' });
+    if (kind === 'b') {
+      setSub({ kind: 'burn', index: Number(idx) });
+    } else if (kind === 's') {
       const tr = info?.subtitles.find((s) => String(s.index) === idx);
       if (tr) setSub({ kind: 'server', track: tr });
     } else {
@@ -811,13 +893,25 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
     }
   };
 
-  const qualityOptions: SheetOption<string>[] = QUALITY_OPTIONS.map((q) => ({ key: String(q.kbps ?? 'orig'), label: q.label, selected: q.kbps === maxBitrate, description: q.kbps == null && info ? `Currently: ${info.method}` : undefined }));
+  const qualityOptions: SheetOption<string>[] = [
+    { key: 'auto', label: 'Auto', selected: autoQuality, description: autoQuality && info ? `Adapts to your connection · ${info.method}` : 'Adapts to your connection' },
+    ...QUALITY_OPTIONS.map((q) => ({ key: String(q.kbps ?? 'orig'), label: q.label, selected: !autoQuality && q.kbps === maxBitrate, description: !autoQuality && q.kbps == null && info ? `Currently: ${info.method}` : undefined })),
+  ];
   const selectQuality = (key: string) => {
     setSheet(null);
+    if (key === 'auto') {
+      if (autoQuality) return;
+      setAutoQuality(true);
+      autoRef.current = true;
+      void load(posRef.current, { audio: audioIndex, auto: true });
+      return;
+    }
     const kbps = key === 'orig' ? null : Number(key);
-    if (kbps === maxBitrate) return;
+    if (!autoQuality && kbps === maxBitrate) return;
+    setAutoQuality(false);
+    autoRef.current = false;
     setMaxBitrate(kbps);
-    void load(posRef.current, { audio: audioIndex, bitrate: kbps });
+    void load(posRef.current, { audio: audioIndex, bitrate: kbps, auto: false });
   };
 
   const onSubtitleDownloaded = (_item: Item, remote: RemoteSubtitle) => {
@@ -840,6 +934,17 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
 
   // ----- render -----
   const subtitleText = sub.kind === 'server' && !casting ? activeCues(cues, pos).map((c) => c.text).join('\n') : '';
+  // The user's subtitle style (Settings → Subtitles), as on the web/TV players.
+  const ss = prefs?.subtitleStyle;
+  const subLook = {
+    scale: ({ small: 0.8, medium: 1, large: 1.25, xlarge: 1.5 } as const)[ss?.size ?? 'medium'],
+    color: ({ white: '#fff', yellow: '#ffe94d', cyan: '#5ff2ff', green: '#6dff7a' } as const)[ss?.color ?? 'white'],
+    text: ss?.background === 'box' ? { backgroundColor: 'rgba(0,0,0,0.62)' }
+      : ss?.background === 'boxSolid' ? { backgroundColor: '#000' }
+      : ss?.background === 'none' || ss?.edge === 'none' ? { backgroundColor: 'transparent' }
+      : { backgroundColor: 'transparent', textShadowColor: 'rgba(0,0,0,0.95)', textShadowRadius: ss?.edge === 'shadow' ? 3 : 6, textShadowOffset: { width: ss?.edge === 'shadow' ? 2 : 0, height: ss?.edge === 'shadow' ? 2 : 1 } },
+  };
+  const subLift = ss?.verticalOffset ? (t.isTV ? t.s(1080) : 600) * (ss.verticalOffset / 100) : ss?.position === 'raised' ? (t.isTV ? t.s(80) : 50) : 0;
   const title = info?.title ?? offlineItem?.title ?? channel?.name ?? '';
   const subtitle = isLive ? (catchup ? `Catch-up · ${formatTime(catchup.start)}` : channel?.nowPlaying?.title ?? null) : info?.subtitle ?? null;
   // ----- remote control (other devices) -----
@@ -941,12 +1046,12 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
 
       {/* Subtitles */}
       {subtitleText ? (
-        <View pointerEvents="none" style={{ position: 'absolute', left: '8%', right: '8%', bottom: controls ? (t.isTV ? t.s(190) : 130) : t.isTV ? t.s(60) : 36, alignItems: 'center' }}>
+        <View pointerEvents="none" style={{ position: 'absolute', left: '8%', right: '8%', bottom: (controls ? (t.isTV ? t.s(190) : 130) : t.isTV ? t.s(60) : 36) + subLift, alignItems: 'center' }}>
           <T
             center
             weight="700"
-            color="#fff"
-            style={{ fontSize: t.isTV ? t.s(30) : t.wide ? 24 : 18, lineHeight: t.isTV ? t.s(40) : t.wide ? 32 : 25, textShadowColor: 'rgba(0,0,0,0.95)', textShadowRadius: 6, textShadowOffset: { width: 0, height: 1 }, backgroundColor: 'rgba(0,0,0,0.35)', paddingHorizontal: 8, borderRadius: 4 }}
+            color={subLook.color}
+            style={{ fontSize: (t.isTV ? t.s(30) : t.wide ? 24 : 18) * subLook.scale, lineHeight: (t.isTV ? t.s(40) : t.wide ? 32 : 25) * subLook.scale, ...subLook.text, paddingHorizontal: 8, borderRadius: 4 }}
           >
             {subtitleText}
           </T>
@@ -1081,7 +1186,7 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
               <View style={{ flex: 1 }} />
               {audioStreams.length > 1 ? <CtrlButton icon="musical-note-outline" label={t.isTV || t.wide ? 'Audio' : undefined} onPress={() => setSheet('audio')} size={iconSize} /> : null}
               {(info?.subtitles.length ?? 0) + embeddedSubs.length > 0 || onlineVod ? <CtrlButton icon={sub.kind === 'off' ? 'chatbox-outline' : 'chatbox'} label={t.isTV || t.wide ? 'Subtitles' : undefined} onPress={() => setSheet('subs')} size={iconSize} /> : null}
-              {!offlineUri && !isLive ? <CtrlButton icon="speedometer-outline" label={t.isTV || t.wide ? (maxBitrate ? `${Math.round(maxBitrate / 1000)} Mbps` : 'Quality') : undefined} onPress={() => setSheet('quality')} size={iconSize} /> : null}
+              {!offlineUri && !isLive ? <CtrlButton icon="speedometer-outline" label={t.isTV || t.wide ? (autoQuality ? 'Auto' : maxBitrate ? `${Math.round(maxBitrate / 1000)} Mbps` : 'Quality') : undefined} onPress={() => setSheet('quality')} size={iconSize} /> : null}
               {isLive && channelList.length > 1 ? <CtrlButton icon="list" label={t.isTV || t.wide ? 'Channels' : undefined} onPress={() => setSheet('channels')} size={iconSize} /> : null}
               {isLive ? <CtrlButton icon="grid-outline" label={t.isTV || t.wide ? 'Guide' : undefined} onPress={() => router.push('/live/guide' as never)} size={iconSize} /> : null}
               {isLive && caps.dvr && channel?.nowPlaying && !catchup ? <CtrlButton icon="radio-button-on" label={t.isTV || t.wide ? 'Record' : undefined} onPress={recordNow} size={iconSize} color={t.colors.danger} /> : null}

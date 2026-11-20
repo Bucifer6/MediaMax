@@ -16,7 +16,8 @@
     "start": "npm run start -w server",
     "test": "npm test -w server",
     "sync-types": "node scripts/sync-types.mjs",
-    "test:e2e": "node scripts/e2e-smoke.cjs"
+    "test:e2e": "node scripts/e2e-smoke.cjs",
+    "screenshots": "node scripts/screenshots/run.mjs"
   },
   "engines": {
     "node": ">=22.5"

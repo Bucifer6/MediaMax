@@ -1,7 +1,8 @@
+import { securityEvent } from './util/securityLog.js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { DeviceInfo } from '@mediamax/shared';
 import { authenticate, authenticateApiKey, type AuthContext } from './services/auth.js';
-import { forbidden, unauthorized } from './util/errors.js';
+import { forbidden, HttpError, unauthorized } from './util/errors.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -22,11 +23,23 @@ export function extractToken(req: FastifyRequest): string | null {
 export async function authHook(req: FastifyRequest) {
   const apiKey = (req.headers['x-api-key'] as string | undefined) ?? ((req.query as Record<string, unknown> | undefined)?.api_key as string | undefined);
   req.auth = apiKey ? authenticateApiKey(apiKey) : authenticate(extractToken(req));
+  // A wrong API key is a guessing attempt worth banning for; expired session tokens are normal and are not logged.
+  if (apiKey && !req.auth) securityEvent('AUTH_FAIL', req.ip, { reason: 'api_key' });
 }
 
 export function requireUser(req: FastifyRequest): AuthContext {
   if (!req.auth) throw unauthorized();
   return req.auth;
+}
+
+/**
+ * Account-level actions (security, API keys, device linking, managing profiles): the account owner's own session
+ * only, never a profile session, even when the owner is an administrator.
+ */
+export function requireAccountOwner(req: FastifyRequest): AuthContext {
+  const a = requireUser(req);
+  if (a.user.parentUserId) throw new HttpError(403, 'Switch to the account owner\'s profile to do this', 'profile_session');
+  return a;
 }
 
 export function requireAdmin(req: FastifyRequest): AuthContext {

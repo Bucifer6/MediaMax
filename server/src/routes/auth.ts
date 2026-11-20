@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { CreateUserRequest, LoginRequest, PinLoginRequest, UpdateMeRequest, UpdateUserRequest } from '@mediamax/shared';
-import { requireAdmin, requireUser, deviceFromRequest, remoteAddr, noCache } from '../http.js';
+import { requireAccountOwner, requireAdmin, requireUser, deviceFromRequest, remoteAddr, noCache } from '../http.js';
 import * as auth from '../services/auth.js';
 import * as oidc from '../services/oidc.js';
 import * as invites from '../services/invites.js';
@@ -13,7 +13,7 @@ import type { FastifyRequest } from 'fastify';
 import { config } from '../config.js';
 import { badRequest } from '../util/errors.js';
 
-async function saveAvatar(req: FastifyRequest, userId: string): Promise<string> {
+export async function saveAvatar(req: FastifyRequest, userId: string): Promise<string> {
   const file = await req.file();
   if (!file) throw badRequest('No file uploaded (field "file")');
   const ext = path.extname(file.filename).toLowerCase() || '.jpg';
@@ -94,7 +94,7 @@ export default async function authRoutes(app: FastifyInstance) {
     noCache(reply);
     return auth.pollLinkCode(req.query.pollToken);
   });
-  app.post<{ Body: { code: string } }>('/auth/link/approve', async (req) => auth.approveLinkCode(requireUser(req), req.body?.code, remoteAddr(req) ?? undefined));
+  app.post<{ Body: { code: string } }>('/auth/link/approve', async (req) => auth.approveLinkCode(requireAccountOwner(req), req.body?.code, remoteAddr(req) ?? undefined));
 
   app.post('/auth/logout', async (req) => {
     auth.logout(requireUser(req));
@@ -120,10 +120,10 @@ export default async function authRoutes(app: FastifyInstance) {
     return auth.setAvatar(req.params.id, null);
   });
   /* Two-factor (TOTP) */
-  app.post('/auth/me/2fa/setup', async (req) => auth.totpSetup(requireUser(req).user.id));
-  app.post<{ Body: { code: string } }>('/auth/me/2fa/enable', async (req) => auth.totpEnable(requireUser(req).user.id, req.body?.code));
+  app.post('/auth/me/2fa/setup', async (req) => auth.totpSetup(requireAccountOwner(req).user.id));
+  app.post<{ Body: { code: string } }>('/auth/me/2fa/enable', async (req) => auth.totpEnable(requireAccountOwner(req).user.id, req.body?.code));
   app.post<{ Body: { code: string } }>('/auth/me/2fa/disable', async (req) => {
-    const { user } = requireUser(req);
+    const { user } = requireAccountOwner(req);
     auth.totpDisable(user.id, req.body?.code);
     return auth.getUser(user.id);
   });
@@ -135,14 +135,14 @@ export default async function authRoutes(app: FastifyInstance) {
   });
 
   /* API keys (act as the owning user) */
-  app.get('/auth/api-keys', async (req) => auth.listApiKeys(requireUser(req).user.id));
+  app.get('/auth/api-keys', async (req) => auth.listApiKeys(requireAccountOwner(req).user.id));
   app.post<{ Body: { name: string } }>('/auth/api-keys', async (req) => {
-    const a = requireUser(req);
+    const a = requireAccountOwner(req);
     if (a.deviceRowId.startsWith('apikey:')) throw badRequest('API keys cannot create other API keys');
     return auth.createApiKey(a.user.id, req.body?.name);
   });
   app.delete<{ Params: { id: string } }>('/auth/api-keys/:id', async (req) => {
-    const { user } = requireUser(req);
+    const { user } = requireAccountOwner(req);
     auth.deleteApiKey(user.id, req.params.id, user.isAdmin);
     return { ok: true };
   });

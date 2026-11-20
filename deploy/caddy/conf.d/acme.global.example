@@ -1,0 +1,2 @@
+# Copy to acme.global (the installer does this) so Let's Encrypt can warn you before a certificate expires.
+email you@example.com

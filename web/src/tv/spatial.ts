@@ -11,9 +11,93 @@
 const KEY = 'mm.tv';
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), video[controls]';
 
-// Remote key codes: Tizen (10009 back, 10252 play/pause, 415 play, 19 pause, 413 stop, 417 ff, 412 rew), webOS (461 back).
+// Remote key codes: Tizen (10009 back, 10182 exit), webOS (461 back), plus Backspace.
 const BACK = new Set([10009, 461, 8]);
-const MEDIA: Record<number, string> = { 10252: ' ', 415: ' ', 19: ' ', 179: ' ', 413: 'Escape', 417: 'ArrowRight', 412: 'ArrowLeft', 228: 'ArrowRight', 227: 'ArrowLeft' };
+
+/**
+ * TV remote / HDMI-CEC / Bluetooth remote keys, normalised to KeyboardEvent.key names. Browsers on Android TV and
+ * Fire TV already send the standard `key` values; Tizen and webOS send vendor key codes.
+ */
+const REMOTE: Record<number, string> = {
+  10252: 'MediaPlayPause', 179: 'MediaPlayPause', 415: 'MediaPlay', 19: 'MediaPause', 413: 'MediaStop', 178: 'MediaStop',
+  417: 'MediaFastForward', 228: 'MediaFastForward', 412: 'MediaRewind', 227: 'MediaRewind',
+  10233: 'MediaTrackNext', 176: 'MediaTrackNext', 10232: 'MediaTrackPrevious', 177: 'MediaTrackPrevious',
+  427: 'ChannelUp', 428: 'ChannelDown',
+  403: 'ColorF0Red', 404: 'ColorF1Green', 405: 'ColorF2Yellow', 406: 'ColorF3Blue',
+  457: 'Info', 458: 'Guide', 10221: 'ClosedCaptionToggle', 10073: 'ChannelList',
+};
+const REMOTE_KEYS = new Set(Object.values(REMOTE).concat(['MediaPlay', 'MediaPause', 'Subtitle']));
+
+/** Keys the Tizen wrapper / web app register (`tizen.tvinputdevice.registerKey`); unknown names are skipped. */
+export const TIZEN_KEYS = ['MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop', 'MediaFastForward', 'MediaRewind', 'MediaTrackNext', 'MediaTrackPrevious',
+  'ChannelUp', 'ChannelDown', 'ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue', 'Info', 'Guide', 'Caption', 'ChannelList',
+  '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+/** On-screen help for the remote (TV mode help dialog / Settings). */
+export const REMOTE_HELP: { keys: string; action: string }[] = [
+  { keys: 'Play / Pause / Stop', action: 'Control playback (Stop leaves the player)' },
+  { keys: 'Fast-forward / Rewind', action: 'Skip 10 s forward / back' },
+  { keys: 'Next / Previous', action: 'Next episode · previous: back 30 s (Live TV: next / previous channel)' },
+  { keys: 'Channel + / −', action: 'Change channel in Live TV' },
+  { keys: '0–9', action: 'Live TV: type a channel number · videos: jump to 0–90 %' },
+  { keys: 'Info', action: 'Show the info overlay (playback details, HDR format)' },
+  { keys: 'Guide', action: 'Open the TV guide' },
+  { keys: 'Red', action: 'Subtitles on / next language' },
+  { keys: 'Green', action: 'Next audio track' },
+  { keys: 'Yellow', action: 'Skip intro / credits / ad break' },
+  { keys: 'Blue', action: 'Info overlay (Live TV: channel list)' },
+  { keys: 'Back', action: 'Close a menu, leave the player, or go back' },
+];
+
+const send = (target: Element | null, key: string, shiftKey = false) =>
+  (target ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }));
+
+function goTo(path: string) {
+  // React Router (BrowserRouter) follows popstate.
+  window.history.pushState({}, '', path);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
+/** Translate a remote key into the shortcuts the players already understand. Returns true when handled. */
+function handleRemote(key: string, target: Element | null): boolean {
+  const video = document.querySelector('video');
+  const live = !!document.querySelector('.live-player');
+  const player = !!video && !!document.querySelector('.player, .live-player, .mv-shell');
+  const clickSkip = () => {
+    const b = document.querySelector<HTMLButtonElement>('.skip-btn');
+    if (b) b.click();
+    return !!b;
+  };
+  switch (key) {
+    case 'MediaPlayPause': if (!player) return false; send(target, ' '); return true;
+    case 'MediaPlay': if (!player) return false; if (video?.paused) send(target, ' '); return true;
+    case 'MediaPause': if (!player) return false; if (video && !video.paused) send(target, ' '); return true;
+    case 'MediaStop': if (!player) return false; send(target, 'Escape'); return true;
+    case 'MediaFastForward': if (!player) return false; send(target, 'ArrowRight'); return true;
+    case 'MediaRewind': if (!player) return false; send(target, 'ArrowLeft'); return true;
+    case 'MediaTrackNext': if (!player) return false; send(target, live ? 'ChannelDown' : 'n'); return true;
+    case 'MediaTrackPrevious': if (!player) return false; send(target, live ? 'ChannelUp' : 'ArrowLeft', !live); return true;
+    case 'ChannelUp': case 'ChannelDown':
+      if (live) { send(target, key); return true; }
+      return false;
+    case 'Info': case 'ColorF3Blue':
+      if (player) { send(target, 'i'); return true; }
+      return false;
+    case 'Guide': case 'ChannelList':
+      if (live && key === 'ChannelList') { send(target, 'l'); return true; }
+      goTo('/livetv/guide');
+      return true;
+    case 'ColorF0Red': case 'ClosedCaptionToggle': case 'Subtitle': case 'Caption':
+      if (player) { send(target, 'c'); return true; }
+      return false;
+    case 'ColorF1Green':
+      if (player && !live) { send(target, 'a'); return true; }
+      return false;
+    case 'ColorF2Yellow':
+      return player ? clickSkip() : false;
+  }
+  return false;
+}
 
 export function detectTv(): boolean {
   try {
@@ -113,9 +197,16 @@ const DIRS: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft:
 export function installTvMode() {
   document.documentElement.classList.add('tv');
   // Ask the platforms for the media keys (they're swallowed by the system otherwise).
-  const w = window as unknown as { tizen?: { tvinputdevice?: { registerKeyBatch?: (k: string[]) => void } } };
+  const w = window as unknown as { tizen?: { tvinputdevice?: { registerKey?: (k: string) => void } } };
   try {
-    w.tizen?.tvinputdevice?.registerKeyBatch?.(['MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop', 'MediaFastForward', 'MediaRewind']);
+    // Register one by one so a key a model lacks doesn't fail the whole batch.
+    for (const k of TIZEN_KEYS) {
+      try {
+        w.tizen?.tvinputdevice?.registerKey?.(k);
+      } catch {
+        /* key not on this model */
+      }
+    }
   } catch {
     /* not on Tizen */
   }
@@ -132,11 +223,14 @@ export function installTvMode() {
       else if (window.history.length > 1) window.history.back();
       return;
     }
-    // Media keys → the shortcuts the players use.
-    const mk = MEDIA[e.keyCode];
-    if (mk && !DIRS[e.key]) {
-      e.preventDefault();
-      (target ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: mk, bubbles: true, cancelable: true }));
+    // Remote keys (media, channel, colour, info/guide) → the shortcuts the players use.
+    if (!e.isTrusted) return; // our own re-dispatched shortcuts
+    const rk = REMOTE[e.keyCode] ?? (REMOTE_KEYS.has(e.key) ? e.key : null);
+    if (rk && !DIRS[e.key] && !isTextInput(target)) {
+      if (handleRemote(rk, target)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
       return;
     }
     const dir = DIRS[e.key];

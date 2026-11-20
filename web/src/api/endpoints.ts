@@ -7,9 +7,12 @@ import type {
   RecordingRule, RecordingStatus, RemoteSubtitle, ScheduledTask, SearchResponse, ServerSettings, ServerStats, SetupRequest, SystemInfo,
   TestSourceResponse, Theme, TraktDeviceCode, TraktStatus, TrickplayInfo, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
   UpdateUserRequest, User, UserItemData, UserStats,
-  ArrOptions, CreateMediaRequest, DjMix, DjMixRequest, DjStatus, TrackAnalysis, DjHostRequest, DjHostLine, DjFeedback, ApiKey, CreatedApiKey, TotpSetup, TotpEnabled, Invite, CreateInviteRequest, InvitePreview, AcceptInviteRequest,
+  ArrOptions, CreateMediaRequest, DjMix, DjMixRequest, DjStatus, TrackAnalysis, DjHostRequest, DjHostLine, DjFeedback, StarterLook, ApiKey, CreatedApiKey, TotpSetup, TotpEnabled, Invite, CreateInviteRequest, InvitePreview, AcceptInviteRequest,
+  CalendarResponse, NotificationsResponse,
   BackupInfo, RemoteAccessStatus, Bookmark, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
+import type { ManualRendererRequest, Renderer, RendererAction, RendererAdminView, RendererCommandRequest, RendererPlayRequest, RendererSettings, RendererState } from '@mediamax/shared';
+import type { ApplyMatchRequest, MatchSearchResponse, MetadataProviderId, MetadataSettings, MetadataSettingsResponse, MetadataTestResult } from '@mediamax/shared';
 import { http, request, upload } from './client';
 import { deviceInfo } from './device';
 
@@ -33,6 +36,8 @@ export const api = {
     createTheme: (theme: Omit<Theme, 'id'> & { id?: string }) => http.post<Branding>('/branding/themes', theme),
     updateTheme: (theme: Theme) => http.put<Branding>(`/branding/themes/${enc(theme.id)}`, theme),
     deleteTheme: (id: string) => http.del<Branding>(`/branding/themes/${enc(id)}`),
+    looks: () => http.get<StarterLook[]>('/branding/looks'),
+    applyLook: (id: string) => http.post<Branding>(`/branding/looks/${enc(id)}/apply`),
   },
 
   auth: {
@@ -113,6 +118,17 @@ export const api = {
     bookmarks: (id: string, signal?: AbortSignal) => http.get<Bookmark[]>(`/items/${enc(id)}/bookmarks`, undefined, signal),
     addBookmark: (id: string, body: { positionMs: number; note?: string }) => http.post<Bookmark>(`/items/${enc(id)}/bookmarks`, body),
     removeBookmark: (id: string, bookmarkId: string) => http.del<Ok>(`/items/${enc(id)}/bookmarks/${enc(bookmarkId)}`),
+    setWatchlist: (id: string, on: boolean) =>
+      on ? http.post<UserItemData>(`/items/${enc(id)}/watchlist`) : http.del<UserItemData>(`/items/${enc(id)}/watchlist`),
+    setNotInterested: (id: string, on: boolean) =>
+      on ? http.post<UserItemData>(`/items/${enc(id)}/not-interested`) : http.del<UserItemData>(`/items/${enc(id)}/not-interested`),
+  },
+
+  discovery: {
+    watchlist: (q: { limit?: number; offset?: number } = {}) => http.get<Paged<Item>>('/watchlist', q),
+    calendar: (q: { from?: string; to?: string } = {}, signal?: AbortSignal) => http.get<CalendarResponse>('/calendar', q, signal),
+    notifications: (limit = 30) => http.get<NotificationsResponse>('/notifications', { limit }),
+    markRead: (ids?: string[]) => http.post<{ unread: number }>('/notifications/read', ids ? { ids } : {}),
   },
 
   subtitles: {
@@ -181,7 +197,7 @@ export const api = {
   },
 
   discover: {
-    search: (q: { q?: string; type?: 'movie' | 'show' | 'all'; page?: number }, signal?: AbortSignal) =>
+    search: (q: { q?: string; type?: 'movie' | 'show' | 'all'; page?: number; hideAvailable?: boolean }, signal?: AbortSignal) =>
       http.get<DiscoverResponse>('/discover', q, signal),
   },
 
@@ -218,6 +234,10 @@ export const api = {
     updateSource: (id: string, body: UpdateLiveSourceRequest) => http.patch<LiveSource>(`/livetv/sources/${enc(id)}`, body),
     removeSource: (id: string) => http.del<Ok>(`/livetv/sources/${enc(id)}`),
     testSource: (body: CreateLiveSourceRequest) => http.post<TestSourceResponse>('/livetv/sources/test', body),
+    /** SAT>IP (SSDP) and HDHomeRun (UDP) devices on the server's LAN. */
+    discoverTuners: () => http.get<import('@mediamax/shared').DiscoveredTuner[]>('/livetv/tuners/discover'),
+    /** TVHeadend sources: finished recordings on the backend. */
+    tunerRecordings: (sourceId: string) => http.get<import('@mediamax/shared').TunerRecording[]>(`/livetv/sources/${enc(sourceId)}/recordings`),
     refreshSource: (id: string) => http.post<Ok>(`/livetv/sources/${enc(id)}/refresh`),
     categories: (sourceId?: string) => http.get<ChannelCategory[]>('/livetv/categories', { sourceId }),
     updateCategory: (id: string, body: { hidden?: boolean; sortOrder?: number; name?: string }) =>
@@ -264,6 +284,29 @@ export const api = {
     backupDownloadUrl: (id: string) => `/api/v1/admin/backups/${enc(id)}/download`,
     remoteAccess: () => http.get<RemoteAccessStatus>('/admin/remote-access'),
     refreshRemoteAccess: () => http.post<RemoteAccessStatus>('/admin/remote-access/refresh'),
+  },
+
+  /** Built-in metadata providers (Server settings → Metadata) and Fix match. */
+  metadata: {
+    get: () => http.get<MetadataSettingsResponse>('/admin/metadata'),
+    save: (s: Partial<MetadataSettings>) => http.put<MetadataSettingsResponse>('/admin/metadata', s),
+    test: (id: MetadataProviderId, body: { apiKey?: string | null; pin?: string | null } = {}) => http.post<MetadataTestResult>(`/admin/metadata/${enc(id)}/test`, body),
+    clearCache: (provider?: MetadataProviderId) => http.del<Ok>('/admin/metadata/cache', { provider }),
+    searchMatch: (itemId: string, q: { provider?: MetadataProviderId; q?: string; year?: number | '' }) => http.get<MatchSearchResponse>(`/items/${enc(itemId)}/match`, q),
+    applyMatch: (itemId: string, body: ApplyMatchRequest) => http.post<Item>(`/items/${enc(itemId)}/match`, body),
+  },
+
+  /** "Play to" network renderers (DLNA/UPnP TVs, Sonos, Kodi). */
+  renderers: {
+    list: () => http.get<Renderer[]>('/renderers'),
+    discover: () => http.post<Renderer[]>('/renderers/discover'),
+    state: (id: string) => http.get<RendererState>(`/renderers/${enc(id)}/state`),
+    play: (id: string, body: RendererPlayRequest) => http.post<RendererState>(`/renderers/${enc(id)}/play`, body),
+    command: (id: string, action: RendererAction, body: RendererCommandRequest = {}) => http.post<RendererState>(`/renderers/${enc(id)}/${action}`, body),
+    admin: () => http.get<RendererAdminView>('/admin/renderers'),
+    saveSettings: (s: Partial<RendererSettings>) => http.put<RendererAdminView>('/admin/renderers/settings', s),
+    addManual: (body: ManualRendererRequest) => http.post<RendererAdminView>('/admin/renderers/manual', body),
+    removeManual: (id: string) => http.del<RendererAdminView>(`/admin/renderers/manual/${enc(id)}`),
   },
 
   plugins: {

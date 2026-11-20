@@ -12,7 +12,8 @@ import { runComskip, edlPathFor } from './edl.js';
 import { getSettings } from './settings.js';
 import { events, bus } from './events.js';
 import { logActivity } from './activity.js';
-import { accessibleChannelRow, channelStreamUrl, channelUserAgent, trackUpstream } from './livetv/livetv.js';
+import { accessibleChannelRow, channelInputArgs, channelStreamUrl, trackUpstream } from './livetv/livetv.js';
+import { effEpg } from './livetv/epg/epg.js';
 import { scanLibrary } from './scanner.js';
 import { homeHooks, getItem } from './items.js';
 import { getBranding } from './branding.js';
@@ -188,7 +189,7 @@ function startRecording(r: Row) {
   const file = path.join(dir, `${safe(r.title)} (${stamp}).ts`);
   const durationSec = Math.max(10, Math.round((Date.parse(r.end) - Date.now()) / 1000));
   const url = channelStreamUrl(ch);
-  const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-user_agent', channelUserAgent(ch), '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '10',
+  const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...channelInputArgs(ch, url), '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '10',
     ...REMOTE_PROTOCOLS, '-i', url, '-map', '0:v?', '-map', '0:a?', '-c', 'copy', '-t', String(durationSec), '-f', 'mpegts', file];
   log.info(`Recording "${r.title}" for ${durationSec}s → ${file}`);
   const p = spawn(config.ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -339,7 +340,7 @@ export function applyRules() {
     const chans = rule.channel_id ? db.all('SELECT * FROM channels WHERE id = ?', rule.channel_id) : db.all('SELECT * FROM channels WHERE hidden = 0');
     const epgToChannel = new Map<string, Row>();
     for (const c of chans) {
-      const e = parseJson<any>(c.custom, {}).epgChannelId ?? c.epg_channel_id;
+      const e = effEpg(c);
       if (e && !epgToChannel.has(e)) epgToChannel.set(e, c);
     }
     if (!epgToChannel.size) continue;

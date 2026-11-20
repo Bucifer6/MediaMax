@@ -144,8 +144,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ],
       // Chromecast (phones only). The Cast SDK has no tvOS build and casting from a TV makes no
       // sense, so TV builds skip the plugin and react-native.config.js unlinks the native module.
-      // CC1AD845 = Google's Default Media Receiver.
-      ...(isTV ? [] : [['react-native-google-cast', { receiverAppId: 'CC1AD845', expandedController: false }] as [string, Record<string, unknown>]]),
+      // CC1AD845 = Google's Default Media Receiver. The Cast SDK is pinned: the default '+' picks up 23.x,
+      // which is compiled with a newer Kotlin than React Native's toolchain can read.
+      ...(isTV ? [] : [['react-native-google-cast', { receiverAppId: 'CC1AD845', expandedController: false, androidPlayServicesCastFrameworkVersion: '22.1.0' }] as [string, Record<string, unknown>]]),
       // CarPlay (audio entitlement + CarPlay scene) and Android Auto (Media3 MediaLibraryService), backed
       // by the local module in modules/mediamax-car. On TV builds the plugin only removes the module
       // from Android autolinking; the iOS pod is iOS-only, so tvOS skips it. See README › CarPlay & Android Auto.

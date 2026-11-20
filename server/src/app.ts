@@ -21,13 +21,18 @@ import dlnaRoutes from './routes/dlna.js';
 import pluginRoutes from './routes/plugins.js';
 import subsonicRoutes from './routes/subsonic.js';
 import djRoutes from './routes/dj.js';
+import securityRoutes from './routes/security.js';
+import networkRoutes from './routes/network.js';
+import { initNetwork, trustProxy } from './services/network.js';
+import discoveryRoutes from './routes/discovery.js';
+import metadataRoutes from './routes/metadata.js';
 
 const log = logger('http');
 
 export async function buildApp(): Promise<FastifyInstance> {
-  // Only honour X-Forwarded-* from proxies on loopback/private networks (or an explicit list), so
-  // internet clients can't spoof their address. Override with MEDIAMAX_TRUSTED_PROXIES (comma list / CIDRs).
-  const trustProxy = process.env.MEDIAMAX_TRUSTED_PROXIES?.split(',').map((s) => s.trim()).filter(Boolean) ?? ['loopback', 'linklocal', 'uniquelocal'];
+  // Only honour X-Forwarded-* from trusted proxies (default: loopback/private networks), so internet clients can't
+  // spoof their address. Admin → Network changes the list live; MEDIAMAX_TRUSTED_PROXIES overrides it.
+  initNetwork();
   const app = Fastify({ logger: false, trustProxy, bodyLimit: 50 * 1024 * 1024, routerOptions: { maxParamLength: 500 } });
   await app.register(cors, { origin: true, credentials: true, exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'] });
   await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
@@ -66,11 +71,22 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register(authRoutes);
     await api.register(libraryRoutes);
     await api.register(playbackRoutes);
+    await api.register((await import('./routes/streaming.js')).default);
     await api.register(liveRoutes);
     await api.register(wsRoutes);
     await api.register(extraRoutes);
     await api.register(pluginRoutes);
     await api.register(djRoutes);
+    await api.register(securityRoutes);
+    await api.register(networkRoutes);
+    await api.register(discoveryRoutes);
+    await api.register(metadataRoutes);
+    await api.register((await import('./routes/arr.js')).default);
+    await api.register((await import('./routes/requests.js')).default);
+    await api.register((await import('./routes/transcoding.js')).default);
+    await api.register((await import('./routes/smarthome.js')).default);
+    await api.register((await import('./routes/renderers.js')).default);
+    await api.register((await import('./routes/profiles.js')).default);
   }, { prefix: '/api/v1' });
 
   await app.register(dlnaRoutes);

@@ -1,3 +1,4 @@
+import { securityEvent } from '../util/securityLog.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -87,6 +88,7 @@ function authenticate(req: FastifyRequest): User {
   if (!row || !row.password_hash || !verifySecret(p, row.password_hash) || row.totp_enabled) {
     const cur = failures.get(key);
     failures.set(key, !cur || cur.until < Date.now() ? { n: 1, until: Date.now() + 15 * 60000 } : { ...cur, n: cur.n + 1 });
+    securityEvent('AUTH_FAIL', req.ip, { user: u, reason: 'subsonic' });
     throw new SubsonicError(40, row?.totp_enabled ? 'This account uses two-factor sign-in; create an API key and use the apiKey parameter' : 'Wrong username or password');
   }
   failures.delete(key);

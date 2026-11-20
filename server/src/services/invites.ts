@@ -67,6 +67,7 @@ export function acceptInvite(code: string, req: AcceptInviteRequest, remoteAddr?
       username: req.username, displayName: req.displayName, password: req.password, isAdmin: false,
       libraryIds: libIds, maxContentRating: t.maxContentRating, allowLiveTv: t.allowLiveTv, allowDownloads: t.allowDownloads,
       allowTranscode: t.allowTranscode, allowDvr: t.allowDvr, allowRemote: t.allowRemote, maxStreams: t.maxStreams,
+      ...(t.requestPermissions ? { requestPermissions: t.requestPermissions } : {}),
     });
     // Atomic use counter (guards against two people racing the last use).
     const upd = db.run('UPDATE invites SET uses = uses + 1 WHERE code = ? AND (max_uses IS NULL OR uses < max_uses)', r!.code);

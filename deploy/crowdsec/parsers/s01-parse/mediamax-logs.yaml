@@ -1,0 +1,38 @@
+# CrowdSec parser for the MediaMax security log (<data>/logs/security.log).
+#
+#   2026-11-20T15:25:14.875Z mediamax[security] AUTH_FAIL ip=198.51.100.7 user="admin" reason=password
+#   2026-11-20T15:25:15.009Z mediamax[security] AUTH_FAIL ip=127.0.0.1 reason=api_key
+#   2026-11-20T15:25:16.000Z mediamax[security] AUTH_LOCKED ip=203.0.113.9 account=u:admin
+#   2026-11-20T15:25:17.000Z mediamax[security] AUTH_OK ip=203.0.113.9 user="admin"
+#
+# Acquire the file with `labels: { type: mediamax }` (see acquis.yaml); crowdsecurity/non-syslog (s00-raw)
+# then hands the raw line over as evt.Parsed.message with evt.Parsed.program = "mediamax".
+# Lines with ip=unknown don't match (nothing to ban) and are dropped.
+#
+# Test:  cscli explain --file /var/log/mediamax/security.log --type mediamax
+onsuccess: next_stage
+filter: "evt.Parsed.program == 'mediamax'"
+name: mediamax/mediamax-logs
+description: "Parse MediaMax security events (sign-in failures, lockouts, successes)"
+grok:
+  # Field order is fixed by the server: ip, then user, account and reason when present.
+  pattern: '^%{TIMESTAMP_ISO8601:timestamp} mediamax\[security\] %{WORD:event} ip=%{IP:source_ip}(?: user="%{DATA:user}")?(?: account=%{NOTSPACE:account})?(?: reason=%{WORD:reason})?\s*$'
+  apply_on: message
+statics:
+  - meta: service
+    value: mediamax
+  - meta: log_type
+    expression: "evt.Parsed.event in ['AUTH_FAIL', 'AUTH_LOCKED'] ? 'mediamax_failed_auth' : (evt.Parsed.event == 'AUTH_OK' ? 'mediamax_auth_ok' : 'mediamax_' + lower(evt.Parsed.event))"
+  - meta: mediamax_event
+    expression: evt.Parsed.event
+  # Dual-stack sockets report IPv4 clients as ::ffff:a.b.c.d; ban the plain IPv4 address.
+  - meta: source_ip
+    expression: "trimPrefix(evt.Parsed.source_ip, '::ffff:')"
+  - meta: user
+    expression: "evt.Parsed.user != '' ? evt.Parsed.user : (evt.Parsed.account startsWith 'u:' ? trimPrefix(evt.Parsed.account, 'u:') : '')"
+  - meta: reason
+    expression: "evt.Parsed.reason != '' ? evt.Parsed.reason : (evt.Parsed.event == 'AUTH_LOCKED' ? 'locked' : '')"
+  # The timestamp is UTC (trailing Z); crowdsecurity/dateparse-enrich turns it into the event time, so
+  # replayed logs (cscli explain, crowdsec -dsn) are bucketed at the time they happened.
+  - target: evt.StrTime
+    expression: evt.Parsed.timestamp

@@ -15,6 +15,7 @@ import { badRequest, notFound } from '../util/errors.js';
 import { newId } from '../util/ids.js';
 import { nowIso, toInt } from '../util/misc.js';
 import { detectSeason } from '../services/introdetect.js';
+import { similarTo } from '../services/recommend.js';
 
 const LIB_TYPES = ['movies', 'shows', 'music', 'photos', 'videos', 'audiobooks'];
 
@@ -109,7 +110,12 @@ export default async function libraryRoutes(app: FastifyInstance) {
     return getChildren(user, req.params.id, { sort: req.query.sort, order: req.query.order, limit: toInt(req.query.limit, 500, 1, 2000), offset: toInt(req.query.offset, 0, 0) });
   });
 
-  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/items/:id/similar', async (req) => similarItems(requireUser(req).user, req.params.id, toInt(req.query.limit, 12, 1, 50)));
+  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/items/:id/similar', async (req) => {
+    const { user } = requireUser(req);
+    const limit = toInt(req.query.limit, 12, 1, 50);
+    // Movies and shows use the recommendation engine's similarity (genres, cast, crew, studio, era, co-watching).
+    return similarTo(user, req.params.id, limit) ?? similarItems(user, req.params.id, limit);
+  });
   app.get<{ Params: { id: string } }>('/items/:id/next', async (req) => nextItem(requireUser(req).user, req.params.id));
 
   app.post<{ Params: { id: string } }>('/items/:id/played', async (req) => setPlayed(requireUser(req).user, req.params.id, true));
@@ -124,8 +130,12 @@ export default async function libraryRoutes(app: FastifyInstance) {
 
   app.patch<{ Params: { id: string }; Body: UpdateItemRequest }>('/items/:id', async (req) => {
     const a = requireAdmin(req);
+    const before = req.body?.episodeOrder !== undefined ? getItem(a.user, req.params.id, false).episodeOrder : undefined;
     updateItem(req.params.id, req.body ?? {});
-    return getItem(a.user, req.params.id, true);
+    const item = getItem(a.user, req.params.id, true);
+    // A new episode ordering re-matches the show's episodes (TheTVDB) in the background.
+    if (before !== undefined && item.episodeOrder !== before) void refreshItem(req.params.id).catch(() => undefined);
+    return item;
   });
 
   app.post<{ Params: { id: string } }>('/items/:id/refresh', async (req) => {

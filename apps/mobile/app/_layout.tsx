@@ -61,7 +61,7 @@ function ThemedApp() {
 const PUBLIC = new Set(['connect', 'login']);
 
 function useAuthGuard() {
-  const { status } = useSession();
+  const { status, needsProfilePick } = useSession();
   const segments = useSegments();
   const nav = useRootNavigationState();
   const first = segments[0] as string | undefined;
@@ -74,11 +74,13 @@ function useAuthGuard() {
     } else if (status === 'signed-out') {
       if (!first || !PUBLIC.has(first)) router.replace('/login');
     } else if (status === 'signed-in') {
-      if (atRoot || first === 'login') router.replace('/(tabs)');
+      if (needsProfilePick) {
+        if (first !== 'profiles') router.replace('/profiles');
+      } else if (atRoot || first === 'login' || first === 'profiles') router.replace('/(tabs)');
     } else if (status === 'offline') {
       if (atRoot || first === 'login') router.replace('/(tabs)/downloads');
     }
-  }, [status, first, nav?.key]);
+  }, [status, first, nav?.key, needsProfilePick]);
 }
 
 function Navigation() {
@@ -103,6 +105,7 @@ function Navigation() {
         <Stack.Screen name="index" />
         <Stack.Screen name="connect" options={{ animation: 'fade' }} />
         <Stack.Screen name="login" options={{ animation: 'fade' }} />
+        <Stack.Screen name="profiles" options={{ animation: 'fade' }} />
         <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
         <Stack.Screen name="player/[id]" options={{ presentation: 'fullScreenModal', animation: 'fade', orientation: t.isTV ? undefined : 'all' }} />
         <Stack.Screen name="live/[id]" options={{ presentation: 'fullScreenModal', animation: 'fade', orientation: t.isTV ? undefined : 'all' }} />

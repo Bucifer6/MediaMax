@@ -1,3 +1,5 @@
+import { logActivity } from '../services/activity.js';
+import { applyLook, listLooks } from '../services/looks.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -33,6 +35,16 @@ export default async function brandingRoutes(app: FastifyInstance) {
     if (!fs.existsSync(p)) throw notFound();
     reply.header('Cache-Control', 'public, max-age=31536000, immutable').header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox").type(mimeFor(p));
     return fs.createReadStream(p);
+  });
+  app.get('/branding/looks', async (req) => {
+    requireAdmin(req);
+    return listLooks();
+  });
+  app.post<{ Params: { id: string } }>('/branding/looks/:id/apply', async (req) => {
+    const a = requireAdmin(req);
+    const b = applyLook(req.params.id);
+    logActivity('branding', `Starter look "${req.params.id}" applied`, { userId: a.user.id, userName: a.user.displayName });
+    return b;
   });
   app.post<{ Body: Theme }>('/branding/themes', async (req) => {
     requireAdmin(req);

@@ -10,9 +10,13 @@ import './styles/player.css';
 import './styles/admin.css';
 import './styles/stats.css';
 import './styles/tv.css';
+import './styles/discovery.css';
 import { detectTv, installTvMode } from './tv/spatial';
+import { initCapabilities } from './player/capabilities';
 
 if (detectTv()) installTvMode();
+// Start HDR / codec capability detection early (async MediaCapabilities); the player awaits it briefly.
+void initCapabilities();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

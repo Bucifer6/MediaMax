@@ -15,6 +15,10 @@ import { programProgress } from '../components/Cards';
 import { catchupLink } from '../components/ProgramModal';
 import { isTypingTarget, useNow } from '../hooks';
 import { formatClock, formatTime } from '../utils/format';
+import { subtitleStyleOf } from './subtitleStyle';
+import { SubtitleOverlay } from './subtitles/SubtitleOverlay';
+import { activeLiveCues } from './subtitles/live';
+import type { TextCue } from './subtitles/types';
 
 export default function LivePlayer() {
   const { channelId = '' } = useParams();
@@ -52,6 +56,35 @@ export default function LivePlayer() {
   const [durMs, setDurMs] = useState(0);
   const [schedule, setSchedule] = useState<Program[]>([]);
   const now = useNow(15000);
+  // Closed captions carried in the stream (hls.js exposes CEA-608/708 and WebVTT renditions as text tracks).
+  const subStyle = subtitleStyleOf(user?.preferences.subtitleStyle);
+  const [ccCount, setCcCount] = useState(0);
+  /** Active caption cues, drawn by our overlay (the tracks stay "hidden": the platform never renders them). */
+  const [liveCues, setLiveCues] = useState<TextCue[]>([]);
+  const [ccOn, setCcOn] = useState(() => user?.preferences.subtitleMode === 'always');
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const list = v.textTracks;
+    const captionTracks = () => Array.from(list).filter((t) => t.kind === 'captions' || t.kind === 'subtitles');
+    const apply = () => {
+      const tracks = captionTracks();
+      setCcCount(tracks.length);
+      tracks.forEach((t, i) => {
+        const on = ccOn && i === 0;
+        if (t.mode !== 'hidden') t.mode = 'hidden';
+        t.oncuechange = on ? () => setLiveCues(activeLiveCues(t.activeCues)) : null;
+        if (on) setLiveCues(activeLiveCues(t.activeCues));
+      });
+    };
+    apply();
+    list.addEventListener('addtrack', apply);
+    list.addEventListener('removetrack', apply);
+    return () => {
+      list.removeEventListener('addtrack', apply);
+      list.removeEventListener('removetrack', apply);
+    };
+  }, [ccOn, subStyle.position, info?.sessionId]);
 
   // Channel lineup for zapping.
   useEffect(() => {
@@ -364,6 +397,10 @@ export default function LivePlayer() {
         case 'm':
           setMuted((m) => !m);
           break;
+        case 'c':
+          if (ccCount) setCcOn((x) => !x);
+          else handled = false;
+          break;
         case 'g':
           navigate('/livetv/guide');
           break;
@@ -420,6 +457,9 @@ export default function LivePlayer() {
   return (
     <div ref={shellRef} className={`player live-player ${controls ? 'show-controls' : 'hide-controls'}`} onMouseMove={poke} onTouchStart={poke}>
       <video ref={videoRef} className="player-video" playsInline onClick={togglePlay} onDoubleClick={toggleFs} />
+      {ccOn && !casting && (
+        <SubtitleOverlay track={null} video={videoRef.current} streamStartMs={0} delayMs={0} style={subStyle} tv={document.documentElement.classList.contains('tv')} controlsVisible={controls} liveCues={liveCues} />
+      )}
       {buffering && !error && !casting && <div className="player-center"><Spinner size={56} /></div>}
       {casting && (
         <div className="cast-overlay">
@@ -525,6 +565,9 @@ export default function LivePlayer() {
               <button className="btn btn-glass btn-sm" onClick={recordNow} disabled={!!nowProg.recordingId}>
                 <Icon name="record" size={12} className="text-danger" /> {nowProg.recordingId ? 'Recording' : 'Record'}
               </button>
+            )}
+            {ccCount > 0 && (
+              <button className={`btn-icon ${ccOn ? 'active' : ''}`} onClick={() => setCcOn((x) => !x)} aria-label={ccOn ? 'Turn captions off' : 'Turn captions on'} aria-pressed={ccOn} title="Captions (C)"><Icon name="subtitles" size={22} /></button>
             )}
             <button className={`btn-icon ${showList ? 'active' : ''}`} onClick={() => setShowList((s) => !s)} aria-label="Channel list"><Icon name="list" size={22} /></button>
             <button className="btn-icon" onClick={() => navigate('/livetv/guide')} aria-label="Guide"><Icon name="guide" size={22} /></button>

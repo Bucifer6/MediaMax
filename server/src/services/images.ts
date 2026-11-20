@@ -28,7 +28,39 @@ export function registerImage(source: string | null | undefined): string | null 
   if (!/^https?:\/\//i.test(source) && !isLocalImagePath(source)) return null;
   const id = stableId('img', source);
   db.run('INSERT OR IGNORE INTO images (id, source, created_at) VALUES (?, ?, ?)', id, source, nowIso());
+  if (!/^https?:\/\//i.test(source)) refreshLocalCopy(id, source);
   return id;
+}
+
+/** Media-folder artwork is copied into the data dir on first use (see resolveImage). */
+const isInDataDir = (p: string) => path.resolve(p).startsWith(config.dataDir + path.sep);
+
+function cacheLocalCopy(id: string, source: string): string {
+  if (isInDataDir(source)) return source;
+  try {
+    const dest = path.join(config.imageCacheDir, 'local', id.slice(0, 2), id + path.extname(source).toLowerCase());
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(source, dest);
+    db.run('UPDATE images SET cached = ? WHERE id = ?', dest, id);
+    return dest;
+  } catch {
+    return source;
+  }
+}
+
+/** Called while scanning (the disk is awake then): drop the copy if the original artwork changed. */
+function refreshLocalCopy(id: string, source: string) {
+  const row = db.get<{ cached: string | null }>('SELECT cached FROM images WHERE id = ?', id);
+  if (!row?.cached) return;
+  try {
+    if (fs.statSync(source).mtimeMs > fs.statSync(row.cached).mtimeMs) {
+      fs.rmSync(row.cached, { force: true });
+      db.run('UPDATE images SET cached = NULL WHERE id = ?', id);
+      for (const f of fs.readdirSync(path.join(config.imageCacheDir, 'w')).filter((f) => f.startsWith(id + '_'))) fs.rmSync(path.join(config.imageCacheDir, 'w', f), { force: true });
+    }
+  } catch {
+    /* source gone or cache dir missing */
+  }
 }
 
 /**
@@ -51,13 +83,20 @@ const inflight = new Map<string, Promise<string>>();
 const MIME: Record<string, string> = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.avif': 'image/avif', '.ico': 'image/x-icon', '.tbn': 'image/jpeg' };
 export const mimeFor = (p: string) => MIME[path.extname(p).toLowerCase()] ?? 'image/jpeg';
 
+async function fetchWithUserInfo(url: string): Promise<Response> {
+  const { TunerHttp, splitUserInfo } = await import('./livetv/tuners/http.js');
+  const p = splitUserInfo(url);
+  return new TunerHttp({ username: p.username, password: p.password }).fetch(p.url, { timeoutMs: 20000 });
+}
+
 async function fetchRemote(id: string, url: string, untrusted: boolean): Promise<string> {
   const ext = (path.extname(new URL(url).pathname).toLowerCase().match(/^\.(jpe?g|png|webp|gif|avif)$/)?.[0]) ?? '.jpg';
   const dest = path.join(config.imageCacheDir, id.slice(0, 2), id + ext);
   if (fs.existsSync(dest)) return dest;
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const init = { signal: AbortSignal.timeout(20000), headers: { 'User-Agent': 'MediaMax/1.0' } };
-  const res = untrusted ? await safeFetch(url, init) : await fetch(url, init);
+  // Tuner boxes (TVHeadend imagecache, OpenWebif picons) may need the device login: Basic or Digest, kept out of fetch's URL.
+  const res = !untrusted && /^https?:\/\/[^/@]+@/i.test(url) ? await fetchWithUserInfo(url) : untrusted ? await safeFetch(url, init) : await fetch(url, init);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   // Remote images must be raster images — never SVG/HTML (script on our origin).
   const type = (res.headers.get('content-type') ?? '').toLowerCase();
@@ -72,7 +111,7 @@ async function fetchRemote(id: string, url: string, untrusted: boolean): Promise
 
 function resize(src: string, dest: string, width: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const p = spawn(config.ffmpeg, ['-v', 'error', '-y', '-i', src, '-vf', `scale='min(${width},iw)':-2`, '-frames:v', '1', '-q:v', '3', dest]);
+    const p = spawn(config.ffmpeg, ['-v', 'error', '-y', '-i', src, '-vf', `scale='min(${width},iw)':-2`, '-frames:v', '1', ...(dest.endsWith('.png') ? ['-compression_level', '6'] : ['-q:v', '3']), dest]);
     p.on('error', reject);
     p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}`))));
   });
@@ -97,15 +136,22 @@ export async function resolveImage(id: string, width?: number): Promise<{ path: 
         throw notFound('Image unavailable');
       }
     }
+  } else if (row.cached && fs.existsSync(row.cached)) {
+    // Artwork next to the media (poster.jpg, folder.jpg…) is served from its copy in the data dir, so browsing
+    // never wakes a sleeping NAS disk. The scanner refreshes the copy when the original changes.
+    file = row.cached;
   } else {
     file = row.source;
     if (!isLocalImagePath(file) || !fs.existsSync(file)) throw notFound('Image file missing');
+    file = cacheLocalCopy(id, file);
   }
   const ext = path.extname(file).toLowerCase();
   if (ext === '.svg') throw notFound('Image unavailable');
   if (width && width > 0 && width < 3000 && ext !== '.gif') {
     const w = Math.ceil(width / 80) * 80; // bucket sizes to keep cache small
-    const dest = path.join(config.imageCacheDir, 'w', `${id}_${w}.jpg`);
+    // Keep transparency: PNG/WebP sources (clear logos, channel logos) are resized to PNG, everything else to JPEG.
+    const alpha = ext === '.png' || ext === '.webp';
+    const dest = path.join(config.imageCacheDir, 'w', `${id}_${w}.${alpha ? 'png' : 'jpg'}`);
     if (!fs.existsSync(dest)) {
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       const key = dest;
@@ -120,7 +166,7 @@ export async function resolveImage(id: string, width?: number): Promise<{ path: 
         return { path: file, mime: mimeFor(file) };
       }
     }
-    return { path: dest, mime: 'image/jpeg' };
+    return { path: dest, mime: alpha ? 'image/png' : 'image/jpeg' };
   }
   return { path: file, mime: mimeFor(file) };
 }

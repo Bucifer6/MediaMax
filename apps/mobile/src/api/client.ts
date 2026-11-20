@@ -48,12 +48,15 @@ import type {
   Program,
   ProgressReport,
   PublicProfile,
+  AccountProfile,
   Recording,
   RecordingRule,
   RecordingStatus,
   RemoteSubtitle,
   RemoteTarget,
   RequestMediaType,
+  RequestOptions as MediaRequestOptions,
+  RequestTvInfo,
   RequestStatus,
   SearchResponse,
   SmartFilter,
@@ -270,6 +273,14 @@ export class MediaMaxClient {
     const body: PinLoginRequest = { ...this.device, userId, pin, totpCode: totpCode || undefined };
     return this.post<AuthResponse>('/auth/profile-login', body, { allow401: true });
   }
+  /** "Who's watching?": the signed-in account's profiles (owner first). */
+  accountProfiles() {
+    return this.get<AccountProfile[]>('/auth/account/profiles');
+  }
+  /** Switch this device to another profile of the account (401 `pin_required` / `pin_invalid` for PIN profiles). */
+  switchProfile(id: string, pin?: string) {
+    return this.post<AuthResponse>(`/auth/profiles/${encodeURIComponent(id)}/switch`, { pin }, { allow401: true });
+  }
   linkRequest() {
     return this.post<LinkCodeResponse>('/auth/link/request', { ...this.device });
   }
@@ -400,6 +411,14 @@ export class MediaMaxClient {
   /** Trending when `q` is empty. */
   discover(q: { q?: string; type?: RequestMediaType | 'all'; page?: number }, signal?: AbortSignal) {
     return this.request<DiscoverResponse>('GET', '/discover', { query: q, signal, timeoutMs: 30000 });
+  }
+  /** What this user may request (permissions, 4K, remaining quota). */
+  requestOptions() {
+    return this.get<MediaRequestOptions>('/requests/options');
+  }
+  /** Seasons of a show with library/request status (request sheet). */
+  requestTvInfo(tmdbId: string) {
+    return this.get<RequestTvInfo>(`/requests/tv/${encodeURIComponent(tmdbId)}`);
   }
   /** Non-admins always get their own; admins get everyone's unless `mine`. */
   mediaRequests(q: { status?: RequestStatus; mine?: boolean } = {}) {

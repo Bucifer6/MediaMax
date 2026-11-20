@@ -306,6 +306,154 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX dj_feedback_user ON dj_feedback(user_id, at);
   `,
+  /* 13: discovery — My List, "not interested", TV schedules, in-app notifications */ `
+  CREATE TABLE watchlist (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    added_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, item_id)
+  );
+  CREATE INDEX watchlist_user ON watchlist(user_id, added_at);
+  CREATE INDEX watchlist_item ON watchlist(item_id);
+  ALTER TABLE user_data ADD COLUMN not_interested INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX user_data_item ON user_data(item_id);
+  CREATE INDEX play_history_started ON play_history(started_at);
+  CREATE TABLE show_schedule (
+    show_id TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+    status TEXT, in_production INTEGER, last_air_date TEXT,
+    next_air_date TEXT, next_season INTEGER, next_episode INTEGER, next_title TEXT, next_overview TEXT,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX show_schedule_next ON show_schedule(next_air_date);
+  CREATE TABLE notifications (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL, item_id TEXT, title TEXT NOT NULL, body TEXT, created_at TEXT NOT NULL, read_at TEXT
+  );
+  CREATE INDEX notifications_user ON notifications(user_id, created_at);
+  -- Cast & crew of movies/shows as rows (kept in sync by triggers) so "titles with these people" is an index lookup.
+  CREATE TABLE item_people (
+    item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE, name TEXT NOT NULL, kind TEXT, ord INTEGER NOT NULL
+  );
+  CREATE INDEX item_people_name ON item_people(name);
+  CREATE INDEX item_people_item ON item_people(item_id);
+  CREATE TRIGGER items_people_ins AFTER INSERT ON items WHEN new.type IN ('movie','show') BEGIN
+    INSERT INTO item_people (item_id, name, kind, ord)
+      SELECT new.id, json_extract(j.value, '$.name'), json_extract(j.value, '$.kind'), CAST(j.key AS INTEGER)
+      FROM json_each(CASE WHEN json_valid(new.people) THEN new.people ELSE '[]' END) j
+      WHERE json_extract(j.value, '$.name') IS NOT NULL
+        AND ((json_extract(j.value, '$.kind') = 'actor' AND CAST(j.key AS INTEGER) < 10) OR json_extract(j.value, '$.kind') IN ('director', 'writer'));
+  END;
+  CREATE TRIGGER items_people_upd AFTER UPDATE OF people ON items WHEN new.type IN ('movie','show') BEGIN
+    DELETE FROM item_people WHERE item_id = new.id;
+    INSERT INTO item_people (item_id, name, kind, ord)
+      SELECT new.id, json_extract(j.value, '$.name'), json_extract(j.value, '$.kind'), CAST(j.key AS INTEGER)
+      FROM json_each(CASE WHEN json_valid(new.people) THEN new.people ELSE '[]' END) j
+      WHERE json_extract(j.value, '$.name') IS NOT NULL
+        AND ((json_extract(j.value, '$.kind') = 'actor' AND CAST(j.key AS INTEGER) < 10) OR json_extract(j.value, '$.kind') IN ('director', 'writer'));
+  END;
+  INSERT INTO item_people (item_id, name, kind, ord)
+    SELECT i.id, json_extract(j.value, '$.name'), json_extract(j.value, '$.kind'), CAST(j.key AS INTEGER)
+    FROM items i, json_each(CASE WHEN json_valid(i.people) THEN i.people ELSE '[]' END) j
+    WHERE i.type IN ('movie','show') AND json_extract(j.value, '$.name') IS NOT NULL
+      AND ((json_extract(j.value, '$.kind') = 'actor' AND CAST(j.key AS INTEGER) < 10) OR json_extract(j.value, '$.kind') IN ('director', 'writer'));
+  `,
+  /* 14: *arr suite — music/book/4K requests, per-user 4K permission */ `
+  ALTER TABLE media_requests ADD COLUMN subtitle TEXT;
+  ALTER TABLE media_requests ADD COLUMN also_4k INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE media_requests ADD COLUMN options TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE users ADD COLUMN allow_request_4k INTEGER NOT NULL DEFAULT 0;
+  `,
+  /* 15: metadata providers — response cache, third-party ratings, provider extras */ `
+  CREATE TABLE IF NOT EXISTS metadata_cache (
+    key TEXT PRIMARY KEY, provider TEXT NOT NULL, status INTEGER NOT NULL, body TEXT, expires_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS metadata_cache_expires ON metadata_cache(expires_at);
+  ALTER TABLE items ADD COLUMN ratings TEXT;
+  ALTER TABLE items ADD COLUMN provider_meta TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE items ADD COLUMN providers_fetched_at TEXT;
+  `,
+  /* 16: EPG providers — guide sources, guide channel lists, channel↔guide matching, Schedules Direct caches */ `
+  CREATE TABLE epg_sources (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, config TEXT NOT NULL DEFAULT '{}', secret TEXT, state TEXT NOT NULL DEFAULT '{}',
+    priority INTEGER NOT NULL DEFAULT 50, enabled INTEGER NOT NULL DEFAULT 1, live_source_ids TEXT,
+    owner_source_id TEXT REFERENCES live_sources(id) ON DELETE CASCADE, managed_by TEXT, refresh_hours INTEGER NOT NULL DEFAULT 12,
+    last_refresh_at TEXT, last_success_at TEXT, last_error TEXT, channel_count INTEGER NOT NULL DEFAULT 0, stats TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+  );
+  CREATE TABLE epg_channels (
+    epg_source_id TEXT NOT NULL REFERENCES epg_sources(id) ON DELETE CASCADE, id TEXT NOT NULL, name TEXT NOT NULL,
+    alt_names TEXT NOT NULL DEFAULT '[]', callsign TEXT, number TEXT, icon TEXT, programmes INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (epg_source_id, id)
+  );
+  CREATE TABLE epg_match_candidates (
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE, epg_source_id TEXT NOT NULL REFERENCES epg_sources(id) ON DELETE CASCADE,
+    guide_channel_id TEXT NOT NULL, confidence REAL NOT NULL, method TEXT NOT NULL, offset_minutes INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (channel_id, epg_source_id)
+  );
+  CREATE INDEX epg_match_candidates_source ON epg_match_candidates(epg_source_id);
+  CREATE TABLE epg_sd_lineups (
+    epg_source_id TEXT NOT NULL REFERENCES epg_sources(id) ON DELETE CASCADE, lineup TEXT NOT NULL, modified TEXT, data TEXT NOT NULL,
+    PRIMARY KEY (epg_source_id, lineup)
+  );
+  CREATE TABLE epg_sd_schedules (
+    epg_source_id TEXT NOT NULL REFERENCES epg_sources(id) ON DELETE CASCADE, station_id TEXT NOT NULL, date TEXT NOT NULL, md5 TEXT NOT NULL, data TEXT NOT NULL,
+    PRIMARY KEY (epg_source_id, station_id, date)
+  );
+  CREATE TABLE epg_sd_programs (program_id TEXT PRIMARY KEY, md5 TEXT NOT NULL, data TEXT NOT NULL, artwork TEXT, fetched_at TEXT NOT NULL);
+  ALTER TABLE channels ADD COLUMN guide_key TEXT;
+  ALTER TABLE channels ADD COLUMN guide_source_id TEXT;
+  ALTER TABLE channels ADD COLUMN guide_channel_id TEXT;
+  ALTER TABLE channels ADD COLUMN guide_confidence REAL;
+  ALTER TABLE channels ADD COLUMN guide_method TEXT;
+  ALTER TABLE channels ADD COLUMN guide_status TEXT;
+  ALTER TABLE channels ADD COLUMN guide_offset INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX channels_guide_key ON channels(guide_key);
+  CREATE INDEX programs_source ON programs(source_id);
+  `,
+  /* HDR: HDR format / Dolby Vision profile / mastering metadata per media file (JSON VideoRangeInfo) */ `
+  ALTER TABLE media ADD COLUMN video_range TEXT;
+  `,
+  /* Requests (Overseerr parity): per-user request permissions/quotas, request timeline & comments, blacklist, issues, Discover watchlist */ `
+  ALTER TABLE users ADD COLUMN request_perms TEXT;
+  ALTER TABLE users ADD COLUMN request_quotas TEXT;
+  ALTER TABLE media_requests ADD COLUMN updated_at TEXT;
+  ALTER TABLE notifications ADD COLUMN link TEXT;
+  CREATE INDEX IF NOT EXISTS media_requests_user ON media_requests(requested_by, requested_at);
+  CREATE TABLE request_activity (
+    id TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES media_requests(id) ON DELETE CASCADE,
+    user_id TEXT, kind TEXT NOT NULL, body TEXT, created_at TEXT NOT NULL
+  );
+  CREATE INDEX request_activity_req ON request_activity(request_id, created_at);
+  CREATE TABLE request_blacklist (
+    media_type TEXT NOT NULL, external_id TEXT NOT NULL, title TEXT NOT NULL, reason TEXT, created_by TEXT, created_at TEXT NOT NULL,
+    PRIMARY KEY (media_type, external_id)
+  );
+  CREATE TABLE issues (
+    id TEXT PRIMARY KEY, item_id TEXT REFERENCES items(id) ON DELETE SET NULL, root_item_id TEXT, media_type TEXT NOT NULL, title TEXT NOT NULL, poster TEXT,
+    kind TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', season INTEGER, episode INTEGER, message TEXT NOT NULL,
+    created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, resolved_by TEXT, resolved_at TEXT
+  );
+  CREATE INDEX issues_status ON issues(status, created_at);
+  CREATE TABLE issue_comments (
+    id TEXT PRIMARY KEY, issue_id TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE, user_id TEXT, body TEXT NOT NULL, created_at TEXT NOT NULL
+  );
+  CREATE INDEX issue_comments_issue ON issue_comments(issue_id, created_at);
+  CREATE TABLE discover_watchlist (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, media_type TEXT NOT NULL, external_id TEXT NOT NULL,
+    title TEXT NOT NULL, year INTEGER, poster TEXT, added_at TEXT NOT NULL, request_id TEXT, auto_error TEXT,
+    PRIMARY KEY (user_id, media_type, external_id)
+  );
+  `,
+  /* Hardware tuner / set-top-box live sources (TVHeadend, SAT>IP, Enigma2): per-source driver options */ `
+  ALTER TABLE live_sources ADD COLUMN options TEXT NOT NULL DEFAULT '{}';
+  `,
+  /* Account profiles (Plex Home style): a profile is a users row owned by an account (parent_user_id); existing users are owners */ `
+  ALTER TABLE users ADD COLUMN parent_user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
+  ALTER TABLE users ADD COLUMN profile_kids INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN profile_color TEXT;
+  ALTER TABLE users ADD COLUMN avatar_builtin TEXT;
+  ALTER TABLE users ADD COLUMN hide_unrated INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX users_parent ON users(parent_user_id);
+  `,
 ];
 
 function migrate(db: Database) {

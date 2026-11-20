@@ -10,10 +10,14 @@ import { usePlayItem, useMusic } from '../player/music';
 import { Icon } from '../components/Icon';
 import { Badge, Dropdown, EmptyState, ErrorState, Img, Modal, ProgressBar, Skeleton, StarRating, Tabs, useConfirm, type MenuItem } from '../components/ui';
 import { Row } from '../components/Row';
-import { PosterCard } from '../components/Cards';
+import { canWatchlist, PosterCard, WatchlistButton } from '../components/Cards';
 import { SmartListModal } from '../components/SmartListModal';
 import { BookmarksSection } from '../components/Bookmarks';
 import { AddToContainerModal, EditMetadataModal, UploadArtworkModal } from '../components/ItemModals';
+import { RatingBadges } from '../components/RatingBadges';
+import { MediaRangeBadge, rangeDetails } from '../components/HdrBadge';
+import { ArrItemActions } from '../components/ArrItemActions';
+import { ReportIssueButton } from '../components/ReportIssue';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
 import { episodeCode, hasAudioResume, isAudio, isResumable, isVideo, itemLink, playLink, progressPct } from '../utils/items';
@@ -26,7 +30,7 @@ export function MediaBadges({ media }: { media?: MediaSource[] }) {
   return (
     <span className="media-badges">
       {m.resolutionLabel && <Badge tone="muted" className="badge-res">{m.resolutionLabel}</Badge>}
-      {m.hdr && <Badge tone="warning">HDR</Badge>}
+      <MediaRangeBadge media={m} />
       {m.videoCodec && <Badge tone="muted">{m.videoCodec.toUpperCase()}</Badge>}
       {audio && (
         <Badge tone="muted">
@@ -48,7 +52,8 @@ function MediaInfo({ media }: { media: MediaSource[] }) {
           {media.length > 1 && <h3>Version {i + 1}</h3>}
           <dl className="kv">
             <dt>Container</dt><dd>{m.container?.toUpperCase() ?? '—'}</dd>
-            <dt>Video</dt><dd>{[m.videoCodec?.toUpperCase(), m.width && m.height ? `${m.width}×${m.height}` : null, m.resolutionLabel, m.hdr ? 'HDR' : null].filter(Boolean).join(' · ') || '—'}</dd>
+            <dt>Video</dt><dd>{[m.videoCodec?.toUpperCase(), m.width && m.height ? `${m.width}×${m.height}` : null, m.resolutionLabel, m.videoRange && m.videoRange.hdrFormat !== 'sdr' ? null : m.hdr ? 'HDR' : null].filter(Boolean).join(' · ') || '—'}</dd>
+            {m.videoRange && m.videoRange.hdrFormat !== 'sdr' && <><dt>HDR</dt><dd><MediaRangeBadge media={m} /> {rangeDetails(m.videoRange)}</dd></>}
             <dt>Bitrate</dt><dd>{formatBitrate(m.bitrate)}</dd>
             <dt>Size</dt><dd>{formatBytes(m.size)}</dd>
             <dt>Duration</dt><dd>{formatClock(m.durationMs)}</dd>
@@ -423,6 +428,15 @@ export function ItemPage() {
       toast.error(e);
     }
   };
+  const notInterested = async () => {
+    const on = !item.userData.notInterested;
+    try {
+      setUD(await api.items.setNotInterested(item.id, on));
+      toast.show(on ? "Got it — we won't recommend this to you" : 'OK, it can show up in your recommendations again');
+    } catch (e) {
+      toast.error(e);
+    }
+  };
   const refresh = async () => {
     try {
       toast.show('Refreshing metadata…');
@@ -464,6 +478,9 @@ export function ItemPage() {
   const playable = isVideo(item) || isAudio(item) || ['show', 'season', 'album', 'artist', 'playlist', 'collection', 'audiobook', 'podcast'].includes(item.type);
   const resumable = (isVideo(item) || hasAudioResume(item)) && isResumable(item);
   const pct = progressPct(item);
+  // Thumbs map onto the 0–10 rating: up = 10, down = 2 (stars still work for people who prefer them).
+  const thumbsUp = item.userData.rating != null && item.userData.rating >= 8;
+  const thumbsDown = item.userData.rating != null && item.userData.rating <= 4;
   const nextEp = nextUp.data?.forId === item.id && ['episode', 'bookpart', 'podcastepisode'].includes(nextUp.data.ep?.type ?? '') ? nextUp.data.ep : null;
   const nextIsAudio = !!nextEp && isAudio(nextEp);
   const nextResumable = !!nextEp && isResumable(nextEp);
@@ -555,6 +572,7 @@ export function ItemPage() {
             {item.communityRating != null && (
               <span className="detail-rating"><Icon name="starFill" size={14} /> {item.communityRating.toFixed(1)}</span>
             )}
+            <RatingBadges ratings={item.ratings} />
             <MediaBadges media={item.media} />
           </div>
           {item.genres.length > 0 && (
@@ -596,6 +614,7 @@ export function ItemPage() {
                 <Icon name="video" size={18} /> Trailer
               </button>
             )}
+            {canWatchlist(item) && <WatchlistButton item={item} />}
             {item.type !== 'photo' && item.type !== 'playlist' && item.type !== 'collection' && (
               <button className={`btn-round ${item.userData.played ? 'active' : ''}`} onClick={togglePlayed} title={item.userData.played ? 'Mark unwatched' : 'Mark watched'} data-nav>
                 <Icon name="check" />
@@ -631,7 +650,9 @@ export function ItemPage() {
                 ]}
               />
             )}
+            <ReportIssueButton item={item} round />
           </div>
+          <ArrItemActions item={item} />
 
           {resumable && (
             <div className="detail-progress">
@@ -642,7 +663,22 @@ export function ItemPage() {
 
           <div className="detail-rate">
             <span className="muted">Your rating</span>
+            {!['photo', 'playlist', 'collection'].includes(item.type) && (
+              <span className="thumbs" role="group" aria-label="Thumbs rating">
+                <button className={`thumb ${thumbsUp ? 'active' : ''}`} onClick={() => rate(thumbsUp ? null : 10)} aria-pressed={thumbsUp} title={thumbsUp ? 'Remove rating' : 'I like this'} data-nav>
+                  <Icon name="thumbUp" size={18} />
+                </button>
+                <button className={`thumb down ${thumbsDown ? 'active' : ''}`} onClick={() => rate(thumbsDown ? null : 2)} aria-pressed={thumbsDown} title={thumbsDown ? 'Remove rating' : 'Not for me'} data-nav>
+                  <Icon name="thumbDown" size={18} />
+                </button>
+              </span>
+            )}
             <StarRating value={item.userData.rating} onChange={rate} size={20} />
+            {(item.type === 'movie' || item.type === 'show') && (
+              <button className={`btn btn-sm not-interested ${item.userData.notInterested ? 'active' : ''}`} onClick={notInterested} aria-pressed={item.userData.notInterested} title="Hide from your recommendations" data-nav>
+                <Icon name={item.userData.notInterested ? 'eye' : 'ban'} size={14} /> {item.userData.notInterested ? 'Show in recommendations' : 'Not interested'}
+              </button>
+            )}
           </div>
 
           {item.tagline && <p className="detail-tagline">{item.tagline}</p>}

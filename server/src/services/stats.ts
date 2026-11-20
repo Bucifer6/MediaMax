@@ -108,7 +108,7 @@ export function userStats(userId: string, year: number | null): UserStats {
 
 export function serverStats(days: number): ServerStats {
   const since = new Date(Date.now() - days * 86400000).toISOString();
-  const rows = db.all(`${HISTORY_SELECT.replace('SELECT h.*', 'SELECT h.*, u.display_name uname')} LEFT JOIN users u ON u.id = h.user_id WHERE h.started_at >= ? ORDER BY h.started_at`, since);
+  const rows = db.all(`${HISTORY_SELECT.replace('SELECT h.*', 'SELECT h.*, CASE WHEN o.id IS NOT NULL THEN o.display_name || \' › \' || u.display_name ELSE u.display_name END uname')} LEFT JOIN users u ON u.id = h.user_id LEFT JOIN users o ON o.id = u.parent_user_id WHERE h.started_at >= ? ORDER BY h.started_at`, since);
   const byUser = new Map<string, { userId: string; userName: string; plays: number; minutes: number }>();
   const byPlatform = new Map<string, number>();
   const byMethod = new Map<string, number>();

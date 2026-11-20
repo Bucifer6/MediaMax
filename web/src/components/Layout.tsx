@@ -6,12 +6,16 @@ import { Icon, type IconName } from './Icon';
 import { Avatar, Dropdown } from './ui';
 import { BrandLogo } from './BrandLogo';
 import { MiniPlayer } from '../player/MiniPlayer';
+import { RendererBar } from '../player/RendererBar';
 import { useMusic } from '../player/music';
 import { isTypingTarget } from '../hooks';
 import { useSpatialNav } from '../hooks/spatialNav';
 import { isIptvLibrary, libraryIcon } from '../utils/items';
 import { api } from '../api/endpoints';
-import { REQUESTS_CHANGED } from '../utils/requests';
+import { canManageRequests, ISSUES_CHANGED, REQUESTS_CHANGED } from '../utils/requests';
+import { seerrApi } from '../api/seerr';
+import { NotificationBell } from './NotificationBell';
+import { ProfileAvatar } from './ProfileAvatar';
 
 function NavItem({ to, icon, label, end, badge }: { to: string; icon: IconName; label: ReactNode; end?: boolean; badge?: ReactNode }) {
   return (
@@ -27,21 +31,26 @@ export function UserMenu() {
   const { user, logout, features } = useApp();
   const navigate = useNavigate();
   if (!user) return null;
+  // Account profiles: "Switch profile" opens "Who's watching?" without signing out.
+  const hasProfiles = !!user.parentUserId || !!user.profileCount;
   return (
     <Dropdown
       trigger={({ onClick }) => (
         <button className="user-btn" onClick={onClick} aria-label="Account menu">
-          <Avatar name={user.displayName || user.username} url={user.avatarUrl} size={34} />
+          {hasProfiles
+            ? <ProfileAvatar name={user.displayName || user.username} url={user.avatarUrl} color={user.profileColor} size={34} />
+            : <Avatar name={user.displayName || user.username} url={user.avatarUrl} size={34} />}
         </button>
       )}
       items={[
-        { label: <strong>{user.displayName || user.username}</strong>, disabled: true },
+        { label: <span className="um-profile"><strong>{user.displayName || user.username}</strong>{user.parentUserId && <small>{user.isKids ? 'Kids profile' : 'Profile'} · {user.ownerName}</small>}</span>, disabled: true },
+        ...(hasProfiles ? [{ label: 'Switch profile', icon: 'users' as const, onClick: () => navigate('/profiles') }] : []),
         { divider: true, label: '' },
         { label: 'Your year', icon: 'sparkles', onClick: () => navigate('/wrapped') },
         { label: 'Settings', icon: 'settings', onClick: () => navigate('/settings') },
-        ...(features.linkCodes ? [{ label: 'Link a device', icon: 'link' as const, onClick: () => navigate('/link') }] : []),
+        ...(features.linkCodes && !user.parentUserId ? [{ label: 'Link a device', icon: 'link' as const, onClick: () => navigate('/link') }] : []),
         ...(user.isAdmin ? [{ label: 'Admin dashboard', icon: 'shield' as const, onClick: () => navigate('/admin') }] : []),
-        ...(features.profilePicker ? [{ label: 'Switch profile', icon: 'users' as const, onClick: () => void logout().then(() => navigate('/login?profiles=1')) }] : []),
+        ...(features.profilePicker && !hasProfiles ? [{ label: 'Switch user', icon: 'users' as const, onClick: () => void logout().then(() => navigate('/login?profiles=1')) }] : []),
         { divider: true, label: '' },
         { label: 'Sign out', icon: 'logout', danger: true, onClick: () => void logout().then(() => navigate('/login')) },
       ]}
@@ -68,6 +77,27 @@ function usePendingRequests(enabled: boolean): number {
       alive = false;
       window.clearInterval(t);
       window.removeEventListener(REQUESTS_CHANGED, load);
+    };
+  }, [enabled]);
+  return n;
+}
+
+/** Open issues (all for managers, own for others); refreshed on an interval and whenever issues change. */
+function useOpenIssues(enabled: boolean): number {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (!enabled) return setN(0);
+    let alive = true;
+    const load = () => {
+      seerrApi.issueCount().then((r) => alive && setN(r.open)).catch(() => undefined);
+    };
+    load();
+    const t = window.setInterval(load, 120000);
+    window.addEventListener(ISSUES_CHANGED, load);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+      window.removeEventListener(ISSUES_CHANGED, load);
     };
   }, [enabled]);
   return n;
@@ -110,7 +140,11 @@ export function Layout() {
   const iptv = features.iptvVod ? libraries.filter((l) => isIptvLibrary(l.type)) : [];
   const liveTv = features.liveTv && (user?.allowLiveTv ?? true);
   const dvr = features.dvr && (user?.allowDvr ?? true);
-  const pending = usePendingRequests(!!user?.isAdmin && features.requests);
+  const manager = canManageRequests(user);
+  const pending = usePendingRequests(manager && features.requests);
+  const openIssues = useOpenIssues(!!user);
+  // Kids profiles without any request permission don't see Discover / Requests.
+  const kidsNoRequests = !!user?.isKids && !!user.requestPermissions && (['movie', 'show', 'music', 'book'] as const).every((k) => user.requestPermissions![k] === 'none');
 
   return (
     <div className={`app-shell ${drawer ? 'drawer-open' : ''} ${music.current ? 'has-mini' : ''}`}>
@@ -121,13 +155,21 @@ export function Layout() {
         <nav className="sidebar-nav">
           <NavItem to="/" end icon="home" label="Home" />
           <NavItem to="/search" icon="search" label="Search" />
-          {features.requests && <NavItem to="/discover" icon="compass" label="Discover" />}
-          {(features.requests || pending > 0) && (
+          {features.requests && !kidsNoRequests && <NavItem to="/discover" icon="compass" label="Discover" />}
+          {((features.requests && !kidsNoRequests) || pending > 0) && (
             <NavItem
               to="/requests"
               icon="inbox"
-              label={user?.isAdmin ? 'Requests' : 'My requests'}
+              label={manager ? 'Requests' : 'My requests'}
               badge={pending > 0 ? <span className="nav-count" aria-label={`${pending} pending`}>{pending > 99 ? '99+' : pending}</span> : undefined}
+            />
+          )}
+          {(manager ? openIssues > 0 || features.requests : openIssues > 0) && (
+            <NavItem
+              to="/issues"
+              icon="flag"
+              label={manager ? 'Issues' : 'My issues'}
+              badge={manager && openIssues > 0 ? <span className="nav-count" aria-label={`${openIssues} open`}>{openIssues > 99 ? '99+' : openIssues}</span> : undefined}
             />
           )}
           {local.length > 0 && <div className="nav-section">Libraries</div>}
@@ -148,6 +190,8 @@ export function Layout() {
             <NavItem key={l.id} to={`/library/${l.id}`} icon={libraryIcon(l.type)} label={l.name} badge={<span className="nav-tag">IPTV</span>} />
           ))}
           <div className="nav-section">You</div>
+          <NavItem to="/my-list" icon="plus" label="My List" />
+          <NavItem to="/calendar" icon="calendar" label="Calendar" />
           {features.music && <NavItem to="/dj" icon="music" label="DJ" badge={djLive ? <span className="live-dot" aria-label="Mix playing" /> : undefined} />}
           <NavItem to="/podcasts" icon="podcast" label="Podcasts" />
           <NavItem to="/playlists" icon="playlist" label="Playlists" />
@@ -181,6 +225,7 @@ export function Layout() {
             <span>Search</span>
             <kbd>/</kbd>
           </button>
+          <NotificationBell />
           <UserMenu />
         </header>
         <main className="main" id="main">
@@ -188,6 +233,7 @@ export function Layout() {
         </main>
       </div>
       <MiniPlayer />
+      <RendererBar />
       <nav className="bottom-nav" aria-label="Quick navigation">
         <NavLink to="/" end className="bn-item">
           <Icon name="home" />

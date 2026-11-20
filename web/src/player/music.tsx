@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Chapter, Item, PlaybackInfo } from '@mediamax/shared';
+import type { Chapter, DjMixRequest, Item, PlaybackInfo } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
-import { attachStream, type Attached } from './engine';
+import { attachStream } from './engine';
 import { profileWithBitrate } from './deviceProfile';
 import { absoluteUrl, CAST_OWNER_EVENT, castContentType, castDeviceProfile, castOwner, claimCast, useCast, type CastHandle, type CastOwner } from './cast';
+import { isAlbumInOrder, MusicOutput, replayGainFactor, SUSPENDS_WEB_AUDIO_IN_BACKGROUND, type Deck } from './musicOutput';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { findNextEpisode, shuffled, tracksFor } from '../utils/playback';
@@ -21,6 +22,21 @@ export type SleepTimer =
 export type SleepOption = { minutes: number } | 'chapter' | 'part';
 /** How long the volume fades out before the sleep timer pauses. */
 const SLEEP_FADE_MS = 12000;
+/** Start preparing the next track this long before the current one ends (plus the crossfade). */
+const PRELOAD_LEAD_MS = 30000;
+/** Gapless: below this much remaining time, schedule the exact handover with a timer. */
+const HANDOVER_WINDOW_MS = 600;
+/** Start the next element this much early to cover its output start-up latency. */
+const HANDOVER_LEAD_MS = 8;
+/** Radio: fetch more tracks when fewer than this many are left after the current one. */
+const RADIO_LOW_WATER = 5;
+
+/** Song / album / artist radio: an endless DJ-style mix seeded from one item, played through the normal queue. */
+export interface RadioState {
+  seedId: string;
+  /** "Radio based on <title>". */
+  label: string;
+}
 
 interface MusicApi {
   queue: Item[];
@@ -58,6 +74,10 @@ interface MusicApi {
   casting: boolean;
   sleep: SleepTimer | null;
   setSleep: (opt: SleepOption | null) => void;
+  /** Active radio, if the queue is a radio mix. */
+  radio: RadioState | null;
+  /** Start a radio mix seeded from a track, album or artist; `title` names it ("Radio based on <title>"). */
+  startRadio: (seedId: string, title: string) => Promise<void>;
 }
 
 const Ctx = createContext<MusicApi | null>(null);
@@ -78,13 +98,14 @@ function loadVolume() {
 }
 
 export function MusicProvider({ children }: { children: ReactNode }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  if (!audioRef.current && typeof Audio !== 'undefined') {
-    audioRef.current = new Audio();
-    audioRef.current.preload = 'auto';
-    // Lets DJ mode step aside when normal music starts (detached elements' events don't reach the document).
-    audioRef.current.addEventListener('play', () => window.dispatchEvent(new Event('mediamax:media-play')));
+  const outRef = useRef<MusicOutput | null>(null);
+  if (!outRef.current && typeof Audio !== 'undefined') {
+    outRef.current = new MusicOutput((el) => {
+      // Lets DJ mode step aside when normal music starts (detached elements' events don't reach the document).
+      el.addEventListener('play', () => window.dispatchEvent(new Event('mediamax:media-play')));
+    });
   }
+  const out = outRef.current;
   const toast = useToast();
   const [queue, setQueue] = useState<Item[]>([]);
   const [index, setIndex] = useState(-1);
@@ -99,21 +120,43 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const [repeat, setRepeat] = useState<Repeat>('off');
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [sleep, setSleepState] = useState<SleepTimer | null>(null);
+  const [radio, setRadio] = useState<RadioState | null>(null);
   /** Requested start position for the next track load (bookmarks). */
   const startAtRef = useRef<{ id: string; ms: number } | null>(null);
   /** Load the next track paused (sleep timer "end of part"). */
   const holdRef = useRef(false);
-  const attached = useRef<Attached | null>(null);
-  const sessionRef = useRef<string | null>(null);
-  /** Media position at stream time 0 (non-zero when the server starts a transcode mid-file). */
-  const offsetRef = useRef(0);
-  const pendingSeek = useRef<number | null>(null);
-  const stateRef = useRef({ queue, index, repeat, durationMs, positionMs, chapters, volume, sleep });
-  stateRef.current = { queue, index, repeat, durationMs, positionMs, chapters, volume, sleep };
+  /** The live deck already plays this queue entry (gapless / crossfade handover): the load effect adopts it. */
+  const adoptRef = useRef<{ itemId: string; index: number } | null>(null);
+  /** A handover is scheduled or running (don't start another). */
+  const handoverRef = useRef<{ timer: number | null; fromDeck: 0 | 1 } | null>(null);
+  /** Sleep-timer fade factor (0–1) applied on top of the volume. */
+  const sleepFactorRef = useRef(1);
+  const { system, user } = useApp();
+  const crossfadeSec = Math.max(0, Math.min(12, user?.preferences.musicCrossfadeSec ?? 0));
+  const rgMode = user?.preferences.replayGain ?? 'auto';
   const current = index >= 0 ? queue[index] ?? null : null;
+  const stateRef = useRef({ queue, index, repeat, durationMs, positionMs, chapters, volume, muted, sleep, shuffle, crossfadeSec, rgMode, radio });
+  stateRef.current = { queue, index, repeat, durationMs, positionMs, chapters, volume, muted, sleep, shuffle, crossfadeSec, rgMode, radio };
   const playingRef = useRef(playing);
   playingRef.current = playing;
-  const { system } = useApp();
+
+  /** Route audio through Web Audio (gain ramps, ReplayGain boost) — except on iOS unless crossfade is on. */
+  const wantGraph = () => !SUSPENDS_WEB_AUDIO_IN_BACKGROUND || stateRef.current.crossfadeSec > 0;
+  /** The live deck's element (null during SSR). */
+  const liveEl = () => out?.active.el ?? null;
+
+  /* ---------------- output levels ---------------- */
+  const applyMaster = useCallback(() => {
+    const st = stateRef.current;
+    out?.setMaster(st.muted ? 0 : st.volume * sleepFactorRef.current);
+  }, [out]);
+
+  /** ReplayGain for the item loaded on a deck, in the current queue context. */
+  const deckGain = useCallback((d: Deck) => {
+    const st = stateRef.current;
+    const item = st.queue[d.queueIndex]?.id === d.itemId ? st.queue[d.queueIndex] : st.queue.find((q) => q.id === d.itemId);
+    return replayGainFactor(item, st.rgMode, isAlbumInOrder(st.queue, item ?? null, st.shuffle));
+  }, []);
 
   /* ---------------- Google Cast ---------------- */
   // The SDK is only loaded once something is playing.
@@ -169,30 +212,95 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     reportCast('playing');
   };
 
-  const report = useCallback((state: 'playing' | 'paused' | 'stopped', keepalive = false) => {
-    const a = audioRef.current;
-    const sid = sessionRef.current;
-    if (!a || !sid) return;
+  /* ---------------- deck sessions ---------------- */
+  const reportDeck = useCallback((d: Deck, state: 'playing' | 'paused' | 'stopped', keepalive = false) => {
+    const sid = d.sessionId;
+    if (!sid) return;
     api.playback
-      .progress(sid, { positionMs: Math.round(offsetRef.current + a.currentTime * 1000), durationMs: stateRef.current.durationMs || undefined, state, sessionId: sid }, keepalive)
+      .progress(sid, { positionMs: Math.round(d.offsetMs + d.el.currentTime * 1000), durationMs: (d.info?.durationMs ?? stateRef.current.durationMs) || undefined, state, sessionId: sid }, keepalive)
       .catch(() => {});
   }, []);
+  const report = useCallback((state: 'playing' | 'paused' | 'stopped', keepalive = false) => {
+    if (out) reportDeck(out.active, state, keepalive);
+  }, [out, reportDeck]);
+
+  /** Stop a deck: end its server session and detach its stream. `report` = it was heard (send a final progress). */
+  const releaseDeck = useCallback((d: Deck, keepalive = false) => {
+    d.token++;
+    const sid = d.sessionId;
+    if (sid) {
+      // Only a deck that actually played reports progress; a preloaded one never started.
+      if (d.el.currentTime > 0) reportDeck(d, 'stopped', keepalive);
+      api.playback.stop(sid, keepalive).catch(() => {});
+    }
+    d.sessionId = null;
+    d.attached?.destroy();
+    d.attached = null;
+    d.info = null;
+    d.itemId = null;
+    d.queueIndex = -1;
+    d.pendingSeek = null;
+    d.ready = false;
+  }, [reportDeck]);
 
   const stopSession = useCallback((keepalive = false) => {
-    const sid = sessionRef.current;
-    if (!sid) return;
-    report('stopped', keepalive);
-    api.playback.stop(sid, keepalive).catch(() => {});
-    sessionRef.current = null;
-  }, [report]);
+    if (out) releaseDeck(out.active, keepalive);
+  }, [out, releaseDeck]);
+
+  /** Cancel a scheduled handover and silence the deck that is fading out, if any. */
+  const cancelHandover = useCallback(() => {
+    const h = handoverRef.current;
+    if (!h || !out) return;
+    if (h.timer != null) window.clearTimeout(h.timer);
+    handoverRef.current = null;
+    const from = out.decks[h.fromDeck];
+    if (from !== out.active) {
+      from.el.pause();
+      releaseDeck(from);
+      out.setFade(from.id, 1);
+    }
+  }, [out, releaseDeck]);
+
+  /** Attach `item` to deck `d`. Returns false when superseded or failed. */
+  const loadDeck = useCallback(async (d: Deck, item: Item, queueIndex: number, startMs: number, onFatal: (msg: string) => void): Promise<boolean> => {
+    releaseDeck(d);
+    const token = ++d.token;
+    d.itemId = item.id;
+    d.queueIndex = queueIndex;
+    const pi = await api.playback.start(item.id, { startMs: startMs || undefined, deviceProfile: profileWithBitrate(null) });
+    if (token !== d.token || castingRef.current) {
+      api.playback.stop(pi.sessionId).catch(() => {});
+      return false;
+    }
+    d.sessionId = pi.sessionId;
+    d.offsetMs = pi.streamStartMs ?? 0;
+    d.pendingSeek = startMs > 0 ? startMs : null;
+    d.info = pi;
+    d.attached = await attachStream(d.el, pi, { onFatal: (_k, msg) => (token === d.token ? onFatal(msg) : undefined) });
+    if (token !== d.token) return false;
+    d.ready = true;
+    return true;
+  }, [releaseDeck]);
+
+  const setMediaSession = (item: Item, pi: PlaybackInfo | null) => {
+    if (!('mediaSession' in navigator)) return;
+    const art = pi?.posterUrl || item.posterUrl;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: pi?.title || item.title,
+      artist: pi?.subtitle ?? item.grandparentTitle ?? item.parentTitle ?? '',
+      album: item.parentTitle ?? '',
+      artwork: art ? [{ src: art, sizes: '512x512' }] : [],
+    });
+  };
 
   // Load the current track.
   useEffect(() => {
-    const a = audioRef.current;
-    if (!a) return;
+    if (!out) return;
+    const d = out.active;
     if (!current) {
-      attached.current?.destroy();
-      attached.current = null;
+      adoptRef.current = null;
+      cancelHandover();
+      releaseDeck(out.standby);
       stopSession();
       if (castingRef.current && castSidRef.current) castRef.current.stop();
       endCastSession();
@@ -200,19 +308,49 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       setPlaying(false);
       return;
     }
+    setChapters(current.chapters ?? []);
+    // Gapless / crossfade handover: the live deck already plays this entry.
+    const adopt = adoptRef.current;
+    if (adopt && adopt.itemId === current.id && adopt.index === index && d.itemId === current.id) {
+      adoptRef.current = null;
+      setInfo(d.info);
+      setDuration(d.info?.durationMs ?? current.durationMs ?? 0);
+      setPosition(d.offsetMs + d.el.currentTime * 1000);
+      setLoading(false);
+      setMediaSession(current, d.info);
+      return;
+    }
+    adoptRef.current = null;
+    cancelHandover();
     let cancelled = false;
     setLoading(true);
     setPosition(0);
     setDuration(current.durationMs ?? 0);
-    setChapters(current.chapters ?? []);
     const startAt = startAtRef.current?.id === current.id ? startAtRef.current.ms : null;
     startAtRef.current = null;
     const resumeMs = startAt ?? (hasAudioResume(current) && isResumable(current) ? current.userData.positionMs : 0);
     (async () => {
-      stopSession();
-      attached.current?.destroy();
-      attached.current = null;
       try {
+        // Next/previous onto the track the standby deck has already prepared: swap decks, no reload.
+        const sb = out.standby;
+        if (!castingRef.current && startAt == null && !hasAudioResume(current) && sb.ready && sb.itemId === current.id) {
+          d.el.pause();
+          stopSession();
+          out.swap();
+          sb.queueIndex = index;
+          out.setFade(sb.id, 1);
+          out.setReplayGain(sb.id, deckGain(sb));
+          setInfo(sb.info);
+          if (sb.el.currentTime > 0) sb.el.currentTime = 0;
+          if (holdRef.current) {
+            holdRef.current = false;
+            setPlaying(false);
+          } else await sb.el.play().catch(() => setPlaying(false));
+          setMediaSession(current, sb.info);
+          return;
+        }
+        d.el.pause();
+        stopSession();
         // Pick up the latest saved position (the queued copy may be stale) and the chapters,
         // which are only included on GET /items/:id.
         let startMs = resumeMs;
@@ -223,39 +361,25 @@ export function MusicProvider({ children }: { children: ReactNode }) {
             if (!cancelled && fresh.chapters) setChapters(fresh.chapters);
           }
         }
+        if (cancelled) return;
         if (castingRef.current) {
           endCastSession();
-          if (!cancelled) await castTrackRef.current(current, startMs);
+          await castTrackRef.current(current, startMs);
           return;
         }
-        const pi = await api.playback.start(current.id, { startMs: startMs || undefined, deviceProfile: profileWithBitrate(null) });
-        if (cancelled || castingRef.current) {
-          api.playback.stop(pi.sessionId).catch(() => {});
-          return;
-        }
-        sessionRef.current = pi.sessionId;
-        offsetRef.current = pi.streamStartMs ?? 0;
-        pendingSeek.current = startMs > 0 ? startMs : null;
-        setInfo(pi);
-        attached.current = await attachStream(a, pi, {
-          onFatal: (_k, msg) => {
-            toast.error(`Can't play "${current.title}": ${msg}`);
-            setPlaying(false);
-          },
+        const ok = await loadDeck(d, current, index, startMs, (msg) => {
+          toast.error(`Can't play "${current.title}": ${msg}`);
+          setPlaying(false);
         });
-        if (cancelled) return;
+        if (!ok || cancelled) return;
+        setInfo(d.info);
+        out.setFade(d.id, 1);
+        out.setReplayGain(d.id, deckGain(d));
         if (holdRef.current) {
           holdRef.current = false;
           setPlaying(false);
-        } else await a.play().catch(() => setPlaying(false));
-        if ('mediaSession' in navigator) {
-          navigator.mediaSession.metadata = new MediaMetadata({
-            title: pi.title || current.title,
-            artist: pi.subtitle ?? current.grandparentTitle ?? current.parentTitle ?? '',
-            album: current.parentTitle ?? '',
-            artwork: pi.posterUrl || current.posterUrl ? [{ src: (pi.posterUrl || current.posterUrl)!, sizes: '512x512' }] : [],
-          });
-        }
+        } else await d.el.play().catch(() => setPlaying(false));
+        setMediaSession(current, d.info);
       } catch (e) {
         if (!cancelled) {
           toast.error(`Playback failed: ${errorMessage(e)}`);
@@ -274,30 +398,27 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   /** Seek in media time; restarts the stream when the target is before a mid-file transcode start. */
   const seekRef = useRef<(ms: number) => void>(() => {});
   seekRef.current = (ms: number) => {
-    const a = audioRef.current;
     const cur = stateRef.current.queue[stateRef.current.index];
-    if (!a || !cur) return;
+    if (!out || !cur) return;
     if (castingRef.current) {
       castRef.current.seek(Math.max(0, (ms - castOffsetRef.current) / 1000));
       setPosition(ms);
       return;
     }
-    const local = (ms - offsetRef.current) / 1000;
-    if (local >= 0 && (!info?.isHls || (a.seekable.length && local <= a.seekable.end(a.seekable.length - 1) + 1))) {
+    cancelHandover();
+    const d = out.active;
+    const a = d.el;
+    const local = (ms - d.offsetMs) / 1000;
+    if (local >= 0 && (!d.info?.isHls || (a.seekable.length && local <= a.seekable.end(a.seekable.length - 1) + 1))) {
       a.currentTime = local;
       return;
     }
     // Outside what the stream covers: ask the server for a new stream at that point.
     void (async () => {
       try {
-        stopSession();
-        attached.current?.destroy();
-        const pi = await api.playback.start(cur.id, { startMs: Math.round(ms), deviceProfile: profileWithBitrate(null) });
-        sessionRef.current = pi.sessionId;
-        offsetRef.current = pi.streamStartMs ?? 0;
-        pendingSeek.current = ms;
-        setInfo(pi);
-        attached.current = await attachStream(a, pi, { onFatal: (_k, msg) => toast.error(msg) });
+        const ok = await loadDeck(d, cur, stateRef.current.index, Math.round(ms), (msg) => toast.error(msg));
+        if (!ok) return;
+        setInfo(d.info);
         await a.play().catch(() => setPlaying(false));
       } catch (e) {
         toast.error(e);
@@ -311,156 +432,309 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setIndex(i);
   }, []);
 
-  const next = useCallback(() => {
+  /** Queue position that follows the current one (-1 = none). */
+  const nextIndexOf = useCallback(() => {
     const { queue: q, index: i, repeat: r } = stateRef.current;
-    if (i + 1 < q.length) setIndex(i + 1);
-    else if (r === 'all' && q.length) setIndex(0);
-    else {
-      audioRef.current?.pause();
-    }
+    if (i + 1 < q.length) return i + 1;
+    if (r === 'all' && q.length) return 0;
+    return -1;
   }, []);
 
+  const next = useCallback(() => {
+    out?.prime(wantGraph());
+    const n = nextIndexOf();
+    if (n >= 0) setIndex(n);
+    else {
+      cancelHandover();
+      liveEl()?.pause();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextIndexOf, cancelHandover, out]);
+
   const prev = useCallback(() => {
-    const a = audioRef.current;
+    out?.prime(wantGraph());
+    const a = liveEl();
     if (castingRef.current) {
       const pos = castOffsetRef.current + castRef.current.remote.currentTime * 1000;
       if (pos > 4000 || stateRef.current.index <= 0) seekRef.current(0);
       else setIndex(stateRef.current.index - 1);
       return;
     }
-    if (a && offsetRef.current + a.currentTime * 1000 > 4000) {
-      if (offsetRef.current) seekRef.current(0);
+    const off = out?.active.offsetMs ?? 0;
+    if (a && off + a.currentTime * 1000 > 4000) {
+      if (off) seekRef.current(0);
       else a.currentTime = 0;
       return;
     }
     const { index: i } = stateRef.current;
     if (i > 0) setIndex(i - 1);
     else if (a) a.currentTime = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [out]);
+
+  /* ---------------- gapless & crossfade ---------------- */
+  /** Should the move from `a` to `b` crossfade (vs. a plain gapless join)? Albums played in order stay gapless. */
+  const fadeSecFor = useCallback((a: Item | undefined, b: Item | undefined) => {
+    const st = stateRef.current;
+    if (!st.crossfadeSec || !a || !b || a.type !== 'track' || b.type !== 'track') return 0;
+    if (!st.shuffle && a.parentId && a.parentId === b.parentId) return 0;
+    const shortest = Math.min(a.durationMs || Infinity, b.durationMs || Infinity) / 1000;
+    return Math.max(0, Math.min(st.crossfadeSec, shortest / 3));
   }, []);
 
-  // Element events.
+  const preloadingRef = useRef(false);
+  /** Prepare the next queue entry on the standby deck (music only, local playback). */
+  const maybePreload = useCallback(() => {
+    if (!out || castingRef.current || preloadingRef.current || handoverRef.current) return;
+    const st = stateRef.current;
+    if (st.repeat === 'one' || st.sleep?.mode === 'part') return;
+    const n = nextIndexOf();
+    const item = st.queue[n];
+    const cur = st.queue[st.index];
+    if (!item || !cur || hasAudioResume(item) || hasAudioResume(cur)) return;
+    const sb = out.standby;
+    if (sb.itemId === item.id && (sb.ready || sb.sessionId)) return;
+    const d = out.active;
+    const remaining = (d.el.duration - d.el.currentTime) * 1000;
+    if (!Number.isFinite(remaining) || remaining > PRELOAD_LEAD_MS + fadeSecFor(cur, item) * 1000) return;
+    preloadingRef.current = true;
+    out.setFade(sb.id, 0);
+    loadDeck(sb, item, n, 0, () => releaseDeck(sb))
+      .then((ok) => {
+        if (ok) out.setReplayGain(sb.id, deckGain(sb));
+      })
+      .catch(() => releaseDeck(sb)) // e.g. stream limit reached: fall back to a normal track change
+      .finally(() => {
+        preloadingRef.current = false;
+      });
+  }, [out, nextIndexOf, fadeSecFor, loadDeck, releaseDeck, deckGain]);
+
+  /** Start the standby deck now: gapless join (fadeSec 0) or crossfade. */
+  const handover = useCallback((fadeSec: number) => {
+    if (!out) return false;
+    const from = out.active;
+    const to = out.standby;
+    const n = nextIndexOf();
+    const st = stateRef.current;
+    if (n < 0 || !to.ready || to.itemId !== st.queue[n]?.id) return false;
+    out.resume();
+    to.queueIndex = n;
+    out.swap();
+    out.setReplayGain(to.id, deckGain(to));
+    if (fadeSec > 0) {
+      handoverRef.current = { timer: null, fromDeck: from.id };
+      out.setFade(to.id, 0);
+      void out.fadeTo(to.id, 1, fadeSec);
+      void out.fadeTo(from.id, 0, fadeSec).then(() => {
+        if (handoverRef.current?.fromDeck !== from.id) return;
+        handoverRef.current = null;
+        from.el.pause();
+        releaseDeck(from);
+        out.setFade(from.id, 1);
+      });
+    } else {
+      out.setFade(to.id, 1);
+      // The outgoing deck is freed when it ends; make sure it is even if 'ended' never comes.
+      const tok = from.token;
+      window.setTimeout(() => {
+        if (from.token === tok && out.active !== from) {
+          from.el.pause();
+          releaseDeck(from);
+        }
+      }, 3000);
+    }
+    void to.el.play().catch(() => setPlaying(false));
+    adoptRef.current = { itemId: to.itemId!, index: n };
+    setIndex(n);
+    setInfo(to.info);
+    setPosition(0);
+    setDuration(to.info?.durationMs ?? st.queue[n]?.durationMs ?? 0);
+    return true;
+  }, [out, nextIndexOf, deckGain, releaseDeck]);
+
+  /** Called on every timeupdate of the live deck: preload, then start the next track on time. */
+  const checkTransition = useCallback(() => {
+    if (!out || castingRef.current || handoverRef.current) return;
+    maybePreload();
+    const st = stateRef.current;
+    const d = out.active;
+    const to = out.standby;
+    if (!to.ready || d.el.paused) return;
+    const remainingMs = ((d.el.duration - d.el.currentTime) * 1000) / (d.el.playbackRate || 1);
+    if (!Number.isFinite(remainingMs)) return;
+    const fade = fadeSecFor(st.queue[st.index], st.queue[nextIndexOf()]);
+    if (fade > 0) {
+      if (remainingMs <= fade * 1000) handover(Math.min(fade, remainingMs / 1000));
+      return;
+    }
+    if (remainingMs <= HANDOVER_WINDOW_MS) {
+      // timeupdate only fires every ~250 ms: time the gapless start precisely with a timer.
+      const wait = Math.max(0, remainingMs - HANDOVER_LEAD_MS);
+      const timer = window.setTimeout(() => {
+        if (handoverRef.current?.timer !== timer) return;
+        handoverRef.current = null;
+        handover(0);
+      }, wait);
+      handoverRef.current = { timer, fromDeck: d.id };
+    }
+  }, [out, maybePreload, fadeSecFor, nextIndexOf, handover]);
+
+  // A stale preload (queue edited, repeat/shuffle changed): drop it so the right track is prepared.
   useEffect(() => {
-    const a = audioRef.current;
-    if (!a) return;
-    a.volume = volume;
-    const onTime = () => setPosition(offsetRef.current + a.currentTime * 1000);
-    const onDur = () => {
-      if (!isFinite(a.duration)) return;
-      // Keep the item's full duration when the stream starts part-way through.
-      setDuration((d) => Math.max(offsetRef.current + a.duration * 1000, offsetRef.current ? d : 0));
-    };
-    const onMeta = () => {
-      const target = pendingSeek.current;
-      pendingSeek.current = null;
-      if (target == null) return;
-      const local = (target - offsetRef.current) / 1000;
-      if (local > 0.5) a.currentTime = local;
-    };
-    const onPlay = () => {
-      setPlaying(true);
-      report('playing');
-    };
-    const onPause = () => {
-      setPlaying(false);
-      if (!a.ended) report('paused');
-    };
-    const onEnded = () => {
-      const { repeat: r, sleep: sl } = stateRef.current;
-      if (sl?.mode === 'part') {
-        // Sleep timer "end of part": move on, but load the next part paused.
-        setSleepState(null);
-        a.volume = stateRef.current.volume;
-        holdRef.current = stateRef.current.index + 1 < stateRef.current.queue.length || r === 'all';
-        next();
-        return;
-      }
-      if (r === 'one') {
-        a.currentTime = 0;
-        void a.play();
-      } else next();
-    };
-    a.addEventListener('timeupdate', onTime);
-    a.addEventListener('loadedmetadata', onMeta);
-    a.addEventListener('durationchange', onDur);
-    a.addEventListener('play', onPlay);
-    a.addEventListener('pause', onPause);
-    a.addEventListener('ended', onEnded);
+    if (!out || handoverRef.current) return;
+    const sb = out.standby;
+    // Not loaded, or the outgoing track of a gapless join playing out its last milliseconds.
+    if (!sb.itemId || (!sb.el.paused && sb.el.currentTime > 0)) return;
+    const n = nextIndexOf();
+    if (queue[n]?.id !== sb.itemId || repeat === 'one') releaseDeck(sb);
+  }, [queue, index, repeat, shuffle, out, nextIndexOf, releaseDeck]);
+
+  // Element events (both decks; only the live one drives the UI).
+  useEffect(() => {
+    if (!out) return;
+    const cleanups = out.decks.map((d) => {
+      const a = d.el;
+      const live = () => out.active === d;
+      const onTime = () => {
+        if (!live()) return;
+        setPosition(d.offsetMs + a.currentTime * 1000);
+        checkTransition();
+      };
+      const onDur = () => {
+        if (!live() || !isFinite(a.duration)) return;
+        // Keep the item's full duration when the stream starts part-way through.
+        setDuration((dur) => Math.max(d.offsetMs + a.duration * 1000, d.offsetMs ? dur : 0));
+      };
+      const onMeta = () => {
+        const target = d.pendingSeek;
+        d.pendingSeek = null;
+        if (target == null) return;
+        const local = (target - d.offsetMs) / 1000;
+        if (local > 0.5) a.currentTime = local;
+      };
+      const onPlay = () => {
+        out.resume();
+        if (!live()) return;
+        setPlaying(true);
+        report('playing');
+      };
+      const onPause = () => {
+        if (!live()) return;
+        setPlaying(false);
+        if (!a.ended) report('paused');
+      };
+      const onEnded = () => {
+        if (!live()) {
+          // The outgoing deck of a gapless join finished: free it.
+          if (d.el.currentTime > 0) releaseDeck(d);
+          return;
+        }
+        const { repeat: r, sleep: sl } = stateRef.current;
+        if (sl?.mode === 'part') {
+          // Sleep timer "end of part": move on, but load the next part paused.
+          setSleepState(null);
+          sleepFactorRef.current = 1;
+          applyMaster();
+          holdRef.current = stateRef.current.index + 1 < stateRef.current.queue.length || r === 'all';
+          next();
+          return;
+        }
+        if (r === 'one') {
+          a.currentTime = 0;
+          void a.play();
+          return;
+        }
+        // Gapless fallback when the timer didn't get there first.
+        const h = handoverRef.current;
+        if (h?.timer != null) window.clearTimeout(h.timer);
+        handoverRef.current = null;
+        if (!handover(0)) next();
+      };
+      a.addEventListener('timeupdate', onTime);
+      a.addEventListener('loadedmetadata', onMeta);
+      a.addEventListener('durationchange', onDur);
+      a.addEventListener('play', onPlay);
+      a.addEventListener('pause', onPause);
+      a.addEventListener('ended', onEnded);
+      return () => {
+        a.removeEventListener('timeupdate', onTime);
+        a.removeEventListener('loadedmetadata', onMeta);
+        a.removeEventListener('durationchange', onDur);
+        a.removeEventListener('play', onPlay);
+        a.removeEventListener('pause', onPause);
+        a.removeEventListener('ended', onEnded);
+      };
+    });
     const iv = window.setInterval(() => {
-      if (!a.paused) report('playing');
+      if (!out.active.el.paused) report('playing');
     }, 10000);
-    const unload = () => stopSession(true);
+    const unload = () => {
+      releaseDeck(out.standby, true);
+      stopSession(true);
+    };
     window.addEventListener('pagehide', unload);
     return () => {
-      a.removeEventListener('timeupdate', onTime);
-      a.removeEventListener('loadedmetadata', onMeta);
-      a.removeEventListener('durationchange', onDur);
-      a.removeEventListener('play', onPlay);
-      a.removeEventListener('pause', onPause);
-      a.removeEventListener('ended', onEnded);
+      cleanups.forEach((c) => c());
       window.clearInterval(iv);
       window.removeEventListener('pagehide', unload);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [next, report, stopSession]);
+  }, [out, next, report, stopSession, releaseDeck, checkTransition, handover, applyMaster]);
 
   useEffect(() => {
     if (castingRef.current) castRef.current.setVolume(volume);
-    else if (audioRef.current) audioRef.current.volume = volume;
+    else applyMaster();
     try {
       localStorage.setItem(VOL_KEY, String(volume));
     } catch {
       /* ignore */
     }
-  }, [volume]);
+  }, [volume, applyMaster]);
   useEffect(() => {
     if (castingRef.current) castRef.current.setMuted(muted);
-    else if (audioRef.current) audioRef.current.muted = muted;
-  }, [muted]);
+    else applyMaster();
+  }, [muted, applyMaster]);
+
+  // ReplayGain follows the queue context (album in order or not) and the preference.
+  useEffect(() => {
+    if (!out) return;
+    for (const d of out.decks) if (d.itemId) out.setReplayGain(d.id, deckGain(d));
+  }, [out, queue, index, shuffle, rgMode, deckGain]);
 
   /** Start local playback of the current track at `ms` (after casting ends). */
   const resumeLocal = useCallback(async (ms: number, autoplay: boolean) => {
-    const a = audioRef.current;
     const cur = stateRef.current.queue[stateRef.current.index];
-    if (!a || !cur) return;
+    if (!out || !cur) return;
     try {
-      stopSession();
-      attached.current?.destroy();
-      const pi = await api.playback.start(cur.id, { startMs: Math.round(ms) || undefined, deviceProfile: profileWithBitrate(null) });
-      if (castingRef.current) {
-        api.playback.stop(pi.sessionId).catch(() => {});
-        return;
-      }
-      sessionRef.current = pi.sessionId;
-      offsetRef.current = pi.streamStartMs ?? 0;
-      pendingSeek.current = ms > 0 ? ms : null;
-      setInfo(pi);
-      attached.current = await attachStream(a, pi, { onFatal: (_k, msg) => toast.error(msg) });
-      a.volume = volume;
-      a.muted = muted;
-      if (autoplay) await a.play().catch(() => setPlaying(false));
+      const d = out.active;
+      const ok = await loadDeck(d, cur, stateRef.current.index, Math.round(ms), (msg) => toast.error(msg));
+      if (!ok) return;
+      setInfo(d.info);
+      out.setFade(d.id, 1);
+      out.setReplayGain(d.id, deckGain(d));
+      applyMaster();
+      if (autoplay) await d.el.play().catch(() => setPlaying(false));
     } catch (e) {
       toast.error(e);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stopSession, toast]);
+  }, [out, loadDeck, deckGain, applyMaster, toast]);
 
   /** Move the current track to the Cast device. */
   const takeOverCast = useCallback(() => {
-    const a = audioRef.current;
     const cur = stateRef.current.queue[stateRef.current.index];
     castingRef.current = true;
     setCasting(true);
-    if (!cur) return;
-    const pos = a ? offsetRef.current + a.currentTime * 1000 : 0;
-    a?.pause();
+    if (!out || !cur) return;
+    cancelHandover();
+    const d = out.active;
+    const pos = d.offsetMs + d.el.currentTime * 1000;
+    d.el.pause();
     stopSession();
-    attached.current?.destroy();
-    attached.current = null;
+    releaseDeck(out.standby);
     setLoading(true);
     castTrackRef.current(cur, pos)
       .catch((e) => toast.error(`Cast failed: ${errorMessage(e)}`))
       .finally(() => setLoading(false));
-  }, [stopSession, toast]);
+  }, [out, cancelHandover, stopSession, releaseDeck, toast]);
 
   // Hand over to / back from the Cast device. Music only claims a new Cast session when it's the
   // active player (not while a video or live channel is open, which cast themselves).
@@ -531,8 +805,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, [casting, reportCast, endCastSession]);
 
   const togglePlayback = useCallback(() => {
-    const a = audioRef.current;
-    if (!a || stateRef.current.index < 0) return;
+    if (!out || stateRef.current.index < 0) return;
     if (castingRef.current) {
       castRef.current.playOrPause();
       return;
@@ -542,35 +815,43 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       takeOverCast();
       return;
     }
+    out.prime(wantGraph());
+    const a = out.active.el;
     if (a.paused) void a.play();
-    else a.pause();
-  }, [takeOverCast]);
+    else {
+      cancelHandover();
+      a.pause();
+    }
+  }, [out, takeOverCast, cancelHandover]);
   const pausePlayback = useCallback(() => {
     if (castingRef.current) {
       if (!castRef.current.remote.isPaused) castRef.current.playOrPause();
       return;
     }
-    audioRef.current?.pause();
-  }, []);
+    cancelHandover();
+    liveEl()?.pause();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cancelHandover]);
 
   // Media session controls.
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
     const ms = navigator.mediaSession;
     try {
-      ms.setActionHandler('play', () => (castingRef.current ? togglePlayback() : void audioRef.current?.play()));
+      ms.setActionHandler('play', () => (castingRef.current ? togglePlayback() : void liveEl()?.play()));
       ms.setActionHandler('pause', pausePlayback);
       ms.setActionHandler('nexttrack', next);
       ms.setActionHandler('previoustrack', prev);
     } catch {
       /* unsupported action */
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [next, prev, togglePlayback, pausePlayback]);
 
   /* ---------------- Sleep timer ---------------- */
   const setSleep = useCallback((opt: SleepOption | null) => {
-    const a = audioRef.current;
-    if (a && !castingRef.current) a.volume = stateRef.current.volume;
+    sleepFactorRef.current = 1;
+    if (!castingRef.current) applyMaster();
     if (!opt) {
       setSleepState(null);
       return;
@@ -588,15 +869,17 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       return;
     }
     setSleepState({ mode: 'time', minutes: opt.minutes, endsAt: Date.now() + opt.minutes * 60_000 });
-  }, []);
+  }, [applyMaster]);
 
   useEffect(() => {
     if (!sleep) return;
-    const a = audioRef.current;
     const fire = () => {
       setSleepState(null);
       pausePlayback();
-      if (a) window.setTimeout(() => (a.volume = stateRef.current.volume), 300);
+      window.setTimeout(() => {
+        sleepFactorRef.current = 1;
+        applyMaster();
+      }, 300);
       toast.show('Sleep timer: playback paused');
     };
     const iv = window.setInterval(() => {
@@ -617,19 +900,83 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         return;
       }
       // Fade out over the last few seconds (local playback only).
-      if (a && !castingRef.current && playingRef.current) {
+      if (!castingRef.current && playingRef.current) {
         const f = Math.max(0, Math.min(1, remaining / SLEEP_FADE_MS));
-        a.volume = st.volume * (sleep.mode === 'part' ? Math.max(f, 0.05) : f);
+        sleepFactorRef.current = sleep.mode === 'part' ? Math.max(f, 0.05) : f;
+        applyMaster();
       }
     }, 250);
     return () => window.clearInterval(iv);
-  }, [sleep, pausePlayback, toast]);
+  }, [sleep, pausePlayback, applyMaster, toast]);
+
+  /* ---------------- Radio ---------------- */
+  const radioFetching = useRef(false);
+  const radioReq = useRef<DjMixRequest>({});
+  const startRadio = useCallback(async (seedId: string, title: string) => {
+    out?.prime(wantGraph());
+    const label = `Radio based on ${title}`;
+    try {
+      radioReq.current = { harmonic: true, curve: 'steady' };
+      const mix = await api.dj.mix({ seedItemId: seedId, count: 25, harmonic: true, curve: 'steady' });
+      if (mix.request) radioReq.current = { ...mix.request, harmonic: true, curve: 'steady' };
+      const tracks = mix.tracks.map((t) => t.item).filter(isAudio);
+      if (!tracks.length) {
+        toast.show('Not enough music to build a radio from this yet');
+        return;
+      }
+      const st = stateRef.current;
+      const cur = st.queue[st.index];
+      setShuffleState(false);
+      setRepeat('off');
+      setRadio({ seedId, label });
+      if (cur && cur.id === seedId && (playingRef.current || castingRef.current)) {
+        // Keep the seed playing; the mix becomes what comes next.
+        setQueue([cur, ...tracks.filter((t) => t.id !== cur.id)]);
+        if (st.index !== 0) adoptRef.current = { itemId: cur.id, index: 0 };
+        if (out) out.active.queueIndex = 0;
+        setIndex(0);
+      } else {
+        startAtRef.current = null;
+        setQueue(tracks);
+        setIndex(-1);
+        window.setTimeout(() => setIndex(0), 0);
+      }
+      toast.show(label);
+    } catch (e) {
+      toast.error(e);
+    }
+  }, [out, toast]);
+
+  // Keep the radio going: top up when only a few tracks are left.
+  useEffect(() => {
+    if (!radio || radioFetching.current || index < 0) return;
+    if (queue.length - index - 1 >= RADIO_LOW_WATER) return;
+    radioFetching.current = true;
+    const history = queue.map((q) => q.id).slice(-200);
+    api.dj
+      .mix({ ...radioReq.current, seedItemId: undefined, history, count: 10 })
+      .then((mix) => {
+        if (stateRef.current.radio?.seedId !== radio.seedId) return;
+        const seen = new Set(stateRef.current.queue.map((q) => q.id));
+        const more = mix.tracks.map((t) => t.item).filter((t) => isAudio(t) && !seen.has(t.id));
+        if (more.length) setQueue((q) => [...q, ...more]);
+      })
+      .catch(() => {})
+      .finally(() => {
+        radioFetching.current = false;
+      });
+  }, [radio, queue, index]);
+
+  // Release the audio graph on unmount.
+  useEffect(() => () => out?.close(), [out]);
 
   const value = useMemo<MusicApi>(
     () => ({
       queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters,
       playQueue: (items, start = 0, startMs) => {
         if (!items.length) return;
+        out?.prime(wantGraph());
+        setRadio(null);
         startAtRef.current = startMs != null && items[start] ? { id: items[start]!.id, ms: startMs } : null;
         const list = shuffle && !hasAudioResume(items[start]!) ? [items[start]!, ...shuffled(items.filter((_, i) => i !== start))] : items;
         setQueue(list);
@@ -639,6 +986,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       enqueue: (items, playNext) => {
         setQueue((q) => {
           if (!q.length) {
+            out?.prime(wantGraph());
             window.setTimeout(() => setIndex(0), 0);
             return items;
           }
@@ -657,6 +1005,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       jump: (i, startMs) => {
         const item = stateRef.current.queue[i];
         if (!item) return;
+        out?.prime(wantGraph());
         if (i === stateRef.current.index) {
           if (startMs != null) seekRef.current(startMs);
           return;
@@ -667,10 +1016,13 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       removeAt: (i) => {
         setQueue((q) => q.filter((_, j) => j !== i));
         setIndex((cur) => (i < cur ? cur - 1 : i === cur ? Math.min(cur, queue.length - 2) : cur));
+        if (out && out.active.queueIndex > i) out.active.queueIndex--;
       },
       clear: () => {
-        audioRef.current?.pause();
+        cancelHandover();
+        liveEl()?.pause();
         if (castingRef.current) castRef.current.stop();
+        setRadio(null);
         setQueue([]);
         setIndex(-1);
       },
@@ -682,6 +1034,11 @@ export function MusicProvider({ children }: { children: ReactNode }) {
           const cur = queue[index];
           const rest = shuffled(queue.filter((_, i) => i !== index));
           setQueue(cur ? [cur, ...rest] : rest);
+          if (cur && index !== 0) {
+            // Same track keeps playing; only its queue position changes.
+            adoptRef.current = { itemId: cur.id, index: 0 };
+            if (out) out.active.queueIndex = 0;
+          }
           setIndex(cur ? 0 : -1);
         }
       },
@@ -690,12 +1047,16 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       casting,
       sleep,
       setSleep,
+      radio,
+      startRadio,
     }),
-    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto, togglePlayback, pausePlayback, cast, casting, sleep, setSleep],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto, togglePlayback, pausePlayback, cast, casting, sleep, setSleep, radio, startRadio, cancelHandover],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
+
 
 /** One function that "plays" any item the right way. */
 export function usePlayItem() {

@@ -177,7 +177,7 @@ export function Login() {
         .me()
         .then((me) => {
           login({ token, user: me });
-          navigate('/', { replace: true });
+          navigate(me.profileCount ? '/profiles' : '/', { replace: true });
         })
         .catch((e) => {
           setToken(null);
@@ -203,7 +203,8 @@ export function Login() {
       .catch(() => setProfiles([]));
   }, [features.profilePicker]);
 
-  if (user) return <Navigate to={next} replace />;
+  // Accounts with profiles continue to "Who's watching?".
+  if (user) return <Navigate to={user.profileCount ? `/profiles?next=${encodeURIComponent(next)}` : next} replace />;
 
   const pickProfile = async (p: PublicProfile) => {
     setSelected(p);

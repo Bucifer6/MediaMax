@@ -18,20 +18,28 @@ import { assertCanStartSession, registerSession, stopSession, type PlaySession }
 import type { AuthContext } from '../auth.js';
 import * as xt from './xtream.js';
 import { parseM3u, m3uCatchupUrl } from './m3u.js';
-import { parseXmltvStream } from './xmltv.js';
+import * as epg from './epg/epg.js';
+import * as tuners from './tuners/index.js';
+import { Readable } from 'node:stream';
 
 const log = logger('livetv');
 
 /* ------------------------------ mapping ----------------------------- */
 
 function toSource(r: Row): LiveSource {
+  const tuner = tuners.isTunerType(r.type);
+  const device = tuner ? parseJson<(LiveSource['deviceInfo'] & { tunerCount?: number | null }) | null>(r.account_info, null) : null;
   return {
     id: r.id, name: r.name, type: r.type, url: r.url, username: r.username ?? null, password: r.password ? '••••••••' : null,
     epgUrl: r.epg_url ?? null, enabled: !!r.enabled, proxyStreams: !!r.proxy_streams, importVod: !!r.import_vod, importSeries: !!r.import_series,
     userAgent: r.user_agent ?? null, refreshIntervalHours: r.refresh_hours, maxConnections: r.max_connections ?? null,
     lastRefreshAt: r.last_refresh_at ?? null, lastError: r.last_error ?? null,
     channelCount: db.get<{ n: number }>('SELECT COUNT(*) n FROM channels WHERE source_id = ?', r.id)!.n,
-    accountInfo: parseJson<XtreamAccountInfo | null>(r.account_info, null),
+    accountInfo: tuner ? null : parseJson<XtreamAccountInfo | null>(r.account_info, null),
+    ...(tuner ? {
+      options: parseJson<tuners.TunerOptions>(r.options, {}), tunerCount: device?.tunerCount ?? null,
+      deviceInfo: device ? { name: device.name, model: device.model, version: device.version, tuners: device.tuners ?? [] } : null,
+    } : {}),
   };
 }
 
@@ -52,11 +60,13 @@ function toChannel(r: Row): Channel {
   return {
     id: r.id, sourceId: r.source_id, number: custom.number ?? r.number ?? null, name: custom.name ?? r.name,
     logoUrl: imageUrl(custom.logo ? registerRemoteImage(custom.logo) : r.logo), categoryId: r.category_id ?? null, categoryName: r.cat_name ?? null,
-    hasArchive: !!r.has_archive, archiveDays: r.archive_days ?? 0, favorite: !!r.fav, hidden: !!r.hidden, epgChannelId: custom.epgChannelId ?? r.epg_channel_id ?? null,
+    hasArchive: !!r.has_archive, archiveDays: r.archive_days ?? 0, favorite: !!r.fav, hidden: !!r.hidden,
+    epgChannelId: r.guide_status != null ? (r.guide_key ? r.guide_channel_id ?? null : null) : custom.epgChannelId ?? r.epg_channel_id ?? null,
+    epgSourceId: r.guide_key ? r.guide_source_id ?? null : null, guideStatus: r.guide_status ?? null, epgOffsetHours: (r.guide_offset ?? 0) / 60,
   };
 }
 
-const effEpg = (r: Row) => parseJson<Record<string, any>>(r.custom, {}).epgChannelId ?? r.epg_channel_id ?? null;
+const effEpg = epg.effEpg;
 
 function attachNowNext(channels: Channel[], rows: Row[]) {
   const ids = [...new Set(rows.map(effEpg).filter(Boolean))] as string[];
@@ -95,7 +105,7 @@ export function getSourceRow(id: string): Row {
 }
 
 function validateSource(req: Partial<CreateLiveSourceRequest>) {
-  if (req.type && !['xtream', 'm3u', 'hdhomerun'].includes(req.type)) throw badRequest('Unknown source type');
+  if (req.type && !['xtream', 'm3u', 'hdhomerun', ...tuners.TUNER_TYPES].includes(req.type)) throw badRequest('Unknown source type');
   if (req.url !== undefined && !/^https?:\/\/|^[\w.-]+(:\d+)?/.test(req.url)) throw badRequest('Invalid URL');
   if (req.epgUrl) {
     const urls = splitEpgUrls(req.epgUrl);
@@ -112,47 +122,80 @@ export function createSource(req: CreateLiveSourceRequest): LiveSource {
   validateSource(req);
   if (!req.name || !req.url) throw badRequest('Name and URL are required');
   if (req.type === 'xtream' && (!req.username || !req.password)) throw badRequest('Xtream sources need a username and password');
+  const tuner = tuners.isTunerType(req.type);
+  const options = tuner ? tunerOptions(req.type, req.options) : {};
   const id = newId();
   db.insert('live_sources', {
-    id, name: req.name.trim(), type: req.type, url: req.type === 'xtream' ? xt.normalizeBase(req.url) : req.url.trim(), username: req.username ?? null, password: req.password ?? null,
-    epg_url: normEpg(req.epgUrl), enabled: req.enabled ?? true, proxy_streams: req.proxyStreams ?? true, import_vod: req.importVod ?? req.type === 'xtream',
+    id, name: req.name.trim(), type: req.type, url: req.type === 'xtream' ? xt.normalizeBase(req.url) : req.url.trim(), username: req.username || null, password: req.password || null,
+    // Tuner streams carry device credentials / RTSP: always through the server.
+    epg_url: normEpg(req.epgUrl), enabled: req.enabled ?? true, proxy_streams: tuner ? true : req.proxyStreams ?? true, import_vod: req.importVod ?? req.type === 'xtream',
     import_series: req.importSeries ?? req.type === 'xtream', user_agent: req.userAgent || null, refresh_hours: req.refreshIntervalHours ?? 12, created_at: nowIso(),
+    options: JSON.stringify(options),
   });
   logActivity('livetv.source', `Live TV source "${req.name}" added`);
+  epg.syncLegacyGuides(id);
   void refreshSource(id);
   return toSource(getSourceRow(id));
 }
 
 export function updateSource(id: string, req: UpdateLiveSourceRequest): LiveSource {
   validateSource(req);
-  getSourceRow(id);
+  const cur = getSourceRow(id);
   const patch: Row = {};
+  const tuner = tuners.isTunerType(cur.type);
+  if (req.type !== undefined && req.type !== cur.type) throw badRequest('The source type cannot be changed; add a new source instead');
+  if (tuner && req.options !== undefined) patch.options = JSON.stringify(tunerOptions(cur.type, req.options, parseJson(cur.options, {})));
   if (req.name !== undefined) patch.name = req.name.trim();
   if (req.url !== undefined) patch.url = req.url.trim();
   if (req.username !== undefined) patch.username = req.username;
   if (req.password !== undefined && req.password !== '••••••••') patch.password = req.password;
   if (req.epgUrl !== undefined) patch.epg_url = normEpg(req.epgUrl);
   if (req.enabled !== undefined) patch.enabled = req.enabled;
-  if (req.proxyStreams !== undefined) patch.proxy_streams = req.proxyStreams;
+  if (req.proxyStreams !== undefined && !tuner) patch.proxy_streams = req.proxyStreams;
   if (req.importVod !== undefined) patch.import_vod = req.importVod;
   if (req.importSeries !== undefined) patch.import_series = req.importSeries;
   if (req.userAgent !== undefined) patch.user_agent = req.userAgent || null;
   if (req.refreshIntervalHours !== undefined) patch.refresh_hours = Math.max(1, req.refreshIntervalHours);
   db.update('live_sources', id, patch);
-  if (patch.url || patch.username || patch.password || patch.import_vod !== undefined || patch.import_series !== undefined || patch.epg_url !== undefined) void refreshSource(id);
+  if (patch.epg_url !== undefined || patch.name !== undefined) epg.syncLegacyGuides(id);
+  if (patch.url || patch.username || patch.password || patch.options !== undefined || patch.import_vod !== undefined || patch.import_series !== undefined || patch.epg_url !== undefined) void refreshSource(id);
   return toSource(getSourceRow(id));
 }
 
 export function deleteSource(id: string) {
   getSourceRow(id);
   db.tx(() => {
+    epg.beforeLiveSourceDelete(id);
     db.run('DELETE FROM programs WHERE source_id = ?', id);
     db.run('DELETE FROM libraries WHERE source_id = ?', id);
     db.run('DELETE FROM live_sources WHERE id = ?', id);
   });
 }
 
+function tunerOptions(type: string, o: tuners.TunerOptions | null | undefined, prev: tuners.TunerOptions = {}): tuners.TunerOptions {
+  try {
+    return tuners.cleanOptions(type, o, prev);
+  } catch (e) {
+    throw badRequest((e as Error).message);
+  }
+}
+
 export async function testSource(req: CreateLiveSourceRequest): Promise<TestSourceResponse> {
+  // Editing: a blank password means "the saved one".
+  if (req.sourceId && (req.password == null || req.password === '' || req.password === '••••••••')) {
+    const saved = db.get('SELECT password, username, options FROM live_sources WHERE id = ?', req.sourceId);
+    if (saved) req = { ...req, password: saved.password, options: { ...parseJson<tuners.TunerOptions>(saved.options, {}), ...(req.options ?? {}) } };
+  }
+  if (tuners.isTunerType(req.type)) {
+    let options: tuners.TunerOptions;
+    try {
+      options = tuners.cleanOptions(req.type, req.options);
+    } catch (e) {
+      return { ok: false, message: (e as Error).message };
+    }
+    const r = await tuners.testTuner({ type: req.type, url: req.url, username: req.username, password: req.password, userAgent: req.userAgent, options });
+    return { ok: r.ok, message: r.message, liveCount: r.liveCount, tunerCount: r.tunerCount, deviceInfo: r.device ?? null, bouquets: r.bouquets, profiles: r.profiles, warnings: r.warnings };
+  }
   try {
     if (req.type === 'xtream') {
       const c = { url: req.url, username: req.username ?? '', password: req.password ?? '', userAgent: req.userAgent };
@@ -244,8 +287,8 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
   const src = getSourceRow(id);
   if (!src.enabled) return;
   log.info(`Refreshing live source "${src.name}" (${src.type})`);
-  const epgUrls = splitEpgUrls(src.epg_url);
   let providerEpg: string[] = [];
+  const driver = tuners.guideDriverFor(src.type);
   try {
     if (!opts.epgOnly) {
       if (src.type === 'xtream') {
@@ -291,12 +334,22 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
           remoteId: l.GuideNumber, name: l.GuideName, number: parseFloat(l.GuideNumber) || null, logo: null, category: l.HD ? 'hd' : 'sd',
           streamUrl: l.URL, archive: false, archiveDays: 0, epgId: l.GuideNumber,
         })));
+      } else if (tuners.isTunerType(src.type)) {
+        const r = await tuners.syncTuner(tuners.sourceIn(src));
+        if (!r.channels.length) throw new Error('The device reported no channels');
+        syncChannels(id, r.categories, r.channels.map((c) => ({ ...c, archive: false, archiveDays: 0 })));
+        const limit = tuners.streamLimit(tuners.sourceIn(src), r.device.tunerCount);
+        db.run('UPDATE live_sources SET account_info = ?, max_connections = ? WHERE id = ?', JSON.stringify(r.device), limit, id);
+        for (const w of r.warnings) log.warn(`${src.name}: ${w}`);
       }
     }
-    // Custom guides first (highest priority), then the provider's own guide fills any gaps.
-    if (opts.epgOnly && !providerEpg.length && src.type === 'xtream') providerEpg = [xt.epgUrl(creds(src))];
-    const allEpg = [...new Set([...epgUrls, ...providerEpg])];
-    if (allEpg.length) await refreshEpg(id, allEpg, src.user_agent);
+    if (!opts.epgOnly) epg.afterChannelSync(id);
+    // The source's EPG-URL guides and the provider's own guide (lowest priority) are guide sources too; see epg/epg.ts.
+    if (opts.epgOnly && !providerEpg.length) {
+      if (src.type === 'xtream') providerEpg = [xt.epgUrl(creds(src))];
+      else providerEpg = splitEpgUrls(parseJson<{ urls?: string[] }>(db.get("SELECT config FROM epg_sources WHERE owner_source_id = ? AND managed_by = 'provider'", id)?.config, {}).urls?.join('\n'));
+    }
+    await epg.refreshLiveSourceGuides(id, driver ? { driver } : [...new Set(providerEpg)], src.user_agent);
     db.run('UPDATE live_sources SET last_refresh_at = ?, last_error = NULL WHERE id = ?', nowIso(), id);
     bus.emit('epg.refreshed', id);
     log.info(`Live source "${src.name}" refreshed`);
@@ -306,88 +359,6 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
     logActivity('livetv.source', `Refresh of "${src.name}" failed: ${msg}`, { severity: 'error' });
     log.warn(`Refresh of "${src.name}" failed: ${msg}`);
   }
-}
-
-const redactUrl = (u: string) => u.replace(/(password|pass|token|key)=[^&]*/gi, '$1=***');
-
-async function refreshEpg(sourceId: string, urls: string[], ua: string | null) {
-  // Map XMLTV channel ids (and display names) onto our channels' epg ids.
-  const chans = db.all<{ epg_channel_id: string | null; name: string; custom: string }>('SELECT epg_channel_id, name, custom FROM channels WHERE source_id = ?', sourceId);
-  const wanted = new Set<string>();
-  for (const c of chans) {
-    const e = effEpg(c);
-    if (e) wanted.add(e);
-  }
-  const nameToEpg = new Map<string, string>();
-  for (const c of chans) if (!effEpg(c)) nameToEpg.set(c.name.toLowerCase(), '');
-  const aliases = new Map<string, string>(); // xmltv id → our epg id
-  const keepFrom = new Date(Date.now() - 8 * 86400000).toISOString();
-  const keepTo = new Date(Date.now() + 14 * 86400000).toISOString();
-  const batch: Row[] = [];
-  const flush = () => {
-    if (!batch.length) return;
-    db.tx(() => {
-      for (const p of batch) db.upsert('programs', p);
-    });
-    batch.length = 0;
-  };
-  // Parse every guide before replacing the old programmes so a failing guide never empties the EPG.
-  db.run('DELETE FROM programs WHERE source_id = ? AND id LIKE ?', sourceId, 'tmp:%');
-  const covered = new Set<string>(); // channels already filled by a higher-priority guide
-  let ok = 0;
-  let totalProgrammes = 0;
-  for (const url of urls) {
-  const filled = new Set<string>();
-  let res: { channels: number; programmes: number };
-  try {
-  res = await parseXmltvStream(url, {
-    userAgent: ua,
-    onChannel: (c) => {
-      if (wanted.has(c.id)) return;
-      // Match channels whose epg id equals a display-name (common for M3U tvg-name).
-      for (const n of c.names) {
-        if (wanted.has(n)) aliases.set(c.id, n);
-        const lower = n.toLowerCase();
-        if (nameToEpg.has(lower) && !nameToEpg.get(lower)) nameToEpg.set(lower, c.id);
-      }
-    },
-    onProgramme: (p) => {
-      const target = wanted.has(p.channel) ? p.channel : aliases.get(p.channel) ?? ([...nameToEpg.values()].includes(p.channel) ? p.channel : null);
-      if (!target || covered.has(target) || p.end < keepFrom || p.start > keepTo) return;
-      filled.add(target);
-      batch.push({
-        id: `tmp:${stableId(sourceId, target, p.start)}`, source_id: sourceId, epg_channel_id: `tmp:${target}`, title: p.title, subtitle: p.subtitle,
-        description: p.description, start: p.start, end: p.end, category: p.category, icon: p.icon, episode_num: p.episodeNum, is_new: p.isNew,
-      });
-      if (batch.length >= 2000) flush();
-    },
-  });
-  flush();
-  } catch (e) {
-    batch.length = 0;
-    log.warn(`EPG ${redactUrl(url)} failed for source ${sourceId}: ${(e as Error).message}`);
-    continue;
-  }
-  ok++;
-  totalProgrammes += res.programmes;
-  for (const t of filled) covered.add(t);
-  log.info(`EPG ${redactUrl(url)}: ${res.channels} channels, ${res.programmes} programmes parsed, ${filled.size} channels matched`);
-  }
-  if (!ok) {
-    db.run('DELETE FROM programs WHERE source_id = ? AND id LIKE ?', sourceId, 'tmp:%');
-    throw new Error(urls.length > 1 ? 'All EPG downloads failed' : 'EPG download failed');
-  }
-  db.tx(() => {
-    db.run("DELETE FROM programs WHERE source_id = ? AND id NOT LIKE 'tmp:%'", sourceId);
-    db.run("UPDATE programs SET id = substr(id, 5), epg_channel_id = substr(epg_channel_id, 5) WHERE source_id = ? AND id LIKE 'tmp:%'", sourceId);
-  });
-  // Auto-assign epg ids for channels matched by display name.
-  for (const c of db.all('SELECT id, name, custom, epg_channel_id FROM channels WHERE source_id = ?', sourceId)) {
-    if (effEpg(c)) continue;
-    const m = nameToEpg.get(c.name.toLowerCase());
-    if (m) db.run('UPDATE channels SET epg_channel_id = ? WHERE id = ?', m, c.id);
-  }
-  log.info(`EPG for source ${sourceId}: ${ok}/${urls.length} guides, ${totalProgrammes} programmes, ${covered.size} channels covered`);
 }
 
 /* ---------------------------- VOD import ---------------------------- */
@@ -598,6 +569,10 @@ export function listChannels(user: User, q: ChannelQuery & { favorite?: boolean 
   const rows = db.all(`${CHANNEL_SELECT} WHERE ${w.sql} ORDER BY COALESCE(json_extract(c.custom,'$.number'), c.number), c.sort_order LIMIT ? OFFSET ?`, user.id, ...w.params, limit, offset);
   const items = rows.map(toChannel);
   if (String(q.withEpg) !== 'false') attachNowNext(items, rows);
+  if (user.isAdmin && String(q.guideStatus) === 'true') {
+    const has = epg.channelsWithGuide(items.map((c) => c.id));
+    for (const c of items) c.hasGuide = has.has(c.id);
+  }
   return { items, total, limit, offset };
 }
 
@@ -627,7 +602,13 @@ export function updateChannel(id: string, patch: { number?: number; name?: strin
   if (patch.name !== undefined) custom.name = patch.name || undefined;
   if (patch.epgChannelId !== undefined) custom.epgChannelId = patch.epgChannelId || undefined;
   if (patch.logoUrl !== undefined) custom.logo = patch.logoUrl || undefined;
+  if (patch.epgChannelId !== undefined) {
+    // A bare guide id (older API): resolved against the guides by priority. PUT /livetv/channels/:id/match picks a guide too.
+    delete custom.epgSourceId;
+    delete custom.epgNone;
+  }
   db.run('UPDATE channels SET custom = ?, hidden = ? WHERE id = ?', JSON.stringify(custom), patch.hidden ?? r.hidden, id);
+  if (patch.epgChannelId !== undefined) epg.resolveMatches([id]);
 }
 
 export function setChannelFavorite(user: User, id: string, fav: boolean) {
@@ -661,8 +642,16 @@ export function guide(user: User, q: { start?: string; end?: string; categoryId?
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) throw badRequest('Invalid time range');
   if (end.getTime() - start.getTime() > 3 * 86400000) throw badRequest('Guide window too large (max 3 days)');
   const ch = listChannels(user, { categoryId: q.categoryId, favorite: q.favorite as any, offset: q.offset, limit: q.limit ?? 300, withEpg: false, sourceId: q.sourceId });
+  // Programme keys: the channel's matched guide (with time shift), not the display id.
   const epgByChannel = new Map<string, string>();
-  for (const c of ch.items) if (c.epgChannelId) epgByChannel.set(c.id, c.epgChannelId);
+  const ids = ch.items.map((c) => c.id);
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    for (const r of db.all(`SELECT id, custom, epg_channel_id, guide_status, guide_key FROM channels WHERE id IN (${chunk.map(() => '?').join(',')})`, ...chunk)) {
+      const k = effEpg(r);
+      if (k) epgByChannel.set(r.id, k);
+    }
+  }
   const epgIds = [...new Set(epgByChannel.values())];
   const programs: Program[] = [];
   if (epgIds.length) {
@@ -682,7 +671,7 @@ export function searchLive(user: User, q: string, limit = 20): { channels: Chann
   const channels = listChannels(user, { search: q, limit }).items;
   const now = nowIso();
   const rows = db.all(
-    `SELECT p.*, c.id cid FROM programs p JOIN channels c ON COALESCE(json_extract(c.custom,'$.epgChannelId'), c.epg_channel_id) = p.epg_channel_id JOIN live_sources s ON s.id = c.source_id
+    `SELECT p.*, c.id cid FROM programs p JOIN channels c ON (${epg.EFF_EPG_SQL}) = p.epg_channel_id JOIN live_sources s ON s.id = c.source_id
      WHERE s.enabled = 1 AND c.hidden = 0 AND COALESCE((SELECT hidden FROM channel_categories x WHERE x.id = c.category_id), 0) = 0 AND p.title LIKE ? AND p.end > ? GROUP BY p.id ORDER BY p.start LIMIT ?`, `%${q}%`, now, limit);
   return { channels, programs: rows.map((r) => toProgram(r, r.cid)) };
 }
@@ -708,13 +697,41 @@ export function checkConnectionLimit(src: Row) {
 }
 
 export function channelStreamUrl(r: Row, catchup?: { start: Date; durationMin: number }): string {
-  if (!catchup) return r.stream_url;
+  if (!catchup) {
+    const s = db.get('SELECT * FROM live_sources WHERE id = ?', r.source_id);
+    return s && tuners.isTunerType(s.type) ? tuners.tunerStreamUrl(s, r.stream_url) : r.stream_url;
+  }
   const src = getSourceRow(r.source_id);
   if (src.type === 'xtream') return xt.timeshiftUrl(creds(src), r.remote_id, catchup.start, catchup.durationMin, sourceTimezones.get(src.id) ?? parseJson<any>(src.account_info, null)?.timezone ?? null);
   const custom = parseJson<Record<string, any>>(r.custom, {});
   const url = m3uCatchupUrl({ url: r.stream_url, catchup: custom.catchup ?? null, catchupSource: custom.catchupSource ?? null }, catchup.start, catchup.durationMin);
   if (!url || !isSafeRemoteUrl(url)) throw badRequest('This channel does not support catch-up');
   return url;
+}
+
+/** FFmpeg input options for a channel's upstream (User-Agent; RTSP transport for SAT>IP). */
+export function channelInputArgs(r: Row, url: string = r.stream_url): string[] {
+  const s = db.get('SELECT * FROM live_sources WHERE id = ?', r.source_id);
+  return [...(s ? tuners.tunerInputArgs(s, url) : []), '-user_agent', channelUserAgent(r)];
+}
+
+/**
+ * Open a channel's upstream as an MPEG-TS byte stream for the restream endpoint: plain fetch for IPTV, the
+ * authenticating client for tuner boxes, an FFmpeg remux for RTSP (SAT>IP).
+ */
+export async function openChannelStream(r: Row, url: string, signal: AbortSignal): Promise<Readable> {
+  const src = getSourceRow(r.source_id);
+  if (tuners.isTunerType(src.type)) {
+    try {
+      return await tuners.openTunerStream(src, url, channelUserAgent(r), signal);
+    } catch (e) {
+      if (signal.aborted) throw e;
+      throw new HttpError(502, (e as Error).message, 'stream_failed');
+    }
+  }
+  const res = await fetch(url, { headers: { 'User-Agent': channelUserAgent(r) }, signal, redirect: 'follow' });
+  if (!res.ok || !res.body) throw notFound(`Provider returned ${res.status}`);
+  return Readable.fromWeb(res.body as any);
 }
 
 export function channelUserAgent(r: Row): string {
@@ -749,6 +766,8 @@ export async function playChannel(ctx: AuthContext, channelId: string, req: Live
     audioStreams: [], subtitles: [], markers: [], nextItemId: null, title: channel.name, subtitle: base.subtitle, posterUrl: channel.logoUrl, backdropUrl: null,
   });
 
+  // Tuner boxes are always restreamed (device credentials, RTSP).
+  if (tuners.isTunerType(src.type)) src.proxy_streams = 1;
   // 1) Provider HLS, not proxied: hand the URL straight to the client.
   if (!src.proxy_streams && isUpstreamHls) {
     const s = registerSession({ ...base, method: 'live', job: null });
@@ -771,7 +790,7 @@ export async function playChannel(ctx: AuthContext, channelId: string, req: Live
   if (!shared) {
     checkConnectionLimit(src);
     const job = new TranscodeJob(newId(), {
-      input: upstream, inputArgs: ['-user_agent', channelUserAgent(r)], startSec: 0, durationSec: null, mode: 'live',
+      input: upstream, inputArgs: channelInputArgs(r, upstream), startSec: 0, durationSec: null, mode: 'live',
       audioIndex: null, audioCopy: false, videoCopy: true, bitrate: 8000, maxHeight: null, sourceHeight: null, sourceCodec: null, hdr: false, hasVideo: true,
     });
     job.start(0);
@@ -837,6 +856,7 @@ export async function refreshDueSources() {
     const hours = Math.min(s.refresh_hours || 12, epgHours || 12);
     if (Date.now() - last > hours * 3600000) await refreshSource(s.id);
   }
+  await epg.refreshDueGuides().catch((e) => log.warn(`Guide refresh failed: ${(e as Error).message}`));
 }
 
 bus.on('iptv.refreshLibrary', (sourceId: string) => {
@@ -845,6 +865,39 @@ bus.on('iptv.refreshLibrary', (sourceId: string) => {
 
 export function pruneOldPrograms() {
   db.run('DELETE FROM programs WHERE end < ?', new Date(Date.now() - 8 * 86400000).toISOString());
+}
+
+/** Tuner sources keep driver settings in live_sources.options (a migration adds it; this guards out-of-order schemas). */
+function ensureOptionsColumn() {
+  try {
+    if (!db.all<{ name: string }>('PRAGMA table_info(live_sources)').some((c) => c.name === 'options')) db.exec("ALTER TABLE live_sources ADD COLUMN options TEXT NOT NULL DEFAULT '{}'");
+  } catch (e) {
+    log.warn(`live_sources.options: ${(e as Error).message}`);
+  }
+}
+ensureOptionsColumn();
+epg.initEpg();
+
+/* ------------------------------ tuner extras ------------------------------ */
+
+export const discoverTuners = () => tuners.discoverAll();
+
+export async function tunerRecordings(sourceId: string) {
+  const src = getSourceRow(sourceId);
+  try {
+    return await tuners.listRecordings(src);
+  } catch (e) {
+    throw new HttpError((e as { status?: number }).status === 404 ? 404 : 502, (e as Error).message, 'tuner_error');
+  }
+}
+
+export async function openTunerRecording(sourceId: string, recId: string, signal: AbortSignal, range?: string) {
+  const src = getSourceRow(sourceId);
+  try {
+    return await tuners.openRecording(src, recId, signal, range);
+  } catch (e) {
+    throw new HttpError((e as { status?: number }).status === 404 ? 404 : 502, (e as Error).message, 'tuner_error');
+  }
 }
 
 export { stopSession };

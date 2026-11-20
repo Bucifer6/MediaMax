@@ -10,13 +10,18 @@ import { newId } from '../util/ids.js';
 import { HttpError, badRequest, forbidden, notFound } from '../util/errors.js';
 import { nowIso, parseJson, REMOTE_PROTOCOLS } from '../util/misc.js';
 import { logger } from '../util/log.js';
-import { TranscodeJob, type TranscodeOptions } from './transcoder.js';
+import { TranscodeJob, encoderWorks, type TranscodeOptions } from './transcoder.js';
+import { chooseVideoCodec } from './hwaccel.js';
 import { getSettings } from './settings.js';
 import { assertCanSee, getItem, mediaRowToSource, nextItem, reportProgress } from './items.js';
 import type { AuthContext } from './auth.js';
 import { events, bus } from './events.js';
 import { TEXT_SUB_CODECS } from './probe.js';
 import { isLocalAddress } from './dlna.js';
+import { outputRange, rangeDecision, type RangeDecision } from './hdr.js';
+import { refreshVideoRange } from './hdrBackfill.js';
+import { subtitleTrackList } from './subtitles.js';
+import { bitrateCaps, buildLadder, createRenditionManager, pickStartRendition, streamingSettings, type RenditionManager } from './abr.js';
 
 const log = logger('playback');
 
@@ -30,6 +35,8 @@ export interface PlaySession {
   mediaId: string | null;
   method: PlayMethod;
   job: TranscodeJob | null;
+  /** Adaptive transcode: lazily encoded renditions of a multi-variant master playlist (abr.ts). `job` is the active one. */
+  abr?: RenditionManager | null;
   title: string;
   subtitle: string | null;
   posterUrl: string | null;
@@ -44,6 +51,8 @@ export interface PlaySession {
   onStop?: () => void;
   /** Live multiview tile: several may run side by side on one device. */
   multiview?: boolean;
+  /** Muted trailer preview (home hero / card hover): runs beside other playback, no history, scrobbles or webhooks. */
+  preview?: boolean;
 }
 
 const MAX_MULTIVIEW = 4;
@@ -57,20 +66,21 @@ export function touchSession(id: string) {
   if (s) {
     s.lastActivity = Date.now();
     s.job?.tick();
+    s.abr?.tick();
   }
   return s;
 }
 
 function toActive(s: PlaySession): ActiveSession {
   return {
-    id: s.id, userId: s.ctx.user.id, userName: s.ctx.user.displayName, deviceName: s.ctx.device.deviceName, platform: s.ctx.device.platform,
+    id: s.id, userId: s.ctx.user.id, userName: s.ctx.user.parentUserId && s.ctx.user.ownerName ? `${s.ctx.user.ownerName} › ${s.ctx.user.displayName}` : s.ctx.user.displayName, deviceName: s.ctx.device.deviceName, platform: s.ctx.device.platform,
     itemId: s.itemId, channelId: s.channelId, title: s.title, subtitle: s.subtitle, posterUrl: s.posterUrl, method: s.method, state: s.state,
     positionMs: s.positionMs, durationMs: s.durationMs, startedAt: new Date(s.startedAt).toISOString(), remoteAddress: s.remoteAddr,
     transcodeInfo: s.job?.info && s.method !== 'direct' ? s.job.info : null,
   };
 }
 
-export const listSessions = (): ActiveSession[] => [...sessions.values()].map(toActive);
+export const listSessions = (): ActiveSession[] => [...sessions.values()].filter((s) => !s.preview).map(toActive);
 export const transcodeCount = () => [...sessions.values()].filter((s) => s.job && s.method === 'transcode').length;
 
 let broadcastTimer: NodeJS.Timeout | null = null;
@@ -93,17 +103,27 @@ export function assertCanStartSession(ctx: AuthContext, remoteAddr: string | nul
   }
   if (u.maxStreams && !u.isAdmin) {
     // Other devices count; on this device only multiview tiles that will keep running alongside the new one count.
-    const active = [...sessions.values()].filter((x) => x.ctx.user.id === u.id && (x.ctx.deviceRowId !== ctx.deviceRowId || (multiview && x.multiview))).length;
+    // The limit is per account: the owner and all of its profiles share it.
+    const account = u.parentUserId || u.id;
+    const active = [...sessions.values()].filter((x) => !x.preview && (x.ctx.user.parentUserId || x.ctx.user.id) === account && (x.ctx.deviceRowId !== ctx.deviceRowId || (multiview && x.multiview))).length;
     if (active >= u.maxStreams) {
-      throw new HttpError(429, `You already have ${active} stream${active === 1 ? '' : 's'} playing (limit ${u.maxStreams}). Stop one and try again.`, 'stream_limit');
+      const who = u.parentUserId ? 'Your account already has' : 'You already have';
+      throw new HttpError(429, `${who} ${active} stream${active === 1 ? '' : 's'} playing (limit ${u.maxStreams}). Stop one and try again.`, 'stream_limit');
     }
   }
 }
 
 export function registerSession(s: Omit<PlaySession, 'id' | 'startedAt' | 'lastActivity' | 'historyId' | 'state' | 'positionMs'> & { positionMs?: number }): PlaySession {
   assertCanStartSession(s.ctx, s.remoteAddr, !!s.multiview);
+  if (s.preview) {
+    // Previews only replace an earlier preview on this device and stay out of history, stats and integrations.
+    for (const old of [...sessions.values()]) if (old.preview && old.ctx.deviceRowId === s.ctx.deviceRowId) stopSession(old.id, 'replaced', false);
+    const session: PlaySession = { ...s, id: newId(), positionMs: s.positionMs ?? 0, state: 'buffering', startedAt: Date.now(), lastActivity: Date.now(), historyId: null };
+    sessions.set(session.id, session);
+    return session;
+  }
   // One active playback per device: replace the previous session. Multiview tiles coexist with each other (up to 4).
-  const mine = [...sessions.values()].filter((o) => o.ctx.deviceRowId === s.ctx.deviceRowId).sort((a, b) => a.startedAt - b.startedAt);
+  const mine = [...sessions.values()].filter((o) => o.ctx.deviceRowId === s.ctx.deviceRowId && !o.preview).sort((a, b) => a.startedAt - b.startedAt);
   const keep = s.multiview ? mine.filter((o) => o.multiview).slice(-(MAX_MULTIVIEW - 1)) : [];
   for (const old of mine) if (!keep.includes(old)) stopSession(old.id, 'replaced', false);
   const id = newId();
@@ -121,7 +141,9 @@ export function stopSession(id: string, reason = 'stopped', notify = true) {
   if (!s) return;
   sessions.delete(id);
   s.job?.stop();
+  s.abr?.stop();
   s.onStop?.();
+  if (s.preview) return;
   if (s.historyId) db.run('UPDATE play_history SET ended_at = ?, duration_ms = ? WHERE id = ?', nowIso(), Date.now() - s.startedAt, s.historyId);
   if (notify && reason !== 'stopped' && reason !== 'replaced') events.toUser(s.ctx.user.id, { type: 'session.terminated', sessionId: id, reason });
   bus.emit('playback.stop', s);
@@ -136,6 +158,10 @@ export function sessionProgress(ctx: AuthContext, id: string, positionMs: number
   const prev = s.state;
   s.positionMs = Math.max(0, positionMs);
   if (state !== 'stopped') s.state = state;
+  if (s.preview) {
+    if (state === 'stopped') stopSession(id);
+    return { ok: true };
+  }
   if (s.itemId) reportProgress(ctx.user, s.itemId, s.positionMs, durationMs ?? s.durationMs, state);
   if (prev !== s.state) bus.emit(s.state === 'paused' ? 'playback.pause' : 'playback.resume', s);
   if (state === 'stopped') stopSession(id);
@@ -157,7 +183,7 @@ export function reapSessions() {
 
 /* ------------------------------ decisions --------------------------- */
 
-const DEFAULT_PROFILE: Required<DeviceProfile> = {
+const DEFAULT_PROFILE: DeviceProfile & Required<Pick<DeviceProfile, 'maxBitrate' | 'maxWidth' | 'videoCodecs' | 'audioCodecs' | 'containers' | 'supportsHls'>> = {
   maxBitrate: null,
   maxWidth: null,
   videoCodecs: ['h264'],
@@ -171,6 +197,12 @@ export interface Decision {
   videoCopy: boolean;
   audioCopy: boolean;
   reasons: string[];
+  /** HDR → SDR tone-mapping when transcoding (undefined = legacy client: admin setting decides). See hdr.ts. */
+  toneMap?: boolean;
+  /** Bitstream filter for copied video (Dolby Vision profile 7 → HDR10 base layer). */
+  videoBsf?: string | null;
+  /** How the source's dynamic range reaches the client. */
+  range?: RangeDecision;
 }
 
 export function decide(media: MediaSource, profile: DeviceProfile | undefined, opts: { audio: AudioStream | null; burnSubs: boolean; forceTranscode: boolean; allowTranscode: boolean; userMaxBitrate: number | null; isAudioOnly: boolean }): Decision {
@@ -184,6 +216,17 @@ export function decide(media: MediaSource, profile: DeviceProfile | undefined, o
 
   const videoOk = opts.isAudioOnly || !media.videoCodec || vcodecs.includes(norm(media.videoCodec));
   if (!videoOk) reasons.push(`video codec ${media.videoCodec} not supported`);
+  // HDR / Dolby Vision vs. the client's video-range capabilities, 10-bit decode and max height (hdr.ts).
+  const range = rangeDecision(media.videoRange, media.hdr, p.videoRange);
+  const rangeOk = opts.isAudioOnly || range.ok;
+  if (!rangeOk) reasons.push(...range.reasons);
+  const tenBitOk = opts.isAudioOnly || !p.tenBitCodecs || !media.videoRange?.bitDepth || media.videoRange.bitDepth <= 8 || p.tenBitCodecs.map(norm).includes(norm(media.videoCodec));
+  if (!tenBitOk && videoOk) reasons.push(`10-bit ${media.videoCodec} not supported`);
+  const heightOk = !p.maxHeight || !media.height || media.height <= p.maxHeight;
+  if (!heightOk) reasons.push(`resolution exceeds ${p.maxHeight}p`);
+  const videoPlayable = videoOk && rangeOk && tenBitOk && heightOk;
+  // Formats the client bitstreams to an AV receiver count as supported audio.
+  for (const a of p.audioPassthrough ?? []) if (!acodecs.includes(norm(a))) acodecs.push(norm(a));
   const audioOk = !opts.audio || acodecs.includes(norm(opts.audio.codec));
   if (!audioOk) reasons.push(`audio codec ${opts.audio?.codec} not supported`);
   const containerOk = !!media.container && containers.includes(media.container.toLowerCase());
@@ -193,22 +236,39 @@ export function decide(media: MediaSource, profile: DeviceProfile | undefined, o
   const widthOk = !p.maxWidth || !media.width || media.width <= p.maxWidth;
   if (!widthOk) reasons.push(`resolution exceeds ${p.maxWidth}`);
   // Non-default audio track: most players can't switch tracks in a progressive file.
-  const audioTrackOk = !opts.audio || opts.audio.default || opts.isAudioOnly;
+  const audioTrackOk = !opts.audio || opts.audio.default || opts.isAudioOnly || !!p.canSelectAudioTrack;
   if (!audioTrackOk) reasons.push('non-default audio track selected');
 
   const canTranscode = opts.allowTranscode && getSettings().transcoding.enabled;
-  if (!opts.forceTranscode && !opts.burnSubs && videoOk && audioOk && containerOk && bitrateOk && widthOk && audioTrackOk) {
-    return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [] };
+  // Dual-layer Dolby Vision for an HDR10 client: the video can be copied, but only with its DV layers stripped.
+  const needsRemux = !opts.isAudioOnly && range.needsRemux;
+  if (needsRemux) reasons.push(...range.reasons.filter((r) => !reasons.includes(r)));
+  // Transcoding an HDR source: the transcoder outputs 8-bit SDR, so tone-map (legacy clients: admin setting decides).
+  const toneMap = range.legacy ? undefined : !opts.isAudioOnly && range.delivery !== 'sdr';
+  if (!opts.forceTranscode && !opts.burnSubs && videoPlayable && !needsRemux && audioOk && containerOk && bitrateOk && widthOk && audioTrackOk) {
+    return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [], range };
   }
   if (!canTranscode) {
     // Best effort: direct play even if probably unsupported.
-    return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [...reasons, 'transcoding not permitted'] };
+    return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [...reasons, 'transcoding not permitted'], range };
   }
   // Remux when only the container (or audio) is the problem and HLS is available.
-  if (!opts.forceTranscode && !opts.burnSubs && videoOk && bitrateOk && widthOk && p.supportsHls !== false && !opts.isAudioOnly) {
-    return { method: 'remux', videoCopy: true, audioCopy: audioOk, reasons };
+  if (!opts.forceTranscode && !opts.burnSubs && videoPlayable && bitrateOk && widthOk && p.supportsHls !== false && !opts.isAudioOnly) {
+    return { method: 'remux', videoCopy: true, audioCopy: audioOk, reasons, range, videoBsf: range.videoBsf };
   }
-  return { method: 'transcode', videoCopy: false, audioCopy: audioOk && !opts.forceTranscode && !opts.isAudioOnly ? true : false, reasons };
+  const willToneMap = toneMap ?? (range.delivery !== 'sdr' && !opts.isAudioOnly && getSettings().transcoding.toneMapHdr);
+  const tmRange: RangeDecision = willToneMap ? { ...range, delivery: 'tonemap', toneMap: true } : range;
+  return { method: 'transcode', videoCopy: false, audioCopy: audioOk && !opts.forceTranscode && !opts.isAudioOnly ? true : false, reasons, toneMap, range: tmRange };
+}
+
+/** Output codec for a transcode: HEVC/AV1 with the hardware encoder when the client plays it (see chooseVideoCodec). */
+export function transcodeCodecFor(profile: DeviceProfile | undefined) {
+  const t = getSettings().transcoding;
+  return chooseVideoCodec({
+    clientCodecs: profile?.videoCodecs ?? DEFAULT_PROFILE.videoCodecs, preferred: t.preferredCodecs ?? ['h264'],
+    allowHevc: t.allowHevcEncoding ?? false, allowAv1: t.allowAv1Encoding ?? false, hw: t.hwAccel,
+    codecWorks: (c) => encoderWorks(t.hwAccel, c),
+  });
 }
 
 /* -------------------------------- start ----------------------------- */
@@ -231,6 +291,8 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
   assertCanSee(ctx.user, itemId);
   assertCanStartSession(ctx, remoteAddr);
   const item = getItem(ctx.user, itemId, true);
+  const preview = !!req.preview;
+  if (preview && !(item.type === 'video' && item.parentId && item.extraType === 'trailer')) throw badRequest('Previews are only available for trailers');
   if (!item.media?.length) {
     if (item.type === 'show' || item.type === 'season') {
       // Play the next-up/first episode of a container.
@@ -243,6 +305,15 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     : db.get('SELECT * FROM media WHERE item_id = ? ORDER BY COALESCE(width,0) DESC LIMIT 1', itemId);
   if (!mediaRow) throw notFound('Media not found');
   if (item.type === 'photo') throw badRequest('Photos are not playable');
+  // Files scanned before HDR detection: identify the HDR format now (one quick ffprobe, stored for next time).
+  if (mediaRow.hdr && mediaRow.video_range == null && mediaRow.path) {
+    try {
+      const vr = await refreshVideoRange(mediaRow.id);
+      if (vr) mediaRow.video_range = JSON.stringify(vr);
+    } catch {
+      /* keep the plain HDR flag */
+    }
+  }
   const media = mediaRowToSource(mediaRow);
   const rawSubs = parseJson<(SubtitleStream & { path?: string })[]>(mediaRow.subs, []);
   const prefs = ctx.user.preferences;
@@ -259,7 +330,12 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
   const effectiveBurn = burnSub ?? (imageSubSelected || null);
 
   const isAudioOnly = item.type === 'track' || !media.videoCodec;
-  const decision = decide(media, req.deviceProfile, {
+  // Bitrate limits: device profile, user preference, the remote cap (non-LAN clients) and — for the direct-play
+  // decision only — the client's measured bandwidth (abr.ts). LAN clients are unlimited unless they measured otherwise.
+  const isLocal = !!remoteAddr && isLocalAddress(remoteAddr);
+  const caps = bitrateCaps({ profileMax: req.deviceProfile?.maxBitrate, userMax: prefs.maxBitrate, isLocal, measuredKbps: req.measuredBandwidth, remoteMax: streamingSettings().remoteMaxBitrate });
+  const decideProfile = Number.isFinite(caps.decisionKbps) ? { ...(req.deviceProfile ?? {}), maxBitrate: Math.round(caps.decisionKbps) } : req.deviceProfile;
+  const decision = decide(media, decideProfile, {
     audio, burnSubs: !!effectiveBurn, forceTranscode: !!req.forceTranscode, allowTranscode: ctx.user.allowTranscode,
     userMaxBitrate: prefs.maxBitrate, isAudioOnly,
   });
@@ -275,7 +351,7 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
 
   const base = {
     ctx, itemId, channelId: null, mediaId: media.id, title: item.title, subtitle: subtitleText, posterUrl: item.posterUrl,
-    durationMs: media.durationMs || item.durationMs, remoteAddr, positionMs: startMs,
+    durationMs: media.durationMs || item.durationMs, remoteAddr, positionMs: preview ? 0 : startMs, preview,
   };
   const input = mediaRow.path ?? mediaRow.remote_url;
   const inputArgs = mediaRow.remote_url ? remoteInputArgs(mediaRow) : [];
@@ -285,13 +361,18 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
   let mimeType: string;
   let isHls = false;
   let responseStart = startMs;
+  let abr: RenditionManager | null = null;
+  let renditions: ReturnType<typeof buildLadder> | undefined;
+  let startRendition: number | null = null;
   if (decision.method === 'direct') {
     session = registerSession({ ...base, method: 'direct', job: null });
     url = `/api/v1/stream/direct/${media.id}${tokenQuery(ctx, session.id)}`;
     mimeType = MIME_BY_CONTAINER[media.container ?? ''] ?? (isAudioOnly ? 'audio/mpeg' : 'video/mp4');
   } else {
     const p = { ...DEFAULT_PROFILE, ...(req.deviceProfile ?? {}) };
-    const maxBitrate = [p.maxBitrate, prefs.maxBitrate].filter((x): x is number => !!x).reduce((a, b) => Math.min(a, b), Infinity);
+    // Adaptive (multi-rendition) transcodes let the player climb to the hard cap; single-variant streams start at the measured fit.
+    const adaptive = decision.method === 'transcode' && !!req.adaptive && streamingSettings().adaptive && !isAudioOnly && !preview && !!media.durationMs;
+    const maxBitrate = adaptive ? caps.capKbps : caps.decisionKbps;
     const target = Math.min(Number.isFinite(maxBitrate) ? maxBitrate : getSettings().transcoding.defaultBitrate, media.bitrate ? Math.max(media.bitrate, 1500) : Infinity, getSettings().transcoding.defaultBitrate * 4);
     const opts: TranscodeOptions = {
       // Always encode against the full timeline (segments are produced on demand),
@@ -309,9 +390,40 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
             : { kind: 'embedded-image', streamIndex: effectiveBurn.index }
         : null,
     };
-    const job = new TranscodeJob(newId(), opts);
-    session = registerSession({ ...base, method: decision.method, job });
-    job.start(decision.method === 'transcode' && startMs > 0 ? Math.floor(startMs / 1000 / job.segmentSeconds) : 0);
+    if (!decision.videoCopy && !isAudioOnly) opts.videoCodec = transcodeCodecFor(req.deviceProfile);
+    if (decision.toneMap !== undefined) opts.toneMap = decision.toneMap;
+    if (decision.videoCopy && decision.videoBsf) opts.videoBsf = decision.videoBsf;
+    const ladder = adaptive
+      ? buildLadder({ sourceWidth: media.width, sourceHeight: media.height, sourceKbps: media.bitrate, capKbps: caps.capKbps, maxHeight: opts.maxHeight, audioKbps: opts.audioCopy ? 320 : (audio?.channels ?? 2) > 2 ? 384 : 192 })
+      : [];
+    let job: TranscodeJob;
+    if (ladder.length > 1) {
+      const startSegment = startMs > 0 ? Math.floor(startMs / 1000 / getSettings().transcoding.segmentSeconds) : 0;
+      startRendition = pickStartRendition(ladder, req.measuredBandwidth);
+      const holder: { s: PlaySession | null } = { s: null };
+      abr = createRenditionManager(newId(), opts, ladder, startRendition, startSegment, {
+        otherEncoders: () => [...sessions.values()].filter((x) => x.job && !x.abr && x.method !== 'direct' && !x.job.exited).length,
+        onActiveChange: (j) => {
+          if (!holder.s) return;
+          holder.s.job = j as TranscodeJob;
+          broadcastSessions();
+        },
+      });
+      renditions = ladder;
+      job = abr.activeJob as TranscodeJob;
+      try {
+        session = registerSession({ ...base, method: decision.method, job, abr });
+      } catch (e) {
+        abr.stop();
+        throw e;
+      }
+      holder.s = session;
+    } else {
+      job = new TranscodeJob(newId(), opts);
+      session = registerSession({ ...base, method: decision.method, job });
+      job.start(decision.method === 'transcode' && startMs > 0 ? Math.floor(startMs / 1000 / job.segmentSeconds) : 0);
+    }
+    job.onInfoChange = broadcastSessions;
     if (decision.method === 'remux') {
       try {
         await job.waitForPlaylist();
@@ -325,6 +437,7 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     isHls = true;
     log.info(`${ctx.user.displayName} → ${decision.method} "${item.title}": ${decision.reasons.join('; ')}`);
   }
+  const subs = subtitleTrackList(tokenQuery(ctx), media.id, rawSubs, req.subtitleFormats);
   return {
     sessionId: session.id,
     itemId,
@@ -337,13 +450,32 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     streamStartMs: 0,
     durationMs: media.durationMs || item.durationMs,
     audioStreams: media.audioStreams,
-    subtitles: effectiveBurn ? [] : subtitleTracks(ctx, media.id, rawSubs),
+    subtitles: effectiveBurn ? [] : subs.tracks,
+    burnInSubtitles: subs.burnIn,
+    renditions,
+    startRendition,
+    adaptiveMode: abr ? 'renditions' : isAudioOnly || preview ? null : 'restart',
+    maxBitrate: Number.isFinite(caps.capKbps) ? caps.capKbps : null,
+    sourceBitrate: media.bitrate,
+    isLocal,
+    // Transcoding only because of measured bandwidth (without it: direct play or remux)? Then the client may go back up.
+    bandwidthLimited: decision.method === 'transcode' && caps.bandwidthLimited && !!media.bitrate && media.bitrate > caps.decisionKbps
+      && decide(media, Number.isFinite(caps.capKbps) ? { ...(req.deviceProfile ?? {}), maxBitrate: caps.capKbps } : req.deviceProfile, {
+        audio, burnSubs: !!effectiveBurn, forceTranscode: !!req.forceTranscode, allowTranscode: ctx.user.allowTranscode, userMaxBitrate: prefs.maxBitrate, isAudioOnly,
+      }).method !== 'transcode',
     markers,
     nextItemId: next?.id ?? null,
     title: item.title,
     subtitle: subtitleText,
     posterUrl: item.posterUrl,
     backdropUrl: item.backdropUrl,
+    reasons: decision.reasons,
+    videoRange: !isAudioOnly && (media.hdr || media.videoRange) && decision.range
+      ? {
+          source: media.videoRange?.hdrFormat ?? 'hdr10', label: media.videoRange?.label ?? 'HDR', delivery: decision.range.delivery,
+          output: outputRange(media.videoRange, media.hdr, decision.range.delivery), frameRate: media.videoRange?.frameRate ?? null,
+        }
+      : null,
   };
 }
 

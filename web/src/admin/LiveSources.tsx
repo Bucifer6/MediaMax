@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import type { ChannelCategory, LiveSource } from '@mediamax/shared';
+import type { ChannelCategory, LiveSource, TunerRecording } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useToast } from '../state/toast';
 import { useAsync, useServerEvent } from '../hooks';
 import { Badge, Dropdown, EmptyState, ErrorState, Modal, Skeleton, Switch, useConfirm } from '../components/ui';
 import { Icon } from '../components/Icon';
-import { AccountInfo, SourceForm } from '../components/SourceForm';
-import { relativeTime } from '../utils/format';
+import { AccountInfo, SourceForm, isTuner, sourceTypeInfo } from '../components/SourceForm';
+import { relativeTime, formatDateTime } from '../utils/format';
+import { withToken } from '../api/client';
 import { AdminHeader } from './AdminRoutes';
 
 function Categories({ source }: { source: LiveSource }) {
@@ -82,12 +83,36 @@ function Categories({ source }: { source: LiveSource }) {
   );
 }
 
+/** TVHeadend: finished recordings on the backend (read-only; files download through MediaMax). */
+function TunerRecordings({ source }: { source: LiveSource }) {
+  const recs = useAsync(() => api.livetv.tunerRecordings(source.id), [source.id]);
+  if (recs.loading && !recs.data) return <Skeleton h={160} />;
+  if (recs.error) return <ErrorState message={recs.error} onRetry={recs.reload} />;
+  if (!recs.data?.length) return <p className="muted">No finished recordings on {source.name}.</p>;
+  return (
+    <ul className="cat-admin-list tuner-recordings">
+      {recs.data.map((r: TunerRecording) => (
+        <li key={r.id}>
+          <div className="cat-admin-name">
+            <strong>{r.title}</strong>{r.subtitle ? ` — ${r.subtitle}` : ''}
+            <div className="muted">{[r.channelName, r.start && formatDateTime(r.start), r.sizeBytes ? `${(r.sizeBytes / 1e9).toFixed(1)} GB` : null, r.status].filter(Boolean).join(' · ')}</div>
+          </div>
+          <a className="btn btn-sm" href={withToken(`/api/v1/livetv/sources/${encodeURIComponent(source.id)}/recordings/${encodeURIComponent(r.id)}/file`)} download>
+            <Icon name="download" size={14} /> Download
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function LiveSourcesAdmin() {
   const toast = useToast();
   const confirm = useConfirm();
   const sources = useAsync(() => api.livetv.sources(), []);
   const [edit, setEdit] = useState<LiveSource | 'new' | null>(null);
   const [cats, setCats] = useState<LiveSource | null>(null);
+  const [recs, setRecs] = useState<LiveSource | null>(null);
   useServerEvent((ev) => {
     if (ev.type === 'task.updated' && /epg|guide|channel|iptv|source/i.test(ev.task.id + ev.task.name) && !ev.task.running) sources.reload();
   });
@@ -128,7 +153,7 @@ export function LiveSourcesAdmin() {
 
   return (
     <div>
-      <AdminHeader title="Live TV sources" subtitle="Xtream Codes, M3U playlists and HDHomeRun tuners." actions={<button className="btn btn-primary" onClick={() => setEdit('new')}><Icon name="plus" size={16} /> Add source</button>} />
+<AdminHeader title="Live TV sources" subtitle="Xtream Codes, M3U playlists, HDHomeRun, TVHeadend, SAT>IP and Enigma2 receivers." actions={<button className="btn btn-primary" onClick={() => setEdit('new')}><Icon name="plus" size={16} /> Add source</button>} />
       {sources.loading && !sources.data ? <Skeleton h={200} /> : sources.error ? <ErrorState message={sources.error} onRetry={sources.reload} /> : !sources.data?.length ? (
         <EmptyState icon="antenna" title="No Live TV sources" message="Connect an IPTV provider to get channels, a TV guide, catch-up, VOD and DVR." action={<button className="btn btn-primary" onClick={() => setEdit('new')}>Add source</button>} />
       ) : (
@@ -136,10 +161,10 @@ export function LiveSourcesAdmin() {
           {sources.data.map((s) => (
             <div key={s.id} className={`source-card ${s.enabled ? '' : 'dim'}`}>
               <div className="source-head">
-                <span className="lib-icon"><Icon name={s.type === 'hdhomerun' ? 'antenna' : s.type === 'xtream' ? 'zap' : 'list'} size={24} /></span>
+                <span className="lib-icon"><Icon name={sourceTypeInfo(s.type).icon} size={24} /></span>
                 <div className="source-title">
                   <strong>{s.name}</strong>
-                  <div className="muted">{s.type === 'xtream' ? 'Xtream Codes' : s.type === 'm3u' ? 'M3U' : 'HDHomeRun'} · {s.url}</div>
+                  <div className="muted">{sourceTypeInfo(s.type).label} · {s.url}</div>
                 </div>
                 <input type="checkbox" className="switch" checked={s.enabled} onChange={(e) => toggle(s, { enabled: e.target.checked })} aria-label="Enabled" />
                 <Dropdown
@@ -148,6 +173,7 @@ export function LiveSourcesAdmin() {
                     { label: 'Edit', icon: 'edit', onClick: () => setEdit(s) },
                     { label: 'Categories', icon: 'layers', onClick: () => setCats(s) },
                     { label: 'Refresh now', icon: 'refresh', onClick: () => refresh(s) },
+                    ...(s.type === 'tvheadend' ? [{ label: 'Recordings on TVHeadend', icon: 'record' as const, onClick: () => setRecs(s) }] : []),
                     { divider: true, label: '' },
                     { label: 'Remove', icon: 'trash', danger: true, onClick: () => remove(s) },
                   ]}
@@ -157,6 +183,9 @@ export function LiveSourcesAdmin() {
                 <span><Icon name="tv" size={14} /> {s.channelCount.toLocaleString()} channels</span>
                 <span><Icon name="clock" size={14} /> Refreshed {relativeTime(s.lastRefreshAt)} · every {s.refreshIntervalHours}h</span>
                 {s.maxConnections != null && <span><Icon name="users" size={14} /> Max {s.maxConnections} streams</span>}
+                {isTuner(s.type) && s.deviceInfo && (
+                  <span title={s.deviceInfo.tuners.join('\n')}><Icon name="antenna" size={14} /> {[s.deviceInfo.name, s.tunerCount != null ? `${s.tunerCount} tuner${s.tunerCount === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ')}</span>
+                )}
                 {s.proxyStreams && <Badge tone="muted">Restreamed</Badge>}
               </div>
               {s.accountInfo && <AccountInfo info={s.accountInfo} />}
@@ -181,6 +210,9 @@ export function LiveSourcesAdmin() {
       </Modal>
       <Modal open={!!cats} onClose={() => setCats(null)} title={`Categories · ${cats?.name ?? ''}`} size="md">
         {cats && <Categories source={cats} />}
+      </Modal>
+      <Modal open={!!recs} onClose={() => setRecs(null)} title={`Recordings · ${recs?.name ?? ''}`} size="md">
+        {recs && <TunerRecordings source={recs} />}
       </Modal>
     </div>
   );

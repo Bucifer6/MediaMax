@@ -2,7 +2,7 @@
   "id": "io.mediamax.musicbrainz",
   "name": "MusicBrainz + Cover Art Archive",
   "version": "1.0.0",
-  "description": "Matches artists and albums to MusicBrainz, adds MBIDs, genres, artist descriptions and album covers from the Cover Art Archive. No API key needed.",
+  "description": "Matches artists and albums to MusicBrainz, adds MBIDs, genres, artist descriptions and album covers from the Cover Art Archive. No API key needed. MediaMax now has MusicBrainz built in (Server settings → Metadata); this plugin keeps working alongside it.",
   "author": "MediaMax",
   "homepage": "https://musicbrainz.org/",
   "main": "index.js",

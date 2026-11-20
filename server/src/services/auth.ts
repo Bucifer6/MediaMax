@@ -1,18 +1,21 @@
+import { securityEvent } from '../util/securityLog.js';
 import crypto from 'node:crypto';
 import type {
   ApiKey, AuthResponse, CreatedApiKey, CreateUserRequest, TotpEnabled, TotpSetup, Device, DeviceInfo, LinkCodeResponse, LinkPollResponse, Platform,
-  PublicProfile, UpdateMeRequest, UpdateUserRequest, User, UserPreferences,
+  ProfileSettings, PublicProfile, SubtitleStyle, UpdateMeRequest, UpdateUserRequest, User, UserPreferences,
 } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { newId, newToken, sha256, shortCode } from '../util/ids.js';
 import { badRequest, conflict, forbidden, HttpError, notFound, unauthorized } from '../util/errors.js';
 import { newTotpSecret, otpauthUrl, verifyTotp } from '../util/totp.js';
-import { nowIso, parseJson } from '../util/misc.js';
+import { nowIso, parseJson, ratingLevel } from '../util/misc.js';
 import { getSettings } from './settings.js';
 import { getBranding } from './branding.js';
 import { logActivity } from './activity.js';
 import { bus } from './events.js';
 import { imageUrl, registerImage } from './images.js';
+import { defaultPermissions, defaultQuotas, normalizePermissions, normalizeQuotas, storedPermissions, storedQuotas } from './requestPerms.js';
+import { builtinAvatarUrl, isBuiltinAvatar } from './avatars.js';
 
 /* ----------------------------- hashing ----------------------------- */
 
@@ -33,12 +36,49 @@ export function verifySecret(secret: string, stored: string | null | undefined):
 
 /* ------------------------------ users ------------------------------ */
 
+export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = { size: 'medium', color: 'white', background: 'shadow', font: 'default', position: 'bottom' };
+
 export const DEFAULT_PREFS: UserPreferences = {
   audioLanguage: null, subtitleLanguage: null, subtitleMode: 'auto', autoplayNext: true, skipIntros: false, maxBitrate: null, themeId: null,
+  replayGain: 'auto', subtitleStyle: DEFAULT_SUBTITLE_STYLE, musicCrossfadeSec: 0,
 };
 
+const SUBTITLE_CHOICES: { [K in keyof SubtitleStyle]: readonly SubtitleStyle[K][] } = {
+  size: ['small', 'medium', 'large', 'xlarge'],
+  color: ['white', 'yellow', 'cyan', 'green'],
+  background: ['none', 'shadow', 'box', 'boxSolid'],
+  font: ['default', 'serif', 'mono', 'rounded'],
+  position: ['bottom', 'raised'],
+  // Client-rendered subtitles (web/src/player/subtitles): 0 = automatic lift (follows `position`).
+  verticalOffset: [0, 5, 10, 15, 20],
+  edge: ['outline', 'shadow', 'none'],
+  assStyles: ['auto', 'file', 'user'],
+};
+
+/** Fill in / validate a (possibly partial) subtitle style; unknown values fall back to the current or default value. */
+export function normalizeSubtitleStyle(input: unknown, base: SubtitleStyle = DEFAULT_SUBTITLE_STYLE): SubtitleStyle {
+  const src = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+  const out = { ...DEFAULT_SUBTITLE_STYLE, ...base };
+  for (const k of Object.keys(SUBTITLE_CHOICES) as (keyof SubtitleStyle)[]) {
+    const v = src[k];
+    if ((SUBTITLE_CHOICES[k] as readonly unknown[]).includes(v)) (out as Record<string, unknown>)[k] = v;
+  }
+  return out;
+}
+
+/** Stored preferences merged over the defaults (nested objects merged field by field). */
+function mergePrefs(stored: Partial<UserPreferences>, patch: Partial<UserPreferences> = {}): UserPreferences {
+  const prefs: UserPreferences = { ...DEFAULT_PREFS, ...stored, ...patch };
+  const base = normalizeSubtitleStyle(stored.subtitleStyle);
+  prefs.subtitleStyle = patch.subtitleStyle ? normalizeSubtitleStyle(patch.subtitleStyle, base) : base;
+  const xf = Number(prefs.musicCrossfadeSec);
+  prefs.musicCrossfadeSec = Number.isFinite(xf) ? Math.max(0, Math.min(12, Math.round(xf))) : 0;
+  if (!['off', 'track', 'album', 'auto'].includes(prefs.replayGain as string)) prefs.replayGain = 'auto';
+  return prefs;
+}
+
 export function toUser(r: Row): User {
-  return {
+  const u: User = {
     id: r.id,
     username: r.username,
     displayName: r.display_name,
@@ -53,15 +93,82 @@ export function toUser(r: Row): User {
     allowDownloads: !!r.allow_downloads,
     allowTranscode: !!r.allow_transcode,
     allowDvr: !!r.allow_dvr,
+    allowRequest4k: !!r.allow_request_4k,
+    requestPermissions: storedPermissions(r),
+    requestQuotas: storedQuotas(r),
     disabled: !!r.disabled,
     allowRemote: r.allow_remote === undefined ? true : !!r.allow_remote,
     maxStreams: r.max_streams ?? null,
     totpEnabled: !!r.totp_enabled,
-    preferences: { ...DEFAULT_PREFS, ...parseJson<Partial<UserPreferences>>(r.preferences, {}) },
+    preferences: mergePrefs(parseJson<Partial<UserPreferences>>(r.preferences, {})),
     createdAt: r.created_at,
     lastSeenAt: r.last_seen_at ?? null,
+    parentUserId: r.parent_user_id ?? null,
+    isKids: !!r.profile_kids,
+    profileColor: r.profile_color ?? null,
+    avatarId: r.avatar ? null : r.avatar_builtin ?? null,
+    hideUnrated: !!r.hide_unrated,
   };
+  if (!r.avatar && isBuiltinAvatar(r.avatar_builtin)) u.avatarUrl = builtinAvatarUrl(r.avatar_builtin);
+  if (r.parent_user_id) {
+    const owner = db.get('SELECT * FROM users WHERE id = ?', r.parent_user_id);
+    if (owner) applyAccountLimits(u, r, owner);
+  } else {
+    u.profileCount = db.get<{ n: number }>('SELECT COUNT(*) n FROM users WHERE parent_user_id = ?', r.id)!.n;
+  }
+  return u;
 }
+
+/** The stricter of two rating limits (null = unrestricted). */
+export function stricterRating(a: string | null | undefined, b: string | null | undefined): string | null {
+  const la = ratingLevel(a);
+  const lb = ratingLevel(b);
+  if (la === null || la < 0) return lb === null || lb < 0 ? a || b || null : b!;
+  if (lb === null || lb < 0) return a!;
+  return la <= lb ? a! : b!;
+}
+
+/**
+ * Effective limits of a profile: never more than its owner may do. Library access is the intersection, the rating
+ * limit the stricter one, the stream limit and remote access are the owner's (shared by the whole account), and a
+ * profile is never an administrator and has no password or two-factor of its own.
+ */
+function applyAccountLimits(u: User, r: Row, owner: Row) {
+  const ownerLibs = parseJson<string[] | null>(owner.library_ids, null);
+  const ownLibs = u.libraryIds;
+  u.libraryIds = ownerLibs === null || owner.is_admin ? ownLibs : ownLibs === null ? ownerLibs : ownLibs.filter((id) => ownerLibs.includes(id));
+  u.maxContentRating = owner.is_admin ? u.maxContentRating : stricterRating(u.maxContentRating, owner.max_rating);
+  u.isAdmin = false;
+  u.hasPassword = false;
+  u.totpEnabled = false;
+  const ownerAdmin = !!owner.is_admin;
+  u.allowLiveTv = u.allowLiveTv && (ownerAdmin || !!owner.allow_live_tv) && (!u.isKids || profileSettings().kidsLiveTv);
+  u.allowDownloads = u.allowDownloads && (ownerAdmin || !!owner.allow_downloads);
+  u.allowTranscode = ownerAdmin || !!owner.allow_transcode;
+  u.allowDvr = !u.isKids && (ownerAdmin || !!owner.allow_dvr) && !!r.allow_dvr;
+  u.allowRemote = ownerAdmin || owner.allow_remote === undefined || !!owner.allow_remote;
+  u.maxStreams = owner.max_streams ?? null;
+  u.disabled = u.disabled || !!owner.disabled;
+  u.ownerName = owner.display_name;
+}
+
+export const DEFAULT_PROFILE_SETTINGS: ProfileSettings = { enabled: true, maxPerAccount: 6, kidsLiveTv: false, kidsDefaultRating: 'PG', kidsHideUnrated: true };
+export function profileSettings(): ProfileSettings {
+  const s = { ...DEFAULT_PROFILE_SETTINGS, ...(getSettings().profiles ?? {}) };
+  s.maxPerAccount = Math.max(1, Math.min(20, Math.round(Number(s.maxPerAccount) || DEFAULT_PROFILE_SETTINGS.maxPerAccount)));
+  return s;
+}
+
+/** "Owner › Profile" for profiles, the display name otherwise (activity, sessions, stats). */
+export const qualifiedName = (u: Pick<User, 'displayName' | 'ownerName' | 'parentUserId'>) =>
+  u.parentUserId && u.ownerName ? `${u.ownerName} › ${u.displayName}` : u.displayName;
+
+/** The account (owner) user id of a user or profile. */
+export const accountIdOf = (u: Pick<User, 'id' | 'parentUserId'>) => u.parentUserId || u.id;
+
+/** Ids of every user on an account: the owner and its profiles. */
+export const accountMemberIds = (accountId: string): string[] =>
+  db.all<{ id: string }>('SELECT id FROM users WHERE id = ? OR parent_user_id = ?', accountId, accountId).map((r) => r.id);
 
 export const userCount = () => db.get<{ n: number }>('SELECT COUNT(*) n FROM users')!.n;
 
@@ -84,6 +191,10 @@ export function createUser(req: CreateUserRequest): User {
   if (req.password && req.password.length < 4) throw badRequest('Password must be at least 4 characters');
   if (req.pin) validatePin(req.pin);
   const id = newId();
+  // New users start from the server's default request permissions; the legacy `allowRequest4k` flag still grants 4K.
+  const base = defaultPermissions();
+  if (req.allowRequest4k) Object.assign(base, { movie4k: base.movie4k === 'none' ? 'request' : base.movie4k, show4k: base.show4k === 'none' ? 'request' : base.show4k });
+  const perms = normalizePermissions(req.requestPermissions ?? {}, base);
   db.insert('users', {
     id,
     username,
@@ -98,6 +209,9 @@ export function createUser(req: CreateUserRequest): User {
     allow_downloads: req.allowDownloads ?? true,
     allow_transcode: req.allowTranscode ?? true,
     allow_dvr: req.allowDvr ?? !!req.isAdmin,
+    allow_request_4k: perms.movie4k !== 'none' || perms.show4k !== 'none',
+    request_perms: JSON.stringify(perms),
+    request_quotas: req.requestQuotas ? JSON.stringify(normalizeQuotas(req.requestQuotas, defaultQuotas())) : null,
     allow_remote: req.allowRemote ?? true,
     max_streams: req.maxStreams && req.maxStreams > 0 ? Math.min(100, Math.trunc(req.maxStreams)) : null,
     preferences: '{}',
@@ -108,6 +222,7 @@ export function createUser(req: CreateUserRequest): User {
 
 export function updateUser(id: string, req: UpdateUserRequest, actorId: string): User {
   const cur = getUserRow(id);
+  if (cur.parent_user_id && (req.isAdmin || req.password || req.username !== undefined)) throw badRequest('Profiles cannot be administrators, have a password or a username; edit them under the owner\'s profiles');
   const patch: Row = {};
   if (req.username !== undefined) {
     const u = req.username.trim();
@@ -129,16 +244,39 @@ export function updateUser(id: string, req: UpdateUserRequest, actorId: string):
   }
   if (req.maxContentRating !== undefined) patch.max_rating = req.maxContentRating || null;
   if (req.libraryIds !== undefined) patch.library_ids = req.libraryIds ? JSON.stringify(req.libraryIds) : null;
-  for (const [k, col] of [['allowLiveTv', 'allow_live_tv'], ['allowDownloads', 'allow_downloads'], ['allowTranscode', 'allow_transcode'], ['allowDvr', 'allow_dvr'], ['allowRemote', 'allow_remote'], ['disabled', 'disabled']] as const) {
+  for (const [k, col] of [['allowLiveTv', 'allow_live_tv'], ['allowDownloads', 'allow_downloads'], ['allowTranscode', 'allow_transcode'], ['allowDvr', 'allow_dvr'], ['allowRequest4k', 'allow_request_4k'], ['allowRemote', 'allow_remote'], ['disabled', 'disabled']] as const) {
     if ((req as any)[k] !== undefined) patch[col] = !!(req as any)[k];
   }
   if (req.maxStreams !== undefined) patch.max_streams = req.maxStreams && req.maxStreams > 0 ? Math.min(100, Math.trunc(req.maxStreams)) : null;
+  Object.assign(patch, requestPermsPatch(cur, req));
   if (patch.disabled && id === actorId) throw badRequest('You cannot disable yourself');
   db.update('users', id, patch);
   if (patch.disabled || patch.password_hash !== undefined) {
-    db.run('DELETE FROM devices WHERE user_id = ?', id);
+    // Signs the account out everywhere, including its profiles' sessions.
+    db.run('DELETE FROM devices WHERE user_id IN (SELECT id FROM users WHERE id = ? OR parent_user_id = ?)', id, id);
   }
   return getUser(id);
+}
+
+/** Columns for a permissions/quotas change. Old clients that only send `allowRequest4k` toggle the 4K permissions. */
+export function requestPermsPatch(cur: Row, req: Pick<UpdateUserRequest, 'requestPermissions' | 'requestQuotas' | 'allowRequest4k'>): Row {
+  const patch: Row = {};
+  let perms = storedPermissions(cur);
+  let changed = false;
+  if (req.requestPermissions) {
+    perms = normalizePermissions(req.requestPermissions, perms);
+    changed = true;
+  } else if (req.allowRequest4k !== undefined) {
+    const lvl = req.allowRequest4k ? 'request' : 'none';
+    perms = { ...perms, movie4k: req.allowRequest4k && perms.movie4k !== 'none' ? perms.movie4k : lvl, show4k: req.allowRequest4k && perms.show4k !== 'none' ? perms.show4k : lvl };
+    changed = true;
+  }
+  if (changed) {
+    patch.request_perms = JSON.stringify(perms);
+    patch.allow_request_4k = perms.movie4k !== 'none' || perms.show4k !== 'none';
+  }
+  if (req.requestQuotas !== undefined) patch.request_quotas = req.requestQuotas ? JSON.stringify(normalizeQuotas(req.requestQuotas, defaultQuotas())) : null;
+  return patch;
 }
 
 const adminCount = () => db.get<{ n: number }>('SELECT COUNT(*) n FROM users WHERE is_admin = 1 AND disabled = 0')!.n;
@@ -147,11 +285,19 @@ export function deleteUser(id: string, actorId: string) {
   const cur = getUserRow(id);
   if (id === actorId) throw badRequest('You cannot delete yourself');
   if (cur.is_admin && adminCount() <= 1) throw badRequest('Cannot delete the last administrator');
-  db.run('DELETE FROM users WHERE id = ?', id);
+  // Deleting an account deletes its profiles (also enforced by the foreign key).
+  db.tx(() => {
+    db.run('DELETE FROM users WHERE parent_user_id = ?', id);
+    db.run('DELETE FROM users WHERE id = ?', id);
+  });
 }
 
 export function updateMe(userId: string, req: UpdateMeRequest): User {
   const cur = getUserRow(userId);
+  // Profiles have no password; their name and PIN are managed by the account owner (Settings → Profiles).
+  if (cur.parent_user_id && (req.password !== undefined || req.pin !== undefined || req.displayName !== undefined)) {
+    throw new HttpError(403, 'Ask the account owner to change this profile\'s name or PIN', 'profile_session');
+  }
   const patch: Row = {};
   if (req.displayName !== undefined) patch.display_name = req.displayName.trim() || cur.username;
   if (req.password !== undefined) {
@@ -165,8 +311,17 @@ export function updateMe(userId: string, req: UpdateMeRequest): User {
     patch.pin_hash = req.pin ? hashSecret(req.pin) : null;
     patch.pin_length = req.pin ? req.pin.length : null;
   }
+  if (req.avatarId !== undefined) {
+    if (req.avatarId !== null && !isBuiltinAvatar(req.avatarId)) throw badRequest('Unknown avatar');
+    patch.avatar_builtin = req.avatarId;
+    if (req.avatarId) patch.avatar = null;
+  }
+  if (req.profileColor !== undefined) {
+    if (req.profileColor !== null && !/^#[0-9a-f]{6}$/i.test(req.profileColor)) throw badRequest('Colour must be a #rrggbb value');
+    patch.profile_color = req.profileColor;
+  }
   if (req.preferences) {
-    const prefs = { ...DEFAULT_PREFS, ...parseJson(cur.preferences, {}), ...req.preferences };
+    const prefs = mergePrefs(parseJson<Partial<UserPreferences>>(cur.preferences, {}), req.preferences);
     if (prefs.themeId && !getBranding().themes.some((t) => t.id === prefs.themeId)) prefs.themeId = null;
     patch.preferences = JSON.stringify(prefs);
   }
@@ -194,7 +349,7 @@ function normDevice(d: Partial<DeviceInfo>): DeviceInfo {
   };
 }
 
-export function issueToken(userId: string, device: Partial<DeviceInfo>, remoteAddr?: string): AuthResponse {
+export function issueToken(userId: string, device: Partial<DeviceInfo>, remoteAddr?: string, opts: { switched?: boolean } = {}): AuthResponse {
   const user = getUser(userId);
   if (user.disabled) throw forbidden('This account is disabled');
   const d = normDevice(device);
@@ -207,7 +362,9 @@ export function issueToken(userId: string, device: Partial<DeviceInfo>, remoteAd
     platform: d.platform, app_version: d.appVersion ?? null, remote_addr: remoteAddr ?? null, created_at: now, last_seen_at: now,
   });
   db.run('UPDATE users SET last_seen_at = ? WHERE id = ?', now, userId);
-  logActivity('user.login', `${user.displayName} signed in on ${d.deviceName} (${d.platform})`, { userId, userName: user.displayName });
+  const name = qualifiedName(user);
+  if (opts.switched) logActivity('user.profile', `${name} is now watching on ${d.deviceName}`, { userId, userName: name });
+  else logActivity('user.login', `${name} signed in on ${d.deviceName} (${d.platform})`, { userId, userName: name });
   bus.emit('user.login', { user, device: d });
   return { token, user };
 }
@@ -220,6 +377,8 @@ export function authenticate(token: string | undefined | null): AuthContext | nu
     `SELECT d.id did, d.device_id, d.device_name, d.platform, d.app_version, d.last_seen_at dlast, u.*
      FROM devices d JOIN users u ON u.id = d.user_id WHERE d.token_hash = ?`, sha256(token));
   if (!row || row.disabled) return null;
+  const user = toUser(row);
+  if (user.disabled) return null;
   const timeoutDays = getSettings().sessionTimeoutDays;
   if (timeoutDays > 0 && Date.parse(row.dlast) < Date.now() - timeoutDays * 86400000) {
     db.run('DELETE FROM devices WHERE id = ?', row.did);
@@ -234,7 +393,7 @@ export function authenticate(token: string | undefined | null): AuthContext | nu
     db.run('UPDATE users SET last_seen_at = ? WHERE id = ?', now, row.id);
   }
   return {
-    user: toUser(row),
+    user,
     deviceRowId: row.did,
     token,
     device: { deviceId: row.device_id, deviceName: row.device_name, platform: row.platform, appVersion: row.app_version ?? undefined },
@@ -243,9 +402,10 @@ export function authenticate(token: string | undefined | null): AuthContext | nu
 
 /* Per-account lockout: 5 failures → 15 minutes, independent of client IP (which can't be trusted). */
 const failures = new Map<string, { n: number; until: number }>();
-function assertNotLocked(key: string) {
+function assertNotLocked(key: string, ip?: string) {
   const f = failures.get(key);
   if (f && f.n >= 5 && f.until > Date.now()) {
+    securityEvent('AUTH_LOCKED', ip, { account: key });
     throw Object.assign(unauthorized(`Too many failed attempts. Try again in ${Math.ceil((f.until - Date.now()) / 60000)} minute(s).`), { statusCode: 429 });
   }
 }
@@ -260,26 +420,28 @@ const clearFailures = (key: string) => failures.delete(key);
  * Accounts that may sign in without any secret: Plex-Home style kids/family profiles only.
  * Never administrators, never SSO-created accounts.
  */
-export const passwordlessAllowed = (r: Row) => !r.password_hash && !r.pin_hash && !r.is_admin && !r.oidc_sub && getSettings().allowPasswordlessProfiles;
+export const passwordlessAllowed = (r: Row) => !r.parent_user_id && !r.password_hash && !r.pin_hash && !r.is_admin && !r.oidc_sub && getSettings().allowPasswordlessProfiles;
 
 export function login(username: string, password: string, device: Partial<DeviceInfo>, remoteAddr?: string, totpCode?: string): AuthResponse {
   const key = `u:${String(username ?? '').trim().toLowerCase()}`;
-  assertNotLocked(key);
+  assertNotLocked(key, remoteAddr);
   const row = db.get('SELECT * FROM users WHERE username = ?', (username ?? '').trim());
   // Constant-ish time: always run a hash compare.
   const ok = row ? (row.password_hash ? verifySecret(password ?? '', row.password_hash) : !password && passwordlessAllowed(row)) : verifySecret('x', hashSecret('y'));
   if (!row || !ok) {
     recordFailure(key);
     logActivity('user.login.failed', `Failed sign-in for "${username}" from ${remoteAddr ?? 'unknown'}`, { severity: 'warning' });
+    securityEvent('AUTH_FAIL', remoteAddr, { user: String(username ?? ''), reason: 'password' });
     throw unauthorized('Invalid username or password');
   }
-  checkSecondFactor(row, totpCode, key);
+  checkSecondFactor(row, totpCode, key, remoteAddr);
   clearFailures(key);
+  securityEvent('AUTH_OK', remoteAddr, { user: row.username });
   return issueToken(row.id, device, remoteAddr);
 }
 
 /** Second factor for accounts with TOTP enabled. Throws 401 `totp_required` when no code was sent. */
-function checkSecondFactor(row: Row, code: string | undefined, key: string) {
+function checkSecondFactor(row: Row, code: string | undefined, key: string, ip?: string) {
   if (!row.totp_enabled) return;
   if (!code) throw new HttpError(401, 'Enter the 6-digit code from your authenticator app', 'totp_required');
   if (row.totp_secret && verifyTotp(row.totp_secret, code)) return;
@@ -294,6 +456,7 @@ function checkSecondFactor(row: Row, code: string | undefined, key: string) {
     return;
   }
   recordFailure(key);
+  securityEvent('AUTH_FAIL', ip, { user: row.username, reason: 'totp' });
   throw new HttpError(401, 'That code is not valid', 'totp_invalid');
 }
 
@@ -361,7 +524,8 @@ export function authenticateApiKey(key: string | null | undefined): AuthContext 
 
 export function publicProfiles(): PublicProfile[] {
   if (!getBranding().features.profilePicker) return [];
-  return db.all('SELECT * FROM users WHERE disabled = 0 ORDER BY is_admin DESC, display_name').map((r) => ({
+  // Account profiles are entered through their owner's account, never from the server-wide picker.
+  return db.all('SELECT * FROM users WHERE disabled = 0 AND parent_user_id IS NULL ORDER BY is_admin DESC, display_name').map((r) => ({
     id: r.id,
     username: r.username,
     displayName: r.display_name,
@@ -376,41 +540,53 @@ export function publicProfiles(): PublicProfile[] {
 export function profileLogin(userId: string, pin: string | undefined, device: Partial<DeviceInfo>, remoteAddr?: string, totpCode?: string): AuthResponse {
   if (!getBranding().features.profilePicker) throw forbidden('Profile sign-in is disabled');
   const row = getUserRow(userId);
+  if (row.parent_user_id) throw unauthorized('Sign in with the account this profile belongs to');
   const key = `p:${userId}`;
-  assertNotLocked(key);
+  assertNotLocked(key, remoteAddr);
   if (row.pin_hash) {
     if (!verifySecret(pin ?? '', row.pin_hash)) {
       recordFailure(key);
       logActivity('user.login.failed', `Wrong PIN for ${row.display_name}`, { severity: 'warning' });
+      securityEvent('AUTH_FAIL', remoteAddr, { user: row.username, reason: 'pin' });
       throw unauthorized('Incorrect PIN');
     }
   } else if (!passwordlessAllowed(row)) {
     throw unauthorized('This profile requires a password');
   }
   // A PIN never replaces the second factor.
-  checkSecondFactor(row, totpCode, key);
+  checkSecondFactor(row, totpCode, key, remoteAddr);
   clearFailures(key);
   return issueToken(userId, device, remoteAddr);
 }
 
 export function logout(ctx: AuthContext) {
   db.run('DELETE FROM devices WHERE id = ?', ctx.deviceRowId);
+  // Signing out of a profile signs the whole account out of this device (the owner's session included).
+  if (!ctx.deviceRowId.startsWith('apikey:')) {
+    const acct = accountIdOf(ctx.user);
+    db.run('DELETE FROM devices WHERE device_id = ? AND user_id IN (SELECT id FROM users WHERE id = ? OR parent_user_id = ?)', ctx.device.deviceId, acct, acct);
+  }
 }
 
 export function listDevices(ctx: AuthContext, all: boolean): Device[] {
+  const SEL = `SELECT d.*, u.display_name uname, o.display_name oname FROM devices d JOIN users u ON u.id = d.user_id LEFT JOIN users o ON o.id = u.parent_user_id`;
+  // Account owners also see (and can revoke) their profiles' sessions.
   const rows = all && ctx.user.isAdmin
-    ? db.all('SELECT d.*, u.display_name uname FROM devices d JOIN users u ON u.id = d.user_id ORDER BY d.last_seen_at DESC')
-    : db.all('SELECT d.*, u.display_name uname FROM devices d JOIN users u ON u.id = d.user_id WHERE d.user_id = ? ORDER BY d.last_seen_at DESC', ctx.user.id);
+    ? db.all(`${SEL} ORDER BY d.last_seen_at DESC`)
+    : ctx.user.parentUserId
+      ? db.all(`${SEL} WHERE d.user_id = ? ORDER BY d.last_seen_at DESC`, ctx.user.id)
+      : db.all(`${SEL} WHERE d.user_id = ? OR u.parent_user_id = ? ORDER BY d.last_seen_at DESC`, ctx.user.id, ctx.user.id);
   return rows.map((r) => ({
     id: r.id, deviceId: r.device_id, deviceName: r.device_name, platform: r.platform, appVersion: r.app_version,
-    userId: r.user_id, userName: r.uname, lastSeenAt: r.last_seen_at, current: r.id === ctx.deviceRowId,
+    userId: r.user_id, userName: r.oname ? `${r.oname} › ${r.uname}` : r.uname, lastSeenAt: r.last_seen_at, current: r.id === ctx.deviceRowId,
   }));
 }
 
 export function revokeDevice(ctx: AuthContext, id: string) {
-  const r = db.get('SELECT user_id FROM devices WHERE id = ?', id);
+  const r = db.get('SELECT d.user_id, u.parent_user_id FROM devices d JOIN users u ON u.id = d.user_id WHERE d.id = ?', id);
   if (!r) throw notFound('Device not found');
-  if (r.user_id !== ctx.user.id && !ctx.user.isAdmin) throw forbidden();
+  const ownersProfile = !ctx.user.parentUserId && r.parent_user_id === ctx.user.id;
+  if (r.user_id !== ctx.user.id && !ownersProfile && !ctx.user.isAdmin) throw forbidden();
   db.run('DELETE FROM devices WHERE id = ?', id);
 }
 
@@ -464,6 +640,8 @@ export function approveLinkCode(ctx: AuthContext, code: string, remoteAddr?: str
 /** Set or clear a user's avatar (image file already saved on disk). */
 export function setAvatar(userId: string, file: string | null): User {
   getUserRow(userId);
-  db.run('UPDATE users SET avatar = ? WHERE id = ?', file ? registerImage(file) : null, userId);
+  // An uploaded picture replaces a built-in avatar.
+  if (file) db.run('UPDATE users SET avatar = ?, avatar_builtin = NULL WHERE id = ?', registerImage(file), userId);
+  else db.run('UPDATE users SET avatar = NULL WHERE id = ?', userId);
   return getUser(userId);
 }

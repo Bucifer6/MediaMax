@@ -1,0 +1,10 @@
+# CrowdSec bouncer (needs the Caddy image built from deploy/caddy/Dockerfile).
+# The installer copies this file and crowdsec.site into conf.d/ when CrowdSec is enabled, creates the key with
+#   docker compose exec crowdsec cscli bouncers add caddy-bouncer
+# and stores it in .env as CROWDSEC_BOUNCER_KEY.
+crowdsec {
+	api_url {$CROWDSEC_LAPI_URL:http://crowdsec:8080}
+	api_key {$CROWDSEC_BOUNCER_KEY}
+	ticker_interval 15s
+}
+order crowdsec first

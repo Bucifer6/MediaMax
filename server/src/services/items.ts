@@ -1,5 +1,5 @@
 import type {
-  HomeRow, HomeRowConfig, Item, SubtitleStream, Chapter, ItemQuery, ItemSort, MediaSource, Marker, Paged, Person, User, UserItemData, UpdateItemRequest,
+  HomeRow, HomeRowConfig, Item, SubtitleStream, Chapter, ItemQuery, ItemSort, MediaSource, Marker, Paged, Person, User, UserItemData, UpdateItemRequest, VideoRangeInfo,
 } from '@mediamax/shared';
 import { db, type Param, type Row } from '../db.js';
 import { imageUrl } from './images.js';
@@ -37,7 +37,7 @@ export function accessClause(user: User, alias = 'i'): { sql: string; params: Pa
     const eff = `COALESCE(${alias}.content_rating, CASE WHEN ${alias}.parent_id IS NOT NULL THEN (SELECT x.content_rating FROM items x WHERE x.id = COALESCE(${alias}.grandparent_id, ${alias}.parent_id)) END)`;
     // Unrated and unrecognised ratings are allowed by default, or hidden when blockUnratedForRestricted is on
     // (containers like collections/playlists and music stay visible).
-    const unratedOk = getSettings().blockUnratedForRestricted ? `${alias}.type IN ('collection','playlist','season','artist','album','track','photo')` : '1';
+    const unratedOk = getSettings().blockUnratedForRestricted || user.hideUnrated ? `${alias}.type IN ('collection','playlist','season','artist','album','track','photo')` : '1';
     parts.push(`mm_rating_ok(${eff}, ?, ${unratedOk}) = 1`);
     params.push(max);
   }
@@ -57,6 +57,7 @@ const SELECT = (userParam = '?') => `
   SELECT i.*, p.title p_title, g.title g_title, p.poster p_poster, g.poster g_poster, p.backdrop p_backdrop, g.backdrop g_backdrop,
     p.logo p_logo, g.logo g_logo, p.content_rating p_rating, g.content_rating g_rating,
     ud.played u_played, ud.play_count u_play_count, ud.position_ms u_position, ud.favorite u_favorite, ud.last_played_at u_last, ud.rating u_rating,
+    ud.not_interested u_not_interested, wl.added_at u_watchlist,
     CASE WHEN i.type IN ('collection','playlist') THEN (SELECT COUNT(*) FROM collection_items ci WHERE ci.collection_id = i.id)
          WHEN i.type IN ('show','season','artist','album','audiobook','podcast') THEN (SELECT COUNT(*) FROM items c WHERE c.parent_id = i.id) ELSE 0 END child_count,
     CASE WHEN i.type = 'show' THEN (SELECT COUNT(*) FROM items e LEFT JOIN user_data eu ON eu.item_id = e.id AND eu.user_id = ${userParam} WHERE e.grandparent_id = i.id AND e.type = 'episode' AND COALESCE(eu.played, 0) = 0)
@@ -65,7 +66,11 @@ const SELECT = (userParam = '?') => `
   FROM items i
   LEFT JOIN items p ON p.id = i.parent_id
   LEFT JOIN items g ON g.id = i.grandparent_id
-  LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ${userParam}`;
+  LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ${userParam}
+  LEFT JOIN watchlist wl ON wl.item_id = i.id AND wl.user_id = ${userParam}`;
+
+/** SELECT() binds the viewer's id this many times, before any other parameter. */
+const userParams = (user: User): Param[] => [user.id, user.id, user.id, user.id];
 
 function userData(r: Row): UserItemData {
   const ud: UserItemData = {
@@ -75,6 +80,8 @@ function userData(r: Row): UserItemData {
     favorite: !!r.u_favorite,
     lastPlayedAt: r.u_last ?? null,
     rating: r.u_rating ?? null,
+    inWatchlist: r.u_watchlist != null,
+    notInterested: !!r.u_not_interested,
   };
   if (r.unplayed !== null && r.unplayed !== undefined) {
     ud.unplayedCount = r.unplayed;
@@ -125,6 +132,9 @@ export function rowToItem(r: Row): Item {
     ...((extra as any).series ? { series: (extra as any).series } : {}),
     ...((extra as any).extraType ? { extraType: (extra as any).extraType } : {}),
     ...((extra as any).replayGain ? { replayGain: (extra as any).replayGain } : {}),
+    ...(!(extra as any).series && r.provider_meta && r.provider_meta !== '{}' && parseJson<any>(r.provider_meta, {}).series ? { series: parseJson<any>(r.provider_meta, {}).series } : {}),
+    ...(r.ratings ? { ratings: parseJson(r.ratings, null) } : {}),
+    ...(r.type === 'show' ? { episodeOrder: (extra as any).episodeOrder === 'dvd' || (extra as any).episodeOrder === 'absolute' ? (extra as any).episodeOrder : 'aired' } : {}),
   };
 }
 
@@ -140,6 +150,7 @@ export function mediaRowToSource(m: Row): MediaSource {
     videoCodec: m.video_codec,
     resolutionLabel: resolutionLabel(m.width, m.height),
     hdr: !!m.hdr,
+    videoRange: parseJson<VideoRangeInfo | null>(m.video_range, null),
     audioStreams: parseJson(m.audio, []),
     subtitleStreams: parseJson<(SubtitleStream & { path?: string })[]>(m.subs, []).map(({ path: _p, ...s }) => s),
     remote: !m.path && !!m.remote_url,
@@ -163,7 +174,7 @@ const SORTS: Record<ItemSort, string[]> = {
 export function queryItems(user: User, q: ItemQuery): Paged<Item> {
   const a = accessClause(user);
   const where: string[] = [a.sql];
-  const params: Param[] = [user.id, user.id, user.id, ...a.params];
+  const params: Param[] = [...userParams(user), ...a.params];
   const limit = toInt(q.limit, 50, 1, 500);
   const offset = toInt(q.offset, 0, 0);
   if (q.libraryId) {
@@ -225,7 +236,7 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
   }
   const dir = q.order === 'desc' ? 'DESC' : q.order === 'asc' ? 'ASC' : q.sort === 'addedAt' || q.sort === 'rating' || q.sort === 'lastPlayed' ? 'DESC' : 'ASC';
   const sql = `${SELECT()} WHERE ${where.join(' AND ')}`;
-  const total = db.get<{ n: number }>(`SELECT COUNT(*) n FROM items i LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ? WHERE ${where.join(' AND ')}`, user.id, ...params.slice(3))!.n;
+  const total = db.get<{ n: number }>(`SELECT COUNT(*) n FROM items i LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ? WHERE ${where.join(' AND ')}`, user.id, ...params.slice(userParams(user).length))!.n;
   const rows = db.all(`${sql} ORDER BY ${sort.map((s) => `${s} ${dir}`).join(', ')}, i.sort_title LIMIT ? OFFSET ?`, ...params, limit, offset);
   return { items: rows.map(rowToItem), total, limit, offset };
 }
@@ -241,13 +252,25 @@ export function queryWhere(user: User, whereSql: string, params: Param[], sort: 
   const s = SORTS[sort] ?? SORTS.title;
   const dir = order === 'desc' ? 'DESC' : 'ASC';
   const rows = db.all(`${SELECT()} WHERE ${where} ORDER BY ${s.map((x) => `${x} ${dir}`).join(', ')}, i.sort_title LIMIT ? OFFSET ?`,
-    user.id, user.id, user.id, ...a.params, ...params, lim, offset);
+    ...userParams(user), ...a.params, ...params, lim, offset);
   return { items: rows.map(rowToItem), total, limit, offset };
 }
 
-function selectItems(user: User, whereSql: string, params: Param[], tail = ''): Item[] {
+/** Items matching a caller-built WHERE (bound params only), with access rules applied. `ud` and `wl` are the viewer's user data / watchlist rows. */
+export function selectItems(user: User, whereSql: string, params: Param[], tail = ''): Item[] {
   const a = accessClause(user);
-  return db.all(`${SELECT()} WHERE ${a.sql} AND (${whereSql}) ${tail}`, user.id, user.id, user.id, ...a.params, ...params).map(rowToItem);
+  return db.all(`${SELECT()} WHERE ${a.sql} AND (${whereSql}) ${tail}`, ...userParams(user), ...a.params, ...params).map(rowToItem);
+}
+
+/** Items by id, in the given order (unknown or hidden ids are skipped). */
+export function itemsByIds(user: User, ids: string[]): Item[] {
+  if (!ids.length) return [];
+  const out = new Map<string, Item>();
+  for (let i = 0; i < ids.length; i += 400) {
+    const chunk = ids.slice(i, i + 400);
+    for (const it of selectItems(user, `i.id IN (${chunk.map(() => '?').join(',')})`, chunk)) out.set(it.id, it);
+  }
+  return ids.map((id) => out.get(id)).filter((x): x is Item => !!x);
 }
 
 export function getItem(user: User, id: string, withMedia = true): Item {
@@ -262,6 +285,11 @@ export function getItem(user: User, id: string, withMedia = true): Item {
     item.lockedFields = parseJson<string[]>(row?.locked_fields, []);
     const ch = db.get<{ chapters: string }>("SELECT chapters FROM media WHERE item_id = ? AND chapters != '[]' LIMIT 1", id);
     if (ch) item.chapters = parseJson<Chapter[]>(ch.chapters, []);
+    // Built-in metadata providers: Audnexus chapters (audiobooks), fanart.tv/TheAudioDB extra art, artist facts.
+    const pm = parseJson<{ chapters?: Chapter[]; art?: Record<string, string>; artistInfo?: Item['artistInfo'] }>(db.get<{ provider_meta: string }>('SELECT provider_meta FROM items WHERE id = ?', id)?.provider_meta, {});
+    if (!item.chapters?.length && pm.chapters?.length && item.type === 'audiobook') item.chapters = pm.chapters;
+    if (pm.art && Object.keys(pm.art).length) item.extraArt = { clearArtUrl: imageUrl(pm.art.clearart), discArtUrl: imageUrl(pm.art.discart), bannerUrl: imageUrl(pm.art.banner) };
+    if (pm.artistInfo && item.type === 'artist') item.artistInfo = pm.artistInfo;
     if (item.type === 'show' || item.type === 'season') {
       // Aggregate duration hint for containers.
       item.media = [];
@@ -282,7 +310,7 @@ export function getChildren(user: User, id: string, q: { sort?: ItemSort; order?
     const a = accessClause(user);
     const rows = db.all(
       `${SELECT()} JOIN collection_items ci ON ci.item_id = i.id AND ci.collection_id = ? WHERE ${a.sql} ORDER BY ci.sort, i.sort_title LIMIT ? OFFSET ?`,
-      user.id, user.id, user.id, id, ...a.params, limit, offset);
+      ...userParams(user), id, ...a.params, limit, offset);
     const total = db.get<{ n: number }>('SELECT COUNT(*) n FROM collection_items WHERE collection_id = ?', id)!.n;
     return { items: rows.map(rowToItem), total, limit, offset };
   }
@@ -391,6 +419,7 @@ export function setFavorite(user: User, itemId: string, fav: boolean): UserItemD
   assertCanSee(user, itemId);
   ensureUd(user.id, itemId);
   db.run('UPDATE user_data SET favorite = ? WHERE user_id = ? AND item_id = ?', fav, user.id, itemId);
+  bus.emit('userdata.changed', { userId: user.id, itemId });
   return emitUd(user, itemId);
 }
 
@@ -399,7 +428,43 @@ export function setRating(user: User, itemId: string, rating: number | null): Us
   ensureUd(user.id, itemId);
   const r = rating === null ? null : Math.max(0, Math.min(10, Number(rating)));
   db.run('UPDATE user_data SET rating = ? WHERE user_id = ? AND item_id = ?', r, user.id, itemId);
+  bus.emit('userdata.changed', { userId: user.id, itemId });
   return emitUd(user, itemId);
+}
+
+/** Add to / remove from the viewer's watchlist ("My List"). */
+export function setWatchlist(user: User, itemId: string, on: boolean): UserItemData {
+  assertCanSee(user, itemId);
+  if (on) db.run('INSERT OR IGNORE INTO watchlist (user_id, item_id, added_at) VALUES (?, ?, ?)', user.id, itemId, nowIso());
+  else db.run('DELETE FROM watchlist WHERE user_id = ? AND item_id = ?', user.id, itemId);
+  if (on) {
+    // Wanting to watch something overrides an earlier "not interested".
+    db.run('UPDATE user_data SET not_interested = 0 WHERE user_id = ? AND item_id = ?', user.id, itemId);
+  }
+  bus.emit('userdata.changed', { userId: user.id, itemId });
+  return emitUd(user, itemId);
+}
+
+/** "Not interested": hides the title from recommendation, because-you-watched and trending rows for this viewer. */
+export function setNotInterested(user: User, itemId: string, on: boolean): UserItemData {
+  assertCanSee(user, itemId);
+  ensureUd(user.id, itemId);
+  db.run('UPDATE user_data SET not_interested = ? WHERE user_id = ? AND item_id = ?', on, user.id, itemId);
+  if (on) db.run('DELETE FROM watchlist WHERE user_id = ? AND item_id = ?', user.id, itemId);
+  bus.emit('userdata.changed', { userId: user.id, itemId });
+  return emitUd(user, itemId);
+}
+
+/** The viewer's watchlist, newest first. */
+export function listWatchlist(user: User, limit = 100, offset = 0): Paged<Item> {
+  const lim = toInt(limit, 100, 1, 500);
+  const off = toInt(offset, 0, 0);
+  const a = accessClause(user);
+  const total = db.get<{ n: number }>(`SELECT COUNT(*) n FROM watchlist wl JOIN items i ON i.id = wl.item_id WHERE wl.user_id = ? AND ${a.sql}`, user.id, ...a.params)!.n;
+  // Page through the (small, indexed) watchlist first, then load just those items.
+  const ids = db.all<{ item_id: string }>(`SELECT wl.item_id FROM watchlist wl JOIN items i ON i.id = wl.item_id WHERE wl.user_id = ? AND ${a.sql} ORDER BY wl.added_at DESC, wl.rowid DESC LIMIT ? OFFSET ?`,
+    user.id, ...a.params, lim, off).map((r) => r.item_id);
+  return { items: itemsByIds(user, ids), total, limit: lim, offset: off };
 }
 
 export function reportProgress(user: User, itemId: string, positionMs: number, durationMs?: number | null, state?: string): UserItemData {
@@ -453,6 +518,9 @@ export function updateItem(id: string, req: UpdateItemRequest): void {
   }
   patch.locked_fields = JSON.stringify([...locked]);
   if (req.markers) patch.markers = JSON.stringify(req.markers.filter((m) => m.endMs > m.startMs));
+  if (req.episodeOrder !== undefined && cur.type === 'show' && ['aired', 'dvd', 'absolute'].includes(req.episodeOrder)) {
+    patch.extra = JSON.stringify({ ...parseJson<Record<string, unknown>>(cur.extra, {}), episodeOrder: req.episodeOrder });
+  }
   db.update('items', id, patch);
 }
 
@@ -544,10 +612,18 @@ function recentlyAdded(user: User, libraryId: string | null, limit: number): Ite
 const DEFAULT_TITLES: Record<string, string> = {
   hero: 'Featured', continue: 'Continue Watching', nextup: 'Next Up', recent: 'Recently Added', favorites: 'Favourites', 'live-now': 'On Now',
   'favorite-channels': 'Favourite Channels', recordings: 'Recordings', collection: 'Collection', genre: 'Genre', playlist: 'Playlist', 'library-recent': 'Recently Added',
+  // {title} = the title a "because" row is based on; {server} = the server name.
+  recommended: 'Recommended for you', because: 'Because you watched {title}', top10: 'Top 10 on {server} this week', trending: 'Popular right now',
+  watchlist: 'My List', upcoming: 'Coming soon',
 };
 
 /** Home rows that depend on Live TV/DVR are filled by the live module via this hook. */
-export const homeHooks: { liveRow?: (user: User, cfg: HomeRowConfig) => HomeRow | null; recordingsRow?: (user: User, cfg: HomeRowConfig) => HomeRow | null } = {};
+export const homeHooks: {
+  liveRow?: (user: User, cfg: HomeRowConfig) => HomeRow | null;
+  recordingsRow?: (user: User, cfg: HomeRowConfig) => HomeRow | null;
+  /** recommended / because / top10 / trending / upcoming — filled by services/recommend.ts and services/calendar.ts. */
+  discoveryRow?: (user: User, cfg: HomeRowConfig) => HomeRow | null;
+} = {};
 
 export function buildHome(user: User): HomeRow[] {
   const b = getBranding();
@@ -559,7 +635,8 @@ export function buildHome(user: User): HomeRow[] {
     try {
       switch (cfg.type) {
         case 'hero': {
-          const items = selectItems(user, "i.type IN ('movie','show') AND i.backdrop IS NOT NULL AND COALESCE(ud.played,0) = 0",
+          // Never feature what the viewer said they don't want (not interested / thumbs down).
+          const items = selectItems(user, "i.type IN ('movie','show') AND i.backdrop IS NOT NULL AND COALESCE(ud.played,0) = 0 AND COALESCE(ud.not_interested,0) = 0 AND COALESCE(ud.rating, 10) > 4",
             [], `ORDER BY (i.added_at > '${new Date(Date.now() - 30 * 86400000).toISOString()}') DESC, RANDOM() LIMIT ${limit}`);
           if (items.length) rows.push({ id: cfg.id, type: 'hero', title, items });
           break;
@@ -616,6 +693,20 @@ export function buildHome(user: User): HomeRow[] {
         }
         case 'recordings': {
           const r = homeHooks.recordingsRow?.(user, { ...cfg, title, limit });
+          if (r) rows.push(r);
+          break;
+        }
+        case 'watchlist': {
+          const items = listWatchlist(user, limit).items;
+          if (items.length) rows.push({ id: cfg.id, type: cfg.type, title, items, link: { page: 'watchlist' } });
+          break;
+        }
+        case 'recommended':
+        case 'because':
+        case 'top10':
+        case 'trending':
+        case 'upcoming': {
+          const r = homeHooks.discoveryRow?.(user, { ...cfg, title, limit });
           if (r) rows.push(r);
           break;
         }

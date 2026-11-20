@@ -6,16 +6,23 @@ import { LibrariesAdmin } from './Libraries';
 import { UsersAdmin } from './Users';
 import { LiveSourcesAdmin } from './LiveSources';
 import { ChannelsAdmin } from './Channels';
+import { GuideAdmin } from './GuideAdmin';
 import { BrandingStudio } from './Branding';
 import { ServerSettingsAdmin } from './ServerSettings';
 import { TasksAdmin } from './Tasks';
 import { ActivityAdmin } from './Activity';
+import { SecurityAdmin } from './Security';
+import { NetworkAdmin } from './Network';
 import { DevicesAdmin } from './Devices';
 import { StatsAdmin } from './Stats';
 import { PluginsAdmin } from './Plugins';
 import { InvitesAdmin } from './Invites';
 import { BackupsAdmin } from './Backups';
 import { RemoteAccessAdmin } from './RemoteAccess';
+import { DownloadsAdmin } from './Downloads';
+import { RenderersAdmin } from './Renderers';
+import { SmartHomeAdmin } from './SmartHome';
+import { StorageAdmin } from './Storage';
 import WrappedPage from '../pages/Wrapped';
 
 const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
@@ -26,9 +33,16 @@ const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/admin/invites', label: 'Invites', icon: 'link' },
   { to: '/admin/livetv', label: 'Live TV sources', icon: 'antenna' },
   { to: '/admin/channels', label: 'Channels', icon: 'tv' },
+  { to: '/admin/guide', label: 'TV guide', icon: 'guide' },
+  { to: '/admin/downloads', label: 'Downloads', icon: 'download' },
   { to: '/admin/branding', label: 'Branding studio', icon: 'palette' },
   { to: '/admin/settings', label: 'Server settings', icon: 'server' },
+  { to: '/admin/storage', label: 'Storage & disks', icon: 'folder' },
+  { to: '/admin/smarthome', label: 'Smart home', icon: 'zap' },
+  { to: '/admin/renderers', label: 'Play to devices', icon: 'cast' },
   { to: '/admin/remote', label: 'Remote access', icon: 'globe' },
+  { to: '/admin/network', label: 'Network & HTTPS', icon: 'link' },
+  { to: '/admin/security', label: 'Security', icon: 'shield' },
   { to: '/admin/backups', label: 'Backups', icon: 'layers' },
   { to: '/admin/plugins', label: 'Plugins', icon: 'puzzle' },
   { to: '/admin/tasks', label: 'Scheduled tasks', icon: 'clock' },
@@ -57,14 +71,21 @@ export default function AdminRoutes() {
             <Route path="users/:userId/wrapped" element={<WrappedPage />} />
             <Route path="livetv" element={<LiveSourcesAdmin />} />
             <Route path="channels" element={<ChannelsAdmin />} />
+            <Route path="guide" element={<GuideAdmin />} />
             <Route path="branding" element={<BrandingStudio />} />
             <Route path="settings" element={<ServerSettingsAdmin />} />
+            <Route path="downloads" element={<DownloadsAdmin />} />
             <Route path="invites" element={<InvitesAdmin />} />
+            <Route path="storage" element={<StorageAdmin />} />
+            <Route path="smarthome" element={<SmartHomeAdmin />} />
+            <Route path="renderers" element={<RenderersAdmin />} />
             <Route path="remote" element={<RemoteAccessAdmin />} />
             <Route path="backups" element={<BackupsAdmin />} />
             <Route path="plugins" element={<PluginsAdmin />} />
             <Route path="tasks" element={<TasksAdmin />} />
             <Route path="activity" element={<ActivityAdmin />} />
+            <Route path="security" element={<SecurityAdmin />} />
+            <Route path="network" element={<NetworkAdmin />} />
             <Route path="devices" element={<DevicesAdmin />} />
           </Routes>
         </div>

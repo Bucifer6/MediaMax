@@ -313,3 +313,10 @@
   .subsearch-row .btn { margin-left: 52px; }
 }
 .type-hint { display: flex; align-items: center; gap: 6px; font-size: 0.86rem; margin-top: -6px; }
+
+/* HDR format badges (HdrBadge.tsx) */
+.badge-hdr { border: 1px solid currentColor; background: transparent; letter-spacing: 0.04em; }
+.badge-hdr-hdr10, .badge-hdr-hdr10plus { color: #f5b301; }
+.badge-hdr-hlg { color: #4fc3f7; }
+.badge-hdr-dolbyvision { color: #fff; background: #000; border-color: #000; font-weight: 500; }
+.badge-hdr-dolbyvision b { font-weight: 800; margin-right: 3px; }

@@ -85,11 +85,12 @@ export function generate(mediaId: string, file: string, durationMs: number, widt
 }
 
 /** Background task: generate for every local video missing (or with stale) thumbnails. */
-export async function generateMissing(progress: (p: number) => void, limit = 500): Promise<number> {
+export async function generateMissing(progress: (p: number) => void, limit = 500, filter?: (mediaPath: string) => boolean): Promise<number> {
   if (!getSettings().trickplay.enabled) return 0;
   const rows = db.all(`SELECT m.id, m.path, m.duration_ms, m.width, m.height, m.mtime FROM media m JOIN items i ON i.id = m.item_id
     WHERE m.path IS NOT NULL AND m.video_codec IS NOT NULL AND m.duration_ms > 60000 AND i.type IN ('movie','episode','video') ORDER BY i.added_at DESC`);
   const todo = rows.filter((r) => {
+    if (filter && !filter(r.path)) return false;
     const m = readManifest(r.id);
     return !m || m.mtime !== r.mtime || m.intervalMs !== getSettings().trickplay.intervalSeconds * 1000;
   }).slice(0, limit);

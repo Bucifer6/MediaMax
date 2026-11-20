@@ -190,7 +190,7 @@ async function upsertMedia(itemId: string, f: FileEntry, force = false, preProbe
   const row: Row = {
     id, item_id: itemId, path: f.path, remote_url: null, container: pr?.container ?? ext(f.path), duration_ms: pr?.durationMs ?? null,
     size: f.size, bitrate: pr?.bitrate ?? null, width: pr?.width ?? null, height: pr?.height ?? null, video_codec: pr?.videoCodec ?? null,
-    hdr: pr?.hdr ?? false, audio: JSON.stringify(pr?.audio ?? []), subs: JSON.stringify([...(pr?.subs ?? []), ...subsSide]),
+    hdr: pr?.hdr ?? false, video_range: pr?.videoRange ? JSON.stringify(pr.videoRange) : null, audio: JSON.stringify(pr?.audio ?? []), subs: JSON.stringify([...(pr?.subs ?? []), ...subsSide]),
     mtime: f.mtime, probed_at: pr ? nowIso() : null, chapters: JSON.stringify(pr?.chapters ?? []),
   };
   db.upsert('media', row);

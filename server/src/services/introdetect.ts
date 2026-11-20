@@ -148,10 +148,12 @@ export async function detectSeason(seasonId: string, force = false): Promise<num
   return updated;
 }
 
-export async function detectAll(onProgress?: (p: number) => void): Promise<number> {
-  const seasons = db.all<{ id: string }>(
-    `SELECT s.id FROM items s WHERE s.type = 'season' AND EXISTS (SELECT 1 FROM items e JOIN media m ON m.item_id = e.id WHERE e.parent_id = s.id AND m.path IS NOT NULL
+export async function detectAll(onProgress?: (p: number) => void, filter?: (mediaPath: string) => boolean): Promise<number> {
+  const all = db.all<{ id: string; path: string | null }>(
+    `SELECT s.id, (SELECT m.path FROM items e JOIN media m ON m.item_id = e.id WHERE e.parent_id = s.id AND m.path IS NOT NULL LIMIT 1) path FROM items s WHERE s.type = 'season' AND EXISTS (SELECT 1 FROM items e JOIN media m ON m.item_id = e.id WHERE e.parent_id = s.id AND m.path IS NOT NULL
        AND (e.markers = '[]' OR e.markers NOT LIKE '%intro%'))`);
+  // Optional disk filter (disk-friendly mode runs one disk's share at a time).
+  const seasons = filter ? all.filter((x) => x.path && filter(x.path)) : all;
   let total = 0;
   for (let i = 0; i < seasons.length; i++) {
     try {

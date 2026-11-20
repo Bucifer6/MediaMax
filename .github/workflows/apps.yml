@@ -1,0 +1,112 @@
+name: Native apps
+
+# Compiles the phone and TV apps for real (not just type-checks): Android phone, Android TV / Fire TV,
+# iPhone/iPad (simulator) and Apple TV (simulator). Android builds produce installable APKs (signed with
+# the debug key — for testing, not for the stores). Store builds go through EAS (see apps/mobile/README.md).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'claude/**']
+    paths: ['apps/mobile/**', '.github/workflows/apps.yml']
+  pull_request:
+    paths: ['apps/mobile/**', '.github/workflows/apps.yml']
+
+concurrency:
+  group: apps-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  android:
+    name: Android ${{ matrix.tv && 'TV / Fire TV' || 'phone' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        tv: [false, true]
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      EXPO_TV: ${{ matrix.tv && '1' || '0' }}
+      CI: '1'
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install dependencies
+        run: npm ci
+      - name: Switch to the TV flavour of React Native
+        if: matrix.tv
+        run: node scripts/tv-deps.mjs on --install
+      - name: Generate the native project
+        run: npx expo prebuild --platform android --clean
+      - name: Build the release APK
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a,x86_64
+      - name: Show the APK
+        run: ls -la android/app/build/outputs/apk/release/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mediamax-android-${{ matrix.tv && 'tv' || 'phone' }}-apk
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          retention-days: 14
+
+  ios:
+    name: ${{ matrix.tv && 'Apple TV' || 'iPhone / iPad' }} (simulator)
+    runs-on: macos-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        tv: [false, true]
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      EXPO_TV: ${{ matrix.tv && '1' || '0' }}
+      CI: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - name: Toolchain
+        run: xcodebuild -version && pod --version
+      - name: Install dependencies
+        run: npm ci
+      - name: Switch to the TV flavour of React Native
+        if: matrix.tv
+        run: node scripts/tv-deps.mjs on --install
+      - name: Generate the native project (and install pods)
+        run: npx expo prebuild --platform ios --clean
+      - name: Build for the simulator
+        run: |
+          ws=$(ls -d ios/*.xcworkspace | head -1)
+          scheme=$(basename "$ws" .xcworkspace)
+          if [ "$EXPO_TV" = 1 ]; then sdk=appletvsimulator; dest='generic/platform=tvOS Simulator'; else sdk=iphonesimulator; dest='generic/platform=iOS Simulator'; fi
+          echo "Building $scheme for $sdk"
+          set -o pipefail
+          xcodebuild -workspace "$ws" -scheme "$scheme" -configuration Release -sdk "$sdk" -destination "$dest" \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build | tail -n 200
+      - name: Package the .app
+        run: |
+          app=$(find build/Build/Products -maxdepth 2 -name '*.app' | head -1)
+          echo "Built $app"
+          ditto -c -k --keepParent "$app" mediamax-simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mediamax-${{ matrix.tv && 'tvos' || 'ios' }}-simulator-app
+          path: apps/mobile/mediamax-simulator.zip
+          retention-days: 14

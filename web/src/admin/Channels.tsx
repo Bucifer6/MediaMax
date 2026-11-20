@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { Channel } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useToast } from '../state/toast';
@@ -34,7 +35,7 @@ function ChannelEditor({ channel, onClose, onSaved }: { channel: Channel; onClos
           <Field label="Number"><input className="input" type="number" value={f.number} onChange={(e) => setF({ ...f, number: e.target.value })} /></Field>
           <Field label="Name"><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
         </div>
-        <Field label="EPG channel ID" hint="Match this to a channel id in the XMLTV guide to fix missing guide data."><input className="input" value={f.epgChannelId} onChange={(e) => setF({ ...f, epgChannelId: e.target.value })} /></Field>
+        <Field label="EPG channel ID" hint={<>A guide channel id, looked up in your guides by priority. The <Link to="/admin/guide?tab=matching">Guide matching</Link> page lets you search every guide, pick one and shift times.</>}><input className="input" value={f.epgChannelId} onChange={(e) => setF({ ...f, epgChannelId: e.target.value })} /></Field>
         <Field label="Logo URL">
           <div className="logo-field">
             <span className="ch-logo"><Img src={f.logoUrl} width={80} fallback={<Icon name="tv" size={16} />} /></span>
@@ -65,7 +66,7 @@ export function ChannelsAdmin() {
     const id = ++req.current;
     setLoading(true);
     try {
-      const r = await api.livetv.channels({ sourceId: sourceId || undefined, categoryId: categoryId || undefined, search: q || undefined, limit: PAGE, offset, withEpg: false });
+      const r = await api.livetv.channels({ sourceId: sourceId || undefined, categoryId: categoryId || undefined, search: q || undefined, limit: PAGE, offset, withEpg: false, guideStatus: true });
       if (id !== req.current) return;
       setChannels((c) => (offset ? [...c, ...r.items] : r.items));
       setTotal(r.total);
@@ -91,7 +92,7 @@ export function ChannelsAdmin() {
 
   return (
     <div>
-      <AdminHeader title="Channels" subtitle={`${total.toLocaleString()} channels — renumber, rename, hide or fix guide mapping.`} />
+      <AdminHeader title="Channels" subtitle={`${total.toLocaleString()} channels — renumber, rename, hide or fix guide mapping.`} actions={<Link className="btn" to="/admin/guide?tab=matching"><Icon name="guide" size={16} /> Guide matching</Link>} />
       <div className="toolbar">
         <div className="search-mini"><Icon name="search" size={16} /><input className="input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search channels" /></div>
         <select className="select" value={sourceId} onChange={(e) => { setSourceId(e.target.value); setCategoryId(''); }}>
@@ -106,7 +107,7 @@ export function ChannelsAdmin() {
       {loading && !channels.length ? <Skeleton h={300} /> : !channels.length ? <EmptyState icon="tv" title="No channels" /> : (
         <div className="table-wrap">
           <table className="table channels-table">
-            <thead><tr><th style={{ width: 90 }}>#</th><th>Channel</th><th>Category</th><th>EPG ID</th><th>Visible</th><th /></tr></thead>
+            <thead><tr><th style={{ width: 90 }}>#</th><th>Channel</th><th>Category</th><th>Guide</th><th>Visible</th><th /></tr></thead>
             <tbody>
               {channels.map((c) => (
                 <tr key={c.id} className={c.hidden ? 'dim' : ''}>
@@ -123,7 +124,11 @@ export function ChannelsAdmin() {
                     </div>
                   </td>
                   <td className="muted">{c.categoryName ?? '—'}</td>
-                  <td>{c.epgChannelId ? <code>{c.epgChannelId}</code> : <span className="text-warning">Unmapped</span>}</td>
+                  <td>
+                    {c.epgChannelId ? <code>{c.epgChannelId}</code> : <span className="text-warning">{c.guideStatus === 'review' ? 'Suggestion waiting' : 'Unmapped'}</span>}
+                    {c.epgOffsetHours ? <span className="muted"> {c.epgOffsetHours > 0 ? '+' : ''}{c.epgOffsetHours} h</span> : null}
+                    {c.hasGuide === false && <Link to="/admin/guide?tab=matching" className="badge badge-danger ch-guide-missing" title="No programmes from now on — fix it on the Guide matching page">Missing guide</Link>}
+                  </td>
                   <td><input type="checkbox" className="switch" checked={!c.hidden} onChange={(e) => quick(c, { hidden: !e.target.checked })} aria-label="Visible" /></td>
                   <td className="td-actions"><button className="btn-icon" onClick={() => setEdit(c)} aria-label="Edit"><Icon name="edit" size={16} /></button></td>
                 </tr>

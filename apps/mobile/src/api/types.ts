@@ -106,7 +106,19 @@ export type HomeRowType =
   | 'live-now'
   | 'favorite-channels'
   | 'recordings'
-  | 'playlist';
+  | 'playlist'
+  /** "Recommended for you": scored from the viewer's history, favourites, ratings and what similar viewers watched. */
+  | 'recommended'
+  /** "Because you watched <title>": titles most similar to one recently finished movie or show. */
+  | 'because'
+  /** "Top 10 on <server> this week": most-played titles across all users in the last 7 days (episodes roll up to shows). */
+  | 'top10'
+  /** "Popular right now": recent plays weighted by recency. */
+  | 'trending'
+  /** "My List": the viewer's watchlist. */
+  | 'watchlist'
+  /** "Coming soon": next airing episodes of shows in the viewer's libraries (needs TMDB). */
+  | 'upcoming';
 
 export interface HomeRowConfig {
   id: string;
@@ -261,6 +273,23 @@ export interface UserPreferences {
   replayGain?: 'off' | 'track' | 'album' | 'auto';
   /** Play the server's cinema-mode intros (trailers, pre-roll) before movies. Default true when the server enables it. */
   cinemaMode?: boolean;
+  /** Play muted trailer previews in the home hero and on card hover. Default true (clients also respect reduced-motion settings). */
+  autoplayPreviews?: boolean;
+  /** How text subtitles look (web/TV players). Default: medium, white, shadow, default font, bottom. */
+  subtitleStyle?: SubtitleStyle;
+  /** Music: crossfade between tracks in seconds (0–12; 0 = gapless, no fade). Consecutive tracks of one album never crossfade. */
+  musicCrossfadeSec?: number;
+}
+
+/** Subtitle appearance, applied to text tracks (WebVTT `::cue`). */
+export interface SubtitleStyle {
+  size: 'small' | 'medium' | 'large' | 'xlarge';
+  color: 'white' | 'yellow' | 'cyan' | 'green';
+  /** none = plain text; shadow = outlined text, no box; box = translucent box; boxSolid = opaque black box. */
+  background: 'none' | 'shadow' | 'box' | 'boxSolid';
+  font: 'default' | 'serif' | 'mono' | 'rounded';
+  /** raised = lifted above the bottom edge (clears burnt-in lower thirds and the control bar). */
+  position: 'bottom' | 'raised';
 }
 
 export interface User {
@@ -281,6 +310,8 @@ export interface User {
   allowDownloads: boolean;
   allowTranscode: boolean;
   allowDvr: boolean;
+  /** May ask for a 4K copy when requesting titles ("Also request in 4K"). Admins always can. */
+  allowRequest4k: boolean;
   disabled: boolean;
   /** Allowed to stream from outside the local network. */
   allowRemote: boolean;
@@ -305,6 +336,7 @@ export interface CreateUserRequest {
   allowDownloads?: boolean;
   allowTranscode?: boolean;
   allowDvr?: boolean;
+  allowRequest4k?: boolean;
   allowRemote?: boolean;
   maxStreams?: number | null;
 }
@@ -445,6 +477,10 @@ export interface UserItemData {
   rating: number | null;
   /** For containers (show/season): number of unplayed children. */
   unplayedCount?: number;
+  /** On the viewer's watchlist ("My List"). */
+  inWatchlist: boolean;
+  /** The viewer said "Not interested": hidden from recommendation, because-you-watched and trending rows. */
+  notInterested: boolean;
 }
 
 export interface AudioStream {
@@ -543,6 +579,14 @@ export interface Item {
   series?: { name: string; index: number | null } | null;
   /** Tracks: ReplayGain loudness tags, when the file has them. */
   replayGain?: ReplayGain | null;
+  /** IMDb / Rotten Tomatoes / Metacritic (OMDb) and TMDB ratings. */
+  ratings?: ItemRatings | null;
+  /** Shows: episode ordering used to match episodes (set on the Edit page; default aired). */
+  episodeOrder?: EpisodeOrder;
+  /** GET /items/:id only: extra artwork from fanart.tv / TheAudioDB. */
+  extraArt?: { clearArtUrl?: string | null; discArtUrl?: string | null; bannerUrl?: string | null };
+  /** Artists, GET /items/:id only: facts from TheAudioDB. */
+  artistInfo?: { formedYear?: number | null; country?: string | null; mood?: string | null; style?: string | null };
 }
 
 export type ExtraType = 'trailer' | 'featurette' | 'behindthescenes' | 'deleted' | 'interview' | 'scene' | 'short' | 'other';
@@ -599,6 +643,8 @@ export interface UpdateItemRequest {
   /** Locked fields are not overwritten by metadata refreshes. */
   lockedFields?: string[];
   markers?: Marker[];
+  /** Shows only: episode ordering (TheTVDB); changing it re-matches the episodes. */
+  episodeOrder?: EpisodeOrder;
 }
 
 export interface ProgressReport {
@@ -614,8 +660,12 @@ export interface HomeRow {
   title: string;
   items: Item[];
   channels?: Channel[];
-  /** Deep link the client can use for "See all". */
-  link?: { libraryId?: string; itemId?: string; genre?: string; sort?: ItemSort };
+  /** Deep link the client can use for "See all". `page` points at a built-in screen (My List, calendar). */
+  link?: { libraryId?: string; itemId?: string; genre?: string; sort?: ItemSort; page?: 'watchlist' | 'calendar' };
+  /** `because` rows: the title the row is based on. */
+  seedItemId?: string;
+  /** `upcoming` rows: one entry per item, in the same order (items are the shows). */
+  calendar?: CalendarEntry[];
 }
 
 export interface HomeResponse {
@@ -665,6 +715,11 @@ export interface PlaybackRequest {
   burnSubtitles?: boolean;
   forceTranscode?: boolean;
   deviceProfile?: DeviceProfile;
+  /**
+   * Muted trailer preview (home hero, card hover). Only for trailer extras: it doesn't replace other playback on the
+   * device, isn't recorded in play history, and isn't scrobbled or sent to webhooks. Stop it with DELETE /playback/sessions/:id.
+   */
+  preview?: boolean;
 }
 
 export type PlayMethod = 'direct' | 'remux' | 'transcode' | 'live';
@@ -725,14 +780,20 @@ export interface ActiveSession {
   durationMs: number | null;
   startedAt: string;
   remoteAddress: string | null;
-  transcodeInfo: { videoCodec: string; audioCodec: string; bitrate: number | null; hwAccel: string } | null;
+  transcodeInfo: {
+    videoCodec: string; audioCodec: string; bitrate: number | null; hwAccel: string;
+    /** Set when the hardware transcode failed and this session fell back (e.g. "vaapi failed, used software: …"). */
+    hwFallback?: string | null;
+    /** HDR → SDR tone-mapping path in use, when tone-mapping. */
+    toneMap?: string | null;
+  } | null;
 }
 
 /* ------------------------------------------------------------------ */
 /* Live TV & IPTV                                                      */
 /* ------------------------------------------------------------------ */
 
-export type LiveSourceType = 'xtream' | 'm3u' | 'hdhomerun';
+export type LiveSourceType = 'xtream' | 'm3u' | 'hdhomerun' | 'tvheadend' | 'satip' | 'enigma2';
 
 export interface LiveSource {
   id: string;
@@ -837,6 +898,14 @@ export interface Channel {
   favorite: boolean;
   hidden: boolean;
   epgChannelId: string | null;
+  /** The guide source (`EpgSource.id`) the channel's guide data comes from, when matched. */
+  epgSourceId?: string | null;
+  /** How the guide match was made: `manual`, `auto`, `review` (suggestion waiting for an admin) or `none`. */
+  guideStatus?: GuideMatchStatus | null;
+  /** Programme times are shifted by this many hours (manual time-shift, or +1 channels). */
+  epgOffsetHours?: number;
+  /** Admin channel lists with `guideStatus=true`: the channel has guide data from now on. */
+  hasGuide?: boolean;
   nowPlaying?: Program | null;
   next?: Program | null;
 }
@@ -850,6 +919,168 @@ export interface ChannelQuery {
   offset?: number;
   /** Include nowPlaying/next. Default true. */
   withEpg?: boolean;
+  /** Admin only: include `hasGuide` (a "missing guide" badge in admin lists). */
+  guideStatus?: boolean;
+}
+
+/* ------------------------------ TV guide (EPG) providers ------------------------------ */
+
+/** `xmltv` covers plain XMLTV URLs/files and the iptv-org / epg.pw presets. `provider` is a live source's own guide. */
+export type EpgSourceKind = 'xmltv' | 'schedulesdirect' | 'hdhomerun' | 'provider';
+export type GuideMatchStatus = 'manual' | 'auto' | 'review' | 'none';
+
+export interface EpgSourceConfig {
+  /** xmltv: http(s) URL (.xml, .xml.gz or .xml.xz). */
+  url?: string | null;
+  /** xmltv: absolute path of a local XMLTV file instead of a URL. */
+  path?: string | null;
+  /** xmltv: id of the built-in preset this guide came from (see GET /livetv/epg-presets). */
+  preset?: string | null;
+  /** xmltv: reinterpret the guide's times in this IANA zone (e.g. "Europe/London") or fixed offset ("+01:00"). */
+  timezone?: string | null;
+  /** schedulesdirect: account username. */
+  username?: string | null;
+  /** schedulesdirect: write-only. Send it to set it; responses only say `hasPassword`. */
+  password?: string | null;
+  /** schedulesdirect: days of guide data to fetch (1–21, default 7). */
+  days?: number;
+  /** schedulesdirect: also fetch programme artwork. */
+  artwork?: boolean;
+  /** hdhomerun: the HDHomeRun live source whose tuner provides the DeviceAuth. */
+  liveSourceId?: string | null;
+  /** hdhomerun: or a device address (http://192.168.1.50). */
+  deviceUrl?: string | null;
+}
+
+export interface EpgSource {
+  id: string;
+  name: string;
+  kind: EpgSourceKind;
+  /** Kind-specific settings. Secrets are never returned. */
+  config: EpgSourceConfig & { hasPassword?: boolean; lineups?: SdLineup[] };
+  /** Higher wins: each channel takes its programmes from the highest-priority guide that has it; lower ones fill gaps. */
+  priority: number;
+  enabled: boolean;
+  /** null = applies to every live source; otherwise only these live source ids. */
+  liveSourceIds: string[] | null;
+  /** Set when the guide belongs to one live source (its provider guide, or a URL from its `epgUrl` field). */
+  ownerSourceId: string | null;
+  /** `epgUrl` = created from the live source's EPG URL field; `provider` = the provider's own guide. Managed guides can only change priority/enabled. */
+  managedBy: 'epgUrl' | 'provider' | null;
+  refreshIntervalHours: number;
+  lastRefreshAt: string | null;
+  lastError: string | null;
+  refreshing: boolean;
+  channelCount: number;
+  report: EpgSourceReport;
+}
+
+export interface EpgSourceReport {
+  /** Guide channels in the source. */
+  channels: number;
+  /** Programmes stored (from 8 days ago to 14 days ahead). */
+  programmes: number;
+  /** Live channels whose guide currently comes from this source. */
+  matchedChannels: number;
+  /** Days of guide data ahead of now (latest programme end). */
+  daysAhead: number;
+  /** Duration of the last successful refresh. */
+  lastDurationMs: number | null;
+  /** Non-fatal notes from the last refresh (a URL that failed, a skipped lineup...). */
+  warnings: string[];
+}
+
+export interface CreateEpgSourceRequest {
+  name: string;
+  kind: Exclude<EpgSourceKind, 'provider'>;
+  config: EpgSourceConfig;
+  priority?: number;
+  enabled?: boolean;
+  liveSourceIds?: string[] | null;
+  refreshIntervalHours?: number;
+}
+export type UpdateEpgSourceRequest = Partial<CreateEpgSourceRequest>;
+
+export interface EpgPreset {
+  id: string;
+  provider: 'iptv-org' | 'epg.pw';
+  country: string;
+  countryName: string;
+  name: string;
+  url: string;
+}
+
+/** A channel inside a guide source. */
+export interface EpgGuideChannel {
+  epgSourceId: string;
+  epgSourceName: string;
+  id: string;
+  name: string;
+  altNames: string[];
+  callsign: string | null;
+  number: string | null;
+  iconUrl: string | null;
+  programmes: number;
+}
+
+export interface ChannelMatch {
+  channelId: string;
+  channelName: string;
+  channelNumber: number | null;
+  logoUrl: string | null;
+  sourceId: string;
+  sourceName: string;
+  status: GuideMatchStatus;
+  /** Current (or, for `review`, suggested) guide channel. */
+  epgSourceId: string | null;
+  epgSourceName: string | null;
+  epgChannelId: string | null;
+  epgChannelName: string | null;
+  /** 0–1. */
+  confidence: number | null;
+  /** id, number, callsign, name, fuzzy, manual. */
+  method: string | null;
+  offsetHours: number;
+  hasGuide: boolean;
+}
+
+export interface MatchingResponse {
+  items: ChannelMatch[];
+  total: number;
+  counts: { all: number; matched: number; review: number; unmatched: number; missingGuide: number };
+  thresholds: { auto: number; suggest: number };
+}
+
+export interface SetChannelMatchRequest {
+  /** Pick a guide channel; omit both (or send null) to clear the manual match and go back to automatic matching. */
+  epgSourceId?: string | null;
+  epgChannelId?: string | null;
+  /** Explicitly "no guide" for this channel. */
+  none?: boolean;
+  /** Shift this channel's programmes (hours, -24..24). null clears it. */
+  offsetHours?: number | null;
+}
+
+export interface SdHeadend {
+  headend: string;
+  transport: string;
+  location: string;
+  lineups: { name: string; lineup: string }[];
+}
+export interface SdLineup {
+  lineup: string;
+  name: string;
+  transport: string;
+  location: string;
+  isDeleted?: boolean;
+}
+export interface SdStatus {
+  accountExpires: string | null;
+  maxLineups: number | null;
+  lastDataUpdate: string | null;
+  systemStatus: string | null;
+  messages: string[];
+  lineups: SdLineup[];
 }
 
 export interface GuideResponse {
@@ -874,10 +1105,11 @@ export interface LivePlayRequest {
 /* DVR                                                                 */
 /* ------------------------------------------------------------------ */
 
+/** @deprecated Single Radarr/Sonarr config; replaced by `ServerSettings.arr` (still read as a fallback). */
 export interface ArrService {
   url: string;
   apiKey: string;
-  /** Quality profile id (see GET /requests/arr/:kind/options). */
+  /** Quality profile id (see POST /arr/test). */
   qualityProfileId: number | null;
   /** Root folder path for new titles. */
   rootFolder: string | null;
@@ -888,8 +1120,203 @@ export interface ArrService {
 export interface ArrOptions {
   ok: boolean;
   message: string;
+  /** App name and version reported by the instance (e.g. "Radarr", "5.14.0"). */
+  appName?: string | null;
+  version?: string | null;
   qualityProfiles: { id: number; name: string }[];
   rootFolders: { path: string; freeSpace: number | null }[];
+  tags?: { id: number; label: string }[];
+  /** Lidarr/Readarr metadata profiles. */
+  metadataProfiles?: { id: number; name: string }[];
+  /** Sonarr v3 language profiles (absent on Sonarr v4). */
+  languageProfiles?: { id: number; name: string }[];
+}
+
+/* ------------------------------------------------------------------ */
+/* *arr suite: Radarr, Sonarr, Lidarr, Readarr, Bazarr                 */
+/* ------------------------------------------------------------------ */
+
+export type ArrKind = 'radarr' | 'sonarr' | 'lidarr' | 'readarr' | 'bazarr';
+
+/** Rewrites a path as the *arr sees it (`remotePath`) into the path MediaMax sees (`localPath`). */
+export interface ArrPathMapping {
+  remotePath: string;
+  localPath: string;
+}
+
+/** One Radarr/Sonarr/Lidarr/Readarr/Bazarr server. */
+export interface ArrInstance {
+  id: string;
+  kind: ArrKind;
+  name: string;
+  /** Base URL, e.g. http://radarr:7878 (LAN addresses are fine). */
+  url: string;
+  /** Write-only: settings reads return "••••" when a key is set; saving "••••" keeps the stored key. */
+  apiKey: string;
+  enabled: boolean;
+  /** A 4K instance: used for "Also request in 4K". */
+  is4k?: boolean;
+  qualityProfileId?: number | null;
+  rootFolderPath?: string | null;
+  /** Sonarr v3 only. */
+  languageProfileId?: number | null;
+  /** Lidarr/Readarr. */
+  metadataProfileId?: number | null;
+  /** Tag ids applied to titles added from requests. */
+  tags?: number[];
+  /** Sonarr: put episodes in season folders (default true). */
+  seasonFolders?: boolean;
+  /** What to monitor when adding: Sonarr `all|future|missing|existing|firstSeason|latestSeason|none`, Lidarr/Readarr `all|future|none`. */
+  monitor?: string;
+  /** Start searching as soon as a title is added (default true). */
+  searchOnAdd?: boolean;
+  /** Docker-style path translation for webhook events. */
+  pathMappings?: ArrPathMapping[];
+}
+
+/** Body of POST /arr/test. Pass `id` with apiKey "••••" to test a saved instance with its stored key. */
+export interface ArrTestRequest {
+  id?: string;
+  kind: ArrKind;
+  url: string;
+  apiKey: string;
+}
+
+export interface ArrInstanceRef {
+  id: string;
+  kind: ArrKind;
+  name: string;
+  is4k: boolean;
+  /** Link to the instance's web UI. */
+  url: string;
+}
+
+/** One instance's slice of a dashboard list. Instances fail independently (`ok: false` + `error`). */
+export interface ArrSection<T> {
+  instance: ArrInstanceRef;
+  ok: boolean;
+  error: string | null;
+  items: T[];
+}
+
+/** External ids used to match *arr titles with requests and library items. */
+export interface ArrMediaIds {
+  tmdbId?: string | null;
+  tvdbId?: string | null;
+  foreignArtistId?: string | null;
+  foreignAlbumId?: string | null;
+  foreignBookId?: string | null;
+}
+
+export interface ArrQueueItem {
+  id: number;
+  title: string;
+  /** e.g. "S02E05 · Episode title", album or book title. */
+  subtitle: string | null;
+  quality: string | null;
+  /** 0–100 */
+  progress: number;
+  size: number;
+  sizeLeft: number;
+  /** "hh:mm:ss" as reported by the download client. */
+  timeLeft: string | null;
+  estimatedCompletion: string | null;
+  status: string;
+  trackedState: string | null;
+  warnings: string[];
+  protocol: string | null;
+  downloadClient: string | null;
+  ids: ArrMediaIds;
+}
+
+export interface ArrCalendarEntry {
+  /** Movie/episode/album/book id inside the *arr. */
+  id: number;
+  title: string;
+  subtitle: string | null;
+  /** ISO date/time of the release or air date. */
+  date: string;
+  /** e.g. "Digital release", "Airs", "Album release". */
+  releaseType: string;
+  hasFile: boolean;
+  monitored: boolean;
+}
+
+export interface ArrWantedEntry {
+  /** Id to pass to POST /arr/:instanceId/search. */
+  id: number;
+  title: string;
+  subtitle: string | null;
+  date: string | null;
+}
+
+export interface ArrHealthCheck {
+  source: string;
+  type: 'ok' | 'notice' | 'warning' | 'error';
+  message: string;
+  wikiUrl: string | null;
+}
+
+export interface ArrDisk {
+  path: string;
+  label: string | null;
+  freeSpace: number;
+  totalSpace: number;
+}
+
+export interface ArrHealthSection {
+  instance: ArrInstanceRef;
+  ok: boolean;
+  error: string | null;
+  version: string | null;
+  checks: ArrHealthCheck[];
+  disks: ArrDisk[];
+}
+
+export interface ArrListResponse<T> {
+  sections: ArrSection<T>[];
+  fetchedAt: string;
+}
+
+export interface ArrHealthResponse {
+  sections: ArrHealthSection[];
+  fetchedAt: string;
+}
+
+/** POST /arr/:instanceId/search. Without `command`, the kind's default is used (MoviesSearch, EpisodeSearch, AlbumSearch, BookSearch). */
+export interface ArrSearchRequest {
+  ids: number[];
+  command?: 'MoviesSearch' | 'EpisodeSearch' | 'SeriesSearch' | 'SeasonSearch' | 'AlbumSearch' | 'ArtistSearch' | 'BookSearch' | 'AuthorSearch';
+  /** SeasonSearch only. */
+  seasonNumber?: number;
+}
+
+/** GET /arr/webhook (admin): what to paste into each *arr's Settings → Connect → Webhook. */
+export interface ArrWebhookInfo {
+  /** Path relative to the server, e.g. /api/v1/arr/webhook/<token>. */
+  path: string;
+  /** Full URL built from the server's public URL (when set). */
+  url: string | null;
+  token: string;
+}
+
+/** A library title as found in the *arr instances (GET /arr/item/:itemId, admin). */
+export interface ArrItemMatch {
+  instance: ArrInstanceRef;
+  /** Movie/series/artist id inside the *arr. */
+  arrId: number;
+  title: string;
+  /** Deep link into the *arr web UI. */
+  webUrl: string;
+  /** Command for "Search for upgrade". */
+  searchCommand: NonNullable<ArrSearchRequest['command']>;
+  hasFile: boolean | null;
+}
+
+export interface ArrItemInfo {
+  matches: ArrItemMatch[];
+  /** A Bazarr instance is enabled and this item is a movie/show/episode. */
+  bazarr: boolean;
 }
 
 export interface DvrDefaults {
@@ -969,7 +1396,79 @@ export type CreateRecordingRuleRequest = Omit<RecordingRule, 'id' | 'enabled' | 
 /* Admin: settings, tasks, activity                                    */
 /* ------------------------------------------------------------------ */
 
-export type HwAccel = 'none' | 'vaapi' | 'nvenc' | 'qsv' | 'videotoolbox' | 'v4l2m2m';
+/**
+ * Hardware transcoding method. VA-API covers both Intel and AMD GPUs on Linux (AMD = Mesa radeonsi);
+ * `amf` is AMD on Windows, `qsv` is Intel Quick Sync (Linux via VA-API, Windows via D3D11),
+ * `nvenc` is NVIDIA on Linux and Windows, `rkmpp` is Rockchip (RK3588 etc., needs an ffmpeg-rockchip build).
+ */
+export type HwAccel = 'none' | 'vaapi' | 'nvenc' | 'qsv' | 'videotoolbox' | 'v4l2m2m' | 'amf' | 'rkmpp';
+/** Video codecs the transcoder can output. HEVC and AV1 are only produced with a hardware encoder. */
+export type TranscodeVideoCodec = 'h264' | 'hevc' | 'av1';
+/** How HDR is tone-mapped to SDR: on the GPU (vaapi/qsv/cuda/opencl/libplacebo) or on the CPU (`software` = zscale+tonemap). */
+export type ToneMapPath = 'software' | 'libplacebo' | 'vaapi' | 'opencl' | 'qsv' | 'cuda';
+
+export interface HwDevice {
+  kind: 'dri' | 'nvidia' | 'v4l2' | 'rockchip' | 'apple' | 'windows-gpu';
+  /** /dev/dri/renderD128, /dev/video11 … (null for Windows/macOS adapters). */
+  path: string | null;
+  name: string;
+  /** Kernel driver (i915, xe, amdgpu, nvidia …) or VA-API driver from vainfo. */
+  driver: string | null;
+  vendor: 'intel' | 'amd' | 'nvidia' | 'apple' | 'broadcom' | 'rockchip' | 'unknown';
+  /** GPU / adapter index (NVIDIA, Windows). */
+  index: number | null;
+}
+
+export interface HwTestResult {
+  works: boolean;
+  /** Last lines of ffmpeg's error output when it failed, or why the test was skipped. */
+  error: string | null;
+  /** Frames per second the test ran at. */
+  fps: number | null;
+  /** True when the test was not run (missing encoder/filter/sample). */
+  skipped?: boolean;
+}
+
+export interface HwMethodResult {
+  /** Stable key for the UI, e.g. "vaapi:/dev/dri/renderD128". */
+  id: string;
+  hwAccel: HwAccel;
+  label: string;
+  /** Render node for VA-API/QSV on Linux. */
+  device: string | null;
+  /** GPU/adapter index for NVENC, and QSV/AMF on Windows. */
+  gpuIndex: number | null;
+  deviceName: string | null;
+  /** The device/driver/encoder this method needs is present (a test was run). */
+  available: boolean;
+  /** H.264 hardware encoding works. */
+  works: boolean;
+  /** Why it is not available or does not work. */
+  error: string | null;
+  /** Encode tests per output codec (testsrc2 → scale → encode). */
+  encode: Record<TranscodeVideoCodec, HwTestResult & { encoder: string | null }>;
+  /** Hardware decode → scale → encode of an H.264 sample. */
+  decode: HwTestResult | null;
+  /** Hardware decode of a 10-bit HEVC sample. */
+  tenBit: HwTestResult | null;
+  /** The first tone-mapping path that works for this method, and everything tried. */
+  toneMapping: { path: ToneMapPath | null; tried: (HwTestResult & { path: ToneMapPath })[] };
+  /** H.264 encode speed (fps) — same as encode.h264.fps. */
+  fps: number | null;
+  recommended: boolean;
+  notes: string[];
+}
+
+export interface HwDetectReport {
+  ranAt: string;
+  durationMs: number;
+  platform: string;
+  arch: string;
+  ffmpeg: { path: string; version: string | null; hwaccels: string[]; encoders: string[]; filters: string[] };
+  devices: HwDevice[];
+  methods: HwMethodResult[];
+  recommendation: { id: string; hwAccel: HwAccel; device: string | null; gpuIndex: number | null; reason: string };
+}
 
 export interface ServerSettings {
   serverName: string;
@@ -989,6 +1488,16 @@ export interface ServerSettings {
     threads: number;
     segmentSeconds: number;
     toneMapHdr: boolean;
+    /** GPU / adapter index for NVENC, and for QSV/AMF on Windows (0 = first). */
+    gpuIndex: number;
+    /** Output codecs in order of preference; H.264 is always the final fallback. */
+    preferredCodecs: TranscodeVideoCodec[];
+    /** Encode HEVC (with a hardware encoder) for clients that can play it. */
+    allowHevcEncoding: boolean;
+    /** Encode AV1 (with a hardware encoder) for clients that can play it. */
+    allowAv1Encoding: boolean;
+    /** Tone-map HDR on the GPU when possible (else the CPU zscale+tonemap path). */
+    hardwareToneMapping: boolean;
   };
   dvr: {
     recordingsPath: string;
@@ -1041,13 +1550,17 @@ export interface ServerSettings {
   /** Media requests and the download managers approved requests are sent to. */
   requests: {
     enabled: boolean;
-    /** Requests from admins (and users listed here) are approved automatically. */
+    /** @deprecated Per-user `requestPermissions` replace this (still read for users without stored permissions). */
     autoApproveUserIds: string[];
-    /** Max open requests per user per 7 days (0 = unlimited). */
+    /** @deprecated Seeds `defaultQuotas` when those were never saved. Max requests per user per 7 days (0 = unlimited). */
     weeklyLimit: number;
+    /** @deprecated Moved to `ServerSettings.arr` (migrated once; still read as a fallback). */
     radarr: ArrService | null;
+    /** @deprecated Moved to `ServerSettings.arr` (migrated once; still read as a fallback). */
     sonarr: ArrService | null;
-  };
+  } & Partial<RequestSettingsExtra>;
+  /** Radarr/Sonarr/Lidarr/Readarr/Bazarr instances (requests, downloads dashboard, webhooks). */
+  arr: ArrInstance[];
   /** Single sign-on via any OpenID Connect provider (Authentik, Keycloak, Authelia, Google, Entra…). */
   oidc: {
     enabled: boolean;
@@ -1103,7 +1616,12 @@ export type WebhookEvent =
   | 'recording.completed'
   | 'recording.failed'
   | 'request.created'
-  | 'request.available';
+  | 'request.available'
+  | 'request.approved'
+  | 'request.declined'
+  | 'request.failed'
+  | 'issue.created'
+  | 'issue.resolved';
 
 export interface Webhook {
   id: string;
@@ -1177,7 +1695,9 @@ export type ServerEvent =
   /** A command from another of your devices (apply it to the local player). */
   | { type: 'remote.command'; fromDeviceName: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number }
   /** Your controllable devices changed (online/offline/now playing). */
-  | { type: 'remote.targets'; targets: RemoteTarget[] };
+  | { type: 'remote.targets'; targets: RemoteTarget[] }
+  /** A new in-app notification for you (e.g. a new episode of a show you watch). `unread` is your new unread total. */
+  | { type: 'notification'; notification: AppNotification; unread: number };
 
 export type ClientEvent =
   | { type: 'ping' }
@@ -1358,21 +1878,115 @@ export interface LyricLine {
 export interface Lyrics {
   itemId: string;
   synced: boolean;
-  source: 'lrc' | 'embedded' | 'txt';
+  /** `lrclib`: fetched from LRCLIB (no local .lrc or embedded lyrics). */
+  source: 'lrc' | 'embedded' | 'txt' | 'lrclib';
   lines: LyricLine[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Built-in metadata providers                                          */
+/* ------------------------------------------------------------------ */
+
+export type MetadataProviderId = 'tmdb' | 'tvdb' | 'fanart' | 'audiodb' | 'audnexus' | 'openlibrary' | 'googlebooks' | 'lrclib' | 'omdb' | 'musicbrainz';
+/** Providers configured under Server settings → Metadata (TMDB keeps its key on the General tab). */
+export type BuiltinProviderId = Exclude<MetadataProviderId, 'tmdb'>;
+/** Episode ordering used to match a show's episodes (TheTVDB season types). */
+export type EpisodeOrder = 'aired' | 'dvd' | 'absolute';
+/** Third-party ratings: imdb and tmdb are 0–10, rottenTomatoes and metacritic 0–100. */
+export interface ItemRatings {
+  imdb?: number;
+  rottenTomatoes?: number;
+  metacritic?: number;
+  tmdb?: number;
+}
+export interface MetadataProviderConfig {
+  enabled: boolean;
+  /** Write-only: reads return "••••" when a key is stored; sending "••••" back keeps it. */
+  apiKey: string | null;
+  /** TheTVDB subscriber PIN (optional, write-only like apiKey). */
+  pin?: string | null;
+}
+export type ArtworkTarget = 'movie' | 'show' | 'artist' | 'album' | 'audiobook';
+export interface MetadataSettings {
+  providers: Record<BuiltinProviderId, MetadataProviderConfig>;
+  /** Priority, highest first. Providers only fill empty, unlocked fields, so earlier ones win. */
+  order: MetadataProviderId[];
+  /** Preferred artwork source per type. `auto`: local art first, providers only fill gaps. */
+  artwork: Record<ArtworkTarget, MetadataProviderId | 'auto'>;
+  /** How long provider responses are cached (hours). */
+  cacheTtlHours: number;
+}
+export interface MetadataProviderInfo {
+  id: MetadataProviderId;
+  name: string;
+  types: ItemType[];
+  key: 'required' | 'optional' | 'none';
+  /** Supports a subscriber PIN (TheTVDB). */
+  pin?: boolean;
+  homepage: string;
+  keyUrl: string | null;
+  cost: string;
+  description: string;
+  rateLimit: string;
+  /** Artwork targets this provider can supply art for. */
+  artwork: ArtworkTarget[];
+  enabled: boolean;
+  /** Enabled and has the key it needs. */
+  ready: boolean;
+  /** Items this provider could still fill (null when not counted). */
+  missing: number | null;
+  missingLabel: string | null;
+}
+export interface MetadataSettingsResponse {
+  settings: MetadataSettings;
+  providers: MetadataProviderInfo[];
+  cache: { entries: number; bytes: number };
+}
+export interface MetadataTestResult {
+  ok: boolean;
+  message: string;
+  ms: number;
+}
+/** A "Fix match" search hit. */
+export interface MatchCandidate {
+  provider: MetadataProviderId;
+  id: string;
+  title: string;
+  year: number | null;
+  subtitle: string | null;
+  overview: string | null;
+  imageUrl: string | null;
+}
+export interface MatchSearchResponse {
+  /** Providers that can be searched for this item type. */
+  providers: MetadataProviderId[];
+  provider: MetadataProviderId;
+  results: MatchCandidate[];
+}
+export interface ApplyMatchRequest {
+  provider: MetadataProviderId;
+  id: string;
 }
 
 /* ------------------------------------------------------------------ */
 /* Media requests (Overseerr-style, with Radarr/Sonarr)                */
 /* ------------------------------------------------------------------ */
 
-export type RequestMediaType = 'movie' | 'show';
+/** movie → Radarr, show → Sonarr, artist/album → Lidarr, book → Readarr. */
+export type RequestMediaType = 'movie' | 'show' | 'artist' | 'album' | 'book';
+/** Which seasons of a show to request. */
+export type SeasonMode = 'all' | 'first' | 'latest' | 'specific';
 export type RequestStatus = 'pending' | 'approved' | 'declined' | 'processing' | 'available' | 'failed';
 
 export interface DiscoverResult {
+  /** TMDB id for movies/shows; for music and books the same value as `externalId`. */
   tmdbId: string;
+  /** TMDB id, MusicBrainz artist/album id (Lidarr) or Readarr foreign book id. */
+  externalId: string;
   mediaType: RequestMediaType;
   title: string;
+  /** Artist of an album, author of a book. */
+  subtitle?: string | null;
   year: number | null;
   overview: string | null;
   posterUrl: string | null;
@@ -1387,13 +2001,24 @@ export interface DiscoverResult {
 
 export interface MediaRequest {
   id: string;
+  /** TMDB id (movies/shows) or the external id for music/books (same as `externalId`). */
   tmdbId: string;
+  externalId: string;
   mediaType: RequestMediaType;
   title: string;
+  /** Artist of an album, author of a book. */
+  subtitle: string | null;
   year: number | null;
   posterUrl: string | null;
   /** Requested seasons for shows (empty = all). */
   seasons: number[];
+  seasonMode: SeasonMode;
+  /** Artist requests: monitor all albums or only future ones. */
+  monitor: 'all' | 'future' | null;
+  /** Also sent to the 4K instance. */
+  also4k: boolean;
+  /** Live download progress while it's in an *arr queue. */
+  download: { progress: number; status: string; timeLeft: string | null; instance: string } | null;
   status: RequestStatus;
   requestedBy: { id: string; displayName: string };
   requestedAt: string;
@@ -1406,10 +2031,31 @@ export interface MediaRequest {
 }
 
 export interface CreateMediaRequest {
-  tmdbId: string;
+  /** TMDB id for movies/shows. For music/books send `externalId` (either field is accepted). */
+  tmdbId?: string;
+  externalId?: string;
   mediaType: RequestMediaType;
+  /** Title as shown in Discover; helps the Lidarr/Readarr lookup. */
+  title?: string;
+  /** Specific seasons (with seasonMode "specific", or alone for backwards compatibility). */
   seasons?: number[];
+  seasonMode?: SeasonMode;
+  /** Artist requests (default "all"). */
+  monitor?: 'all' | 'future';
+  /** Also request in 4K (admins, or users with allowRequest4k; needs a 4K instance). */
+  also4k?: boolean;
   note?: string;
+}
+
+/** GET /requests/options: which request kinds this server can handle. */
+export interface RequestOptions {
+  movies: boolean;
+  shows: boolean;
+  music: boolean;
+  books: boolean;
+  /** Kinds with a 4K instance the current user may use. */
+  can4k: { movie: boolean; show: boolean };
+  tmdb: boolean;
 }
 
 export interface DiscoverResponse {
@@ -1817,4 +2463,1257 @@ export interface DjStatus {
   running: boolean;
   /** AI DJ availability for clients. */
   ai: { enabled: boolean; llm: boolean; serverVoice: boolean; hostName: string; chattiness: AiDjSettings['chattiness'] };
+}
+
+/** A one-click starting point for the whole server's look: theme + home screen rows + feature toggles. */
+export interface StarterLook {
+  id: string;
+  name: string;
+  description: string;
+  themeId: string;
+  homeRows: HomeRowConfig[];
+  features: Partial<FeatureFlags>;
+}
+
+/* ------------------------------------------------------------------ */
+/* Discovery: watchlist, calendar, notifications                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One calendar line. `upcoming`: a future episode from TMDB (`episode` is null, the file isn't here yet).
+ * `added`: an episode recently added to a library (`episode` is the real item).
+ */
+export interface CalendarEntry {
+  kind: 'upcoming' | 'added';
+  /** YYYY-MM-DD air date (upcoming) or the date it was added (added). */
+  date: string;
+  show: Item;
+  episode: Item | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
+  title: string | null;
+  overview: string | null;
+  /** The viewer watches this show (has played an episode) or has it on My List. */
+  following: boolean;
+}
+
+/** TMDB status for a show ("Returning Series", "Ended", "Canceled", "In Production"…). */
+export interface ShowSchedule {
+  status: string | null;
+  inProduction: boolean | null;
+  lastAirDate: string | null;
+  nextAirDate: string | null;
+}
+
+export interface CalendarResponse {
+  from: string;
+  to: string;
+  /** false when no TMDB API key is configured: upcoming episodes are unavailable (recently added still work). */
+  tmdbConfigured: boolean;
+  entries: CalendarEntry[];
+}
+
+export type NotificationKind = 'new-episode' | 'request' | 'issue';
+
+export interface AppNotification {
+  id: string;
+  kind: NotificationKind;
+  itemId: string | null;
+  title: string;
+  body: string | null;
+  /** Artwork for the item (poster or episode thumbnail). */
+  imageUrl: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export interface NotificationsResponse {
+  items: AppNotification[];
+  unread: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Admin → Security: reverse proxy, CrowdSec, fail2ban, sign-in log    */
+/* ------------------------------------------------------------------ */
+
+export interface SecurityDashboardSettings {
+  proxy: { kind: 'none' | 'caddy' | 'nginx'; accessLog: string | null };
+  /** Public host name to check the HTTPS certificate of. */
+  publicHost: string | null;
+  crowdsec: { url: string | null; machineId: string | null; password: string | null };
+  /** fail2ban control socket, normally the MediaMax bridge's socket. */
+  fail2banSocket: string | null;
+}
+
+export interface SecurityCount { key: string; count: number; extra?: string | null }
+
+export interface SecurityOverview {
+  generatedAt: string;
+  signIns: {
+    failures24h: number;
+    failures7d: number;
+    lockouts24h: number;
+    successes24h: number;
+    byReason: SecurityCount[];
+    topIps: SecurityCount[];
+    topUsers: SecurityCount[];
+    /** Failures per hour for the last 24 hours (oldest first). */
+    hourly: number[];
+    recent: { at: string; event: string; ip: string; user: string | null; reason: string | null }[];
+  };
+  proxy: null | {
+    kind: 'caddy' | 'nginx';
+    ok: boolean;
+    error: string | null;
+    lastRequestAt: string | null;
+    requests24h: number;
+    uniqueIps24h: number;
+    bytes24h: number;
+    status: { s2xx: number; s3xx: number; s4xx: number; s5xx: number };
+    hourly: number[];
+    topIps: SecurityCount[];
+    topErrors: SecurityCount[];
+  };
+  certificate: null | { host: string; ok: boolean; error: string | null; validTo: string | null; daysLeft: number | null; issuer: string | null };
+  crowdsec: null | {
+    ok: boolean;
+    error: string | null;
+    decisions: { id: number; ip: string; type: string; origin: string; scenario: string; duration: string; country: string | null; asName: string | null }[];
+    alerts: { id: number; scenario: string; at: string; ip: string | null; country: string | null; events: number }[];
+  };
+  fail2ban: null | {
+    ok: boolean;
+    error: string | null;
+    jails: { name: string; currentlyFailed: number; totalFailed: number; currentlyBanned: number; totalBanned: number; bannedIps: string[] }[];
+  };
+}
+
+export interface SecurityBanRequest {
+  ip: string;
+  /** Where to ban; unban without a tool removes the IP everywhere. */
+  tool?: 'crowdsec' | 'fail2ban';
+  jail?: string;
+  /** CrowdSec duration, e.g. "4h", "7d". */
+  duration?: string;
+  reason?: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Admin → Network: direct, behind your reverse proxy, or built-in HTTPS */
+/* ------------------------------------------------------------------ */
+
+export interface NetworkSettings {
+  /**
+   * direct  = clients connect straight to MediaMax (LAN, VPN, or port forward to 8484);
+   * proxy   = behind your own reverse proxy (Nginx, Traefik, Caddy, NPM, Cloudflare Tunnel…);
+   * builtin = MediaMax runs Caddy itself for automatic HTTPS (Let's Encrypt). Off unless chosen here.
+   */
+  mode: 'direct' | 'proxy' | 'builtin';
+  /** Addresses/CIDRs whose X-Forwarded-For/-Proto headers are believed. Keywords: loopback, linklocal, uniquelocal. */
+  trustedProxies: string[];
+  builtinHttps: {
+    domain: string | null;
+    email: string | null;
+    /** Ports Caddy listens on (inside the container when running in Docker). */
+    httpPort: number;
+    httpsPort: number;
+    /** Use Let's Encrypt's staging CA while testing (untrusted certificates, generous rate limits). */
+    staging: boolean;
+    hsts: boolean;
+  };
+}
+
+export interface NetworkStatus {
+  settings: NetworkSettings;
+  /** MEDIAMAX_TRUSTED_PROXIES from the environment overrides the saved list when set. */
+  envTrustedProxies: string[] | null;
+  /** How this very request reached MediaMax, to verify a proxy setup. */
+  you: { ip: string; socketAddress: string; forwardedFor: string | null; forwardedProto: string | null; proxyTrusted: boolean; protocol: string; host: string };
+  publicUrl: string | null;
+  builtin: {
+    /** A Caddy binary was found (bundled in Docker and release builds, or on PATH / MEDIAMAX_CADDY). */
+    available: boolean;
+    binary: string | null;
+    version: string | null;
+    running: boolean;
+    error: string | null;
+    /** Recent Caddy log messages (newest last). */
+    log: string[];
+    certificate: { ok: boolean; error: string | null; validTo: string | null; daysLeft: number | null; issuer: string | null } | null;
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* HDR / Dolby Vision & client video-range capabilities               */
+/* (interfaces below extend DeviceProfile, MediaSource, PlaybackInfo   */
+/*  through declaration merging, so this block stays append-only)      */
+/* ------------------------------------------------------------------ */
+
+/** Dynamic range of a video stream. `hdr10plus` and `dolbyvision` usually carry an HDR10 (or HLG/SDR) fallback. */
+export type HdrFormat = 'sdr' | 'hdr10' | 'hdr10plus' | 'hlg' | 'dolbyvision';
+
+/** Dolby Vision configuration record (from ffprobe's "DOVI configuration record" side data). */
+export interface DolbyVisionInfo {
+  /** 4, 5, 7, 8, 9, 10 … */
+  profile: number;
+  level: number | null;
+  /**
+   * Base-layer signal compatibility id: 0 = none (profile 5, IPTPQc2 — not watchable without DV),
+   * 1 = HDR10, 2 = SDR, 4 = HLG, 6 = Blu-ray HDR10 (profile 7). Profile 8.1/8.2/8.4 = compat 1/2/4.
+   */
+  blCompatId: number | null;
+  rpu: boolean;
+  /** Enhancement layer present (profile 7 dual-layer: MEL/FEL). */
+  el: boolean;
+  bl: boolean;
+}
+
+export interface VideoRangeInfo {
+  hdrFormat: HdrFormat;
+  /** What a non-DV / non-HDR10+ player sees: the HDR10/HLG/SDR base layer, or `none` (DV profile 5). */
+  fallback: 'hdr10' | 'hlg' | 'sdr' | 'none' | null;
+  /** Label for UIs, e.g. "Dolby Vision 8.1", "HDR10+", "HLG". */
+  label: string;
+  bitDepth: number | null;
+  pixFmt: string | null;
+  /** Codec profile as ffprobe reports it, e.g. "Main 10". */
+  codecProfile: string | null;
+  colorTransfer: string | null;
+  colorPrimaries: string | null;
+  colorSpace: string | null;
+  frameRate: number | null;
+  dolbyVision: DolbyVisionInfo | null;
+  /** SMPTE ST 2086 mastering display: luminance in cd/m². */
+  masteringDisplay: { minLuminance: number | null; maxLuminance: number | null } | null;
+  /** MaxCLL / MaxFALL in cd/m². */
+  contentLight: { maxCll: number; maxFall: number } | null;
+}
+
+/** What the client can decode *and* display correctly (it may tone-map itself — that counts as supported). */
+export interface VideoRangeCapabilities {
+  hdr10?: boolean;
+  hdr10Plus?: boolean;
+  hlg?: boolean;
+  dolbyVision?: boolean;
+  /** Dolby Vision profiles the client plays, e.g. ["5", "8.1", "8.4"]; "7" only for dual-layer capable players. */
+  dolbyVisionProfiles?: string[];
+  /** The attached display itself is HDR (informational; `hdr10` etc. are what decisions use). */
+  hdrDisplay?: boolean;
+}
+
+export interface DeviceProfile {
+  /** HDR support. Omitted = legacy client: MediaMax keeps its old behaviour (no range-based decisions). */
+  videoRange?: VideoRangeCapabilities;
+  maxHeight?: number | null;
+  /** Video codecs the client decodes at 10-bit, e.g. ["hevc","av1","vp9"]. */
+  tenBitCodecs?: string[];
+  /** Audio formats passed through to an AV receiver (bitstream), e.g. ["ac3","eac3","eac3-joc","truehd","dts","dts-hd"]. */
+  audioPassthrough?: string[];
+  /** The player switches embedded audio tracks itself (Tizen AVPlay, ExoPlayer, AVPlayer), so a non-default track doesn't force a remux. */
+  canSelectAudioTrack?: boolean;
+  /** Which player backend sent this profile: "html5", "avplay", "webos", "exoplayer", "avplayer". */
+  player?: string;
+}
+
+export interface MediaSource {
+  /** HDR format details (null for SDR or media scanned before HDR detection). */
+  videoRange?: VideoRangeInfo | null;
+}
+
+/** How the server delivers the video's dynamic range to this client. */
+export type VideoRangeDelivery = 'sdr' | 'passthrough' | 'base-layer' | 'strip-dovi' | 'tonemap';
+
+export interface PlaybackInfo {
+  /** Why the server remuxes or transcodes (empty for direct play). */
+  reasons?: string[];
+  /** Source range and how it reaches the client (`base-layer`: DV/HDR10+ played as HDR10; `tonemap`: HDR → SDR). */
+  videoRange?: {
+    source: HdrFormat;
+    label: string;
+    delivery: VideoRangeDelivery;
+    /** Range the client's display should switch to (Apple TV AVDisplayCriteria / Android TV mode matching). */
+    output?: 'sdr' | 'hdr10' | 'hlg' | 'dolbyvision';
+    /** Source frame rate (fps) for display refresh-rate matching. */
+    frameRate?: number | null;
+  } | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Requests: Overseerr/Jellyseerr parity (permissions, quotas, issues)  */
+/* ------------------------------------------------------------------ */
+
+/** none = can't request; request = needs approval; auto = approved automatically. */
+export type RequestPermissionLevel = 'none' | 'request' | 'auto';
+/** The request kinds a permission can be set for. */
+export type RequestPermissionKind = 'movie' | 'show' | 'movie4k' | 'show4k' | 'music' | 'book';
+
+export interface RequestPermissions {
+  movie: RequestPermissionLevel;
+  show: RequestPermissionLevel;
+  movie4k: RequestPermissionLevel;
+  show4k: RequestPermissionLevel;
+  /** Artists and albums (Lidarr). */
+  music: RequestPermissionLevel;
+  /** Books (Readarr). */
+  book: RequestPermissionLevel;
+  /** Request manager: may see, edit, approve, decline and delete everyone's requests, manage issues and the blacklist. */
+  manageRequests: boolean;
+  /** May report problems ("issues") with library items. */
+  reportIssues: boolean;
+  /** Titles this user adds to their Discover watchlist are requested automatically (permissions and quotas still apply). */
+  watchlistAutoRequest: boolean;
+}
+
+/** `limit` requests (seasons for shows) per rolling `days`; limit 0 = unlimited. */
+export interface RequestQuota {
+  limit: number;
+  days: number;
+}
+export interface RequestQuotas {
+  movie: RequestQuota;
+  /** Counts seasons, like Overseerr. */
+  show: RequestQuota;
+  /** Artists and albums. */
+  music: RequestQuota;
+  book: RequestQuota;
+}
+export type RequestQuotaKind = keyof RequestQuotas;
+
+/** Remaining quota for one kind (GET /requests/options, GET /requests/quota). */
+export interface RequestQuotaStatus {
+  limit: number;
+  days: number;
+  used: number;
+  /** null = unlimited. */
+  remaining: number | null;
+  /** When the oldest counted request leaves the window (null when nothing is counted). */
+  resetsAt: string | null;
+  /** Exempt (admin, or exempt by the server's quota settings). */
+  exempt: boolean;
+}
+
+export interface User {
+  /** Stored request permissions (admins act as if everything were "auto"). Older servers derive them from allowRequest4k + autoApproveUserIds. */
+  requestPermissions?: RequestPermissions;
+  /** Per-user quota override; null = the server defaults. */
+  requestQuotas?: RequestQuotas | null;
+}
+export interface CreateUserRequest {
+  requestPermissions?: Partial<RequestPermissions>;
+  requestQuotas?: RequestQuotas | null;
+}
+export interface InviteTemplate {
+  /** Request permissions for users joining with this invite (default: the server's default permissions). */
+  requestPermissions?: RequestPermissions | null;
+}
+
+/** PATCH /users/bulk (admin): apply the same permissions/quotas to several users. */
+export interface BulkUpdateUsersRequest {
+  userIds: string[];
+  requestPermissions?: Partial<RequestPermissions>;
+  /** null resets to the server defaults; omit to leave unchanged. */
+  requestQuotas?: RequestQuotas | null;
+  allowLiveTv?: boolean;
+  allowDownloads?: boolean;
+  allowTranscode?: boolean;
+  allowDvr?: boolean;
+  allowRemote?: boolean;
+}
+
+export interface ServerSettings {
+  notificationAgents: NotificationAgent[];
+}
+export interface RequestSettingsExtra {
+  /** Permissions given to new users (created by an admin, invite or SSO). */
+  defaultPermissions: RequestPermissions;
+  /** Quotas for users without their own. Migrated from `weeklyLimit` when absent. */
+  defaultQuotas: RequestQuotas;
+  /** Users with "auto" for a kind aren't counted against that kind's quota. */
+  quotaExemptAutoApprove: boolean;
+  /** Request managers have no quota. */
+  quotaExemptManagers: boolean;
+  /** Global auto-approve rule: approve movie/show requests rated at least this on TMDB (0 = off). */
+  autoApproveMinRating: number;
+  /** Discover hides titles that are already in a library (per-user toggle overrides). */
+  hideAvailable: boolean;
+}
+
+/** Overrides a manager can set before approving ("edit before approve"). Missing = the instance defaults. */
+export interface RequestArrOverrides {
+  instanceId?: string | null;
+  /** 4K copy target (also4k requests). */
+  instance4kId?: string | null;
+  qualityProfileId?: number | null;
+  rootFolderPath?: string | null;
+  languageProfileId?: number | null;
+  tags?: number[] | null;
+}
+
+export interface MediaRequest {
+  /** Overrides set by a manager (managers only). */
+  arr?: RequestArrOverrides | null;
+  /** Units counted against the quota (seasons for shows). */
+  quotaUnits?: number;
+  /** Number of comments on the request. */
+  commentCount?: number;
+  /** The requester's own reason/notes vs. the manager's decline reason. */
+  declineReason?: string | null;
+}
+
+/** PATCH /requests/:id (managers): change a request before approving it. */
+export interface EditMediaRequest {
+  seasons?: number[];
+  seasonMode?: SeasonMode;
+  also4k?: boolean;
+  arr?: RequestArrOverrides;
+}
+
+/** POST /requests/:id/approve body (optional): edits applied first. */
+export type ApproveMediaRequest = EditMediaRequest;
+
+/** POST /requests/bulk (managers). */
+export interface BulkRequestAction {
+  ids: string[];
+  action: 'approve' | 'decline' | 'delete' | 'retry';
+  /** Decline reason. */
+  note?: string;
+  /** delete: also remove the titles from Radarr/Sonarr. */
+  removeFromArr?: boolean;
+}
+export interface BulkRequestResult {
+  ok: string[];
+  failed: { id: string; error: string }[];
+}
+
+export interface RequestListQuery {
+  status?: RequestStatus;
+  mine?: boolean;
+  mediaType?: RequestMediaType;
+  userId?: string;
+  sort?: 'requested' | 'updated' | 'title' | 'status';
+  order?: 'asc' | 'desc';
+}
+
+/** One entry of a request's timeline (status changes and comments). */
+export interface RequestActivity {
+  id: string;
+  kind: 'created' | 'approved' | 'declined' | 'processing' | 'failed' | 'available' | 'edited' | 'comment' | 'retried';
+  user: { id: string; displayName: string } | null;
+  body: string | null;
+  createdAt: string;
+}
+
+/** GET /requests/tv/:tmdbId: seasons of a show with availability. */
+export type SeasonAvailability = 'available' | 'partial' | 'requested' | 'pending' | 'missing';
+export interface RequestSeasonInfo {
+  seasonNumber: number;
+  name: string;
+  episodeCount: number;
+  airDate: string | null;
+  /** Episodes of this season in the library. */
+  libraryEpisodes: number;
+  status: SeasonAvailability;
+}
+export interface RequestTvInfo {
+  tmdbId: string;
+  title: string;
+  seasons: RequestSeasonInfo[];
+  /** Library show, if any. */
+  itemId: string | null;
+}
+
+/** GET /requests/:id/arr-options (managers): pickers for "edit before approve". */
+export interface RequestArrChoices {
+  kind: ArrKind;
+  instances: { id: string; name: string; is4k: boolean; defaults: RequestArrOverrides; options: ArrOptions }[];
+}
+
+export interface RequestOptions {
+  /** The viewer's effective permissions. */
+  permissions?: RequestPermissions;
+  /** Remaining quota per kind. */
+  quotas?: Record<RequestQuotaKind, RequestQuotaStatus>;
+  /** May manage requests (admin or request manager). */
+  canManage?: boolean;
+  /** Server default for hiding titles already in the library. */
+  hideAvailable?: boolean;
+}
+
+export interface DiscoverResult {
+  /** On the admin blacklist (only managers see these; others never get them). */
+  blacklisted?: boolean;
+  /** On the viewer's Discover watchlist. */
+  onWatchlist?: boolean;
+  /** Shows: some seasons are in the library, others can still be requested. */
+  partiallyAvailable?: boolean;
+}
+
+/** Admin blacklist: titles nobody can request. */
+export interface BlacklistEntry {
+  mediaType: RequestMediaType;
+  externalId: string;
+  title: string;
+  reason: string | null;
+  createdBy: { id: string; displayName: string } | null;
+  createdAt: string;
+}
+
+/** Discover sliders (TMDB lists). */
+export type DiscoverListKey =
+  | 'trending' | 'popular-movies' | 'popular-shows' | 'upcoming-movies' | 'upcoming-shows' | 'top-movies' | 'top-shows'
+  | `movie-genre-${number}` | `show-genre-${number}` | `studio-${number}` | `network-${number}`;
+export interface DiscoverSlider {
+  key: DiscoverListKey | 'recently-requested' | 'recently-added' | 'watchlist';
+  title: string;
+  results: DiscoverResult[];
+}
+export interface DiscoverGenre {
+  id: number;
+  name: string;
+}
+export interface DiscoverGenres {
+  movie: DiscoverGenre[];
+  show: DiscoverGenre[];
+}
+export interface DiscoverPerson {
+  id: string;
+  name: string;
+  biography: string | null;
+  birthday: string | null;
+  deathday: string | null;
+  placeOfBirth: string | null;
+  knownFor: string | null;
+  profileUrl: string | null;
+  cast: (DiscoverResult & { character: string | null })[];
+  crew: (DiscoverResult & { job: string | null })[];
+}
+
+/** Discover watchlist: titles (not necessarily in a library) a user wants. */
+export interface DiscoverWatchlistEntry {
+  mediaType: 'movie' | 'show';
+  externalId: string;
+  title: string;
+  year: number | null;
+  posterUrl: string | null;
+  addedAt: string;
+  requestId: string | null;
+  /** Why auto-request didn't happen (no permission, quota, blacklist…). */
+  autoRequestError: string | null;
+  availableItemId: string | null;
+}
+
+/* Issues ("Report an issue") */
+export type IssueKind = 'video' | 'audio' | 'subtitle' | 'other';
+export type IssueStatus = 'open' | 'resolved';
+export interface IssueComment {
+  id: string;
+  user: { id: string; displayName: string } | null;
+  body: string;
+  createdAt: string;
+}
+export interface Issue {
+  id: string;
+  kind: IssueKind;
+  status: IssueStatus;
+  /** The reported library item (movie, show, episode, album…). */
+  itemId: string | null;
+  /** Movie/show the item belongs to, for *arr actions. */
+  rootItemId: string | null;
+  mediaType: string;
+  title: string;
+  posterUrl: string | null;
+  season: number | null;
+  episode: number | null;
+  message: string;
+  createdBy: { id: string; displayName: string } | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedBy: { id: string; displayName: string } | null;
+  resolvedAt: string | null;
+  commentCount: number;
+  comments?: IssueComment[];
+}
+export interface CreateIssueRequest {
+  itemId: string;
+  kind: IssueKind;
+  message: string;
+  season?: number | null;
+  episode?: number | null;
+}
+
+/* Notification agents (Discord, Slack, Telegram, ntfy, Gotify, Pushover, email, JSON webhook) */
+export type NotifyEvent =
+  | 'request.pending' | 'request.auto_approved' | 'request.approved' | 'request.declined' | 'request.available' | 'request.failed' | 'request.comment'
+  | 'issue.created' | 'issue.comment' | 'issue.resolved' | 'issue.reopened' | 'test';
+export type NotificationAgentKind = 'discord' | 'slack' | 'telegram' | 'ntfy' | 'gotify' | 'pushover' | 'email' | 'webhook';
+export interface NotificationAgent {
+  id: string;
+  kind: NotificationAgentKind;
+  name: string;
+  enabled: boolean;
+  events: NotifyEvent[];
+  /** Kind-specific settings (webhookUrl, botToken, chatId, server, topic, token, userKey, smtp…). Secret fields read back as "••••". */
+  config: Record<string, string>;
+}
+/** The fields each agent kind takes (GET /notify/agents/kinds). */
+export interface NotificationAgentKindInfo {
+  kind: NotificationAgentKind;
+  label: string;
+  fields: { key: string; label: string; secret?: boolean; required?: boolean; placeholder?: string; hint?: string }[];
+}
+export interface NotificationTestResult {
+  ok: boolean;
+  message: string;
+}
+export interface AppNotification {
+  /** In-app path to open (e.g. "/requests?id=…", "/issues/…") for request and issue notifications. */
+  link?: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Home Assistant / smart home                                         */
+/* ------------------------------------------------------------------ */
+
+/** Payload shape a webhook sends: MediaMax's own (default) or a flat one made for Home Assistant's webhook trigger. */
+export type WebhookFormat = 'mediamax' | 'home-assistant';
+
+export interface Webhook {
+  /** Omitted = 'mediamax'. */
+  format?: WebhookFormat;
+  /** Optional label shown in the admin list (e.g. "Home Assistant"). */
+  name?: string;
+}
+
+export interface HomeAssistantMqttSettings {
+  enabled: boolean;
+  /** mqtt://host:1883 or mqtts://host:8883. */
+  brokerUrl: string;
+  username: string | null;
+  /** Write-only: returned as "••••" when set. Send "••••" back to keep it. */
+  password: string | null;
+  /** Use TLS even with an mqtt:// URL (mqtts:// always does). */
+  tls: boolean;
+  /** Accept self-signed broker certificates. */
+  tlsInsecure: boolean;
+  /** Root of MediaMax's own topics (default "mediamax"). */
+  baseTopic: string;
+  /** Home Assistant discovery prefix (default "homeassistant"). */
+  discoveryPrefix: string;
+  /** Publish one now-playing sensor per playing device (default true). */
+  perDeviceSensors: boolean;
+}
+
+export interface HomeAssistantSettings {
+  mqtt: HomeAssistantMqttSettings;
+}
+
+export type MqttConnectionState = 'disabled' | 'connecting' | 'connected' | 'disconnected' | 'error';
+
+export interface HomeAssistantStatus {
+  mqtt: {
+    state: MqttConnectionState;
+    error: string | null;
+    connectedAt: string | null;
+    lastPublishAt: string | null;
+    lastDiscoveryAt: string | null;
+    /** Discovery configs published (entities Home Assistant should show). */
+    entities: number;
+    /** Topic that reports online/offline (retained, offline is the last will). */
+    availabilityTopic: string | null;
+  };
+  /** Where to find the REST endpoint for HA's REST sensor / dashboards. */
+  restPath: string;
+}
+
+export interface HomeAssistantTestResult {
+  ok: boolean;
+  message: string;
+  latencyMs: number | null;
+}
+
+/** One playing (or paused) stream as reported to smart-home integrations. */
+export interface NowPlayingEntry {
+  sessionId: string;
+  state: 'playing' | 'paused' | 'buffering';
+  userId: string;
+  user: string;
+  deviceId: string;
+  device: string;
+  platform: string;
+  itemId: string | null;
+  mediaType: string | null;
+  title: string;
+  /** Show title for episodes, artist for tracks. */
+  series: string | null;
+  season: number | null;
+  episode: number | null;
+  year: number | null;
+  /** Absolute when the server has a public URL, else server-relative. */
+  posterUrl: string | null;
+  positionSeconds: number;
+  durationSeconds: number | null;
+  progressPercent: number | null;
+  transcode: boolean;
+  method: string;
+  hdr: boolean;
+  bitrateKbps: number | null;
+  startedAt: string;
+}
+
+export interface NowPlayingStatus {
+  server: { id: string; name: string; version: string };
+  /** True while at least one stream is playing (paused streams don't count). */
+  watching: boolean;
+  activeStreams: number;
+  transcodes: number;
+  directStreams: number;
+  bandwidthKbps: number;
+  sessions: NowPlayingEntry[];
+  recentlyAdded: { id: string; type: string; title: string; series: string | null; year: number | null; addedAt: string; posterUrl: string | null }[];
+  generatedAt: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Storage / NAS disk spin-down                                        */
+/* ------------------------------------------------------------------ */
+
+export type DiskPowerState = 'active' | 'idle' | 'standby' | 'unknown';
+
+export interface StorageSettings {
+  /** Only run background media-disk work inside the maintenance window (or piggybacked on playback). */
+  diskFriendly: boolean;
+  /** Local server time, "HH:MM". */
+  windowStart: string;
+  windowEnd: string;
+  /** When a stream starts from a disk, run that disk's postponed jobs while it is spinning anyway. */
+  piggyback: boolean;
+  /** Linux: ask hdparm/smartctl (when available and permitted) whether disks are asleep; never wakes them. */
+  checkDiskState: boolean;
+  /** native = inotify/FSEvents (no polling); poll = check folder timestamps every pollIntervalMinutes; off = scheduled scans only. */
+  watchMode: 'native' | 'poll' | 'off';
+  /** Poll mode interval (minimum 60). */
+  pollIntervalMinutes: number;
+}
+
+export interface StorageDiskInfo {
+  /** Block device name, e.g. "sda" (null when unknown). */
+  name: string;
+  state: DiskPowerState;
+  /** How the state was found: "hdparm", "smartctl", "sysfs" (I/O counters) or null. */
+  method: string | null;
+  rotational: boolean | null;
+  checkedAt: string | null;
+}
+
+export interface StorageLibraryPath {
+  path: string;
+  mountPoint: string | null;
+  fsType: string | null;
+  source: string | null;
+  /** Network share (NFS/SMB): disk state can't be seen from here. */
+  network: boolean;
+  /** Key used to group work per disk (mount device id). */
+  diskKey: string;
+  disks: StorageDiskInfo[];
+  /** Overall state for the path (standby only if every disk under it sleeps). */
+  state: DiskPowerState;
+}
+
+export interface StorageLibraryInfo {
+  id: string;
+  name: string;
+  type: string;
+  paths: StorageLibraryPath[];
+  watch: { mode: 'native' | 'poll' | 'off'; directories: number; error: string | null };
+}
+
+export interface StorageDeferredTask {
+  taskId: string;
+  name: string;
+  since: string;
+  /** Disks that already caught up through piggybacking. */
+  doneDisks: string[];
+}
+
+export interface StorageStatus {
+  settings: StorageSettings;
+  inWindow: boolean;
+  nextWindowAt: string | null;
+  /** Server-local time zone, so the window can be read correctly. */
+  timeZone: string;
+  serverTime: string;
+  deferred: StorageDeferredTask[];
+  piggybackRunning: string | null;
+  tools: { hdparm: boolean; smartctl: boolean; mountinfo: boolean };
+  libraries: StorageLibraryInfo[];
+  /** Where artwork, thumbnails, trickplay, subtitles and the database live (should be an SSD). */
+  dataDir: string;
+  transcodeDir: string;
+  /** Task ids that count as background media-disk work. */
+  diskTasks: string[];
+}
+
+/* ------------------------------------------------------------------ */
+/* "Play to" network renderers (DLNA/UPnP, Sonos, Kodi)                */
+/* ------------------------------------------------------------------ */
+
+export type RendererKind = 'dlna' | 'sonos' | 'kodi';
+
+/** A device on the local network MediaMax can send media to. */
+export interface Renderer {
+  /** Stable id (derived from the device UDN or the manual entry). */
+  id: string;
+  kind: RendererKind;
+  name: string;
+  manufacturer: string | null;
+  model: string | null;
+  /** LAN host (IP) of the device. */
+  host: string;
+  iconUrl: string | null;
+  /** Plays video (Sonos and audio-only DLNA renderers don't). */
+  supportsVideo: boolean;
+  /** Added by an administrator rather than discovered. */
+  manual: boolean;
+  online: boolean;
+  lastSeenAt: string | null;
+  /** What it's playing for MediaMax right now, if anything. */
+  nowPlaying: { title: string; userName: string; state: RendererPlayState } | null;
+}
+
+export type RendererPlayState = 'idle' | 'buffering' | 'playing' | 'paused' | 'stopped';
+
+export interface RendererState {
+  rendererId: string;
+  rendererName: string;
+  state: RendererPlayState;
+  /** Play session id (shows in the admin dashboard like any other stream). */
+  sessionId: string | null;
+  /** The user this playback belongs to (only they and admins may control it). */
+  userId: string | null;
+  itemId: string | null;
+  title: string | null;
+  subtitle: string | null;
+  posterUrl: string | null;
+  positionMs: number;
+  durationMs: number | null;
+  /** 0–100, null when the device doesn't report it. */
+  volume: number | null;
+  muted: boolean;
+  /** direct = original file; transcode = MediaMax converts it for the device. */
+  method: 'direct' | 'transcode' | null;
+  /** Queue position for albums / playlists (1-based), null for a single item. */
+  queue: { index: number; total: number } | null;
+  error: string | null;
+}
+
+export interface RendererPlayRequest {
+  itemId: string;
+  startMs?: number;
+  mediaId?: string;
+  audioStreamIndex?: number;
+  /** Text subtitle to show (DLNA: Samsung/LG CaptionInfo; Kodi: added as external subtitle). null = off. */
+  subtitleStreamIndex?: number | null;
+  /** Play these items in order (album / playlist). `itemId` must be one of them; playback starts there. */
+  queueItemIds?: string[];
+}
+
+export type RendererAction = 'pause' | 'resume' | 'stop' | 'seek' | 'volume' | 'next' | 'previous';
+
+export interface RendererCommandRequest {
+  positionMs?: number;
+  /** 0–100 */
+  volume?: number;
+  muted?: boolean;
+}
+
+/** Admin → Play to devices. */
+export interface RendererSettings {
+  /** Discover and control renderers at all (off = feature hidden). */
+  enabled: boolean;
+  /** Look for Kodi with mDNS (_xbmc-jsonrpc-h._tcp) as well as SSDP. */
+  mdns: boolean;
+  /** Allow manual devices on non-private addresses (off: LAN / private addresses only). */
+  allowPublicHosts: boolean;
+  /** Base URL devices use to fetch streams, e.g. http://192.168.1.10:8096 (default: this server's LAN address). */
+  streamBaseUrl: string | null;
+}
+
+export interface ManualRendererRequest {
+  kind: 'kodi' | 'dlna';
+  name?: string;
+  /** Kodi: host or IP. */
+  host?: string;
+  /** Kodi JSON-RPC port (default 8080). */
+  port?: number;
+  username?: string;
+  password?: string;
+  /** DLNA / Sonos: the device description URL, e.g. http://192.168.1.20:1400/xml/device_description.xml */
+  descriptionUrl?: string;
+}
+
+export interface RendererAdminView {
+  settings: RendererSettings;
+  manual: { id: string; kind: 'kodi' | 'dlna'; name: string; host: string; port: number | null; username: string | null; hasPassword: boolean; descriptionUrl: string | null }[];
+  renderers: Renderer[];
+  lastDiscoveryAt: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Hardware tuners & set-top boxes: TVHeadend, SAT>IP, Enigma2         */
+/* (extends LiveSource / CreateLiveSourceRequest / TestSourceResponse  */
+/*  through declaration merging, so this block stays append-only)      */
+/* ------------------------------------------------------------------ */
+
+/** Driver settings of tuner sources (`tvheadend`, `satip`, `enigma2`). Unknown keys are ignored. */
+export interface LiveSourceOptions {
+  /** All tuner types: limit concurrent streams (default: the device's tuner count). */
+  maxStreams?: number | null;
+  /** TVHeadend / Enigma2: HTTP auth scheme. `auto` answers whatever the device asks for (Digest or Basic). */
+  authType?: 'auto' | 'basic' | 'digest' | null;
+  /** TVHeadend: stream profile name (default `pass` = untouched MPEG-TS). */
+  profile?: string | null;
+  /** SAT>IP: `fritzbox` reads the FRITZ!Box's own lists; `m3u` reads `playlistUrl` (default: detected). */
+  satipMode?: 'fritzbox' | 'm3u' | null;
+  /** SAT>IP FRITZ!Box: which built-in lists to import (`tvhd`, `tvsd`, `radio`; default HD + SD). */
+  fritzLists?: string[] | null;
+  /** SAT>IP: M3U with rtsp:// or http://<ip>/?src=…&freq=… entries (`sat.ip` placeholder hosts are replaced by the device). */
+  playlistUrl?: string | null;
+  /** SAT>IP: RTSP transport FFmpeg uses (default: UDP for FRITZ!Box, TCP otherwise). */
+  rtspTransport?: 'tcp' | 'udp' | null;
+  /** SAT>IP: the UPnP description URL (from discovery); used for the tuner count. */
+  descriptionUrl?: string | null;
+  /** Enigma2: service references of the bouquets to import (default: the first bouquet). */
+  bouquets?: string[] | null;
+  /** Enigma2: streaming port (default 8001). */
+  streamPort?: number | null;
+  /** Enigma2: use the receiver's transcoding port instead (default 8002). */
+  useTranscoding?: boolean | null;
+  transcodePort?: number | null;
+  /** Enigma2: OpenWebif "streamauth" is on — send the login to the streaming port too. */
+  streamAuth?: boolean | null;
+  /** Enigma2: days of guide to read (1–14, default 7). */
+  guideDays?: number | null;
+}
+
+/** What a tuner source reported about the device at its last refresh / test. */
+export interface TunerDeviceInfo {
+  name: string | null;
+  model: string | null;
+  version: string | null;
+  /** One line per tuner, e.g. "DVB-S2 ×2" or "Tuner A: DVB-S2 NIM". */
+  tuners: string[];
+}
+
+export interface TunerBouquet {
+  /** Enigma2 bouquet service reference. */
+  ref: string;
+  name: string;
+}
+
+export interface LiveSource {
+  /** Tuner sources: driver settings (secrets are never in here). */
+  options?: LiveSourceOptions;
+  /** Tuner sources: tuners the device reported (`maxConnections` is the effective stream limit). */
+  tunerCount?: number | null;
+  deviceInfo?: TunerDeviceInfo | null;
+}
+
+export interface CreateLiveSourceRequest {
+  options?: LiveSourceOptions;
+  /** POST /livetv/sources/test only: an existing source whose saved password is used when none is sent. */
+  sourceId?: string;
+}
+
+export interface TestSourceResponse {
+  tunerCount?: number | null;
+  deviceInfo?: TunerDeviceInfo | null;
+  /** Enigma2: every TV bouquet on the receiver, for the bouquet picker. */
+  bouquets?: TunerBouquet[];
+  /** TVHeadend: stream profiles the user may pick. */
+  profiles?: string[];
+  warnings?: string[];
+}
+
+/** GET /livetv/tuners/discover: a device found on the LAN. */
+export interface DiscoveredTuner {
+  kind: 'satip' | 'hdhomerun';
+  name: string;
+  manufacturer: string | null;
+  model: string | null;
+  /** Address to use as the source URL. */
+  address: string;
+  descriptionUrl: string | null;
+  tunerCount: number | null;
+  /** SAT>IP X_SATIPCAP, e.g. "DVBS2-2,DVBT-2". */
+  capabilities: string | null;
+  isFritzBox: boolean;
+  deviceId: string | null;
+}
+
+/** GET /livetv/sources/:id/recordings (TVHeadend): a finished recording on the backend. */
+export interface TunerRecording {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  description: string | null;
+  channelName: string | null;
+  start: string | null;
+  end: string | null;
+  sizeBytes: number | null;
+  status: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Client-side subtitle rendering & adaptive streaming                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * How a subtitle track reaches the client's own renderer. Players never hand subtitles to the platform's text-track
+ * renderer: they fetch the original format and draw it themselves (text overlay, libass for ASS, canvas for PGS).
+ *  - srt / vtt / ass: text, fetched from `rawUrl` in its original format (`url` stays WebVTT for older clients)
+ *  - pgs: Blu-ray bitmap subtitles (.sup), decoded on the client
+ *  - vobsub / dvb: bitmap subtitles the client can't decode: the player asks for burn-in (`burnSubtitles`)
+ */
+export type SubtitleFormat = 'srt' | 'vtt' | 'ass' | 'pgs' | 'vobsub' | 'dvb' | 'teletext';
+
+export interface SubtitleTrack {
+  /** Source codec as probed (subrip, ass, webvtt, hdmv_pgs_subtitle, dvd_subtitle …). */
+  codec?: string;
+  /** Format the client renders (see SubtitleFormat). */
+  format?: SubtitleFormat;
+  /** Bitmap subtitle (PGS / VobSub / DVB). */
+  isImage?: boolean;
+  /** Sidecar file rather than a stream of the media file. */
+  external?: boolean;
+  /**
+   * The track in its original format, with token: `.srt`, `.vtt`, `.ass` (SSA is served as ASS) or `.sup` (PGS).
+   * Add `&partial=1` to get what has been extracted so far while a long file is still being read; the response then
+   * carries `X-Subtitle-Complete: 0|1` and `X-Subtitle-Progress` (0..1). Poll until complete.
+   */
+  rawUrl?: string;
+  /** ASS only: GET returns `SubtitleFont[]` — fonts attached to the media file (MKV attachments) for libass. */
+  fontsUrl?: string;
+}
+
+/** An embedded font (MKV attachment) served for the client's libass renderer. */
+export interface SubtitleFont {
+  /** Attachment file name, e.g. "Roboto-Bold.ttf". */
+  name: string;
+  /** URL with token. */
+  url: string;
+  mimeType: string | null;
+}
+
+/** One variant of an adaptive (multi-rendition) HLS master playlist. */
+export interface HlsRendition {
+  /** Index used in the variant's URL (`r<id>.m3u8`). */
+  id: number;
+  width: number | null;
+  height: number | null;
+  /** Video bitrate (kbps, H.264-equivalent target). */
+  videoKbps: number;
+  /** Peak bandwidth incl. audio and container overhead (bits/s), as in the playlist's BANDWIDTH. */
+  bandwidth: number;
+  /** e.g. "1080p", "720p". */
+  label: string;
+}
+
+export interface PlaybackRequest {
+  /**
+   * Subtitle formats the client renders itself. Image formats listed here (e.g. "pgs") are returned in `subtitles`
+   * instead of requiring burn-in. Omitted: legacy behaviour (text tracks as WebVTT only).
+   */
+  subtitleFormats?: SubtitleFormat[];
+  /** Client-measured network throughput (kbps), from a bandwidth probe or playback. Used to pick direct play vs a transcode and the starting rendition. */
+  measuredBandwidth?: number | null;
+  /** The client follows a multi-variant master playlist (hls.js, AVPlayer, ExoPlayer): transcodes get a rendition ladder. */
+  adaptive?: boolean;
+}
+
+export interface PlaybackInfo {
+  /** Adaptive transcode: the variants of the master playlist (lazily encoded on the server). Absent for single-variant streams. */
+  renditions?: HlsRendition[];
+  /** Rendition the server expects the client to start with (best fit for `measuredBandwidth`), listed first in the master playlist. */
+  startRendition?: number | null;
+  /**
+   * How quality adapts during this session: 'renditions' = switch variants of the master playlist; 'restart' = the client
+   * restarts the stream at another bitrate; null = fixed.
+   */
+  adaptiveMode?: 'renditions' | 'restart' | null;
+  /** Effective bitrate cap (kbps) the server applied from the device profile, user preference and remote limit; null = none. */
+  maxBitrate?: number | null;
+  /** Source bitrate (kbps), for client ABR decisions about direct play. */
+  sourceBitrate?: number | null;
+  /** The client connects from the local network (treated as unlimited unless it measured otherwise). */
+  isLocal?: boolean;
+  /** True when bandwidth (not codec/container support) is why this stream is transcoded. */
+  bandwidthLimited?: boolean;
+  /** Bitmap subtitle tracks this client must have burned in (VobSub/DVB, or PGS when it doesn't render PGS). */
+  burnInSubtitles?: SubtitleTrack[];
+}
+
+export interface SubtitleStyle {
+  /**
+   * ASS/SSA styling: 'auto' = full libass rendering where the device can (WASM + Worker), simplified styled text
+   * otherwise; 'file' = always use the file's own styles (libass, even on slow devices); 'user' = plain text in this style.
+   */
+  assStyles?: 'auto' | 'file' | 'user';
+  /** Lift above the bottom edge, % of the video height (5–20); 0 / unset = automatic (follows `position`). */
+  verticalOffset?: number;
+  /** Text outline / edge (applies to shadow/none backgrounds). Default 'outline'. */
+  edge?: 'outline' | 'shadow' | 'none';
+}
+
+export interface UserPreferences {
+  /** Pick quality automatically from measured bandwidth (default true). `maxBitrate` still caps it when set. */
+  autoQuality?: boolean;
+}
+
+/** Server-wide adaptive streaming settings. */
+export interface StreamingSettings {
+  /** Offer multi-rendition (lazily encoded) HLS ladders for transcodes. Default true. */
+  adaptive: boolean;
+  /** Stop a rendition's encoder after this many seconds without requests. Default 20. */
+  renditionIdleSeconds: number;
+  /** Cap (kbps) for clients outside the local network; null = none. */
+  remoteMaxBitrate: number | null;
+  /** Largest bandwidth-test download (bytes). Default 20 MB. */
+  bandwidthTestMaxBytes: number;
+}
+
+export interface ServerSettings {
+  streaming?: StreamingSettings;
+}
+
+/* ------------------------------------------------------------------ */
+/* Account profiles ("Who's watching?", Plex Home / Netflix style)     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A profile is a lightweight managed user that belongs to an account owner. It is a row in `users` with
+ * `parentUserId` set, so watch progress, history, My List, ratings, recommendations and preferences are all
+ * per profile. It has no password or email and is entered through the owner's account ("Who's watching?").
+ */
+export interface User {
+  /** Set on profiles: the account owner's user id. null/absent for normal accounts (account owners). */
+  parentUserId?: string | null;
+  /** Profiles: the owner's display name (for "Owner › Profile" labels). */
+  ownerName?: string | null;
+  /** Kids profile (rating limit, no requests by default, kids theme). */
+  isKids?: boolean;
+  /** Profile colour (hex), used behind built-in avatars and in the picker. */
+  profileColor?: string | null;
+  /** Built-in avatar id (see GET /avatars); null when an uploaded picture or initials are used. */
+  avatarId?: string | null;
+  /** Hide titles without a content rating from this user (in addition to the server-wide setting). */
+  hideUnrated?: boolean;
+  /** Account owners: number of extra profiles on the account (0 = no "Who's watching?" picker). */
+  profileCount?: number;
+}
+
+/** One entry of the "Who's watching?" picker (GET /auth/account/profiles). */
+export interface AccountProfile {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+  avatarId: string | null;
+  color: string | null;
+  isKids: boolean;
+  /** The account owner's own profile (always first). */
+  isOwner: boolean;
+  hasPin: boolean;
+  pinLength: number | null;
+  /** The profile this session is signed in as. */
+  current: boolean;
+}
+
+/** A profile as seen by its manager (the owner, or an admin): stored settings, not effective ones. */
+export interface Profile {
+  id: string;
+  /** Account owner (user id). */
+  ownerId: string;
+  ownerName: string;
+  displayName: string;
+  avatarUrl: string | null;
+  avatarId: string | null;
+  color: string | null;
+  isKids: boolean;
+  hasPin: boolean;
+  pinLength: number | null;
+  /** Preferred audio/subtitle language (ISO 639-1), stored in the profile's preferences. */
+  language: string | null;
+  /** Own rating limit; the effective limit is the stricter of this and the owner's. */
+  maxContentRating: string | null;
+  hideUnrated: boolean;
+  /** Own library subset (null = all of the owner's libraries). */
+  libraryIds: string[] | null;
+  allowLiveTv: boolean;
+  allowDownloads: boolean;
+  /** null = inherits the owner's request permissions. */
+  requestPermissions: RequestPermissions | null;
+  /** null = shares the owner's request quota (admin-only override). */
+  requestQuotas: RequestQuotas | null;
+  /** Kids profiles: use the kids-friendly theme. */
+  themeId: string | null;
+  createdAt: string;
+  lastSeenAt: string | null;
+}
+
+export interface CreateProfileRequest {
+  displayName: string;
+  avatarId?: string | null;
+  color?: string | null;
+  isKids?: boolean;
+  /** 4–8 digits; empty string or null = no PIN. */
+  pin?: string | null;
+  language?: string | null;
+  maxContentRating?: string | null;
+  hideUnrated?: boolean;
+  libraryIds?: string[] | null;
+  allowLiveTv?: boolean;
+  allowDownloads?: boolean;
+  /** null = inherit the owner's. Owners can only lower levels; admins can set anything. */
+  requestPermissions?: Partial<RequestPermissions> | null;
+  /** Admin only. null = share the owner's quota. */
+  requestQuotas?: RequestQuotas | null;
+  /** Use the kids theme (sets the profile's theme preference). */
+  kidsTheme?: boolean;
+}
+export type UpdateProfileRequest = Partial<CreateProfileRequest>;
+
+/** POST /auth/profiles/:id/switch */
+export interface SwitchProfileRequest {
+  /** The target profile's PIN (the owner's PIN when switching back to the owner). */
+  pin?: string;
+}
+
+/** Built-in avatar (GET /avatars). `url` serves a self-contained SVG. */
+export interface BuiltinAvatar {
+  id: string;
+  name: string;
+  url: string;
+  color: string;
+}
+
+/** Server-wide profile settings (Admin → Users → Profiles). */
+export interface ProfileSettings {
+  /** Allow account owners to create profiles. Default true. */
+  enabled: boolean;
+  /** Profiles per account, including the owner's own. Default 6. */
+  maxPerAccount: number;
+  /** Kids profiles may watch Live TV (there is no per-channel rating filter). Default false. */
+  kidsLiveTv: boolean;
+  /** Default rating limit for new kids profiles. Default "PG". */
+  kidsDefaultRating: string;
+  /** New kids profiles hide unrated titles. Default true. */
+  kidsHideUnrated: boolean;
+}
+export interface ServerSettings {
+  profiles?: ProfileSettings;
+}
+export interface UpdateMeRequest {
+  /** Built-in avatar id (replaces an uploaded picture); null clears it. */
+  avatarId?: string | null;
+  /** Profile colour (#rrggbb); null clears it. */
+  profileColor?: string | null;
 }

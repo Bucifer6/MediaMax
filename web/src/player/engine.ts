@@ -6,11 +6,44 @@ export interface AttachOptions {
   /** Called on unrecoverable errors. `kind` lets callers decide on fallbacks. */
   onFatal: (kind: 'hls' | 'mpegts' | 'native' | 'unsupported', message: string) => void;
   live?: boolean;
+  /**
+   * Our ABR (abr.ts) drives quality: hls.js's own level switching is disabled after the manifest loads, and the stream
+   * starts on the first variant of the master playlist (the server lists the best fit for the measured bandwidth first).
+   */
+  manualLevels?: boolean;
+  /** Called for each media fragment: bytes and transfer time (first → last byte, ms), for bandwidth estimation. */
+  onFragment?: (bytes: number, ms: number) => void;
+  /** The variant being played changed (index into `levels()`). */
+  onLevelSwitched?: (level: number) => void;
+}
+
+export interface EngineLevel {
+  bitrate: number;
+  width: number;
+  height: number;
+}
+
+export interface StreamStats {
+  videoCodec?: string | null;
+  audioCodec?: string | null;
+  /** Bitrate of the variant being played (bits/s). */
+  bitrate?: number | null;
+  /** Estimated network throughput (bits/s). */
+  bandwidth?: number | null;
 }
 
 export interface Attached {
   destroy: () => void;
   engine: 'hls.js' | 'native-hls' | 'mpegts' | 'native';
+  /** Engine-level details for the stats overlay (hls.js / mpegts.js only). */
+  stats?: () => StreamStats;
+  /** Variants of a multi-variant HLS stream (hls.js only), lowest bitrate first. */
+  levels?: () => EngineLevel[];
+  /** Switch variant at the next fragment boundary (hls.js `nextLevel`), or at once, dropping the buffer (`immediate`). */
+  setLevel?: (level: number, immediate?: boolean) => void;
+  currentLevel?: () => number;
+  /** The media fragment being downloaded right now: bytes so far and ms since its first byte (null when idle). */
+  inflight?: () => { bytes: number; ms: number } | null;
 }
 
 function absolute(url: string) {
@@ -51,9 +84,55 @@ export async function attachStream(el: HTMLMediaElement, info: PlaybackInfo, opt
           opts.onFatal('hls', data.details || 'Playback error');
         }
       });
+      if (opts.manualLevels) {
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (hls.levels.length > 1) hls.loadLevel = hls.firstLevel;
+        });
+      }
+      if (opts.onFragment) {
+        hls.on(Hls.Events.FRAG_LOADED, (_e, data) => {
+          const st = data.frag.stats;
+          if (data.frag.sn === 'initSegment' || !st.loaded) return;
+          const first = st.loading.first || st.loading.start;
+          opts.onFragment!(st.loaded, Math.max(1, st.loading.end - first));
+        });
+      }
+      if (opts.onLevelSwitched) hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => opts.onLevelSwitched!(data.level));
+      // Fragment in flight, for ABR decisions before a slow download completes.
+      let loading: { stats: { loaded: number; loading: { first: number } } } | null = null;
+      hls.on(Hls.Events.FRAG_LOADING, (_e, data) => {
+        if (data.frag.sn !== 'initSegment') loading = data.frag;
+      });
+      hls.on(Hls.Events.FRAG_LOADED, () => {
+        loading = null;
+      });
       hls.loadSource(url);
       hls.attachMedia(el);
-      return { engine: 'hls.js', destroy: () => hls.destroy() };
+      return {
+        engine: 'hls.js',
+        destroy: () => hls.destroy(),
+        levels: () => hls.levels.map((l) => ({ bitrate: l.bitrate, width: l.width, height: l.height })),
+        setLevel: (level: number, immediate?: boolean) => {
+          if (level < 0 || level >= hls.levels.length) return;
+          if (immediate) hls.currentLevel = level;
+          else hls.nextLevel = level;
+        },
+        currentLevel: () => hls.currentLevel,
+        inflight: () => {
+          const st = loading?.stats;
+          if (!st || !st.loading.first) return null;
+          return { bytes: st.loaded, ms: performance.now() - st.loading.first };
+        },
+        stats: () => {
+          const lvl = hls.levels[hls.currentLevel] ?? hls.levels[0];
+          return {
+            videoCodec: lvl?.videoCodec ?? null,
+            audioCodec: lvl?.audioCodec ?? null,
+            bitrate: lvl?.bitrate ?? null,
+            bandwidth: Number.isFinite(hls.bandwidthEstimate) ? hls.bandwidthEstimate : null,
+          };
+        },
+      };
     }
     if (supportsNativeHls()) {
       el.src = url;
@@ -75,6 +154,11 @@ export async function attachStream(el: HTMLMediaElement, info: PlaybackInfo, opt
       player.load();
       return {
         engine: 'mpegts',
+        stats: () => {
+          const mi = (player.mediaInfo ?? {}) as { videoCodec?: string; audioCodec?: string };
+          const si = (player.statisticsInfo ?? {}) as { speed?: number };
+          return { videoCodec: mi.videoCodec ?? null, audioCodec: mi.audioCodec ?? null, bandwidth: si.speed ? si.speed * 8 * 1024 : null };
+        },
         destroy: () => {
           try {
             player.pause();

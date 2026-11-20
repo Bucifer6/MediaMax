@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { Branding, BrandingAssetKind, FeatureFlags, HomeRowConfig, HomeRowType, Item, Theme, ThemeColors } from '@mediamax/shared';
+import type { Branding, BrandingAssetKind, FeatureFlags, HomeRowConfig, HomeRowType, Item, StarterLook, Theme, ThemeColors } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
@@ -11,7 +11,7 @@ import { COLOR_KEYS, loadFont, themeStyle } from '../theme/applyTheme';
 import { DEFAULT_THEME } from '../theme/defaults';
 import { AdminHeader } from './AdminRoutes';
 
-type Tab = 'theme' | 'assets' | 'text' | 'rows' | 'features' | 'css';
+type Tab = 'looks' | 'theme' | 'assets' | 'text' | 'rows' | 'features' | 'css';
 
 const COLOR_LABELS: Record<keyof ThemeColors, string> = {
   primary: 'Primary', primaryText: 'Text on primary', background: 'Background', surface: 'Surface', surfaceAlt: 'Surface (alt)',
@@ -47,6 +47,12 @@ const ROW_TYPES: { value: HomeRowType; label: string; hint: string }[] = [
   { value: 'live-now', label: 'Live now', hint: 'Channels with current programme' },
   { value: 'favorite-channels', label: 'Favourite channels', hint: 'Viewer favourites' },
   { value: 'recordings', label: 'Recordings', hint: 'Latest DVR recordings' },
+  { value: 'recommended', label: 'Recommended for you', hint: "Picked from the viewer's history, favourites, ratings and what similar viewers watched" },
+  { value: 'because', label: 'Because you watched…', hint: 'Titles like one the viewer recently finished. Use {title} in a custom title' },
+  { value: 'top10', label: 'Top 10 this week', hint: 'Most-played titles on this server in the last 7 days, with big rank numbers. {server} = server name' },
+  { value: 'trending', label: 'Popular right now', hint: 'Recent plays across the server, newest weighted most' },
+  { value: 'watchlist', label: 'My List', hint: "The viewer's watchlist" },
+  { value: 'upcoming', label: 'Coming soon', hint: 'Next airing episodes of shows in the libraries (needs a TMDB key)' },
 ];
 
 const FEATURE_LABELS: { key: keyof FeatureFlags; label: string; hint: string; icon: IconName }[] = [
@@ -546,6 +552,7 @@ export function BrandingStudio() {
             onChange={setTab}
             className="studio-tabs"
             tabs={[
+              { value: 'looks', label: <><Icon name="sparkles" size={16} /> Starter looks</> },
               { value: 'theme', label: <><Icon name="palette" size={16} /> Theme</> },
               { value: 'assets', label: <><Icon name="image" size={16} /> Assets</> },
               { value: 'text', label: <><Icon name="type" size={16} /> Text</> },
@@ -554,6 +561,27 @@ export function BrandingStudio() {
               { value: 'css', label: <><Icon name="code" size={16} /> Custom CSS</> },
             ]}
           />
+
+          {tab === 'looks' && (
+            <StarterLooks
+              themes={draft.themes}
+              current={draft.defaultThemeId}
+              onApply={async (look) => {
+                if (!(await confirm({ title: `Apply “${look.name}”?`, message: 'This sets the default theme, replaces the home screen rows and turns on the features it needs. Logos, text and your own themes are kept. You can fine-tune everything afterwards.', confirmLabel: 'Apply look' }))) return;
+                try {
+                  const b = await api.branding.applyLook(look.id);
+                  setDraft(b);
+                  app.setBranding(b);
+                  setThemeId(look.themeId);
+                  setDirty(false);
+                  setDirtyThemes(new Set());
+                  toast.success(`“${look.name}” applied to every app`);
+                } catch (e) {
+                  toast.error(e);
+                }
+              }}
+            />
+          )}
 
           {tab === 'theme' && (
             <div className="studio-panel">
@@ -664,6 +692,49 @@ export function BrandingStudio() {
             {previewKind === 'home' ? <BrandPreview draft={draft} theme={theme} sample={sample.data ?? []} /> : <LoginPreview draft={draft} theme={theme} />}
           </div>
         </aside>
+      </div>
+    </div>
+  );
+}
+
+/** Starter looks: theme + home rows + features in one click, with a live mini preview. */
+function StarterLooks({ themes, current, onApply }: { themes: Theme[]; current: string; onApply: (l: StarterLook) => void }) {
+  const looks = useAsync(() => api.branding.looks(), []);
+  if (looks.loading && !looks.data) return <div className="studio-panel"><Spinner /></div>;
+  return (
+    <div className="studio-panel">
+      <p className="muted">Pick a starting point for the whole server — every app (web, phones, TVs) updates live. You can change anything afterwards.</p>
+      <div className="look-grid">
+        {(looks.data ?? []).map((l) => {
+          const t = themes.find((x) => x.id === l.themeId);
+          if (!t) return null;
+          const c = t.colors;
+          const posterR = t.posterShape === 'pill' ? 999 : t.posterShape === 'square' ? 2 : Math.min(t.radius, 12);
+          const rows = l.homeRows.filter((r) => r.enabled && r.type !== 'hero');
+          return (
+            <div key={l.id} className={`look-card ${current === l.themeId ? 'current' : ''}`}>
+              <div className="look-preview" style={{ background: c.background, color: c.text, fontFamily: t.fontFamily }} aria-hidden="true">
+                {l.homeRows.some((r) => r.type === 'hero' && r.enabled) && t.heroStyle !== 'none' && (
+                  <div className="look-hero" style={{ background: `linear-gradient(120deg, ${c.surfaceAlt}, ${c.primary}55)`, borderRadius: Math.min(t.radius, 14) }}>
+                    <b style={{ background: c.primary, color: c.primaryText, borderRadius: Math.min(t.radius, 10) }}>Play</b>
+                  </div>
+                )}
+                {rows.slice(0, 2).map((r) => (
+                  <div key={r.id} className="look-row">
+                    <small style={{ color: c.textMuted }}>{r.title || 'Recently added'}</small>
+                    <div>{Array.from({ length: t.cardSize === 'large' ? 4 : t.cardSize === 'small' ? 7 : 5 }, (_, i) => <i key={i} style={{ background: i % 2 ? c.surfaceAlt : c.surface, borderRadius: posterR, borderColor: c.border }} />)}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="look-info">
+                <strong>{l.name}</strong>
+                <span className="muted small">{l.description}</span>
+                <span className="muted small">Theme: {t.name} · {rows.length} home rows</span>
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={() => onApply(l)}>Apply</button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

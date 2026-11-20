@@ -1,0 +1,25 @@
+/* Server settings → Transcoding → Hardware detection */
+.hwd { display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--c-border); border-radius: 12px; background: var(--c-surface); }
+.hwd-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.hwd-sub { font-size: 0.82rem; margin-top: 2px; }
+.hwd-rec { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 0.9rem; }
+.hwd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 10px; }
+.hwd-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--c-border); border-radius: 10px; background: var(--c-surface-alt); min-width: 0; }
+.hwd-card-rec { border-color: var(--c-primary); }
+.hwd-card-off { opacity: 0.8; }
+.hwd-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.hwd-title { font-weight: 600; }
+.hwd-dev { font-size: 0.8rem; overflow-wrap: anywhere; }
+.hwd-badges { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.hwd-tests { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.86rem; }
+.hwd-test { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.hwd-test > span:last-child:not(:nth-child(2)) { margin-left: auto; font-size: 0.8rem; }
+.hwd-err { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+.hwd-success { color: var(--c-success); flex: none; }
+.hwd-danger { color: var(--c-danger); flex: none; }
+.hwd-muted { color: var(--c-text-muted); flex: none; }
+.hwd-error { margin: 0; font-size: 0.82rem; color: var(--c-danger); overflow-wrap: anywhere; }
+.hwd-note { margin: 0; font-size: 0.8rem; }
+.hwd-use { align-self: flex-start; }
+.hwd-more { align-self: flex-start; }
+.hwd-details p { margin: 4px 0; font-size: 0.78rem; overflow-wrap: anywhere; }
