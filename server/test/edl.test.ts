@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseEdl } from '../src/services/edl.js';
+import { parseEdl } from '../src/util/edl.js';
 
 test('parseEdl keeps cut/commercial segments and ignores mute/scene', () => {
   const m = parseEdl('12.5\t95.04\t3\n100 105 1\n# comment\n300.0 420.5 0\n500 500.2 3\n700 760\n');
