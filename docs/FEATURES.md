@@ -37,6 +37,9 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Auto-play next episode | ✅ | ✅ | ✅ | ✅ |
 | Downloads for offline | Pass | ✅ | Premiere | ✅ (mobile apps) |
 | Watch together | ✅ | ✅ | ❌ | ✅ SyncPlay rooms with join codes |
+| Seek-bar preview thumbnails (trickplay) | ✅ | ✅ | ✅ | ✅ |
+| Online subtitle search & auto-download (OpenSubtitles, hash matching) | ✅ | Plugin | ✅ | ✅ |
+| Converted downloads (device-friendly MP4 at 1080p/720p/480p) | Pass | ✅ | Premiere | ✅ |
 
 ## Live TV & IPTV
 | Feature | Plex | Jellyfin | Emby | MediaMax |
@@ -84,8 +87,13 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Webhooks (playback, library, login, DVR events) | Pass | Plugin | ✅ | ✅ |
 | Real-time WebSocket events | ✅ | ✅ | ✅ | ✅ |
 | Docker image with GPU passthrough | ✅ | ✅ | ✅ | ✅ |
+| DLNA / UPnP media server (smart TVs, consoles, VLC) | ✅ | ✅ | ✅ | ✅ (LAN-only, per-user access) |
+| Trakt scrobbling & watched sync | Plugin | Plugin | Plugin | ✅ built in |
+| Viewing statistics & yearly "Wrapped" | Pass | Plugin | Plugin | ✅ |
+| User avatars | ✅ | ✅ | ✅ | ✅ |
+| Hide unrated content from restricted users | ✅ | ✅ | ✅ | ✅ |
+| CI (typecheck, tests, web build, Docker smoke test) | — | ✅ | — | ✅ |
 
 ## Roadmap ideas
-DLNA/UPnP server · Chromecast & AirPlay sender in apps · Trakt/Last.fm scrobbling · OpenSubtitles download ·
-trickplay scrub thumbnails · lyrics · audiobooks/podcasts · plugin API · LDAP/OIDC login ·
-remote access relay · per-user listening stats & "Wrapped".
+Chromecast sender in apps · Last.fm scrobbling · lyrics · audiobooks/podcasts · plugin API · LDAP/OIDC login ·
+remote access relay.

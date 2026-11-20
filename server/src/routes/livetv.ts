@@ -8,6 +8,7 @@ import * as dvr from '../services/dvr.js';
 import { touchSession, getSession } from '../services/playback.js';
 import { forbidden, notFound } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
+import { getSettings } from '../services/settings.js';
 
 export default async function liveRoutes(app: FastifyInstance) {
   /* ------------------------------ sources --------------------------- */
@@ -103,6 +104,11 @@ export default async function liveRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>('/dvr/recordings/:id', async (req) => {
     dvr.cancelRecording(requireUser(req).user, req.params.id);
     return { ok: true };
+  });
+  app.get('/dvr/defaults', async (req) => {
+    requireUser(req);
+    const d = getSettings().dvr;
+    return { paddingBeforeMin: d.paddingBeforeMin, paddingAfterMin: d.paddingAfterMin };
   });
   app.get('/dvr/rules', async (req) => dvr.listRules(requireUser(req).user));
   app.post<{ Body: CreateRecordingRuleRequest }>('/dvr/rules', async (req) => dvr.createRule(requireUser(req).user, req.body));

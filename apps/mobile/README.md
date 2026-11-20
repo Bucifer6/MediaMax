@@ -110,12 +110,14 @@ Caveats on TV: there are no downloads, haptics or PiP. expo-secure-store is repl
   * **EPG grid:** virtualised rows. Channel cells and the header stay pinned by native-driven transforms. Every programme is focusable on TV, and a preview panel shows the focused programme.
   * Live player with zapping and a channel list.
   * Catch-up for archive channels ("Start over" or "Watch (catch-up)").
-* **DVR:** record a programme, record a series (rule), cancel a recording, a recordings list grouped by status, and series rules. The list updates live from `recording.updated`.
+* **DVR:** record a programme, record a series (rule, using the server's padding from `GET /dvr/defaults`), cancel a recording, a recordings list grouped by status, and series rules. The list updates live from `recording.updated`.
 * **Downloads** (phones; shown only when the server enables them and the user has `allowDownloads`):
   * Single items, whole seasons or whole albums via `/stream/download/:itemId`, using the expo-file-system `DownloadTask`.
+  * Choose the quality per download (Original, 1080p, 720p or 480p; default in Settings › Download quality). Non-original qualities are converted by the server to H.264/AAC MP4 (`.m4a` for music). They have no `Content-Length`, so the list shows bytes downloaded with an indeterminate bar.
+  * On iOS, originals in containers AVPlayer can't open (anything but mp4/m4v/mov/m4a/mp3/aac, e.g. MKV, AVI, TS, FLAC) are downloaded as 1080p automatically so they play offline.
   * Artwork is cached too.
   * Offline playback; resume positions sync back to the server when you're online again.
-* **Settings:** edit your account name, theme picker (when `allowUserThemes`; applies instantly), playback preferences, Link a TV, signed-in devices (with revoke), switch profile, switch server, sign out and about.
+* **Settings:** edit your account name and profile picture (phones: pick a photo with expo-image-picker, uploaded to `POST /auth/me/avatar`), theme picker (when `allowUserThemes`; applies instantly), playback preferences, Link a TV, signed-in devices (with revoke), switch profile, switch server, sign out and about.
 * **Feature flags:** Live TV, DVR, music, photos, IPTV VOD, downloads, the profile picker and link codes are hidden when the server or the user's permissions turn them off.
 
 ## File layout
@@ -180,6 +182,12 @@ npm run brand -- https://media.acme.com acme --bundle-id com.acme.media [--lock]
 #    tv-banner.png (320x180), tv-icon.png, appletv-icon-1280x768.png, appletv-icon-400x240.png,
 #    appletv-icon-800x480.png, appletv-topshelf-1920x720.png, appletv-topshelf-3840x1440.png,
 #    appletv-topshelfwide-2320x720.png, appletv-topshelfwide-4640x1440.png
+#    `npm run brand` does this for you when the server has a TV banner (Branding.tvBannerUrl)
+#    and/or a top shelf image (Branding.topShelfUrl): it downloads them, resizes them with
+#    @expo/image-utils, and derives the 2x / wide top-shelf sizes plus the three Apple TV icons
+#    from icon.png (config-tv only applies Apple TV art when all seven exist). Files you add
+#    by hand are never overwritten (brand.json > generatedAssets lists what the script owns).
+#    If resizing fails (e.g. the server serves WebP/SVG), the script lists the files to add by hand.
 
 # 3. Build with the brand selected
 MEDIAMAX_BRAND=acme eas build --profile ios
@@ -200,5 +208,6 @@ The icon must be a 1024×1024 PNG (iOS rejects transparency); prebuild resizes i
 * **Transcode offset:** when the server starts a transcode at `startMs`, the HLS timeline may start at 0 or at `startMs`. The player compares the loaded stream duration with `durationMs` to tell which, and maps positions accordingly. Seeks that fall outside a transcode's generated range re-request `POST /playback/:id` with `startMs`, as the API doc suggests.
 * **Subtitles:** server sidecar subtitles (`SubtitleTrack.url`, WebVTT) are rendered by the app, so they work on every platform. The app always requests `subtitleStreamIndex: null`, so nothing is burned in. In-manifest HLS subtitle tracks are offered too.
 * **Fonts:** native apps can only load `Theme.fontUrl` when it points at a real `.ttf` or `.otf` file. Google-Fonts CSS URLs fall back to the system font.
-* **PIN length:** the PIN pad auto-submits at 4 digits.
-* **Downloads** fetch the original file. Containers that iOS can't play (for example MKV) won't play offline on iOS.
+* **PIN length:** the PIN pad auto-submits at the profile's `pinLength` (4 if the server doesn't say).
+* **Downloads** fetch the original file unless a converted quality is chosen; on iOS, containers it can't play (for example MKV) are fetched as 1080p. The app does not read `X-MediaMax-Duration-Ms` (expo-file-system's download task doesn't expose response headers); it uses the item's `durationMs`.
+* **Artist play-all** loads every track with one `GET /items?ancestorId=<artist>&type=track&sort=index&limit=500` call.

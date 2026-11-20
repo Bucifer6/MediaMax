@@ -2,13 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { PlaybackRequest, ProgressReport } from '@mediamax/shared';
+import type { DownloadQuality, PlaybackRequest, ProgressReport } from '@mediamax/shared';
 import { db } from '../db.js';
 import { requireAdmin, requireUser, remoteAddr } from '../http.js';
 import { getSession, listSessions, sessionProgress, startPlayback, stopSession, subtitleVtt, touchSession } from '../services/playback.js';
 import { assertCanSee } from '../services/items.js';
 import { liveJobBySession } from '../services/livetv/livetv.js';
-import { forbidden, notFound } from '../util/errors.js';
+import { badRequest, forbidden, notFound } from '../util/errors.js';
+import { spawn } from 'node:child_process';
+import { config } from '../config.js';
 import { logActivity } from '../services/activity.js';
 
 const MIME: Record<string, string> = {
@@ -17,7 +19,7 @@ const MIME: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic',
 };
 
-function sendFileRange(req: FastifyRequest, reply: FastifyReply, file: string, mime: string, download?: string) {
+export function sendFileRange(req: FastifyRequest, reply: FastifyReply, file: string, mime: string, download?: string) {
   const stat = fs.statSync(file);
   const size = stat.size;
   reply.header('Accept-Ranges', 'bytes').header('Content-Type', mime).header('Cache-Control', 'private, max-age=3600');
@@ -57,6 +59,36 @@ async function proxyRemote(req: FastifyRequest, reply: FastifyReply, url: string
   }
   reply.header('Content-Type', res.headers.get('content-type')?.startsWith('video') ? res.headers.get('content-type')! : mime);
   return reply.send(res.body ? Readable.fromWeb(res.body as any) : '');
+}
+
+const QUALITY: Record<string, { height: number; bitrate: number }> = {
+  '1080p': { height: 1080, bitrate: 8000 },
+  '720p': { height: 720, bitrate: 4000 },
+  '480p': { height: 480, bitrate: 1500 },
+};
+
+/**
+ * Stream a device-friendly H.264/AAC MP4 (fragmented, so it can be written while encoding).
+ * Used by mobile apps for offline downloads of files their platform can't play (e.g. MKV on iOS).
+ */
+function convertedDownload(req: FastifyRequest, reply: FastifyReply, m: Record<string, any>, baseName: string, quality: string) {
+  const q = QUALITY[quality];
+  const input = m.path ?? m.remote_url;
+  const isAudio = !m.video_codec;
+  const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-i', input, '-map', '0:v:0?', '-map', '0:a:0?', '-sn', '-map_metadata', '0'];
+  if (!isAudio) {
+    const copyVideo = m.video_codec === 'h264' && (m.height ?? 0) <= q.height && (m.bitrate ?? Infinity) <= q.bitrate * 1.5;
+    if (copyVideo) args.push('-c:v', 'copy');
+    else args.push('-vf', `scale=-2:'min(${q.height},ih)',format=yuv420p`, '-c:v', 'libx264', '-preset', 'veryfast', '-b:v', `${q.bitrate}k`, '-maxrate', `${q.bitrate}k`, '-bufsize', `${q.bitrate * 2}k`, '-profile:v', 'high');
+  }
+  args.push('-c:a', 'aac', '-ac', '2', '-b:a', '160k', '-movflags', 'frag_keyframe+empty_moov+default_base_moof', '-f', 'mp4', 'pipe:1');
+  const p = spawn(config.ffmpeg, args, { stdio: ['ignore', 'pipe', 'ignore'] });
+  req.raw.on('close', () => p.kill('SIGKILL'));
+  reply.header('Content-Type', isAudio ? 'audio/mp4' : 'video/mp4')
+    .header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`${baseName} - ${quality}.${isAudio ? 'm4a' : 'mp4'}`)}`)
+    .header('Cache-Control', 'no-store');
+  if (m.duration_ms) reply.header('X-MediaMax-Duration-Ms', String(m.duration_ms));
+  return reply.send(p.stdout);
 }
 
 export default async function playbackRoutes(app: FastifyInstance) {
@@ -155,7 +187,7 @@ export default async function playbackRoutes(app: FastifyInstance) {
     return fs.createReadStream(file);
   });
 
-  app.get<{ Params: { itemId: string }; Querystring: { mediaId?: string } }>('/stream/download/:itemId', async (req, reply) => {
+  app.get<{ Params: { itemId: string }; Querystring: { mediaId?: string; quality?: DownloadQuality } }>('/stream/download/:itemId', async (req, reply) => {
     const { user } = requireUser(req);
     if (!user.allowDownloads && !user.isAdmin) throw forbidden('Downloads are not enabled for your account');
     const item = assertCanSee(user, req.params.itemId);
@@ -163,6 +195,12 @@ export default async function playbackRoutes(app: FastifyInstance) {
     if (!m) throw notFound('No media to download');
     const ext = (m.container ?? path.extname(m.path ?? '').slice(1) ?? 'mp4').toLowerCase();
     const mime = MIME[ext] ?? 'application/octet-stream';
+    const quality = req.query.quality && req.query.quality !== 'original' ? req.query.quality : null;
+    if (quality) {
+      if (!['1080p', '720p', '480p'].includes(quality)) throw badRequest('quality must be original, 1080p, 720p or 480p');
+      if (!user.allowTranscode && !user.isAdmin) throw forbidden('Converted downloads need transcoding permission');
+      return convertedDownload(req, reply, m, `${item.title}${item.year ? ` (${item.year})` : ''}`.replace(/[\\/:*?"<>|]/g, ''), quality);
+    }
     const name = `${item.title}${item.year ? ` (${item.year})` : ''}.${ext}`.replace(/[\\/:*?"<>|]/g, '');
     if (m.path) return sendFileRange(req, reply, m.path, mime, name);
     reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);

@@ -4,7 +4,7 @@ import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync } from '../hooks';
-import { Avatar, Badge, Dropdown, EmptyState, ErrorState, Field, Modal, Skeleton, Spinner, Switch, useConfirm } from '../components/ui';
+import { Avatar, AvatarEditor, Badge, Dropdown, EmptyState, ErrorState, Field, Modal, Skeleton, Spinner, Switch, useConfirm } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { CONTENT_RATINGS, isIptvLibrary, libraryIcon } from '../utils/items';
 import { relativeTime } from '../utils/format';
@@ -12,9 +12,10 @@ import { AdminHeader } from './AdminRoutes';
 
 type Form = CreateUserRequest & { disabled?: boolean };
 
-function UserForm({ initial, libraries, onSaved, onCancel }: { initial?: User; libraries: Library[]; onSaved: (u: User) => void; onCancel: () => void }) {
+function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged }: { initial?: User; libraries: Library[]; onSaved: (u: User) => void; onCancel: () => void; onAvatarChanged?: (u: User) => void }) {
   const toast = useToast();
-  const { user: me } = useApp();
+  const { user: me, setUser } = useApp();
+  const [avatarUrl, setAvatarUrl] = useState(initial?.avatarUrl ?? null);
   const [f, setF] = useState<Form>({
     username: initial?.username ?? '',
     displayName: initial?.displayName ?? '',
@@ -37,7 +38,16 @@ function UserForm({ initial, libraries, onSaved, onCancel }: { initial?: User; l
     set('libraryIds', next.length === libraries.length ? null : next);
   };
 
+  const avatarDone = (u: User, msg: string) => {
+    setAvatarUrl(u.avatarUrl);
+    if (u.id === me?.id) setUser(u);
+    onAvatarChanged?.(u);
+    toast.success(msg);
+  };
+  const pinInvalid = !!f.pin && f.pin.length < 4;
+
   const submit = async () => {
+    if (pinInvalid) return toast.show('PIN must be 4–8 digits', 'error');
     setBusy(true);
     try {
       const body: Form = { ...f, displayName: f.displayName || f.username };
@@ -57,6 +67,30 @@ function UserForm({ initial, libraries, onSaved, onCancel }: { initial?: User; l
   return (
     <>
       <div className="form-grid">
+        {initial && (
+          <div className="field">
+            <span className="field-label">Profile picture</span>
+            <AvatarEditor
+              name={f.displayName || f.username}
+              url={avatarUrl}
+              size={64}
+              onUpload={async (file) => {
+                try {
+                  avatarDone(await api.users.uploadAvatar(initial.id, file), 'Profile picture updated');
+                } catch (e) {
+                  toast.error(e);
+                }
+              }}
+              onRemove={async () => {
+                try {
+                  avatarDone(await api.users.deleteAvatar(initial.id), 'Profile picture removed');
+                } catch (e) {
+                  toast.error(e);
+                }
+              }}
+            />
+          </div>
+        )}
         <div className="form-row">
           <Field label="Username"><input className="input" value={f.username} onChange={(e) => set('username', e.target.value)} autoComplete="off" /></Field>
           <Field label="Display name"><input className="input" value={f.displayName} onChange={(e) => set('displayName', e.target.value)} /></Field>
@@ -65,8 +99,8 @@ function UserForm({ initial, libraries, onSaved, onCancel }: { initial?: User; l
           <Field label={initial ? 'New password' : 'Password'} hint={initial ? 'Leave blank to keep' : 'Optional for PIN-only profiles'}>
             <input className="input" type="password" value={f.password} onChange={(e) => set('password', e.target.value)} autoComplete="new-password" />
           </Field>
-          <Field label="PIN" hint={initial?.hasPin ? 'PIN set — enter a new one to replace' : '4 digits, optional'}>
-            <input className="input" inputMode="numeric" value={f.pin} onChange={(e) => set('pin', e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="••••" />
+          <Field label="PIN" hint={pinInvalid ? 'PIN must be 4–8 digits' : initial?.hasPin ? `PIN set (${initial.pinLength ?? 4} digits) — enter a new one to replace` : '4–8 digits, optional'}>
+            <input className="input" inputMode="numeric" value={f.pin} onChange={(e) => set('pin', e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="••••" maxLength={8} />
           </Field>
         </div>
         <Field label="Maximum content rating">
@@ -100,7 +134,7 @@ function UserForm({ initial, libraries, onSaved, onCancel }: { initial?: User; l
       </div>
       <div className="modal-foot inline">
         <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
-        <button className="btn btn-primary" onClick={submit} disabled={busy || !f.username.trim()}>{busy ? <Spinner size={18} /> : initial ? 'Save' : 'Create user'}</button>
+        <button className="btn btn-primary" onClick={submit} disabled={busy || !f.username.trim() || pinInvalid}>{busy ? <Spinner size={18} /> : initial ? 'Save' : 'Create user'}</button>
       </div>
     </>
   );
@@ -177,6 +211,7 @@ export function UsersAdmin() {
             initial={edit === 'new' ? undefined : edit}
             libraries={libs.data ?? []}
             onCancel={() => setEdit(null)}
+            onAvatarChanged={(u) => users.setData((d) => (d ?? []).map((x) => (x.id === u.id ? { ...x, avatarUrl: u.avatarUrl } : x)))}
             onSaved={(u) => {
               users.setData((d) => {
                 const arr = d ?? [];

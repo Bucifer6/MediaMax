@@ -113,7 +113,7 @@ export function TrackListDetail({ item, onUserData }: { item: Item; onUserData: 
             <Button label="Play" icon="play" onPress={() => playAt(0)} disabled={!tracks.length} hasTVPreferredFocus />
             {audio.length > 1 ? <Button label="Shuffle" icon="shuffle" variant="secondary" onPress={() => playAt(Math.floor(Math.random() * tracks.length), true)} /> : null}
             <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" onPress={toggleFavorite} accessibilityLabel="Favourite" />
-            {caps.downloads && downloads.supported && audio.length ? <Button icon="arrow-down-circle-outline" variant="secondary" onPress={() => downloads.download(audio)} accessibilityLabel="Download all" /> : null}
+            {caps.downloads && downloads.supported && audio.length ? <Button icon="arrow-down-circle-outline" variant="secondary" onPress={() => downloads.download(audio, 'original')} accessibilityLabel="Download all" /> : null}
           </View>
         </Header>
       }
@@ -138,8 +138,11 @@ export function ArtistDetail({ item, onUserData }: { item: Item; onUserData: (ud
   const list = albums.data?.items ?? [];
 
   const playAll = async (shuffle: boolean) => {
-    const sets = await Promise.all(list.slice(0, 15).map((al) => api.children(al.id, { sort: 'index', order: 'asc', limit: 200 }).then((r) => r.items).catch(() => [] as Item[])));
-    const tracks = sets.flat();
+    // Every track of the artist in one call (album → disc → track order).
+    const tracks = await api
+      .items({ ancestorId: item.id, type: 'track', sort: 'index', order: 'asc', limit: 500 })
+      .then((r) => r.items)
+      .catch(() => [] as Item[]);
     if (tracks.length) music.playQueue(tracks, shuffle ? Math.floor(Math.random() * tracks.length) : 0, { shuffle });
   };
 

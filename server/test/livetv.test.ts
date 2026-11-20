@@ -58,3 +58,20 @@ test('fingerprint shared region', () => {
   assert.ok(Math.abs(r.bStart - 40) <= 2);
   assert.equal(findSharedRegion(rnd(7, 500), rnd(8, 500)), null);
 });
+
+test('lrc lyrics parsing', async () => {
+  const { parseLrc } = await import('../src/services/lyrics.ts');
+  const l = parseLrc('[ar:Someone]\n[offset:+100]\n[00:01.50]Hello\n[00:03.00][00:10.00]Chorus\n');
+  assert.deepEqual(l.map((x) => x.startMs), [1400, 2900, 9900]);
+  assert.equal(l[1].text, 'Chorus');
+  assert.deepEqual(parseLrc('just\nplain text').map((x) => x.startMs), [null, null]);
+});
+
+test('dlna soap helpers', async () => {
+  process.env.MEDIAMAX_DATA ??= (await import('node:os')).tmpdir() + '/mediamax-test-' + process.pid;
+  const { soapArg, isLocalAddress } = await import('../src/services/dlna.ts');
+  assert.equal(soapArg('<s:Body><u:Browse><ObjectID>lib:abc</ObjectID><BrowseFlag>BrowseMetadata</BrowseFlag></u:Browse></s:Body>', 'ObjectID'), 'lib:abc');
+  assert.ok(isLocalAddress('192.168.1.20'));
+  assert.ok(isLocalAddress('::ffff:10.0.0.5'));
+  assert.ok(!isLocalAddress('8.8.8.8'));
+});

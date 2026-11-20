@@ -215,6 +215,16 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX play_history_user ON play_history(user_id, started_at);
   `,
+  /* 2: PIN length for PIN pads */ `
+  ALTER TABLE users ADD COLUMN pin_length INTEGER;
+  `,
+  /* 3: Trakt accounts */ `
+  CREATE TABLE trakt_accounts (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    access_token TEXT NOT NULL, refresh_token TEXT NOT NULL, expires_at TEXT NOT NULL,
+    username TEXT, scrobble INTEGER NOT NULL DEFAULT 1
+  );
+  `,
 ];
 
 function migrate(db: Database) {

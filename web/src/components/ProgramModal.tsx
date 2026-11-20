@@ -56,7 +56,8 @@ export function ProgramModal({ program, channel, onClose, onChanged }: { program
   const series = async () => {
     setBusy(true);
     try {
-      await api.dvr.createRule({ titleMatch: program.title, channelId: program.channelId, newOnly: true, keepLatest: null, paddingBeforeMin: 1, paddingAfterMin: 5, enabled: true });
+      const pad = await api.dvr.defaults().catch(() => ({ paddingBeforeMin: 1, paddingAfterMin: 5 }));
+      await api.dvr.createRule({ titleMatch: program.title, channelId: program.channelId, newOnly: true, keepLatest: null, ...pad, enabled: true });
       toast.success(`Series recording set for "${program.title}"`);
       onClose();
     } catch (e) {

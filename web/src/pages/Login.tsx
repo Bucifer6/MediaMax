@@ -174,7 +174,7 @@ export function Login() {
             <Avatar name={selected.displayName} url={selected.avatarUrl} size={84} />
             <h2>{selected.displayName}</h2>
             <p className="muted">Enter your PIN</p>
-            <PinPad onComplete={submitPin} error={error} busy={busy} />
+            <PinPad length={selected.pinLength ?? 4} onComplete={submitPin} error={error} busy={busy} />
           </div>
         ) : (
           <form className="login-card glass fade-in" onSubmit={submitPassword}>

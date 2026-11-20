@@ -53,6 +53,9 @@ export default function DvrPage() {
   const [tab, setTab] = useState<Tab>('upcoming');
   const recs = useAsync(() => api.dvr.recordings(), []);
   const rules = useAsync(() => api.dvr.rules(), []);
+  const defaults = useAsync(() => api.dvr.defaults().catch(() => ({ paddingBeforeMin: 1, paddingAfterMin: 5 })), []);
+  const padBefore = defaults.data?.paddingBeforeMin ?? 1;
+  const padAfter = defaults.data?.paddingAfterMin ?? 5;
   const [editRule, setEditRule] = useState<Partial<RecordingRule> | null>(null);
 
   useServerEvent((ev) => {
@@ -87,8 +90,8 @@ export default function DvrPage() {
         channelId: editRule.channelId || null,
         newOnly: editRule.newOnly ?? true,
         keepLatest: editRule.keepLatest ?? null,
-        paddingBeforeMin: editRule.paddingBeforeMin ?? 1,
-        paddingAfterMin: editRule.paddingAfterMin ?? 5,
+        paddingBeforeMin: editRule.paddingBeforeMin ?? padBefore,
+        paddingAfterMin: editRule.paddingAfterMin ?? padAfter,
         enabled: editRule.enabled ?? true,
       };
       if (editRule.id) {
@@ -155,7 +158,7 @@ export default function DvrPage() {
       ) : (
         <>
           <div className="toolbar">
-            <button className="btn btn-primary" onClick={() => setEditRule({ newOnly: true, paddingBeforeMin: 1, paddingAfterMin: 5, enabled: true })}>
+            <button className="btn btn-primary" onClick={() => setEditRule({ newOnly: true, paddingBeforeMin: padBefore, paddingAfterMin: padAfter, enabled: true })}>
               <Icon name="plus" size={16} /> New rule
             </button>
           </div>

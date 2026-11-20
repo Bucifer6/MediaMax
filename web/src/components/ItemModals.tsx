@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Item, Marker, UpdateItemRequest } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useToast } from '../state/toast';
@@ -150,6 +150,29 @@ export function UploadArtworkModal({ open, onClose, item, onUpdated }: { open: b
 
 /* ---------------- Edit metadata ---------------- */
 const MARKER_TYPES: Marker['type'][] = ['intro', 'credits', 'recap'];
+const FIELD_LABELS: Record<string, string> = {
+  title: 'Title', sortTitle: 'Sort title', originalTitle: 'Original title', tagline: 'Tagline', year: 'Year',
+  communityRating: 'Rating', contentRating: 'Content rating', overview: 'Overview', genres: 'Genres', studios: 'Studios',
+  releaseDate: 'Release date', people: 'Cast & crew', trailerUrl: 'Trailer', poster: 'Poster', backdrop: 'Backdrop', logo: 'Logo', thumb: 'Thumbnail',
+};
+
+function LockToggle({ locked, onToggle, label }: { locked: boolean; onToggle: () => void; label: string }) {
+  return (
+    // A span (not a button) so it isn't the label's labelled control: clicking the label text still focuses the input.
+    <span
+      role="button"
+      tabIndex={0}
+      className={`lock-toggle ${locked ? 'locked' : ''}`}
+      onClick={(e) => { e.preventDefault(); onToggle(); }}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+      title={locked ? `${label} is locked — metadata refreshes won't change it. Click to unlock.` : `Lock ${label.toLowerCase()} so metadata refreshes won't change it`}
+      aria-pressed={locked}
+      aria-label={locked ? `Unlock ${label}` : `Lock ${label}`}
+    >
+      <Icon name="lock" size={12} /> {locked ? 'Locked' : 'Lock'}
+    </span>
+  );
+}
 
 export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: boolean; onClose: () => void; item: Item; onUpdated: (i: Item) => void }) {
   const toast = useToast();
@@ -167,17 +190,39 @@ export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: bo
   });
   const [f, setF] = useState(init);
   const [markers, setMarkers] = useState<{ type: Marker['type']; start: string; end: string }[]>([]);
-  const [lock, setLock] = useState(true);
+  const [locked, setLocked] = useState<Set<string>>(() => new Set(item.lockedFields ?? []));
+  const autoLocked = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setF(init());
+    setLocked(new Set(item.lockedFields ?? []));
+    autoLocked.current = new Set();
     setMarkers((item.markers ?? []).map((m) => ({ type: m.type, start: formatClock(m.startMs), end: formatClock(m.endMs) })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, item.id]);
 
-  const set = (k: keyof ReturnType<typeof init>, v: string) => setF((x) => ({ ...x, [k]: v }));
+  const set = (k: keyof ReturnType<typeof init>, v: string) => {
+    setF((x) => ({ ...x, [k]: v }));
+    // Edited fields lock automatically (once) so a refresh doesn't undo the edit; admins can unlock again.
+    if (!autoLocked.current.has(k)) {
+      autoLocked.current.add(k);
+      setLocked((l) => (l.has(k) ? l : new Set(l).add(k)));
+    }
+  };
+  const toggleLock = (k: string) =>
+    setLocked((l) => {
+      const n = new Set(l);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+  const label = (k: keyof ReturnType<typeof init>, text: string) => (
+    <span className="field-label-row">{text} <LockToggle locked={locked.has(k)} onToggle={() => toggleLock(k)} label={text} /></span>
+  );
+  const formKeys = Object.keys(init());
+  const otherLocked = [...locked].filter((k) => !formKeys.includes(k));
   const playable = item.type === 'movie' || item.type === 'episode' || item.type === 'video';
 
   const submit = async () => {
@@ -221,7 +266,10 @@ export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: bo
       const before = JSON.stringify(item.markers ?? []);
       if (JSON.stringify(parsed) !== before) body.markers = parsed;
     }
-    if (lock && changed.length) body.lockedFields = changed;
+    const lockedList = [...locked];
+    const before = [...new Set(item.lockedFields ?? [])];
+    // Always send when edits were made (the server otherwise auto-locks every edited field).
+    if (changed.length || lockedList.length !== before.length || lockedList.some((k) => !before.includes(k))) body.lockedFields = lockedList;
     if (!Object.keys(body).length) return onClose();
     setBusy(true);
     try {
@@ -244,7 +292,7 @@ export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: bo
       size="lg"
       footer={
         <>
-          <label className="check-inline"><input type="checkbox" checked={lock} onChange={(e) => setLock(e.target.checked)} /> Lock edited fields</label>
+          <span className="muted small"><Icon name="lock" size={12} /> Locked fields are kept when metadata is refreshed.</span>
           <span className="spacer" />
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={submit} disabled={busy}>{busy ? <Spinner size={18} /> : 'Save'}</button>
@@ -253,26 +301,38 @@ export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: bo
     >
       <div className="form-grid">
         <div className="form-row">
-          <Field label="Title"><input className="input" value={f.title} onChange={(e) => set('title', e.target.value)} /></Field>
-          <Field label="Sort title"><input className="input" value={f.sortTitle} onChange={(e) => set('sortTitle', e.target.value)} /></Field>
+          <Field label={label('title', 'Title')}><input className="input" value={f.title} onChange={(e) => set('title', e.target.value)} /></Field>
+          <Field label={label('sortTitle', 'Sort title')}><input className="input" value={f.sortTitle} onChange={(e) => set('sortTitle', e.target.value)} /></Field>
         </div>
         <div className="form-row">
-          <Field label="Original title"><input className="input" value={f.originalTitle} onChange={(e) => set('originalTitle', e.target.value)} /></Field>
-          <Field label="Tagline"><input className="input" value={f.tagline} onChange={(e) => set('tagline', e.target.value)} /></Field>
+          <Field label={label('originalTitle', 'Original title')}><input className="input" value={f.originalTitle} onChange={(e) => set('originalTitle', e.target.value)} /></Field>
+          <Field label={label('tagline', 'Tagline')}><input className="input" value={f.tagline} onChange={(e) => set('tagline', e.target.value)} /></Field>
         </div>
         <div className="form-row form-row-3">
-          <Field label="Year"><input className="input" type="number" value={f.year} onChange={(e) => set('year', e.target.value)} /></Field>
-          <Field label="Rating (0–10)"><input className="input" type="number" step="0.1" min="0" max="10" value={f.communityRating} onChange={(e) => set('communityRating', e.target.value)} /></Field>
-          <Field label="Content rating">
+          <Field label={label('year', 'Year')}><input className="input" type="number" value={f.year} onChange={(e) => set('year', e.target.value)} /></Field>
+          <Field label={label('communityRating', 'Rating (0–10)')}><input className="input" type="number" step="0.1" min="0" max="10" value={f.communityRating} onChange={(e) => set('communityRating', e.target.value)} /></Field>
+          <Field label={label('contentRating', 'Content rating')}>
             <input className="input" list="mm-ratings" value={f.contentRating} onChange={(e) => set('contentRating', e.target.value)} />
             <datalist id="mm-ratings">{CONTENT_RATINGS.map((r) => <option key={r} value={r} />)}</datalist>
           </Field>
         </div>
-        <Field label="Overview"><textarea className="textarea" rows={5} value={f.overview} onChange={(e) => set('overview', e.target.value)} /></Field>
+        <Field label={label('overview', 'Overview')}><textarea className="textarea" rows={5} value={f.overview} onChange={(e) => set('overview', e.target.value)} /></Field>
         <div className="form-row">
-          <Field label="Genres" hint="Comma separated"><input className="input" value={f.genres} onChange={(e) => set('genres', e.target.value)} /></Field>
-          <Field label="Studios" hint="Comma separated"><input className="input" value={f.studios} onChange={(e) => set('studios', e.target.value)} /></Field>
+          <Field label={label('genres', 'Genres')} hint="Comma separated"><input className="input" value={f.genres} onChange={(e) => set('genres', e.target.value)} /></Field>
+          <Field label={label('studios', 'Studios')} hint="Comma separated"><input className="input" value={f.studios} onChange={(e) => set('studios', e.target.value)} /></Field>
         </div>
+        {otherLocked.length > 0 && (
+          <div className="field">
+            <span className="field-label">Other locked fields</span>
+            <div className="badge-row">
+              {otherLocked.map((k) => (
+                <button key={k} type="button" className="lock-toggle locked" onClick={() => toggleLock(k)} title="Click to unlock">
+                  <Icon name="lock" size={12} /> {FIELD_LABELS[k] ?? k} <Icon name="x" size={12} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {playable && (
           <div className="field">
             <span className="field-label">Markers <small className="muted">(h:mm:ss or m:ss) — power Skip Intro / Skip Credits</small></span>

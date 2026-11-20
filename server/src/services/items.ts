@@ -7,6 +7,7 @@ import { forbidden, notFound } from '../util/errors.js';
 import { nowIso, parseJson, ratingLevel, resolutionLabel, sortTitle, toInt } from '../util/misc.js';
 import { getBranding } from './branding.js';
 import { events, bus } from './events.js';
+import { getSettings } from './settings.js';
 
 /* ----------------------------- access ------------------------------ */
 
@@ -36,7 +37,9 @@ export function accessClause(user: User, alias = 'i'): { sql: string; params: Pa
     const blocked = ALL_RATINGS.filter((r) => (ratingLevel(r) ?? 0) > max);
     if (blocked.length) {
       const eff = `COALESCE(${alias}.content_rating, (SELECT x.content_rating FROM items x WHERE x.id = COALESCE(${alias}.grandparent_id, ${alias}.parent_id)))`;
-      parts.push(`(${eff} IS NULL OR UPPER(${eff}) NOT IN (${blocked.map(() => '?').join(',')}))`);
+      // Unrated: allowed by default; optionally blocked (containers like collections/playlists are always visible).
+      const unrated = getSettings().blockUnratedForRestricted ? `${alias}.type IN ('collection','playlist','season','artist','album','track','photo')` : `${eff} IS NULL`;
+      parts.push(`((${eff} IS NULL AND (${unrated})) OR (${eff} IS NOT NULL AND UPPER(${eff}) NOT IN (${blocked.map(() => '?').join(',')})))`);
       params.push(...blocked);
     }
   }
@@ -168,11 +171,15 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
     where.push('i.parent_id = ?');
     params.push(q.parentId);
   }
+  if (q.ancestorId) {
+    where.push('(i.parent_id = ? OR i.grandparent_id = ?)');
+    params.push(q.ancestorId, q.ancestorId);
+  }
   const types = q.type ? String(q.type).split(',').map((s) => s.trim()).filter(Boolean) : [];
   if (types.length) {
     where.push(`i.type IN (${types.map(() => '?').join(',')})`);
     params.push(...types);
-  } else if (!q.parentId && !q.search) {
+  } else if (!q.parentId && !q.ancestorId && !q.search) {
     // Library browsing defaults to top-level items.
     where.push("i.type IN ('movie','show','artist','photo','video','album')");
     if (q.libraryId) {
@@ -201,7 +208,11 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
   }
   if (q.played !== undefined) where.push(String(q.played) === 'true' ? 'COALESCE(ud.played,0) = 1' : 'COALESCE(ud.played,0) = 0');
   if (q.favorite !== undefined && String(q.favorite) === 'true') where.push('COALESCE(ud.favorite,0) = 1');
-  const sort = SORTS[q.sort as ItemSort] ?? (q.parentId ? SORTS.index : SORTS.title);
+  let sort = SORTS[q.sort as ItemSort] ?? (q.parentId || q.ancestorId ? SORTS.index : SORTS.title);
+  // Across several parents (an artist's albums, a show's seasons), keep each parent's children together.
+  if (q.ancestorId && sort === SORTS.index) {
+    sort = ['(SELECT COALESCE(x.year, 0) FROM items x WHERE x.id = i.parent_id)', '(SELECT x.sort_title FROM items x WHERE x.id = i.parent_id)', ...SORTS.index];
+  }
   const dir = q.order === 'desc' ? 'DESC' : q.order === 'asc' ? 'ASC' : q.sort === 'addedAt' || q.sort === 'rating' || q.sort === 'lastPlayed' ? 'DESC' : 'ASC';
   const sql = `${SELECT()} WHERE ${where.join(' AND ')}`;
   const total = db.get<{ n: number }>(`SELECT COUNT(*) n FROM items i LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ? WHERE ${where.join(' AND ')}`, user.id, ...params.slice(3))!.n;
@@ -220,8 +231,9 @@ export function getItem(user: User, id: string, withMedia = true): Item {
   const item = items[0];
   if (withMedia) {
     item.media = db.all('SELECT * FROM media WHERE item_id = ? ORDER BY COALESCE(width,0) DESC', id).map(mediaRowToSource);
-    const row = db.get('SELECT markers FROM items WHERE id = ?', id);
+    const row = db.get('SELECT markers, locked_fields FROM items WHERE id = ?', id);
     item.markers = parseJson<Marker[]>(row?.markers, []);
+    item.lockedFields = parseJson<string[]>(row?.locked_fields, []);
     if (item.type === 'show' || item.type === 'season') {
       // Aggregate duration hint for containers.
       item.media = [];
@@ -328,6 +340,7 @@ export function setPlayed(user: User, itemId: string, played: boolean): UserItem
       else db.run('UPDATE user_data SET played = 0, position_ms = 0 WHERE user_id = ? AND item_id = ?', user.id, id);
     }
   });
+  if (played) bus.emit('items.played', { user, itemIds: ids });
   return emitUd(user, itemId);
 }
 

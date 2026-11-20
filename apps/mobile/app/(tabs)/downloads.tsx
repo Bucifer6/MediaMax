@@ -10,7 +10,7 @@ import { Screen, ScreenHeader } from '@/components/Screen';
 import { EmptyState } from '@/components/States';
 import { useTabBarSpace } from '@/components/TabBar';
 import { T } from '@/components/Text';
-import { useDownloads, type DownloadRecord } from '@/state/downloads';
+import { qualityLabel, useDownloads, type DownloadRecord } from '@/state/downloads';
 import { useMusic } from '@/state/music';
 import { useCapabilities, useSession } from '@/state/session';
 import { useTheme } from '@/theme';
@@ -85,9 +85,13 @@ export default function DownloadsScreen() {
                     </T>
                     {r.state === 'downloading' || r.state === 'queued' ? (
                       <>
-                        <ProgressBar value={r.progress} track={t.alpha(t.colors.text, 0.12)} />
+                        <ProgressBar value={r.progress} indeterminate={r.state === 'downloading' && !r.total} track={t.alpha(t.colors.text, 0.12)} />
                         <T variant="caption" tone="muted">
-                          {r.state === 'queued' ? 'Waiting…' : `${formatBytes(r.bytes)} of ${formatBytes(r.total) || '?'}`}
+                          {r.state === 'queued'
+                            ? `Waiting…${r.quality && r.quality !== 'original' ? ` · ${qualityLabel(r.quality)}` : ''}`
+                            : r.total
+                              ? `${formatBytes(r.bytes)} of ${formatBytes(r.total)}`
+                              : `${formatBytes(r.bytes) || '0 B'} downloaded${r.quality && r.quality !== 'original' ? ` · converting to ${qualityLabel(r.quality)}` : ''}`}
                         </T>
                       </>
                     ) : r.state === 'error' ? (
@@ -97,6 +101,7 @@ export default function DownloadsScreen() {
                     ) : (
                       <T variant="caption" tone="muted">
                         {formatBytes(r.bytes)}
+                        {r.quality && r.quality !== 'original' ? ` · ${qualityLabel(r.quality)}` : ''}
                         {r.pendingSync ? ' · progress will sync' : ''}
                       </T>
                     )}

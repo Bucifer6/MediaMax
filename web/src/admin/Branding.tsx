@@ -68,6 +68,8 @@ const ASSETS: { kind: BrandingAssetKind; label: string; field: keyof Branding | 
   { kind: 'appIcon', label: 'App icon', field: 'appIconUrl', hint: 'Home-screen icon for phones & TVs. 1024×1024.' },
   { kind: 'loginBackground', label: 'Login background', field: 'loginBackgroundUrl', hint: 'Full-bleed image behind the sign-in screen.', wide: true },
   { kind: 'splashLogo', label: 'Splash logo', field: 'splashLogo', hint: 'Shown on the loading splash screen of apps.' },
+  { kind: 'tvBanner', label: 'Android TV banner', field: 'tvBannerUrl', hint: 'Launcher banner on Android TV / Google TV home. 320×180 PNG.', wide: true },
+  { kind: 'topShelf', label: 'Apple TV top shelf', field: 'topShelfUrl', hint: 'Top shelf artwork on the Apple TV home screen. 1920×720 (or 2320×720 wide).', wide: true },
 ];
 
 /* ---------------- colour helpers ---------------- */
@@ -424,7 +426,7 @@ export function BrandingStudio() {
     setDraft((d) => {
       if (!keepDraft) return b;
       const themes = b.themes.map((t) => (dirtyThemes.has(t.id) ? d.themes.find((x) => x.id === t.id) ?? t : t));
-      return dirty ? { ...d, themes, logoUrl: b.logoUrl, logoWideUrl: b.logoWideUrl, faviconUrl: b.faviconUrl, appIconUrl: b.appIconUrl, loginBackgroundUrl: b.loginBackgroundUrl, splash: { ...d.splash, logoUrl: b.splash.logoUrl }, revision: b.revision } : { ...b, themes };
+      return dirty ? { ...d, themes, logoUrl: b.logoUrl, logoWideUrl: b.logoWideUrl, faviconUrl: b.faviconUrl, appIconUrl: b.appIconUrl, loginBackgroundUrl: b.loginBackgroundUrl, tvBannerUrl: b.tvBannerUrl, topShelfUrl: b.topShelfUrl, splash: { ...d.splash, logoUrl: b.splash.logoUrl }, revision: b.revision } : { ...b, themes };
     });
   };
 

@@ -17,6 +17,7 @@ import {
 import { events, bus } from './events.js';
 import { enrichLibrary } from './metadata/index.js';
 import { logActivity } from './activity.js';
+import { downloadedSubs } from './opensubtitles.js';
 
 const log = logger('scanner');
 
@@ -169,7 +170,7 @@ function sidecarSubs(videoPath: string): SubtitleStream[] {
 async function upsertMedia(itemId: string, f: FileEntry, force = false, preProbed?: ProbeResult | null): Promise<{ mediaId: string; probe: ProbeResult | null; changed: boolean }> {
   const existing = db.get('SELECT * FROM media WHERE path = ?', f.path);
   const id = existing?.id ?? stableId('media', f.path);
-  const subsSide = sidecarSubs(f.path);
+  const subsSide = [...sidecarSubs(f.path), ...downloadedSubs(id, 2000)];
   if (existing && existing.mtime === f.mtime && existing.size === f.size && !force && existing.probed_at) {
     // Keep sidecar subtitles fresh even when the file itself is unchanged.
     const embedded = parseJson<SubtitleStream[]>(existing.subs, []).filter((s) => !s.external);

@@ -5,7 +5,7 @@ import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync } from '../hooks';
-import { Avatar, Badge, EmptyState, Field, Skeleton, Spinner, Switch, useConfirm } from '../components/ui';
+import { AvatarEditor, Badge, EmptyState, Field, Skeleton, Spinner, Switch, useConfirm } from '../components/ui';
 import { Icon, type IconName } from '../components/Icon';
 import { themeStyle } from '../theme/applyTheme';
 import { DEFAULT_PREFERENCES } from '../theme/defaults';
@@ -58,7 +58,27 @@ function Profile() {
   return (
     <form className="settings-card" onSubmit={submit}>
       <div className="profile-head">
-        <Avatar name={user.displayName || user.username} url={user.avatarUrl} size={80} />
+        <AvatarEditor
+          name={user.displayName || user.username}
+          url={user.avatarUrl}
+          size={80}
+          onUpload={async (file) => {
+            try {
+              setUser(await api.auth.uploadAvatar(file));
+              toast.success('Profile picture updated');
+            } catch (err) {
+              toast.error(err);
+            }
+          }}
+          onRemove={async () => {
+            try {
+              setUser(await api.auth.deleteAvatar());
+              toast.success('Profile picture removed');
+            } catch (err) {
+              toast.error(err);
+            }
+          }}
+        />
         <div>
           <h2>{user.displayName || user.username}</h2>
           <p className="muted">@{user.username} {user.isAdmin && <Badge tone="primary">Admin</Badge>}</p>
@@ -118,11 +138,11 @@ function Security() {
       </form>
       <form className="settings-card" onSubmit={(e) => { e.preventDefault(); void savePin(pin); }}>
         <h2>Profile PIN</h2>
-        <p className="muted">A 4-digit PIN protects your profile on the “Who’s watching?” screen. {user.hasPin ? <Badge tone="success">PIN set</Badge> : <Badge tone="muted">No PIN</Badge>}</p>
-        <Field label="New PIN"><input className="input code-input small" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="••••" /></Field>
+        <p className="muted">A 4–8 digit PIN protects your profile on the “Who’s watching?” screen. {user.hasPin ? <Badge tone="success">PIN set</Badge> : <Badge tone="muted">No PIN</Badge>}</p>
+        <Field label="New PIN"><input className="input code-input small" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="••••" maxLength={8} /></Field>
         <div className="form-actions">
           {user.hasPin && <button type="button" className="btn btn-ghost" onClick={() => savePin('')} disabled={busy}>Remove PIN</button>}
-          <button className="btn btn-primary" disabled={busy || pin.length !== 4}>Save PIN</button>
+          <button className="btn btn-primary" disabled={busy || pin.length < 4}>Save PIN</button>
         </div>
       </form>
     </>

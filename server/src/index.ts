@@ -4,7 +4,9 @@ import { logger } from './util/log.js';
 import { startScheduler, stopScheduler } from './services/tasks.js';
 import { cleanupTranscodeDir, ffmpegAvailable } from './services/transcoder.js';
 import { initWebhooks } from './services/webhooks.js';
+import { initTrakt } from './services/trakt.js';
 import { serverId } from './services/settings.js';
+import { syncDlna, stopDlna } from './services/dlna.js';
 
 const log = logger('main');
 
@@ -12,14 +14,17 @@ async function main() {
   if (!ffmpegAvailable()) log.warn('ffmpeg was not found — transcoding, live TV remuxing and DVR will not work. Set MEDIAMAX_FFMPEG.');
   cleanupTranscodeDir();
   initWebhooks();
+  initTrakt();
   const app = await buildApp();
   await app.listen({ port: config.port, host: config.host });
   log.info(`MediaMax ${config.version} (server ${serverId()}) listening on http://${config.host}:${config.port}`);
   log.info(`Data directory: ${config.dataDir}`);
   if (process.env.MEDIAMAX_NO_SCHEDULER !== '1') startScheduler();
+  syncDlna();
   const shutdown = async (sig: string) => {
     log.info(`${sig} received, shutting down`);
     stopScheduler();
+    stopDlna();
     await app.close();
     cleanupTranscodeDir();
     process.exit(0);

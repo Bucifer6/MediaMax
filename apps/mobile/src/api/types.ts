@@ -149,6 +149,10 @@ export interface Branding {
   footerText: string;
   supportUrl: string | null;
   splash: { backgroundColor: string; logoUrl: string | null };
+  /** Android TV launcher banner. */
+  tvBannerUrl: string | null;
+  /** Apple TV top shelf artwork. */
+  topShelfUrl: string | null;
   /** The default theme applied to everyone. */
   defaultThemeId: string;
   /** All themes available (presets + admin-made). */
@@ -169,7 +173,11 @@ export type BrandingAssetKind =
   | 'favicon'
   | 'appIcon'
   | 'loginBackground'
-  | 'splashLogo';
+  | 'splashLogo'
+  /** Android TV launcher banner (320x180). */
+  | 'tvBanner'
+  /** Apple TV top shelf image (1920x720 / 2320x720). */
+  | 'topShelf';
 
 /* ------------------------------------------------------------------ */
 /* Auth & users                                                        */
@@ -206,6 +214,8 @@ export interface PublicProfile {
   displayName: string;
   avatarUrl: string | null;
   hasPin: boolean;
+  /** Number of digits in the PIN (so PIN pads can auto-submit). */
+  pinLength: number | null;
   /** If false the profile can be entered with the PIN alone (or nothing). */
   requiresPassword: boolean;
 }
@@ -241,6 +251,7 @@ export interface User {
   isAdmin: boolean;
   avatarUrl: string | null;
   hasPin: boolean;
+  pinLength: number | null;
   /** Profiles without a password can be entered from the profile picker. */
   hasPassword: boolean;
   /** Max content rating allowed (e.g. "PG-13", "TV-14"); null = unrestricted. */
@@ -451,6 +462,8 @@ export interface Item {
   media?: MediaSource[];
   markers?: Marker[];
   trailerUrl?: string | null;
+  /** Populated on GET /items/:id only: fields protected from metadata refreshes. */
+  lockedFields?: string[];
 }
 
 export type ItemSort =
@@ -466,6 +479,8 @@ export type ItemSort =
 export interface ItemQuery {
   libraryId?: string;
   parentId?: string;
+  /** Items whose parent OR grandparent is this id (e.g. all tracks of an artist, all episodes of a show). */
+  ancestorId?: string;
   /** Comma separated list allowed. */
   type?: ItemType | string;
   genre?: string;
@@ -768,6 +783,14 @@ export interface LivePlayRequest {
 /* DVR                                                                 */
 /* ------------------------------------------------------------------ */
 
+export interface DvrDefaults {
+  paddingBeforeMin: number;
+  paddingAfterMin: number;
+}
+
+/** Quality for `/stream/download/:itemId?quality=`. `original` = the untouched file. */
+export type DownloadQuality = 'original' | '1080p' | '720p' | '480p';
+
 export type RecordingStatus = 'scheduled' | 'recording' | 'completed' | 'failed' | 'cancelled';
 
 export interface Recording {
@@ -846,6 +869,33 @@ export interface ServerSettings {
   webhooks: Webhook[];
   /** Allow sign-in from the public profile picker without a password. */
   allowPasswordlessProfiles: boolean;
+  /** Hide items with no content rating from users who have a rating limit. */
+  blockUnratedForRestricted: boolean;
+  trickplay: {
+    /** Generate scrub-preview thumbnails in the background. */
+    enabled: boolean;
+    intervalSeconds: number;
+    width: number;
+  };
+  openSubtitles: {
+    apiKey: string | null;
+    username: string | null;
+    password: string | null;
+    /** Languages to fetch automatically for new media (ISO 639-1, e.g. ["en"]); empty = off. */
+    autoLanguages: string[];
+  };
+  trakt: {
+    clientId: string | null;
+    clientSecret: string | null;
+  };
+  /** DLNA / UPnP media server for smart TVs, consoles and players on the local network. */
+  dlna: {
+    enabled: boolean;
+    /** Name shown on TVs; defaults to the server name. */
+    friendlyName: string | null;
+    /** Browse as this user (library access & rating limits apply). Null = first admin. */
+    userId: string | null;
+  };
   sessionTimeoutDays: number;
 }
 
@@ -947,4 +997,128 @@ export interface SyncPlayRoom {
   state: 'playing' | 'paused';
   positionMs: number;
   updatedAt: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Trickplay (scrub preview thumbnails)                                */
+/* ------------------------------------------------------------------ */
+
+export interface TrickplayInfo {
+  mediaId: string;
+  /** Milliseconds between thumbnails. */
+  intervalMs: number;
+  /** Size of one thumbnail in px. */
+  width: number;
+  height: number;
+  /** Thumbnails per sheet row / column. */
+  columns: number;
+  rows: number;
+  /** Total thumbnails across all sheets. */
+  count: number;
+  /** Sprite sheet URLs (include `?token=`), in order. Thumbnail n is on sheet floor(n / (columns*rows)). */
+  sheets: string[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Statistics / "Wrapped"                                              */
+/* ------------------------------------------------------------------ */
+
+export interface StatsTopEntry {
+  itemId: string | null;
+  title: string;
+  subtitle: string | null;
+  posterUrl: string | null;
+  plays: number;
+  minutes: number;
+}
+
+export interface UserStats {
+  /** Year the stats cover, or null for all time. */
+  year: number | null;
+  totalMinutes: number;
+  totalPlays: number;
+  moviesWatched: number;
+  episodesWatched: number;
+  tracksPlayed: number;
+  liveTvMinutes: number;
+  /** Longest run of consecutive days with any playback. */
+  longestStreakDays: number;
+  /** Minutes per month (12 entries, Jan..Dec) — only when year is set. */
+  minutesByMonth: number[];
+  /** Minutes per weekday (7 entries, Sun..Sat). */
+  minutesByWeekday: number[];
+  /** Minutes per hour of day (24 entries). */
+  minutesByHour: number[];
+  topGenres: { genre: string; minutes: number }[];
+  topMovies: StatsTopEntry[];
+  topShows: StatsTopEntry[];
+  topArtists: StatsTopEntry[];
+  topChannels: StatsTopEntry[];
+  /** A few short fun facts for the "Wrapped" screen. */
+  highlights: string[];
+}
+
+export interface ServerStats {
+  days: number;
+  totalPlays: number;
+  totalMinutes: number;
+  byUser: { userId: string; userName: string; plays: number; minutes: number }[];
+  byPlatform: { platform: string; plays: number }[];
+  byMethod: { method: string; plays: number }[];
+  topItems: StatsTopEntry[];
+  /** Plays per day for the window (oldest first). */
+  playsByDay: { date: string; plays: number; minutes: number }[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Online subtitles (OpenSubtitles)                                    */
+/* ------------------------------------------------------------------ */
+
+export interface RemoteSubtitle {
+  /** Provider file id to pass to the download endpoint. */
+  fileId: string;
+  provider: 'opensubtitles';
+  language: string;
+  release: string | null;
+  downloads: number;
+  hearingImpaired: boolean;
+  forced: boolean;
+  aiTranslated: boolean;
+  rating: number | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Trakt                                                               */
+/* ------------------------------------------------------------------ */
+
+export interface TraktStatus {
+  /** Admin has configured a Trakt app (client id/secret). */
+  available: boolean;
+  connected: boolean;
+  username: string | null;
+  scrobble: boolean;
+}
+
+export interface TraktDeviceCode {
+  userCode: string;
+  verificationUrl: string;
+  expiresAt: string;
+  intervalSeconds: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Lyrics                                                              */
+/* ------------------------------------------------------------------ */
+
+export interface LyricLine {
+  /** Start time in ms; null for unsynced lyrics. */
+  startMs: number | null;
+  text: string;
+}
+
+export interface Lyrics {
+  itemId: string;
+  synced: boolean;
+  source: 'lrc' | 'embedded' | 'txt';
+  lines: LyricLine[];
 }

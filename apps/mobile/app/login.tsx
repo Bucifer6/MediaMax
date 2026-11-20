@@ -158,7 +158,7 @@ export default function LoginScreen() {
                 <View style={{ alignItems: 'center', gap: t.space.lg }}>
                   <Avatar profile={selected} size={t.isTV ? t.s(96) : 80} />
                   <T variant="heading">Enter PIN for {selected.displayName}</T>
-                  <PinPad value={pin} onChange={setPin} onComplete={(p) => enterProfile(selected, p)} error={!!error} />
+                  <PinPad value={pin} onChange={setPin} length={selected.pinLength ?? 4} onComplete={(p) => enterProfile(selected, p)} error={!!error} />
                   {busy ? <ActivityIndicator color={t.colors.primary} /> : null}
                 </View>
               ) : null}

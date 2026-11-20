@@ -36,6 +36,8 @@ const DEFAULTS: StoredBranding = {
   footerText: '',
   supportUrl: null,
   splash: { backgroundColor: '#0b0c10', logoUrl: null },
+  tvBannerUrl: null,
+  topShelfUrl: null,
   defaultThemeId: 'midnight',
   customThemes: [],
   allowUserThemes: true,
@@ -105,7 +107,7 @@ export function updateBranding(patch: Partial<Branding>): Branding {
   const next: StoredBranding = { ...cur };
   const strFields = ['serverName', 'tagline', 'loginMessage', 'footerText', 'customCss'] as const;
   for (const f of strFields) if (typeof patch[f] === 'string') (next as any)[f] = patch[f];
-  const nullableStr = ['supportUrl', 'logoUrl', 'logoWideUrl', 'faviconUrl', 'appIconUrl', 'loginBackgroundUrl'] as const;
+  const nullableStr = ['supportUrl', 'logoUrl', 'logoWideUrl', 'faviconUrl', 'appIconUrl', 'loginBackgroundUrl', 'tvBannerUrl', 'topShelfUrl'] as const;
   for (const f of nullableStr) if (patch[f] !== undefined) (next as any)[f] = patch[f] || null;
   if (patch.splash) next.splash = { ...cur.splash, ...patch.splash };
   if (patch.defaultThemeId) next.defaultThemeId = patch.defaultThemeId;
@@ -142,6 +144,8 @@ const ASSET_FIELD: Record<BrandingAssetKind, (b: StoredBranding, url: string | n
   appIcon: (b, u) => (b.appIconUrl = u),
   loginBackground: (b, u) => (b.loginBackgroundUrl = u),
   splashLogo: (b, u) => (b.splash = { ...b.splash, logoUrl: u }),
+  tvBanner: (b, u) => (b.tvBannerUrl = u),
+  topShelf: (b, u) => (b.topShelfUrl = u),
 };
 
 const ALLOWED_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.svg', '.ico', '.gif', '.avif']);
