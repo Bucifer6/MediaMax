@@ -26,6 +26,14 @@ export interface NativeMediaCapabilities {
   audioPassthrough: string[];
   maxDecodeHeight: number;
   displayHeight: number;
+  /** Channels of the current audio output (HDMI / eARC sink, AirPlay, speakers); absent on older native builds. */
+  maxAudioChannels?: number;
+  /** Decoders that output more than two channels. */
+  multichannelAudioCodecs?: string[];
+  /** Android 13+: encoded formats the route takes directly (AudioManager.getDirectProfilesForAttributes). */
+  directAudioFormats?: string[];
+  /** Spatial audio active (Android Spatializer / iOS spatial headphones): Atmos JOC renders spatially. */
+  spatialAudio?: boolean;
 }
 
 export type MediaEvents = {

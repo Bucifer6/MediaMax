@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { Item, Marker, PlaybackInfo, PlaybackRequest, Renderer, SubtitleFormat, SubtitleStyle, TrickplayInfo } from '@mediamax/shared';
+import type { AudioComforts, Item, Marker, PlaybackInfo, PlaybackRequest, Renderer, SubtitleFormat, SubtitleStyle, TrickplayInfo } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import { useApp } from '../state/app';
@@ -9,6 +9,10 @@ import { useMusic } from './music';
 import { attachStream, type Attached } from './engine';
 import { profileWithBitrate, QUALITY_OPTIONS } from './deviceProfile';
 import { capabilitiesReady } from './capabilities';
+import { audioCaps, audioCapsReady } from './audioCaps';
+import { AudioFx, clientFx, comfortRequest, deviceComforts, fxActive } from './audioFx';
+import { AudioBadges, audioDecisionText, audioSummary } from '../components/AudioBadge';
+import { getDeviceId } from '../api/device';
 import { RangeBadge, rangeDeliveryText } from '../components/HdrBadge';
 import { OptionList, Popover, SeekBar, VolumeControl } from './controls';
 import { useSyncPlay } from './syncplay';
@@ -90,6 +94,16 @@ interface Stats {
   abr?: string;
   /** Subtitle renderer in use. */
   subs?: string;
+  /** Listening comforts and where they run (server / this browser). */
+  audioFx?: string;
+}
+
+/** "night mode (server), dialogue boost (browser)" for the stats overlay. */
+function audioFxText(pi: PlaybackInfo | null, c: AudioComforts, webFx: boolean): string | undefined {
+  const applied = new Set(pi?.audio?.applied ?? []);
+  const names: [keyof AudioComforts, string][] = [['nightMode', 'night mode'], ['dialogueBoost', 'dialogue boost'], ['normalize', 'normalise'], ['delayMs', `lip-sync ${formatDelay(c.delayMs ?? 0)}`]];
+  const parts = names.filter(([k]) => c[k]).map(([k, n]) => `${n} (${applied.has(k) ? 'server' : webFx && k !== 'normalize' && !(k === 'delayMs' && (c.delayMs ?? 0) < 0) ? 'browser' : 'off'})`);
+  return parts.length ? parts.join(', ') : undefined;
 }
 
 interface StartOpts {
@@ -180,6 +194,10 @@ export default function VideoPlayer() {
   const [syncToast, setSyncToast] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [showStats, setShowStats] = useState(false);
+  /** Listening comforts (night mode, dialogue boost, normalise, lip-sync) for this device: see audioFx.ts. */
+  const [comforts, setComforts] = useState<AudioComforts>(() => deviceComforts(user?.preferences, getDeviceId()));
+  const comfortsRef = useRef(comforts);
+  comfortsRef.current = comforts;
   const [tapSkip, setTapSkip] = useState<{ side: 'left' | 'right'; n: number } | null>(null);
 
   const durationMs = info?.durationMs ?? item?.durationMs ?? 0;
@@ -222,6 +240,7 @@ export default function VideoPlayer() {
       burnSubtitles: opts.burn || undefined,
       deviceProfile: profileWithBitrate(opts.auto ? null : opts.maxBitrate),
       subtitleFormats: SUBTITLE_FORMATS,
+      ...comfortRequest(comfortsRef.current, audioCaps()?.webAudioFx ?? false),
       ...(opts.auto ? { adaptive: true, measuredBandwidth: kbps } : {}),
     };
   };
@@ -362,6 +381,7 @@ export default function VideoPlayer() {
     attached.current = null;
     try {
       await capabilitiesReady(); // HDR / 10-bit detection (bounded wait), so the profile carries videoRange
+      await audioCapsReady(); // speaker channels / multichannel / Atmos (bounded wait)
       const pi = await api.playback.start(itemId, await playbackRequest(opts));
       if (castingRef.current) {
         // Casting started while this request was in flight.
@@ -639,35 +659,51 @@ export default function VideoPlayer() {
     showSyncToast(`Audio ${formatDelay(next)}`);
   }, [audioDelayMs, setSync, showSyncToast]);
 
-  /* ---------------- audio delay (Web Audio) ---------------- */
-  // The element's sound is routed through a DelayNode the first time a delay is set. Web Audio can only
-  // hold audio back (positive delay); the routing stays in place for the life of the player.
-  const audioGraph = useRef<{ ctx: AudioContext; delay: DelayNode } | null>(null);
+  /* ---------------- audio delay + comforts (Web Audio, audioFx.ts) ---------------- */
+  // The element's sound is routed through Web Audio the first time a delay or a local comfort is needed
+  // (night mode, dialogue boost during direct play). Web Audio can only hold audio back (positive delay); the
+  // routing stays in place for the life of the player. Comforts the server applied are not applied again.
+  const audioGraph = useRef<AudioFx | null>(null);
+  const webFx = audioCaps()?.webAudioFx ?? false;
+  const localFx = clientFx(comforts, info, webFx && !casting);
+  const fxDelay = Math.min(AUDIO_DELAY_MAX, localFx.delayMs + audioDelayMs);
   useEffect(() => {
     const v = videoRef.current;
-    if (!v || (!audioDelayMs && !audioGraph.current)) return;
+    const fx = { ...localFx, delayMs: fxDelay };
+    if (!v || (!fxActive(fx) && !audioGraph.current)) return;
     if (!audioGraph.current) {
       try {
-        const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-        const ctx = new Ctx();
-        const src = ctx.createMediaElementSource(v);
-        const delay = ctx.createDelay(AUDIO_DELAY_MAX / 1000 + 1);
-        src.connect(delay).connect(ctx.destination);
-        audioGraph.current = { ctx, delay };
+        audioGraph.current = new AudioFx(v);
       } catch {
-        toast.show('Audio delay is not supported in this browser');
+        toast.show('Audio effects are not supported in this browser');
         setAudioDelayMs(0);
         return;
       }
     }
-    const g = audioGraph.current;
-    void g.ctx.resume().catch(() => {});
-    g.delay.delayTime.setTargetAtTime(audioDelayMs / 1000, g.ctx.currentTime, 0.03);
-  }, [audioDelayMs, toast]);
+    audioGraph.current.set(fx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fxDelay, localFx.nightMode, localFx.dialogueBoost, toast]);
   useEffect(() => () => {
-    void audioGraph.current?.ctx.close().catch(() => {});
+    audioGraph.current?.close();
     audioGraph.current = null;
   }, []);
+
+  /** Change a comfort (saved to the user's preferences). Restarts the stream when the server has to (re)do it. */
+  const setComfort = useCallback(async (key: 'nightMode' | 'dialogueBoost' | 'normalize', on: boolean) => {
+    const next = { ...comfortsRef.current, [key]: on };
+    setComforts(next);
+    comfortsRef.current = next;
+    const serverSide = !webFx || key === 'normalize' || info?.audio?.delivery === 'transcode' || info?.audio?.delivery === 'dts-core' || !!info?.audio?.applied.includes(key);
+    if (serverSide && info && !castingRef.current) void start({ ...optsRef.current, startMs: currentMs() });
+    if (!user) return;
+    const audio = { ...(user.preferences.audio ?? {}), [key]: on };
+    try {
+      setUser(await api.auth.updateMe({ preferences: { audio } }));
+    } catch (e) {
+      toast.error(e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [webFx, info, user, setUser, toast]);
 
   const saveSubStyle = useCallback(async (patch: Partial<SubtitleStyle>) => {
     if (!user) return;
@@ -805,7 +841,8 @@ export default function VideoPlayer() {
         method: pi ? (pi.method === 'direct' ? 'Direct play' : pi.method === 'remux' ? 'Direct stream (remux)' : pi.method === 'transcode' ? 'Transcode' : pi.method) : '—',
         resolution: v.videoWidth ? `${v.videoWidth}×${v.videoHeight}${media?.width && media.width !== v.videoWidth ? ` (source ${media.width}×${media.height})` : ''}` : '—',
         videoCodec: es.videoCodec || (direct ? media?.videoCodec : null) || (pi?.method === 'transcode' ? 'h264 (transcoded)' : '—'),
-        audioCodec: es.audioCodec || (audio ? `${audio.codec}${audio.channels ? ` · ${audio.channels}ch` : ''}` : '—'),
+        audioCodec: pi?.audio ? audioDecisionText(pi.audio) : es.audioCodec || (audio ? `${audio.codec}${audio.channels ? ` · ${audio.channels}ch` : ''}` : '—'),
+        audioFx: audioFxText(pi, comfortsRef.current, webFx),
         // MediaSource.bitrate is in kbps.
         bitrate: kbps(es.bitrate ?? (direct && media?.bitrate ? media.bitrate * 1000 : null)),
         bandwidth: es.bandwidth ? kbps(es.bandwidth) : adaptiveRef.current.state.estimate ? `${kbps(adaptiveRef.current.state.estimate)} (estimated)` : attached.current?.engine === 'native' ? 'n/a (progressive download)' : '—',
@@ -821,7 +858,7 @@ export default function VideoPlayer() {
     tick();
     const iv = window.setInterval(tick, 1000);
     return () => window.clearInterval(iv);
-  }, [showStats, info, rate, audioDelayMs]);
+  }, [showStats, info, rate, audioDelayMs, webFx]);
 
   /* ---------------- controls ---------------- */
   const seekTo = useCallback((ms: number, fromRemote = false) => {
@@ -1277,7 +1314,8 @@ export default function VideoPlayer() {
             <dt>Video codec</dt><dd>{stats.videoCodec}</dd>
             {stats.range && <><dt>Dynamic range</dt><dd>{info?.videoRange && <RangeBadge format={info.videoRange.source} label={info.videoRange.label} />} {stats.range}</dd></>}
             {stats.why && <><dt>Why</dt><dd>{stats.why}</dd></>}
-            <dt>Audio codec</dt><dd>{stats.audioCodec}</dd>
+            <dt>Audio</dt><dd>{(() => { const a = info?.audioStreams.find((x) => x.index === (optsRef.current.audioIndex ?? currentAudio)); return a ? <AudioBadges stream={a} channels={false} /> : null; })()} {stats.audioCodec}</dd>
+            {stats.audioFx && <><dt>Audio effects</dt><dd>{stats.audioFx}</dd></>}
             <dt>Bitrate</dt><dd>{stats.bitrate}</dd>
             <dt>Network</dt><dd>{stats.bandwidth}</dd>
             {stats.abr && <><dt>Quality</dt><dd>{stats.abr}</dd></>}
@@ -1480,16 +1518,37 @@ export default function VideoPlayer() {
                 </Popover>
               </div>
             )}
-            {audioStreams.length > 1 && (
+            {audioStreams.length > 0 && (
               <div className="pc-menu">
-                <button className="btn-icon" onClick={() => setMenu(menu === 'audio' ? null : 'audio')} aria-label="Audio track"><Icon name="audio" size={22} /></button>
-                <Popover open={menu === 'audio'} onClose={() => setMenu(null)}>
+                <button className="btn-icon" onClick={() => setMenu(menu === 'audio' ? null : 'audio')} aria-label="Audio"><Icon name="audio" size={22} /></button>
+                <Popover open={menu === 'audio'} onClose={() => setMenu(null)} className="audio-popover">
                   <OptionList<number | undefined>
                     title="Audio"
                     value={currentAudio}
                     onSelect={(v) => v !== undefined && v !== currentAudio && selectAudio(v)}
-                    options={audioStreams.map((a) => ({ label: a.title || languageName(a.language), value: a.index, sub: `${a.codec.toUpperCase()} · ${a.channels > 2 ? `${a.channels - 1}.1` : `${a.channels}.0`}` }))}
+                    options={audioStreams.map((a) => ({
+                      label: a.title || languageName(a.language),
+                      value: a.index,
+                      sub: <span className="audio-track-sub">{audioSummary(a)} <AudioBadges stream={a} channels={false} /></span>,
+                    }))}
                   />
+                  {info?.audio && info.audio.delivery !== 'direct' && <p className="audio-delivery">{audioDecisionText(info.audio)}</p>}
+                  {!casting && (
+                    <div className="audio-panel" role="group" aria-label="Listening">
+                      {([
+                        ['nightMode', 'Night mode', 'Softer explosions, clearer quiet scenes'],
+                        ['dialogueBoost', 'Dialogue boost', 'Lifts voices above music and effects'],
+                        ['normalize', 'Normalise volume', 'Even loudness (re-encodes the audio on the server)'],
+                      ] as const).map(([key, label, hint]) => (
+                        <button key={key} type="button" role="switch" aria-checked={!!comforts[key]} className="audio-toggle" onClick={() => void setComfort(key, !comforts[key])}>
+                          <span>{label}<small>{hint}</small></span>
+                          <i className="audio-switch" aria-hidden="true" />
+                        </button>
+                      ))}
+                      {!webFx && <p className="audio-note">This device plays sound through its own hardware pipeline, so these are applied by the server (the audio is re-encoded; the picture is not).</p>}
+                      {(comforts.delayMs ?? 0) !== 0 && <p className="audio-note">Lip-sync for this device: {formatDelay(comforts.delayMs ?? 0)} (Settings → Audio).</p>}
+                    </div>
+                  )}
                 </Popover>
               </div>
             )}

@@ -130,18 +130,38 @@ export function codecsAttr(codec: TranscodeVideoCodec, height: number | null, au
   const v = codec === 'hevc' ? (big ? 'hvc1.1.6.L153.90' : 'hvc1.1.6.L120.90') : codec === 'av1' ? 'av01.0.08M.08' : big ? 'avc1.640033' : 'avc1.640028';
   if (audio === 'aac') return `${v},mp4a.40.2`;
   if (audio == null) return v;
-  return null;
+  // Audio given as an RFC 6381 string (audio.ts audioCodecString) or a codec name: E-AC-3 must be listed as "ec-3"
+  // or hls.js / AVPlayer reject the variant.
+  const a = AUDIO_CODEC_STRINGS[audio] ?? (/^(mp4a\.40\.\d+|ec-3|ac-3|fLaC|Opus|alac|mlpa|dts[chle])$/.test(audio) ? audio : null);
+  return a ? `${v},${a}` : null;
+}
+
+const AUDIO_CODEC_STRINGS: Record<string, string> = { eac3: 'ec-3', ac3: 'ac-3', flac: 'fLaC', opus: 'Opus', mp3: 'mp4a.40.34', truehd: 'mlpa' };
+
+/**
+ * Muxed audio described by an EXT-X-MEDIA tag without URI (RFC 8216 §4.3.4.1: the audio is in the variant itself).
+ * Used for E-AC-3 so players see the channel count, and `CHANNELS="16/JOC"` when Dolby Atmos (JOC) is copied.
+ */
+export interface MasterAudio {
+  channels: string;
+  name: string;
+  language?: string | null;
 }
 
 /** Multi-variant master playlist. The start rendition is listed first (players without their own estimate start there). */
-export function masterPlaylist(ladder: HlsRendition[], startId: number, query: string, codecs: (r: HlsRendition) => string | null): string {
+export function masterPlaylist(ladder: HlsRendition[], startId: number, query: string, codecs: (r: HlsRendition) => string | null, audio?: MasterAudio | null): string {
   const ordered = [...ladder.filter((r) => r.id === startId), ...ladder.filter((r) => r.id !== startId)];
   const lines = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-INDEPENDENT-SEGMENTS'];
+  if (audio) {
+    const lang = audio.language ? `,LANGUAGE="${audio.language.replace(/"/g, '')}"` : '';
+    lines.push(`#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="${audio.name.replace(/"/g, '')}"${lang},DEFAULT=YES,AUTOSELECT=YES,CHANNELS="${audio.channels}"`);
+  }
   for (const r of ordered) {
     const c = codecs(r);
     const attrs = [`BANDWIDTH=${r.bandwidth}`, `AVERAGE-BANDWIDTH=${Math.round(r.bandwidth * 0.85)}`];
     if (r.width && r.height) attrs.push(`RESOLUTION=${r.width}x${r.height}`);
     if (c) attrs.push(`CODECS="${c}"`);
+    if (audio) attrs.push('AUDIO="aud"');
     attrs.push(`NAME="${r.label}"`);
     lines.push(`#EXT-X-STREAM-INF:${attrs.join(',')}`, `r${r.id}.m3u8${query}`);
   }
@@ -190,6 +210,8 @@ export interface RenditionManagerOptions {
   /** May one more encoder start now (hardware session limit across the server)? */
   canStartExtra?: () => boolean;
   codecs?: (r: HlsRendition) => string | null;
+  /** EXT-X-MEDIA description of the muxed audio (E-AC-3 / Atmos), see MasterAudio. */
+  masterAudio?: MasterAudio | null;
   onActiveChange?: (job: RenditionJob) => void;
   now?: () => number;
 }
@@ -280,8 +302,9 @@ export class RenditionManager {
     // CODECS from the encoder the running job actually uses (a hardware → software fallback can change it).
     const info = this.activeJob?.info;
     const codec = codecOfEncoder(info?.videoCodec);
-    const codecs = this.o.codecs ?? ((r: HlsRendition) => (codec ? codecsAttr(codec, r.height, info?.audioCodec === 'aac' ? 'aac' : 'unknown') : null));
-    return masterPlaylist(this.o.ladder, this.o.startRendition, query, codecs);
+    const audio = info?.audioCodecString ?? (info?.audioCodec === 'aac' ? 'aac' : 'unknown');
+    const codecs = this.o.codecs ?? ((r: HlsRendition) => (codec ? codecsAttr(codec, r.height, audio) : null));
+    return masterPlaylist(this.o.ladder, this.o.startRendition, query, codecs, this.o.masterAudio ?? null);
   }
 
   media(id: number, query: string): string {
@@ -363,7 +386,7 @@ export function hardwareHasRoom(otherEncoders: number, hw = getSettings().transc
   return otherEncoders + adaptiveEncoderCount() + 1 <= limit;
 }
 
-export function createRenditionManager(sessionId: string, base: TranscodeOptions, ladder: HlsRendition[], startRendition: number, startSegment: number, hooks: { otherEncoders: () => number; onActiveChange?: (job: RenditionJob) => void }): RenditionManager {
+export function createRenditionManager(sessionId: string, base: TranscodeOptions, ladder: HlsRendition[], startRendition: number, startSegment: number, hooks: { otherEncoders: () => number; onActiveChange?: (job: RenditionJob) => void; masterAudio?: MasterAudio | null }): RenditionManager {
   const s = getSettings().transcoding;
   const st = streamingSettings();
   const durationSec = base.durationSec ?? 0;
@@ -374,6 +397,7 @@ export function createRenditionManager(sessionId: string, base: TranscodeOptions
     createJob: (id, r) => new TranscodeJob(id, { ...base, bitrate: r.videoKbps, maxHeight: r.height }),
     canStartExtra: () => hardwareHasRoom(hooks.otherEncoders(), s.hwAccel),
     onActiveChange: hooks.onActiveChange,
+    masterAudio: hooks.masterAudio ?? null,
   });
 }
 

@@ -15,7 +15,8 @@ public class MediaMaxMediaModule: Module {
     Events("onRemoteKey")
 
     Function("getCapabilities") { () -> [String: Any] in
-      Self.capabilities()
+      // Audio route details (AudioCaps.swift) override the static audio entries.
+      Self.capabilities().merging(AudioCaps.capabilities()) { _, audio in audio }
     }
 
     /// tvOS 17+: ask the display to match `frameRate` (fps, 0 = keep) and `range` ("sdr" | "hdr10" | "hlg" | "dolbyvision").

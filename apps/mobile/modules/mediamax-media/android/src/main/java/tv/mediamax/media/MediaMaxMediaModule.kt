@@ -83,7 +83,7 @@ class MediaMaxMediaModule : Module() {
       "audioPassthrough" to passthrough(ctx),
       "maxDecodeHeight" to codecs.maxHeight,
       "displayHeight" to physicalHeight,
-    )
+    ) + AudioCaps.capabilities(ctx)
   }
 
   /** Encoded formats the current audio route (HDMI / eARC / optical) takes as a bitstream. */

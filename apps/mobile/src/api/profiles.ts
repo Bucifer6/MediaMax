@@ -20,7 +20,9 @@ export function videoDeviceProfile(maxBitrate?: number | null): DeviceProfile {
     ...base,
     videoCodecs: Platform.OS === 'ios' ? videoCodecs.filter((c) => c !== 'vp9') : videoCodecs,
     audioCodecs: merge(base.audioCodecs, n.audioCodecs.filter((c) => c !== 'pcm')),
-    audioPassthrough: n.audioPassthrough,
+    audioPassthrough: merge(n.audioPassthrough, n.directAudioFormats),
+    // Smart audio decisions (E-AC-3 / DTS core / AAC 7.1): only when the native build reports the output channels.
+    ...(n.maxAudioChannels ? { maxAudioChannels: n.maxAudioChannels, multichannelAudioCodecs: n.multichannelAudioCodecs ?? [] } : {}),
     tenBitCodecs: n.tenBitCodecs,
     maxHeight,
     maxWidth: maxHeight ? Math.max(base.maxWidth ?? 0, Math.round((maxHeight * 16) / 9)) : base.maxWidth,

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import type { AudioStream, Chapter, SubtitleStream, VideoRangeInfo } from '@mediamax/shared';
 import { config } from '../config.js';
 import { parseVideoRange, wantsFrameProbe } from './hdr.js';
+import { parseAudioStream } from './audio.js';
 
 export interface ProbeResult {
   container: string | null;
@@ -101,14 +102,8 @@ export async function probe(input: string, filePath?: string): Promise<ProbeResu
   const frameSd = video && wantsFrameProbe(video) ? await firstFrameSideData(input, video.index).catch(() => []) : [];
   const videoRange = video ? parseVideoRange(video, frameSd) : null;
   const hdr = !!videoRange && videoRange.hdrFormat !== 'sdr';
-  const audio: AudioStream[] = streams.filter((s) => s.codec_type === 'audio').map((s) => ({
-    index: s.index,
-    codec: s.codec_name ?? 'unknown',
-    language: normLang(s.tags?.language),
-    title: s.tags?.title ?? null,
-    channels: s.channels ?? 2,
-    default: !!s.disposition?.default,
-  }));
+  // Codec, profile, layout and Atmos / DTS:X / DTS-HD MA / lossless flags (audio.ts).
+  const audio: AudioStream[] = streams.filter((s) => s.codec_type === 'audio').map((s) => parseAudioStream(s, normLang));
   if (audio.length && !audio.some((a) => a.default)) audio[0].default = true;
   const subs: SubtitleStream[] = streams.filter((s) => s.codec_type === 'subtitle').map((s) => ({
     index: s.index,

@@ -1,0 +1,80 @@
+{
+  "_comment": "ffprobe -show_streams of real files made with ffmpeg 6.1 (sine tone, 5.1(side)): ac3, eac3, dca (-strict -2), truehd (-strict -2). Trimmed to the fields MediaMax reads.",
+  "ac3": {
+    "index": 0,
+    "codec_name": "ac3",
+    "codec_type": "audio",
+    "sample_fmt": "fltp",
+    "sample_rate": "44100",
+    "channels": 6,
+    "channel_layout": "5.1(side)",
+    "bits_per_sample": 0,
+    "bit_rate": "448000",
+    "disposition": {
+      "default": 0,
+      "forced": 0
+    },
+    "tags": {
+      "ENCODER": "Lavc60.31.102 ac3",
+      "DURATION": "00:00:02.001000000"
+    }
+  },
+  "eac3": {
+    "index": 0,
+    "codec_name": "eac3",
+    "codec_type": "audio",
+    "sample_fmt": "fltp",
+    "sample_rate": "44100",
+    "channels": 6,
+    "channel_layout": "5.1(side)",
+    "bits_per_sample": 0,
+    "bit_rate": "447890",
+    "disposition": {
+      "default": 0,
+      "forced": 0
+    },
+    "tags": {
+      "ENCODER": "Lavc60.31.102 eac3",
+      "DURATION": "00:00:02.001000000"
+    }
+  },
+  "dts": {
+    "index": 0,
+    "codec_name": "dts",
+    "profile": "DTS",
+    "codec_type": "audio",
+    "sample_fmt": "fltp",
+    "sample_rate": "44100",
+    "channels": 6,
+    "channel_layout": "5.1(side)",
+    "bits_per_sample": 0,
+    "bit_rate": "1411200",
+    "disposition": {
+      "default": 0,
+      "forced": 0
+    },
+    "tags": {
+      "ENCODER": "Lavc60.31.102 dca",
+      "DURATION": "00:00:02.000000000"
+    }
+  },
+  "truehd": {
+    "index": 0,
+    "codec_name": "truehd",
+    "codec_type": "audio",
+    "sample_fmt": "s32",
+    "sample_rate": "44100",
+    "channels": 6,
+    "channel_layout": "5.1(side)",
+    "bits_per_sample": 0,
+    "bits_per_raw_sample": "24",
+    "disposition": {
+      "default": 0,
+      "forced": 0
+    },
+    "tags": {
+      "ENCODER": "Lavc60.31.102 truehd",
+      "DURATION": "00:00:02.000000000"
+    }
+  }
+}

@@ -16,6 +16,7 @@ import { BookmarksSection } from '../components/Bookmarks';
 import { AddToContainerModal, EditMetadataModal, UploadArtworkModal } from '../components/ItemModals';
 import { RatingBadges } from '../components/RatingBadges';
 import { MediaRangeBadge, rangeDetails } from '../components/HdrBadge';
+import { AudioBadges, audioFormat, channelText } from '../components/AudioBadge';
 import { ArrItemActions } from '../components/ArrItemActions';
 import { ReportIssueButton } from '../components/ReportIssue';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
@@ -32,11 +33,9 @@ export function MediaBadges({ media }: { media?: MediaSource[] }) {
       {m.resolutionLabel && <Badge tone="muted" className="badge-res">{m.resolutionLabel}</Badge>}
       <MediaRangeBadge media={m} />
       {m.videoCodec && <Badge tone="muted">{m.videoCodec.toUpperCase()}</Badge>}
-      {audio && (
-        <Badge tone="muted">
-          {audio.codec.toUpperCase()} {audio.channels > 2 ? `${audio.channels - 1}.1` : audio.channels === 2 ? '2.0' : 'Mono'}
-        </Badge>
-      )}
+      {audio && (audio.atmos || audio.dtsX || audio.dtsHdMa || audio.codec === 'truehd'
+        ? <AudioBadges stream={audio} />
+        : <Badge tone="muted">{audioFormat(audio)} {channelText(audio)}</Badge>)}
       {m.subtitleStreams.length > 0 && <Badge tone="muted">CC</Badge>}
       {m.remote && <Badge tone="accent">IPTV</Badge>}
     </span>
@@ -64,7 +63,11 @@ function MediaInfo({ media }: { media: MediaSource[] }) {
               <ul className="stream-list">
                 {m.audioStreams.map((a) => (
                   <li key={a.index}>
-                    <Icon name="audio" size={14} /> {a.title || languageName(a.language)} · {a.codec.toUpperCase()} · {a.channels}ch {a.default && <Badge tone="muted">Default</Badge>}
+                    <Icon name="audio" size={14} />
+                    <span>
+                      {[a.title || languageName(a.language), a.title === a.formatLabel ? null : audioFormat(a), channelText(a), a.sampleRate ? `${a.sampleRate / 1000} kHz` : null, a.bitDepth && a.lossless ? `${a.bitDepth}-bit` : null, a.bitrate ? formatBitrate(a.bitrate) : null].filter(Boolean).join(' · ')}
+                    </span>
+                    <AudioBadges stream={a} channels={false} /> {a.default && <Badge tone="muted">Default</Badge>}
                   </li>
                 ))}
               </ul>
