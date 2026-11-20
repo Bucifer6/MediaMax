@@ -37,7 +37,7 @@ MediaMax brings together the features people love in **Plex, Jellyfin and Emby**
 - Direct play, remux or transcode per device, with on-demand HLS and instant seeking
 - Hardware transcoding (VA-API, QSV, NVENC, VideoToolbox, V4L2) and HDR → SDR tone mapping
 - HDR10, HDR10+, HLG and Dolby Vision detection with per-device direct play ([docs/HDR.md](docs/HDR.md))
-- Skip intro, credits, recaps and ad breaks; scrub previews; editions and extras
+- Skip intro, credits, recaps and ad breaks; scrub previews (trickplay) on web, TVs, phones, Android TV and Apple TV, offline too; editions and extras
 - Cinema mode (trailers and pre-rolls), watch-together, Chromecast, "Play on…" another device
 - Our own subtitle renderer everywhere (SRT/WebVTT, ASS with libass and embedded fonts, PGS) with styling and sync ([docs/PLAYBACK.md](docs/PLAYBACK.md))
 - Automatic quality: bandwidth probe, adaptive multi-rendition transcodes and seamless direct-play ↔ transcode switching
@@ -57,7 +57,7 @@ MediaMax brings together the features people love in **Plex, Jellyfin and Emby**
 
 **🎧 Music, DJ & AI DJ**
 - Gapless playback, crossfade, ReplayGain, synced lyrics, song and artist radio
-- **DJ mode**: BPM, key and energy analysis, harmonic auto-mixes and beat-matched two-deck crossfades
+- **DJ mode**: BPM, key, energy and phrase analysis, harmonic auto-mixes and beat-matched two-deck transitions on phrase boundaries: EQ bass swaps, filter fades and echo-outs, tempo-matched with key lock
 - **AI DJ**: ask in plain words ("chilled 90s house, 1 hour"); a voice host talks between songs. Free by default; can use local models (Ollama) or free and cheap hosted APIs
 - MusicBrainz Picard tags, multi-artist credits, discography with missing albums, AcoustID "identify by sound"
 - Last.fm and ListenBrainz scrobbling, ListenBrainz weekly playlists

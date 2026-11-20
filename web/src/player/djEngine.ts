@@ -5,15 +5,38 @@
  * incoming one, crossfade length, tempo ratio). This engine executes the plan precisely:
  *   - preloads the next track on the idle deck ~15 s ahead, already seeked to its mix-in point,
  *   - starts it the moment the live deck reaches the mix-out point (a short timer closes the gap between ticks),
- *   - runs an equal-power crossfade on Web Audio gain nodes (volume ramps as a fallback),
- *   - plays the incoming track at `tempoRatio` (pitch preserved) during the blend, then eases it back to 1.0,
+ *   - runs the transition on a small Web Audio mixer per deck (into a safety limiter) — 2-band split (bass swap), high/low-pass filters
+ *     (filter fade), beat-synced echo send (echo-out) and an equal-power crossfade — with every control
+ *     automated on the audio clock (element volume ramps as a fallback),
+ *   - plays the incoming track at the matched tempo with key lock during the blend (the browser's own
+ *     pitch-preserving playback, or the WSOLA AudioWorklet in djKeylock.worklet.ts where that is missing; no
+ *     tempo change at all when neither is available), then glides it back to its own tempo over N bars (or stays),
  *   - tops up the queue from the server in continuous mode.
+ * Mixer styles and the WSOLA key lock are adapted from OpenDJ (MIT, github.com/Bucifer6/OpenDJ).
  */
 import type { DjHostLine, DjMix, DjMixRequest, DjMixTrack, DjStatus, PlaybackInfo } from '@mediamax/shared';
 import { getToken } from '../api/client';
 import { api } from '../api/endpoints';
 import { attachStream, type Attached } from './engine';
 import { profileWithBitrate } from './deviceProfile';
+import {
+  automationCurves, ECHO_BEATS, ECHO_FEEDBACK, glideMs, incomingRate, levelsAt, OPEN_HP, OPEN_LP, resolveKeyLock, transitionLabel, transitionPoints, usedControls,
+  type KeyLockMode, type MixLevels,
+} from './djMixer';
+import keylockWorkletUrl from './djKeylock.worklet.ts?worker&url';
+import type { DjTransitionPreference } from '@mediamax/shared';
+
+/** DJ mixer settings (kept per browser by the DJ page). */
+export interface DjOptions {
+  transitions: DjTransitionPreference;
+  keyLock: KeyLockMode;
+  /** Largest tempo change for beat-matching, percent. */
+  maxStretchPct: number;
+  /** After a tempo-matched transition: glide back to the track's own tempo, or stay at the matched tempo. */
+  afterTransition: 'glide' | 'stay';
+  glideBars: number;
+}
+export const DEFAULT_DJ_OPTIONS: DjOptions = { transitions: 'auto', keyLock: 'auto', maxStretchPct: 8, afterTransition: 'glide', glideBars: 16 };
 
 export interface DeckState {
   track: DjMixTrack | null;
@@ -45,11 +68,30 @@ export interface DjState {
   /** What the AI DJ understood the request as. */
   summary: string | null;
   understoodBy: 'llm' | 'rules' | null;
+  /** Running transition: label ("Bass swap"), progress 0–1. */
+  transition: { label: string; progress: number } | null;
+  options: DjOptions;
+  /** Key-lock engine in use: browser time-stretch, WSOLA worklet, or off (no tempo matching). */
+  keyLock: 'native' | 'worklet' | 'off';
+}
+
+/** One deck's mixer strip (Web Audio). */
+interface Strip {
+  src: MediaElementAudioSourceNode;
+  /** Entry point after the (optional) key-lock worklet. */
+  input: GainNode;
+  keylock: AudioWorkletNode | null;
+  low: GainNode;
+  high: GainNode;
+  hp: BiquadFilterNode;
+  lp: BiquadFilterNode;
+  echoSend: GainNode;
 }
 
 interface Deck {
   audio: HTMLAudioElement;
   gain: GainNode | null;
+  strip: Strip | null;
   attached: Attached | null;
   sessionId: string | null;
   offsetMs: number;
@@ -60,7 +102,26 @@ interface Deck {
 
 const PRELOAD_MS = 15000;
 const TOPUP_BELOW = 3;
-const RATE_EASE_MS = 8000;
+/** Bass-swap crossover (Hz) and Butterworth Q in dB (Web Audio lowpass/highpass Q is in dB): LR4 = 2 × Butterworth. */
+const XOVER = 200;
+const Q_BUTTER_DB = -3.0103;
+
+const OPTIONS_KEY = 'mm.dj.mixer';
+function loadOptions(): DjOptions {
+  try {
+    const o = JSON.parse(localStorage.getItem(OPTIONS_KEY) ?? 'null');
+    return o && typeof o === 'object' ? { ...DEFAULT_DJ_OPTIONS, ...o } : { ...DEFAULT_DJ_OPTIONS };
+  } catch {
+    return { ...DEFAULT_DJ_OPTIONS };
+  }
+}
+
+/** Can this browser time-stretch an <audio> element without changing pitch? */
+export function nativeKeyLock(): boolean {
+  if (typeof HTMLMediaElement === 'undefined') return false;
+  const p = HTMLMediaElement.prototype as unknown as Record<string, unknown>;
+  return 'preservesPitch' in p || 'webkitPreservesPitch' in p || 'mozPreservesPitch' in p;
+}
 
 export class DjEngine {
   private ctx: AudioContext | null = null;
@@ -83,13 +144,20 @@ export class DjEngine {
   private listeners = new Set<(s: DjState) => void>();
   private gains: [number, number] = [1, 0];
   private easeTimer: number | null = null;
+  private options: DjOptions = loadOptions();
+  private keyLockMode: 'native' | 'worklet' | 'off' = 'off';
+  private workletReady: Promise<boolean> | null = null;
+  private echo: { delay: DelayNode; feedback: GainNode; ret: GainNode } | null = null;
+  /** Running transition's effect and swap/cut points. */
+  private fx: { fx: NonNullable<NonNullable<DjMixTrack['transition']>['fx']>; kSwap: number; kCut: number; label: string } | null = null;
+  private pausedAt = 0;
 
   constructor() {
     const mk = (): Deck => {
       const audio = new Audio();
       audio.preload = 'auto';
       (audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = true;
-      return { audio, gain: null, attached: null, sessionId: null, offsetMs: 0, queueIndex: -1, ready: false, lastReport: 0 };
+      return { audio, gain: null, strip: null, attached: null, sessionId: null, offsetMs: 0, queueIndex: -1, ready: false, lastReport: 0 };
     };
     this.decks = [mk(), mk()];
     for (const d of this.decks) d.audio.addEventListener('ended', () => this.onEnded(d));
@@ -110,6 +178,31 @@ export class DjEngine {
     return () => {
       this.listeners.delete(fn);
     };
+  }
+
+  /** Mixer settings (transition feel, key lock, stretch limit, tempo after a transition). */
+  getOptions(): DjOptions {
+    return { ...this.options };
+  }
+
+  setOptions(o: Partial<DjOptions>) {
+    this.options = { ...this.options, ...o };
+    this.options.maxStretchPct = Math.max(1, Math.min(16, Number(this.options.maxStretchPct) || 8));
+    this.options.glideBars = Math.max(1, Math.min(64, Math.round(Number(this.options.glideBars) || 16)));
+    try {
+      localStorage.setItem(OPTIONS_KEY, JSON.stringify(this.options));
+    } catch {
+      /* private mode */
+    }
+    this.request = { ...this.request, transitions: this.options.transitions, maxStretchPct: this.options.maxStretchPct };
+    if (this.ctx) void this.prepareKeyLock();
+    this.emit();
+  }
+
+  /** What the browser supports for key lock (for the settings UI). */
+  keyLockSupport() {
+    const ctxOk = typeof AudioContext !== 'undefined';
+    return { native: nativeKeyLock(), worklet: ctxOk && typeof AudioWorkletNode !== 'undefined' };
   }
 
   /* ------------------------------ AI DJ host ---------------------------- */
@@ -225,8 +318,9 @@ export class DjEngine {
   async start(mix: DjMix, request: DjMixRequest, continuous: boolean) {
     this.stop(false);
     this.ensureAudioGraph();
+    await this.prepareKeyLock();
     this.queue = mix.tracks;
-    this.request = request;
+    this.request = { ...request, transitions: request.transitions ?? this.options.transitions, maxStretchPct: request.maxStretchPct ?? this.options.maxStretchPct };
     this.summary = mix.summary ?? null;
     this.understoodBy = mix.understoodBy ?? null;
     this.lines.clear();
@@ -259,6 +353,9 @@ export class DjEngine {
     if (this.status !== 'playing') return;
     for (const d of this.decks) if (!d.audio.paused) d.audio.pause();
     this.silence();
+    // Freeze scheduled mixer automation with the music.
+    void this.ctx?.suspend().catch(() => {});
+    this.pausedAt = performance.now();
     this.status = 'paused';
     this.report('paused');
     this.emit();
@@ -267,6 +364,8 @@ export class DjEngine {
   async resume() {
     if (this.status !== 'paused') return;
     await this.ctx?.resume();
+    if (this.pausedAt) this.fadeStart += performance.now() - this.pausedAt;
+    this.pausedAt = 0;
     const liveDeck = this.decks[this.live];
     await liveDeck.audio.play().catch(() => {});
     if (this.transitioning) await this.decks[1 - this.live].audio.play().catch(() => {});
@@ -303,6 +402,8 @@ export class DjEngine {
     next.transition = {
       ...(next.transition ?? { mixInMs: next.analysis?.cueInMs ?? 0, tempoRatio: 1, keyMatch: 'unknown', bpmDelta: null }),
       mixOutMs: Math.round(at), crossfadeMs: Math.min(8000, Math.max(2000, (next.transition?.crossfadeMs ?? 8000))), style: next.transition?.style === 'cut' ? 'cut' : 'fade',
+      // A manual mix happens off-phrase: a filter fade (or the planned echo-out) hides that best.
+      fx: next.transition?.fx === 'echo' ? 'echo' : a?.bpm ? 'filter' : 'none', swapAtMs: undefined, phraseAligned: false,
     } as NonNullable<DjMixTrack['transition']>;
     if (next.transition.style !== 'blend') next.transition.tempoRatio = 1;
     const idle = this.decks[1 - this.live];
@@ -357,6 +458,8 @@ export class DjEngine {
       status: this.status, error: this.error, decks: [deck(0), deck(1)], live: this.live, crossfader: Math.max(-1, Math.min(1, xf)),
       transitioning: this.transitioning, queue: this.queue, index: this.index, continuous: this.continuous, fetching: this.fetching,
       hostSpeaking: this.hostSpeaking, voice: this.voiceOn, summary: this.summary, understoodBy: this.understoodBy,
+      transition: this.transitioning && this.fx ? { label: this.fx.label, progress: Math.min(1, (performance.now() - this.fadeStart) / this.fadeLen) } : null,
+      options: { ...this.options }, keyLock: this.keyLockMode,
     };
   }
 
@@ -374,20 +477,129 @@ export class DjEngine {
     this.emit();
   }
 
+  /**
+   * Per deck: source → [key-lock worklet] → input ─┬─ LR4 low-pass ─ low ─┐
+   *                                                └─ LR4 high-pass ─ high ┴→ HPF → LPF → gain → master
+   *                                                                             LPF → echoSend → echo bus → master
+   */
   private ensureAudioGraph() {
     if (this.ctx || typeof AudioContext === 'undefined') return;
     try {
-      this.ctx = new AudioContext({ latencyHint: 'playback' });
-      this.master = this.ctx.createGain();
-      this.master.connect(this.ctx.destination);
+      const ctx = (this.ctx = new AudioContext({ latencyHint: 'playback' }));
+      this.master = ctx.createGain();
+      // Safety limiter: two tracks at full level around a bass swap can peak above 0 dBFS.
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -2;
+      limiter.knee.value = 0;
+      limiter.ratio.value = 20;
+      limiter.attack.value = 0.003;
+      limiter.release.value = 0.25;
+      this.master.connect(limiter).connect(ctx.destination);
+      const delay = ctx.createDelay(4);
+      const feedback = ctx.createGain();
+      const ret = ctx.createGain();
+      feedback.gain.value = ECHO_FEEDBACK;
+      ret.gain.value = ECHO_FEEDBACK;
+      delay.connect(feedback).connect(delay);
+      delay.connect(ret).connect(this.master);
+      this.echo = { delay, feedback, ret };
+      const biquad = (type: BiquadFilterType, f: number) => {
+        const b = ctx.createBiquadFilter();
+        b.type = type;
+        b.frequency.value = f;
+        b.Q.value = Q_BUTTER_DB;
+        return b;
+      };
       for (const d of this.decks) {
-        const src = this.ctx.createMediaElementSource(d.audio);
-        d.gain = this.ctx.createGain();
-        src.connect(d.gain).connect(this.master);
+        const src = ctx.createMediaElementSource(d.audio);
+        const input = ctx.createGain();
+        const low = ctx.createGain();
+        const high = ctx.createGain();
+        const hp = biquad('highpass', OPEN_HP);
+        const lp = biquad('lowpass', OPEN_LP);
+        const echoSend = ctx.createGain();
+        echoSend.gain.value = 0;
+        d.gain = ctx.createGain();
+        src.connect(input);
+        input.connect(biquad('lowpass', XOVER)).connect(biquad('lowpass', XOVER)).connect(low).connect(hp);
+        input.connect(biquad('highpass', XOVER)).connect(biquad('highpass', XOVER)).connect(high).connect(hp);
+        hp.connect(lp).connect(d.gain).connect(this.master);
+        lp.connect(echoSend).connect(delay);
+        d.strip = { src, input, keylock: null, low, high, hp, lp, echoSend };
       }
     } catch {
       this.ctx = null; // fall back to element volume
+      this.echo = null;
+      for (const d of this.decks) d.strip = null;
     }
+  }
+
+  /** Decide the key-lock engine and, for the worklet, load it and insert it in front of each deck's strip. */
+  private async prepareKeyLock() {
+    const support = this.keyLockSupport();
+    let mode = resolveKeyLock(this.options.keyLock, support);
+    if (mode === 'worklet') {
+      const ok = await this.loadWorklet();
+      if (!ok) mode = support.native && this.options.keyLock !== 'off' ? 'native' : 'off';
+    }
+    this.keyLockMode = mode;
+    for (const d of this.decks) {
+      const el = d.audio as HTMLAudioElement & { preservesPitch?: boolean; webkitPreservesPitch?: boolean; mozPreservesPitch?: boolean };
+      const keep = mode !== 'worklet';
+      el.preservesPitch = keep;
+      el.webkitPreservesPitch = keep;
+      el.mozPreservesPitch = keep;
+      const st = d.strip;
+      if (!st || !this.ctx) continue;
+      if (mode === 'worklet' && !st.keylock) {
+        try {
+          const node = new AudioWorkletNode(this.ctx, 'mediamax-keylock', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+          st.src.disconnect();
+          st.src.connect(node).connect(st.input);
+          st.keylock = node;
+        } catch {
+          this.keyLockMode = support.native ? 'native' : 'off';
+        }
+      } else if (mode !== 'worklet' && st.keylock) {
+        st.src.disconnect();
+        st.keylock.disconnect();
+        st.src.connect(st.input);
+        st.keylock = null;
+      }
+      this.setRate(d, d.audio.playbackRate);
+    }
+  }
+
+  private loadWorklet(): Promise<boolean> {
+    if (!this.ctx?.audioWorklet) return Promise.resolve(false);
+    return (this.workletReady ??= this.ctx.audioWorklet.addModule(keylockWorkletUrl).then(() => true, () => false));
+  }
+
+  /** Set a deck's tempo; the key stays put (browser time-stretch or the worklet undoing the resampling). */
+  private setRate(d: Deck, rate: number) {
+    const r = this.keyLockMode === 'off' ? 1 : rate;
+    d.audio.playbackRate = r;
+    const kl = d.strip?.keylock;
+    if (kl && this.ctx) {
+      const p = kl.parameters.get('pitch');
+      p?.setValueAtTime(1 / r, this.ctx.currentTime);
+    }
+  }
+
+  /** Put a deck's EQ/filters/echo send back to neutral. */
+  private restStrip(d: Deck) {
+    const st = d.strip;
+    if (!st || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const set = (p: AudioParam, v: number) => {
+      p.cancelScheduledValues(0);
+      p.setValueAtTime(v, t);
+    };
+    set(st.low.gain, 1);
+    set(st.high.gain, 1);
+    set(st.hp.frequency, OPEN_HP);
+    set(st.lp.frequency, OPEN_LP);
+    set(st.echoSend.gain, 0);
   }
 
   private setGain(i: 0 | 1, v: number) {
@@ -414,7 +626,7 @@ export class DjEngine {
     const pi: PlaybackInfo = await api.playback.start(t.item.id, { startMs: Math.round(startMs) || undefined, deviceProfile: profileWithBitrate(null) });
     d.sessionId = pi.sessionId;
     d.offsetMs = pi.streamStartMs ?? 0;
-    d.audio.playbackRate = 1;
+    this.setRate(d, 1);
     d.attached = await attachStream(d.audio, pi, {
       onFatal: (_k, msg) => {
         if (d.queueIndex === this.index) this.fail(`Can't play "${t.item.title}": ${msg}`);
@@ -452,6 +664,7 @@ export class DjEngine {
     }
     d.attached?.destroy();
     d.attached = null;
+    this.restStrip(d);
     d.audio.pause();
     d.audio.removeAttribute('src');
     d.audio.load();
@@ -531,26 +744,38 @@ export class DjEngine {
     const next = this.queue[this.index + 1];
     if (!next || incoming.queueIndex !== this.index + 1) return;
     const tr = next.transition;
-    incoming.audio.playbackRate = tr?.tempoRatio && tr.style === 'blend' ? tr.tempoRatio : 1;
+    const outgoing = this.decks[this.live];
+    const outRate = outgoing.audio.playbackRate || 1;
+    // Tempo match with key lock (within the stretch limit; half/double time already folded into the ratio).
+    const rate = tr?.tempoRatio && tr.style === 'blend' ? incomingRate(tr.tempoRatio, outRate, this.options.maxStretchPct / 100) : 1;
+    this.setRate(incoming, rate);
     void incoming.audio.play();
     this.transitioning = true;
     this.fadeStart = performance.now();
-    this.fadeLen = Math.max(300, tr?.crossfadeMs ?? 5000);
-    // Equal-power curves scheduled on the audio clock (smooth regardless of timer jitter).
-    if (this.ctx && incoming.gain && this.decks[this.live].gain) {
-      const n = 128;
-      const up = new Float32Array(n);
-      const down = new Float32Array(n);
-      for (let k = 0; k < n; k++) {
-        const x = k / (n - 1);
-        up[k] = Math.sin((x * Math.PI) / 2);
-        down[k] = Math.cos((x * Math.PI) / 2);
-      }
+    // The plan is in the outgoing track's own time; at a matched tempo its bars pass faster/slower.
+    this.fadeLen = Math.max(300, (tr?.crossfadeMs ?? 5000) / outRate);
+    const fx = tr?.fx ?? 'none';
+    const { kSwap, kCut } = tr ? transitionPoints(tr, outRate) : { kSwap: 0.5, kCut: 0.75 };
+    this.fx = { fx, kSwap, kCut, label: tr ? transitionLabel(tr) : 'Crossfade' };
+    // Every control the style uses, scheduled on the audio clock (smooth regardless of timer jitter).
+    if (this.ctx && incoming.gain && outgoing.gain) {
       const t0 = this.ctx.currentTime + 0.01;
-      incoming.gain.gain.cancelScheduledValues(0);
-      this.decks[this.live].gain!.gain.cancelScheduledValues(0);
-      incoming.gain.gain.setValueCurveAtTime(up, t0, this.fadeLen / 1000);
-      this.decks[this.live].gain!.gain.setValueCurveAtTime(down, t0, this.fadeLen / 1000);
+      const dur = this.fadeLen / 1000;
+      const curves = automationCurves(fx, dur, kSwap, kCut);
+      const params: Partial<Record<keyof MixLevels, AudioParam | undefined>> = {
+        outGain: outgoing.gain.gain, inGain: incoming.gain.gain,
+        outLow: outgoing.strip?.low.gain, inLow: incoming.strip?.low.gain,
+        outHp: outgoing.strip?.hp.frequency, inLp: incoming.strip?.lp.frequency,
+        echoSend: outgoing.strip?.echoSend.gain,
+      };
+      if (fx === 'echo' && this.echo && tr?.beatMs) this.echo.delay.delayTime.setValueAtTime(Math.min(3.9, (ECHO_BEATS * tr.beatMs) / 1000 / outRate), t0);
+      for (const key of usedControls(fx)) {
+        const p = params[key];
+        if (!p) continue;
+        p.cancelScheduledValues(0);
+        p.setValueAtTime(curves[key][0], t0 - 0.005);
+        p.setValueCurveAtTime(curves[key], t0, dur);
+      }
     }
     this.updateMediaSession(next);
     void this.speakIfReady(this.index + 1);
@@ -561,8 +786,9 @@ export class DjEngine {
   private fadeStep() {
     const x = Math.min(1, (performance.now() - this.fadeStart) / this.fadeLen);
     const inIdx = (1 - this.live) as 0 | 1;
-    this.gains[inIdx] = Math.sin((x * Math.PI) / 2);
-    this.gains[this.live] = Math.cos((x * Math.PI) / 2);
+    const l = levelsAt(this.fx?.fx ?? 'none', x, this.fx?.kSwap, this.fx?.kCut);
+    this.gains[inIdx] = l.inGain;
+    this.gains[this.live] = l.outGain;
     if (!this.ctx) {
       this.decks[inIdx].audio.volume = this.gains[inIdx];
       this.decks[this.live].audio.volume = this.gains[this.live];
@@ -577,20 +803,26 @@ export class DjEngine {
     this.index += 1;
     this.transitioning = false;
     this.gains = this.live === 0 ? [1, 0] : [0, 1];
+    this.fx = null;
     this.setGain(this.live, 1);
-    this.easeRate(this.decks[this.live]);
+    this.restStrip(this.decks[this.live]);
+    if (this.options.afterTransition === 'glide') {
+      const t = this.queue[this.index];
+      this.easeRate(this.decks[this.live], glideMs(this.options.glideBars, t?.analysis?.bpm, this.decks[this.live].audio.playbackRate));
+    }
     this.emit();
   }
 
-  /** Ease a tempo-matched deck back to its natural speed. */
-  private easeRate(d: Deck) {
+  /** Glide a tempo-matched deck back to its natural speed (key stays locked throughout). */
+  private easeRate(d: Deck, ms: number) {
     if (Math.abs(d.audio.playbackRate - 1) < 0.001) return;
     if (this.easeTimer) window.clearInterval(this.easeTimer);
     const from = d.audio.playbackRate;
     const t0 = performance.now();
     this.easeTimer = window.setInterval(() => {
-      const x = Math.min(1, (performance.now() - t0) / RATE_EASE_MS);
-      d.audio.playbackRate = from + (1 - from) * x;
+      if (this.status === 'paused') return;
+      const x = Math.min(1, (performance.now() - t0) / Math.max(500, ms));
+      this.setRate(d, from + (1 - from) * x);
       if (x >= 1 && this.easeTimer) {
         window.clearInterval(this.easeTimer);
         this.easeTimer = null;
@@ -605,7 +837,7 @@ export class DjEngine {
       // Ran out before the planned mix point (e.g. after a seek): hard swap.
       const idle = this.decks[1 - this.live];
       if (idle.queueIndex === this.index + 1 && idle.ready) {
-        next.transition = { ...(next.transition ?? { mixInMs: 0, keyMatch: 'unknown', bpmDelta: null }), crossfadeMs: 300, style: 'cut', tempoRatio: 1, mixOutMs: 0 } as NonNullable<DjMixTrack['transition']>;
+        next.transition = { ...(next.transition ?? { mixInMs: 0, keyMatch: 'unknown', bpmDelta: null }), crossfadeMs: 300, style: 'cut', tempoRatio: 1, mixOutMs: 0, fx: 'none' } as NonNullable<DjMixTrack['transition']>;
         this.beginTransition();
         return;
       }
