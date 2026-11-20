@@ -14,7 +14,7 @@ import { events, bus } from '../events.js';
 import { logActivity } from '../activity.js';
 import { homeHooks } from '../items.js';
 import { TranscodeJob } from '../transcoder.js';
-import { registerSession, stopSession, type PlaySession } from '../playback.js';
+import { assertCanStartSession, registerSession, stopSession, type PlaySession } from '../playback.js';
 import type { AuthContext } from '../auth.js';
 import * as xt from './xtream.js';
 import { parseM3u, m3uCatchupUrl } from './m3u.js';
@@ -97,7 +97,16 @@ export function getSourceRow(id: string): Row {
 function validateSource(req: Partial<CreateLiveSourceRequest>) {
   if (req.type && !['xtream', 'm3u', 'hdhomerun'].includes(req.type)) throw badRequest('Unknown source type');
   if (req.url !== undefined && !/^https?:\/\/|^[\w.-]+(:\d+)?/.test(req.url)) throw badRequest('Invalid URL');
+  if (req.epgUrl) {
+    const urls = splitEpgUrls(req.epgUrl);
+    if (urls.length > 10) throw badRequest('At most 10 EPG URLs per source');
+    for (const u of urls) if (!/^https?:\/\//i.test(u)) throw badRequest(`Invalid EPG URL: ${u.slice(0, 80)}`);
+  }
 }
+
+/** A source's EPG field may hold several XMLTV URLs (comma- or newline-separated), in priority order. */
+export const splitEpgUrls = (v: string | null | undefined) => [...new Set((v ?? '').split(/[\n,]+/).map((x) => x.trim()).filter(Boolean))];
+const normEpg = (v: string | null | undefined) => splitEpgUrls(v).join('\n') || null;
 
 export function createSource(req: CreateLiveSourceRequest): LiveSource {
   validateSource(req);
@@ -106,7 +115,7 @@ export function createSource(req: CreateLiveSourceRequest): LiveSource {
   const id = newId();
   db.insert('live_sources', {
     id, name: req.name.trim(), type: req.type, url: req.type === 'xtream' ? xt.normalizeBase(req.url) : req.url.trim(), username: req.username ?? null, password: req.password ?? null,
-    epg_url: req.epgUrl || null, enabled: req.enabled ?? true, proxy_streams: req.proxyStreams ?? true, import_vod: req.importVod ?? req.type === 'xtream',
+    epg_url: normEpg(req.epgUrl), enabled: req.enabled ?? true, proxy_streams: req.proxyStreams ?? true, import_vod: req.importVod ?? req.type === 'xtream',
     import_series: req.importSeries ?? req.type === 'xtream', user_agent: req.userAgent || null, refresh_hours: req.refreshIntervalHours ?? 12, created_at: nowIso(),
   });
   logActivity('livetv.source', `Live TV source "${req.name}" added`);
@@ -122,7 +131,7 @@ export function updateSource(id: string, req: UpdateLiveSourceRequest): LiveSour
   if (req.url !== undefined) patch.url = req.url.trim();
   if (req.username !== undefined) patch.username = req.username;
   if (req.password !== undefined && req.password !== '••••••••') patch.password = req.password;
-  if (req.epgUrl !== undefined) patch.epg_url = req.epgUrl || null;
+  if (req.epgUrl !== undefined) patch.epg_url = normEpg(req.epgUrl);
   if (req.enabled !== undefined) patch.enabled = req.enabled;
   if (req.proxyStreams !== undefined) patch.proxy_streams = req.proxyStreams;
   if (req.importVod !== undefined) patch.import_vod = req.importVod;
@@ -235,7 +244,8 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
   const src = getSourceRow(id);
   if (!src.enabled) return;
   log.info(`Refreshing live source "${src.name}" (${src.type})`);
-  let epgUrl: string | null = src.epg_url;
+  const epgUrls = splitEpgUrls(src.epg_url);
+  let providerEpg: string[] = [];
   try {
     if (!opts.epgOnly) {
       if (src.type === 'xtream') {
@@ -251,7 +261,7 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
             category: s.category_id != null ? String(s.category_id) : null, streamUrl: xt.liveUrl(c, s.stream_id, ext),
             archive: Number(s.tv_archive) === 1, archiveDays: Number(s.tv_archive_duration) || 0, epgId: s.epg_channel_id || null,
           })));
-        epgUrl = epgUrl || xt.epgUrl(c);
+        providerEpg = [xt.epgUrl(c)];
         if (src.import_vod) await importVod(src).catch((e) => log.warn(`VOD import failed for ${src.name}`, e.message));
         else db.run("DELETE FROM libraries WHERE source_id = ? AND type = 'iptv-movies'", id);
         if (src.import_series) await importSeries(src).catch((e) => log.warn(`Series import failed for ${src.name}`, e.message));
@@ -274,7 +284,7 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
           const row = db.get('SELECT custom FROM channels WHERE id = ?', cid);
           if (row) db.run('UPDATE channels SET custom = ? WHERE id = ?', JSON.stringify({ ...parseJson(row.custom, {}), catchup: e.catchup, catchupSource: e.catchupSource, userAgent: e.userAgent }), cid);
         }
-        epgUrl = epgUrl || pl.epgUrl;
+        providerEpg = splitEpgUrls(pl.epgUrl);
       } else if (src.type === 'hdhomerun') {
         const lineup = await hdhrLineup(src.url);
         syncChannels(id, [{ remoteId: 'hd', name: 'HD' }, { remoteId: 'sd', name: 'SD' }], lineup.map((l) => ({
@@ -283,7 +293,10 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
         })));
       }
     }
-    if (epgUrl) await refreshEpg(id, epgUrl, src.user_agent);
+    // Custom guides first (highest priority), then the provider's own guide fills any gaps.
+    if (opts.epgOnly && !providerEpg.length && src.type === 'xtream') providerEpg = [xt.epgUrl(creds(src))];
+    const allEpg = [...new Set([...epgUrls, ...providerEpg])];
+    if (allEpg.length) await refreshEpg(id, allEpg, src.user_agent);
     db.run('UPDATE live_sources SET last_refresh_at = ?, last_error = NULL WHERE id = ?', nowIso(), id);
     bus.emit('epg.refreshed', id);
     log.info(`Live source "${src.name}" refreshed`);
@@ -295,7 +308,9 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
   }
 }
 
-async function refreshEpg(sourceId: string, url: string, ua: string | null) {
+const redactUrl = (u: string) => u.replace(/(password|pass|token|key)=[^&]*/gi, '$1=***');
+
+async function refreshEpg(sourceId: string, urls: string[], ua: string | null) {
   // Map XMLTV channel ids (and display names) onto our channels' epg ids.
   const chans = db.all<{ epg_channel_id: string | null; name: string; custom: string }>('SELECT epg_channel_id, name, custom FROM channels WHERE source_id = ?', sourceId);
   const wanted = new Set<string>();
@@ -316,8 +331,16 @@ async function refreshEpg(sourceId: string, url: string, ua: string | null) {
     });
     batch.length = 0;
   };
-  db.run('DELETE FROM programs WHERE source_id = ?', sourceId);
-  const res = await parseXmltvStream(url, {
+  // Parse every guide before replacing the old programmes so a failing guide never empties the EPG.
+  db.run('DELETE FROM programs WHERE source_id = ? AND id LIKE ?', sourceId, 'tmp:%');
+  const covered = new Set<string>(); // channels already filled by a higher-priority guide
+  let ok = 0;
+  let totalProgrammes = 0;
+  for (const url of urls) {
+  const filled = new Set<string>();
+  let res: { channels: number; programmes: number };
+  try {
+  res = await parseXmltvStream(url, {
     userAgent: ua,
     onChannel: (c) => {
       if (wanted.has(c.id)) return;
@@ -330,22 +353,41 @@ async function refreshEpg(sourceId: string, url: string, ua: string | null) {
     },
     onProgramme: (p) => {
       const target = wanted.has(p.channel) ? p.channel : aliases.get(p.channel) ?? ([...nameToEpg.values()].includes(p.channel) ? p.channel : null);
-      if (!target || p.end < keepFrom || p.start > keepTo) return;
+      if (!target || covered.has(target) || p.end < keepFrom || p.start > keepTo) return;
+      filled.add(target);
       batch.push({
-        id: stableId(sourceId, target, p.start), source_id: sourceId, epg_channel_id: target, title: p.title, subtitle: p.subtitle,
+        id: `tmp:${stableId(sourceId, target, p.start)}`, source_id: sourceId, epg_channel_id: `tmp:${target}`, title: p.title, subtitle: p.subtitle,
         description: p.description, start: p.start, end: p.end, category: p.category, icon: p.icon, episode_num: p.episodeNum, is_new: p.isNew,
       });
       if (batch.length >= 2000) flush();
     },
   });
   flush();
+  } catch (e) {
+    batch.length = 0;
+    log.warn(`EPG ${redactUrl(url)} failed for source ${sourceId}: ${(e as Error).message}`);
+    continue;
+  }
+  ok++;
+  totalProgrammes += res.programmes;
+  for (const t of filled) covered.add(t);
+  log.info(`EPG ${redactUrl(url)}: ${res.channels} channels, ${res.programmes} programmes parsed, ${filled.size} channels matched`);
+  }
+  if (!ok) {
+    db.run('DELETE FROM programs WHERE source_id = ? AND id LIKE ?', sourceId, 'tmp:%');
+    throw new Error(urls.length > 1 ? 'All EPG downloads failed' : 'EPG download failed');
+  }
+  db.tx(() => {
+    db.run("DELETE FROM programs WHERE source_id = ? AND id NOT LIKE 'tmp:%'", sourceId);
+    db.run("UPDATE programs SET id = substr(id, 5), epg_channel_id = substr(epg_channel_id, 5) WHERE source_id = ? AND id LIKE 'tmp:%'", sourceId);
+  });
   // Auto-assign epg ids for channels matched by display name.
   for (const c of db.all('SELECT id, name, custom, epg_channel_id FROM channels WHERE source_id = ?', sourceId)) {
     if (effEpg(c)) continue;
     const m = nameToEpg.get(c.name.toLowerCase());
     if (m) db.run('UPDATE channels SET epg_channel_id = ? WHERE id = ?', m, c.id);
   }
-  log.info(`EPG for source ${sourceId}: ${res.channels} channels, ${res.programmes} programmes parsed`);
+  log.info(`EPG for source ${sourceId}: ${ok}/${urls.length} guides, ${totalProgrammes} programmes, ${covered.size} channels covered`);
 }
 
 /* ---------------------------- VOD import ---------------------------- */
@@ -683,6 +725,7 @@ export function channelUserAgent(r: Row): string {
 
 export async function playChannel(ctx: AuthContext, channelId: string, req: LivePlayRequest & { deviceProfile?: { containers?: string[] } }, remoteAddr: string | null): Promise<PlaybackInfo> {
   const r = accessibleChannelRow(ctx.user, channelId);
+  assertCanStartSession(ctx, remoteAddr, !!req.multiview && !req.catchupStart);
   const src = getSourceRow(r.source_id);
   const channel = getChannel(ctx.user, channelId);
   let catchup: { start: Date; durationMin: number } | undefined;
@@ -699,7 +742,7 @@ export async function playChannel(ctx: AuthContext, channelId: string, req: Live
   const now = channel.nowPlaying;
   const base = {
     ctx, itemId: null, channelId, mediaId: null, title: channel.name, subtitle: catchup ? `Catch-up · ${catchup.start.toLocaleString()}` : now?.title ?? null,
-    posterUrl: channel.logoUrl, durationMs: catchup ? catchup.durationMin * 60000 : null, remoteAddr,
+    posterUrl: channel.logoUrl, durationMs: catchup ? catchup.durationMin * 60000 : null, remoteAddr, multiview: !!req.multiview && !catchup,
   };
   const info = (session: PlaySession, url: string, mimeType: string, isHls: boolean): PlaybackInfo => ({
     sessionId: session.id, itemId: null, channelId, method: 'live', url, mimeType, isHls, startMs: 0, streamStartMs: 0, durationMs: base.durationMs,

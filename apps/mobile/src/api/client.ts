@@ -5,6 +5,7 @@
 import type {
   ApiError as ApiErrorBody,
   AuthResponse,
+  Bookmark,
   Branding,
   Channel,
   ChannelCategory,
@@ -45,6 +46,7 @@ import type {
   RecordingRule,
   RecordingStatus,
   RemoteSubtitle,
+  RemoteTarget,
   RequestMediaType,
   RequestStatus,
   SearchResponse,
@@ -249,15 +251,16 @@ export class MediaMaxClient {
   }
 
   /* ------------------------------ Auth ------------------------------ */
-  login(username: string, password: string) {
-    const body: LoginRequest = { ...this.device, username, password };
+  /** 401 `totp_required` when the account has two-factor on: call again with `totpCode` (6 digits or a recovery code). */
+  login(username: string, password: string, totpCode?: string) {
+    const body: LoginRequest = { ...this.device, username, password, totpCode: totpCode || undefined };
     return this.post<AuthResponse>('/auth/login', body, { allow401: true });
   }
   profiles() {
     return this.get<PublicProfile[]>('/auth/profiles');
   }
-  profileLogin(userId: string, pin?: string) {
-    const body: PinLoginRequest = { ...this.device, userId, pin };
+  profileLogin(userId: string, pin?: string, totpCode?: string) {
+    const body: PinLoginRequest = { ...this.device, userId, pin, totpCode: totpCode || undefined };
     return this.post<AuthResponse>('/auth/profile-login', body, { allow401: true });
   }
   linkRequest() {
@@ -316,6 +319,14 @@ export class MediaMaxClient {
   }
   item(id: string) {
     return this.get<Item>(`/items/${encodeURIComponent(id)}`);
+  }
+  /** Local trailers, featurettes, deleted scenes… attached to a movie. */
+  extras(id: string) {
+    return this.get<Item[]>(`/items/${encodeURIComponent(id)}/extras`);
+  }
+  /** Cinema mode: trailers / pre-roll to play before a movie ([] when off). */
+  intros(id: string) {
+    return this.get<Item[]>(`/items/${encodeURIComponent(id)}/intros`);
   }
   children(id: string, q: { sort?: ItemSort; order?: 'asc' | 'desc'; limit?: number; offset?: number } = {}) {
     return this.get<Paged<Item>>(`/items/${encodeURIComponent(id)}/children`, q);
@@ -431,6 +442,23 @@ export class MediaMaxClient {
   unsubscribePodcast(id: string) {
     return this.del<{ ok: true }>(`/podcasts/${encodeURIComponent(id)}`);
   }
+  /* ----------------------- Audiobook bookmarks ---------------------- */
+  bookmarks(itemId: string, signal?: AbortSignal) {
+    return this.get<Bookmark[]>(`/items/${encodeURIComponent(itemId)}/bookmarks`, undefined, signal);
+  }
+  addBookmark(itemId: string, body: { positionMs: number; note?: string }) {
+    return this.post<Bookmark>(`/items/${encodeURIComponent(itemId)}/bookmarks`, body);
+  }
+  removeBookmark(itemId: string, bookmarkId: string) {
+    return this.del<{ ok: true }>(`/items/${encodeURIComponent(itemId)}/bookmarks/${encodeURIComponent(bookmarkId)}`);
+  }
+
+  /* -------------------------- Remote control ------------------------- */
+  /** The user's other online devices (this one excluded) and what they're playing. */
+  remoteTargets() {
+    return this.get<RemoteTarget[]>('/remote/targets');
+  }
+
   /** 404 (ApiError.status) when the track has no lyrics. */
   lyrics(itemId: string, signal?: AbortSignal) {
     return this.get<Lyrics>(`/items/${encodeURIComponent(itemId)}/lyrics`, undefined, signal);
@@ -518,6 +546,10 @@ export class MediaMaxClient {
   }
   createRecording(body: CreateRecordingRequest) {
     return this.post<Recording>('/dvr/recordings', body);
+  }
+  /** `priority: 100` = "Make top priority" (always wins a tuner conflict). */
+  updateRecording(id: string, body: { priority?: number }) {
+    return this.patch<Recording>(`/dvr/recordings/${encodeURIComponent(id)}`, body);
   }
   deleteRecording(id: string) {
     return this.del<{ ok: true }>(`/dvr/recordings/${encodeURIComponent(id)}`);

@@ -1,0 +1,9 @@
+{
+  "platforms": ["ios", "android"],
+  "apple": {
+    "modules": ["MediaMaxCarModule"]
+  },
+  "android": {
+    "modules": ["tv.mediamax.car.MediaMaxCarModule"]
+  }
+}

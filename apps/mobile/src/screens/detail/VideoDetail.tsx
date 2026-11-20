@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import React from 'react';
+import React, { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import type { Item, UserItemData } from '@/api/types';
 import { useQuery } from '@/api/useQuery';
@@ -14,11 +14,16 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
   const t = useTheme();
   const similar = useQuery(item.type !== 'episode' ? `similar:${item.id}` : null, (api) => api.similar(item.id, 16), { staleMs: 300000 });
   const siblings = useQuery(item.type === 'episode' && item.parentId ? `children:${item.parentId}` : null, (api) => api.children(item.parentId!, { sort: 'index', order: 'asc', limit: 200 }));
+  const extras = useQuery(item.type === 'movie' ? `extras:${item.id}` : null, (api) => api.extras(item.id), { staleMs: 300000 });
+  // Editions / versions: "Director's Cut", "Extended", or 4K vs 1080p copies of the same movie.
+  const versions = item.media ?? [];
+  const [mediaId, setMediaId] = useState<string | undefined>(undefined);
+  const versionLabel = (m: (typeof versions)[number]) => [m.edition, m.resolutionLabel, m.hdr ? 'HDR' : null].filter(Boolean).join(' · ') || m.container?.toUpperCase() || 'Version';
   const { togglePlayed, toggleFavorite, setRating } = useUserDataActions(item, onUserData);
   const p = progressFraction(item);
   const resumable = p > 0.01 && p < 0.95;
-  const play = () => playItem(item.id, { startMs: resumable ? item.userData.positionMs : 0 });
-  const restart = resumable ? () => playItem(item.id, { restart: true }) : undefined;
+  const play = () => playItem(item.id, { startMs: resumable ? item.userData.positionMs : 0, mediaId });
+  const restart = resumable ? () => playItem(item.id, { restart: true, mediaId }) : undefined;
 
   const showLink =
     item.type === 'episode' && item.grandparentId ? (
@@ -26,11 +31,21 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
     ) : null;
 
   const actions = (
-    <ActionBar item={item} onPlay={play} onRestart={restart} playLabel={resumable ? 'Resume' : 'Play'} togglePlayed={togglePlayed} toggleFavorite={toggleFavorite} downloadable extra={showLink} onRate={setRating} playlistItems />
+    <ActionBar item={item} onPlay={play} onRestart={restart} playLabel={resumable ? 'Resume' : 'Play'} togglePlayed={togglePlayed} toggleFavorite={toggleFavorite} downloadable extra={showLink} onRate={setRating} playlistItems playOn={{ itemId: item.id, positionMs: resumable ? item.userData.positionMs : undefined, title: item.title }} />
   );
+
+  const versionPicker = versions.length > 1 ? (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.space.sm }} accessibilityRole="radiogroup" accessibilityLabel="Version">
+      {versions.map((m, i) => {
+        const on = (mediaId ?? versions[0].id) === m.id;
+        return <Button key={m.id} label={versionLabel(m) + (versions.filter((x) => versionLabel(x) === versionLabel(m)).length > 1 ? ` (${i + 1})` : '')} size="sm" variant={on ? 'primary' : 'secondary'} onPress={() => setMediaId(m.id)} accessibilityLabel={`${versionLabel(m)}${on ? ', selected' : ''}`} />;
+      })}
+    </View>
+  ) : null;
 
   const below = (
     <>
+      {extras.data?.length ? <ItemRow title="Extras" items={extras.data} variant="landscape" /> : null}
       {siblings.data?.items.length ? <ItemRow title={item.parentTitle ?? 'Episodes'} items={siblings.data.items} variant="landscape" /> : null}
       <CastRow people={item.people} />
       {similar.data?.length ? <ItemRow title="More like this" items={similar.data} /> : null}
@@ -46,6 +61,7 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
             <TitleBlock item={item} />
             <Overview text={item.overview} />
             <ResumeInfo item={item} />
+            {versionPicker}
             {actions}
           </View>
           {below}
@@ -60,6 +76,7 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
       <View style={{ paddingHorizontal: t.space.gutter, gap: t.space.md, marginTop: -t.space.xxl, marginBottom: t.space.xl }}>
         <TitleBlock item={item} />
         <ResumeInfo item={item} />
+        {versionPicker}
         {actions}
         <Overview text={item.overview} />
       </View>

@@ -199,11 +199,14 @@ export interface DeviceInfo {
 export interface LoginRequest extends DeviceInfo {
   username: string;
   password: string;
+  /** 6-digit authenticator code or a recovery code, when the account has two-factor enabled. */
+  totpCode?: string;
 }
 
 export interface PinLoginRequest extends DeviceInfo {
   userId: string;
   pin?: string;
+  totpCode?: string;
 }
 
 export interface AuthResponse {
@@ -237,6 +240,14 @@ export interface LinkPollResponse {
   user?: User;
 }
 
+/** Loudness levelling from ReplayGain / R128 tags (dB relative to the ReplayGain −18 LUFS reference). */
+export interface ReplayGain {
+  trackGainDb: number | null;
+  trackPeak: number | null;
+  albumGainDb: number | null;
+  albumPeak: number | null;
+}
+
 export interface UserPreferences {
   audioLanguage: string | null;
   subtitleLanguage: string | null;
@@ -246,6 +257,10 @@ export interface UserPreferences {
   /** Max streaming bitrate in kbps; null = original. */
   maxBitrate: number | null;
   themeId: string | null;
+  /** Music loudness levelling: album gain on album playback is the usual choice. Default 'auto'. */
+  replayGain?: 'off' | 'track' | 'album' | 'auto';
+  /** Play the server's cinema-mode intros (trailers, pre-roll) before movies. Default true when the server enables it. */
+  cinemaMode?: boolean;
 }
 
 export interface User {
@@ -267,6 +282,12 @@ export interface User {
   allowTranscode: boolean;
   allowDvr: boolean;
   disabled: boolean;
+  /** Allowed to stream from outside the local network. */
+  allowRemote: boolean;
+  /** Max simultaneous playback sessions (null = unlimited). */
+  maxStreams: number | null;
+  /** Two-factor authentication enabled. */
+  totpEnabled: boolean;
   preferences: UserPreferences;
   createdAt: string;
   lastSeenAt: string | null;
@@ -284,6 +305,8 @@ export interface CreateUserRequest {
   allowDownloads?: boolean;
   allowTranscode?: boolean;
   allowDvr?: boolean;
+  allowRemote?: boolean;
+  maxStreams?: number | null;
 }
 
 export type UpdateUserRequest = Partial<CreateUserRequest> & { disabled?: boolean };
@@ -460,10 +483,13 @@ export interface MediaSource {
   subtitleStreams: SubtitleStream[];
   /** true when the file lives on a remote IPTV provider. */
   remote: boolean;
+  /** Movie edition, e.g. "Director's Cut", "Extended" (from `{edition-…}` or the filename). */
+  edition: string | null;
 }
 
 export interface Marker {
-  type: 'intro' | 'credits' | 'recap';
+  /** commercial: ad breaks from comskip or a `.edl` sidecar; preview: "next time on" scenes. */
+  type: 'intro' | 'credits' | 'recap' | 'preview' | 'commercial';
   startMs: number;
   endMs: number;
 }
@@ -511,7 +537,15 @@ export interface Item {
   chapters?: Chapter[];
   /** Smart collection/playlist rules (null for manual lists). */
   smart?: SmartFilter | null;
+  /** For local extras (trailers, featurettes…) attached to a movie or show — see GET /items/:id/extras. */
+  extraType?: ExtraType;
+  /** Book series (audiobooks) or movie collection order. */
+  series?: { name: string; index: number | null } | null;
+  /** Tracks: ReplayGain loudness tags, when the file has them. */
+  replayGain?: ReplayGain | null;
 }
+
+export type ExtraType = 'trailer' | 'featurette' | 'behindthescenes' | 'deleted' | 'interview' | 'scene' | 'short' | 'other';
 
 export interface Chapter {
   title: string;
@@ -547,6 +581,8 @@ export interface ItemQuery {
   offset?: number;
   /** Return items whose sortTitle starts with this letter ('#' for digits). */
   letter?: string;
+  /** Audiobooks in this series (sorted by series order). */
+  series?: string;
 }
 
 export interface UpdateItemRequest {
@@ -707,7 +743,7 @@ export interface LiveSource {
   username: string | null;
   /** Never returned in full; masked as "••••" when set. */
   password: string | null;
-  /** Optional XMLTV URL. Xtream sources default to their xmltv.php. */
+  /** One or more XMLTV URLs (newline-separated), highest priority first; the provider's own guide fills gaps. */
   epgUrl: string | null;
   enabled: boolean;
   /** Restream through MediaMax (hides provider creds, allows remux/transcode). */
@@ -830,6 +866,8 @@ export interface LivePlayRequest {
   catchupDurationMin?: number;
   /** Force remux to HLS (useful for browsers that can't play MPEG-TS). */
   forceHls?: boolean;
+  /** Multiview tile: keep this device's other multiview sessions running (max 4 per device; each counts toward stream limits). */
+  multiview?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -880,6 +918,10 @@ export interface Recording {
   error: string | null;
   sizeBytes: number | null;
   createdBy: string;
+  /** Higher wins when tuners/provider connections run out (manual: 90, rules: 0–99, 100 = top priority). */
+  priority: number;
+  /** Scheduled but would exceed the source's tuner/connection limit; won't record unless something else is cancelled. */
+  conflict: boolean;
 }
 
 export interface CreateRecordingRequest {
@@ -903,9 +945,25 @@ export interface RecordingRule {
   paddingBeforeMin: number;
   paddingAfterMin: number;
   enabled: boolean;
+  /** 0-99; higher wins tuner conflicts. Default 50. */
+  priority: number;
+  /** Only airings on these weekdays (0 = Sunday … 6 = Saturday), local server time; null = any day. */
+  daysOfWeek: number[] | null;
+  /** Only airings starting within this local-time window ("HH:MM"); null = any time. */
+  timeFrom: string | null;
+  timeTo: string | null;
+  /** Skip airings whose episode (number or episode title) was already recorded or scheduled by this rule. */
+  skipRepeats: boolean;
 }
 
-export type CreateRecordingRuleRequest = Omit<RecordingRule, 'id' | 'enabled'> & { enabled?: boolean };
+export type CreateRecordingRuleRequest = Omit<RecordingRule, 'id' | 'enabled' | 'priority' | 'daysOfWeek' | 'timeFrom' | 'timeTo' | 'skipRepeats'> & {
+  enabled?: boolean;
+  priority?: number;
+  daysOfWeek?: number[] | null;
+  timeFrom?: string | null;
+  timeTo?: string | null;
+  skipRepeats?: boolean;
+};
 
 /* ------------------------------------------------------------------ */
 /* Admin: settings, tasks, activity                                    */
@@ -936,8 +994,24 @@ export interface ServerSettings {
     recordingsPath: string;
     paddingBeforeMin: number;
     paddingAfterMin: number;
+    /** Run comskip on finished recordings and add commercial markers (requires comskip on the server). */
+    commercialDetection: boolean;
+    /** Path to the comskip binary; defaults to `comskip` on PATH. */
+    comskipPath: string | null;
+    /** Optional comskip.ini; MediaMax supplies a minimal EDL-only ini otherwise. */
+    comskipIni: string | null;
   };
   webhooks: Webhook[];
+  /** Cinema mode: trailers and a pre-roll before movies (players ask GET /items/:id/intros). */
+  cinema: {
+    enabled: boolean;
+    /** How many trailers (local "Trailers" extras of other movies) to play first. */
+    trailers: number;
+    /** Only trailers for movies the viewer hasn't watched. */
+    unwatchedOnly: boolean;
+    /** A library of short pre-roll clips; one is picked at random and played last, right before the movie. */
+    prerollLibraryId: string | null;
+  };
   /** Allow sign-in from the public profile picker without a password. */
   allowPasswordlessProfiles: boolean;
   /** Hide items with no content rating from users who have a rating limit. */
@@ -989,6 +1063,22 @@ export interface ServerSettings {
     adminGroup: string | null;
     /** If set, only members of this group may sign in. */
     allowedGroup: string | null;
+  };
+  plugins: {
+    /** Plugin repository index URLs (https). */
+    repositories: string[];
+  };
+  remoteAccess: {
+    /** Ask the router to forward a port via UPnP. */
+    upnp: boolean;
+    /** External port to map (default: same as the server port). */
+    externalPort: number | null;
+  };
+  backups: {
+    /** Automatic backup every N days (0 = off). */
+    intervalDays: number;
+    /** How many automatic backups to keep. */
+    keep: number;
   };
   /** DLNA / UPnP media server for smart TVs, consoles and players on the local network. */
   dlna: {
@@ -1082,14 +1172,45 @@ export type ServerEvent =
   | { type: 'session.terminated'; sessionId: string; reason: string }
   | { type: 'syncplay.state'; room: SyncPlayRoom }
   | { type: 'syncplay.command'; room: string; action: 'play' | 'pause' | 'seek' | 'load'; positionMs: number; itemId?: string; at: number; by: string }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  /** A command from another of your devices (apply it to the local player). */
+  | { type: 'remote.command'; fromDeviceName: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number }
+  /** Your controllable devices changed (online/offline/now playing). */
+  | { type: 'remote.targets'; targets: RemoteTarget[] };
 
 export type ClientEvent =
   | { type: 'ping' }
   | { type: 'syncplay.create'; itemId?: string }
   | { type: 'syncplay.join'; room: string }
   | { type: 'syncplay.leave'; room: string }
-  | { type: 'syncplay.command'; room: string; action: 'play' | 'pause' | 'seek' | 'load'; positionMs: number; itemId?: string };
+  | { type: 'syncplay.command'; room: string; action: 'play' | 'pause' | 'seek' | 'load'; positionMs: number; itemId?: string }
+  /** Control another of your own devices ("Play on…"). */
+  | { type: 'remote.command'; targetDeviceId: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number }
+  /** Players report what they're doing so other devices can show and control it. Send on change and every ~10 s while playing. */
+  | { type: 'remote.state'; state: RemotePlayerState | null };
+
+export type RemoteAction = 'play' | 'pause' | 'togglePause' | 'stop' | 'seek' | 'next' | 'previous' | 'setVolume' | 'playItem' | 'playChannel';
+
+export interface RemotePlayerState {
+  itemId: string | null;
+  channelId: string | null;
+  title: string | null;
+  subtitle: string | null;
+  posterUrl: string | null;
+  positionMs: number;
+  durationMs: number | null;
+  paused: boolean;
+  /** 0-100 */
+  volume: number | null;
+}
+
+/** One of the user's online devices that can be controlled. `id` is the device row id. */
+export interface RemoteTarget {
+  id: string;
+  deviceName: string;
+  platform: Platform;
+  state: RemotePlayerState | null;
+}
 
 export interface SyncPlayRoom {
   id: string;
@@ -1332,4 +1453,197 @@ export interface CreateSmartListRequest {
   title: string;
   overview?: string;
   filter: SmartFilter;
+}
+
+/* ------------------------------------------------------------------ */
+/* Plugins                                                             */
+/* ------------------------------------------------------------------ */
+
+export type PluginSettingType = 'string' | 'secret' | 'number' | 'boolean' | 'select' | 'text';
+
+export interface PluginSetting {
+  key: string;
+  label: string;
+  type: PluginSettingType;
+  default?: string | number | boolean | null;
+  help?: string;
+  /** For `select`. */
+  options?: { value: string; label: string }[];
+  required?: boolean;
+}
+
+export interface PluginManifest {
+  /** Reverse-DNS style unique id, e.g. "com.example.discord-notify". */
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  homepage?: string;
+  /** Entry module (ES module) relative to the plugin folder; exports `activate(ctx)`. */
+  main: string;
+  /** Minimum MediaMax server version (semver). */
+  minServerVersion?: string;
+  settings?: PluginSetting[];
+  /** HTML page (relative path) shown inside the admin dashboard. */
+  adminPage?: string;
+  /** Capabilities the plugin declares, shown to the admin before install. */
+  capabilities?: ('routes' | 'events' | 'tasks' | 'metadata' | 'adminPage' | 'network')[];
+}
+
+export type PluginStatus = 'active' | 'disabled' | 'error' | 'incompatible';
+
+export interface PluginInfo {
+  manifest: PluginManifest;
+  status: PluginStatus;
+  error: string | null;
+  /** Current setting values (secrets masked as "••••••••"). */
+  settings: Record<string, string | number | boolean | null>;
+  source: 'repository' | 'upload' | 'local';
+  /** Repository URL it was installed from, for updates. */
+  repository: string | null;
+  installedAt: string;
+  /** Newer version available in a configured repository. */
+  updateAvailable: string | null;
+  /** `/api/v1/plugins/<id>/ui/<adminPage>?token=` when the plugin has an admin page. */
+  adminPageUrl: string | null;
+}
+
+export interface PluginCatalogVersion {
+  version: string;
+  /** .tar.gz archive containing plugin.json at its root. */
+  url: string;
+  sha256: string;
+  minServerVersion?: string;
+  changelog?: string;
+}
+
+export interface PluginCatalogEntry {
+  id: string;
+  name: string;
+  description: string;
+  author: string;
+  homepage?: string;
+  repository: string;
+  versions: PluginCatalogVersion[];
+  installedVersion: string | null;
+}
+
+/** Shape of a plugin repository (a JSON file served over https). */
+export interface PluginRepositoryIndex {
+  name: string;
+  plugins: Omit<PluginCatalogEntry, 'repository' | 'installedVersion'>[];
+}
+
+/* ------------------------------------------------------------------ */
+/* API keys, two-factor, invites                                       */
+/* ------------------------------------------------------------------ */
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  /** First characters of the key, for recognising it. */
+  prefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export interface CreatedApiKey extends ApiKey {
+  /** Shown once. Send as `X-Api-Key: <key>` (or `?api_key=`); acts as the key's owner. */
+  key: string;
+}
+
+export interface TotpSetup {
+  /** Base32 secret for manual entry. */
+  secret: string;
+  /** otpauth:// URL to render as a QR code. */
+  otpauthUrl: string;
+}
+
+export interface TotpEnabled {
+  /** One-time recovery codes, shown once. */
+  recoveryCodes: string[];
+}
+
+export interface InviteTemplate {
+  libraryIds: string[] | null;
+  maxContentRating: string | null;
+  allowLiveTv: boolean;
+  allowDownloads: boolean;
+  allowTranscode: boolean;
+  allowDvr: boolean;
+  allowRemote: boolean;
+  maxStreams: number | null;
+}
+
+export interface Invite {
+  code: string;
+  /** Full link to share: <publicUrl or origin>/invite/<code>. */
+  url: string;
+  note: string | null;
+  createdBy: string;
+  createdAt: string;
+  expiresAt: string | null;
+  maxUses: number | null;
+  uses: number;
+  template: InviteTemplate;
+}
+
+export interface CreateInviteRequest {
+  note?: string;
+  expiresInDays?: number | null;
+  maxUses?: number | null;
+  template?: Partial<InviteTemplate>;
+}
+
+export interface InvitePreview {
+  valid: boolean;
+  serverName: string;
+  message: string | null;
+}
+
+export interface AcceptInviteRequest extends DeviceInfo {
+  username: string;
+  password: string;
+  displayName?: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Backup & remote access                                              */
+/* ------------------------------------------------------------------ */
+
+export interface BackupInfo {
+  id: string;
+  createdAt: string;
+  sizeBytes: number;
+  /** "manual" | "scheduled" | "pre-restore". */
+  reason: string;
+}
+
+export interface RemoteAccessStatus {
+  lanAddress: string;
+  port: number;
+  publicUrl: string | null;
+  upnp: {
+    enabled: boolean;
+    /** Router found and mapping active. */
+    mapped: boolean;
+    externalIp: string | null;
+    externalPort: number | null;
+    router: string | null;
+    error: string | null;
+    lastCheckedAt: string | null;
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Audiobook bookmarks                                                 */
+/* ------------------------------------------------------------------ */
+
+export interface Bookmark {
+  id: string;
+  itemId: string;
+  positionMs: number;
+  note: string | null;
+  createdAt: string;
 }

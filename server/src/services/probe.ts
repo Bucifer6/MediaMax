@@ -105,7 +105,8 @@ export async function probe(input: string, filePath?: string): Promise<ProbeResu
     hdr,
     audio,
     subs,
-    tags: lowerTags(fmt.tags),
+    // Ogg/Opus/FLAC-in-Ogg keep their tags on the audio stream; container tags win when both exist.
+    tags: { ...lowerTags(streams.find((s) => s.codec_type === 'audio')?.tags), ...lowerTags(fmt.tags) },
     hasVideo: !!video,
     coverArtIndex: cover?.index ?? null,
     chapters,

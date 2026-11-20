@@ -1,11 +1,12 @@
 import crypto from 'node:crypto';
 import type {
-  AuthResponse, CreateUserRequest, Device, DeviceInfo, LinkCodeResponse, LinkPollResponse, Platform,
+  ApiKey, AuthResponse, CreatedApiKey, CreateUserRequest, TotpEnabled, TotpSetup, Device, DeviceInfo, LinkCodeResponse, LinkPollResponse, Platform,
   PublicProfile, UpdateMeRequest, UpdateUserRequest, User, UserPreferences,
 } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { newId, newToken, sha256, shortCode } from '../util/ids.js';
-import { badRequest, conflict, forbidden, notFound, unauthorized } from '../util/errors.js';
+import { badRequest, conflict, forbidden, HttpError, notFound, unauthorized } from '../util/errors.js';
+import { newTotpSecret, otpauthUrl, verifyTotp } from '../util/totp.js';
 import { nowIso, parseJson } from '../util/misc.js';
 import { getSettings } from './settings.js';
 import { getBranding } from './branding.js';
@@ -53,6 +54,9 @@ export function toUser(r: Row): User {
     allowTranscode: !!r.allow_transcode,
     allowDvr: !!r.allow_dvr,
     disabled: !!r.disabled,
+    allowRemote: r.allow_remote === undefined ? true : !!r.allow_remote,
+    maxStreams: r.max_streams ?? null,
+    totpEnabled: !!r.totp_enabled,
     preferences: { ...DEFAULT_PREFS, ...parseJson<Partial<UserPreferences>>(r.preferences, {}) },
     createdAt: r.created_at,
     lastSeenAt: r.last_seen_at ?? null,
@@ -94,6 +98,8 @@ export function createUser(req: CreateUserRequest): User {
     allow_downloads: req.allowDownloads ?? true,
     allow_transcode: req.allowTranscode ?? true,
     allow_dvr: req.allowDvr ?? !!req.isAdmin,
+    allow_remote: req.allowRemote ?? true,
+    max_streams: req.maxStreams && req.maxStreams > 0 ? Math.min(100, Math.trunc(req.maxStreams)) : null,
     preferences: '{}',
     created_at: nowIso(),
   });
@@ -123,9 +129,10 @@ export function updateUser(id: string, req: UpdateUserRequest, actorId: string):
   }
   if (req.maxContentRating !== undefined) patch.max_rating = req.maxContentRating || null;
   if (req.libraryIds !== undefined) patch.library_ids = req.libraryIds ? JSON.stringify(req.libraryIds) : null;
-  for (const [k, col] of [['allowLiveTv', 'allow_live_tv'], ['allowDownloads', 'allow_downloads'], ['allowTranscode', 'allow_transcode'], ['allowDvr', 'allow_dvr'], ['disabled', 'disabled']] as const) {
+  for (const [k, col] of [['allowLiveTv', 'allow_live_tv'], ['allowDownloads', 'allow_downloads'], ['allowTranscode', 'allow_transcode'], ['allowDvr', 'allow_dvr'], ['allowRemote', 'allow_remote'], ['disabled', 'disabled']] as const) {
     if ((req as any)[k] !== undefined) patch[col] = !!(req as any)[k];
   }
+  if (req.maxStreams !== undefined) patch.max_streams = req.maxStreams && req.maxStreams > 0 ? Math.min(100, Math.trunc(req.maxStreams)) : null;
   if (patch.disabled && id === actorId) throw badRequest('You cannot disable yourself');
   db.update('users', id, patch);
   if (patch.disabled || patch.password_hash !== undefined) {
@@ -255,7 +262,7 @@ const clearFailures = (key: string) => failures.delete(key);
  */
 export const passwordlessAllowed = (r: Row) => !r.password_hash && !r.pin_hash && !r.is_admin && !r.oidc_sub && getSettings().allowPasswordlessProfiles;
 
-export function login(username: string, password: string, device: Partial<DeviceInfo>, remoteAddr?: string): AuthResponse {
+export function login(username: string, password: string, device: Partial<DeviceInfo>, remoteAddr?: string, totpCode?: string): AuthResponse {
   const key = `u:${String(username ?? '').trim().toLowerCase()}`;
   assertNotLocked(key);
   const row = db.get('SELECT * FROM users WHERE username = ?', (username ?? '').trim());
@@ -266,8 +273,90 @@ export function login(username: string, password: string, device: Partial<Device
     logActivity('user.login.failed', `Failed sign-in for "${username}" from ${remoteAddr ?? 'unknown'}`, { severity: 'warning' });
     throw unauthorized('Invalid username or password');
   }
+  checkSecondFactor(row, totpCode, key);
   clearFailures(key);
   return issueToken(row.id, device, remoteAddr);
+}
+
+/** Second factor for accounts with TOTP enabled. Throws 401 `totp_required` when no code was sent. */
+function checkSecondFactor(row: Row, code: string | undefined, key: string) {
+  if (!row.totp_enabled) return;
+  if (!code) throw new HttpError(401, 'Enter the 6-digit code from your authenticator app', 'totp_required');
+  if (row.totp_secret && verifyTotp(row.totp_secret, code)) return;
+  // Recovery codes are single-use.
+  const codes = parseJson<string[]>(row.recovery_codes, []);
+  const norm = String(code).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const idx = codes.findIndex((h) => verifySecret(norm, h));
+  if (idx >= 0) {
+    codes.splice(idx, 1);
+    db.run('UPDATE users SET recovery_codes = ? WHERE id = ?', JSON.stringify(codes), row.id);
+    logActivity('user.2fa', `${row.display_name} signed in with a recovery code (${codes.length} left)`, { userId: row.id, severity: 'warning' });
+    return;
+  }
+  recordFailure(key);
+  throw new HttpError(401, 'That code is not valid', 'totp_invalid');
+}
+
+/* ------------------------------ two-factor --------------------------- */
+
+export function totpSetup(userId: string): TotpSetup {
+  const row = getUserRow(userId);
+  if (row.totp_enabled) throw badRequest('Two-factor authentication is already on');
+  const secret = newTotpSecret();
+  db.run('UPDATE users SET totp_secret = ? WHERE id = ?', secret, userId);
+  return { secret, otpauthUrl: otpauthUrl(secret, row.username, getBranding().serverName || 'MediaMax') };
+}
+
+export function totpEnable(userId: string, code: string): TotpEnabled {
+  const row = getUserRow(userId);
+  if (!row.totp_secret) throw badRequest('Start two-factor setup first');
+  if (!verifyTotp(row.totp_secret, code)) throw badRequest('That code is not valid. Check the time on your phone and try again.');
+  const recoveryCodes = Array.from({ length: 8 }, () => crypto.randomBytes(5).toString('hex'));
+  db.run('UPDATE users SET totp_enabled = 1, recovery_codes = ? WHERE id = ?', JSON.stringify(recoveryCodes.map((c) => hashSecret(c))), userId);
+  logActivity('user.2fa', `${row.display_name} turned on two-factor authentication`, { userId });
+  return { recoveryCodes: recoveryCodes.map((c) => `${c.slice(0, 5)}-${c.slice(5)}`) };
+}
+
+export function totpDisable(userId: string, code: string, actorIsAdmin = false) {
+  const row = getUserRow(userId);
+  if (!row.totp_enabled) return;
+  if (!actorIsAdmin && !(row.totp_secret && verifyTotp(row.totp_secret, code))) throw badRequest('That code is not valid');
+  db.run("UPDATE users SET totp_enabled = 0, totp_secret = NULL, recovery_codes = '[]' WHERE id = ?", userId);
+  logActivity('user.2fa', `Two-factor authentication turned off for ${row.display_name}`, { userId, severity: 'warning' });
+}
+
+/* -------------------------------- API keys --------------------------- */
+
+export function listApiKeys(userId: string): ApiKey[] {
+  return db.all('SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC', userId)
+    .map((r) => ({ id: r.id, name: r.name, prefix: r.prefix, createdAt: r.created_at, lastUsedAt: r.last_used_at ?? null }));
+}
+
+export function createApiKey(userId: string, name: string): CreatedApiKey {
+  if (!name?.trim()) throw badRequest('Give the key a name');
+  if (db.get<{ n: number }>('SELECT COUNT(*) n FROM api_keys WHERE user_id = ?', userId)!.n >= 50) throw badRequest('Too many API keys');
+  const key = `mmk_${newToken()}`;
+  const id = newId();
+  const now = nowIso();
+  db.insert('api_keys', { id, user_id: userId, name: name.trim().slice(0, 80), key_hash: sha256(key), prefix: key.slice(0, 10), created_at: now });
+  logActivity('apikey', `API key "${name.trim()}" created`, { userId });
+  return { id, name: name.trim().slice(0, 80), prefix: key.slice(0, 10), createdAt: now, lastUsedAt: null, key };
+}
+
+export function deleteApiKey(userId: string, id: string, isAdmin: boolean) {
+  const r = db.get('SELECT user_id FROM api_keys WHERE id = ?', id);
+  if (!r) throw notFound('API key not found');
+  if (r.user_id !== userId && !isAdmin) throw forbidden();
+  db.run('DELETE FROM api_keys WHERE id = ?', id);
+}
+
+/** Authenticate an `X-Api-Key` (acts as the key's owner, from a virtual "API" device). */
+export function authenticateApiKey(key: string | null | undefined): AuthContext | null {
+  if (!key || !key.startsWith('mmk_')) return null;
+  const row = db.get('SELECT k.id kid, k.name kname, k.last_used_at klast, u.* FROM api_keys k JOIN users u ON u.id = k.user_id WHERE k.key_hash = ?', sha256(key));
+  if (!row || row.disabled) return null;
+  if (!row.klast || Date.now() - Date.parse(row.klast) > 60000) db.run('UPDATE api_keys SET last_used_at = ? WHERE id = ?', nowIso(), row.kid);
+  return { user: toUser(row), deviceRowId: `apikey:${row.kid}`, token: key, device: { deviceId: `apikey:${row.kid}`, deviceName: `API: ${row.kname}`, platform: 'other' } };
 }
 
 export function publicProfiles(): PublicProfile[] {
@@ -284,7 +373,7 @@ export function publicProfiles(): PublicProfile[] {
 }
 
 /** Profile-picker sign in: allowed with a PIN, or with nothing if the profile has neither password nor PIN. */
-export function profileLogin(userId: string, pin: string | undefined, device: Partial<DeviceInfo>, remoteAddr?: string): AuthResponse {
+export function profileLogin(userId: string, pin: string | undefined, device: Partial<DeviceInfo>, remoteAddr?: string, totpCode?: string): AuthResponse {
   if (!getBranding().features.profilePicker) throw forbidden('Profile sign-in is disabled');
   const row = getUserRow(userId);
   const key = `p:${userId}`;
@@ -298,6 +387,8 @@ export function profileLogin(userId: string, pin: string | undefined, device: Pa
   } else if (!passwordlessAllowed(row)) {
     throw unauthorized('This profile requires a password');
   }
+  // A PIN never replaces the second factor.
+  checkSecondFactor(row, totpCode, key);
   clearFailures(key);
   return issueToken(userId, device, remoteAddr);
 }

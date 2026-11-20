@@ -18,6 +18,8 @@ import liveRoutes from './routes/livetv.js';
 import wsRoutes from './routes/ws.js';
 import extraRoutes from './routes/extras.js';
 import dlnaRoutes from './routes/dlna.js';
+import pluginRoutes from './routes/plugins.js';
+import subsonicRoutes from './routes/subsonic.js';
 
 const log = logger('http');
 
@@ -30,6 +32,17 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
   await app.register(websocket);
 
+  // Accept an empty body on JSON requests (many clients send Content-Type on bodiless POSTs).
+  app.removeContentTypeParser('application/json');
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const text = String(body ?? '').trim();
+    if (!text) return done(null, {});
+    try {
+      done(null, JSON.parse(text));
+    } catch {
+      done(Object.assign(new Error('Invalid JSON body'), { statusCode: 400 }), undefined);
+    }
+  });
   app.decorateRequest('auth', null);
   app.addHook('onRequest', authHook);
   app.addHook('onSend', async (_req, reply) => {
@@ -55,9 +68,11 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register(liveRoutes);
     await api.register(wsRoutes);
     await api.register(extraRoutes);
+    await api.register(pluginRoutes);
   }, { prefix: '/api/v1' });
 
   await app.register(dlnaRoutes);
+  await app.register(subsonicRoutes);
   app.get('/health', async () => ({ ok: true }));
 
   // Web client (SPA) — served if built.

@@ -36,6 +36,9 @@ export function LibraryPage() {
   const fav = params.get('fav') === '1';
   const letter = params.get('letter') || '';
   const view = params.get('view') || '';
+  /** Book series (audiobooks): sorted by series order unless a sort is picked. */
+  const series = params.get('series') || '';
+  const seriesOrder = !!series && !params.get('sort');
   const [items, setItems] = useState<Item[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -58,8 +61,9 @@ export function LibraryPage() {
     (offset: number): ItemQuery => ({
       libraryId,
       type,
-      sort,
-      order,
+      sort: seriesOrder ? undefined : sort,
+      order: seriesOrder ? undefined : order,
+      series: series || undefined,
       genre: genre || undefined,
       year: year ? Number(year) : undefined,
       played: played === 'played' ? true : played === 'unplayed' ? false : undefined,
@@ -68,7 +72,7 @@ export function LibraryPage() {
       limit: PAGE,
       offset,
     }),
-    [libraryId, type, sort, order, genre, year, played, fav, letter],
+    [libraryId, type, sort, order, genre, year, played, fav, letter, series, seriesOrder],
   );
 
   const load = useCallback(
@@ -148,6 +152,12 @@ export function LibraryPage() {
       </header>
 
       <div className="filter-bar">
+        {series && (
+          <span className="chip active series-chip">
+            <Icon name="book" size={14} /> Series: {series}
+            <button className="chip-x" onClick={() => set('series', null)} aria-label="Show the whole library"><Icon name="x" size={12} /></button>
+          </span>
+        )}
         {library?.type === 'music' && (
           <div className="segmented">
             <button className={view !== 'artists' ? 'active' : ''} onClick={() => set('view', null)}>Albums</button>
@@ -156,13 +166,14 @@ export function LibraryPage() {
         )}
         <div className="select-wrap">
           <Icon name="sort" size={16} />
-          <select className="select" value={sort} onChange={(e) => set('sort', e.target.value)} aria-label="Sort by">
+          <select className="select" value={seriesOrder ? '' : sort} onChange={(e) => set('sort', e.target.value || null)} aria-label="Sort by">
+            {series && <option value="">Series order</option>}
             {SORTS.map((s) => (
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
         </div>
-        <button className="btn-icon" onClick={() => set('order', order === 'asc' ? 'desc' : 'asc')} aria-label={`Order ${order}`} title={order === 'asc' ? 'Ascending' : 'Descending'}>
+        <button className="btn-icon" disabled={seriesOrder} onClick={() => set('order', order === 'asc' ? 'desc' : 'asc')} aria-label={`Order ${order}`} title={order === 'asc' ? 'Ascending' : 'Descending'}>
           <Icon name={order === 'asc' ? 'chevronUp' : 'chevronDown'} />
         </button>
         <select className="select" value={genre} onChange={(e) => set('genre', e.target.value)} aria-label="Genre">
@@ -187,7 +198,7 @@ export function LibraryPage() {
         <button className={`chip ${fav ? 'active' : ''}`} onClick={() => set('fav', fav ? null : '1')}>
           <Icon name={fav ? 'heartFill' : 'heart'} size={14} /> Favourites
         </button>
-        {(genre || year || played || fav || letter) && (
+        {(genre || year || played || fav || letter || series) && (
           <button className="btn btn-ghost btn-sm" onClick={() => setParams(new URLSearchParams(sort !== 'title' ? { sort } : {}), { replace: true })}>
             <Icon name="x" size={14} /> Clear
           </button>
@@ -210,7 +221,7 @@ export function LibraryPage() {
           )}
           <div ref={sentinel} className="sentinel" />
         </div>
-        {sort === 'title' && (
+        {sort === 'title' && !seriesOrder && (
           <nav className="jumpbar" aria-label="Jump to letter">
             <button className={!letter ? 'active' : ''} onClick={() => set('letter', null)} title="All">•</button>
             {LETTERS.map((l) => (

@@ -9,6 +9,10 @@ import './styles/pages.css';
 import './styles/player.css';
 import './styles/admin.css';
 import './styles/stats.css';
+import './styles/tv.css';
+import { detectTv, installTvMode } from './tv/spatial';
+
+if (detectTv()) installTvMode();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

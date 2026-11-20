@@ -59,3 +59,18 @@ test('smart lists never include collections or playlists', async () => {
   assert.ok(!w.params.includes('collection') && !w.params.includes('playlist'));
   assert.ok(w.params.includes('track') && w.params.includes('movie'));
 });
+
+test('TOTP matches RFC 6238 test vectors', async () => {
+  const { hotp, base32Encode, verifyTotp, totp } = await import('../src/util/totp.ts');
+  const secret = Buffer.from('12345678901234567890');
+  // RFC 6238 (SHA-1) at T=59s → 94287082 (8 digits); 6-digit truncation → 287082
+  assert.equal(hotp(secret, Math.floor(59 / 30), 8), '94287082');
+  assert.equal(hotp(secret, Math.floor(1111111109 / 30), 8), '07081804');
+  const b32 = base32Encode(secret);
+  assert.equal(b32, 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ');
+  const now = Date.now();
+  assert.ok(verifyTotp(b32, totp(b32, now), now));
+  assert.ok(verifyTotp(b32, totp(b32, now - 30000), now));
+  assert.ok(!verifyTotp(b32, totp(b32, now - 120000), now));
+  assert.ok(!verifyTotp(b32, 'abcdef', now));
+});

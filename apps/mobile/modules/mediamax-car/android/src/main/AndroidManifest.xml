@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    The MediaLibraryService, the artwork ContentProvider and the Android Auto meta-data are added to the
+    app manifest by plugins/withMediaMaxCar.js, so that TV builds (EXPO_TV=1) never declare them.
+  -->
+</manifest>

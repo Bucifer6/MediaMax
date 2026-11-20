@@ -18,7 +18,14 @@ const SUB_MODES: { key: UserPreferences['subtitleMode']; label: string; descript
   { key: 'forced', label: 'Forced only', description: 'Only foreign-language parts' },
 ];
 
-type Sheet = 'quality' | 'subMode' | 'audioLang' | 'subLang' | null;
+const RG_MODES: { key: NonNullable<UserPreferences['replayGain']>; label: string; description: string }[] = [
+  { key: 'auto', label: 'Automatic', description: 'Album gain for whole albums, track gain otherwise' },
+  { key: 'track', label: 'Track', description: 'Every track at the same loudness' },
+  { key: 'album', label: 'Album', description: 'Keep the loudness differences within an album' },
+  { key: 'off', label: 'Off', description: 'Play files at their own level' },
+];
+
+type Sheet = 'quality' | 'subMode' | 'audioLang' | 'subLang' | 'rg' | null;
 
 export default function PlaybackSettings() {
   const t = useTheme();
@@ -51,6 +58,10 @@ export default function PlaybackSettings() {
           <SettingSection title="Watching">
             <SettingRow icon="play-skip-forward-outline" label="Autoplay next episode" toggle={p.autoplayNext} onToggle={(v) => set({ autoplayNext: v })} />
             <SettingRow icon="flash-outline" label="Skip intros automatically" toggle={p.skipIntros} onToggle={(v) => set({ skipIntros: v })} />
+            <SettingRow icon="film-outline" label="Cinema mode (trailers before movies)" toggle={p.cinemaMode !== false} onToggle={(v) => set({ cinemaMode: v })} />
+          </SettingSection>
+          <SettingSection title="Music">
+            <SettingRow icon="volume-medium-outline" label="Volume levelling (ReplayGain)" value={RG_MODES.find((m) => m.key === (p.replayGain ?? 'auto'))?.label} onPress={() => setSheet('rg')} />
           </SettingSection>
           <SettingSection title="Languages">
             <SettingRow icon="musical-note-outline" label="Audio language" value={p.audioLanguage ? languageName(p.audioLanguage) : 'Default'} onPress={() => setSheet('audioLang')} />
@@ -60,6 +71,7 @@ export default function PlaybackSettings() {
         </View>
       </ScrollView>
       <OptionSheet visible={sheet === 'quality'} title="Maximum quality" options={QUALITY_OPTIONS.map((q) => ({ key: String(q.kbps ?? 'orig'), label: q.label, selected: q.kbps === p.maxBitrate }))} onSelect={(k) => set({ maxBitrate: k === 'orig' ? null : Number(k) })} onClose={() => setSheet(null)} />
+      <OptionSheet visible={sheet === 'rg'} title="Volume levelling" options={RG_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === (p.replayGain ?? 'auto') }))} onSelect={(k) => set({ replayGain: k })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'subMode'} title="Subtitles" options={SUB_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === p.subtitleMode }))} onSelect={(k) => set({ subtitleMode: k })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'audioLang'} title="Audio language" options={langOptions(p.audioLanguage)} onSelect={(k) => set({ audioLanguage: k === '__none' ? null : k })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'subLang'} title="Subtitle language" options={langOptions(p.subtitleLanguage)} onSelect={(k) => set({ subtitleLanguage: k === '__none' ? null : k })} onClose={() => setSheet(null)} />

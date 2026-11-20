@@ -1,0 +1,23 @@
+/* 10-foot UI, enabled by html.tv (see src/tv/spatial.ts). Viewed from a sofa with a D-pad remote. */
+html.tv { font-size: 20px; }
+html.tv body { cursor: none; }
+/* Focus must always be obvious: there is no mouse pointer. */
+html.tv :focus-visible, html.tv :focus { outline: 4px solid var(--c-primary); outline-offset: 4px; }
+html.tv .card:focus .card-art, html.tv .card:focus-visible .card-art { transform: scale(1.08); box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.7), 0 0 0 4px var(--c-primary); z-index: 3; }
+html.tv .card:focus, html.tv .card:focus-visible { outline: none; }
+html.tv .card:focus .card-hover { opacity: 1; }
+/* Rows scroll by focus, not by swipe; snapping fights smooth focus scrolling. */
+html.tv .row-scroller { scroll-snap-type: none; padding-top: 18px; padding-bottom: 22px; margin: -18px 0 -22px; }
+/* Bigger hit targets and text in controls. */
+html.tv .btn, html.tv .btn-icon { min-height: 48px; min-width: 48px; }
+html.tv .chip { height: 44px; padding: 0 20px; }
+html.tv .input { min-height: 52px; font-size: 1rem; }
+/* Overscan safe area (TVs crop ~3–5% at the edges). */
+html.tv .app-shell { padding: 2.5vh 2.5vw; }
+html.tv .player, html.tv .mv-shell { padding: 0; }
+/* Player controls stay visible while something inside them has focus. */
+html.tv .player:focus-within .player-bottom, html.tv .player:focus-within .player-top { opacity: 1; transform: none; pointer-events: auto; }
+/* Multiview tiles show their bar when focused. */
+html.tv .mv-tile:focus-within .mv-bar { opacity: 1; }
+/* Hover-only affordances aren't reachable; show them. */
+html.tv .hover-only { opacity: 1 !important; }

@@ -10,7 +10,18 @@ import { formatBytes, formatTime, relativeTime } from '../utils/format';
 
 type Tab = 'upcoming' | 'completed' | 'rules';
 
-function RecordingRow({ r, onDelete }: { r: Recording; onDelete: (r: Recording) => void }) {
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function ruleSummary(r: RecordingRule) {
+  const parts = [r.channelId ? 'One channel' : 'Any channel', r.newOnly ? 'New episodes only' : 'All airings'];
+  if (r.daysOfWeek?.length) parts.push(r.daysOfWeek.map((d) => DAYS[d]).join(', '));
+  if (r.timeFrom && r.timeTo) parts.push(`${r.timeFrom}–${r.timeTo}`);
+  if (r.skipRepeats) parts.push('Skip repeats');
+  parts.push(r.keepLatest ? `Keep latest ${r.keepLatest}` : 'Keep all', `Priority ${r.priority}`, `padding −${r.paddingBeforeMin}/+${r.paddingAfterMin} min`);
+  return parts.join(' · ');
+}
+
+function RecordingRow({ r, onDelete, onPriority }: { r: Recording; onDelete: (r: Recording) => void; onPriority: (r: Recording, p: number) => void }) {
   const tone = r.status === 'recording' ? 'danger' : r.status === 'completed' ? 'success' : r.status === 'failed' ? 'warning' : r.status === 'cancelled' ? 'muted' : 'accent';
   return (
     <li className="rec-row">
@@ -28,10 +39,16 @@ function RecordingRow({ r, onDelete }: { r: Recording; onDelete: (r: Recording) 
           {r.sizeBytes ? ` · ${formatBytes(r.sizeBytes)}` : ''}
           {r.status === 'scheduled' && ` · ${relativeTime(r.start)}`}
         </div>
+        {r.conflict && r.status === 'scheduled' && (
+          <div className="form-error" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+            <Icon name="alert" size={14} /> Conflict: every tuner/provider connection is booked by higher-priority recordings.{' '}
+            <button className="btn btn-sm btn-ghost" onClick={() => onPriority(r, 100)} disabled={r.priority >= 100}>Make top priority</button>
+          </div>
+        )}
         {r.error && <div className="form-error">{r.error}</div>}
         {r.description && <p className="rec-desc">{r.description}</p>}
       </div>
-      <Badge tone={tone}>{r.status}</Badge>
+      <Badge tone={r.conflict && r.status === 'scheduled' ? 'warning' : tone}>{r.conflict && r.status === 'scheduled' ? 'conflict' : r.status}</Badge>
       <div className="rec-actions">
         {r.itemId && (
           <Link to={`/play/${r.itemId}`} className="btn btn-primary btn-sm"><Icon name="play" size={14} /> Play</Link>
@@ -82,6 +99,16 @@ export default function DvrPage() {
     }
   };
 
+  const setPriority = async (r: Recording, priority: number) => {
+    try {
+      const u = await api.dvr.updateRecording(r.id, { priority });
+      recs.setData((l) => (l ?? []).map((x) => (x.id === u.id ? u : x)));
+      recs.reload(); // other recordings' conflict flags may have changed
+    } catch (e) {
+      toast.error(e);
+    }
+  };
+
   const saveRule = async () => {
     if (!editRule?.titleMatch?.trim()) return;
     try {
@@ -93,6 +120,11 @@ export default function DvrPage() {
         paddingBeforeMin: editRule.paddingBeforeMin ?? padBefore,
         paddingAfterMin: editRule.paddingAfterMin ?? padAfter,
         enabled: editRule.enabled ?? true,
+        priority: editRule.priority ?? 50,
+        daysOfWeek: editRule.daysOfWeek?.length ? editRule.daysOfWeek : null,
+        timeFrom: editRule.timeFrom && editRule.timeTo ? editRule.timeFrom : null,
+        timeTo: editRule.timeFrom && editRule.timeTo ? editRule.timeTo : null,
+        skipRepeats: editRule.skipRepeats ?? true,
       };
       if (editRule.id) {
         const r = await api.dvr.updateRule(editRule.id, body);
@@ -153,12 +185,12 @@ export default function DvrPage() {
         ) : (tab === 'upcoming' ? upcoming : done).length === 0 ? (
           <EmptyState icon="recordOutline" title={tab === 'upcoming' ? 'Nothing scheduled' : 'No recordings yet'} message="Open the TV guide and choose Record on any programme." />
         ) : (
-          <ul className="rec-list">{(tab === 'upcoming' ? upcoming : done).map((r) => <RecordingRow key={r.id} r={r} onDelete={del} />)}</ul>
+          <ul className="rec-list">{(tab === 'upcoming' ? upcoming : done).map((r) => <RecordingRow key={r.id} r={r} onDelete={del} onPriority={setPriority} />)}</ul>
         )
       ) : (
         <>
           <div className="toolbar">
-            <button className="btn btn-primary" onClick={() => setEditRule({ newOnly: true, paddingBeforeMin: padBefore, paddingAfterMin: padAfter, enabled: true })}>
+            <button className="btn btn-primary" onClick={() => setEditRule({ newOnly: true, paddingBeforeMin: padBefore, paddingAfterMin: padAfter, enabled: true, priority: 50, skipRepeats: true })}>
               <Icon name="plus" size={16} /> New rule
             </button>
           </div>
@@ -173,7 +205,7 @@ export default function DvrPage() {
                   <div className="rec-info">
                     <div className="rec-title"><Icon name="layers" size={16} /> “{r.titleMatch}”</div>
                     <div className="muted rec-sub">
-                      {r.channelId ? 'One channel' : 'Any channel'} · {r.newOnly ? 'New episodes only' : 'All airings'} · {r.keepLatest ? `Keep latest ${r.keepLatest}` : 'Keep all'} · padding −{r.paddingBeforeMin}/+{r.paddingAfterMin} min
+                      {ruleSummary(r)}
                     </div>
                   </div>
                   <input type="checkbox" className="switch" checked={r.enabled} onChange={() => toggleRule(r)} aria-label="Enabled" />
@@ -201,7 +233,26 @@ export default function DvrPage() {
               <Field label="End late (min)"><input className="input" type="number" min={0} value={editRule.paddingAfterMin ?? 0} onChange={(e) => setEditRule({ ...editRule, paddingAfterMin: Number(e.target.value) })} /></Field>
               <Field label="Keep latest" hint="Blank = keep all"><input className="input" type="number" min={1} value={editRule.keepLatest ?? ''} onChange={(e) => setEditRule({ ...editRule, keepLatest: e.target.value ? Number(e.target.value) : null })} /></Field>
             </div>
+            <Field label="Days" hint="None selected = every day">
+              <div className="chip-row" style={{ display: "flex", flexWrap: "wrap", gap: 6 }} role="group" aria-label="Days of the week">
+                {DAYS.map((d, i) => {
+                  const on = editRule.daysOfWeek?.includes(i) ?? false;
+                  return (
+                    <button key={d} type="button" className={`chip${on ? ' active' : ''}`} aria-pressed={on}
+                      onClick={() => setEditRule({ ...editRule, daysOfWeek: on ? (editRule.daysOfWeek ?? []).filter((x) => x !== i) : [...(editRule.daysOfWeek ?? []), i].sort() })}>
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+            <div className="form-row form-row-3">
+              <Field label="From" hint="Optional time window"><input className="input" type="time" value={editRule.timeFrom ?? ''} onChange={(e) => setEditRule({ ...editRule, timeFrom: e.target.value || null })} /></Field>
+              <Field label="To"><input className="input" type="time" value={editRule.timeTo ?? ''} onChange={(e) => setEditRule({ ...editRule, timeTo: e.target.value || null })} /></Field>
+              <Field label="Priority" hint="0–99; wins tuner conflicts"><input className="input" type="number" min={0} max={99} value={editRule.priority ?? 50} onChange={(e) => setEditRule({ ...editRule, priority: Number(e.target.value) })} /></Field>
+            </div>
             <Switch checked={editRule.newOnly ?? true} onChange={(v) => setEditRule({ ...editRule, newOnly: v })} label="New episodes only" />
+            <Switch checked={editRule.skipRepeats ?? true} onChange={(v) => setEditRule({ ...editRule, skipRepeats: v })} label="Skip episodes already recorded" />
             <Switch checked={editRule.enabled ?? true} onChange={(v) => setEditRule({ ...editRule, enabled: v })} label="Enabled" />
           </div>
         )}

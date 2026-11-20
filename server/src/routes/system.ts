@@ -14,6 +14,8 @@ import { listActivity, logActivity } from '../services/activity.js';
 import { sendWebhook } from '../services/webhooks.js';
 import { syncDlna } from '../services/dlna.js';
 import { oidcEnabled } from '../services/oidc.js';
+import * as backup from '../services/backup.js';
+import * as remote from '../services/remote.js';
 import { recentLogLines } from '../util/log.js';
 import { badRequest, forbidden } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
@@ -99,6 +101,7 @@ export default async function systemRoutes(app: FastifyInstance) {
     const a = requireAdmin(req);
     const s = updateSettings(req.body ?? {});
     syncDlna();
+    if (req.body?.remoteAccess) void remote.refreshMapping();
     if (req.body?.serverName) updateBranding({ serverName: req.body.serverName });
     logActivity('settings', 'Server settings updated', { userId: a.user.id, userName: a.user.displayName });
     return s;
@@ -107,6 +110,69 @@ export default async function systemRoutes(app: FastifyInstance) {
     requireAdmin(req);
     if (!req.body?.url) throw badRequest('URL required');
     return sendWebhook(req.body.url, { event: 'test', at: new Date().toISOString(), server: { id: serverId(), name: getSettings().serverName } });
+  });
+
+  /* Backups */
+  app.get('/admin/backups', async (req) => {
+    requireAdmin(req);
+    return backup.listBackups();
+  });
+  app.post('/admin/backups', async (req) => backup.createBackup('manual', requireAdmin(req).user));
+  app.get<{ Params: { id: string } }>('/admin/backups/:id/download', async (req, reply) => {
+    requireAdmin(req);
+    const p = backup.backupPath(req.params.id);
+    reply.header('Content-Type', 'application/gzip').header('Content-Disposition', `attachment; filename="${req.params.id}"`);
+    return fs.createReadStream(p);
+  });
+  app.delete<{ Params: { id: string } }>('/admin/backups/:id', async (req) => {
+    requireAdmin(req);
+    backup.deleteBackup(req.params.id);
+    return { ok: true };
+  });
+  app.post<{ Params: { id: string } }>('/admin/backups/:id/restore', async (req) => backup.stageRestore(fs.readFileSync(backup.backupPath(req.params.id)), requireAdmin(req).user));
+  app.post('/admin/backups/restore-upload', async (req) => {
+    const a = requireAdmin(req);
+    const file = await req.file({ limits: { fileSize: 4 * 1024 * 1024 * 1024 } });
+    if (!file) throw badRequest('Upload a MediaMax backup (.tar.gz)');
+    return backup.stageRestore(await file.toBuffer(), a.user);
+  });
+  /** Exit so the supervisor (Docker restart policy / systemd) starts MediaMax again. */
+  app.post('/admin/restart', async (req) => {
+    const a = requireAdmin(req);
+    logActivity('server', 'Restart requested', { userId: a.user.id, userName: a.user.displayName, severity: 'warning' });
+    setTimeout(() => process.kill(process.pid, 'SIGTERM'), 500);
+    return { ok: true };
+  });
+
+  /* Remote access */
+  app.get('/admin/remote-access', async (req) => {
+    requireAdmin(req);
+    return remote.remoteStatus();
+  });
+  app.post('/admin/remote-access/refresh', async (req) => {
+    requireAdmin(req);
+    await remote.refreshMapping();
+    return remote.remoteStatus();
+  });
+
+  /* Prometheus-style metrics (admin auth or API key). */
+  app.get('/metrics', async (req, reply) => {
+    requireAdmin(req);
+    const count = (sql: string) => db.get<{ n: number }>(sql)!.n;
+    const sessions = listSessions();
+    const lines = [
+      '# HELP mediamax_up 1 if the server is running', '# TYPE mediamax_up gauge', 'mediamax_up 1',
+      `mediamax_uptime_seconds ${Math.round((Date.now() - config.startedAt) / 1000)}`,
+      `mediamax_sessions_active ${sessions.length}`,
+      `mediamax_transcodes_active ${transcodeCount()}`,
+      ...['movie', 'show', 'episode', 'track', 'audiobook', 'podcastepisode'].map((t) => `mediamax_items{type="${t}"} ${count(`SELECT COUNT(*) n FROM items WHERE type = '${t}'`)}`),
+      `mediamax_users ${userCount()}`,
+      `mediamax_channels ${count('SELECT COUNT(*) n FROM channels')}`,
+      `mediamax_recordings_scheduled ${count("SELECT COUNT(*) n FROM recordings WHERE status IN ('scheduled','recording')")}`,
+      `mediamax_requests_pending ${count("SELECT COUNT(*) n FROM media_requests WHERE status = 'pending'")}`,
+    ];
+    reply.type('text/plain; version=0.0.4');
+    return lines.join('\n') + '\n';
   });
 
   app.get('/tasks', async (req) => {

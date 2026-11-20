@@ -122,6 +122,9 @@ export function rowToItem(r: Row): Item {
     userData: userData(r),
     trailerUrl: r.trailer_url ?? null,
     ...(r.smart ? { smart: parseJson(r.smart, null) } : {}),
+    ...((extra as any).series ? { series: (extra as any).series } : {}),
+    ...((extra as any).extraType ? { extraType: (extra as any).extraType } : {}),
+    ...((extra as any).replayGain ? { replayGain: (extra as any).replayGain } : {}),
   };
 }
 
@@ -140,6 +143,7 @@ export function mediaRowToSource(m: Row): MediaSource {
     audioStreams: parseJson(m.audio, []),
     subtitleStreams: parseJson<(SubtitleStream & { path?: string })[]>(m.subs, []).map(({ path: _p, ...s }) => s),
     remote: !m.path && !!m.remote_url,
+    edition: m.edition ?? null,
   };
 }
 
@@ -186,6 +190,8 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
       if (lib?.type === 'music') where.push("i.type = 'artist'");
     }
   }
+  // Extras (videos attached to a movie/show) only appear via their owner (GET /items/:id/extras).
+  if (!q.parentId) where.push("NOT (i.type = 'video' AND i.parent_id IS NOT NULL)");
   if (q.genre) {
     where.push('EXISTS (SELECT 1 FROM json_each(i.genres) WHERE json_each.value = ?)');
     params.push(q.genre);
@@ -198,6 +204,10 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
     where.push('(i.title LIKE ? OR i.original_title LIKE ?)');
     params.push(`%${q.search}%`, `%${q.search}%`);
   }
+  if (q.series) {
+    where.push("json_extract(i.extra, '$.series.name') = ?");
+    params.push(String(q.series));
+  }
   if (q.letter) {
     if (q.letter === '#') where.push("substr(i.sort_title,1,1) NOT BETWEEN 'a' AND 'z'");
     else {
@@ -208,6 +218,7 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
   if (q.played !== undefined) where.push(String(q.played) === 'true' ? 'COALESCE(ud.played,0) = 1' : 'COALESCE(ud.played,0) = 0');
   if (q.favorite !== undefined && String(q.favorite) === 'true') where.push('COALESCE(ud.favorite,0) = 1');
   let sort = SORTS[q.sort as ItemSort] ?? (q.parentId || q.ancestorId ? SORTS.index : SORTS.title);
+  if (q.series && !q.sort) sort = ["COALESCE(json_extract(i.extra, '$.series.index'), 9999)", 'i.year'];
   // Across several parents (an artist's albums, a show's seasons), keep each parent's children together.
   if (q.ancestorId && sort === SORTS.index) {
     sort = ['(SELECT COALESCE(x.year, 0) FROM items x WHERE x.id = i.parent_id)', '(SELECT x.sort_title FROM items x WHERE x.id = i.parent_id)', ...SORTS.index];
@@ -621,7 +632,7 @@ export function searchItems(user: User, q: string, limit = 30): Item[] {
   if (!term) return [];
   const like = `%${term}%`;
   return selectItems(user,
-    `(i.title LIKE ? OR i.original_title LIKE ? OR EXISTS (SELECT 1 FROM json_each(i.people) WHERE json_extract(json_each.value,'$.name') LIKE ?)) AND i.type IN ('movie','show','episode','artist','album','track','collection','video','audiobook','podcast','podcastepisode')`,
+    `(i.title LIKE ? OR i.original_title LIKE ? OR EXISTS (SELECT 1 FROM json_each(i.people) WHERE json_extract(json_each.value,'$.name') LIKE ?)) AND i.type IN ('movie','show','episode','artist','album','track','collection','video','audiobook','podcast','podcastepisode') AND NOT (i.type = 'video' AND i.parent_id IS NOT NULL)`,
     [like, like, like, term, `${term}%`],
     `ORDER BY CASE WHEN i.title LIKE ? THEN 0 WHEN i.title LIKE ? THEN 1 ELSE 2 END, CASE i.type WHEN 'movie' THEN 0 WHEN 'show' THEN 0 WHEN 'artist' THEN 1 ELSE 2 END, i.sort_title LIMIT ${toInt(limit, 30, 1, 200)}`)
 

@@ -10,8 +10,9 @@ export function openItem(item: Pick<Item, 'id' | 'type'>) {
   router.push(itemHref(item) as never);
 }
 
-export function playItem(id: string, opts: { startMs?: number; restart?: boolean } = {}) {
+export function playItem(id: string, opts: { startMs?: number; restart?: boolean; mediaId?: string } = {}) {
   const q = new URLSearchParams();
+  if (opts.mediaId) q.set('media', opts.mediaId);
   if (opts.startMs) q.set('start', String(Math.round(opts.startMs)));
   if (opts.restart) q.set('start', '0');
   const qs = q.toString();

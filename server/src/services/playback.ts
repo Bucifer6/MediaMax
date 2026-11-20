@@ -16,6 +16,7 @@ import { assertCanSee, getItem, mediaRowToSource, nextItem, reportProgress } fro
 import type { AuthContext } from './auth.js';
 import { events, bus } from './events.js';
 import { TEXT_SUB_CODECS } from './probe.js';
+import { isLocalAddress } from './dlna.js';
 
 const log = logger('playback');
 
@@ -41,7 +42,11 @@ export interface PlaySession {
   historyId: number | null;
   /** Live sessions may hold an upstream provider connection. */
   onStop?: () => void;
+  /** Live multiview tile: several may run side by side on one device. */
+  multiview?: boolean;
 }
+
+const MAX_MULTIVIEW = 4;
 
 const sessions = new Map<string, PlaySession>();
 
@@ -77,11 +82,30 @@ export function broadcastSessions() {
   }, 300);
 }
 
-export function registerSession(s: Omit<PlaySession, 'id' | 'startedAt' | 'lastActivity' | 'historyId' | 'state' | 'positionMs'> & { positionMs?: number }): PlaySession {
-  // One active playback per device: replace the previous session.
-  for (const old of sessions.values()) {
-    if (old.ctx.deviceRowId === s.ctx.deviceRowId) stopSession(old.id, 'replaced', false);
+/**
+ * Per-user limits: remote streaming permission and max simultaneous streams.
+ * A new session on the same device replaces the old one, so it doesn't count against the limit.
+ */
+export function assertCanStartSession(ctx: AuthContext, remoteAddr: string | null, multiview = false) {
+  const u = ctx.user;
+  if (!u.allowRemote && !u.isAdmin && remoteAddr && !isLocalAddress(remoteAddr)) {
+    throw new HttpError(403, 'Your account can only stream on the home network', 'remote_not_allowed');
   }
+  if (u.maxStreams && !u.isAdmin) {
+    // Other devices count; on this device only multiview tiles that will keep running alongside the new one count.
+    const active = [...sessions.values()].filter((x) => x.ctx.user.id === u.id && (x.ctx.deviceRowId !== ctx.deviceRowId || (multiview && x.multiview))).length;
+    if (active >= u.maxStreams) {
+      throw new HttpError(429, `You already have ${active} stream${active === 1 ? '' : 's'} playing (limit ${u.maxStreams}). Stop one and try again.`, 'stream_limit');
+    }
+  }
+}
+
+export function registerSession(s: Omit<PlaySession, 'id' | 'startedAt' | 'lastActivity' | 'historyId' | 'state' | 'positionMs'> & { positionMs?: number }): PlaySession {
+  assertCanStartSession(s.ctx, s.remoteAddr, !!s.multiview);
+  // One active playback per device: replace the previous session. Multiview tiles coexist with each other (up to 4).
+  const mine = [...sessions.values()].filter((o) => o.ctx.deviceRowId === s.ctx.deviceRowId).sort((a, b) => a.startedAt - b.startedAt);
+  const keep = s.multiview ? mine.filter((o) => o.multiview).slice(-(MAX_MULTIVIEW - 1)) : [];
+  for (const old of mine) if (!keep.includes(old)) stopSession(old.id, 'replaced', false);
   const id = newId();
   const hist = db.run('INSERT INTO play_history (user_id, item_id, channel_id, started_at, method, platform) VALUES (?, ?, ?, ?, ?, ?)',
     s.ctx.user.id, s.itemId, s.channelId, nowIso(), s.method, s.ctx.device.platform);
@@ -205,6 +229,7 @@ export function subtitleTracks(ctx: AuthContext, mediaId: string, subs: Subtitle
 
 export async function startPlayback(ctx: AuthContext, itemId: string, req: PlaybackRequest, remoteAddr: string | null): Promise<PlaybackInfo> {
   assertCanSee(ctx.user, itemId);
+  assertCanStartSession(ctx, remoteAddr);
   const item = getItem(ctx.user, itemId, true);
   if (!item.media?.length) {
     if (item.type === 'show' || item.type === 'season') {

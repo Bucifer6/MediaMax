@@ -17,49 +17,80 @@
       "extends": "base",
       "platform": "ios",
       "autoIncrement": true,
-      "ios": { "resourceClass": "m-medium" }
+      "ios": {
+        "resourceClass": "m-medium"
+      }
     },
     "ios-simulator": {
       "extends": "base",
       "platform": "ios",
       "distribution": "internal",
-      "ios": { "simulator": true }
+      "ios": {
+        "simulator": true
+      }
     },
     "android": {
       "extends": "base",
       "platform": "android",
       "autoIncrement": true,
-      "android": { "buildType": "app-bundle" }
+      "android": {
+        "buildType": "app-bundle"
+      }
     },
     "android-apk": {
       "extends": "base",
       "platform": "android",
       "distribution": "internal",
-      "android": { "buildType": "apk" }
+      "android": {
+        "buildType": "apk"
+      }
     },
     "tvos": {
       "extends": "base",
       "platform": "ios",
       "autoIncrement": true,
-      "env": { "EXPO_TV": "1" },
-      "ios": { "resourceClass": "m-medium" }
+      "env": {
+        "EXPO_TV": "1"
+      },
+      "ios": {
+        "resourceClass": "m-medium"
+      }
     },
     "tvos-simulator": {
       "extends": "tvos",
       "distribution": "internal",
-      "ios": { "simulator": true }
+      "ios": {
+        "simulator": true
+      }
     },
     "androidtv": {
       "extends": "base",
       "platform": "android",
       "autoIncrement": true,
-      "env": { "EXPO_TV": "1" },
-      "android": { "buildType": "app-bundle" }
+      "env": {
+        "EXPO_TV": "1"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
     },
     "androidtv-apk": {
       "extends": "androidtv",
       "distribution": "internal",
-      "android": { "buildType": "apk" }
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "firetv": {
+      "extends": "androidtv",
+      "distribution": "store",
+      "env": {
+        "EXPO_TV": "1",
+        "EXPO_FIRETV": "1"
+      },
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {

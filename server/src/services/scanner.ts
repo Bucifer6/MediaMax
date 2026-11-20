@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import type { Library, LibraryType, SubtitleStream } from '@mediamax/shared';
+import type { ExtraType, Library, LibraryType, SubtitleStream } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { config } from '../config.js';
 import { stableId } from '../util/ids.js';
@@ -10,6 +10,8 @@ import { logger } from '../util/log.js';
 import { probe, normLang, type ProbeResult } from './probe.js';
 import { registerImage } from './images.js';
 import { readNfo, type NfoData } from './metadata/nfo.js';
+import { importSidecarEdl } from './edl.js';
+import { parseReplayGain, gainTags } from '../util/replaygain.js';
 import {
   AUDIO_EXT, IMAGE_EXT, SUB_EXT, VIDEO_EXT, ext, isExtra, parseEpisodeName, parseMovieName, parseSeasonFolder, parseShowFolder,
   parseSubtitleName, stripExt,
@@ -18,6 +20,7 @@ import { events, bus } from './events.js';
 import { enrichLibrary } from './metadata/index.js';
 import { logActivity } from './activity.js';
 import { downloadedSubs } from './opensubtitles.js';
+import { applyPluginMetadata } from './plugins.js';
 
 const log = logger('scanner');
 
@@ -175,6 +178,7 @@ async function upsertMedia(itemId: string, f: FileEntry, force = false, preProbe
     // Keep sidecar subtitles fresh even when the file itself is unchanged.
     const embedded = parseJson<SubtitleStream[]>(existing.subs, []).filter((s) => !s.external);
     db.run('UPDATE media SET item_id = ?, subs = ? WHERE id = ?', itemId, JSON.stringify([...embedded, ...subsSide]), id);
+    importSidecarEdl(itemId, f.path);
     return { mediaId: id, probe: null, changed: false };
   }
   let pr: ProbeResult | null = preProbed ?? null;
@@ -190,6 +194,7 @@ async function upsertMedia(itemId: string, f: FileEntry, force = false, preProbe
     mtime: f.mtime, probed_at: pr ? nowIso() : null, chapters: JSON.stringify(pr?.chapters ?? []),
   };
   db.upsert('media', row);
+  importSidecarEdl(itemId, f.path);
   return { mediaId: id, probe: pr, changed: true };
 }
 
@@ -236,11 +241,54 @@ async function scanMovies(ctx: ScanCtx, files: FileEntry[]) {
     });
     if (!existed) ctx.newItems.push(id);
     const m = await upsertMedia(id, f, ctx.force);
+    const edition = fileParse.edition ?? stripExt(path.basename(f.path)).match(/\s-\s(director'?s cut|extended(?: edition| cut)?|theatrical(?: cut)?|unrated|ultimate edition|imax|remastered|final cut)\s*$/i)?.[1] ?? null;
+    db.run('UPDATE media SET edition = ? WHERE id = ?', edition, m.mediaId);
     ctx.seenMedia.add(m.mediaId);
     ctx.seenItems.add(id);
     itemDuration(id);
     ctx.progress(++done, files.length);
   });
+}
+
+const EXTRA_FOLDERS: [RegExp, ExtraType][] = [
+  [/^trailers?$/i, 'trailer'], [/^featurettes?$/i, 'featurette'], [/^behind the scenes$/i, 'behindthescenes'], [/^deleted scenes$/i, 'deleted'],
+  [/^interviews?$/i, 'interview'], [/^scenes$/i, 'scene'], [/^shorts$/i, 'short'], [/^(extras?|other)$/i, 'other'],
+];
+const EXTRA_SUFFIX: Record<string, ExtraType> = { trailer: 'trailer', featurette: 'featurette', behindthescenes: 'behindthescenes', deleted: 'deleted', interview: 'interview', scene: 'scene', short: 'short', other: 'other' };
+
+/**
+ * Local extras (Plex/Jellyfin naming): "Movie (2010)/Trailers/x.mkv", "Movie (2010)/Extras/x.mkv",
+ * "Movie (2010)/Movie (2010)-trailer.mkv", "Show/Featurettes/x.mkv". Attached to the owning movie/show as videos.
+ */
+async function scanExtras(ctx: ScanCtx, extras: FileEntry[]) {
+  for (const f of extras) {
+    if (/[-._ ]sample$/i.test(stripExt(path.basename(f.path))) || /(^|[\\/])samples?([\\/]|$)/i.test(f.rel)) continue;
+    let dir = path.dirname(f.path);
+    let extraType: ExtraType | null = null;
+    const folder = path.basename(dir);
+    const hit = EXTRA_FOLDERS.find(([re]) => re.test(folder));
+    if (hit) {
+      extraType = hit[1];
+      dir = path.dirname(dir);
+    } else {
+      const suffix = stripExt(path.basename(f.path)).match(/-(trailer|featurette|behindthescenes|deleted|interview|scene|short|other)$/i)?.[1]?.toLowerCase();
+      if (suffix) extraType = EXTRA_SUFFIX[suffix];
+    }
+    if (!extraType) continue;
+    // Owner: the movie keyed by its folder, or the show keyed by its top folder.
+    const owner = db.get<{ id: string }>("SELECT id FROM items WHERE library_id = ? AND type IN ('movie','show') AND path = ?", ctx.lib.id, dir)
+      ?? db.get<{ id: string }>("SELECT i.id FROM items i JOIN media m ON m.item_id = i.id WHERE i.library_id = ? AND i.type = 'movie' AND m.path LIKE ? LIMIT 1", ctx.lib.id, dir + path.sep + '%');
+    if (!owner) continue;
+    const id = stableId(ctx.lib.id, 'extra', f.path);
+    const title = stripExt(path.basename(f.path)).replace(/-(trailer|featurette|behindthescenes|deleted|interview|scene|short|other)$/i, '').replace(/[._]/g, ' ').trim();
+    const LABEL: Record<ExtraType, string> = { trailer: 'Trailer', featurette: 'Featurette', behindthescenes: 'Behind the Scenes', deleted: 'Deleted Scene', interview: 'Interview', scene: 'Scene', short: 'Short', other: 'Extra' };
+    // Folder-based extras keep their file name; suffix-based ones ("Movie (2010)-trailer") get a readable label.
+    ensureItem({ id, library_id: ctx.lib.id, type: 'video', title: hit ? title : LABEL[extraType], parent_id: owner.id, path: f.path, extra: JSON.stringify({ extraType }) });
+    const m = await upsertMedia(id, f, ctx.force);
+    ctx.seenMedia.add(m.mediaId);
+    ctx.seenItems.add(id);
+    itemDuration(id);
+  }
 }
 
 async function scanShows(ctx: ScanCtx, files: FileEntry[]) {
@@ -370,7 +418,7 @@ async function scanMusic(ctx: ScanCtx, files: FileEntry[]) {
       id: trackId, library_id: ctx.lib.id, type: 'track', title: tags.title || stripExt(path.basename(f.path)).replace(/^\d+[\s.-]+/, ''),
       idx: trackNo, parent_idx: discNo, parent_id: albumId, grandparent_id: artistId, path: f.path, year,
       ...(genre.length ? { genres: JSON.stringify(genre) } : {}),
-      extra: JSON.stringify({ tags: { artist: tags.artist ?? null, album: tags.album ?? null, title: tags.title ?? null, track: tags.track ?? null, disc: tags.disc ?? null, date: tags.date ?? null, genre: tags.genre ?? null, album_artist: tags.album_artist ?? null } }),
+      extra: JSON.stringify({ tags: { artist: tags.artist ?? null, album: tags.album ?? null, title: tags.title ?? null, track: tags.track ?? null, disc: tags.disc ?? null, date: tags.date ?? null, genre: tags.genre ?? null, album_artist: tags.album_artist ?? null, ...gainTags(tags) }, replayGain: parseReplayGain(tags) }),
     });
     const res = await upsertMedia(trackId, f, ctx.force, pr);
     if (m0 && m0.item_id !== trackId) db.run('DELETE FROM items WHERE id = ? AND NOT EXISTS (SELECT 1 FROM media WHERE item_id = ?)', m0.item_id, m0.item_id);
@@ -414,7 +462,13 @@ async function scanAudiobooks(ctx: ScanCtx, files: FileEntry[]) {
     const rel = path.relative(first.root, key).split(path.sep);
     const isFile = key === first.path;
     const folderTitle = stripExt(rel[rel.length - 1] ?? 'Unknown book');
-    const folderAuthor = rel.length >= 2 ? rel[rel.length - 2] : null;
+    // Author/Series/01 - Book  →  author = first folder, series = middle folder.
+    const folderAuthor = rel.length >= 3 ? rel[0] : rel.length >= 2 ? rel[rel.length - 2] : null;
+    const folderSeries = rel.length >= 3 ? rel[rel.length - 2] : null;
+    const tagSeries = tags.series || tags.mvnm || tags['movementname'] || tags.grouping || null;
+    const tagSeriesIdx = parseFloat(tags['series-part'] || tags.mvin || tags['movement'] || '') || null;
+    const folderIdx = parseFloat(rel[rel.length - 1]?.match(/^(?:book\s*)?(\d+(?:\.\d+)?)\b/i)?.[1] ?? '') || null;
+    const series = tagSeries ? { name: tagSeries, index: tagSeriesIdx } : folderSeries ? { name: folderSeries, index: folderIdx } : null;
     const title = tags.album || (isFile ? tags.title : null) || folderTitle.replace(/^\d{4}\s*-\s*/, '');
     const author = tags.album_artist || tags.artist || folderAuthor || 'Unknown author';
     const narrator = tags.composer || tags.narrator || null;
@@ -434,7 +488,7 @@ async function scanAudiobooks(ctx: ScanCtx, files: FileEntry[]) {
       people: JSON.stringify(people), studios: JSON.stringify(tags.publisher ? [tags.publisher] : []),
       genres: JSON.stringify(tags.genre ? tags.genre.split(/[;/,]/).map((g) => g.trim()).filter(Boolean) : ['Audiobook']),
       overview: descFile ? fs.readFileSync(descFile, 'utf8').trim().slice(0, 4000) : tags.comment || tags.description || null,
-      extra: JSON.stringify({ parentTitle: author, author, narrator }),
+      extra: JSON.stringify({ parentTitle: author, author, narrator, ...(series ? { series } : {}) }),
     });
     if (!existed) ctx.newItems.push(bookId);
     ctx.seenItems.add(bookId);
@@ -531,7 +585,9 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     return true;
   });
   const accept = ACCEPT[type] ?? ((e: string) => VIDEO_EXT.has(e));
-  const files = paths.flatMap((root) => walk(root, accept)).filter((f) => type === 'photos' || type === 'music' || !isExtra(f.rel));
+  const allFiles = paths.flatMap((root) => walk(root, accept));
+  const files = allFiles.filter((f) => type === 'photos' || type === 'music' || type === 'audiobooks' || !isExtra(f.rel));
+  const extraFiles = type === 'movies' || type === 'shows' ? allFiles.filter((f) => isExtra(f.rel)) : [];
   let lastEmit = 0;
   const ctx: ScanCtx = {
     lib, seenMedia: new Set(), seenItems: new Set(), newItems: [], force: !!opts.force,
@@ -543,8 +599,14 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     },
   };
   try {
-    if (type === 'movies') await scanMovies(ctx, files);
-    else if (type === 'shows') await scanShows(ctx, files);
+    // Extras (trailers, featurettes…) are attached after the main pass so their owners exist.
+    if (type === 'movies') {
+      await scanMovies(ctx, files);
+      if (extraFiles.length) await scanExtras(ctx, extraFiles);
+    } else if (type === 'shows') {
+      await scanShows(ctx, files);
+      if (extraFiles.length) await scanExtras(ctx, extraFiles);
+    }
     else if (type === 'music') await scanMusic(ctx, files);
     else if (type === 'audiobooks') await scanAudiobooks(ctx, files);
     else if (type === 'photos') await scanFlat(ctx, files, 'photo');
@@ -570,6 +632,8 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     db.run('UPDATE libraries SET last_scan_at = ? WHERE id = ?', nowIso(), libId);
     const secs = ((Date.now() - started) / 1000).toFixed(1);
     log.info(`Scan of "${lib.name}" finished in ${secs}s: ${files.length} files, ${ctx.newItems.length} new items`);
+    // Metadata-provider plugins fill gaps for new music/audiobooks/videos (movies/shows were handled by enrichLibrary).
+    if (type !== 'movies' && type !== 'shows') for (const id of ctx.newItems.slice(0, 500)) await applyPluginMetadata(id);
     if (ctx.newItems.length) {
       logActivity('library.scan', `${ctx.newItems.length} new item(s) added to ${lib.name}`);
       bus.emit('library.new', { libraryId: libId, itemIds: ctx.newItems });

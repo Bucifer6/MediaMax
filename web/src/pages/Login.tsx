@@ -1,9 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import type { PublicProfile } from '@mediamax/shared';
+import type { AuthResponse, PublicProfile } from '@mediamax/shared';
 import { useApp } from '../state/app';
 import { api } from '../api/endpoints';
-import { API_BASE, errorMessage, setToken } from '../api/client';
+import { API_BASE, ApiRequestError, errorMessage, setToken } from '../api/client';
 import { getDeviceId, getDeviceName, PLATFORM } from '../api/device';
 import { Avatar, Spinner } from '../components/ui';
 import { Icon } from '../components/Icon';
@@ -52,6 +52,74 @@ export function PinPad({ length = 4, onComplete, error, busy }: { length?: numbe
   );
 }
 
+/** Second sign-in step for accounts with two-factor authentication. */
+export function TotpStep({ onSubmit, onBack, initialError }: { onSubmit: (code: string) => Promise<void>; onBack: () => void; initialError?: string | null }) {
+  const [recovery, setRecovery] = useState(false);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(initialError ?? null);
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const ready = recovery ? code.trim().length >= 6 : code.length === 6;
+  const submit = async (value = code) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onSubmit(value.trim());
+    } catch (e) {
+      setError(e instanceof ApiRequestError && e.code === 'totp_invalid' ? (recovery ? 'That recovery code is not valid.' : 'That code is not valid. Check the time on your phone and try again.') : errorMessage(e));
+      setCode('');
+      window.setTimeout(() => input.current?.focus(), 0);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="login-card glass fade-in" onSubmit={(e) => { e.preventDefault(); if (ready) void submit(); }}>
+      <button type="button" className="btn-icon login-back" onClick={onBack} aria-label="Back">
+        <Icon name="arrowLeft" />
+      </button>
+      <span className="totp-icon"><Icon name="shield" size={30} /></span>
+      <h2>Two-factor authentication</h2>
+      <p className="muted">{recovery ? 'Enter one of the recovery codes you saved when you turned on two-factor.' : 'Enter the 6-digit code from your authenticator app.'}</p>
+      <label className="field">
+        <span className="field-label">{recovery ? 'Recovery code' : 'Authentication code'}</span>
+        {recovery ? (
+          <input key="rec" ref={input} className="input code-input" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="xxxxx-xxxxx" autoFocus />
+        ) : (
+          <input
+            key="otp"
+            ref={input}
+            className="input code-input totp-input"
+            value={code}
+            onChange={(e) => {
+              const v = e.target.value.replace(/\D/g, '').slice(0, 6);
+              setCode(v);
+              if (v.length === 6) void submit(v);
+            }}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="one-time-code"
+            maxLength={6}
+            placeholder="123456"
+            aria-invalid={!!error}
+            autoFocus
+          />
+        )}
+      </label>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <button className="btn btn-primary btn-lg btn-block" disabled={busy || !ready}>
+        {busy ? <Spinner size={18} /> : 'Verify'}
+      </button>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setRecovery((r) => !r); setCode(''); setError(null); }}>
+        {recovery ? 'Use an authenticator code' : 'Use a recovery code'}
+      </button>
+    </form>
+  );
+}
+
+const isTotpRequired = (e: unknown) => e instanceof ApiRequestError && e.status === 401 && e.code === 'totp_required';
+
 type Mode = 'profiles' | 'pin' | 'password';
 
 /** Where the browser goes to start single sign-on. */
@@ -87,6 +155,8 @@ export function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ssoPending, setSsoPending] = useState(() => /[#&]token=/.test(location.hash));
+  /** Set when the server asks for a second factor: resends the same sign-in with the code. */
+  const [totp, setTotp] = useState<{ retry: (code: string) => Promise<AuthResponse> } | null>(null);
 
   // Single sign-on returns here with #token=… or #error=… in the fragment.
   useEffect(() => {
@@ -152,7 +222,8 @@ export function Login() {
     try {
       login(await api.auth.profileLogin(p.id));
     } catch (e) {
-      setError(errorMessage(e));
+      if (isTotpRequired(e)) setTotp({ retry: (code) => api.auth.profileLogin(p.id, undefined, code) });
+      else setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -165,7 +236,9 @@ export function Login() {
     try {
       login(await api.auth.profileLogin(selected.id, pin));
     } catch (e) {
-      setError(errorMessage(e) || 'Incorrect PIN');
+      const id = selected.id;
+      if (isTotpRequired(e)) setTotp({ retry: (code) => api.auth.profileLogin(id, pin, code) });
+      else setError(errorMessage(e) || 'Incorrect PIN');
     } finally {
       setBusy(false);
     }
@@ -176,9 +249,13 @@ export function Login() {
     setBusy(true);
     setError(null);
     try {
-      login(await api.auth.login(username.trim(), password));
+      const u = username.trim();
+      login(await api.auth.login(u, password));
     } catch (err) {
-      setError(errorMessage(err));
+      const u = username.trim();
+      const pw = password;
+      if (isTotpRequired(err)) setTotp({ retry: (code) => api.auth.login(u, pw, code) });
+      else setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -199,6 +276,8 @@ export function Login() {
 
         {profiles === null || ssoPending ? (
           <Spinner size={36} />
+        ) : totp ? (
+          <TotpStep onSubmit={async (code) => login(await totp.retry(code))} onBack={() => { setTotp(null); setPassword(''); }} />
         ) : mode === 'profiles' ? (
           <div className="profiles fade-in">
             <h1>Who's watching?</h1>

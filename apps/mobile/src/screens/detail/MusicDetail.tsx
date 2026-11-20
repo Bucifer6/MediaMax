@@ -12,6 +12,7 @@ import { Icon } from '@/components/Icon';
 import { Img } from '@/components/Img';
 import { MediaCard } from '@/components/MediaCard';
 import { OptionSheet } from '@/components/OptionSheet';
+import { PlayOnSheet } from '@/components/PlayOnSheet';
 import { ItemRow } from '@/components/Row';
 import { BackButton } from '@/components/Screen';
 import { SmartBadge } from '@/components/SmartBadge';
@@ -19,6 +20,7 @@ import { SmartPlaylistSheet } from '@/components/SmartPlaylistSheet';
 import { T } from '@/components/Text';
 import { useDownloads } from '@/state/downloads';
 import { useMusic } from '@/state/music';
+import { useRemote } from '@/state/remote';
 import { useApi, useCapabilities } from '@/state/session';
 import { useTheme } from '@/theme';
 import { formatClock, formatDuration, progressFraction } from '@/utils/format';
@@ -110,6 +112,8 @@ export function TrackListDetail({ item, onUserData, onItem }: { item: Item; onUs
   const isBook = item.type === 'audiobook';
   const children = useQuery(`children:${item.id}`, (a) => a.children(item.id, { sort: item.type === 'album' || isBook ? 'index' : undefined, order: 'asc', limit: 1000 }));
   const [playlistSheet, setPlaylistSheet] = useState(false);
+  const [playOnSheet, setPlayOnSheet] = useState(false);
+  const remote = useRemote();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const similar = useQuery(item.type === 'album' ? `similar:${item.id}` : null, (api) => api.similar(item.id, 12), { staleMs: 300000 });
@@ -187,6 +191,7 @@ export function TrackListDetail({ item, onUserData, onItem }: { item: Item; onUs
             {audio.length > 1 && !isBook ? <Button label="Shuffle" icon="shuffle" variant="secondary" onPress={() => playAt(Math.floor(Math.random() * tracks.length), true)} /> : null}
             <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" onPress={toggleFavorite} accessibilityLabel="Favourite" />
             {caps.downloads && downloads.supported && audio.length ? <Button icon="arrow-down-circle-outline" variant="secondary" onPress={() => downloads.download(audio, 'original')} accessibilityLabel="Download all" /> : null}
+            {remote.enabled && audio.length ? <Button icon="phone-portrait-outline" label={t.isTV ? 'Play on…' : undefined} variant="secondary" onPress={() => setPlayOnSheet(true)} accessibilityLabel="Play on another device" /> : null}
             {!isPlaylist && tracks.length ? <Button icon="list-outline" label={t.isTV ? 'Playlist' : undefined} variant="secondary" onPress={() => setPlaylistSheet(true)} accessibilityLabel="Add to playlist" /> : null}
             {isPlaylist && isSmart ? <Button icon="options-outline" label={t.isTV ? 'Edit rules' : undefined} variant="secondary" onPress={() => setEditRules(true)} accessibilityLabel="Edit smart playlist rules" /> : null}
             {isPlaylist ? <Button icon="trash-outline" label={t.isTV ? 'Delete' : undefined} variant="secondary" onPress={() => setConfirmDelete(true)} accessibilityLabel="Delete playlist" /> : null}
@@ -208,6 +213,7 @@ export function TrackListDetail({ item, onUserData, onItem }: { item: Item; onUs
               }}
             />
           ) : null}
+          {remote.enabled ? <PlayOnSheet visible={playOnSheet} what={{ itemId: item.id, title: item.title }} onClose={() => setPlayOnSheet(false)} /> : null}
           <AddToPlaylistSheet visible={playlistSheet} title={item.title} getItemIds={() => tracks.map((x) => x.id)} onClose={() => setPlaylistSheet(false)} />
           <OptionSheet
             visible={confirmDelete}

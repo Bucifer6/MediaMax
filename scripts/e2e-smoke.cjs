@@ -81,7 +81,9 @@ async function waitFor(fn, ms, what) {
     const pages = ['/', '/search?q=smoke', '/livetv', '/livetv/guide', '/dvr', '/playlists', '/collections', '/link', '/wrapped', '/podcasts', '/settings', '/discover', '/requests',
       ...libs.map((l) => `/library/${l.id}`), ...ids.map((i) => `/item/${i}`),
       '/admin', '/admin/libraries', '/admin/stats', '/admin/users', `/admin/users/${users[0].id}/wrapped`, '/admin/livetv', '/admin/channels',
-      '/admin/branding', '/admin/settings', '/admin/tasks', '/admin/activity', '/admin/devices'];
+      '/admin/branding', '/admin/settings', '/admin/plugins', '/admin/plugins?tab=catalog', '/admin/plugins?tab=repositories', '/admin/tasks', '/admin/activity', '/admin/devices',
+      '/settings/security', '/admin/invites', '/admin/backups', '/admin/remote', '/invite/not-a-real-code',
+      ...libs.filter((l) => l.type === 'audiobooks').map((l) => `/library/${l.id}?series=Smoke%20Series`)];
 
     browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
     const page = await (await browser.newContext({ viewport: { width: 1366, height: 860 } })).newPage();

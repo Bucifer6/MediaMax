@@ -64,6 +64,18 @@ eas build --profile tvos         # Apple TV
 eas build --profile androidtv    # Android TV (AAB); androidtv-apk for sideloading
 ```
 
+**Amazon Fire TV.** Fire OS is Android, so the Android TV build runs there unchanged. TV builds already leave out
+Google-only pieces such as Chromecast, and the D-pad/remote focus handling is shared. Use the `firetv` profile to
+build a store APK for the Amazon Appstore:
+
+```bash
+eas build --profile firetv       # Amazon Appstore APK (sideload with: adb connect <fire-tv-ip> && adb install app.apk)
+```
+
+When you submit, choose the Fire TV device targets in the Amazon Developer Console and upload the TV banner (`androidTVBanner`
+in the brand file, 320×180). Test on a real Fire TV Stick with developer options enabled; the Android TV emulator is
+close enough for layout checks.
+
 ### How the TV UI differs
 
 The app checks `Platform.isTV` at runtime and switches layouts. It is not a separate code tree.
@@ -120,6 +132,7 @@ Caveats on TV: there are no downloads, haptics or PiP. expo-secure-store is repl
 * **Discover & requests** (when the server turns on `features.requests`): a Discover tab on phones and in the TV top bar. It shows trending titles (`GET /discover`) with infinite scroll, or searches with a Movies / Shows / All toggle. Cards carry "In library", "Requested" and "Pending" badges; "In library" opens the item. The request sheet takes "All seasons" or chosen season numbers for shows, plus an optional note (`POST /requests`), and explains a weekly-limit (429), already-requested (409) or not-configured (400) answer. **My requests** (from Discover or Settings) shows status chips and lets you withdraw pending requests. Admins see everyone's requests with a status filter, Approve and Decline (with a note).
 * **Smart playlists:** Library › Playlists › "New smart playlist" opens a rule builder: match all/any, rules on genre, year, rating, added within N days, played, favourite, type, person and resolution, plus sort and limit. A live preview (`POST /smart/preview`) shows the match count and the first titles before saving (`POST /smart`, kind `playlist`). Smart playlists can be edited from their page. Smart collections and playlists show a "Smart" badge and have no manual add/remove (the smart *collection* builder is admin-only and lives in the web admin).
 * **Chromecast** (iPhone/iPad and Android phones only; see [Chromecast](#chromecast)).
+* **CarPlay & Android Auto** (audio: music, audiobooks, podcasts; see [CarPlay & Android Auto](#carplay--android-auto)).
 * **Settings:** edit your account name and profile picture (phones: pick a photo with expo-image-picker, uploaded to `POST /auth/me/avatar`), theme picker (when `allowUserThemes`; applies instantly), playback preferences, Link a TV, signed-in devices (with revoke), switch profile, switch server, sign out and about.
 * **Feature flags:** Live TV, DVR, music, photos, IPTV VOD, downloads, requests (Discover), the profile picker and link codes are hidden when the server or the user's permissions turn them off.
 
@@ -134,6 +147,129 @@ Phones and tablets can cast to a Chromecast or Google TV with [`react-native-goo
 * While connected, the app requests playback with a Chromecast profile (h264, aac/mp3, mp4 and HLS, max width 1920) and loads `<server> + PlaybackInfo.url` (it already carries the token) with `PlaybackInfo.mimeType`, title, subtitle, an absolute poster URL and the WebVTT subtitle tracks. Channels load as a LIVE stream (HLS forced).
 * Local playback pauses and the player shows "Casting to <device>". Play/pause, seeking, subtitle, audio and quality changes go to the receiver, and progress is still reported to the server every 10 s from the receiver's media status. Music and spoken-word queues cast the same way and advance when a track ends.
 * Disconnecting hands playback back to the phone at the same position, paused.
+
+## CarPlay & Android Auto
+
+The phone apps show up in **Apple CarPlay** and **Android Auto** as audio apps. Both platforms only allow audio in this category, so the car gets music, audiobooks and podcasts; video and live TV stay on the phone.
+
+> **Needs a development build or an EAS build**, like Chromecast. The car integration is a local native module plus a config plugin, so it does not exist in **Expo Go**, and TV builds leave it out. Where the module is missing, the JS side does nothing.
+
+### What the car shows
+
+| Tab | Contents |
+|---|---|
+| Home | **Continue listening**: in-progress audiobook parts (one row per book) and podcast episodes, from the `continue` row of `/home` plus `/items?type=bookpart,podcastepisode&sort=lastPlayed`. **Recently played**: the last 10 tracks (`/items?type=track&sort=lastPlayed`). |
+| Music | Shuffle all (200 random tracks), Playlists › tracks, Artists › albums › tracks |
+| Audiobooks | In progress, then all books. Picking a book resumes it: `GET /items/:id/next` chooses the part, and the player resumes the saved position. |
+| Podcasts | Subscribed shows › the 20 newest episodes, with progress |
+
+* A tab only appears when the user can see a library of that kind. Music also needs the server's `features.music` flag. Signed-out, offline and "no audio libraries" states show a single message row.
+* Lists are capped (200 artists or tracks, 100 books, 50 playlists or shows, 20 episodes), and both cars may shorten them further while driving. CarPlay allows 4 tabs and 5 levels for audio apps, and the tree fits within both limits.
+* **Now Playing** shows artwork, title and artist. Music gets play/pause and previous/next track. Audiobooks and podcasts get play/pause and −15 s / +30 s, plus a speed button on CarPlay. CarPlay's **Up Next** lists the rest of the queue.
+* **Search and voice:**
+  * Android Auto supports in-car search (`onSearch`), and Assistant requests such as "play *X* on MediaMax" (`onPlayFromSearch`). Both use `GET /search?q=`. Voice plays the best audio match: a track, an album, a playlist, an artist (shuffled), a book (resumed), or a show (its in-progress or newest episode). "Play MediaMax" with an empty query resumes the queue, or else continue listening, or else shuffles the music library.
+  * CarPlay shows a Search row on the Home tab on **iOS 27 and later**, because Apple only lets audio apps use the search template from iOS 27. Siri voice search would need SiriKit `INPlayMediaIntent` support, which is not implemented.
+* Live TV and radio are not in the car. The shared player only queues library items, and channels would need their own playback path through `POST /livetv/channels/:id/play`.
+
+### Architecture
+
+```
+            CarPlay (CPTemplateApplicationScene)        Android Auto (MediaBrowser / MediaController)
+                         │                                            │
+   ios/CarPlaySceneDelegate.swift + CarPlayController.swift   android/MediaMaxCarService.kt (Media3 MediaLibraryService)
+                         │                                            │  + CarProxyPlayer (SimpleBasePlayer)
+                         └──────────── modules/mediamax-car (Expo module "MediaMaxCar") ─────┘
+                                 events: onGetChildren · onSearch · onPlay · onPlayFromSearch · onCommand
+                                 calls:  resolveChildren · updateNowPlaying · invalidate · setReady
+                                                      │
+                            src/car/CarBridge.tsx (mounted inside MusicProvider) + src/car/tree.ts
+                                                      │
+                     src/state/music.tsx: the same expo-audio queue the phone UI, lock screen and Chromecast use
+```
+
+* **One player.** The car never plays audio itself. Anything picked in the car becomes `useMusic().playQueue(…)`, and every car button becomes `toggle` / `next` / `previous` / `skip` / `seek` / `setRate`. The phone's mini player, the lock screen, Chromecast hand-off and server progress reporting therefore keep working unchanged.
+* **The browse tree lives in JS** (`src/car/tree.ts`). Native code asks for the children of an opaque id and renders what comes back: a tab bar of `CPListTemplate`s on CarPlay, and `MediaItem`s on Android Auto. Ids look like `tab:music`, `artist:<id>`, `book:<id>`, `episode:<id>` or `play:<context>:<index>:<itemId>`. Requests time out after 20 s, and the car then shows an error.
+* **CarPlay Now Playing** is the shared `CPNowPlayingTemplate`. It reads expo-audio's `MPNowPlayingInfoCenter` metadata and `MPRemoteCommandCenter` handlers. A single expo-audio player cannot skip tracks, so after every `setActiveForLockScreen` the player calls `syncCarRemoteCommands` (`src/car/remote.ts`), and the module installs next/previous-track handlers that drive the JS queue. As a result, music on the iPhone lock screen now has working previous/next buttons as well. Spoken audio uses expo-audio's −15/+30 s skip commands, with the intervals set in `music.tsx`.
+* **Android Auto Now Playing** is the session of `MediaMaxCarService`. Its player is a `SimpleBasePlayer` that mirrors `updateNowPlaying` (position extrapolated natively) and forwards commands to JS. Spoken audio gets −15 s / +30 s custom buttons in place of previous/next. expo-audio's own service still owns the phone notification and foreground state, so this service never posts a notification and only lives while Android Auto is bound to it.
+* **Artwork on Android Auto** is served through `content://<package>.mediamax.artwork/…` (`ArtworkProvider`), because the car host does not load http(s) artwork. Only URLs the app handed out are fetched, and they are cached in `cacheDir/car-artwork`.
+* **Cold starts.**
+  * *CarPlay:* CarPlay may launch the app with only the CarPlay scene (iPhone locked). `MediaMaxCarSceneDelegate` then starts React Native into a placeholder window, so the whole app (session, player, bridge) runs. When the phone UI opens later, `MediaMaxPhoneSceneDelegate`, an `ExpoAppSceneDelegate` subclass that replaces the template's `SceneDelegate`, adopts that window instead of starting a second React root.
+  * *Android Auto:* if Android Auto binds while the React Native runtime is not running (the process was started just for the car), the service reports "Open MediaMax on your phone to start listening" with an **Open MediaMax** action. As soon as the app is opened, the tree loads. See Limitations.
+
+### Files
+
+| Path | What |
+|---|---|
+| `modules/mediamax-car/index.ts` | Typed JS API. The module is `null` in Expo Go, on web and on TV. |
+| `modules/mediamax-car/ios/` | `MediaMaxCarModule.swift` (bridge), `CarPlayController.swift` (templates, Now Playing, search), `CarPlaySceneDelegate.swift` (CarPlay + phone scene delegates), `CarShared.swift` (records, events, remote commands). The pod is iOS-only. |
+| `modules/mediamax-car/android/` | `MediaMaxCarService.kt` (MediaLibraryService), `CarProxyPlayer.kt`, `ArtworkProvider.kt`, `CarBridge.kt`, `MediaMaxCarModule.kt`. Media3 1.9.1, the same version expo-audio uses. |
+| `plugins/withMediaMaxCar.js` | Config plugin (see below) |
+| `src/car/CarBridge.tsx`, `src/car/tree.ts`, `src/car/remote.ts` | JS side |
+
+### What the config plugin changes
+
+`app.config.ts` adds `['./plugins/withMediaMaxCar', { isTV }]`.
+
+* **iOS:**
+  * the `com.apple.developer.carplay-audio` entitlement
+  * in `UIApplicationSceneManifest`, a `CPTemplateApplicationSceneSessionRoleApplication` scene (`MediaMaxCarSceneDelegate`), with the phone scene's delegate switched to `MediaMaxPhoneSceneDelegate`. The template's `SceneDelegate.swift` still compiles but is no longer used, so config plugins that edit it have no effect.
+  * `UIBackgroundModes` includes `audio`
+* **Android:**
+  * `tv.mediamax.car.MediaMaxCarService` (exported, with the `androidx.media3.session.MediaLibraryService` and `android.media.browse.MediaBrowserService` intent filters)
+  * the artwork provider
+  * `<meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc"/>`
+  * `res/xml/automotive_app_desc.xml` containing `<automotiveApp><uses name="media"/></automotiveApp>`
+* **TV (`EXPO_TV=1`):** none of the above. On Android, `settings.gradle` gets `expoAutolinking.exclude += 'mediamax-car'`. On tvOS, autolinking skips the iOS-only pod. `react-native.config.js` also unlinks it for TV, the same way as Chromecast.
+
+Check the result without building:
+
+```bash
+npx expo config --type introspect | grep -n -i -E "carplay|SceneDelegate|MediaMaxCarService|automotive"
+EXPO_TV=1 npx expo config --type introspect | grep -c -i carplay     # 0
+```
+
+### Build and test
+
+```bash
+npx expo prebuild --clean
+npx expo run:ios          # or: npx expo run:android
+```
+
+**CarPlay (Simulator):**
+
+1. Run the development build on an iPhone simulator.
+2. Choose **Simulator › I/O › External Displays › CarPlay**. The MediaMax icon appears on the CarPlay home screen.
+3. Test both launch orders: open the app on the phone first, and also launch it from the CarPlay window with the app killed (CarPlay-first). Then check that playback, the lock screen and the phone's mini player stay in sync.
+
+The simulator works with the entitlement in a development build. Real cars need Apple's approval (see below). The CarPlay-first cold launch is best verified with a Release build. CarPlay-first launch of an `expo-dev-client` build has not been verified, because dev-launcher sets up its window differently.
+
+**Android Auto (Desktop Head Unit):**
+
+1. Install the **Android Auto Desktop Head Unit (DHU)** from the Android Studio SDK Manager (SDK Tools › Android Auto Desktop Head Unit Emulator).
+2. On the phone or emulator (with Google Play), open Android Auto settings and tap the version 10 times to enable developer settings. Turn on **Unknown sources**, then choose **Start head unit server** from the overflow menu.
+3. Run:
+
+   ```bash
+   adb forward tcp:5277 tcp:5277
+   $ANDROID_SDK_ROOT/extras/google/auto/desktop-head-unit
+   ```
+
+4. Open MediaMax on the phone once, so that React Native is running, and then pick MediaMax in the DHU launcher. For voice, type `mic begin` in the DHU console and speak, for example "play Daft Punk on MediaMax".
+5. `adb logcat | grep -i -E "MediaSession|MediaMaxCar"` shows the session traffic. Google's **Media Controller Test** app (github.com/googlesamples/android-media-controller) can also browse the service and send play-from-search requests without a car.
+
+Side-loaded builds only appear in Android Auto with **Unknown sources** on. Builds from the Play Store (including internal testing) show up normally.
+
+### Account steps before release
+
+* **Apple:** request the **CarPlay audio app** entitlement at <https://developer.apple.com/contact/carplay/> for the team that ships the app. After Apple grants it, enable the CarPlay capability on the App ID (Certificates, IDs & Profiles) and regenerate the provisioning profiles, for example with `eas credentials`. Without the grant, App Store and TestFlight builds that contain the entitlement fail to sign or are rejected, so for white-label builds request it per bundle id, or drop the plugin for brands that don't have it. Apple's CarPlay guidelines also apply: no lyrics on the car screen, and no prompts asking the driver to pick up the phone.
+* **Google:** nothing to request. Media apps must pass the Android Auto quality review when submitted to Play. In Play Console, add the Android Auto form factor (Advanced settings › Form factors) before publishing.
+
+### Limitations
+
+* **Android Auto cold start:** the browse tree and the player live in the React Native app. If Android Auto starts the process without the app (for example after a reboot), the car shows "Open MediaMax on your phone to start listening" until the app has been opened once. After that it works in the background, also with the screen off. Removing this limit would mean starting a headless React Native surface from the service, or moving the queue into native code.
+* There is no queue editing from the car, and Android Auto does not show its queue. Live TV and radio are not included, and neither is CarPlay Siri search (see above).
+* Downloads are not used offline in the car browse tree. It needs the server, although a downloaded item that is already queued still plays offline.
+* Native code was written against the iOS 26/27 CarPlay SDK and Media3 1.9.1, but it has only been type-checked on the JS side here. Run the simulator/DHU checks above before shipping.
 
 ## File layout
 
@@ -166,8 +302,11 @@ apps/mobile
 │   ├── screens/detail/       detail page variants
 │   ├── player/               VideoPlayerScreen, Scrubber, WebVTT parser
 │   ├── cast/                 Chromecast: lazy module loader, CastProvider/useCast, CastButton, MediaInfo builder
+│   ├── car/                  CarPlay / Android Auto: CarBridge (events <-> player), browse tree, remote commands
 │   ├── tv/                   remote events, back/menu handling, focus guide
 │   └── utils/                formatting, navigation helpers, event bus
+├── modules/mediamax-car/     local Expo module: CarPlay scene + templates (Swift), Android Auto MediaLibraryService (Kotlin)
+├── plugins/withMediaMaxCar.js config plugin: CarPlay entitlement + scenes, Android Auto service/manifest, TV exclusion
 ├── scripts/brand.mjs         produce a white-label brand folder from a server
 ├── scripts/tv-deps.mjs       react-native <-> react-native-tvos alias switch
 ├── app.config.ts             dynamic config (EXPO_TV, MEDIAMAX_BRAND)

@@ -35,6 +35,10 @@ See the full [feature matrix](docs/FEATURES.md) and the [API reference](docs/API
 - **Requests built in** — users discover trending titles and request them; approvals go straight to
   Radarr/Sonarr and the request flips to *available* when the title lands.
 - **Smart collections & playlists** — rule-based lists (genre, decade, unwatched, recently added, 4K…).
+- **In the car** — Apple CarPlay and Android Auto for music, audiobooks and podcasts, with continue
+  listening, search and voice on Android Auto.
+- **Serious live TV** — multiview (up to four channels at once), several merged EPG sources, DVR with
+  priorities, tuner-conflict detection, day/time rules and comskip ad-break markers.
 - **Your year in review** — per-user "Wrapped" plus admin statistics.
 - **Plays well with others** — Trakt and Last.fm scrobbling, OpenSubtitles, DLNA for smart TVs and
   consoles, webhooks for Home Assistant/Discord.
@@ -112,6 +116,17 @@ M3U playlists (with `url-tvg`, `tvg-*`, `catchup-source`) and HDHomeRun tuners a
 
 Every connected app receives a `branding.updated` event and re-themes instantly.
 
+## Use your favourite music apps (Subsonic)
+MediaMax speaks the **Subsonic / OpenSubsonic API** at `http://<server>:8484/rest`, so music players such as
+Symfonium, Feishin, play:Sub, Amperfy, Substreamer and Sonos bridges can browse, search, stream (with on-the-fly
+transcoding), star, scrobble, edit playlists and show synced lyrics. Many of these apps also offer CarPlay, Android
+Auto, gapless playback and offline sync. Sign in with your MediaMax username and password. If you use two-factor
+sign-in, create an API key (*Settings → API keys*) and pick "API key" in apps that support OpenSubsonic API-key auth.
+
+## Plugins
+Extend MediaMax with plugins (*Admin → Plugins*): install from repositories or upload a package. See
+[docs/PLUGINS.md](docs/PLUGINS.md) to write your own; examples live in [`plugins/examples`](plugins/examples).
+
 ## Security notes
 - Put MediaMax behind HTTPS (Caddy, Traefik, nginx) when exposing it to the internet and set **Public URL** in settings.
 - Passwordless profiles are only allowed for non-admin, non-SSO accounts; administrators must keep a password.
@@ -138,4 +153,8 @@ Runs the server unit tests: filename parsing, playback decisions, M3U/XMLTV/Xtre
 audio-fingerprint matching.
 
 ## License
-No license has been chosen yet. Add one before publishing or distributing builds.
+MediaMax is open source under the [MIT License](LICENSE). You're free to use, modify and redistribute it,
+including publishing your own branded builds of the apps, as long as the licence notice is kept.
+
+Third-party services you connect (TMDB, Trakt, Last.fm, OpenSubtitles, IPTV providers) have their own terms;
+make sure your use of them complies. FFmpeg is used as a separate program and is licensed under the LGPL/GPL.

@@ -254,6 +254,38 @@ const MIGRATIONS: string[] = [
   CREATE INDEX media_requests_status ON media_requests(status);
   ALTER TABLE items ADD COLUMN smart TEXT;
   `,
+  /* 8: API keys, two-factor, invites, per-user limits, bookmarks */ `
+  ALTER TABLE users ADD COLUMN allow_remote INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE users ADD COLUMN max_streams INTEGER;
+  ALTER TABLE users ADD COLUMN totp_secret TEXT;
+  ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN recovery_codes TEXT NOT NULL DEFAULT '[]';
+  CREATE TABLE api_keys (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL,
+    key_hash TEXT NOT NULL UNIQUE, prefix TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT
+  );
+  CREATE TABLE invites (
+    code TEXT PRIMARY KEY, note TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT,
+    max_uses INTEGER, uses INTEGER NOT NULL DEFAULT 0, template TEXT NOT NULL DEFAULT '{}'
+  );
+  CREATE TABLE bookmarks (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE, position_ms INTEGER NOT NULL, note TEXT, created_at TEXT NOT NULL
+  );
+  CREATE INDEX bookmarks_user_item ON bookmarks(user_id, item_id);
+  `,
+  /* 9: movie editions */ `
+  ALTER TABLE media ADD COLUMN edition TEXT;
+  `,
+  /* 10: DVR priorities, conflicts and rule constraints */ `
+  ALTER TABLE recordings ADD COLUMN priority INTEGER NOT NULL DEFAULT 100;
+  ALTER TABLE recordings ADD COLUMN conflict INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE recording_rules ADD COLUMN priority INTEGER NOT NULL DEFAULT 50;
+  ALTER TABLE recording_rules ADD COLUMN days TEXT;
+  ALTER TABLE recording_rules ADD COLUMN time_from TEXT;
+  ALTER TABLE recording_rules ADD COLUMN time_to TEXT;
+  ALTER TABLE recording_rules ADD COLUMN skip_repeats INTEGER NOT NULL DEFAULT 1;
+  `,
 ];
 
 function migrate(db: Database) {

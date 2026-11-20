@@ -528,6 +528,7 @@ export default function LivePlayer() {
             )}
             <button className={`btn-icon ${showList ? 'active' : ''}`} onClick={() => setShowList((s) => !s)} aria-label="Channel list"><Icon name="list" size={22} /></button>
             <button className="btn-icon" onClick={() => navigate('/livetv/guide')} aria-label="Guide"><Icon name="guide" size={22} /></button>
+            {!catchup && <button className="btn-icon" onClick={() => navigate(`/watch/multiview?ch=${encodeURIComponent(channelId)}`)} aria-label="Multiview" title="Multiview"><Icon name="grid" size={22} /></button>}
             {(cast.available || cast.connected) && (
               <button
                 className={`btn-icon ${cast.connected ? 'active' : ''}`}

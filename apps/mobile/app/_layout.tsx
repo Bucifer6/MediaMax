@@ -5,11 +5,14 @@ import * as SystemUI from 'expo-system-ui';
 import React, { useEffect, useMemo } from 'react';
 import { Platform, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CarBridge } from '@/car/CarBridge';
 import { CastProvider } from '@/cast';
 import { BrandSplash } from '@/components/BrandSplash';
 import { MiniPlayer } from '@/components/MiniPlayer';
+import { T } from '@/components/Text';
 import { DownloadsProvider } from '@/state/downloads';
 import { MusicProvider } from '@/state/music';
+import { RemoteProvider, useRemote } from '@/state/remote';
 import { SessionProvider, useSession } from '@/state/session';
 import { SyncPlayProvider } from '@/state/syncplay';
 import { ThemeProvider, resolveTheme, useTheme } from '@/theme';
@@ -35,9 +38,14 @@ function ThemedApp() {
       <CastProvider>
         <DownloadsProvider>
           <MusicProvider>
-            <SyncPlayProvider>
-              <Navigation />
-            </SyncPlayProvider>
+            {/* CarPlay / Android Auto (renders nothing; absent in Expo Go and TV builds) */}
+            <CarBridge />
+            {/* Remote control ("Play on…"): reports player state, applies commands from your other devices */}
+            <RemoteProvider>
+              <SyncPlayProvider>
+                <Navigation />
+              </SyncPlayProvider>
+            </RemoteProvider>
           </MusicProvider>
         </DownloadsProvider>
       </CastProvider>
@@ -99,7 +107,38 @@ function Navigation() {
         <Stack.Screen name="settings/wrapped" options={{ presentation: 'fullScreenModal', animation: 'fade', orientation: t.isTV ? undefined : 'all' }} />
       </Stack>
       <FloatingMiniPlayer />
+      <RemoteNotice />
       <BrandSplash />
+    </View>
+  );
+}
+
+const ACTION_TEXT: Record<string, string> = {
+  play: 'Play',
+  pause: 'Pause',
+  togglePause: 'Play / pause',
+  stop: 'Stop',
+  seek: 'Seek',
+  next: 'Next',
+  previous: 'Previous',
+  setVolume: 'Volume',
+  playItem: 'Playing',
+  playChannel: 'Playing channel',
+};
+
+/** Brief notice when another of your devices sends a command (the video player shows its own). */
+function RemoteNotice() {
+  const t = useTheme();
+  const insets = useSafeAreaInsets();
+  const { lastCommand } = useRemote();
+  const segments = useSegments() as string[];
+  const inVideo = segments[0] === 'player' || (segments[0] === 'live' && segments[1] === '[id]');
+  if (!lastCommand || inVideo) return null;
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', top: t.isTV ? t.space.lg : insets.top + 8, alignSelf: 'center', backgroundColor: t.alpha(t.colors.surface, 0.95), borderColor: t.colors.border, borderWidth: 1, paddingHorizontal: t.space.lg, paddingVertical: t.space.sm, borderRadius: 999 }}>
+      <T variant="small" weight="700">
+        {ACTION_TEXT[lastCommand.action] ?? lastCommand.action} · from {lastCommand.from}
+      </T>
     </View>
   );
 }

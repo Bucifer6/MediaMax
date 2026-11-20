@@ -1,10 +1,16 @@
-import type { ServerEvent } from '@mediamax/shared';
+import type { Platform, RemotePlayerState, RemoteTarget, ServerEvent } from '@mediamax/shared';
 import { EventEmitter } from 'node:events';
 
 export interface WsClient {
   id: string;
   userId: string;
   isAdmin: boolean;
+  /** Device row id (one per signed-in device) — the "Play on…" target id. */
+  deviceRowId: string;
+  deviceName: string;
+  platform: Platform;
+  /** Last reported player state (for remote control UIs). */
+  remoteState: RemotePlayerState | null;
   send: (ev: ServerEvent) => void;
 }
 
@@ -38,5 +44,18 @@ export const events = {
   },
   toAdmins(ev: ServerEvent) {
     this.broadcast(ev, (c) => c.isAdmin);
+  },
+  /** The user's online devices (one entry per device even with several sockets). */
+  remoteTargets(userId: string): RemoteTarget[] {
+    const byDevice = new Map<string, RemoteTarget>();
+    for (const c of clients) {
+      if (c.userId !== userId || c.deviceRowId.startsWith('apikey:')) continue;
+      const prev = byDevice.get(c.deviceRowId);
+      byDevice.set(c.deviceRowId, { id: c.deviceRowId, deviceName: c.deviceName, platform: c.platform, state: c.remoteState ?? prev?.state ?? null });
+    }
+    return [...byDevice.values()];
+  },
+  announceTargets(userId: string) {
+    this.toUser(userId, { type: 'remote.targets', targets: this.remoteTargets(userId) });
   },
 };

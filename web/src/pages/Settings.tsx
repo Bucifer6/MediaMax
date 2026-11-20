@@ -12,6 +12,7 @@ import { DEFAULT_PREFERENCES } from '../theme/defaults';
 import { QUALITY_OPTIONS } from '../player/deviceProfile';
 import { relativeTime } from '../utils/format';
 import { LinkDeviceForm } from './LinkDevice';
+import { ApiKeysCard, SubsonicCard, TwoFactorCard } from './SecuritySettings';
 
 const LANGS = [
   ['', 'Default'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'],
@@ -145,6 +146,9 @@ function Security() {
           <button className="btn btn-primary" disabled={busy || pin.length < 4}>Save PIN</button>
         </div>
       </form>
+      <TwoFactorCard />
+      <ApiKeysCard />
+      <SubsonicCard />
     </>
   );
 }
@@ -525,7 +529,7 @@ export default function SettingsPage() {
   const { features } = useApp();
   const tabs: { to: string; label: string; icon: IconName }[] = [
     { to: 'profile', label: 'Profile', icon: 'user' },
-    { to: 'security', label: 'Password & PIN', icon: 'lock' },
+    { to: 'security', label: 'Security', icon: 'lock' },
     { to: 'appearance', label: 'Appearance', icon: 'palette' },
     { to: 'playback', label: 'Playback', icon: 'play' },
     { to: 'devices', label: 'Devices', icon: 'device' },

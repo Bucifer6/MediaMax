@@ -9,7 +9,7 @@ import { Icon } from '../components/Icon';
 import { AdminHeader } from './AdminRoutes';
 import { formatBytes } from '../utils/format';
 
-type Tab = 'general' | 'transcoding' | 'dvr' | 'requests' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks';
+type Tab = 'general' | 'transcoding' | 'cinema' | 'dvr' | 'requests' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks';
 const HW: { value: HwAccel; label: string }[] = [
   { value: 'none', label: 'None (CPU)' },
   { value: 'vaapi', label: 'VA-API (Intel/AMD, Linux)' },
@@ -56,6 +56,7 @@ export function ServerSettingsAdmin() {
   const [runningTp, setRunningTp] = useState(false);
   const needUsers = tab === 'dlna' || tab === 'requests';
   const users = useAsync(async () => (needUsers ? api.users.list() : ([] as User[])), [needUsers]);
+  const libs = useAsync(async () => (tab === 'cinema' ? api.libraries.list() : []), [tab]);
 
   const load = () => {
     setError(null);
@@ -133,6 +134,7 @@ export function ServerSettingsAdmin() {
       <Tabs<Tab> value={tab} onChange={setTab} tabs={[
         { value: 'general', label: 'General' },
         { value: 'transcoding', label: 'Transcoding' },
+        { value: 'cinema', label: 'Cinema mode' },
         { value: 'dvr', label: 'DVR' },
         { value: 'requests', label: 'Requests' },
         { value: 'sso', label: 'SSO' },
@@ -192,6 +194,25 @@ export function ServerSettingsAdmin() {
             <Switch checked={s.transcoding.toneMapHdr} onChange={(v) => setT({ toneMapHdr: v })} label="Tone-map HDR to SDR" hint="Keeps colours correct on non-HDR screens when transcoding." />
           </div>
         )}
+        {tab === 'cinema' && (
+          <div className="form-grid">
+            <p className="muted">
+              Before a movie starts from the beginning, play trailers for other movies in your libraries (from their local <code>Trailers</code> folders or
+              <code>-trailer</code> files), then one short pre-roll clip, like at the cinema. Viewers can skip straight to the movie, and turn it off in their playback settings.
+            </p>
+            <Switch checked={s.cinema.enabled} onChange={(v) => set({ cinema: { ...s.cinema, enabled: v } })} label="Enable cinema mode" />
+            <div className="form-row">
+              <Field label="Trailers before a movie"><input className="input" type="number" min={0} max={5} value={s.cinema.trailers} onChange={(e) => set({ cinema: { ...s.cinema, trailers: Number(e.target.value) } })} /></Field>
+              <Field label="Pre-roll library" hint="A Videos library of short intro clips; one is picked at random. Hide it from users under Users → library access.">
+                <select className="input" value={s.cinema.prerollLibraryId ?? ''} onChange={(e) => set({ cinema: { ...s.cinema, prerollLibraryId: e.target.value || null } })}>
+                  <option value="">None</option>
+                  {(libs.data ?? []).filter((l) => l.type === 'videos' || l.type === 'movies').map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </Field>
+            </div>
+            <Switch checked={s.cinema.unwatchedOnly} onChange={(v) => set({ cinema: { ...s.cinema, unwatchedOnly: v } })} label="Only trailers for movies the viewer hasn't seen" />
+          </div>
+        )}
         {tab === 'dvr' && (
           <div className="form-grid">
             <Field label="Recordings folder"><input className="input mono" value={s.dvr.recordingsPath} onChange={(e) => setD({ recordingsPath: e.target.value })} /></Field>
@@ -199,6 +220,14 @@ export function ServerSettingsAdmin() {
               <Field label="Default start padding (min)"><input className="input" type="number" min={0} value={s.dvr.paddingBeforeMin} onChange={(e) => setD({ paddingBeforeMin: Number(e.target.value) })} /></Field>
               <Field label="Default end padding (min)"><input className="input" type="number" min={0} value={s.dvr.paddingAfterMin} onChange={(e) => setD({ paddingAfterMin: Number(e.target.value) })} /></Field>
             </div>
+            <Switch checked={!!s.dvr.commercialDetection} onChange={(v) => setD({ commercialDetection: v })} label="Detect commercials"
+              hint="Runs comskip on finished recordings and adds “Skip ad break” markers. comskip must be installed on the server. Any video with a .edl file next to it gets markers too." />
+            {s.dvr.commercialDetection && (
+              <div className="form-row">
+                <Field label="comskip binary"><input className="input mono" placeholder="comskip" value={s.dvr.comskipPath ?? ''} onChange={(e) => setD({ comskipPath: e.target.value || null })} /></Field>
+                <Field label="comskip.ini (optional)"><input className="input mono" placeholder="Built-in EDL-only settings" value={s.dvr.comskipIni ?? ''} onChange={(e) => setD({ comskipIni: e.target.value || null })} /></Field>
+              </div>
+            )}
           </div>
         )}
         {tab === 'requests' && (

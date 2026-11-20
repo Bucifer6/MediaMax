@@ -218,3 +218,100 @@ SyncPlay (watch together): `syncplay.create` → server replies `syncplay.state`
 * Children (`GET /items/:id/children`) are computed live for the viewer. `Item.smart` holds the `SmartFilter`.
 * Rule fields: genre, studio, person, year, rating, durationMin, addedDays (lte = within N days, gte = older),
   contentRating, played, favorite, inProgress, library, type, title, resolution (4K/1080p/720p/480p/SD).
+
+## Plugins
+See [PLUGINS.md](PLUGINS.md). Management (🛡️): `GET /admin/plugins` → `PluginInfo[]` · `GET /admin/plugins/catalog?refresh=true` →
+`PluginCatalogEntry[]` · `POST /admin/plugins/install` `{ id, version? }` · `POST /admin/plugins/upload` (multipart `file`, .tar.gz) ·
+`POST /admin/plugins/:id/enable|disable` · `PUT /admin/plugins/:id/settings` `{ key: value }` · `DELETE /admin/plugins/:id`.
+Repositories: `ServerSettings.plugins.repositories`. Plugin routes: `/api/v1/plugins/<id>/<path>`; admin pages:
+`PluginInfo.adminPageUrl` (render in a sandboxed iframe).
+
+## Security & sharing
+* **API keys** (for Home Assistant, scripts): `GET/POST /auth/api-keys` (`{ name }` → `CreatedApiKey`, key shown once) ·
+  `DELETE /auth/api-keys/:id`. Send `X-Api-Key: mmk_…` (or `?api_key=`); the key acts as its owner.
+* **Two-factor (TOTP)**: `POST /auth/me/2fa/setup` → `TotpSetup` · `POST /auth/me/2fa/enable` `{ code }` → `TotpEnabled` (recovery codes) ·
+  `POST /auth/me/2fa/disable` `{ code }` · admin reset `DELETE /users/:id/2fa`. Sign-in returns 401 `totp_required` until
+  `LoginRequest.totpCode` / `PinLoginRequest.totpCode` is sent (a PIN never replaces the second factor).
+* **Invites**: `GET/POST /invites` 🛡️ (`CreateInviteRequest` → `Invite` with `url`) · `DELETE /invites/:code` 🛡️ ·
+  `GET /invites/:code/preview` 🔓 → `InvitePreview` · `POST /invites/:code/accept` 🔓 `AcceptInviteRequest` → `AuthResponse`.
+  New users get the invite's `template` (libraries, rating limit, permissions, `maxStreams`, `allowRemote`).
+* **Per-user limits**: `User.maxStreams` (429 `stream_limit` when exceeded) and `User.allowRemote` (403 `remote_not_allowed` off-LAN).
+
+## Backups, remote access, metrics (🛡️)
+* `GET/POST /admin/backups` → `BackupInfo[]` / new backup · `GET /admin/backups/:id/download` · `DELETE /admin/backups/:id` ·
+  `POST /admin/backups/:id/restore` or `POST /admin/backups/restore-upload` (multipart) → `{ restartRequired: true }`;
+  the restore is applied on the next start (a `pre-restore` backup is taken first). `POST /admin/restart` exits so Docker/systemd restarts it.
+  Scheduled backups: `ServerSettings.backups`.
+* `GET /admin/remote-access` → `RemoteAccessStatus` · `POST /admin/remote-access/refresh`. UPnP port mapping: `ServerSettings.remoteAccess`
+  (needs host networking in Docker).
+* `GET /metrics` — Prometheus text format (admin token or API key).
+
+## Audiobooks extras
+* Bookmarks: `GET/POST /items/:id/bookmarks` (`{ positionMs, note? }` → `Bookmark`) · `DELETE /items/:id/bookmarks/:bookmarkId`.
+* Series: `Item.series = { name, index }` (from `series`/`mvnm` tags or `Author/Series/01 - Book` folders); `GET /items?series=<name>`.
+
+## Subsonic / OpenSubsonic
+`/rest/<method>.view` (GET or form POST, `f=json` or XML). Auth: `u` + `p` (plain or `enc:<hex>`) or OpenSubsonic `apiKey`
+(a MediaMax API key). Salted-token auth (`t`/`s`) returns error 41 (passwords are never stored in plaintext). Implemented:
+ping, getLicense, getOpenSubsonicExtensions, getUser, getMusicFolders, getGenres, getIndexes, getArtists, getArtist, getAlbum,
+getSong, getMusicDirectory, getAlbumList2, getRandomSongs, getSongsByGenre, search3, getStarred2, star, unstar, scrobble,
+getPlaylists, getPlaylist, createPlaylist, updatePlaylist, deletePlaylist, getLyrics, getLyricsBySongId, getNowPlaying,
+getScanStatus, stream (raw or `format=mp3|opus&maxBitRate=`), download, getCoverArt.
+
+## Remote control ("Play on…")
+* `GET /remote/targets` → `RemoteTarget[]` — your other online devices and what they're playing.
+* Players send `{ type: 'remote.state', state: RemotePlayerState | null }` over the WebSocket on change and every ~10 s.
+* Controllers send `{ type: 'remote.command', targetDeviceId, action, itemId?, channelId?, positionMs?, volume? }`; the target device
+  receives `remote.command` (with `fromDeviceName`) and applies it. Everyone gets `remote.targets` pushes when devices come and go.
+  Only the same user's devices can be controlled.
+
+## Editions & extras
+* `MediaSource.edition` — e.g. "Director's Cut" (from `{edition-…}` or `Movie (2010) - Director's Cut.mkv`); several editions are
+  several `media` entries on one movie.
+* `GET /items/:id/extras` → `Item[]` (type `video`, `extraType` trailer/featurette/behindthescenes/deleted/interview/scene/short/other),
+  from Plex/Jellyfin-style folders (`Trailers/`, `Featurettes/`, `Behind The Scenes/`, `Extras/`…) or `-trailer`-style suffixes.
+  Extras never appear in library lists or search.
+
+## DVR priorities, rule filters and tuner conflicts
+
+Recordings and rules carry a `priority` (0–100, higher wins). Manual recordings default to 90 and rules to 50 (0–99), so `PATCH /dvr/recordings/:id {"priority":100}` always makes a recording win. "Make top priority" in the apps does this.
+
+Rules (`POST /dvr/rules`) accept these optional fields:
+
+| Field | Meaning |
+|---|---|
+| `daysOfWeek` | `[0..6]` (0 = Sunday); only match programmes starting on these days |
+| `timeFrom` / `timeTo` | `"HH:MM"` 24-hour window (server local time); may wrap past midnight, e.g. `22:00`–`02:00` |
+| `skipRepeats` | default `true`; skip episodes already recorded (by episode number, else title + subtitle) |
+| `priority` | rule priority, passed on to the recordings it schedules |
+
+Every change to the schedule (create, cancel, rule delete, rule run) re-checks each live source's `maxConnections`. Recordings are given slots in order: recordings already in progress first, then by priority, then oldest first. A recording that cannot get a slot has `conflict: true`, and a `recording.updated` event is sent. If it is still in conflict at start time, it fails with a clear error. Cancelling another recording frees its slot straight away.
+
+## Multiple EPG sources
+
+A live source's `epgUrl` may contain up to 10 XMLTV URLs, separated by commas or newlines, highest priority first. On refresh, every guide is downloaded and merged:
+
+- Each channel takes its programmes from the first guide that covers it.
+- The provider's own guide (the Xtream `xmltv.php`, or the M3U `url-tvg` list) is always appended last, so it fills any gaps.
+- A guide that fails is skipped and logged. Existing programmes are replaced only once at least one guide has loaded, so a broken guide never empties the EPG.
+
+## Commercial and preview markers
+
+`Marker.type` can also be `preview` ("next time on" scenes) or `commercial` (ad breaks). Players show "Skip ad break" or "Skip preview". When auto-skip is on, intros, recaps and ad breaks are skipped automatically.
+
+- **Sidecar EDL:** a Kodi/MythTV/comskip `.edl` file next to any video (same base name) is imported on every scan. Each line is `start end action`, in seconds. Actions `0` (cut) and `3` (commercial) become `commercial` markers.
+- **DVR:** with `settings.dvr.commercialDetection` on, finished recordings are passed to comskip (`dvr.comskipPath`, default `comskip` on PATH). If `dvr.comskipIni` is not set, MediaMax supplies an EDL-only ini. The resulting `.edl` is imported straight away and deleted along with the recording.
+
+## IPTV multiview
+
+`POST /livetv/channels/:id/play` with `{"multiview": true}` starts a multiview tile. Normally a new playback on a device replaces that device's previous one. Multiview tiles from the same device run side by side instead, up to 4 (the oldest is stopped beyond that). Any normal playback on the device still replaces them all. Each tile counts toward the user's `maxStreams`. It uses a provider connection only when nobody else is already watching that channel, because tuners are shared. Catch-up streams cannot be multiview tiles.
+
+The web app's multiview is at `/watch/multiview?ch=<id>,<id>,…`. Click a tile (or press 1–4 or Tab) to move the sound to it, double-click a tile to open it in the full player, and press F for full screen.
+
+## ReplayGain / loudness levelling
+
+Music tracks carry `replayGain: { trackGainDb, trackPeak, albumGainDb, albumPeak }` when the file has `REPLAYGAIN_*` tags. Opus `R128_*_GAIN` tags are converted to the ReplayGain −18 LUFS reference. The OpenSubsonic `replayGain` field on songs carries the same values, so Symfonium, Feishin and similar apps can level volume. Each user picks a mode with the `replayGain` preference (`off`, `track`, `album`, or `auto`, the default, which uses album gain when playing an album in order and track gain otherwise). Tags are read on scan; run a full refresh to pick them up for files that were already scanned.
+
+## Cinema mode (trailers and pre-rolls)
+
+`GET /items/:id/intros` returns the videos to play before a movie: up to `settings.cinema.trailers` local trailers for *other* movies (unwatched ones only, when `unwatchedOnly` is set), then one random clip from `cinema.prerollLibraryId`. It returns `[]` when cinema mode is off, when the item is not a movie, or when the user has turned off the `cinemaMode` preference. Results respect parental limits and library access. The web player chains intros as `/play/<intro>?then=<movie>&intros=<rest>`, and "Skip to movie" jumps straight to the feature.

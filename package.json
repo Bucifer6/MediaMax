@@ -2,6 +2,7 @@
   "name": "mediamax",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "description": "MediaMax - all-in-one self-hosted media server with Xtream IPTV, live TV, DVR and fully server-driven branding.",
   "workspaces": [
     "shared",

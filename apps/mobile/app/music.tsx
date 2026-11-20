@@ -8,17 +8,22 @@ import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
 import { Img } from '@/components/Img';
 import { OptionSheet } from '@/components/OptionSheet';
+import { PlayOnSheet } from '@/components/PlayOnSheet';
 import { EmptyState } from '@/components/States';
 import { T } from '@/components/Text';
+import { BookmarksPanel } from '@/player/Bookmarks';
 import { LyricsView, useLyrics } from '@/player/Lyrics';
 import { Scrubber } from '@/player/Scrubber';
-import { SPEEDS, useMusic } from '@/state/music';
+import { SPEEDS, useMusic, type SleepOption } from '@/state/music';
+import { useRemote } from '@/state/remote';
+import { useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 import { useTVRemote } from '@/tv';
 import { formatClock } from '@/utils/format';
 
-type Panel = 'queue' | 'lyrics' | 'chapters';
+type Panel = 'queue' | 'lyrics' | 'chapters' | 'bookmarks';
 const speedLabel = (r: number) => `${r}x`;
+const SLEEP_MINUTES = [5, 15, 30, 45, 60];
 
 export default function NowPlaying() {
   const t = useTheme();
@@ -26,13 +31,17 @@ export default function NowPlaying() {
   const insets = useSafeAreaInsets();
   const [panel, setPanel] = useState<Panel>('queue');
   const [speedSheet, setSpeedSheet] = useState(false);
+  const [sleepSheet, setSleepSheet] = useState(false);
+  const [playOn, setPlayOn] = useState(false);
+  const remote = useRemote();
+  const { status } = useSession();
   const cur = m.current;
   const isTrack = cur?.type === 'track';
   const lyrics = useLyrics(isTrack && panel === 'lyrics' ? cur.id : null);
   // A panel that no longer applies (track ↔ episode) falls back to the queue.
   useEffect(() => {
-    if ((panel === 'lyrics' && !isTrack) || (panel === 'chapters' && !m.chapters.length)) setPanel('queue');
-  }, [panel, isTrack, m.chapters.length]);
+    if ((panel === 'lyrics' && !isTrack) || (panel === 'chapters' && !m.chapters.length) || (panel === 'bookmarks' && !m.spoken)) setPanel('queue');
+  }, [panel, isTrack, m.chapters.length, m.spoken]);
   useTVRemote((e) => {
     if (e.eventType === 'playPause') m.toggle();
     if (e.eventType === 'fastForward') (m.spoken ? m.skip(30000) : m.next());
@@ -43,6 +52,9 @@ export default function NowPlaying() {
   const art = cur.posterUrl ?? cur.thumbUrl;
   const size = t.isTV ? t.s(panel === 'queue' ? 420 : 300) : Math.min(t.width - 64, t.height * (panel === 'queue' || t.wide ? 0.42 : 0.22), 420);
   const transportIcon = t.isTV ? t.s(34) : 32;
+  const canPlayOn = remote.enabled && status === 'signed-in';
+  const sleepLabel = m.sleep ? (m.sleepRemainingMs != null ? `Sleep ${formatClock(m.sleepRemainingMs)}` : m.sleep.mode === 'time' ? 'Sleep' : 'Sleep · end') : 'Sleep';
+  const sleepKey = !m.sleep ? 'off' : m.sleep.mode === 'time' ? `m${m.sleep.minutes}` : 'chapter';
 
   const controls = (
     <View style={{ width: t.isTV ? t.s(520) : '100%', gap: t.space.lg }}>
@@ -91,7 +103,10 @@ export default function NowPlaying() {
         <PanelChip icon="list" label="Up next" active={panel === 'queue'} onPress={() => setPanel('queue')} />
         {isTrack ? <PanelChip icon="chatbubble-ellipses-outline" label="Lyrics" active={panel === 'lyrics'} onPress={() => setPanel(panel === 'lyrics' ? 'queue' : 'lyrics')} /> : null}
         {m.chapters.length ? <PanelChip icon="bookmarks-outline" label="Chapters" active={panel === 'chapters'} onPress={() => setPanel(panel === 'chapters' ? 'queue' : 'chapters')} /> : null}
+        {m.spoken ? <PanelChip icon="bookmark-outline" label="Bookmarks" active={panel === 'bookmarks'} onPress={() => setPanel(panel === 'bookmarks' ? 'queue' : 'bookmarks')} /> : null}
         {m.spoken ? <PanelChip icon="speedometer-outline" label={speedLabel(m.rate)} active={m.rate !== 1} onPress={() => setSpeedSheet(true)} /> : null}
+        <PanelChip icon={m.sleep ? 'moon' : 'moon-outline'} label={sleepLabel} active={!!m.sleep} onPress={() => setSleepSheet(true)} />
+        {canPlayOn && t.isTV ? <PanelChip icon="phone-portrait-outline" label="Play on…" active={false} onPress={() => setPlayOn(true)} /> : null}
       </View>
       {m.error ? <T tone="danger">{m.error}</T> : null}
     </View>
@@ -115,6 +130,7 @@ export default function NowPlaying() {
     />
   );
   const lyricsPanel = <LyricsView lyrics={lyrics} positionMs={m.positionMs} onSeek={m.seek} />;
+  const sidePanel = panel === 'lyrics' ? lyricsPanel : panel === 'chapters' ? chapterList : panel === 'bookmarks' ? <BookmarksPanel /> : null;
 
   const queue = (
     <FlatList
@@ -154,6 +170,11 @@ export default function NowPlaying() {
               </View>
             ) : null}
           </View>
+          {canPlayOn ? (
+            <Focusable onPress={() => setPlayOn(true)} style={{ padding: 8 }} accessibilityLabel="Play on another device">
+              <Icon name="phone-portrait-outline" color="#fff" size={24} />
+            </Focusable>
+          ) : null}
           <CastButton tint="#fff" size={30} style={{ marginHorizontal: 4 }} />
           <Focusable onPress={() => { m.stop(); router.back(); }} style={{ padding: 8 }} accessibilityLabel="Stop">
             <Icon name="stop-circle-outline" color="#fff" size={26} />
@@ -168,7 +189,7 @@ export default function NowPlaying() {
             </View>
             {controls}
           </View>
-          <View style={{ flex: 1, alignSelf: 'stretch' }}>{panel === 'lyrics' ? lyricsPanel : panel === 'chapters' ? chapterList : queue}</View>
+          <View style={{ flex: 1, alignSelf: 'stretch' }}>{sidePanel ?? queue}</View>
         </View>
       ) : (
         <View style={{ flex: 1, paddingHorizontal: 32, gap: t.space.xl, paddingTop: t.space.lg }}>
@@ -176,7 +197,7 @@ export default function NowPlaying() {
             {art ? <Img path={art} width={size} style={{ width: '100%', height: '100%' }} /> : null}
           </View>
           {controls}
-          {panel === 'lyrics' ? lyricsPanel : panel === 'chapters' ? chapterList : queue}
+          {sidePanel ?? queue}
         </View>
       )}
       <OptionSheet
@@ -189,6 +210,30 @@ export default function NowPlaying() {
         }}
         onClose={() => setSpeedSheet(false)}
       />
+      <OptionSheet
+        visible={sleepSheet}
+        title={m.sleep && m.sleepRemainingMs != null ? `Sleep timer · ${formatClock(m.sleepRemainingMs)} left` : 'Sleep timer'}
+        options={[
+          { key: 'off', label: 'Off', icon: 'close-circle-outline', selected: sleepKey === 'off' },
+          ...SLEEP_MINUTES.map((n) => ({ key: `m${n}`, label: `${n} minutes`, icon: 'time-outline' as const, selected: sleepKey === `m${n}` })),
+          {
+            key: 'chapter',
+            label: m.chapters.length ? 'End of chapter' : m.spoken ? 'End of this part' : 'End of this track',
+            description: m.chapters.length ? 'Falls back to the end of the part after the last chapter' : undefined,
+            icon: 'bookmark-outline',
+            selected: sleepKey === 'chapter',
+          },
+        ]}
+        onSelect={(k) => {
+          const opt: SleepOption | null = k === 'off' ? null : k === 'chapter' ? 'chapter' : { minutes: Number(k.slice(1)) };
+          m.setSleep(opt);
+          setSleepSheet(false);
+        }}
+        onClose={() => setSleepSheet(false)}
+      />
+      {canPlayOn ? (
+        <PlayOnSheet visible={playOn} what={{ itemId: cur.id, positionMs: m.spoken ? m.positionMs : undefined, title: cur.title }} onClose={() => setPlayOn(false)} onSent={() => m.pause()} />
+      ) : null}
     </View>
   );
 }

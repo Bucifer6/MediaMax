@@ -105,6 +105,7 @@ export default async function liveRoutes(app: FastifyInstance) {
   /* -------------------------------- DVR ----------------------------- */
   app.get<{ Querystring: { status?: string } }>('/dvr/recordings', async (req) => dvr.listRecordings(requireUser(req).user, req.query.status));
   app.post<{ Body: CreateRecordingRequest }>('/dvr/recordings', async (req) => dvr.scheduleRecording(requireUser(req).user, req.body));
+  app.patch<{ Params: { id: string }; Body: { priority?: number } }>('/dvr/recordings/:id', async (req) => dvr.updateRecording(requireUser(req).user, req.params.id, req.body ?? {}));
   app.delete<{ Params: { id: string } }>('/dvr/recordings/:id', async (req) => {
     dvr.cancelRecording(requireUser(req).user, req.params.id);
     return { ok: true };

@@ -2,19 +2,22 @@ import fs from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import { db } from '../db.js';
 import { requireAdmin, requireUser } from '../http.js';
-import { assertCanSee, getItem } from '../services/items.js';
+import { assertCanSee, getItem, queryItems } from '../services/items.js';
 import { sheetPath, trickplayInfo } from '../services/trickplay.js';
 import { serverStats, userStats } from '../services/stats.js';
 import { deleteDownloadedSubtitle, downloadSubtitle, searchSubtitles } from '../services/opensubtitles.js';
 import { disconnect, setScrobble, startDeviceAuth, traktStatus } from '../services/trakt.js';
 import { notFound, badRequest, forbidden } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
+import { newId } from '../util/ids.js';
+import { events } from '../services/events.js';
 import { getLyrics } from '../services/lyrics.js';
 import * as podcasts from '../services/podcasts.js';
 import * as lastfm from '../services/lastfm.js';
 import * as requests from '../services/requests.js';
 import * as smart from '../services/smart.js';
 import { createContainer } from '../services/items.js';
+import { getSettings } from '../services/settings.js';
 import type { CreateMediaRequest, CreateSmartListRequest, SmartFilter } from '@mediamax/shared';
 import type { SubscribePodcastRequest } from '@mediamax/shared';
 
@@ -156,6 +159,82 @@ export default async function extraRoutes(app: FastifyInstance) {
     const { user } = requireUser(req);
     canManage(user.id, user.isAdmin, req.params.id);
     podcasts.unsubscribe(req.params.id);
+    return { ok: true };
+  });
+
+  /* ----------------------------- remote control --------------------- */
+  app.get('/remote/targets', async (req) => {
+    const a = requireUser(req);
+    return events.remoteTargets(a.user.id).filter((t) => t.id !== a.deviceRowId);
+  });
+
+  /* -------------------------------- extras -------------------------- */
+  app.get<{ Params: { id: string } }>('/items/:id/extras', async (req) => {
+    const { user } = requireUser(req);
+    assertCanSee(user, req.params.id);
+    const order = ['trailer', 'featurette', 'behindthescenes', 'deleted', 'interview', 'scene', 'short', 'other'];
+    return queryItems(user, { parentId: req.params.id, type: 'video', sort: 'title', limit: 200 }).items
+      .sort((a, b) => order.indexOf(a.extraType ?? 'other') - order.indexOf(b.extraType ?? 'other'));
+  });
+
+  /* ------------------------------- cinema mode ---------------------- */
+  // Trailers for other (unwatched) movies, then one pre-roll clip; empty unless enabled and the item is a movie.
+  app.get<{ Params: { id: string } }>('/items/:id/intros', async (req) => {
+    const { user } = requireUser(req);
+    const row = assertCanSee(user, req.params.id);
+    const cfg = getSettings().cinema;
+    if (!cfg.enabled || row.type !== 'movie' || user.preferences?.cinemaMode === false) return [];
+    const visible = (id: string) => {
+      try {
+        assertCanSee(user, id);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const out: string[] = [];
+    const want = Math.max(0, Math.min(5, cfg.trailers | 0));
+    if (want) {
+      const cands = db.all<{ id: string; movie: string }>(
+        `SELECT x.id, m.id movie FROM items x JOIN items m ON m.id = x.parent_id
+         WHERE x.type = 'video' AND json_extract(x.extra, '$.extraType') = 'trailer' AND m.type = 'movie' AND m.id != ?
+         ${cfg.unwatchedOnly ? 'AND NOT EXISTS (SELECT 1 FROM user_data ud WHERE ud.item_id = m.id AND ud.user_id = ? AND ud.played = 1)' : 'AND ? IS NOT NULL'}
+         ORDER BY random() LIMIT 40`, row.id, user.id);
+      const movies = new Set<string>();
+      for (const c of cands) {
+        if (out.length >= want) break;
+        if (movies.has(c.movie) || !visible(c.movie)) continue;
+        movies.add(c.movie);
+        out.push(c.id);
+      }
+    }
+    if (cfg.prerollLibraryId) {
+      const pre = db.all<{ id: string }>("SELECT id FROM items WHERE library_id = ? AND type IN ('video','movie') AND EXISTS (SELECT 1 FROM media WHERE item_id = items.id) ORDER BY random() LIMIT 10", cfg.prerollLibraryId)
+        .find((p) => visible(p.id));
+      if (pre) out.push(pre.id);
+    }
+    return out.map((id) => getItem(user, id, false));
+  });
+
+  /* ------------------------------- bookmarks ------------------------ */
+  app.get<{ Params: { id: string } }>('/items/:id/bookmarks', async (req) => {
+    const { user } = requireUser(req);
+    assertCanSee(user, req.params.id);
+    return db.all('SELECT * FROM bookmarks WHERE user_id = ? AND item_id = ? ORDER BY position_ms', user.id, req.params.id)
+      .map((b) => ({ id: b.id, itemId: b.item_id, positionMs: b.position_ms, note: b.note ?? null, createdAt: b.created_at }));
+  });
+  app.post<{ Params: { id: string }; Body: { positionMs: number; note?: string } }>('/items/:id/bookmarks', async (req) => {
+    const { user } = requireUser(req);
+    assertCanSee(user, req.params.id);
+    const pos = Math.max(0, Math.round(Number(req.body?.positionMs) || 0));
+    if (db.get<{ n: number }>('SELECT COUNT(*) n FROM bookmarks WHERE user_id = ? AND item_id = ?', user.id, req.params.id)!.n >= 500) throw badRequest('Too many bookmarks');
+    const b = { id: newId(), user_id: user.id, item_id: req.params.id, position_ms: pos, note: req.body?.note ? String(req.body.note).slice(0, 1000) : null, created_at: new Date().toISOString() };
+    db.insert('bookmarks', b);
+    return { id: b.id, itemId: b.item_id, positionMs: pos, note: b.note, createdAt: b.created_at };
+  });
+  app.delete<{ Params: { id: string; bookmarkId: string } }>('/items/:id/bookmarks/:bookmarkId', async (req) => {
+    const { user } = requireUser(req);
+    db.run('DELETE FROM bookmarks WHERE id = ? AND user_id = ?', req.params.bookmarkId, user.id);
     return { ok: true };
   });
 
