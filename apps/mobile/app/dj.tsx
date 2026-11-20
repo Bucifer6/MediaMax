@@ -99,6 +99,8 @@ function Setup() {
   const [bpmMax, setBpmMax] = useState('');
   const [starting, setStarting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /** Which button the last attempt came from (errors show next to it). */
+  const [via, setVia] = useState<'ask' | 'build'>('build');
 
   // Genres of the music libraries (GET /genres?libraryId=…); free text when there are none.
   const genreList = useQuery(
@@ -121,6 +123,7 @@ function Setup() {
     const p = prompt.trim();
     if (!p) return;
     Keyboard.dismiss();
+    setVia('ask');
     setErr(null);
     setStarting(true);
     try {
@@ -133,6 +136,7 @@ function Setup() {
   };
 
   const go = async () => {
+    setVia('build');
     setErr(null);
     setStarting(true);
     try {
@@ -174,7 +178,7 @@ function Setup() {
     <ScrollView contentContainerStyle={{ paddingHorizontal: t.space.gutter, paddingBottom: insets.bottom + t.space.xxl * 2, paddingTop: t.space.sm, maxWidth: t.isTV ? t.s(980) : undefined }}>
       {ai ? <AskDj ai={ai} artist={playingArtist} busy={starting || dj.phase === 'loading'} onAsk={(p) => void ask(p)} /> : null}
 
-      {ai && (err || dj.error) ? (
+      {ai && via === 'ask' && (err || dj.error) ? (
         <T tone="danger" weight="600" style={{ marginBottom: t.space.md }}>
           {err ?? dj.error}
         </T>
@@ -262,7 +266,7 @@ function Setup() {
         {ai ? <VoiceRow ai={ai} /> : null}
       </SettingSection>
 
-      {!ai && (err || dj.error) ? (
+      {(!ai || via === 'build') && (err || dj.error) ? (
         <T tone="danger" weight="600" style={{ marginBottom: t.space.md }}>
           {err ?? dj.error}
         </T>
