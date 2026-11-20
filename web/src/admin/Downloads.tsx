@@ -100,7 +100,7 @@ function QueueTable({ data }: { data: ArrListResponse<ArrQueueItem> }) {
     <div className="table-wrap">
       <table className="table arr-queue">
         <thead>
-          <tr><th>Title</th><th>Instance</th><th>Quality</th><th style={{ minWidth: 140 }}>Progress</th><th>Size</th><th>Time left</th><th>Status</th></tr>
+          <tr><th>Title</th><th>Instance</th><th>Quality</th><th style={{ minWidth: 150 }}>Progress</th><th>Status</th></tr>
         </thead>
         <tbody>
           {rows.map(({ q, i }) => (
@@ -116,9 +116,8 @@ function QueueTable({ data }: { data: ArrListResponse<ArrQueueItem> }) {
               <td>{q.quality ?? '—'}</td>
               <td>
                 <div className="arr-progress"><ProgressBar value={q.progress} /><span>{Math.round(q.progress)}%</span></div>
+                <div className="muted arr-sub nowrap">{formatBytes(q.size)}{q.timeLeft ? ` · ${timeLeft(q.timeLeft)} left` : ''}</div>
               </td>
-              <td className="nowrap">{formatBytes(q.size)}</td>
-              <td className="nowrap">{timeLeft(q.timeLeft)}</td>
               <td>
                 <Badge tone={q.warnings.length ? 'warning' : q.status === 'downloading' ? 'primary' : q.status === 'completed' ? 'success' : 'muted'} className="arr-status">{q.status}</Badge>
                 <div className="muted arr-sub">{[q.trackedState && q.trackedState !== q.status ? q.trackedState.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase() : null, q.downloadClient].filter(Boolean).join(' · ')}</div>

@@ -596,8 +596,16 @@ export function guide(user: User, q: { start?: string; end?: string; categoryId?
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) throw badRequest('Invalid time range');
   if (end.getTime() - start.getTime() > 3 * 86400000) throw badRequest('Guide window too large (max 3 days)');
   const ch = listChannels(user, { categoryId: q.categoryId, favorite: q.favorite as any, offset: q.offset, limit: q.limit ?? 300, withEpg: false, sourceId: q.sourceId });
+  // Programme keys: the channel's matched guide (with time shift), not the display id.
   const epgByChannel = new Map<string, string>();
-  for (const c of ch.items) if (c.epgChannelId) epgByChannel.set(c.id, c.epgChannelId);
+  const ids = ch.items.map((c) => c.id);
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    for (const r of db.all(`SELECT id, custom, epg_channel_id, guide_status, guide_key FROM channels WHERE id IN (${chunk.map(() => '?').join(',')})`, ...chunk)) {
+      const k = effEpg(r);
+      if (k) epgByChannel.set(r.id, k);
+    }
+  }
   const epgIds = [...new Set(epgByChannel.values())];
   const programs: Program[] = [];
   if (epgIds.length) {

@@ -165,7 +165,7 @@ function applyResult(row: Row, p: BuiltinProvider, res: ProviderResult, st: Appl
     const cur: string | null = COLUMN_ART.has(a.kind) ? row[a.kind] : meta.art?.[a.kind] ?? null;
     const replaceable = !!cur && !isLocalImage(cur) && ((st.replace && !st.touched.has(a.kind)) || prefersArtFrom(row.type, p.id));
     if (cur && !replaceable) continue;
-    const img = registerRemoteImage(a.url);
+    const img = registerRemoteImage(a.url, { untrusted: true });
     if (!img || img === cur) continue;
     doneKinds.add(a.kind);
     st.touched.add(a.kind);
@@ -188,7 +188,7 @@ function applyResult(row: Row, p: BuiltinProvider, res: ProviderResult, st: Appl
       const season = db.get('SELECT id, poster, locked_fields FROM items WHERE parent_id = ? AND type = ? AND idx = ?', row.id, 'season', a.season!);
       if (!season || parseJson<string[]>(season.locked_fields, []).includes('poster')) continue;
       if (season.poster && (isLocalImage(season.poster) || !(prefersArtFrom('show', p.id) || st.replace))) continue;
-      const img = registerRemoteImage(a.url);
+      const img = registerRemoteImage(a.url, { untrusted: true });
       if (img && img !== season.poster) db.update('items', season.id, { poster: img, updated_at: nowIso() });
     }
   }
@@ -220,7 +220,7 @@ function applyEpisodes(show: Row, res: ProviderResult, st: ApplyState) {
       if (!locked.has('year')) p.year = Number(re.airDate.slice(0, 4));
     }
     if (re.image && !locked.has('thumb') && (!ep.thumb || (auth && !isLocalImage(ep.thumb)))) {
-      const img = registerRemoteImage(re.image);
+      const img = registerRemoteImage(re.image, { untrusted: true });
       if (img && img !== ep.thumb) p.thumb = img;
     }
     if (Object.keys(p).length) {
@@ -353,7 +353,7 @@ export async function searchMatch(itemId: string, q: { provider?: string; query?
   return { providers, provider, results: results.slice(0, 20) };
 }
 
-const ID_RE = /^[\w.:/-]{1,80}$/;
+const ID_RE = /^[\w-]{1,80}$/;
 /** External ids that belong to the old match and must go when the admin picks another one. */
 const MATCH_IDS: Record<string, string[]> = {
   movie: ['tmdb', 'imdb', 'tvdb'],

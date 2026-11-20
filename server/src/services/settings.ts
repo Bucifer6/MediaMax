@@ -34,6 +34,11 @@ export const DEFAULT_SETTINGS: ServerSettings = {
     threads: 0,
     segmentSeconds: 4,
     toneMapHdr: true,
+    gpuIndex: 0,
+    preferredCodecs: ['hevc', 'h264'],
+    allowHevcEncoding: true,
+    allowAv1Encoding: false,
+    hardwareToneMapping: true,
   },
   dvr: { recordingsPath: config.recordingsDir, paddingBeforeMin: 1, paddingAfterMin: 5, commercialDetection: false, comskipPath: null, comskipIni: null },
   webhooks: [],
@@ -171,7 +176,7 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
   const next: ServerSettings = {
     ...cur,
     ...patch,
-    transcoding: { ...cur.transcoding, ...(patch.transcoding ?? {}) },
+    transcoding: normaliseTranscoding({ ...cur.transcoding, ...(patch.transcoding ?? {}) }),
     dvr: { ...cur.dvr, ...(patch.dvr ?? {}) },
     cinema: { ...cur.cinema, ...(patch.cinema ?? {}) },
     aiDj: { ...cur.aiDj, ...(patch.aiDj ?? {}), llm: { ...cur.aiDj.llm, ...(patch.aiDj?.llm ?? {}) }, tts: { ...cur.aiDj.tts, ...(patch.aiDj?.tts ?? {}) } },
@@ -191,6 +196,19 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
   setKv('server', next);
   cache = next;
   return next;
+}
+
+const HW_ACCELS = ['none', 'vaapi', 'nvenc', 'qsv', 'videotoolbox', 'v4l2m2m', 'amf', 'rkmpp'];
+const OUT_CODECS = ['h264', 'hevc', 'av1'];
+
+function normaliseTranscoding(t: ServerSettings['transcoding']): ServerSettings['transcoding'] {
+  const codecs = Array.isArray(t.preferredCodecs) ? t.preferredCodecs.filter((c) => OUT_CODECS.includes(c)) : DEFAULT_SETTINGS.transcoding.preferredCodecs;
+  return {
+    ...t,
+    hwAccel: HW_ACCELS.includes(t.hwAccel) ? t.hwAccel : 'none',
+    gpuIndex: Math.max(0, Math.min(15, Math.floor(Number(t.gpuIndex) || 0))),
+    preferredCodecs: [...new Set(codecs)],
+  };
 }
 
 export function serverId(): string {

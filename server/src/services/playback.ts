@@ -10,7 +10,8 @@ import { newId } from '../util/ids.js';
 import { HttpError, badRequest, forbidden, notFound } from '../util/errors.js';
 import { nowIso, parseJson, REMOTE_PROTOCOLS } from '../util/misc.js';
 import { logger } from '../util/log.js';
-import { TranscodeJob, type TranscodeOptions } from './transcoder.js';
+import { TranscodeJob, encoderWorks, type TranscodeOptions } from './transcoder.js';
+import { chooseVideoCodec } from './hwaccel.js';
 import { getSettings } from './settings.js';
 import { assertCanSee, getItem, mediaRowToSource, nextItem, reportProgress } from './items.js';
 import type { AuthContext } from './auth.js';
@@ -225,6 +226,16 @@ export function decide(media: MediaSource, profile: DeviceProfile | undefined, o
   return { method: 'transcode', videoCopy: false, audioCopy: audioOk && !opts.forceTranscode && !opts.isAudioOnly ? true : false, reasons };
 }
 
+/** Output codec for a transcode: HEVC/AV1 with the hardware encoder when the client plays it (see chooseVideoCodec). */
+export function transcodeCodecFor(profile: DeviceProfile | undefined) {
+  const t = getSettings().transcoding;
+  return chooseVideoCodec({
+    clientCodecs: profile?.videoCodecs ?? DEFAULT_PROFILE.videoCodecs, preferred: t.preferredCodecs ?? ['h264'],
+    allowHevc: t.allowHevcEncoding ?? false, allowAv1: t.allowAv1Encoding ?? false, hw: t.hwAccel,
+    codecWorks: (c) => encoderWorks(t.hwAccel, c),
+  });
+}
+
 /* -------------------------------- start ----------------------------- */
 
 const tokenQuery = (ctx: AuthContext, sessionId?: string) => `?token=${encodeURIComponent(ctx.token)}${sessionId ? `&session=${sessionId}` : ''}`;
@@ -325,8 +336,10 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
             : { kind: 'embedded-image', streamIndex: effectiveBurn.index }
         : null,
     };
+    if (!decision.videoCopy && !isAudioOnly) opts.videoCodec = transcodeCodecFor(req.deviceProfile);
     const job = new TranscodeJob(newId(), opts);
     session = registerSession({ ...base, method: decision.method, job });
+    job.onInfoChange = broadcastSessions;
     job.start(decision.method === 'transcode' && startMs > 0 ? Math.floor(startMs / 1000 / job.segmentSeconds) : 0);
     if (decision.method === 'remux') {
       try {

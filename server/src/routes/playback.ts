@@ -185,8 +185,13 @@ export default async function playbackRoutes(app: FastifyInstance) {
       await job.waitForPlaylist();
       return job.rewrittenPlaylist(q);
     }
-    const m = file.match(/^seg(\d+)\.ts$/);
-    if (!m) throw notFound();
+    if (file === 'init.mp4' && job.segmentType === 'fmp4') {
+      const initPath = await job.initSegment();
+      reply.type('video/mp4').header('Cache-Control', 'private, max-age=600');
+      return fs.createReadStream(initPath);
+    }
+    const m = file.match(/^seg(\d+)\.(ts|m4s)$/);
+    if (!m || m[2] !== job.segmentExt) throw notFound();
     const n = parseInt(m[1], 10);
     let segPath: string;
     if (job.opts.mode === 'transcode') segPath = await job.waitForSegment(n);
@@ -196,7 +201,7 @@ export default async function playbackRoutes(app: FastifyInstance) {
       while (!fs.existsSync(segPath) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 150));
       if (!fs.existsSync(segPath)) throw notFound('Segment not available');
     }
-    reply.type('video/mp2t').header('Cache-Control', 'private, max-age=600');
+    reply.type(job.segmentType === 'fmp4' ? 'video/mp4' : 'video/mp2t').header('Cache-Control', 'private, max-age=600');
     return fs.createReadStream(segPath);
   };
   app.get<{ Params: { sessionId: string; file: string } }>('/stream/hls/:sessionId/:file', hlsHandler);

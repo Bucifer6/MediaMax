@@ -51,12 +51,14 @@ Options (each can also be given as the environment variable in brackets)
   --domain NAME           public name, e.g. media.example.com (MEDIAMAX_DOMAIN)
   --no-domain             no domain: plain http://<server-ip>:8484
   --email ADDR            e-mail for Let's Encrypt expiry notices (ACME_EMAIL)
-  --proxy KIND            caddy | nginx | none | existing | tunnel (MEDIAMAX_PROXY, default caddy)
+  --proxy KIND            caddy | nginx | none | existing | tunnel (MEDIAMAX_PROXY, default none)
   --security KIND         crowdsec | fail2ban | both | none (MEDIAMAX_SECURITY, default crowdsec)
   --media PATH[:rw]       media folder to mount read-only (repeat; add :rw for read-write)
                           (MEDIAMAX_MEDIA, comma separated)
   --puid N --pgid N       user/group MediaMax runs as (MEDIAMAX_PUID / MEDIAMAX_PGID, auto-detected)
   --tz ZONE               time zone, e.g. Europe/London (MEDIAMAX_TZ, auto-detected)
+  --builtin-https         with --proxy none: also publish ports 80/443 so Admin → Network → Built-in HTTPS
+                          can get a certificate (MEDIAMAX_BUILTIN_HTTPS=yes)
   --port N                port for http://<server-ip>:N without a domain, or for an existing proxy
                           to connect to (MEDIAMAX_HTTP_PORT, default 8484)
   --hwaccel KIND          auto | none | vaapi | qsv | nvenc (MEDIAMAX_HWACCEL, default auto)
@@ -101,6 +103,7 @@ PURGE=0
 NO_START=0
 NO_PULL=0
 LE_STAGING_FLAG=""
+BUILTIN_HTTPS_FLAG=""
 FIREWALL_BOUNCER_FLAG=""
 AUTO_UPGRADE_FLAG=""
 OPT_DOMAIN="${MEDIAMAX_DOMAIN-__unset__}"
@@ -145,6 +148,7 @@ while [ "$#" -gt 0 ]; do
     --firewall-bouncer) FIREWALL_BOUNCER_FLAG="yes" ;;
     --auto-upgrade) AUTO_UPGRADE_FLAG="yes" ;;
     --staging) LE_STAGING_FLAG="1" ;;
+    --builtin-https) BUILTIN_HTTPS_FLAG="1" ;;
     --no-start) NO_START=1 ;;
     --no-pull) NO_PULL=1 ;;
     -y|--yes) ASSUME_YES=1 ;;
@@ -447,6 +451,7 @@ configure() {
   AUTO_UPGRADE="$(env_get MEDIAMAX_AUTO_UPGRADE)"
   LE_STAGING="$(env_get LE_STAGING)"
   HTTP_PORT="$(env_get MEDIAMAX_HTTP_PORT)"
+  BUILTIN_HTTPS="$(env_get MEDIAMAX_BUILTIN_HTTPS)"
   local first_run=1; [ -f "$ENV_FILE" ] && first_run=0
 
   [ "$OPT_DOMAIN" != "__unset__" ] && DOMAIN="$OPT_DOMAIN"
@@ -463,11 +468,12 @@ configure() {
   [ -n "$FIREWALL_BOUNCER_FLAG" ] && FIREWALL_BOUNCER="yes"
   [ -n "$AUTO_UPGRADE_FLAG" ] && AUTO_UPGRADE="yes"
   [ -n "$LE_STAGING_FLAG" ] && LE_STAGING="1"
+  [ -n "$BUILTIN_HTTPS_FLAG" ] && BUILTIN_HTTPS="yes"
   [ -n "$OPT_PORT" ] && HTTP_PORT="$OPT_PORT"
   : "${HTTP_PORT:=8484}"
   case "$HTTP_PORT" in *[!0-9]*|"") die "--port must be a number" ;; esac
   : "${IMAGE:=ghcr.io/bucifer6/mediamax:latest}"
-  : "${PROXY:=caddy}"
+  : "${PROXY:=none}"
   : "${HWACCEL:=auto}"
 
   if interactive; then
@@ -494,15 +500,16 @@ configure() {
   # Reverse proxy
   if [ -z "$OPT_PROXY" ]; then
     choose PROXY "Reverse proxy (HTTPS, compression, security headers in front of MediaMax):" "$PROXY" \
-      "caddy|Caddy (recommended: automatic HTTPS)" \
+      "none|None: MediaMax on port $HTTP_PORT (turn on built-in HTTPS later in Admin → Network)" \
+      "caddy|Caddy container (automatic HTTPS)" \
       "nginx|Nginx + Certbot" \
-      "none|None: MediaMax directly on port $HTTP_PORT" \
       "existing|I already have one (Nginx, NPM, Traefik, ...): show me the settings" \
       "tunnel|Cloudflare Tunnel: no open ports"
   fi
   case "$PROXY" in caddy|nginx|none|existing|tunnel) ;; *) die "--proxy must be caddy, nginx, none, existing or tunnel" ;; esac
-  if [ -n "$DOMAIN" ] && [ "$PROXY" = none ]; then
-    warn "a domain without a reverse proxy gets no HTTPS; MediaMax will answer on port $HTTP_PORT only"
+  if [ "$PROXY" != none ]; then BUILTIN_HTTPS=""; fi
+  if [ -n "$DOMAIN" ] && [ "$PROXY" = none ] && [ "$BUILTIN_HTTPS" != yes ]; then
+    warn "a domain without a reverse proxy gets no HTTPS yet: re-run with --builtin-https and turn it on in Admin → Network"
   fi
 
   # E-mail for Let's Encrypt
@@ -671,8 +678,9 @@ derive() {
       TRUSTED="loopback,$SUBNET"; [ -n "$PROXY_IP" ] && TRUSTED="$TRUSTED,$PROXY_IP"
       : "${BIND:=127.0.0.1}" ;;
     none)
-      # Nobody is in front: don't believe X-Forwarded-For from anyone (no spoofed addresses in the logs).
-      TRUSTED="loopback"; BIND="0.0.0.0" ;;
+      # Nobody is in front. Leave the trusted-proxy list to Admin → Network (direct mode believes
+      # X-Forwarded-For from no one), so a proxy added later is switched on there, not here.
+      TRUSTED=""; BIND="0.0.0.0" ;;
   esac
   if [ -n "$DOMAIN" ] && [ "$PROXY" = caddy ]; then SITE_ADDRESS="$DOMAIN"; else SITE_ADDRESS=":8484"; fi
   PROFILES=""
@@ -725,6 +733,7 @@ write_env() {
     say "MEDIAMAX_SITE_ADDRESS=$(env_quote "$SITE_ADDRESS")"
     say "MEDIAMAX_BIND=$(env_quote "$BIND")"
     say "MEDIAMAX_HTTP_PORT=$HTTP_PORT"
+    say "MEDIAMAX_BUILTIN_HTTPS=$(env_quote "$BUILTIN_HTTPS")"
     say "MEDIAMAX_EXISTING_PROXY_IP=$(env_quote "$PROXY_IP")"
     say "MEDIAMAX_SUBNET=$(env_quote "$SUBNET")"
     say "MEDIAMAX_TRUSTED_PROXIES=$(env_quote "$TRUSTED")"
@@ -742,7 +751,7 @@ write_env() {
     say "CLOUDFLARE_TUNNEL_TOKEN=$(env_quote "$TUNNEL_TOKEN")"
     # Keep anything else someone added by hand.
     if [ -f "$ENV_FILE" ]; then
-      local known=" COMPOSE_PROJECT_NAME COMPOSE_PROFILES MEDIAMAX_IMAGE MEDIAMAX_REF MEDIAMAX_DOMAIN ACME_EMAIL LE_STAGING MEDIAMAX_PROXY MEDIAMAX_SECURITY MEDIAMAX_SITE_ADDRESS MEDIAMAX_BIND MEDIAMAX_HTTP_PORT MEDIAMAX_EXISTING_PROXY_IP MEDIAMAX_SUBNET MEDIAMAX_TRUSTED_PROXIES MEDIAMAX_MEDIA_DIRS MEDIAMAX_PUID MEDIAMAX_PGID MEDIAMAX_TZ MEDIAMAX_HWACCEL MEDIAMAX_TRANSCODE_SIZE MEDIAMAX_AUTO_UPGRADE CROWDSEC_BOUNCER_KEY CROWDSEC_DASHBOARD_PASSWORD CROWDSEC_FIREWALL_BOUNCER CROWDSEC_LAPI_PORT CLOUDFLARE_TUNNEL_TOKEN "
+      local known=" COMPOSE_PROJECT_NAME COMPOSE_PROFILES MEDIAMAX_IMAGE MEDIAMAX_REF MEDIAMAX_DOMAIN ACME_EMAIL LE_STAGING MEDIAMAX_PROXY MEDIAMAX_SECURITY MEDIAMAX_SITE_ADDRESS MEDIAMAX_BIND MEDIAMAX_HTTP_PORT MEDIAMAX_BUILTIN_HTTPS MEDIAMAX_EXISTING_PROXY_IP MEDIAMAX_SUBNET MEDIAMAX_TRUSTED_PROXIES MEDIAMAX_MEDIA_DIRS MEDIAMAX_PUID MEDIAMAX_PGID MEDIAMAX_TZ MEDIAMAX_HWACCEL MEDIAMAX_TRANSCODE_SIZE MEDIAMAX_AUTO_UPGRADE CROWDSEC_BOUNCER_KEY CROWDSEC_DASHBOARD_PASSWORD CROWDSEC_FIREWALL_BOUNCER CROWDSEC_LAPI_PORT CLOUDFLARE_TUNNEL_TOKEN "
       local first=1 line
       while IFS= read -r line || [ -n "$line" ]; do
         case "$line" in ''|'#'*) continue ;; esac
@@ -808,6 +817,15 @@ EOF
     ports:
       - "${MEDIAMAX_BIND:-127.0.0.1}:${MEDIAMAX_HTTP_PORT:-8484}:8484"
 EOF
+      if [ "$BUILTIN_HTTPS" = yes ]; then
+        cat <<'EOF'
+      # Built-in HTTPS (Admin → Network). Idle until it is turned on there.
+      - "80:80"
+      - "443:443"
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "0"   # MediaMax runs unprivileged and still binds 80/443
+EOF
+      fi
     fi
     cat <<'EOF'
     environment:
@@ -815,7 +833,8 @@ EOF
       PGID: ${MEDIAMAX_PGID:-1000}
       TZ: ${MEDIAMAX_TZ:-Etc/UTC}
       # X-Forwarded-For is only believed from these (the proxy on the Docker network); see server/src/app.ts.
-      MEDIAMAX_TRUSTED_PROXIES: ${MEDIAMAX_TRUSTED_PROXIES:-loopback}
+      # Empty = managed in Admin → Network.
+      MEDIAMAX_TRUSTED_PROXIES: ${MEDIAMAX_TRUSTED_PROXIES:-}
       MEDIAMAX_HWACCEL: ${MEDIAMAX_HWACCEL:-none}
 EOF
     # Admin → Security dashboard: where MediaMax finds the proxy log, the certificate, CrowdSec and fail2ban.

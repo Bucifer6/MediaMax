@@ -11,7 +11,12 @@ Contents: [Quick start](#quick-start) · [What gets installed](#what-gets-instal
 [Existing reverse proxy](#existing-reverse-proxy) · [Cloudflare Tunnel](#cloudflare-tunnel) ·
 [Tailscale](#tailscale) · [CrowdSec](#crowdsec) · [fail2ban](#fail2ban) · [Unbanning an address](#unbanning-an-address) ·
 [Hardening defaults](#hardening-defaults) · [Upgrades and backups](#upgrades-and-backups) ·
-[Troubleshooting](#troubleshooting)
+[Troubleshooting](#troubleshooting) · [Network & HTTPS in the admin](#network--https-admin--network)
+
+> **No reverse proxy by default.** Out of the box MediaMax answers plain HTTP on port 8484 and runs no proxy of
+> its own, so it drops straight in behind an Nginx, Traefik, NPM, SWAG or Caddy you already run. Turn on HTTPS
+> where it suits you: the installer's `--proxy caddy|nginx`, your own proxy, or **Admin → Network & HTTPS →
+> Built-in HTTPS** (see [below](#network--https-admin--network)).
 
 ---
 
@@ -57,7 +62,7 @@ sudo /opt/mediamax/install.sh --uninstall [--purge]
 | Component | Why | When |
 |---|---|---|
 | **MediaMax** (`ghcr.io/bucifer6/mediamax`) | the server | always |
-| **Caddy** | HTTPS with automatic certificates, HTTP→HTTPS, HTTP/3, compression, security headers, access log | proxy `caddy` (default) |
+| **Caddy** | HTTPS with automatic certificates, HTTP→HTTPS, HTTP/3, compression, security headers, access log | proxy `caddy` (the default is `none`) |
 | **Nginx + Certbot** | the same with Nginx; Certbot gets and renews the certificate | proxy `nginx` |
 | **CrowdSec** | reads the MediaMax security log and the proxy log, bans brute force, scanners and known-bad addresses (community blocklist) | security `crowdsec` (default) or `both` |
 | **CrowdSec bouncer in Caddy** | blocks the addresses CrowdSec decides on, with a 403 | Caddy + CrowdSec |
@@ -578,3 +583,37 @@ Set up by hand? Enter the same values under **Admin → Security → Connections
 ```bash
 docker exec crowdsec cscli machines add mediamax-dashboard --password '<choose one>' -f /dev/null
 ```
+
+## Network & HTTPS (Admin → Network)
+
+Admin → **Network & HTTPS** decides how people reach the server. Changes apply at once, without a restart.
+
+| Mode | When | What MediaMax does |
+|---|---|---|
+| **Direct** (default) | LAN, VPN, Tailscale, a port forward to 8484 | plain HTTP on 8484; `X-Forwarded-For` is believed from loopback only, so nobody can fake their address |
+| **Behind my reverse proxy** | you run Nginx, Traefik, Caddy, NPM, SWAG, HAProxy, Apache or Cloudflare Tunnel | believes `X-Forwarded-For`/`-Proto` from the **trusted proxies** you list (default: loopback and private networks, Docker networks included); shows copy-ready configs for each proxy |
+| **Built-in HTTPS** | no proxy, but you want a certificate | runs a bundled [Caddy](https://caddyserver.com) as a child process: Let's Encrypt certificate, HTTP→HTTPS, HTTP/2 and 3, HSTS, compression of text only, unbuffered streaming. Off until you choose it |
+
+The page's **Connection check** shows how your own request arrived (socket address, `X-Forwarded-For`, protocol),
+so you can see straight away whether the proxy is trusted. `MEDIAMAX_TRUSTED_PROXIES` in the environment still
+overrides the list (the installer sets it for its own Caddy/Nginx; it is left empty with `--proxy none`).
+
+**Built-in HTTPS needs:** a domain whose DNS points at the server, ports 80 and 443 reachable from the internet,
+and nothing else listening on them. Caddy is bundled in the Docker image and the release downloads; elsewhere
+install it or set `MEDIAMAX_CADDY=/path/to/caddy`. Its certificates live in `<data>/caddy`, its access log is
+`<logs>/caddy-access.log` (tokens redacted), and its messages show on the page. Use *Test mode* (Let's Encrypt
+staging) while you get DNS and ports right, to stay clear of rate limits.
+
+In Docker, publish the ports and let the unprivileged process bind them:
+
+```yaml
+services:
+  mediamax:
+    ports: ["8484:8484", "80:80", "443:443"]
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "0"
+```
+
+The installer does this with `--proxy none --builtin-https`. Outside Docker, either run with the right to bind
+low ports (`setcap cap_net_bind_service=+ep $(which caddy)`) or choose ports above 1024 and forward 80/443 to them
+on your router.

@@ -363,7 +363,7 @@ const MIGRATIONS: string[] = [
   ALTER TABLE media_requests ADD COLUMN options TEXT NOT NULL DEFAULT '{}';
   ALTER TABLE users ADD COLUMN allow_request_4k INTEGER NOT NULL DEFAULT 0;
   `,
-  /* metadata providers: response cache, third-party ratings, provider extras */ `
+  /* 15: metadata providers — response cache, third-party ratings, provider extras */ `
   CREATE TABLE IF NOT EXISTS metadata_cache (
     key TEXT PRIMARY KEY, provider TEXT NOT NULL, status INTEGER NOT NULL, body TEXT, expires_at INTEGER NOT NULL
   );

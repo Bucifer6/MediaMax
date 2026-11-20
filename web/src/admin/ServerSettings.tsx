@@ -1,4 +1,5 @@
 import { AiDjSettingsPanel } from './AiDjSettings';
+import { MetadataSettingsPanel } from './MetadataSettings';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { HwAccel, ServerSettings, User, Webhook, WebhookEvent } from '@mediamax/shared';
@@ -12,7 +13,7 @@ import { ErrorState, Field, Skeleton, Spinner, Switch, Tabs } from '../component
 import { Icon } from '../components/Icon';
 import { AdminHeader } from './AdminRoutes';
 
-type Tab = 'general' | 'transcoding' | 'cinema' | 'aidj' | 'dvr' | 'requests' | 'arr' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks';
+type Tab = 'general' | 'transcoding' | 'cinema' | 'aidj' | 'dvr' | 'requests' | 'arr' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks' | 'metadata';
 const HW: { value: HwAccel; label: string }[] = [
   { value: 'none', label: 'None (CPU)' },
   { value: 'vaapi', label: 'VA-API (Intel/AMD, Linux)' },
@@ -136,6 +137,7 @@ export function ServerSettingsAdmin() {
       <AdminHeader title="Server settings" actions={<button className="btn btn-primary" onClick={() => void save()} disabled={!dirty || saving}>{saving ? <Spinner size={18} /> : 'Save changes'}</button>} />
       <Tabs<Tab> value={tab} onChange={setTab} tabs={[
         { value: 'general', label: 'General' },
+        { value: 'metadata', label: 'Metadata' },
         { value: 'transcoding', label: 'Transcoding' },
         { value: 'cinema', label: 'Cinema mode' },
         { value: 'aidj', label: 'AI DJ' },
@@ -199,6 +201,7 @@ export function ServerSettingsAdmin() {
             <Switch checked={s.transcoding.toneMapHdr} onChange={(v) => setT({ toneMapHdr: v })} label="Tone-map HDR to SDR" hint="Keeps colours correct on non-HDR screens when transcoding." />
           </div>
         )}
+        {tab === 'metadata' && <MetadataSettingsPanel />}
         {tab === 'aidj' && <AiDjSettingsPanel value={s.aiDj} onChange={(aiDj) => set({ aiDj })} />}
         {tab === 'cinema' && (
           <div className="form-grid">

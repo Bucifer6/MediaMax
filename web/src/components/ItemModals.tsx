@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Item, Marker, UpdateItemRequest } from '@mediamax/shared';
+import type { EpisodeOrder, Item, Marker, UpdateItemRequest } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useToast } from '../state/toast';
 import { Field, Img, Modal, Spinner } from './ui';
 import { Icon } from './Icon';
 import { formatClock, parseClock } from '../utils/format';
 import { CONTENT_RATINGS } from '../utils/items';
+import { FixMatchPanel, canFixMatch } from './FixMatch';
 
 /* ---------------- Add to playlist / collection ---------------- */
 export function AddToContainerModal({ open, onClose, items, kind }: { open: boolean; onClose: () => void; items: Item[]; kind: 'playlist' | 'collection' }) {
@@ -193,9 +194,13 @@ export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: bo
   const [locked, setLocked] = useState<Set<string>>(() => new Set(item.lockedFields ?? []));
   const autoLocked = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
+  const [view, setView] = useState<'form' | 'match'>('form');
+  const [episodeOrder, setEpisodeOrder] = useState<EpisodeOrder>(item.episodeOrder ?? 'aired');
 
   useEffect(() => {
     if (!open) return;
+    setView('form');
+    setEpisodeOrder(item.episodeOrder ?? 'aired');
     setF(init());
     setLocked(new Set(item.lockedFields ?? []));
     autoLocked.current = new Set();
@@ -266,6 +271,7 @@ export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: bo
       const before = JSON.stringify(item.markers ?? []);
       if (JSON.stringify(parsed) !== before) body.markers = parsed;
     }
+    if (item.type === 'show' && episodeOrder !== (item.episodeOrder ?? 'aired')) body.episodeOrder = episodeOrder;
     const lockedList = [...locked];
     const before = [...new Set(item.lockedFields ?? [])];
     // Always send when edits were made (the server otherwise auto-locks every edited field).
@@ -275,7 +281,7 @@ export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: bo
     try {
       const updated = await api.items.update(item.id, body);
       onUpdated(updated);
-      toast.success('Metadata saved');
+      toast.success(body.episodeOrder ? 'Saved — re-matching episodes in the background' : 'Metadata saved');
       onClose();
     } catch (e) {
       toast.error(e);
@@ -283,6 +289,14 @@ export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: bo
       setBusy(false);
     }
   };
+
+  if (view === 'match') {
+    return (
+      <Modal open={open} onClose={onClose} title={`Fix match — ${item.title}`} size="lg">
+        <FixMatchPanel item={item} onCancel={() => setView('form')} onDone={(i) => { onUpdated(i); onClose(); }} />
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -300,6 +314,25 @@ export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: bo
       }
     >
       <div className="form-grid">
+        {(canFixMatch(item) || item.type === 'show') && (
+          <div className="form-row">
+            {item.type === 'show' ? (
+              <Field label="Episode order" hint="DVD and absolute orders come from TheTVDB (enable it under Server settings → Metadata). Saving re-matches the episodes.">
+                <select className="select" value={episodeOrder} onChange={(e) => setEpisodeOrder(e.target.value as EpisodeOrder)}>
+                  <option value="aired">Aired order</option>
+                  <option value="dvd">DVD order</option>
+                  <option value="absolute">Absolute order (anime)</option>
+                </select>
+              </Field>
+            ) : <span />}
+            {canFixMatch(item) && (
+              <div className="field">
+                <span className="field-label">Wrong title or artwork?</span>
+                <button type="button" className="btn" onClick={() => setView('match')}><Icon name="search" size={16} /> Fix match…</button>
+              </div>
+            )}
+          </div>
+        )}
         <div className="form-row">
           <Field label={label('title', 'Title')}><input className="input" value={f.title} onChange={(e) => set('title', e.target.value)} /></Field>
           <Field label={label('sortTitle', 'Sort title')}><input className="input" value={f.sortTitle} onChange={(e) => set('sortTitle', e.target.value)} /></Field>

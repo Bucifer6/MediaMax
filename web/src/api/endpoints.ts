@@ -11,6 +11,7 @@ import type {
   CalendarResponse, NotificationsResponse,
   BackupInfo, RemoteAccessStatus, Bookmark, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
+import type { ApplyMatchRequest, MatchSearchResponse, MetadataProviderId, MetadataSettings, MetadataSettingsResponse, MetadataTestResult } from '@mediamax/shared';
 import { http, request, upload } from './client';
 import { deviceInfo } from './device';
 
@@ -278,6 +279,16 @@ export const api = {
     backupDownloadUrl: (id: string) => `/api/v1/admin/backups/${enc(id)}/download`,
     remoteAccess: () => http.get<RemoteAccessStatus>('/admin/remote-access'),
     refreshRemoteAccess: () => http.post<RemoteAccessStatus>('/admin/remote-access/refresh'),
+  },
+
+  /** Built-in metadata providers (Server settings → Metadata) and Fix match. */
+  metadata: {
+    get: () => http.get<MetadataSettingsResponse>('/admin/metadata'),
+    save: (s: Partial<MetadataSettings>) => http.put<MetadataSettingsResponse>('/admin/metadata', s),
+    test: (id: MetadataProviderId, body: { apiKey?: string | null; pin?: string | null } = {}) => http.post<MetadataTestResult>(`/admin/metadata/${enc(id)}/test`, body),
+    clearCache: (provider?: MetadataProviderId) => http.del<Ok>('/admin/metadata/cache', { provider }),
+    searchMatch: (itemId: string, q: { provider?: MetadataProviderId; q?: string; year?: number | '' }) => http.get<MatchSearchResponse>(`/items/${enc(itemId)}/match`, q),
+    applyMatch: (itemId: string, body: ApplyMatchRequest) => http.post<Item>(`/items/${enc(itemId)}/match`, body),
   },
 
   plugins: {

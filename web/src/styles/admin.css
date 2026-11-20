@@ -407,3 +407,29 @@ a.stat:hover { transform: translateY(-2px); border-color: var(--c-primary); }
 .sec-errors li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sec-card details summary { cursor: pointer; font-weight: 600; font-size: 0.88rem; }
 .sec-card .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ------------------------------ network ------------------------------ */
+.net-page .sec-card { margin-bottom: 16px; }
+.net-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.net-mode { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--c-line); border-radius: var(--radius); cursor: pointer; background: var(--c-surface-alt); }
+.net-mode input { position: absolute; opacity: 0; pointer-events: none; }
+.net-mode.active { border-color: var(--c-primary); box-shadow: 0 0 0 1px var(--c-primary); }
+.net-mode:focus-within { outline: 2px solid var(--c-primary); outline-offset: 2px; }
+.net-check { padding: 10px 12px; border-radius: var(--radius-sm); border-left: 3px solid var(--c-line); background: var(--c-surface-alt); }
+.net-check.net-good { border-left-color: var(--c-success, #2e9d5b); }
+.net-check.net-warn { border-left-color: var(--c-warning, #c98a12); }
+.net-check.net-bad { border-left-color: var(--c-danger, #d04848); }
+.net-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin-top: 12px; }
+.net-facts dt { color: var(--c-text-muted); }
+.net-facts dd { margin: 0; overflow-wrap: anywhere; }
+.net-chips { margin: 10px 0; }
+.net-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 999px; background: var(--c-surface-alt); border: 1px solid var(--c-line); font-size: 0.82rem; }
+.net-chip button { width: 20px; height: 20px; border-radius: 50%; color: var(--c-text-muted); }
+.net-chip button:hover { background: var(--c-line); color: var(--c-text); }
+.net-code { position: relative; margin-top: 12px; }
+.net-code > .btn { position: absolute; top: 8px; right: 8px; }
+.net-code pre, .net-log { margin: 0; padding: 14px; border-radius: var(--radius-sm); background: var(--c-surface-alt); border: 1px solid var(--c-line); overflow-x: auto; font-size: 0.8rem; line-height: 1.5; }
+.net-log { max-height: 240px; overflow-y: auto; margin-top: 8px; }
+.net-opt { display: flex; margin-top: 10px; }
+.net-status { margin-top: 18px; border-top: 1px solid var(--c-line); padding-top: 14px; }
+@media (max-width: 560px) { .net-facts { grid-template-columns: 1fr; } .net-facts dd { margin-bottom: 6px; } }

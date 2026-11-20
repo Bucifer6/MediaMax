@@ -14,6 +14,10 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Local NFO metadata (Kodi/Jellyfin/Emby format) | ✅ (PMS 1.43.2+) | ✅ | ✅ | ✅ |
 | Local artwork (poster/fanart/logo/season posters) | ✅ | ✅ | ✅ | ✅ |
 | Online metadata (TMDB) with cast, logos, trailers, ratings | ✅ | ✅ | ✅ | ✅ |
+| Built-in metadata providers: TheTVDB, fanart.tv, TheAudioDB, Audnexus, Open Library, Google Books, LRCLIB, OMDb, MusicBrainz (Server settings → Metadata: enable, keys, priority, preferred artwork source, Test, cached + rate-limited) — see [METADATA.md](METADATA.md) | 🟡 | 🟡 (some plugins) | 🟡 (some plugins) | ✅ |
+| Alternative episode orderings per show (aired / DVD / absolute, via TheTVDB) | ❌ | ✅ | ✅ | ✅ |
+| IMDb / Rotten Tomatoes / Metacritic rating badges (OMDb) | ✅ | 🟡 (plugin) | 🟡 | ✅ |
+| "Fix match" (search TMDB / TheTVDB / MusicBrainz / Audnexus / book providers and re-fetch) | ✅ | ✅ | ✅ | ✅ |
 | Automatic box-set collections | ✅ | ✅ | ✅ | ✅ |
 | Manual collections & per-user playlists | ✅ | ✅ | ✅ | ✅ |
 | Smart (rule-based) collections & playlists | ✅ | ❌ | ✅ | ✅ |
@@ -22,11 +26,11 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | `.mediamaxignore` / `.plexignore` folders | ✅ | ✅ | ❌ | ✅ |
 | Safe removal (no wipe when a drive is unmounted) | ✅ | 🟡 | 🟡 | ✅ |
 | Real-time filesystem watching | ✅ | ✅ | ✅ | ✅ |
-| Synced lyrics (LRC sidecars, embedded tags) | ✅ | ✅ | ✅ | ✅ |
+| Synced lyrics (LRC sidecars, embedded tags, LRCLIB fallback) | ✅ | ✅ | ✅ | ✅ |
 | Subsonic/OpenSubsonic API (Symfonium, Feishin, play:Sub…) | ❌ | Plugin | ❌ | ✅ |
 | ReplayGain / R128 loudness levelling (track & album) | ✅ (Plexamp) | 🟡 | 🟡 | ✅ |
 | DJ mode: BPM/key/energy analysis, automatic beat-matched crossfades, harmonic auto-playlists, non-stop mixes | 🟡 (Plexamp sweet fades) | ❌ | ❌ | ✅ |
-| Anime (AniList) and MusicBrainz/Cover Art Archive metadata | 🟡 | Plugin | Plugin | ✅ (plugins) |
+| Anime (AniList) and MusicBrainz/Cover Art Archive metadata | 🟡 | Plugin | Plugin | ✅ (MusicBrainz built in; AniList plugin) |
 | Audiobooks (multi-file & .m4b, chapters, author/narrator, resume) | 🟡 | ✅ | ✅ | ✅ |
 | Podcasts (RSS, iTunes directory search, OPML import, auto-download) | ✅ | Plugin? | Plugin? | ✅ |
 
@@ -87,7 +91,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Invite links with permission templates | ✅ | Add-on | ❌ | ✅ |
 | Per-user stream limits & home-network-only accounts | ✅ | ✅ | ✅ | ✅ |
 | API keys for integrations | ✅ | ✅ | ✅ | ✅ |
-| Media requests with Radarr/Sonarr (Overseerr-style) | Add-on | Add-on | Add-on | ✅ built in |
+| Media requests (Overseerr-style): movies, shows (all/first/latest/specific seasons), music (Lidarr), books (Readarr), "also in 4K", live download progress | Add-on | Add-on | Add-on | ✅ built in |
 
 ## Clients & devices
 | Feature | Plex | Jellyfin | Emby | MediaMax |
@@ -139,6 +143,33 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | User avatars | ✅ | ✅ | ✅ | ✅ |
 | Hide unrated content from restricted users | ✅ | ✅ | ✅ | ✅ |
 | CI (typecheck, tests, web build, Docker smoke test) | — | ✅ | — | ✅ |
+| *arr suite hub: several Radarr/Sonarr/Lidarr/Readarr/Bazarr instances (incl. 4K), Test buttons, profile/root-folder pickers | ❌ | ❌ | ❌ | ✅ |
+| Instant, targeted library rescans from *arr webhooks (debounced, Docker path mappings) | Add-on | Plugin | ❌ | ✅ |
+| Downloads dashboard: queues, 14-day calendar, wanted/missing with Search, *arr health and disk space | ❌ | ❌ | ❌ | ✅ |
+
+### Media automation (*arr suite)
+MediaMax can be the hub of a Radarr/Sonarr/Lidarr/Readarr/Bazarr setup (**Admin → Server settings → Media automation (*arr)**):
+
+* **Any number of instances per app**, each with name, URL, write-only API key, enabled flag, quality profile, root folder,
+  metadata profile (Lidarr/Readarr), tags, monitor option, season folders and "search on add". The **Test** button checks
+  `/system/status` and loads the profile, root-folder and tag pickers from the instance. Mark a Radarr/Sonarr as **4K** to
+  offer "Also request in 4K" (admins, and users with the *Request in 4K* permission).
+* **Requests** go to the first enabled non-4K instance of the right kind: movies → Radarr, shows → Sonarr (all, first,
+  latest or specific seasons), artists/albums → Lidarr (artist: all or only future albums), books → Readarr. Discover has
+  Movies / Shows / Music / Books tabs; Music and Books search Lidarr's and Readarr's own lookup (no TMDB key needed) and only
+  appear when such an instance exists. Approval, auto-approve users and weekly limits work as before. While a request is in
+  an *arr queue its status reads "Downloading 42%".
+* **Webhooks**: add one *Webhook* connection per app (Settings → Connect → Webhook, triggers On Import / Upgrade / Rename /
+  Delete) pointing at the URL shown in the settings tab. MediaMax works out the folder the event touched, maps it through
+  the instance's path mappings (`/movies` → `/media/Movies`), rescans only the library that contains it, debounces bursts
+  (a season pack is one scan within about 10 s) and then marks matching requests as available. Events are logged to
+  Activity. The URL carries a random secret, compared in constant time; regenerate it from the settings tab.
+* **Downloads dashboard** (**Admin → Downloads**): queue with quality, progress, size, time left, status and warnings
+  (refreshes every 10 s), upcoming releases for the next 14 days, the top 50 missing titles with a **Search** button,
+  health checks and disk space per instance (Bazarr included). An unreachable instance shows a red card; the others keep working.
+* Existing single Radarr/Sonarr settings are migrated automatically (the old fields stay as a fallback).
+* For item pages there is a ready-made admin component (`web/src/components/ArrItemActions.tsx`): "Open in Radarr/Sonarr/Lidarr",
+  "Search for upgrade" and "Find subtitles with Bazarr", backed by `GET /arr/item/:id` and `POST /arr/item/:id/subtitles`.
 
 ## Roadmap
 See the ranked [ROADMAP](ROADMAP.md) (gap analysis against Plex, Jellyfin, Emby, Channels DVR, TiviMate, Audiobookshelf, Navidrome/Plexamp, Infuse and Kodi).

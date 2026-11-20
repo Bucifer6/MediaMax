@@ -109,7 +109,9 @@ export async function autoDecompress(src: Readable): Promise<Readable> {
 /** Open an XMLTV guide from an http(s) URL or a local file path, decompressing gzip/xz. */
 export async function openXmltv(input: string, opts: { userAgent?: string | null; timeoutMs?: number } = {}): Promise<Readable> {
   if (/^https?:\/\//i.test(input)) {
-    const res = await fetch(input, { headers: { 'User-Agent': opts.userAgent || 'MediaMax/1.0', 'Accept-Encoding': 'gzip' }, signal: AbortSignal.timeout(opts.timeoutMs ?? 300000) });
+    const res = await fetch(input, { headers: { 'User-Agent': opts.userAgent || 'MediaMax/1.0', 'Accept-Encoding': 'gzip' }, signal: AbortSignal.timeout(opts.timeoutMs ?? 300000) }).catch((e: any) => {
+      throw new Error(`Could not download the guide: ${e?.cause?.code ?? e?.cause?.message ?? e?.message ?? e}`);
+    });
     if (!res.ok || !res.body) throw new Error(`EPG download failed: HTTP ${res.status}`);
     return autoDecompress(Readable.fromWeb(res.body as any));
   }

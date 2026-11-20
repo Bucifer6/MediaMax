@@ -780,7 +780,13 @@ export interface ActiveSession {
   durationMs: number | null;
   startedAt: string;
   remoteAddress: string | null;
-  transcodeInfo: { videoCodec: string; audioCodec: string; bitrate: number | null; hwAccel: string } | null;
+  transcodeInfo: {
+    videoCodec: string; audioCodec: string; bitrate: number | null; hwAccel: string;
+    /** Set when the hardware transcode failed and this session fell back (e.g. "vaapi failed, used software: …"). */
+    hwFallback?: string | null;
+    /** HDR → SDR tone-mapping path in use, when tone-mapping. */
+    toneMap?: string | null;
+  } | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1390,7 +1396,79 @@ export type CreateRecordingRuleRequest = Omit<RecordingRule, 'id' | 'enabled' | 
 /* Admin: settings, tasks, activity                                    */
 /* ------------------------------------------------------------------ */
 
-export type HwAccel = 'none' | 'vaapi' | 'nvenc' | 'qsv' | 'videotoolbox' | 'v4l2m2m';
+/**
+ * Hardware transcoding method. VA-API covers both Intel and AMD GPUs on Linux (AMD = Mesa radeonsi);
+ * `amf` is AMD on Windows, `qsv` is Intel Quick Sync (Linux via VA-API, Windows via D3D11),
+ * `nvenc` is NVIDIA on Linux and Windows, `rkmpp` is Rockchip (RK3588 etc., needs an ffmpeg-rockchip build).
+ */
+export type HwAccel = 'none' | 'vaapi' | 'nvenc' | 'qsv' | 'videotoolbox' | 'v4l2m2m' | 'amf' | 'rkmpp';
+/** Video codecs the transcoder can output. HEVC and AV1 are only produced with a hardware encoder. */
+export type TranscodeVideoCodec = 'h264' | 'hevc' | 'av1';
+/** How HDR is tone-mapped to SDR: on the GPU (vaapi/qsv/cuda/opencl/libplacebo) or on the CPU (`software` = zscale+tonemap). */
+export type ToneMapPath = 'software' | 'libplacebo' | 'vaapi' | 'opencl' | 'qsv' | 'cuda';
+
+export interface HwDevice {
+  kind: 'dri' | 'nvidia' | 'v4l2' | 'rockchip' | 'apple' | 'windows-gpu';
+  /** /dev/dri/renderD128, /dev/video11 … (null for Windows/macOS adapters). */
+  path: string | null;
+  name: string;
+  /** Kernel driver (i915, xe, amdgpu, nvidia …) or VA-API driver from vainfo. */
+  driver: string | null;
+  vendor: 'intel' | 'amd' | 'nvidia' | 'apple' | 'broadcom' | 'rockchip' | 'unknown';
+  /** GPU / adapter index (NVIDIA, Windows). */
+  index: number | null;
+}
+
+export interface HwTestResult {
+  works: boolean;
+  /** Last lines of ffmpeg's error output when it failed, or why the test was skipped. */
+  error: string | null;
+  /** Frames per second the test ran at. */
+  fps: number | null;
+  /** True when the test was not run (missing encoder/filter/sample). */
+  skipped?: boolean;
+}
+
+export interface HwMethodResult {
+  /** Stable key for the UI, e.g. "vaapi:/dev/dri/renderD128". */
+  id: string;
+  hwAccel: HwAccel;
+  label: string;
+  /** Render node for VA-API/QSV on Linux. */
+  device: string | null;
+  /** GPU/adapter index for NVENC, and QSV/AMF on Windows. */
+  gpuIndex: number | null;
+  deviceName: string | null;
+  /** The device/driver/encoder this method needs is present (a test was run). */
+  available: boolean;
+  /** H.264 hardware encoding works. */
+  works: boolean;
+  /** Why it is not available or does not work. */
+  error: string | null;
+  /** Encode tests per output codec (testsrc2 → scale → encode). */
+  encode: Record<TranscodeVideoCodec, HwTestResult & { encoder: string | null }>;
+  /** Hardware decode → scale → encode of an H.264 sample. */
+  decode: HwTestResult | null;
+  /** Hardware decode of a 10-bit HEVC sample. */
+  tenBit: HwTestResult | null;
+  /** The first tone-mapping path that works for this method, and everything tried. */
+  toneMapping: { path: ToneMapPath | null; tried: (HwTestResult & { path: ToneMapPath })[] };
+  /** H.264 encode speed (fps) — same as encode.h264.fps. */
+  fps: number | null;
+  recommended: boolean;
+  notes: string[];
+}
+
+export interface HwDetectReport {
+  ranAt: string;
+  durationMs: number;
+  platform: string;
+  arch: string;
+  ffmpeg: { path: string; version: string | null; hwaccels: string[]; encoders: string[]; filters: string[] };
+  devices: HwDevice[];
+  methods: HwMethodResult[];
+  recommendation: { id: string; hwAccel: HwAccel; device: string | null; gpuIndex: number | null; reason: string };
+}
 
 export interface ServerSettings {
   serverName: string;
@@ -1410,6 +1488,16 @@ export interface ServerSettings {
     threads: number;
     segmentSeconds: number;
     toneMapHdr: boolean;
+    /** GPU / adapter index for NVENC, and for QSV/AMF on Windows (0 = first). */
+    gpuIndex: number;
+    /** Output codecs in order of preference; H.264 is always the final fallback. */
+    preferredCodecs: TranscodeVideoCodec[];
+    /** Encode HEVC (with a hardware encoder) for clients that can play it. */
+    allowHevcEncoding: boolean;
+    /** Encode AV1 (with a hardware encoder) for clients that can play it. */
+    allowAv1Encoding: boolean;
+    /** Tone-map HDR on the GPU when possible (else the CPU zscale+tonemap path). */
+    hardwareToneMapping: boolean;
   };
   dvr: {
     recordingsPath: string;
@@ -2503,4 +2591,49 @@ export interface SecurityBanRequest {
   /** CrowdSec duration, e.g. "4h", "7d". */
   duration?: string;
   reason?: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Admin → Network: direct, behind your reverse proxy, or built-in HTTPS */
+/* ------------------------------------------------------------------ */
+
+export interface NetworkSettings {
+  /**
+   * direct  = clients connect straight to MediaMax (LAN, VPN, or port forward to 8484);
+   * proxy   = behind your own reverse proxy (Nginx, Traefik, Caddy, NPM, Cloudflare Tunnel…);
+   * builtin = MediaMax runs Caddy itself for automatic HTTPS (Let's Encrypt). Off unless chosen here.
+   */
+  mode: 'direct' | 'proxy' | 'builtin';
+  /** Addresses/CIDRs whose X-Forwarded-For/-Proto headers are believed. Keywords: loopback, linklocal, uniquelocal. */
+  trustedProxies: string[];
+  builtinHttps: {
+    domain: string | null;
+    email: string | null;
+    /** Ports Caddy listens on (inside the container when running in Docker). */
+    httpPort: number;
+    httpsPort: number;
+    /** Use Let's Encrypt's staging CA while testing (untrusted certificates, generous rate limits). */
+    staging: boolean;
+    hsts: boolean;
+  };
+}
+
+export interface NetworkStatus {
+  settings: NetworkSettings;
+  /** MEDIAMAX_TRUSTED_PROXIES from the environment overrides the saved list when set. */
+  envTrustedProxies: string[] | null;
+  /** How this very request reached MediaMax, to verify a proxy setup. */
+  you: { ip: string; socketAddress: string; forwardedFor: string | null; forwardedProto: string | null; proxyTrusted: boolean; protocol: string; host: string };
+  publicUrl: string | null;
+  builtin: {
+    /** A Caddy binary was found (bundled in Docker and release builds, or on PATH / MEDIAMAX_CADDY). */
+    available: boolean;
+    binary: string | null;
+    version: string | null;
+    running: boolean;
+    error: string | null;
+    /** Recent Caddy log messages (newest last). */
+    log: string[];
+    certificate: { ok: boolean; error: string | null; validTo: string | null; daysLeft: number | null; issuer: string | null } | null;
+  };
 }

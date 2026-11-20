@@ -14,6 +14,7 @@ import { canWatchlist, PosterCard, WatchlistButton } from '../components/Cards';
 import { SmartListModal } from '../components/SmartListModal';
 import { BookmarksSection } from '../components/Bookmarks';
 import { AddToContainerModal, EditMetadataModal, UploadArtworkModal } from '../components/ItemModals';
+import { RatingBadges } from '../components/RatingBadges';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
 import { episodeCode, hasAudioResume, isAudio, isResumable, isVideo, itemLink, playLink, progressPct } from '../utils/items';
@@ -567,6 +568,7 @@ export function ItemPage() {
             {item.communityRating != null && (
               <span className="detail-rating"><Icon name="starFill" size={14} /> {item.communityRating.toFixed(1)}</span>
             )}
+            <RatingBadges ratings={item.ratings} />
             <MediaBadges media={item.media} />
           </div>
           {item.genres.length > 0 && (

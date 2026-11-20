@@ -16,10 +16,17 @@ const KV = 'securityDashboard';
 export function getSecuritySettings(): SecurityDashboardSettings {
   const saved = getKv<Partial<SecurityDashboardSettings>>(KV, {});
   const env = process.env;
-  const kind = (saved.proxy?.kind ?? env.MEDIAMAX_PROXY_KIND ?? 'none') as SecurityDashboardSettings['proxy']['kind'];
+  // With built-in HTTPS on (Admin → Network), its Caddy log and domain are the defaults. Read straight from the
+  // kv store: services/network.ts imports this file.
+  const net = getKv<{ mode?: string; builtinHttps?: { domain?: string | null } }>('network', {});
+  const builtin = net.mode === 'builtin';
+  const kind = (saved.proxy?.kind ?? env.MEDIAMAX_PROXY_KIND ?? (builtin ? 'caddy' : 'none')) as SecurityDashboardSettings['proxy']['kind'];
   return {
-    proxy: { kind: ['caddy', 'nginx'].includes(kind) ? kind : 'none', accessLog: saved.proxy?.accessLog ?? env.MEDIAMAX_PROXY_LOG ?? null },
-    publicHost: saved.publicHost ?? env.MEDIAMAX_PUBLIC_HOST ?? null,
+    proxy: {
+      kind: ['caddy', 'nginx'].includes(kind) ? kind : 'none',
+      accessLog: saved.proxy?.accessLog ?? env.MEDIAMAX_PROXY_LOG ?? (builtin ? path.join(config.logDir, 'caddy-access.log') : null),
+    },
+    publicHost: saved.publicHost ?? env.MEDIAMAX_PUBLIC_HOST ?? (builtin ? net.builtinHttps?.domain ?? null : null),
     crowdsec: {
       url: saved.crowdsec?.url ?? env.MEDIAMAX_CROWDSEC_URL ?? null,
       machineId: saved.crowdsec?.machineId ?? env.MEDIAMAX_CROWDSEC_MACHINE_ID ?? null,
@@ -190,20 +197,21 @@ export function proxyStats(kind: 'caddy' | 'nginx', file: string, now = Date.now
 }
 
 /** Check the public HTTPS certificate (expiry, issuer, whether it validates). */
-export function checkCertificate(host: string, port = 443): Promise<NonNullable<SecurityOverview['certificate']>> {
+/** `connectTo` dials another address (e.g. 127.0.0.1 for the built-in Caddy) while asking for `host` via SNI. */
+export function checkCertificate(host: string, port = 443, connectTo?: string): Promise<NonNullable<SecurityOverview['certificate']>> {
   return new Promise((resolve) => {
     const done = (v: NonNullable<SecurityOverview['certificate']>) => {
       sock.destroy();
       resolve(v);
     };
-    const sock = tls.connect({ host, port, ...(net.isIP(host) ? {} : { servername: host }), rejectUnauthorized: false, timeout: 6000 }, () => {
+    const sock = tls.connect({ host: connectTo ?? host, port, ...(net.isIP(host) ? {} : { servername: host }), rejectUnauthorized: false, timeout: 6000 }, () => {
       const c = sock.getPeerCertificate();
       const validTo = c?.valid_to ? new Date(c.valid_to) : null;
       const days = validTo ? Math.floor((validTo.getTime() - Date.now()) / 86400000) : null;
       const issuer = c?.issuer ? [c.issuer.O, c.issuer.CN].filter(Boolean).join(' · ') : null;
       done({ host, ok: sock.authorized, error: sock.authorized ? null : String(sock.authorizationError ?? 'not trusted'), validTo: validTo?.toISOString() ?? null, daysLeft: days, issuer });
     });
-    sock.on('timeout', () => done({ host, ok: false, error: 'Timed out connecting on port 443', validTo: null, daysLeft: null, issuer: null }));
+    sock.on('timeout', () => done({ host, ok: false, error: `Timed out connecting on port ${port}`, validTo: null, daysLeft: null, issuer: null }));
     sock.on('error', (e) => done({ host, ok: false, error: e.message, validTo: null, daysLeft: null, issuer: null }));
   });
 }

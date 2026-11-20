@@ -50,6 +50,7 @@ the WebSocket emits `branding.updated`.
 
 ## Users 🛡️
 `GET /users` → `User[]` · `POST /users` `CreateUserRequest` → `User` · `PATCH /users/:id` `UpdateUserRequest` → `User` · `DELETE /users/:id`
+`allowRequest4k` (default false) lets a non-admin tick "Also request in 4K" when a 4K Radarr/Sonarr exists.
 
 ## Libraries
 | Method | Path | Body | Returns |
@@ -76,7 +77,9 @@ the WebSocket emits `branding.updated`.
 | POST/DELETE 🔑 | `/items/:id/not-interested` | | `UserItemData` |
 | POST 🔑 | `/items/:id/progress` | `ProgressReport` | `UserItemData` (≥90% ⇒ marked played) |
 | PATCH 🛡️ | `/items/:id` | `UpdateItemRequest` | `Item` |
-| POST 🛡️ | `/items/:id/refresh` | | `Item` (re-fetch metadata) |
+| POST 🛡️ | `/items/:id/refresh` | | `Item` (re-fetch metadata: TMDB, then the built-in providers, then plugins) |
+| GET 🛡️ | `/items/:id/match?provider=&q=&year=` | | `MatchSearchResponse` (Fix match search; see Metadata providers) |
+| POST 🛡️ | `/items/:id/match` | `ApplyMatchRequest` `{ provider, id }` | `Item` (re-fetched from that match) |
 | POST 🛡️ | `/items/:id/images/:kind` | multipart `file` (`poster`/`backdrop`/`logo`/`thumb`) | `Item` |
 | DELETE 🛡️ | `/items/:id` | | `{ ok: true }` (removes from DB only) |
 | GET 🔑 | `/genres?libraryId=` | | `string[]` |
@@ -213,6 +216,51 @@ SyncPlay (watch together): `syncplay.create` → server replies `syncplay.state`
 
 ## Lyrics
 * `GET /items/:id/lyrics` → `Lyrics` (from `.lrc`/`.txt` sidecars or embedded tags; `synced` lines carry `startMs`). 404 when none.
+  When neither exists and LRCLIB is enabled (Server settings → Metadata), lyrics come from LRCLIB (`source: "lrclib"`) and are cached.
+
+## Metadata providers (🛡️)
+Built-in providers, configured on Server settings → Metadata (see [METADATA.md](METADATA.md) for keys and costs).
+Settings are stored separately from `ServerSettings` (settings key `metadata`).
+
+| Method | Path | Body / Query | Returns |
+|---|---|---|---|
+| GET | `/admin/metadata` | | `MetadataSettingsResponse` `{ settings, providers, cache }` — keys/PINs are `"••••"` when set |
+| PUT | `/admin/metadata` | `Partial<MetadataSettings>` | `MetadataSettingsResponse` (send `"••••"` to keep a stored key, `null` to remove it) |
+| POST | `/admin/metadata/:provider/test` | `{ apiKey?, pin? }` (unsaved form values; `"••••"` = stored) | `MetadataTestResult` `{ ok, message, ms }` (always a live request) |
+| DELETE | `/admin/metadata/cache?provider=` | | `{ ok: true }` |
+| GET | `/items/:id/match?provider=&q=&year=` | | `MatchSearchResponse` `{ providers, provider, results: MatchCandidate[] }` |
+| POST | `/items/:id/match` | `{ provider, id }` | `Item` |
+
+`MetadataSettings`:
+```jsonc
+{
+  "providers": {                       // BuiltinProviderId → config
+    "tvdb":        { "enabled": true,  "apiKey": "••••", "pin": null },
+    "fanart":      { "enabled": true,  "apiKey": "••••" },
+    "audiodb":     { "enabled": false, "apiKey": null },
+    "audnexus":    { "enabled": true,  "apiKey": null },
+    "openlibrary": { "enabled": true,  "apiKey": null },
+    "googlebooks": { "enabled": true,  "apiKey": null },   // key optional
+    "lrclib":      { "enabled": true,  "apiKey": null },
+    "omdb":        { "enabled": true,  "apiKey": "••••" },
+    "musicbrainz": { "enabled": true,  "apiKey": null }
+  },
+  "order": ["tmdb", "tvdb", "musicbrainz", "audnexus", "omdb", "fanart", "audiodb", "googlebooks", "openlibrary", "lrclib"],
+  "artwork": { "movie": "auto", "show": "fanart", "artist": "audiodb", "album": "auto", "audiobook": "audnexus" },
+  "cacheTtlHours": 168
+}
+```
+* Providers only fill **empty, unlocked** fields, in `order` (TMDB always runs first for movies/shows). Artwork: `auto` fills
+  gaps; naming a provider lets it replace downloaded (remote) art for that type. Local and locked art is never replaced.
+* Fix match: `provider` is one of the item type's searchable providers (`movie` → `tmdb`; `show` → `tmdb`, `tvdb`;
+  `artist`/`album` → `musicbrainz`; `audiobook` → `audnexus` (query = ASIN), `googlebooks`, `openlibrary`). Applying drops the
+  old match's ids and downloaded art and refreshes in replace mode (unlocked fields take the new match's values).
+* New `Item` fields: `ratings?: { imdb?, rottenTomatoes?, metacritic?, tmdb? }` (imdb/tmdb 0–10, RT/MC 0–100);
+  `episodeOrder?: 'aired' | 'dvd' | 'absolute'` (shows; set with `PATCH /items/:id` `{ episodeOrder }`, which re-matches
+  the episodes); on `GET /items/:id`: `extraArt?: { clearArtUrl, discArtUrl, bannerUrl }`, `artistInfo?: { formedYear,
+  country, mood, style }`, and Audnexus `chapters` for audiobooks without embedded chapters.
+* "Refresh all metadata" (task `refresh-metadata`, or `POST /libraries/:id/scan { refreshMetadata: true }`) runs TMDB and
+  every enabled provider for movies, shows, artists, albums and audiobooks, with progress.
 
 ## Single sign-on (OpenID Connect)
 * `SystemInfo.oidc` is non-null when SSO is configured — show a button labelled `buttonLabel`.
@@ -242,13 +290,72 @@ SyncPlay (watch together): `syncplay.create` → server replies `syncplay.state`
   "Now playing" is sent on start; tracks are scrobbled after half their length or 4 minutes.
 
 ## Requests (Discover)
-* `GET /discover?q=&type=movie|show|all&page=` → `DiscoverResponse` (trending when `q` is empty; shows availability and request state).
-* `GET /requests?status=&mine=true` → `MediaRequest[]` (non-admins see their own) · `POST /requests` `CreateMediaRequest` ·
-  `POST /requests/:id/approve` 🛡️ · `POST /requests/:id/decline` 🛡️ `{ note }` · `DELETE /requests/:id` (own pending, or admin).
-* `POST /requests/arr/test` 🛡️ `{ url, apiKey }` → `ArrOptions` (quality profiles + root folders for the settings UI).
-* Configure `ServerSettings.requests` (Radarr/Sonarr, auto-approve users, weekly limit). Admin requests auto-approve.
-  Approved requests are sent to Radarr/Sonarr and flip to `available` when the title appears in a library.
+* `GET /discover?q=&type=movie|show|all&page=` → `DiscoverResponse` (TMDB; trending when `q` is empty; shows availability and request state).
+* `GET /discover/arr?kind=music|books&q=` → `DiscoverResponse` — searches Lidarr (`/api/v1/artist/lookup` + `/api/v1/album/lookup`)
+  or Readarr (`/api/v1/book/lookup`); no TMDB key needed. Results have `mediaType` `artist`, `album` or `book` and an `externalId`
+  (MusicBrainz artist/album id, Readarr foreign book id).
+* `GET /requests/options` → `RequestOptions` (`music`/`books` when a Lidarr/Readarr exists, `can4k.movie/show` for this user, `tmdb`).
+* `GET /requests?status=&mine=true` → `MediaRequest[]` (non-admins see their own). While a request is in an *arr queue,
+  `download` is `{ progress, status, timeLeft, instance }` (matched by TMDB/TVDB/MusicBrainz/foreign book id).
+* `POST /requests` `CreateMediaRequest`:
+  `{ mediaType: 'movie'|'show'|'artist'|'album'|'book', tmdbId | externalId, title?, seasonMode?: 'all'|'first'|'latest'|'specific', seasons?, monitor?: 'all'|'future', also4k?, note? }`.
+  `also4k` needs a 4K Radarr/Sonarr and an admin or a user with `allowRequest4k`. Weekly limits and auto-approve apply to every kind.
+* `POST /requests/:id/approve` 🛡️ · `POST /requests/:id/decline` 🛡️ `{ note }` · `DELETE /requests/:id` (own pending, or admin).
+  Approval sends the title to the first enabled non-4K instance of its kind (and the 4K instance when `also4k`); the request
+  becomes `processing`, or `failed` with `error` when every instance refused.
+* `POST /requests/arr/test` 🛡️ `{ url, apiKey, kind? }` → `ArrOptions` (legacy; use `POST /arr/test`).
+* `ServerSettings.requests`: `enabled`, `autoApproveUserIds`, `weeklyLimit`. Download managers live in `ServerSettings.arr`
+  (below); the old `requests.radarr` / `requests.sonarr` are migrated once and still read as a fallback.
   Webhooks: `request.created`, `request.available`.
+
+## *arr suite: Radarr, Sonarr, Lidarr, Readarr, Bazarr
+`ServerSettings.arr: ArrInstance[]` — `{ id, kind: 'radarr'|'sonarr'|'lidarr'|'readarr'|'bazarr', name, url, apiKey, enabled, is4k?,
+qualityProfileId?, rootFolderPath?, languageProfileId? (Sonarr v3), metadataProfileId? (Lidarr/Readarr), tags?, seasonFolders?, monitor?,
+searchOnAdd?, pathMappings?: { remotePath, localPath }[] }`. Saved with `PUT /settings`. **API keys are write-only**: reads return
+`"••••"` when a key is set, and saving `"••••"` keeps the stored key. Instance URLs may be LAN/private addresses.
+API prefixes: Radarr/Sonarr `/api/v3`, Lidarr/Readarr `/api/v1`, Bazarr `/api` (header `X-Api-Key`).
+
+All 🛡️:
+* `POST /arr/test` `ArrTestRequest { id?, kind, url, apiKey }` → `ArrOptions` (`ok`, `message`, `version`, `qualityProfiles`,
+  `rootFolders`, `tags`, `metadataProfiles`, `languageProfiles`). Pass the instance `id` with `apiKey: "••••"` to test with the saved key.
+* `GET /arr/queue` → `ArrListResponse<ArrQueueItem>` (cached 10 s) · `GET /arr/calendar?days=14` → `ArrListResponse<ArrCalendarEntry>` (30 s) ·
+  `GET /arr/wanted` → `ArrListResponse<ArrWantedEntry>` (top 50 missing per instance, 30 s) ·
+  `GET /arr/health` → `ArrHealthResponse` (health checks + disk space, Bazarr included, 30 s).
+  Each response holds one `section` per enabled instance: `{ instance, ok, error, items }`. An unreachable instance is
+  `ok: false` with an `error`; the others are unaffected.
+* `POST /arr/:instanceId/search` `ArrSearchRequest { ids, command?, seasonNumber? }` → `{ ok, command, commandId }`. Default command
+  per kind: `MoviesSearch`, `EpisodeSearch`, `AlbumSearch`, `BookSearch`; also `SeriesSearch`, `SeasonSearch`, `ArtistSearch`, `AuthorSearch`.
+* `GET /arr/item/:itemId` → `ArrItemInfo { matches: ArrItemMatch[], bazarr }` — the movie/show/artist in each instance
+  (TMDB id → Radarr, TVDB id → Sonarr, name → Lidarr) with `webUrl` ("Open in …") and `searchCommand` ("Search for upgrade").
+* `POST /arr/item/:itemId/subtitles` → `{ ok, message }` — asks Bazarr to search missing subtitles for a movie (via its Radarr id)
+  or a show (via its Sonarr id; episodes and seasons use their show).
+* `GET /arr/webhook` → `ArrWebhookInfo { path, url, token }` · `POST /arr/webhook/regenerate` → new `ArrWebhookInfo`.
+
+### *arr webhooks
+`POST /arr/webhook/:token` 🔓 — the token is a random secret (stored in the settings table, compared in constant time; a wrong
+token is a 401 and an `AUTH_FAIL reason=arr_webhook` security event). Set it up in each app:
+
+1. **Settings → Connect → + → Webhook**. Name "MediaMax", URL = `GET /arr/webhook`'s `url` (or your server address + `path`),
+   method POST, no username/password.
+2. Triggers — Radarr: On File Import, On File Upgrade, On Rename, On Movie Delete, On Movie File Delete (On Grab optional).
+   Sonarr: On File Import, On File Upgrade, On Import Complete, On Rename, On Series Delete, On Episode File Delete.
+   Lidarr: On Release Import, On Upgrade, On Rename, On Track Retag, On Artist Delete, On Album Delete.
+   Readarr: On Release Import, On Upgrade, On Rename, On Book Retag, On Author Delete, On Book Delete, On Book File Delete.
+3. **Test** (logged under Activity as "webhook test received"), then **Save**.
+
+Handling, by `eventType`:
+* `Download` (import/upgrade), `Rename`, `Retag`, `ImportComplete`, `MovieDelete`, `MovieFileDelete`, `SeriesDelete`,
+  `EpisodeFileDelete`, `ArtistDelete`, `AlbumDelete`, `TrackFileDelete`, `AuthorDelete`, `BookDelete`, `BookFileDelete` →
+  the affected folders are taken from `movie.folderPath`, `series.path`, `artist.path`, `author.path`/`book.path` and the
+  folders of any listed files (`movieFile.path`, or `relativePath` joined to the title folder; `episodeFile`, `trackFiles`,
+  `bookFiles`). Each path is mapped through the sending instance's `pathMappings` (longest `remotePath` prefix wins;
+  Windows paths compare case-insensitively), and the library whose folder contains it is rescanned. Events for the same
+  library within ~10 s collapse into one scan; afterwards the request availability check runs, so requests flip to
+  `available` straight away. If no library contains the path, a warning is logged suggesting a path mapping.
+* `Test` → logged. `Grab` → logged, queue cache refreshed. `Health`, `HealthRestored`, `ApplicationUpdate`,
+  `ManualInteractionRequired` → logged, health cache refreshed. Anything else is ignored with `200`.
+* The sending instance is recognised by `instanceName` / `applicationUrl`; otherwise all instances of that kind's mappings are tried.
+* Response: `{ ok, event, kind, libraries, paths }`.
 
 ## Smart collections & playlists
 * `POST /smart/preview` `{ filter, limit }` → `Paged<Item>` · `POST /smart` `CreateSmartListRequest` → `Item` ·
@@ -426,4 +533,6 @@ The AI DJ is free by default and works offline. Admins can connect free or cheap
 - `GET /admin/security[?refresh=1]` returns a `SecurityOverview`, cached for 15 s. It covers sign-in failures from MediaMax's security log (24 h and 7 d, by reason, top IPs, targeted users, an hourly histogram and recent events), proxy stats from the Caddy JSON or Nginx combined access log (24 h), the HTTPS certificate (expiry, issuer, trust), CrowdSec active decisions and alerts, and fail2ban jails with their banned IPs. Any part that isn't configured is `null`.
 - `GET/PUT /admin/security/settings` reads and writes `SecurityDashboardSettings`. Defaults come from the `MEDIAMAX_PROXY_KIND`, `MEDIAMAX_PROXY_LOG`, `MEDIAMAX_PUBLIC_HOST`, `MEDIAMAX_CROWDSEC_URL`, `MEDIAMAX_CROWDSEC_MACHINE_ID`, `MEDIAMAX_CROWDSEC_PASSWORD` and `MEDIAMAX_FAIL2BAN_SOCKET` environment variables. The CrowdSec password is write-only.
 - `POST /admin/security/ban {ip, tool: 'crowdsec'|'fail2ban', jail?, duration?, reason?}` bans an IP or CIDR. Your own address is refused.
+- `GET /admin/network` returns `NetworkStatus`: the saved `NetworkSettings` (mode `direct`|`proxy`|`builtin`, trusted proxies, built-in HTTPS domain/email/ports/staging/HSTS), any `MEDIAMAX_TRUSTED_PROXIES` override, how this request arrived (`you`), and the built-in Caddy status (binary, version, running, last error, recent log, certificate).
+- `PUT /admin/network` saves a partial `NetworkSettings`. Trusted-proxy changes apply immediately; choosing `builtin` validates the domain and starts Caddy (400 if no Caddy binary is found).
 - `POST /admin/security/unban {ip, tool?, jail?}` unbans an address. Without `tool` it removes the address from CrowdSec and every fail2ban jail, and returns `removedFrom`.
