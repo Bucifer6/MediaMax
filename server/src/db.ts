@@ -273,5 +273,22 @@ function migrate(db: Database) {
 
 export const db = new Database(process.env.MEDIAMAX_DB ?? config.dbPath);
 // SQL helper used by parental-control filters.
-db.raw.function('mm_rating_level', { deterministic: true }, (r: unknown) => ratingLevel(r == null ? null : String(r)));
+const levelCache = new Map<string, number | null>();
+const cachedLevel = (r: unknown): number | null => {
+  if (r == null) return null;
+  const k = String(r);
+  let v = levelCache.get(k);
+  if (v === undefined) {
+    v = ratingLevel(k);
+    if (levelCache.size < 5000) levelCache.set(k, v);
+  }
+  return v;
+};
+db.raw.function('mm_rating_level', { deterministic: true }, (r: unknown) => cachedLevel(r));
+/** 1 if a rating is allowed for a max age: known ratings compare by age; unrated/unknown use `unratedOk`. */
+db.raw.function('mm_rating_ok', { deterministic: true }, (r: unknown, max: unknown, unratedOk: unknown) => {
+  const lvl = cachedLevel(r);
+  if (lvl === null || lvl < 0) return Number(unratedOk) ? 1 : 0;
+  return lvl <= Number(max) ? 1 : 0;
+});
 migrate(db);

@@ -33,11 +33,12 @@ export function accessClause(user: User, alias = 'i'): { sql: string; params: Pa
   const max = ratingLevel(user.maxContentRating);
   if (max !== null && max >= 0) {
     // Effective rating: the item's own, else its show's/parent's. mm_rating_level() → age, NULL (unrated) or -1 (unknown).
-    const lvl = `mm_rating_level(COALESCE(${alias}.content_rating, (SELECT x.content_rating FROM items x WHERE x.id = COALESCE(${alias}.grandparent_id, ${alias}.parent_id))))`;
+    // Effective rating = own rating, else the show's/parent's (subquery only runs when the item has none).
+    const eff = `COALESCE(${alias}.content_rating, CASE WHEN ${alias}.parent_id IS NOT NULL THEN (SELECT x.content_rating FROM items x WHERE x.id = COALESCE(${alias}.grandparent_id, ${alias}.parent_id)) END)`;
     // Unrated and unrecognised ratings are allowed by default, or hidden when blockUnratedForRestricted is on
     // (containers like collections/playlists and music stay visible).
     const unratedOk = getSettings().blockUnratedForRestricted ? `${alias}.type IN ('collection','playlist','season','artist','album','track','photo')` : '1';
-    parts.push(`(CASE WHEN ${lvl} IS NULL OR ${lvl} < 0 THEN (${unratedOk}) ELSE ${lvl} <= ? END)`);
+    parts.push(`mm_rating_ok(${eff}, ?, ${unratedOk}) = 1`);
     params.push(max);
   }
   return { sql: parts.join(' AND '), params };
