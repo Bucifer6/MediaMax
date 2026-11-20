@@ -372,3 +372,97 @@ export function energyScore(meanDb: number, env: Float64Array, fps: number) {
   void fps;
   return Math.round((0.65 * loud + 0.35 * dens) * 1000) / 1000;
 }
+
+/* ------------------------------ timbre ------------------------------ */
+
+let melCache: { n: number; rate: number; bank: { lo: number; mid: number; hi: number }[] } | null = null;
+function melBank(n: number, rate: number, filters = 26, fmax = 5000) {
+  if (melCache && melCache.n === n && melCache.rate === rate) return melCache.bank;
+  const mel = (f: number) => 2595 * Math.log10(1 + f / 700);
+  const inv = (m: number) => 700 * (Math.pow(10, m / 2595) - 1);
+  const top = mel(Math.min(fmax, rate / 2));
+  const pts = Array.from({ length: filters + 2 }, (_, i) => Math.round((inv((top * i) / (filters + 1)) / rate) * n));
+  const bank = Array.from({ length: filters }, (_, i) => ({ lo: pts[i], mid: Math.max(pts[i] + 1, pts[i + 1]), hi: Math.max(pts[i] + 2, pts[i + 2]) }));
+  melCache = { n, rate, bank };
+  return bank;
+}
+
+/**
+ * Timbre fingerprint: means and standard deviations of MFCC 1–12, plus mean spectral centroid (0–1 of Nyquist)
+ * and spectral flatness. 26 numbers; compare after z-scoring across the library.
+ */
+export function timbre(pcm: Float32Array, rate: number, n = 1024, hop = 2048): number[] | null {
+  const win = hann(n);
+  const frame = new Float64Array(n);
+  const mag = new Float64Array(n / 2);
+  const re = new Float64Array(n);
+  const im = new Float64Array(n);
+  const bank = melBank(n, rate);
+  const C = 13;
+  const sums = new Float64Array(C);
+  const sq = new Float64Array(C);
+  let centroid = 0;
+  let flat = 0;
+  let frames = 0;
+  const energies = new Float64Array(bank.length);
+  for (let off = 0; off + n <= pcm.length; off += hop) {
+    let e = 0;
+    for (let i = 0; i < n; i++) {
+      frame[i] = pcm[off + i] * win[i];
+      e += frame[i] * frame[i];
+    }
+    if (e < 1e-5) continue; // skip silence
+    magnitudes(frame, mag, re, im);
+    for (let b = 0; b < bank.length; b++) {
+      const { lo, mid, hi } = bank[b];
+      let s = 0;
+      for (let k = lo; k < hi && k < mag.length; k++) {
+        const w = k < mid ? (k - lo) / (mid - lo) : (hi - k) / (hi - mid);
+        s += w * mag[k] * mag[k];
+      }
+      energies[b] = Math.log(s + 1e-10);
+    }
+    for (let c = 1; c < C; c++) {
+      let v = 0;
+      for (let b = 0; b < bank.length; b++) v += energies[b] * Math.cos((Math.PI * c * (b + 0.5)) / bank.length);
+      sums[c] += v;
+      sq[c] += v * v;
+    }
+    let num = 0;
+    let den = 0;
+    let logSum = 0;
+    let linSum = 0;
+    for (let k = 1; k < mag.length; k++) {
+      num += k * mag[k];
+      den += mag[k];
+      logSum += Math.log(mag[k] + 1e-10);
+      linSum += mag[k];
+    }
+    centroid += den ? num / den / mag.length : 0;
+    flat += Math.exp(logSum / (mag.length - 1)) / (linSum / (mag.length - 1) + 1e-10);
+    frames++;
+  }
+  if (frames < 10) return null;
+  const out: number[] = [];
+  for (let c = 1; c < C; c++) {
+    const mean = sums[c] / frames;
+    out.push(mean, Math.sqrt(Math.max(0, sq[c] / frames - mean * mean)));
+  }
+  out.push(centroid / frames, flat / frames);
+  return out.map((v) => Math.round(v * 1000) / 1000);
+}
+
+/** Cosine similarity of two z-scored vectors (−1…1). */
+export function similarity(a: number[], b: number[], mean: number[], std: number[]): number {
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    const x = (a[i] - mean[i]) / (std[i] || 1);
+    const y = (b[i] - mean[i]) / (std[i] || 1);
+    dot += x * y;
+    na += x * x;
+    nb += y * y;
+  }
+  return na && nb ? dot / Math.sqrt(na * nb) : 0;
+}

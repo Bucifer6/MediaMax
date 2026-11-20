@@ -21,6 +21,7 @@ import { generateMissing } from './trickplay.js';
 import { pluginTasks } from './plugins.js';
 import { createBackup } from './backup.js';
 import { analyseAll } from './dj/analysis.js';
+import { pruneVoices } from './dj/ai.js';
 import { autoDownload } from './opensubtitles.js';
 import { refreshAll as refreshPodcasts } from './podcasts.js';
 import { checkAvailability } from './requests.js';
@@ -173,6 +174,7 @@ const DEFS: TaskDef[] = [
       pruneActivity();
       pruneOldPrograms();
       pruneImageCache();
+      pruneVoices();
       const active = new Set(listSessions().map((s) => s.id));
       for (const d of fs.readdirSync(config.transcodeDir)) {
         const p = path.join(config.transcodeDir, d);

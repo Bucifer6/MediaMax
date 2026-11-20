@@ -297,6 +297,15 @@ const MIGRATIONS: string[] = [
   CREATE INDEX track_analysis_bpm ON track_analysis(bpm);
   CREATE INDEX track_analysis_camelot ON track_analysis(camelot);
   `,
+  /* 12: AI DJ — timbre fingerprints and listener feedback */ `
+  ALTER TABLE track_analysis ADD COLUMN timbre TEXT;
+  CREATE TABLE dj_feedback (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL, at TEXT NOT NULL
+  );
+  CREATE INDEX dj_feedback_user ON dj_feedback(user_id, at);
+  `,
 ];
 
 function migrate(db: Database) {

@@ -4,11 +4,11 @@ import { db } from '../../db.js';
 import { config } from '../../config.js';
 import { logger } from '../../util/log.js';
 import { nowIso } from '../../util/misc.js';
-import { chroma, energyScore, estimateKey, estimateTempo, loudness, mixPoints, onsetEnvelope } from './dsp.js';
+import { chroma, energyScore, estimateKey, estimateTempo, loudness, mixPoints, onsetEnvelope, timbre } from './dsp.js';
 
 const log = logger('dj');
 /** Bump when the algorithm changes so tracks are re-analysed. */
-export const ANALYSIS_VERSION = 1;
+export const ANALYSIS_VERSION = 2;
 const RATE = 11025;
 /** Longest stretch decoded per track (long DJ sets/podcasts are capped). */
 const MAX_SECONDS = 15 * 60;
@@ -56,14 +56,14 @@ export function analysePcm(pcm: Float32Array, durationMs?: number) {
   }
   return {
     bpm: tempo.bpm, bpmConfidence: tempo.confidence, beatOffsetMs: tempo.beatOffsetMs != null ? tempo.beatOffsetMs + 90 : null, key: key.key, camelot: key.camelot,
-    energy: energyScore(l.meanDb, env, fps), loudnessDb: Math.round(l.meanDb * 10) / 10, durationMs: dur, ...points,
+    energy: energyScore(l.meanDb, env, fps), timbre: timbre(pcm, RATE), loudnessDb: Math.round(l.meanDb * 10) / 10, durationMs: dur, ...points,
   };
 }
 
 const toAnalysis = (r: any): TrackAnalysis => ({
   itemId: r.item_id, bpm: r.bpm, bpmConfidence: r.bpm_confidence, beatOffsetMs: r.beat_offset_ms, key: r.key_name, camelot: r.camelot, energy: r.energy,
   loudnessDb: r.loudness_db, cueInMs: r.cue_in_ms, cueOutMs: r.cue_out_ms, introEndMs: r.intro_end_ms, outroStartMs: r.outro_start_ms,
-  durationMs: r.duration_ms, analyzedAt: r.analyzed_at,
+  durationMs: r.duration_ms, analyzedAt: r.analyzed_at, timbre: r.timbre ? JSON.parse(r.timbre) : null,
 });
 
 export function getAnalysis(itemId: string): TrackAnalysis | null {
@@ -89,9 +89,9 @@ export async function analyseTrack(itemId: string): Promise<TrackAnalysis | null
     if (pcm.length < RATE * 5) throw new Error('Too short to analyse');
     const a = analysePcm(pcm, m.duration_ms ?? undefined);
     db.run(
-      `INSERT OR REPLACE INTO track_analysis (item_id, media_mtime, version, bpm, bpm_confidence, beat_offset_ms, key_name, camelot, energy, loudness_db, cue_in_ms, cue_out_ms, intro_end_ms, outro_start_ms, duration_ms, analyzed_at, error)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-      itemId, m.mtime, ANALYSIS_VERSION, a.bpm, a.bpmConfidence, a.beatOffsetMs, a.key, a.camelot, a.energy, a.loudnessDb, a.cueInMs, a.cueOutMs, a.introEndMs, a.outroStartMs, a.durationMs, nowIso(),
+      `INSERT OR REPLACE INTO track_analysis (item_id, media_mtime, version, bpm, bpm_confidence, beat_offset_ms, key_name, camelot, energy, loudness_db, cue_in_ms, cue_out_ms, intro_end_ms, outro_start_ms, duration_ms, analyzed_at, timbre, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      itemId, m.mtime, ANALYSIS_VERSION, a.bpm, a.bpmConfidence, a.beatOffsetMs, a.key, a.camelot, a.energy, a.loudnessDb, a.cueInMs, a.cueOutMs, a.introEndMs, a.outroStartMs, a.durationMs, nowIso(), a.timbre ? JSON.stringify(a.timbre) : null,
     );
     return getAnalysis(itemId);
   } catch (e) {

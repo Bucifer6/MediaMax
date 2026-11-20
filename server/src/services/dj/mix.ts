@@ -4,7 +4,8 @@ import { accessClause, getItem } from '../items.js';
 import { badRequest, notFound } from '../../util/errors.js';
 import { parseJson } from '../../util/misc.js';
 import { getAnalyses } from './analysis.js';
-import { keyCompatibility } from './dsp.js';
+import { keyCompatibility, similarity } from './dsp.js';
+import { skipStats } from './ai.js';
 
 interface Cand {
   id: string;
@@ -14,6 +15,7 @@ interface Cand {
   durationMs: number;
   favorite: boolean;
   rating: number | null;
+  year: number | null;
   a: TrackAnalysis | null;
 }
 
@@ -93,7 +95,7 @@ function loadCandidates(user: User, req: DjMixRequest): Cand[] {
     params.push(req.libraryId);
   }
   const rows = db.all(
-    `SELECT i.id, i.grandparent_id artist_id, i.parent_id album_id, i.genres, i.duration_ms, al.genres album_genres, ud.favorite, ud.rating
+    `SELECT i.id, i.grandparent_id artist_id, i.parent_id album_id, i.genres, i.duration_ms, al.genres album_genres, ud.favorite, ud.rating, COALESCE(i.year, al.year) year
      FROM items i LEFT JOIN items al ON al.id = i.parent_id LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ?
      WHERE ${where.join(' AND ')} LIMIT 50000`, user.id, ...params);
   const analyses = getAnalyses(rows.map((r) => r.id));
@@ -103,9 +105,11 @@ function loadCandidates(user: User, req: DjMixRequest): Cand[] {
       id: r.id, artistId: r.artist_id, albumId: r.album_id,
       // A track's own genre tags win; the album's genres are only a fallback for untagged tracks.
       genres: [...new Set((parseJson<string[]>(r.genres, []).length ? parseJson<string[]>(r.genres, []) : parseJson<string[]>(r.album_genres, [])).map(lc))],
-      durationMs: r.duration_ms ?? 0, favorite: !!r.favorite, rating: r.rating ?? null, a: analyses.get(r.id) ?? null,
+      durationMs: r.duration_ms ?? 0, favorite: !!r.favorite, rating: r.rating ?? null, year: r.year ?? null, a: analyses.get(r.id) ?? null,
     }))
     .filter((c) => !wantGenres.length || c.genres.some((g) => wantGenres.includes(g)))
+    .filter((c) => (req.yearFrom == null || (c.year != null && c.year >= req.yearFrom)) && (req.yearTo == null || (c.year != null && c.year <= req.yearTo)))
+    .filter((c) => req.maxTrackMinutes == null || !c.durationMs || c.durationMs <= req.maxTrackMinutes * 60000)
     .filter((c) => {
       if (req.bpmMin == null && req.bpmMax == null) return true;
       const b = c.a?.bpm;
@@ -161,6 +165,14 @@ export function buildMix(user: User, req: DjMixRequest): DjMix {
   const byId = new Map(cands.map((c) => [c.id, c]));
   const { start, genres } = resolveSeed(user, req, cands, byId);
   const energies = cands.filter((c) => c.a).map((c) => c.a!.energy).sort((x, y) => x - y);
+  // Timbre statistics for z-scored "sounds like" similarity.
+  const withTimbre = cands.filter((c) => c.a?.timbre?.length);
+  const dims = withTimbre[0]?.a?.timbre?.length ?? 0;
+  const tMean = Array.from({ length: dims }, (_, i) => withTimbre.reduce((s, c) => s + c.a!.timbre![i], 0) / (withTimbre.length || 1));
+  const tStd = Array.from({ length: dims }, (_, i) => Math.sqrt(withTimbre.reduce((s, c) => s + (c.a!.timbre![i] - tMean[i]) ** 2, 0) / (withTimbre.length || 1)));
+  const seedTimbre = (start ?? (req.history?.length ? byId.get(req.history[req.history.length - 1]) : null))?.a?.timbre ?? null;
+  // Listener feedback: recently skipped tracks and artists are played less.
+  const skips = skipStats(user.id);
   const analyzedShare = cands.length ? energies.length / cands.length : 0;
 
   const history = (req.history ?? []).filter((id) => byId.has(id) || db.get('SELECT 1 FROM items WHERE id = ?', id));
@@ -214,6 +226,13 @@ export function buildMix(user: User, req: DjMixRequest): DjMix {
         const overlap = c.genres.filter((g) => genres.has(g)).length;
         s += 0.15 * (overlap ? Math.min(1, overlap / Math.min(3, c.genres.length || 1)) : 0);
       }
+      // "Sounds like": close to the previous track and to the seed (keeps the mix coherent beyond tempo/key).
+      if (a?.timbre && withTimbre.length >= 5 && a.timbre.length === dims) {
+        const sp = prev?.a?.timbre?.length === dims ? similarity(prev.a.timbre, a.timbre, tMean, tStd) : 0;
+        const ss = seedTimbre?.length === dims ? similarity(seedTimbre, a.timbre, tMean, tStd) : 0;
+        s += 0.12 * Math.max(0, sp) + 0.08 * Math.max(0, ss);
+      }
+      s -= Math.min(0.5, 0.25 * (skips.tracks.get(c.id) ?? 0)) + Math.min(0.2, 0.04 * (c.artistId ? skips.artists.get(c.artistId) ?? 0 : 0));
       if (req.preferFavorites !== false) s += (c.favorite ? 0.06 : 0) + ((c.rating ?? 0) / 10) * 0.04;
       if (prev && c.albumId && c.albumId === prev.albumId) s -= 0.1; // variety
       s += Math.random() * 0.04;

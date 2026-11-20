@@ -5,7 +5,7 @@ import type { DashboardStats, DirectoryEntry, ServerSettings, SetupRequest, Syst
 import { db } from '../db.js';
 import { config } from '../config.js';
 import { requireAdmin, deviceFromRequest, remoteAddr, noCache } from '../http.js';
-import { getSettings, updateSettings, serverId } from '../services/settings.js';
+import { getSettings, updateSettings, serverId, publicSettings } from '../services/settings.js';
 import { getBranding, updateBranding } from '../services/branding.js';
 import { createUser, issueToken, userCount } from '../services/auth.js';
 import { listSessions, transcodeCount } from '../services/playback.js';
@@ -95,7 +95,7 @@ export default async function systemRoutes(app: FastifyInstance) {
 
   app.get('/settings', async (req): Promise<ServerSettings> => {
     requireAdmin(req);
-    return getSettings();
+    return publicSettings();
   });
   app.put<{ Body: Partial<ServerSettings> }>('/settings', async (req) => {
     const a = requireAdmin(req);
@@ -104,7 +104,7 @@ export default async function systemRoutes(app: FastifyInstance) {
     if (req.body?.remoteAccess) void remote.refreshMapping();
     if (req.body?.serverName) updateBranding({ serverName: req.body.serverName });
     logActivity('settings', 'Server settings updated', { userId: a.user.id, userName: a.user.displayName });
-    return s;
+    return publicSettings(s);
   });
   app.post<{ Body: { url: string } }>('/settings/webhooks/test', async (req) => {
     requireAdmin(req);
