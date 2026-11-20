@@ -112,6 +112,7 @@ function songOf(t: Item): Obj {
     userRating: t.userData.rating ? Math.round(t.userData.rating / 2) : undefined, created: t.addedAt,
     // OpenSubsonic extras
     genres: t.genres.map((g) => ({ name: g })), displayArtist: t.grandparentTitle ?? undefined, displayAlbumArtist: t.grandparentTitle ?? undefined,
+    replayGain: t.replayGain ? { trackGain: t.replayGain.trackGainDb ?? undefined, albumGain: t.replayGain.albumGainDb ?? undefined, trackPeak: t.replayGain.trackPeak ?? undefined, albumPeak: t.replayGain.albumPeak ?? undefined } : undefined,
   };
 }
 function albumOf(a: Item): Obj {

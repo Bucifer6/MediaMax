@@ -240,6 +240,14 @@ export interface LinkPollResponse {
   user?: User;
 }
 
+/** Loudness levelling from ReplayGain / R128 tags (dB relative to the ReplayGain −18 LUFS reference). */
+export interface ReplayGain {
+  trackGainDb: number | null;
+  trackPeak: number | null;
+  albumGainDb: number | null;
+  albumPeak: number | null;
+}
+
 export interface UserPreferences {
   audioLanguage: string | null;
   subtitleLanguage: string | null;
@@ -249,6 +257,8 @@ export interface UserPreferences {
   /** Max streaming bitrate in kbps; null = original. */
   maxBitrate: number | null;
   themeId: string | null;
+  /** Music loudness levelling: album gain on album playback is the usual choice. Default 'auto'. */
+  replayGain?: 'off' | 'track' | 'album' | 'auto';
 }
 
 export interface User {
@@ -529,6 +539,8 @@ export interface Item {
   extraType?: ExtraType;
   /** Book series (audiobooks) or movie collection order. */
   series?: { name: string; index: number | null } | null;
+  /** Tracks: ReplayGain loudness tags, when the file has them. */
+  replayGain?: ReplayGain | null;
 }
 
 export type ExtraType = 'trailer' | 'featurette' | 'behindthescenes' | 'deleted' | 'interview' | 'scene' | 'short' | 'other';

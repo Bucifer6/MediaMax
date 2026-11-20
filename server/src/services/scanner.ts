@@ -11,6 +11,7 @@ import { probe, normLang, type ProbeResult } from './probe.js';
 import { registerImage } from './images.js';
 import { readNfo, type NfoData } from './metadata/nfo.js';
 import { importSidecarEdl } from './edl.js';
+import { parseReplayGain, gainTags } from '../util/replaygain.js';
 import {
   AUDIO_EXT, IMAGE_EXT, SUB_EXT, VIDEO_EXT, ext, isExtra, parseEpisodeName, parseMovieName, parseSeasonFolder, parseShowFolder,
   parseSubtitleName, stripExt,
@@ -418,7 +419,7 @@ async function scanMusic(ctx: ScanCtx, files: FileEntry[]) {
       id: trackId, library_id: ctx.lib.id, type: 'track', title: tags.title || stripExt(path.basename(f.path)).replace(/^\d+[\s.-]+/, ''),
       idx: trackNo, parent_idx: discNo, parent_id: albumId, grandparent_id: artistId, path: f.path, year,
       ...(genre.length ? { genres: JSON.stringify(genre) } : {}),
-      extra: JSON.stringify({ tags: { artist: tags.artist ?? null, album: tags.album ?? null, title: tags.title ?? null, track: tags.track ?? null, disc: tags.disc ?? null, date: tags.date ?? null, genre: tags.genre ?? null, album_artist: tags.album_artist ?? null } }),
+      extra: JSON.stringify({ tags: { artist: tags.artist ?? null, album: tags.album ?? null, title: tags.title ?? null, track: tags.track ?? null, disc: tags.disc ?? null, date: tags.date ?? null, genre: tags.genre ?? null, album_artist: tags.album_artist ?? null, ...gainTags(tags) }, replayGain: parseReplayGain(tags) }),
     });
     const res = await upsertMedia(trackId, f, ctx.force, pr);
     if (m0 && m0.item_id !== trackId) db.run('DELETE FROM items WHERE id = ? AND NOT EXISTS (SELECT 1 FROM media WHERE item_id = ?)', m0.item_id, m0.item_id);

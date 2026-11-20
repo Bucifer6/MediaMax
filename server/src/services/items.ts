@@ -124,6 +124,7 @@ export function rowToItem(r: Row): Item {
     ...(r.smart ? { smart: parseJson(r.smart, null) } : {}),
     ...((extra as any).series ? { series: (extra as any).series } : {}),
     ...((extra as any).extraType ? { extraType: (extra as any).extraType } : {}),
+    ...((extra as any).replayGain ? { replayGain: (extra as any).replayGain } : {}),
   };
 }
 
