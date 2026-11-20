@@ -164,6 +164,13 @@ export function useAdaptive(o: Opts) {
       }
 
       let est = estimator.current.estimate;
+      // A fragment that has been downloading for a while at a fraction of the estimate: the link just got slower.
+      // (Measured from its first byte, so time the server spent encoding the segment doesn't count.)
+      const fl = attached.current?.inflight?.();
+      if (est && fl && fl.ms > 1500 && fl.bytes > 0) {
+        const bps = (fl.bytes * 8000) / fl.ms;
+        if (bps < est * 0.5) est = bps;
+      }
       const c = ensureController();
       setState((s) => (s.estimate === est ? s : { ...s, estimate: est }));
       if (est && now - rememberAt > 30000) {

@@ -53,7 +53,15 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | "Hardware failed, used software" shown on the session | ❌ | ❌ | ❌ | ✅ |
 | Encoder throttling (pauses ffmpeg when far ahead) | ✅ | ✅ | ✅ | ✅ |
 | Sidecar & embedded text subtitles → WebVTT | ✅ | ✅ | ✅ | ✅ |
-| Image subtitle (PGS/VobSub) burn-in | ✅ | ✅ | ✅ | ✅ |
+| Own subtitle renderer in every player, incl. Tizen/webOS TV mode — never the platform's text tracks or parser ([docs/PLAYBACK.md](PLAYBACK.md)) | 🟡 | 🟡 | 🟡 | ✅ |
+| ASS/SSA with full styling in the browser (libass/WASM, embedded MKV fonts, karaoke, animation; simplified fallback without WASM) | 🟡 | ✅ | 🟡 | ✅ |
+| PGS (Blu-ray) subtitles decoded in the browser, no transcode | ❌ | ✅ | ❌ | ✅ |
+| Subtitles in original format (SRT/ASS/SUP) with partial extraction for long files, teletext → text | 🟡 | 🟡 | 🟡 | ✅ |
+| Image subtitle (PGS/VobSub) burn-in | ✅ | ✅ | ✅ | ✅ (explicit last resort: VobSub/DVB, PGS on native apps) |
+| Automatic quality: bandwidth probe at start, live throughput/buffer/dropped-frame ABR with hysteresis ([docs/PLAYBACK.md](PLAYBACK.md)) | ✅ | 🟡 | ✅ | ✅ |
+| Adaptive transcodes: multi-rendition HLS ladder, renditions encoded lazily on demand with aligned segments | 🟡 | ❌ | 🟡 | ✅ |
+| Direct play ↔ transcode switch on connection change, seamless (old stream plays while the new one loads) | 🟡 | ❌ | 🟡 | ✅ |
+| Remote (WAN) bitrate limit; LAN unlimited unless measured otherwise | ✅ | ✅ | ✅ | ✅ |
 | Audio track selection & language preferences | ✅ | ✅ | ✅ | ✅ |
 | Resume, watched state, continue watching, next up | ✅ | ✅ | ✅ | ✅ |
 | Skip intro / credits (audio-fingerprint detection) | Pass | Plugin | Premiere | ✅ built in |

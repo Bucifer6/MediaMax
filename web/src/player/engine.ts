@@ -42,6 +42,8 @@ export interface Attached {
   /** Switch variant at the next fragment boundary (hls.js `nextLevel`), or at once, dropping the buffer (`immediate`). */
   setLevel?: (level: number, immediate?: boolean) => void;
   currentLevel?: () => number;
+  /** The media fragment being downloaded right now: bytes so far and ms since its first byte (null when idle). */
+  inflight?: () => { bytes: number; ms: number } | null;
 }
 
 function absolute(url: string) {
@@ -96,6 +98,14 @@ export async function attachStream(el: HTMLMediaElement, info: PlaybackInfo, opt
         });
       }
       if (opts.onLevelSwitched) hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => opts.onLevelSwitched!(data.level));
+      // Fragment in flight, for ABR decisions before a slow download completes.
+      let loading: { stats: { loaded: number; loading: { first: number } } } | null = null;
+      hls.on(Hls.Events.FRAG_LOADING, (_e, data) => {
+        if (data.frag.sn !== 'initSegment') loading = data.frag;
+      });
+      hls.on(Hls.Events.FRAG_LOADED, () => {
+        loading = null;
+      });
       hls.loadSource(url);
       hls.attachMedia(el);
       return {
@@ -108,6 +118,11 @@ export async function attachStream(el: HTMLMediaElement, info: PlaybackInfo, opt
           else hls.nextLevel = level;
         },
         currentLevel: () => hls.currentLevel,
+        inflight: () => {
+          const st = loading?.stats;
+          if (!st || !st.loading.first) return null;
+          return { bytes: st.loaded, ms: performance.now() - st.loading.first };
+        },
         stats: () => {
           const lvl = hls.levels[hls.currentLevel] ?? hls.levels[0];
           return {

@@ -114,10 +114,13 @@ test('dropped frames cap the level below the current one for a while', () => {
 test('buffer safety net: a near-empty buffer steps down even when the estimate lags', () => {
   const c = new AbrController(ladder, 3, SEGMENT_ABR, 0);
   // Estimate still says 50 Mbps (the slow segment hasn't finished), but the buffer is empty.
-  assert.equal(c.update({ now: 1000, bandwidth: 50 * MBPS, bufferS: 0.5, playing: true }), null, 'not on the first tick');
-  const d = c.update({ now: 3500, bandwidth: 50 * MBPS, bufferS: 0.4, playing: true });
+  assert.equal(c.update({ now: 11000, bandwidth: 50 * MBPS, bufferS: 0.5, playing: true }), null, 'not on the first tick');
+  const d = c.update({ now: 13500, bandwidth: 50 * MBPS, bufferS: 0.4, playing: true });
   assert.equal(c.levels[d!.level].label, '720p');
   assert.equal(d!.immediate, true);
+  // Not again right away: the new level gets time to deliver.
+  assert.equal(c.update({ now: 20000, bandwidth: 50 * MBPS, bufferS: 0.2, playing: true }), null);
+  assert.equal(c.levels[c.update({ now: 24000, bandwidth: 50 * MBPS, bufferS: 0.2, playing: true })!.level].label, '480p');
   // With a low estimate the drop goes straight to the fitting level, immediately.
   const e = new AbrController(ladder, 3, SEGMENT_ABR, 0).update({ now: 1000, bandwidth: 2 * MBPS, bufferS: 1, playing: true });
   assert.equal(e!.immediate, true);

@@ -77,6 +77,12 @@ keys through the `mediamax-media` module (`apps/mobile/modules/mediamax-media`).
   to fMP4 HLS. The video is copied, not re-encoded, so MKV/HEVC/HDR10/E-AC-3 files keep full quality. The server
   transcodes only what MSE on that TV can't decode. The player detects this with `MediaSource.isTypeSupported` and
   `MediaCapabilities.decodingInfo`; Settings → Playback → **This device** shows the result.
+- **Subtitles: our own renderer.** Subtitles are fetched from the server in their original format and drawn by the
+  player (SRT/WebVTT text in your style with 10-foot sizing; ASS with libass where the TV runs WebAssembly, else a
+  simplified styled renderer; PGS decoded to a canvas). Native text tracks are never used. See
+  [docs/PLAYBACK.md](../docs/PLAYBACK.md).
+- **Automatic quality:** the player measures the connection and switches quality levels itself (hls.js variants, or
+  direct play ↔ transcode), as in browsers.
 - **HDR:** Samsung plays HDR10, HLG and (when MSE reports it) HDR10+. Samsung has no Dolby Vision, so DV 8.1 plays as
   HDR10. LG plays HDR10 and HLG; DV 8.x plays as its base layer. See [docs/HDR.md](../docs/HDR.md).
 - **Samsung native player (AVPlay):** not included. It could be added later only as an opt-in, per-device fallback

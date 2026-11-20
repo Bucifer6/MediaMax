@@ -103,13 +103,37 @@ the WebSocket emits `branding.updated`.
 | GET 🔑 | `/stream/direct/:mediaId` | Range supported | file bytes |
 | GET 🔑 | `/stream/hls/:sessionId/master.m3u8` | | HLS playlist |
 | GET 🔑 | `/stream/hls/:sessionId/:segment` | | `segN.ts` (H.264, MPEG-TS) or `segN.m4s` + `init.mp4` (HEVC/AV1, fMP4; the playlist has `#EXT-X-MAP`) |
-| GET 🔑 | `/stream/subtitles/:mediaId/:index.vtt` | | WebVTT |
+| GET 🔑 | `/stream/subtitles/:mediaId/:index.vtt` | | WebVTT (also without extension) |
+| GET 🔑 | `/stream/subtitles/:mediaId/:index.{srt,ass,ssa,sup}` | `?partial=1` | The track in its original format for client-side renderers (SSA is served as ASS; `.sup` = raw PGS). Only the selected stream is extracted (cached per file version). With `partial=1` the response returns after ≤1.5 s with what has been read so far, cut at the last complete cue, plus `X-Subtitle-Complete: 0\|1` and `X-Subtitle-Progress: 0..1`; poll until complete. Bitmap tracks can't be converted to text (400) |
+| GET 🔑 | `/stream/subtitles/:mediaId/fonts` | | `SubtitleFont[]`: font attachments of the media file (MKV), for libass |
+| GET 🔑 | `/stream/subtitles/:mediaId/fonts/:name` | | the font file (`font/ttf`, `font/otf`, …) |
+| GET 🔑 | `/playback/bandwidth-test` | `?bytes=N` | `N` random (incompressible) bytes, clamped to 8 KiB…`streaming.bandwidthTestMaxBytes` (20 MB); `Cache-Control: no-store, no-transform`. Rate-limited per user (30 requests / 200 MB per minute → 429). Time the body to estimate throughput |
+| GET 🔑 | `/stream/hls/:sessionId/r<N>.m3u8`, `r<N>_seg<n>.ts\|m4s`, `r<N>_init.mp4` | | Adaptive transcodes: rendition playlists and segments referenced by `master.m3u8` |
 | GET 🔑 | `/stream/download/:itemId` | | original file as attachment (needs `allowDownloads`) |
 | GET 🛡️ | `/sessions` | | `ActiveSession[]` |
 | DELETE 🛡️ | `/sessions/:id` | `?reason=` | `{ ok: true }` |
 
 `PlaybackInfo.url` is server-relative and already contains `?token=`; prepend the server base URL.
 For seeking in a transcoded stream beyond what's generated, call `POST /playback/:itemId` again with `startMs`.
+
+**Client-rendered subtitles.** Send `subtitleFormats` (e.g. `["srt","vtt","ass","pgs"]`) with the playback request.
+Every `SubtitleTrack` then carries `format`, `codec`, `isImage`, `rawUrl` (original format) and, for ASS, `fontsUrl`;
+bitmap formats listed in `subtitleFormats` are included in `subtitles` (with `url` = `rawUrl`). Bitmap tracks the client
+can't render are listed in `PlaybackInfo.burnInSubtitles`; play one with `subtitleStreamIndex` + `burnSubtitles: true`.
+Without `subtitleFormats` the response is unchanged (text tracks as WebVTT).
+
+**Adaptive streaming.** Send `adaptive: true` (the client plays multi-variant HLS) and `measuredBandwidth` (kbps, from
+`/playback/bandwidth-test` or playback). The direct-play decision uses 80 % of the measured bandwidth; LAN clients are
+unlimited unless they measured less, others are capped by `streaming.remoteMaxBitrate`. A transcode then answers with a
+master playlist of renditions (`PlaybackInfo.renditions`, best fit for the measurement listed first as
+`startRendition`, `adaptiveMode: "renditions"`). Renditions are encoded lazily: the encoder for `r<N>` starts at the
+first segment requested and stops after `streaming.renditionIdleSeconds` without requests; all renditions share the
+segment grid (forced keyframes every `segmentSeconds`), so players switch between them seamlessly. With one hardware
+encoder session, a switch restarts the encoder at the new bitrate. `adaptiveMode: "restart"` means the client re-requests
+playback with a new `measuredBandwidth` to change quality; `bandwidthLimited: true` marks a transcode chosen only because of
+bandwidth (the client may return to direct play when the connection recovers). `maxBitrate`, `sourceBitrate` and
+`isLocal` describe the limits that applied. Settings: `ServerSettings.streaming` (`adaptive`, `renditionIdleSeconds`,
+`remoteMaxBitrate`, `bandwidthTestMaxBytes`).
 
 ## Live TV / IPTV
 | Method | Path | Body | Returns |

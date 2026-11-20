@@ -35,7 +35,9 @@ MediaMax brings together the features people love in **Plex, Jellyfin and Emby**
 - HDR10, HDR10+, HLG and Dolby Vision detection with per-device direct play ([docs/HDR.md](docs/HDR.md))
 - Skip intro, credits, recaps and ad breaks; scrub previews; editions and extras
 - Cinema mode (trailers and pre-rolls), watch-together, Chromecast, "Play on…" another device
-- Subtitle styling and sync, OpenSubtitles search, picture-in-picture, stats overlay
+- Our own subtitle renderer everywhere (SRT/WebVTT, ASS with libass and embedded fonts, PGS) with styling and sync ([docs/PLAYBACK.md](docs/PLAYBACK.md))
+- Automatic quality: bandwidth probe, adaptive multi-rendition transcodes and seamless direct-play ↔ transcode switching
+- OpenSubtitles search, picture-in-picture, stats overlay
 
 </td><td width="50%" valign="top">
 
@@ -198,6 +200,7 @@ More, including the security dashboard and integration variables, is in [docs/IN
 | [docs/INSTALL.md](docs/INSTALL.md) | Install on Docker, NAS, Windows and Linux; NAS disk spin-down; upgrades, backups, hardware transcoding |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | One-command secure deployment: Caddy/Nginx, CrowdSec, fail2ban, Cloudflare Tunnel, Tailscale |
 | [docs/FEATURES.md](docs/FEATURES.md) | Feature-by-feature comparison with Plex, Jellyfin and Emby |
+| [docs/PLAYBACK.md](docs/PLAYBACK.md) | Subtitles (formats, styling, sync) and automatic quality (bandwidth detection, adaptive streaming) |
 | [docs/HOME_ASSISTANT.md](docs/HOME_ASSISTANT.md) | Home Assistant: MQTT discovery sensors, webhook preset, REST now-playing, automation YAML |
 | [docs/API.md](docs/API.md) | REST and WebSocket API reference |
 | [docs/PLUGINS.md](docs/PLUGINS.md) | Writing plugins; examples in [`plugins/examples`](plugins/examples) |

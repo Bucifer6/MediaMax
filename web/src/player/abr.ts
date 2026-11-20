@@ -229,9 +229,10 @@ export class AbrController {
 
     // Buffer-based safety net: the buffer stays nearly empty although the (lagging) estimate says this level fits —
     // e.g. the link just dropped while a big segment is still downloading. Step down one level, now.
+    // Give a level we just switched to time to deliver its first fragment (a rendition encoder may have to start) before stepping again.
     if (empty && this.current > 0) {
       this.lowSince ??= now;
-      if (now - this.lowSince >= 2000) return this.commit(this.current - 1, now, 'buffer', true);
+      if (now - this.lowSince >= 2000 && now - this.lastSwitch >= 10000) return this.commit(this.current - 1, now, 'buffer', true);
       return null;
     }
     this.lowSince = null;
