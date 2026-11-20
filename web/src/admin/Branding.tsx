@@ -59,6 +59,7 @@ const FEATURE_LABELS: { key: keyof FeatureFlags; label: string; hint: string; ic
   { key: 'syncPlay', label: 'Watch together', hint: 'SyncPlay rooms in the player', icon: 'together' },
   { key: 'profilePicker', label: 'Profile picker', hint: '“Who’s watching?” on the login screen', icon: 'users' },
   { key: 'linkCodes', label: 'Link codes', hint: 'Sign in TVs with a short code', icon: 'link' },
+  { key: 'requests', label: 'Requests', hint: 'Discover tab: ask for new movies and shows (Radarr/Sonarr)', icon: 'compass' },
 ];
 
 const ASSETS: { kind: BrandingAssetKind; label: string; field: keyof Branding | 'splashLogo'; hint: string; wide?: boolean }[] = [

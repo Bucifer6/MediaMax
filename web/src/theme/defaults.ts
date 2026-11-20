@@ -38,6 +38,7 @@ export const DEFAULT_FEATURES: FeatureFlags = {
   dvr: true,
   profilePicker: true,
   linkCodes: true,
+  requests: true,
 };
 
 export const DEFAULT_BRANDING: Branding = {

@@ -7,6 +7,7 @@ import type {
   RecordingRule, RecordingStatus, RemoteSubtitle, ScheduledTask, SearchResponse, ServerSettings, ServerStats, SetupRequest, SystemInfo,
   TestSourceResponse, Theme, TraktDeviceCode, TraktStatus, TrickplayInfo, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
   UpdateUserRequest, User, UserItemData, UserStats,
+  ArrOptions, CreateMediaRequest, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
 import { http, request, upload } from './client';
 import { deviceInfo } from './device';
@@ -145,6 +146,26 @@ export const api = {
     addItems: (id: string, itemIds: string[]) => http.post<Ok>(`/playlists/${enc(id)}/items`, { itemIds }),
     removeItem: (id: string, itemId: string) => http.del<Ok>(`/playlists/${enc(id)}/items/${enc(itemId)}`),
     remove: (id: string) => http.del<Ok>(`/playlists/${enc(id)}`),
+  },
+
+  discover: {
+    search: (q: { q?: string; type?: 'movie' | 'show' | 'all'; page?: number }, signal?: AbortSignal) =>
+      http.get<DiscoverResponse>('/discover', q, signal),
+  },
+
+  requests: {
+    list: (q: { status?: RequestStatus; mine?: boolean } = {}) => http.get<MediaRequest[]>('/requests', q),
+    create: (body: CreateMediaRequest) => http.post<MediaRequest>('/requests', body),
+    approve: (id: string) => http.post<MediaRequest>(`/requests/${enc(id)}/approve`),
+    decline: (id: string, note?: string) => http.post<MediaRequest>(`/requests/${enc(id)}/decline`, { note }),
+    remove: (id: string) => http.del<Ok>(`/requests/${enc(id)}`),
+    testArr: (url: string, apiKey: string) => http.post<ArrOptions>('/requests/arr/test', { url, apiKey }),
+  },
+
+  smart: {
+    preview: (filter: SmartFilter, limit = 24) => http.post<Paged<Item>>('/smart/preview', { filter, limit }),
+    create: (body: CreateSmartListRequest) => http.post<Item>('/smart', body),
+    update: (id: string, body: { title?: string; overview?: string; filter?: SmartFilter }) => http.put<Item>(`/smart/${enc(id)}`, body),
   },
 
   playback: {

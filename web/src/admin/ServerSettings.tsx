@@ -17,7 +17,7 @@ const HW: { value: HwAccel; label: string }[] = [
   { value: 'videotoolbox', label: 'Apple VideoToolbox' },
   { value: 'v4l2m2m', label: 'V4L2 M2M (Raspberry Pi / ARM)' },
 ];
-const EVENTS: WebhookEvent[] = ['playback.start', 'playback.pause', 'playback.resume', 'playback.stop', 'playback.scrobble', 'library.new', 'user.login', 'recording.completed', 'recording.failed'];
+const EVENTS: WebhookEvent[] = ['playback.start', 'playback.pause', 'playback.resume', 'playback.stop', 'playback.scrobble', 'library.new', 'user.login', 'recording.completed', 'recording.failed', 'request.created', 'request.available'];
 const TRICKPLAY_DEFAULTS: ServerSettings['trickplay'] = { enabled: false, intervalSeconds: 10, width: 320 };
 const OPENSUBS_DEFAULTS: ServerSettings['openSubtitles'] = { apiKey: null, username: null, password: null, autoLanguages: [] };
 const TRAKT_DEFAULTS: ServerSettings['trakt'] = { clientId: null, clientSecret: null };
