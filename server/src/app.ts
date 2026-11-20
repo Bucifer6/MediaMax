@@ -29,14 +29,49 @@ import metadataRoutes from './routes/metadata.js';
 
 const log = logger('http');
 
+/**
+ * Content-Security-Policy of the web app (index.html). Scripts only from our origin (+ the Google Cast sender SDK),
+ * no inline script or eval; WebAssembly (libass subtitles, AI stems) and blob: workers (hls.js, mpegts.js) allowed.
+ * Styles may be inline (React style props) and web fonts (a theme's font URL, any https host). Images/media may come from anywhere (admin-set
+ * logos, LAN picons). Frames: plugin pages (same origin) and trailers. ws/wss for this host are listed explicitly
+ * because older TV browsers don't treat 'self' as covering WebSockets; child-src is the CSP2 fallback for workers.
+ */
+export function webAppCsp(host?: string): string {
+  const h = host && /^[\w.:[\]-]+$/.test(host) ? host : null;
+  return [
+    "default-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com",
+    "worker-src 'self' blob:",
+    "child-src 'self' blob: https:",
+    "frame-src 'self' https:",
+    "style-src 'self' 'unsafe-inline' https:",
+    "font-src 'self' data: https:",
+    "img-src 'self' data: blob: https: http:",
+    "media-src 'self' data: blob: https: http:",
+    `connect-src 'self'${h ? ` ws://${h} wss://${h}` : ''} https://www.gstatic.com`,
+    "manifest-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+  ].join('; ');
+}
+
+/** Every registered route (method + path), for the route-table auth test. */
+export const routeTable: { method: string; url: string }[] = [];
+
 export async function buildApp(): Promise<FastifyInstance> {
   // Only honour X-Forwarded-* from trusted proxies (default: loopback/private networks), so internet clients can't
   // spoof their address. Admin → Network changes the list live; MEDIAMAX_TRUSTED_PROXIES overrides it.
   initNetwork();
   const app = Fastify({ logger: false, trustProxy, bodyLimit: 50 * 1024 * 1024, routerOptions: { maxParamLength: 500 } });
+  app.addHook('onRoute', (r) => {
+    for (const m of [r.method].flat()) routeTable.push({ method: m, url: r.url });
+  });
   await app.register(cors, { origin: true, credentials: true, exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'] });
   await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
-  await app.register(websocket);
+  // Client messages are small JSON events (remote control, SyncPlay): don't buffer ws's 100 MiB default per message.
+  await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
 
   // Accept an empty body on JSON requests (many clients send Content-Type on bodiless POSTs).
   app.removeContentTypeParser('application/json');
@@ -122,7 +157,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       if (rel.startsWith('/assets/')) return reply.status(404).send('Not found');
       const index = path.join(config.webDir, 'index.html');
       if (!fs.existsSync(index)) return reply.status(503).send('Web client is being rebuilt, try again in a moment');
-      return reply.type('text/html').header('Cache-Control', 'no-cache').send(fs.readFileSync(index, 'utf8'));
+      return reply.type('text/html').header('Cache-Control', 'no-cache').header('Content-Security-Policy', webAppCsp(req.host)).send(fs.readFileSync(index, 'utf8'));
     });
   } else {
     app.get('/', async (_req, reply) => reply.type('text/html').send('<h1>MediaMax server is running</h1><p>The web client has not been built. Run <code>npm run build</code>.</p>'));

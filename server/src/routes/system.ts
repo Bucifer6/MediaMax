@@ -129,7 +129,11 @@ export default async function systemRoutes(app: FastifyInstance) {
     backup.deleteBackup(req.params.id);
     return { ok: true };
   });
-  app.post<{ Params: { id: string } }>('/admin/backups/:id/restore', async (req) => backup.stageRestore(fs.readFileSync(backup.backupPath(req.params.id)), requireAdmin(req).user));
+  app.post<{ Params: { id: string } }>('/admin/backups/:id/restore', async (req) => {
+    // Authorise before touching the file: no existence oracle, and no reading a multi-GB backup for anonymous callers.
+    const a = requireAdmin(req);
+    return backup.stageRestore(fs.readFileSync(backup.backupPath(req.params.id)), a.user);
+  });
   app.post('/admin/backups/restore-upload', async (req) => {
     const a = requireAdmin(req);
     const file = await req.file({ limits: { fileSize: 4 * 1024 * 1024 * 1024 } });

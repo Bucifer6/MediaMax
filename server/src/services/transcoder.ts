@@ -107,7 +107,15 @@ export interface BuildContext {
   segmentType?: SegmentType;
 }
 
-const escapeFilterPath = (p: string) => p.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'").replace(/,/g, '\\,').replace(/\[/g, '\\[').replace(/\]/g, '\\]');
+/**
+ * A file name as a filter option value inside a filtergraph (e.g. `subtitles=<this>`). ffmpeg unescapes twice: first
+ * the filtergraph (\ ' [ ] , ;), then the option value (\ ' :), so both levels are escaped, in that order reversed.
+ * Quoting with '…' is not enough: a ' in a (downloaded) file name would end the quote. Windows paths use / instead of \.
+ */
+export function escapeFilterPath(p: string, win = process.platform === 'win32'): string {
+  const value = (win ? p.replace(/\\/g, '/') : p).replace(/[\\':]/g, '\\$&');
+  return value.replace(/[\\'[\],;]/g, '\\$&');
+}
 const normCodec = (c: string | null) => (c ?? '').toLowerCase().replace('h265', 'hevc').replace('avc', 'h264');
 
 export function targetHeight(bitrate: number, sourceHeight: number | null, maxHeight: number | null): number | null {
@@ -190,8 +198,8 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
   const h = targetHeight(o.bitrate, o.sourceHeight, o.maxHeight);
   const overlay = o.burnSubtitle?.kind === 'embedded-image' && o.burnSubtitle.streamIndex != null;
   const swFilters: string[] = [];
-  if (o.burnSubtitle?.kind === 'external' && o.burnSubtitle.file) swFilters.push(`subtitles='${escapeFilterPath(o.burnSubtitle.file)}'`);
-  if (o.burnSubtitle?.kind === 'embedded-text' && o.burnSubtitle.relIndex != null) swFilters.push(`subtitles='${escapeFilterPath(o.input)}':si=${o.burnSubtitle.relIndex}`);
+  if (o.burnSubtitle?.kind === 'external' && o.burnSubtitle.file) swFilters.push(`subtitles=${escapeFilterPath(o.burnSubtitle.file)}`);
+  if (o.burnSubtitle?.kind === 'embedded-text' && o.burnSubtitle.relIndex != null) swFilters.push(`subtitles=${escapeFilterPath(o.input)}:si=${o.burnSubtitle.relIndex}`);
   let pipeline: VideoPipeline | null = null;
   if (encodeVideo) {
     const wantToneMap = shouldToneMap(o, s.toneMapHdr);

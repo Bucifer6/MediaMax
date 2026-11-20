@@ -4,7 +4,7 @@ import { config } from '../config.js';
 import { nowIso, parseJson, sleep } from '../util/misc.js';
 import { logger } from '../util/log.js';
 import { badRequest, HttpError } from '../util/errors.js';
-import { assertPublicUrl } from '../util/net.js';
+import { assertPublicUrl, safeFetch } from '../util/net.js';
 import { bus } from './events.js';
 import { SECRET_MASK } from './settings.js';
 import { baseUrl, norm, userAgent } from './metadata/http.js';
@@ -45,7 +45,17 @@ const limits = new Map<string, { remaining: number; resetAt: number }>();
 let maxInlineWaitMs = 10_000;
 export const setLbMaxInlineWait = (ms: number) => (maxInlineWaitMs = ms);
 
-export async function lbFetch<T = any>(a: { token: string | null; server_url: string | null }, path: string, init: { method?: 'GET' | 'POST'; body?: unknown } = {}): Promise<{ status: number; data: T | null }> {
+/**
+ * A self-hosted server URL set by someone who isn't an administrator is untrusted: every request goes through the
+ * SSRF guard (redirects and DNS answers included), not only the check when the URL is saved.
+ */
+function untrustedServer(a: { server_url: string | null; user_id?: string }): boolean {
+  if (!a.server_url) return false;
+  const owner = a.user_id ? db.get<{ is_admin: number }>('SELECT is_admin FROM users WHERE id = ?', a.user_id) : null;
+  return !owner?.is_admin;
+}
+
+export async function lbFetch<T = any>(a: { token: string | null; server_url: string | null; user_id?: string }, path: string, init: { method?: 'GET' | 'POST'; body?: unknown } = {}): Promise<{ status: number; data: T | null }> {
   const base = apiBase(a);
   const lim = limits.get(base);
   if (lim && lim.remaining <= 0 && lim.resetAt > Date.now()) {
@@ -55,7 +65,7 @@ export async function lbFetch<T = any>(a: { token: string | null; server_url: st
   }
   let res: Response;
   try {
-    res = await fetch(base + path, {
+    res = await (untrustedServer(a) ? safeFetch : fetch)(base + path, {
       method: init.method ?? 'GET',
       headers: { 'User-Agent': userAgent(), Accept: 'application/json', ...(a.token ? { Authorization: `Token ${a.token}` } : {}), ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
@@ -121,7 +131,7 @@ export async function lbConnect(user: User, body: ListenBrainzUpdate): Promise<L
   if (tokenChanged) {
     let r;
     try {
-      r = await lbFetch<{ valid: boolean; user_name?: string; message?: string }>({ token, server_url: serverUrl }, `/1/validate-token`);
+      r = await lbFetch<{ valid: boolean; user_name?: string; message?: string }>({ token, server_url: serverUrl, user_id: user.id }, `/1/validate-token`);
     } catch (e) {
       throw new HttpError(502, (e as Error).message, 'listenbrainz_unreachable');
     }

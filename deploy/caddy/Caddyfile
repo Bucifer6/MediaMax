@@ -92,8 +92,9 @@
 		# (MEDIAMAX_TRUSTED_PROXIES in docker-compose.yml).
 	}
 
-	# JSON access log, read by CrowdSec (type: caddy). Tokens, API keys and Subsonic credentials in query
-	# strings are redacted; Authorization and Cookie headers are redacted by Caddy by default.
+	# JSON access log, read by CrowdSec (type: caddy). Tokens, API keys (api_key, OpenSubsonic apiKey), device-link
+	# poll tokens and Subsonic credentials in query strings are redacted; Authorization and Cookie headers are
+	# redacted by Caddy by default, MediaMax's own X-Api-Key / X-MediaMax-Token headers are dropped here.
 	log {
 		output file /var/log/caddy/access.log {
 			roll_size 50MiB
@@ -103,10 +104,14 @@
 			request>uri query {
 				replace token REDACTED
 				replace api_key REDACTED
+				replace apiKey REDACTED
+				replace pollToken REDACTED
 				replace p REDACTED
 				replace t REDACTED
 				replace s REDACTED
 			}
+			request>headers>X-Api-Key delete
+			request>headers>X-Mediamax-Token delete
 			wrap json
 		}
 	}

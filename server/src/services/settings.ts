@@ -158,11 +158,21 @@ export function getSettings(): ServerSettings {
 
 export const SECRET_MASK = '••••';
 
-/** Settings as sent to the admin UI: AI service keys are write-only. */
+/** Other write-only secrets: [section, key] (section null = top level). Sent masked, a masked value back keeps them. */
+const SECRET_FIELDS: [keyof ServerSettings | null, string][] = [
+  [null, 'tmdbApiKey'], ['openSubtitles', 'apiKey'], ['openSubtitles', 'password'], ['trakt', 'clientSecret'], ['lastfm', 'sharedSecret'], ['oidc', 'clientSecret'],
+];
+
+/** Settings as sent to the admin UI: service keys, passwords and client secrets are write-only. */
 export function publicSettings(s: ServerSettings = getSettings()): ServerSettings {
   const maskSvc = (v: ArrService | null) => (v ? { ...v, apiKey: v.apiKey ? SECRET_MASK : '' } : v);
+  const masked: Record<string, any> = { ...s };
+  for (const [sec, key] of SECRET_FIELDS) {
+    if (sec === null) masked[key] = masked[key] ? SECRET_MASK : masked[key];
+    else if (masked[sec]?.[key]) masked[sec] = { ...masked[sec], [key]: SECRET_MASK };
+  }
   return {
-    ...s,
+    ...(masked as ServerSettings),
     requests: { ...s.requests, radarr: maskSvc(s.requests.radarr), sonarr: maskSvc(s.requests.sonarr) },
     arr: s.arr.map((a) => ({ ...a, apiKey: a.apiKey ? SECRET_MASK : '' })),
     notificationAgents: maskAgents(s.notificationAgents),
@@ -175,6 +185,14 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
   // The masked placeholder means "keep the stored key".
   if (patch.aiDj?.llm?.apiKey === SECRET_MASK) patch = { ...patch, aiDj: { ...patch.aiDj, llm: { ...patch.aiDj.llm, apiKey: cur.aiDj.llm.apiKey } } };
   if (patch.aiDj?.tts?.apiKey === SECRET_MASK) patch = { ...patch, aiDj: { ...patch.aiDj!, tts: { ...patch.aiDj!.tts!, apiKey: cur.aiDj.tts.apiKey } } };
+  for (const [sec, key] of SECRET_FIELDS) {
+    const p = patch as Record<string, any>;
+    if (sec === null) {
+      if (p[key] === SECRET_MASK) patch = { ...patch, [key]: (cur as Record<string, any>)[key] };
+    } else if (p[sec]?.[key] === SECRET_MASK) {
+      patch = { ...patch, [sec]: { ...p[sec], [key]: (cur as Record<string, any>)[sec]?.[key] ?? null } };
+    }
+  }
   for (const k of ['radarr', 'sonarr'] as const) {
     const svc = patch.requests?.[k];
     if (svc && svc.apiKey === SECRET_MASK) patch = { ...patch, requests: { ...patch.requests!, [k]: { ...svc, apiKey: cur.requests[k]?.apiKey ?? '' } } };

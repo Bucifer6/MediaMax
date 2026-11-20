@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { DownloadQuality, PlaybackRequest, ProgressReport } from '@mediamax/shared';
 import { db } from '../db.js';
 import { requireAdmin, requireUser, remoteAddr } from '../http.js';
-import { transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, subtitleVtt, touchSession } from '../services/playback.js';
+import { assertRemoteAllowed, transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, subtitleVtt, touchSession } from '../services/playback.js';
 import { assertCanSee } from '../services/items.js';
 import { liveJobBySession } from '../services/livetv/livetv.js';
 import { badRequest, forbidden, notFound, HttpError } from '../util/errors.js';
@@ -153,6 +153,7 @@ export default async function playbackRoutes(app: FastifyInstance) {
   /* ------------------------------ streams --------------------------- */
   app.get<{ Params: { mediaId: string }; Querystring: { session?: string } }>('/stream/direct/:mediaId', async (req, reply) => {
     const { user } = requireUser(req);
+    assertRemoteAllowed(user, remoteAddr(req));
     const m = db.get('SELECT * FROM media WHERE id = ?', req.params.mediaId);
     if (!m) throw notFound('Media not found');
     assertCanSee(user, m.item_id);
@@ -238,6 +239,7 @@ export default async function playbackRoutes(app: FastifyInstance) {
   app.get<{ Params: { itemId: string }; Querystring: { mediaId?: string; quality?: DownloadQuality } }>('/stream/download/:itemId', async (req, reply) => {
     const { user } = requireUser(req);
     if (!user.allowDownloads && !user.isAdmin) throw forbidden('Downloads are not enabled for your account');
+    assertRemoteAllowed(user, remoteAddr(req));
     const item = assertCanSee(user, req.params.itemId);
     const m = req.query.mediaId ? db.get('SELECT * FROM media WHERE id = ? AND item_id = ?', req.query.mediaId, item.id) : db.get('SELECT * FROM media WHERE item_id = ? ORDER BY COALESCE(width,0) DESC LIMIT 1', item.id);
     if (!m) throw notFound('No media to download');

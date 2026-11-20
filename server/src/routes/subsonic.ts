@@ -9,6 +9,7 @@ import { config } from '../config.js';
 import { authenticateApiKey, getUser, verifySecret } from '../services/auth.js';
 import { getItem, getChildren, queryItems, searchItems, setFavorite, reportProgress, allowedLibraryIds, addToContainer, createContainer, removeFromContainer, listContainers } from '../services/items.js';
 import { resolveImage } from '../services/images.js';
+import { isLocalAddress } from '../services/dlna.js';
 import { getLyrics } from '../services/lyrics.js';
 import { creditsFor } from '../services/music/credits.js';
 import { dispatchListen, dispatchNowPlaying } from '../services/scrobble.js';
@@ -363,6 +364,7 @@ export default async function subsonicRoutes(app: FastifyInstance) {
 
   // Binary endpoints
   const stream = async (req: FastifyRequest, reply: FastifyReply, u: User) => {
+    if (!u.allowRemote && !u.isAdmin && req.ip && !isLocalAddress(req.ip)) throw new SubsonicError(50, 'Your account can only stream on the home network');
     const t = ensureType(u, param(req, 'id'), 'track');
     const m = db.get('SELECT * FROM media WHERE item_id = ? LIMIT 1', t.id);
     if (!m?.path || !fs.existsSync(m.path)) throw new SubsonicError(70, 'File not found');

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type {
-  ActiveSession, AudioComforts, AudioStream, DeviceProfile, MediaSource, PlayMethod, PlaybackInfo, PlaybackRequest, SubtitleStream, SubtitleTrack, Marker,
+  ActiveSession, AudioComforts, AudioStream, DeviceProfile, MediaSource, PlayMethod, PlaybackInfo, PlaybackRequest, SubtitleStream, SubtitleTrack, Marker, User,
 } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { config } from '../config.js';
@@ -98,11 +98,19 @@ export function broadcastSessions() {
  * Per-user limits: remote streaming permission and max simultaneous streams.
  * A new session on the same device replaces the old one, so it doesn't count against the limit.
  */
-export function assertCanStartSession(ctx: AuthContext, remoteAddr: string | null, multiview = false) {
-  const u = ctx.user;
+/**
+ * "Allow remote streaming" off: media bytes (direct streams, downloads, Subsonic, karaoke mixes, live TV) are only
+ * served to the home network, not just new playback sessions.
+ */
+export function assertRemoteAllowed(u: Pick<User, 'allowRemote' | 'isAdmin'>, remoteAddr: string | null | undefined) {
   if (!u.allowRemote && !u.isAdmin && remoteAddr && !isLocalAddress(remoteAddr)) {
     throw new HttpError(403, 'Your account can only stream on the home network', 'remote_not_allowed');
   }
+}
+
+export function assertCanStartSession(ctx: AuthContext, remoteAddr: string | null, multiview = false) {
+  const u = ctx.user;
+  assertRemoteAllowed(u, remoteAddr);
   if (u.maxStreams && !u.isAdmin) {
     // Other devices count; on this device only multiview tiles that will keep running alongside the new one count.
     // The limit is per account: the owner and all of its profiles share it.

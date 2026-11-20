@@ -5,7 +5,7 @@ import { db } from '../db.js';
 import { requireAdmin, requireUser, remoteAddr } from '../http.js';
 import * as live from '../services/livetv/livetv.js';
 import * as dvr from '../services/dvr.js';
-import { touchSession, getSession } from '../services/playback.js';
+import { assertRemoteAllowed, touchSession, getSession } from '../services/playback.js';
 import { forbidden, notFound } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
 import { getSettings } from '../services/settings.js';
@@ -94,6 +94,7 @@ export default async function liveRoutes(app: FastifyInstance) {
   /** Raw MPEG-TS restream through the server (hides provider credentials). */
   app.get<{ Params: { channelId: string }; Querystring: { session?: string; catchupStart?: string; duration?: string } }>('/livetv/stream/:channelId', async (req, reply) => {
     const a = requireUser(req);
+    assertRemoteAllowed(a.user, remoteAddr(req));
     const r = live.accessibleChannelRow(a.user, req.params.channelId);
     if (req.query.session) {
       const s = getSession(req.query.session);

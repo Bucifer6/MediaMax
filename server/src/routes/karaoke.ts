@@ -29,6 +29,7 @@ import { ortRuntime } from '../services/ortRuntime.js';
 import { createStemStore, findOrtDir, mixLevel, ortVersion, STEM_NAMES, STEM_RATE, type StemStore } from '../services/stems.js';
 import { getSettings } from '../services/settings.js';
 import { sendFileRange } from './playback.js';
+import { assertRemoteAllowed } from '../services/playback.js';
 import { spawn } from 'node:child_process';
 import { db } from '../db.js';
 import { config } from '../config.js';
@@ -171,11 +172,13 @@ export default async function karaokeRoutes(app: FastifyInstance) {
   });
   app.get<{ Params: { id: string; stem: string } }>('/items/:id/stems/:stem', async (req, reply) => {
     const { user } = requireUser(req);
+    assertRemoteAllowed(user, req.ip);
     assertCanSee(user, req.params.id);
     return sendFileRange(req, reply, stemStore().stemFile(req.params.id, req.params.stem), 'audio/flac');
   });
   app.get<{ Params: { id: string }; Querystring: { vocals?: string; inst?: string } }>('/items/:id/karaoke.mp3', async (req, reply) => {
     const { user } = requireUser(req);
+    assertRemoteAllowed(user, req.ip);
     assertCanSee(user, req.params.id);
     const file = await stemStore().mix(req.params.id, mixLevel(req.query.vocals, 15), mixLevel(req.query.inst, 100));
     return sendFileRange(req, reply, file, 'audio/mpeg');
