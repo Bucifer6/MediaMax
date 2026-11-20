@@ -2637,3 +2637,90 @@ export interface NetworkStatus {
     certificate: { ok: boolean; error: string | null; validTo: string | null; daysLeft: number | null; issuer: string | null } | null;
   };
 }
+
+/* ------------------------------------------------------------------ */
+/* HDR / Dolby Vision & client video-range capabilities               */
+/* (interfaces below extend DeviceProfile, MediaSource, PlaybackInfo   */
+/*  through declaration merging, so this block stays append-only)      */
+/* ------------------------------------------------------------------ */
+
+/** Dynamic range of a video stream. `hdr10plus` and `dolbyvision` usually carry an HDR10 (or HLG/SDR) fallback. */
+export type HdrFormat = 'sdr' | 'hdr10' | 'hdr10plus' | 'hlg' | 'dolbyvision';
+
+/** Dolby Vision configuration record (from ffprobe's "DOVI configuration record" side data). */
+export interface DolbyVisionInfo {
+  /** 4, 5, 7, 8, 9, 10 … */
+  profile: number;
+  level: number | null;
+  /**
+   * Base-layer signal compatibility id: 0 = none (profile 5, IPTPQc2 — not watchable without DV),
+   * 1 = HDR10, 2 = SDR, 4 = HLG, 6 = Blu-ray HDR10 (profile 7). Profile 8.1/8.2/8.4 = compat 1/2/4.
+   */
+  blCompatId: number | null;
+  rpu: boolean;
+  /** Enhancement layer present (profile 7 dual-layer: MEL/FEL). */
+  el: boolean;
+  bl: boolean;
+}
+
+export interface VideoRangeInfo {
+  hdrFormat: HdrFormat;
+  /** What a non-DV / non-HDR10+ player sees: the HDR10/HLG/SDR base layer, or `none` (DV profile 5). */
+  fallback: 'hdr10' | 'hlg' | 'sdr' | 'none' | null;
+  /** Label for UIs, e.g. "Dolby Vision 8.1", "HDR10+", "HLG". */
+  label: string;
+  bitDepth: number | null;
+  pixFmt: string | null;
+  /** Codec profile as ffprobe reports it, e.g. "Main 10". */
+  codecProfile: string | null;
+  colorTransfer: string | null;
+  colorPrimaries: string | null;
+  colorSpace: string | null;
+  frameRate: number | null;
+  dolbyVision: DolbyVisionInfo | null;
+  /** SMPTE ST 2086 mastering display: luminance in cd/m². */
+  masteringDisplay: { minLuminance: number | null; maxLuminance: number | null } | null;
+  /** MaxCLL / MaxFALL in cd/m². */
+  contentLight: { maxCll: number; maxFall: number } | null;
+}
+
+/** What the client can decode *and* display correctly (it may tone-map itself — that counts as supported). */
+export interface VideoRangeCapabilities {
+  hdr10?: boolean;
+  hdr10Plus?: boolean;
+  hlg?: boolean;
+  dolbyVision?: boolean;
+  /** Dolby Vision profiles the client plays, e.g. ["5", "8.1", "8.4"]; "7" only for dual-layer capable players. */
+  dolbyVisionProfiles?: string[];
+  /** The attached display itself is HDR (informational; `hdr10` etc. are what decisions use). */
+  hdrDisplay?: boolean;
+}
+
+export interface DeviceProfile {
+  /** HDR support. Omitted = legacy client: MediaMax keeps its old behaviour (no range-based decisions). */
+  videoRange?: VideoRangeCapabilities;
+  maxHeight?: number | null;
+  /** Video codecs the client decodes at 10-bit, e.g. ["hevc","av1","vp9"]. */
+  tenBitCodecs?: string[];
+  /** Audio formats passed through to an AV receiver (bitstream), e.g. ["ac3","eac3","eac3-joc","truehd","dts","dts-hd"]. */
+  audioPassthrough?: string[];
+  /** The player switches embedded audio tracks itself (Tizen AVPlay, ExoPlayer, AVPlayer), so a non-default track doesn't force a remux. */
+  canSelectAudioTrack?: boolean;
+  /** Which player backend sent this profile: "html5", "avplay", "webos", "exoplayer", "avplayer". */
+  player?: string;
+}
+
+export interface MediaSource {
+  /** HDR format details (null for SDR or media scanned before HDR detection). */
+  videoRange?: VideoRangeInfo | null;
+}
+
+/** How the server delivers the video's dynamic range to this client. */
+export type VideoRangeDelivery = 'sdr' | 'passthrough' | 'base-layer' | 'strip-dovi' | 'tonemap';
+
+export interface PlaybackInfo {
+  /** Why the server remuxes or transcodes (empty for direct play). */
+  reasons?: string[];
+  /** Source range and how it reaches the client (`base-layer`: DV/HDR10+ played as HDR10; `tonemap`: HDR → SDR). */
+  videoRange?: { source: HdrFormat; label: string; delivery: VideoRangeDelivery } | null;
+}

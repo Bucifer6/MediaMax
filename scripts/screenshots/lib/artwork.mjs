@@ -116,60 +116,150 @@ function scene(style, pal, w, h, seed, opts = {}) {
   const r = rng(seed);
   const [c0, c1, ac, lt] = pal;
   const focusX = opts.focusX ?? 0.5;
+  const motif = opts.motif ?? null;
+  const P = !!opts.poster;
+  const u = Math.min(w, h) / 800; // unit scale
   const id = 's' + Math.floor(r() * 1e9);
-  let defs = '';
+  let defs = `<filter id="${id}bl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="${f(8 * u)}"/></filter><filter id="${id}bl2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="${f(30 * u)}"/></filter>`;
   let body = '';
+  const fx = w * focusX;
   switch (style) {
     case 'scifi': {
-      const sunR = Math.min(w, h) * (opts.poster ? 0.33 : 0.3);
-      const sx = w * focusX;
-      const sy = h * (opts.poster ? 0.42 : 0.5);
-      const horizon = h * (opts.poster ? 0.62 : 0.68);
+      const sunR = Math.min(w, h) * (P ? 0.33 : 0.3);
+      const sy = h * (P ? 0.42 : 0.48);
+      const horizon = h * (P ? 0.64 : 0.7);
       defs += `<linearGradient id="${id}sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c0}"/><stop offset="0.65" stop-color="${c1}"/><stop offset="1" stop-color="${c0}"/></linearGradient>
         <linearGradient id="${id}sun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${lt}"/><stop offset="0.55" stop-color="${ac}"/><stop offset="1" stop-color="${c1}"/></linearGradient>
-        <filter id="${id}glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="${f(sunR * 0.18)}"/></filter>
-        <filter id="${id}lg"><feGaussianBlur stdDeviation="2.4"/></filter>
-        <mask id="${id}m"><rect width="${w}" height="${h}" fill="#fff"/>${Array.from({ length: 7 }, (_, i) => `<rect x="0" y="${f(sy + sunR * (0.12 + i * 0.13))}" width="${w}" height="${f(2 + i * 2.6)}" fill="#000"/>`).join('')}</mask>`;
-      body += `<rect width="${w}" height="${h}" fill="url(#${id}sky)"/>${stars(r, w, h, 160, 0.6)}`;
-      body += `<circle cx="${f(sx)}" cy="${f(sy)}" r="${f(sunR * 1.25)}" fill="${ac}" opacity="0.45" filter="url(#${id}glow)"/>`;
-      body += `<circle cx="${f(sx)}" cy="${f(sy)}" r="${f(sunR)}" fill="url(#${id}sun)" mask="url(#${id}m)"/>`;
-      body += skyline(r, w, h, horizon, c0, h * 0.2, lt);
-      // perspective grid
-      let g = '';
-      for (let i = -24; i <= 24; i++) g += `<line x1="${f(sx + i * w * 0.012)}" y1="${f(horizon)}" x2="${f(sx + i * w * 0.14)}" y2="${h}" stroke="${lt}" stroke-width="1.6"/>`;
-      for (let i = 1; i < 14; i++) {
-        const y = horizon + (h - horizon) * Math.pow(i / 13, 2.1);
-        g += `<line x1="0" y1="${f(y)}" x2="${w}" y2="${f(y)}" stroke="${lt}" stroke-width="1.6"/>`;
+        <mask id="${id}m"><rect width="${w}" height="${h}" fill="#fff"/>${Array.from({ length: 7 }, (_, i) => `<rect x="0" y="${f(sy + sunR * (0.12 + i * 0.13))}" width="${w}" height="${f((2 + i * 2.6) * u)}" fill="#000"/>`).join('')}</mask>`;
+      body += `<rect width="${w}" height="${h}" fill="url(#${id}sky)"/>${stars(r, w, h, 180, 0.7)}`;
+      const glowSun = (x, y, R, striped = true) => `<circle cx="${f(x)}" cy="${f(y)}" r="${f(R * 1.25)}" fill="${ac}" opacity="0.45" filter="url(#${id}bl2)"/><circle cx="${f(x)}" cy="${f(y)}" r="${f(R)}" fill="url(#${id}sun)" ${striped ? `mask="url(#${id}m)"` : ''}/>`;
+      if (motif === 'lighthouse') {
+        // ringed planet, ice field, lighthouse with a sweeping beam
+        const px = w * (focusX > 0.5 ? 0.72 : 0.3);
+        body += glowSun(px, sy * 0.8, sunR * 0.8, false);
+        body += `<ellipse cx="${f(px)}" cy="${f(sy * 0.8)}" rx="${f(sunR * 1.5)}" ry="${f(sunR * 0.28)}" fill="none" stroke="${lt}" stroke-width="${f(6 * u)}" opacity="0.7" transform="rotate(-14 ${f(px)} ${f(sy * 0.8)})"/>`;
+        for (let i = 0; i < 3; i++) body += `<path d="${ridge(r, w, h, horizon + i * h * 0.07, h * 0.06, 7 + i * 3, false)}" fill="${mix(lt, c1, 0.55 + i * 0.18)}"/>`;
+        const lx = w * (focusX > 0.5 ? 0.3 : 0.72);
+        const top = horizon - h * 0.28;
+        body += `<path d="M${f(lx)} ${f(top)} L${f(lx + w * 0.08)} ${f(top - h * 0.12)} L${f(lx + w * 0.55)} ${f(top - h * 0.22)} L${f(lx + w * 0.55)} ${f(top + h * 0.1)} Z" fill="${lt}" opacity="0.18" filter="url(#${id}bl)"/>`;
+        body += `<g fill="${c0}"><path d="M${f(lx - 28 * u)} ${f(horizon + 8 * u)} L${f(lx - 16 * u)} ${f(top + 30 * u)} L${f(lx + 16 * u)} ${f(top + 30 * u)} L${f(lx + 28 * u)} ${f(horizon + 8 * u)} Z"/><rect x="${f(lx - 22 * u)}" y="${f(top + 12 * u)}" width="${f(44 * u)}" height="${f(20 * u)}"/><path d="M${f(lx - 18 * u)} ${f(top + 12 * u)} L${f(lx)} ${f(top - 10 * u)} L${f(lx + 18 * u)} ${f(top + 12 * u)} Z"/></g><rect x="${f(lx - 14 * u)}" y="${f(top + 14 * u)}" width="${f(28 * u)}" height="${f(14 * u)}" fill="${ac}"/><circle cx="${f(lx)}" cy="${f(top + 21 * u)}" r="${f(30 * u)}" fill="${ac}" opacity="0.6" filter="url(#${id}bl)"/>`;
+      } else if (motif === 'dish') {
+        body += glowSun(fx, sy, sunR, true);
+        body += `<rect x="0" y="${f(horizon)}" width="${w}" height="${f(h - horizon)}" fill="${c0}"/>`;
+        for (let i = 0; i < 50; i++) body += `<rect x="${f(fx + r.range(-0.3, 0.3) * w)}" y="${f(horizon + r() * (h - horizon))}" width="${f(r.range(20, 120) * u)}" height="${f(2 * u)}" fill="${ac}" opacity="${f(r.range(0.15, 0.5))}"/>`;
+        const dx = w * (focusX > 0.5 ? 0.24 : 0.76);
+        body += `<path d="M${f(dx - w * 0.25)} ${f(horizon + 2)} Q${f(dx)} ${f(horizon - h * 0.08)} ${f(dx + w * 0.25)} ${f(horizon + 2)} Z" fill="${c0}"/>`;
+        const ds = 1.4 * u;
+        body += `<g transform="translate(${f(dx)} ${f(horizon - h * 0.05)}) scale(${f(ds)})" fill="${c0}"><path d="M-6 0 L6 0 L14 -60 L-14 -60 Z"/><path d="M-80 -110 Q0 -20 80 -150 Z" transform="rotate(-10)"/><line x1="0" y1="-120" x2="20" y2="-160" stroke="${c0}" stroke-width="5"/></g>`;
+        for (let i = 1; i <= 4; i++) body += `<path d="M${f(dx + 40 * u + i * 30 * u)} ${f(horizon - h * 0.2 - i * 30 * u)} a${f(i * 50 * u)} ${f(i * 50 * u)} 0 0 1 ${f(i * 20 * u)} ${f(i * 60 * u)}" stroke="${lt}" stroke-width="${f(3 * u)}" fill="none" opacity="${f(0.8 - i * 0.15)}"/>`;
+      } else if (motif === 'orbit' || motif === 'ship') {
+        const pr = Math.max(w, h) * 0.9;
+        const pcy = h + pr * 0.72;
+        defs += `<radialGradient id="${id}pl" cx="0.5" cy="0.2" r="0.6"><stop offset="0" stop-color="${ac}"/><stop offset="0.4" stop-color="${c1}"/><stop offset="1" stop-color="${c0}"/></radialGradient>`;
+        body += `<circle cx="${f(w / 2)}" cy="${f(pcy)}" r="${f(pr * 1.02)}" fill="${lt}" opacity="0.5" filter="url(#${id}bl2)"/><circle cx="${f(w / 2)}" cy="${f(pcy)}" r="${f(pr)}" fill="url(#${id}pl)"/>`;
+        for (let i = 0; i < 6; i++) body += `<ellipse cx="${f(w / 2)}" cy="${f(pcy)}" rx="${f(pr * (0.98 - i * 0.04))}" ry="${f(pr * (0.98 - i * 0.04))}" fill="none" stroke="${lt}" stroke-width="${f(2 * u)}" opacity="0.08"/>`;
+        if (motif === 'orbit') {
+          body += `<ellipse cx="${f(fx)}" cy="${f(h * 0.4)}" rx="${f(w * 0.4)}" ry="${f(h * 0.12)}" fill="none" stroke="${lt}" stroke-width="${f(3 * u)}" stroke-dasharray="${f(10 * u)} ${f(10 * u)}" opacity="0.7" transform="rotate(-12 ${f(fx)} ${f(h * 0.4)})"/>`;
+          body += `<ellipse cx="${f(fx)}" cy="${f(h * 0.4)}" rx="${f(w * 0.4)}" ry="${f(h * 0.12)}" fill="none" stroke="${ac}" stroke-width="${f(3 * u)}" stroke-dasharray="${f(10 * u)} ${f(10 * u)}" opacity="0.7" transform="rotate(12 ${f(fx)} ${f(h * 0.4)})"/>`;
+          const st = (x, y) => `<g transform="translate(${f(x)} ${f(y)}) scale(${f(u)})"><rect x="-60" y="-6" width="120" height="12" fill="${lt}"/><rect x="-100" y="-26" width="40" height="52" fill="${c1}" stroke="${lt}" stroke-width="3"/><rect x="60" y="-26" width="40" height="52" fill="${c1}" stroke="${lt}" stroke-width="3"/><circle r="22" fill="${lt}"/><circle r="10" fill="${ac}"/></g>`;
+          body += st(fx - w * 0.36, h * 0.36) + st(fx + w * 0.36, h * 0.36);
+          body += `<circle cx="${f(fx)}" cy="${f(h * 0.4)}" r="${f(60 * u)}" fill="${ac}" opacity="0.6" filter="url(#${id}bl2)"/>`;
+        } else {
+          // colony ship crossing the sky
+          const sx = fx;
+          const sy2 = h * 0.36;
+          const L = w * (P ? 0.9 : 0.6);
+          body += `<g transform="translate(${f(sx)} ${f(sy2)}) rotate(-8)"><path d="M${f(-L / 2)} 0 L${f(-L / 2 + 40 * u)} ${f(-26 * u)} L${f(L / 2 - 80 * u)} ${f(-30 * u)} L${f(L / 2)} 0 L${f(L / 2 - 80 * u)} ${f(30 * u)} L${f(-L / 2 + 40 * u)} ${f(26 * u)} Z" fill="${c0}" stroke="${lt}" stroke-opacity="0.35" stroke-width="${f(2 * u)}"/>${Array.from({ length: 22 }, (_, i) => `<rect x="${f(-L / 2 + 60 * u + i * (L - 160 * u) / 22)}" y="${f(-4 * u)}" width="${f(6 * u)}" height="${f(4 * u)}" fill="${ac}"/>`).join('')}<circle cx="${f(-L / 2)}" cy="0" r="${f(26 * u)}" fill="${ac}" filter="url(#${id}bl)"/><rect x="${f(-L / 2 - 80 * u)}" y="${f(-4 * u)}" width="${f(80 * u)}" height="${f(8 * u)}" fill="${ac}" opacity="0.6" filter="url(#${id}bl)"/></g>`;
+        }
+      } else {
+        // neon city with a spire
+        body += glowSun(fx, sy, sunR, true);
+        body += skyline(r, w, h, horizon, c0, h * 0.18, lt);
+        if (motif === 'spire') body += `<path d="M${f(fx - 30 * u)} ${f(horizon)} L${f(fx - 8 * u)} ${f(horizon - h * 0.42)} L${f(fx)} ${f(horizon - h * 0.5)} L${f(fx + 8 * u)} ${f(horizon - h * 0.42)} L${f(fx + 30 * u)} ${f(horizon)} Z" fill="${c0}"/><circle cx="${f(fx)}" cy="${f(horizon - h * 0.5)}" r="${f(6 * u)}" fill="${ac}"/><circle cx="${f(fx)}" cy="${f(horizon - h * 0.5)}" r="${f(26 * u)}" fill="${ac}" opacity="0.7" filter="url(#${id}bl)"/>`;
+        let g = '';
+        for (let i = -24; i <= 24; i++) g += `<line x1="${f(fx + i * w * 0.012)}" y1="${f(horizon)}" x2="${f(fx + i * w * 0.14)}" y2="${h}" stroke="${lt}" stroke-width="${f(1.6 * u)}"/>`;
+        for (let i = 1; i < 14; i++) {
+          const y = horizon + (h - horizon) * Math.pow(i / 13, 2.1);
+          g += `<line x1="0" y1="${f(y)}" x2="${w}" y2="${f(y)}" stroke="${lt}" stroke-width="${f(1.6 * u)}"/>`;
+        }
+        body += `<rect x="0" y="${f(horizon)}" width="${w}" height="${f(h - horizon)}" fill="${c0}"/><g opacity="0.7">${g}</g>`;
+        body += `<rect x="0" y="${f(horizon - 2)}" width="${w}" height="${f(3 * u)}" fill="${ac}" opacity="0.9"/>`;
       }
-      body += `<rect x="0" y="${f(horizon)}" width="${w}" height="${f(h - horizon)}" fill="${c0}"/><g opacity="0.75">${g}</g><g opacity="0.6" filter="url(#${id}lg)">${g}</g>`;
-      body += `<rect x="0" y="${f(horizon - 2)}" width="${w}" height="3" fill="${ac}" opacity="0.9"/>`;
       break;
     }
     case 'noir': {
-      defs += `<radialGradient id="${id}lamp" cx="${focusX}" cy="0.25" r="0.6"><stop offset="0" stop-color="${lt}" stop-opacity="0.55"/><stop offset="0.5" stop-color="${c1}" stop-opacity="0.35"/><stop offset="1" stop-color="${c0}" stop-opacity="0"/></radialGradient>
-        <filter id="${id}b"><feGaussianBlur stdDeviation="${f(w * 0.01)}"/></filter>`;
+      defs += `<radialGradient id="${id}lamp" cx="${focusX}" cy="0.22" r="0.55"><stop offset="0" stop-color="${lt}" stop-opacity="0.55"/><stop offset="0.5" stop-color="${c1}" stop-opacity="0.35"/><stop offset="1" stop-color="${c0}" stop-opacity="0"/></radialGradient>
+        <linearGradient id="${id}wet" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c0}"/></linearGradient>`;
       body += `<rect width="${w}" height="${h}" fill="${c0}"/><rect width="${w}" height="${h}" fill="url(#${id}lamp)"/>`;
-      // venetian blind light
+      const ground = h * (P ? 0.86 : 0.84);
+      const sign = (x, y, text, col) => {
+        const ch = [...text];
+        const s = 34 * u;
+        return `<g><rect x="${f(x - s * 0.75)}" y="${f(y - s * 0.4)}" width="${f(s * 1.5)}" height="${f(ch.length * s * 1.1 + s * 0.2)}" rx="${f(6 * u)}" fill="#000" opacity="0.6" stroke="${col}" stroke-width="${f(3 * u)}"/>${ch.map((c, i) => `<text x="${f(x)}" y="${f(y + s * 0.6 + i * s * 1.1)}" text-anchor="middle" font-family="Bebas Neue, Oswald, sans-serif" font-size="${f(s)}" fill="${col}" filter="url(#${id}bl)">${esc(c)}</text><text x="${f(x)}" y="${f(y + s * 0.6 + i * s * 1.1)}" text-anchor="middle" font-family="Bebas Neue, Oswald, sans-serif" font-size="${f(s)}" fill="${mix(col, '#ffffff', 0.5)}">${esc(c)}</text>`).join('')}</g>`;
+      };
+      if (motif === 'curtain') {
+        // velvet stage curtains, spotlight on a microphone
+        defs += `<linearGradient id="${id}cur" x1="0" y1="0" x2="1" y2="0">${Array.from({ length: 9 }, (_, i) => `<stop offset="${i / 8}" stop-color="${i % 2 ? mix(c1, '#000000', 0.5) : c1}"/>`).join('')}</linearGradient>`;
+        body += `<path d="M${f(fx - w * 0.2)} 0 L${f(fx + w * 0.2)} 0 L${f(fx + w * 0.35)} ${f(ground)} L${f(fx - w * 0.35)} ${f(ground)} Z" fill="${lt}" opacity="0.14" filter="url(#${id}bl2)"/>`;
+        body += `<path d="M0 0 L${f(w * 0.32)} 0 Q${f(w * 0.2)} ${f(h * 0.5)} ${f(w * 0.26)} ${f(h)} L0 ${h} Z" fill="url(#${id}cur)"/><path d="M${w} 0 L${f(w * 0.68)} 0 Q${f(w * 0.8)} ${f(h * 0.5)} ${f(w * 0.74)} ${f(h)} L${w} ${h} Z" fill="url(#${id}cur)"/><path d="M0 0 L${w} 0 L${w} ${f(h * 0.08)} Q${f(w / 2)} ${f(h * 0.16)} 0 ${f(h * 0.08)} Z" fill="${c1}"/><rect x="0" y="${f(h * 0.02)}" width="${w}" height="${f(6 * u)}" fill="${ac}" opacity="0.8"/>`;
+        body += `<g fill="#000"><rect x="${f(fx - 3 * u)}" y="${f(ground - h * 0.3)}" width="${f(6 * u)}" height="${f(h * 0.3)}"/><ellipse cx="${f(fx)}" cy="${f(ground)}" rx="${f(40 * u)}" ry="${f(8 * u)}"/><rect x="${f(fx - 12 * u)}" y="${f(ground - h * 0.3 - 40 * u)}" width="${f(24 * u)}" height="${f(46 * u)}" rx="${f(12 * u)}"/></g>`;
+        body += `<rect x="0" y="${f(ground)}" width="${w}" height="${f(h - ground)}" fill="#000"/>`;
+        for (let i = 0; i < 30; i++) body += `<circle cx="${f(r() * w)}" cy="${f(r() * h * 0.8)}" r="${f(r.range(1, 3) * u)}" fill="${ac}" opacity="${f(r.range(0.3, 0.9))}"/>`;
+      } else if (motif === 'hotel') {
+        const bw = w * (P ? 0.8 : 0.42);
+        const bx = fx - bw / 2;
+        const by = h * 0.18;
+        body += `<rect x="${f(bx)}" y="${f(by)}" width="${f(bw)}" height="${f(ground - by)}" fill="${mix(c0, c1, 0.6)}"/><path d="M${f(bx - 10 * u)} ${f(by)} L${f(fx)} ${f(by - h * 0.06)} L${f(bx + bw + 10 * u)} ${f(by)} Z" fill="${mix(c0, c1, 0.4)}"/>`;
+        const cols = 7;
+        const rows = 7;
+        for (let yy = 0; yy < rows; yy++) for (let xx = 0; xx < cols; xx++) {
+          const lit = r() < 0.22 || (yy === 3 && xx === 4);
+          body += `<rect x="${f(bx + bw * (0.06 + xx * 0.13))}" y="${f(by + (ground - by) * (0.08 + yy * 0.11))}" width="${f(bw * 0.08)}" height="${f((ground - by) * 0.07)}" fill="${lit ? '#ffd88a' : '#0b0d14'}" opacity="${lit ? 0.95 : 0.9}"/>`;
+        }
+        body += `<circle cx="${f(fx)}" cy="${f(by + 10 * u)}" r="${f(22 * u)}" fill="${lt}" opacity="0.9"/><line x1="${f(fx)}" y1="${f(by + 10 * u)}" x2="${f(fx)}" y2="${f(by - 6 * u)}" stroke="#111" stroke-width="${f(3 * u)}"/>`;
+        body += sign(bx - 40 * u, by + h * 0.08, 'HOTEL', ac);
+        for (let i = 0; i < 260; i++) body += `<circle cx="${f(r() * w)}" cy="${f(r() * h)}" r="${f(r.range(1, 3.2) * u)}" fill="#fff" opacity="${f(r.range(0.3, 0.9))}"/>`;
+        body += `<rect x="0" y="${f(ground)}" width="${w}" height="${f(h - ground)}" fill="#e9edf5" opacity="0.85"/>`;
+      } else if (motif === 'harbor') {
+        body += `<rect x="0" y="${f(ground - h * 0.12)}" width="${w}" height="${f(h)}" fill="url(#${id}wet)"/>`;
+        const lx = w * (focusX > 0.5 ? 0.78 : 0.22);
+        body += `<path d="M${f(lx)} ${f(ground - h * 0.42)} L${f(lx + w * 0.6)} ${f(ground - h * 0.6)} L${f(lx + w * 0.6)} ${f(ground - h * 0.3)} Z" fill="${ac}" opacity="0.18" filter="url(#${id}bl)"/><path d="M${f(lx)} ${f(ground - h * 0.42)} L${f(lx - w * 0.6)} ${f(ground - h * 0.58)} L${f(lx - w * 0.6)} ${f(ground - h * 0.32)} Z" fill="${ac}" opacity="0.12" filter="url(#${id}bl)"/>`;
+        body += `<g fill="#000"><path d="M${f(lx - 20 * u)} ${f(ground - h * 0.1)} L${f(lx - 12 * u)} ${f(ground - h * 0.4)} L${f(lx + 12 * u)} ${f(ground - h * 0.4)} L${f(lx + 20 * u)} ${f(ground - h * 0.1)} Z"/><rect x="${f(lx - 60 * u)}" y="${f(ground - h * 0.11)}" width="${f(120 * u)}" height="${f(h * 0.1)}"/></g><rect x="${f(lx - 10 * u)}" y="${f(ground - h * 0.435)}" width="${f(20 * u)}" height="${f(14 * u)}" fill="${ac}"/>`;
+        // trawler
+        const tx = fx;
+        const ty = ground - h * 0.06;
+        body += `<g fill="#000" transform="translate(${f(tx)} ${f(ty)}) scale(${f(u * 1.3)})"><path d="M-120 0 L120 0 L90 34 L-100 34 Z"/><rect x="-40" y="-50" width="70" height="50"/><rect x="-6" y="-150" width="5" height="100"/><line x1="-3" y1="-150" x2="-110" y2="0" stroke="#000" stroke-width="2"/><line x1="-3" y1="-150" x2="110" y2="0" stroke="#000" stroke-width="2"/></g><rect x="${f(tx - 30 * u)}" y="${f(ty - 50 * u)}" width="${f(16 * u)}" height="${f(12 * u)}" fill="${ac}" opacity="0.9"/>`;
+        for (let i = 0; i < 70; i++) body += `<rect x="${f(r() * w)}" y="${f(ground + r() * (h - ground))}" width="${f(r.range(20, 100) * u)}" height="${f(2 * u)}" fill="${r() < 0.4 ? ac : lt}" opacity="${f(r.range(0.1, 0.4))}"/>`;
+      } else {
+        // rainy alley: buildings either side, a lamp and a figure
+        const sideW = w * 0.22;
+        for (const side of [0, 1]) {
+          const x0 = side ? w - sideW : 0;
+          body += `<rect x="${f(x0)}" y="${f(h * 0.05)}" width="${f(sideW)}" height="${f(h)}" fill="${mix(c0, c1, 0.5)}"/>`;
+          for (let yy = h * 0.1; yy < ground - 40 * u; yy += 60 * u) for (let xx = x0 + 20 * u; xx < x0 + sideW - 30 * u; xx += 50 * u) if (r() < 0.25) body += `<rect x="${f(xx)}" y="${f(yy)}" width="${f(26 * u)}" height="${f(34 * u)}" fill="#ffcf7a" opacity="${f(r.range(0.5, 0.9))}"/>`;
+        }
+        const sx = focusX > 0.5 ? sideW + 20 * u : w - sideW - 20 * u;
+        body += sign(sx, h * 0.14, motif === 'jazz' ? 'JAZZ' : 'BAR', ac);
+        body += `<rect x="0" y="${f(ground)}" width="${w}" height="${f(h - ground)}" fill="url(#${id}wet)"/>`;
+        body += `<rect x="${f(fx - w * 0.04)}" y="${f(ground)}" width="${f(w * 0.08)}" height="${f(h - ground)}" fill="${lt}" opacity="0.12" filter="url(#${id}bl)"/>`;
+        body += `<rect x="${f(sx - 8 * u)}" y="${f(ground)}" width="${f(16 * u)}" height="${f(h - ground)}" fill="${ac}" opacity="0.35" filter="url(#${id}bl)"/>`;
+      }
+      // blinds of light, figure, rain
       let blinds = '';
       for (let i = 0; i < 16; i++) blinds += `<rect x="${f(-w * 0.5)}" y="${f(i * h * 0.06)}" width="${f(w * 2)}" height="${f(h * 0.028)}" fill="${lt}"/>`;
-      body += `<g opacity="0.1" transform="rotate(-24 ${w / 2} ${h / 2}) translate(${f(w * (focusX - 0.5))} ${f(-h * 0.1)})" filter="url(#${id}b)">${blinds}</g>`;
-      // brick wall hint + street
-      body += `<path d="${ridge(r, w, h, h * 0.86, h * 0.02, 6, false)}" fill="${c1}" opacity="0.55"/>`;
-      // neon sign
-      const nx = w * (focusX > 0.5 ? 0.2 : 0.8);
-      body += `<rect x="${f(nx - w * 0.012)}" y="${f(h * 0.12)}" width="${f(w * 0.024)}" height="${f(h * 0.36)}" rx="6" fill="${ac}" opacity="0.95" filter="url(#${id}b)"/><rect x="${f(nx - w * 0.006)}" y="${f(h * 0.12)}" width="${f(w * 0.012)}" height="${f(h * 0.36)}" rx="4" fill="${ac}"/>`;
-      // figure under the lamp
-      body += figure(w * focusX, h * 0.9, h * (opts.poster ? 0.42 : 0.5), '#000');
-      body += `<ellipse cx="${f(w * focusX)}" cy="${f(h * 0.905)}" rx="${f(w * 0.12)}" ry="${f(h * 0.012)}" fill="#000" opacity="0.7"/>`;
-      // rain
+      if (motif !== 'curtain' && motif !== 'hotel' && motif !== 'harbor') {
+        body += `<g opacity="0.07" transform="rotate(-24 ${w / 2} ${h / 2})" filter="url(#${id}bl)">${blinds}</g>`;
+        body += figure(fx, ground + 4 * u, h * (P ? 0.36 : 0.42), '#000');
+        body += `<path d="M${f(fx - 6 * u)} ${f(ground + 4 * u)} L${f(fx + 6 * u)} ${f(ground + 4 * u)} L${f(fx + w * 0.05)} ${h} L${f(fx - w * 0.05)} ${h} Z" fill="#000" opacity="0.5"/>`;
+      }
       let rain = '';
-      for (let i = 0; i < 260; i++) {
+      for (let i = 0; i < 300; i++) {
         const x = r() * w;
         const y = r() * h;
         const l = r.range(h * 0.015, h * 0.04);
-        rain += `<line x1="${f(x)}" y1="${f(y)}" x2="${f(x - l * 0.18)}" y2="${f(y + l)}" stroke="${lt}" stroke-width="1" opacity="${f(r.range(0.08, 0.3))}"/>`;
+        rain += `<line x1="${f(x)}" y1="${f(y)}" x2="${f(x - l * 0.18)}" y2="${f(y + l)}" stroke="${lt}" stroke-width="${f(1.2 * u)}" opacity="${f(r.range(0.08, 0.3))}"/>`;
       }
-      body += rain;
+      if (motif !== 'curtain' && motif !== 'hotel') body += rain;
       break;
     }
     case 'drama': {
@@ -177,68 +267,133 @@ function scene(style, pal, w, h, seed, opts = {}) {
         <radialGradient id="${id}sun"><stop offset="0" stop-color="#fff" stop-opacity="0.95"/><stop offset="0.3" stop-color="${lt}" stop-opacity="0.85"/><stop offset="1" stop-color="${ac}" stop-opacity="0"/></radialGradient>`;
       body += `<rect width="${w}" height="${h}" fill="url(#${id}sky)"/>`;
       const sr = Math.min(w, h) * 0.42;
-      body += `<circle cx="${f(w * focusX)}" cy="${f(h * 0.56)}" r="${f(sr)}" fill="url(#${id}sun)"/>`;
+      body += `<circle cx="${f(fx)}" cy="${f(h * 0.56)}" r="${f(sr)}" fill="url(#${id}sun)"/>`;
       const layers = 5;
       for (let i = 0; i < layers; i++) {
         const t = i / (layers - 1);
         const y = h * (0.6 + t * 0.26);
         body += `<path d="${ridge(r, w, h, y, h * (0.12 - t * 0.06), 5 + i)}" fill="${mix(c1, c0, t)}" opacity="${f(0.55 + t * 0.45)}"/>`;
+        if (motif === 'grove' && i === 2) {
+          for (let k = 0; k < 9; k++) {
+            const tx = w * (0.05 + k * 0.115) + r.range(-10, 10) * u;
+            const ty = y - h * 0.02;
+            const tr = r.range(34, 52) * u;
+            body += `<rect x="${f(tx - 4 * u)}" y="${f(ty)}" width="${f(8 * u)}" height="${f(h * 0.08)}" fill="${c0}"/><circle cx="${f(tx)}" cy="${f(ty - tr * 0.4)}" r="${f(tr)}" fill="${mix(c1, c0, 0.4)}"/>`;
+            for (let q = 0; q < 6; q++) body += `<circle cx="${f(tx + r.range(-0.7, 0.7) * tr)}" cy="${f(ty - tr * 0.4 + r.range(-0.7, 0.6) * tr)}" r="${f(5 * u)}" fill="${ac}"/>`;
+          }
+        }
+        if (motif === 'street' && i === 3) {
+          let x = 0;
+          while (x < w) {
+            const hw = r.range(70, 120) * u;
+            const hh = r.range(90, 150) * u;
+            body += `<path d="M${f(x)} ${f(y + 20 * u)} L${f(x)} ${f(y - hh)} L${f(x + hw / 2)} ${f(y - hh - 40 * u)} L${f(x + hw)} ${f(y - hh)} L${f(x + hw)} ${f(y + 20 * u)} Z" fill="${mix(c1, c0, 0.7)}"/>`;
+            if (r() < 0.7) body += `<rect x="${f(x + hw * 0.35)}" y="${f(y - hh * 0.6)}" width="${f(hw * 0.3)}" height="${f(hh * 0.3)}" fill="${lt}" opacity="0.9"/>`;
+            x += hw + 6 * u;
+          }
+        }
       }
-      // birds or kites
-      for (let i = 0; i < 7; i++) {
-        const bx = w * r.range(0.1, 0.9);
-        const by = h * r.range(0.12, 0.42);
-        const s = r.range(6, 14) * (w / 800);
-        body += `<path d="M${f(bx - s)} ${f(by)} Q${f(bx - s / 2)} ${f(by - s * 0.6)} ${f(bx)} ${f(by)} Q${f(bx + s / 2)} ${f(by - s * 0.6)} ${f(bx + s)} ${f(by)}" stroke="${c0}" stroke-width="${f(1.5 * (w / 800))}" fill="none" opacity="0.7"/>`;
+      if (motif === 'kites') {
+        for (let i = 0; i < 4; i++) {
+          const kx = w * (0.15 + i * 0.22) + r.range(-20, 20) * u;
+          const ky = h * r.range(0.12, 0.34);
+          const s = r.range(28, 44) * u;
+          const col = [ac, '#e63946', '#457b9d', '#ffffff'][i];
+          body += `<g transform="rotate(${f(r.range(-20, 20))} ${f(kx)} ${f(ky)})"><path d="M${f(kx)} ${f(ky - s)} L${f(kx + s * 0.7)} ${f(ky)} L${f(kx)} ${f(ky + s * 1.3)} L${f(kx - s * 0.7)} ${f(ky)} Z" fill="${col}" stroke="${c0}" stroke-width="${f(2 * u)}"/><path d="M${f(kx)} ${f(ky + s * 1.3)} q${f(20 * u)} ${f(40 * u)} 0 ${f(80 * u)} t0 ${f(80 * u)}" stroke="${c0}" stroke-width="${f(1.5 * u)}" fill="none"/></g><line x1="${f(kx)}" y1="${f(ky + s * 1.3)}" x2="${f(w * 0.5)}" y2="${h}" stroke="${c0}" stroke-width="${f(1 * u)}" opacity="0.5"/>`;
+        }
+      } else {
+        for (let i = 0; i < 7; i++) {
+          const bx = w * r.range(0.1, 0.9);
+          const by = h * r.range(0.12, 0.42);
+          const s = r.range(6, 14) * u;
+          body += `<path d="M${f(bx - s)} ${f(by)} Q${f(bx - s / 2)} ${f(by - s * 0.6)} ${f(bx)} ${f(by)} Q${f(bx + s / 2)} ${f(by - s * 0.6)} ${f(bx + s)} ${f(by)}" stroke="${c0}" stroke-width="${f(1.5 * u)}" fill="none" opacity="0.7"/>`;
+        }
       }
       break;
     }
     case 'family': {
       defs += `<linearGradient id="${id}sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c0}"/><stop offset="0.7" stop-color="${c1}"/><stop offset="1" stop-color="${lt}"/></linearGradient>`;
       body += `<rect width="${w}" height="${h}" fill="url(#${id}sky)"/>${stars(r, w, h, 70, 0.55)}`;
-      const mr = Math.min(w, h) * 0.24;
-      const mx = w * focusX;
-      const my = h * 0.33;
-      body += `<circle cx="${f(mx)}" cy="${f(my)}" r="${f(mr * 1.35)}" fill="${ac}" opacity="0.25"/><circle cx="${f(mx)}" cy="${f(my)}" r="${f(mr)}" fill="${ac}"/>`;
-      for (let i = 0; i < 5; i++) body += `<circle cx="${f(mx + r.range(-0.6, 0.6) * mr)}" cy="${f(my + r.range(-0.6, 0.6) * mr)}" r="${f(r.range(0.08, 0.18) * mr)}" fill="#000" opacity="0.08"/>`;
-      // clouds
-      for (let i = 0; i < 5; i++) {
-        const cx = w * r.range(0.05, 0.95);
-        const cy = h * r.range(0.45, 0.62);
-        const s = r.range(0.06, 0.1) * w;
-        body += `<g fill="#fff" opacity="${f(r.range(0.75, 0.95))}"><circle cx="${f(cx)}" cy="${f(cy)}" r="${f(s)}"/><circle cx="${f(cx + s)}" cy="${f(cy + s * 0.2)}" r="${f(s * 0.8)}"/><circle cx="${f(cx - s)}" cy="${f(cy + s * 0.25)}" r="${f(s * 0.7)}"/><rect x="${f(cx - s * 1.7)}" y="${f(cy + s * 0.2)}" width="${f(s * 3.4)}" height="${f(s * 0.75)}" rx="${f(s * 0.37)}"/></g>`;
+      const mr = Math.min(w, h) * 0.22;
+      const my = h * (P ? 0.42 : 0.34);
+      if (motif !== 'socks') {
+        body += `<circle cx="${f(fx)}" cy="${f(my)}" r="${f(mr * 1.35)}" fill="${ac}" opacity="0.25"/><circle cx="${f(fx)}" cy="${f(my)}" r="${f(mr)}" fill="${ac}"/>`;
+        for (let i = 0; i < 5; i++) body += `<circle cx="${f(fx + r.range(-0.6, 0.6) * mr)}" cy="${f(my + r.range(-0.6, 0.6) * mr)}" r="${f(r.range(0.08, 0.18) * mr)}" fill="#000" opacity="0.08"/>`;
       }
-      // rolling hills
-      const hills = [mix(ac, '#3bb273', 0.7), '#2fa866', '#1f8a55'];
+      for (let i = 0; i < 4; i++) {
+        const cx = w * [0.1, 0.35, 0.68, 0.92][i] + r.range(-20, 20) * u;
+        const cy = h * r.range(0.6, 0.68);
+        const s = r.range(0.05, 0.08) * w;
+        body += `<g fill="#fff" opacity="${f(r.range(0.8, 0.95))}"><circle cx="${f(cx)}" cy="${f(cy)}" r="${f(s)}"/><circle cx="${f(cx + s)}" cy="${f(cy + s * 0.2)}" r="${f(s * 0.8)}"/><circle cx="${f(cx - s)}" cy="${f(cy + s * 0.25)}" r="${f(s * 0.7)}"/><rect x="${f(cx - s * 1.7)}" y="${f(cy + s * 0.2)}" width="${f(s * 3.4)}" height="${f(s * 0.75)}" rx="${f(s * 0.37)}"/></g>`;
+      }
+      const hills = motif === 'socks' ? [mix(c1, '#ffffff', 0.2), c2(c1), mix(c1, '#000000', 0.15)] : [mix(ac, '#3bb273', 0.7), '#2fa866', '#1f8a55'];
       hills.forEach((c, i) => {
-        body += `<path d="${ridge(r, w, h, h * (0.74 + i * 0.08), h * 0.08, 3)}" fill="${c}"/>`;
+        body += `<path d="${ridge(r, w, h, h * (0.78 + i * 0.07), h * 0.07, 3)}" fill="${c}"/>`;
       });
-      // tiny clock tower / house
-      const tx = w * (focusX > 0.5 ? 0.22 : 0.78);
-      body += `<g fill="${c0}"><rect x="${f(tx - w * 0.03)}" y="${f(h * 0.6)}" width="${f(w * 0.06)}" height="${f(h * 0.2)}"/><path d="M${f(tx - w * 0.045)} ${f(h * 0.6)} L${f(tx)} ${f(h * 0.53)} L${f(tx + w * 0.045)} ${f(h * 0.6)} Z"/></g><circle cx="${f(tx)}" cy="${f(h * 0.64)}" r="${f(w * 0.017)}" fill="${lt}"/>`;
-      // confetti
-      for (let i = 0; i < 40; i++) body += `<rect x="${f(r() * w)}" y="${f(r() * h * 0.7)}" width="${f(r.range(4, 10) * (w / 800))}" height="${f(r.range(8, 16) * (w / 800))}" rx="2" fill="${r.pick([ac, lt, '#ff5e5b', '#2ec4b6', '#ffb84c'])}" transform="rotate(${f(r.range(0, 180))} ${f(r() * w)} ${f(r() * h)})" opacity="0.85"/>`;
+      if (motif === 'socks') {
+        const sock = (x, y, s, rot, col, stripe) => `<g transform="translate(${f(x)} ${f(y)}) rotate(${f(rot)}) scale(${f(s)})"><path d="M-30 -90 L30 -90 L30 10 Q30 40 60 40 L80 40 Q100 40 100 60 Q100 84 76 84 L10 84 Q-30 84 -30 40 Z" fill="${col}" stroke="#00000033" stroke-width="4"/><rect x="-30" y="-90" width="60" height="22" fill="${stripe}"/><rect x="-30" y="-56" width="60" height="10" fill="${stripe}"/><circle cx="76" cy="62" r="10" fill="${stripe}" opacity=".6"/></g>`;
+        const cols = ['#ff5e5b', '#ffb84c', '#2ec4b6', '#7b2cbf', '#ffffff', '#3a86ff'];
+        for (let i = 0; i < 7; i++) body += sock(w * (0.12 + i * 0.13), h * r.range(0.45, 0.62), u * r.range(0.8, 1.3), r.range(-40, 40), cols[i % cols.length], cols[(i + 2) % cols.length]);
+        body += `<g transform="translate(${f(fx)} ${f(h * (P ? 0.5 : 0.38))}) scale(${f(u * 1.1)})"><path d="M-60 -40 L-40 -80 L-20 -50 L0 -90 L20 -50 L40 -80 L60 -40 Z" fill="${ac}" stroke="#000" stroke-opacity=".2" stroke-width="4"/></g>`;
+      } else {
+        const tx = w * (focusX > 0.5 ? 0.22 : 0.78);
+        body += `<g fill="${c0}"><rect x="${f(tx - 24 * u)}" y="${f(h * 0.6)}" width="${f(48 * u)}" height="${f(h * 0.22)}"/><path d="M${f(tx - 36 * u)} ${f(h * 0.6)} L${f(tx)} ${f(h * 0.6 - 60 * u)} L${f(tx + 36 * u)} ${f(h * 0.6)} Z"/></g><circle cx="${f(tx)}" cy="${f(h * 0.6 + 30 * u)}" r="${f(14 * u)}" fill="${lt}"/>`;
+        // little rocket / machine heading for the moon
+        body += `<g transform="translate(${f(fx - mr * 1.4)} ${f(my + mr * 1.1)}) rotate(-35) scale(${f(u)})"><path d="M0 -60 Q22 -30 18 20 L-18 20 Q-22 -30 0 -60 Z" fill="#fff"/><circle cy="-15" r="9" fill="${c1}"/><path d="M-18 8 L-32 30 L-18 22 Z M18 8 L32 30 L18 22 Z" fill="#ff5e5b"/><path d="M-10 22 L0 50 L10 22 Z" fill="${ac}"/></g>`;
+      }
+      for (let i = 0; i < 40; i++) body += `<rect x="${f(r() * w)}" y="${f(r() * h * 0.7)}" width="${f(r.range(4, 10) * u)}" height="${f(r.range(8, 16) * u)}" rx="2" fill="${r.pick([ac, lt, '#ff5e5b', '#2ec4b6', '#ffb84c'])}" transform="rotate(${f(r.range(0, 180))} ${f(r() * w)} ${f(r() * h)})" opacity="0.85"/>`;
       break;
     }
     case 'horror': {
       defs += `<radialGradient id="${id}bg" cx="${focusX}" cy="0.35" r="0.75"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c0}"/></radialGradient>
         <radialGradient id="${id}moon"><stop offset="0" stop-color="${lt}"/><stop offset="0.7" stop-color="${lt}" stop-opacity="0.9"/><stop offset="1" stop-color="${lt}" stop-opacity="0"/></radialGradient>
-        <filter id="${id}fog"><feGaussianBlur stdDeviation="${f(h * 0.03)}"/></filter>
         <radialGradient id="${id}vig" cx="0.5" cy="0.5" r="0.75"><stop offset="0.55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.85"/></radialGradient>`;
       body += `<rect width="${w}" height="${h}" fill="url(#${id}bg)"/>${stars(r, w, h, 40, 0.5, 0.5)}`;
+      const ground = h * 0.86;
       const mr = Math.min(w, h) * 0.2;
-      body += `<circle cx="${f(w * focusX)}" cy="${f(h * 0.3)}" r="${f(mr * 1.6)}" fill="${lt}" opacity="0.12" filter="url(#${id}fog)"/><circle cx="${f(w * focusX)}" cy="${f(h * 0.3)}" r="${f(mr)}" fill="url(#${id}moon)"/>`;
-      body += `<path d="${ridge(r, w, h, h * 0.84, h * 0.05, 5)}" fill="#020202"/>`;
-      // dead trees
-      const nTrees = opts.poster ? 3 : 5;
-      for (let i = 0; i < nTrees; i++) {
-        const tx = w * (0.08 + (0.84 * i) / Math.max(1, nTrees - 1)) + r.range(-30, 30);
-        body += tree(r, tx, h * 0.86, h * r.range(0.13, 0.2), -Math.PI / 2 + r.range(-0.12, 0.12), 8, '#020202', w * 0.012);
+      if (motif !== 'bloom') body += `<circle cx="${f(fx)}" cy="${f(h * 0.3)}" r="${f(mr * 1.6)}" fill="${lt}" opacity="0.12" filter="url(#${id}bl2)"/><circle cx="${f(fx)}" cy="${f(h * 0.3)}" r="${f(mr)}" fill="url(#${id}moon)"/>`;
+      body += `<path d="${ridge(r, w, h, ground, h * 0.04, 5)}" fill="#020202"/>`;
+      if (motif === 'birch') {
+        for (let i = 0; i < 9; i++) {
+          const tx = w * (0.04 + i * 0.12) + r.range(-15, 15) * u;
+          if (Math.abs(tx - fx) < w * 0.1) continue;
+          const tw = r.range(12, 22) * u;
+          body += `<rect x="${f(tx)}" y="0" width="${f(tw)}" height="${f(ground)}" fill="#d9dedd" opacity="${f(r.range(0.55, 0.9))}"/>`;
+          for (let k = 0; k < 12; k++) body += `<rect x="${f(tx + (r() < 0.5 ? 0 : tw * 0.4))}" y="${f(r() * ground)}" width="${f(tw * 0.6)}" height="${f(3 * u)}" fill="#111"/>`;
+        }
+        const hx = fx;
+        body += `<path d="M${f(hx - 90 * u)} ${f(ground)} L${f(hx - 90 * u)} ${f(ground - 110 * u)} L${f(hx)} ${f(ground - 190 * u)} L${f(hx + 90 * u)} ${f(ground - 110 * u)} L${f(hx + 90 * u)} ${f(ground)} Z" fill="#030303"/><rect x="${f(hx - 14 * u)}" y="${f(ground - 90 * u)}" width="${f(28 * u)}" height="${f(36 * u)}" fill="${ac}"/><rect x="${f(hx - 30 * u)}" y="${f(ground - 100 * u)}" width="${f(60 * u)}" height="${f(56 * u)}" fill="${ac}" opacity="0.35" filter="url(#${id}bl)"/>`;
+      } else if (motif === 'chapel') {
+        const cx = fx;
+        body += `<g fill="#030303"><path d="M${f(cx - 120 * u)} ${f(ground)} L${f(cx - 120 * u)} ${f(ground - 160 * u)} L${f(cx)} ${f(ground - 260 * u)} L${f(cx + 120 * u)} ${f(ground - 160 * u)} L${f(cx + 120 * u)} ${f(ground)} Z"/><rect x="${f(cx + 70 * u)}" y="${f(ground - 340 * u)}" width="${f(60 * u)}" height="${f(340 * u)}"/><path d="M${f(cx + 62 * u)} ${f(ground - 340 * u)} L${f(cx + 100 * u)} ${f(ground - 440 * u)} L${f(cx + 138 * u)} ${f(ground - 340 * u)} Z"/></g><circle cx="${f(cx)}" cy="${f(ground - 165 * u)}" r="${f(36 * u)}" fill="${ac}"/><circle cx="${f(cx)}" cy="${f(ground - 165 * u)}" r="${f(70 * u)}" fill="${ac}" opacity="0.4" filter="url(#${id}bl)"/>${Array.from({ length: 8 }, (_, i) => `<line x1="${f(cx)}" y1="${f(ground - 165 * u)}" x2="${f(cx + Math.cos(i * Math.PI / 4) * 36 * u)}" y2="${f(ground - 165 * u + Math.sin(i * Math.PI / 4) * 36 * u)}" stroke="#030303" stroke-width="${f(4 * u)}"/>`).join('')}<path d="M${f(cx - 22 * u)} ${f(ground)} L${f(cx - 22 * u)} ${f(ground - 60 * u)} Q${f(cx)} ${f(ground - 90 * u)} ${f(cx + 22 * u)} ${f(ground - 60 * u)} L${f(cx + 22 * u)} ${f(ground)} Z" fill="${ac}" opacity="0.6"/>`;
+        for (let i = 0; i < 4; i++) {
+          const tx = i < 2 ? w * (0.06 + i * 0.12) : w * (0.82 + (i - 2) * 0.12);
+          body += tree(r, tx, ground + 4, h * r.range(0.13, 0.2), -Math.PI / 2 + r.range(-0.12, 0.12), 8, '#020202', w * 0.01);
+        }
+      } else if (motif === 'bloom') {
+        // arctic station, mast, glowing spores
+        body += `<circle cx="${f(fx)}" cy="${f(h * 0.62)}" r="${f(mr * 2.4)}" fill="${ac}" opacity="0.18" filter="url(#${id}bl2)"/>`;
+        body += `<g fill="#020202"><rect x="${f(fx - 160 * u)}" y="${f(ground - 70 * u)}" width="${f(320 * u)}" height="${f(70 * u)}"/><path d="M${f(fx - 160 * u)} ${f(ground - 70 * u)} Q${f(fx)} ${f(ground - 130 * u)} ${f(fx + 160 * u)} ${f(ground - 70 * u)} Z"/><rect x="${f(fx + 110 * u)}" y="${f(ground - 380 * u)}" width="${f(8 * u)}" height="${f(320 * u)}"/></g><circle cx="${f(fx + 114 * u)}" cy="${f(ground - 384 * u)}" r="${f(7 * u)}" fill="${ac}"/>`;
+        for (let i = 0; i < 18; i++) {
+          let d = `M${f(fx + r.range(-150, 150) * u)} ${f(ground - 20 * u)}`;
+          let x = fx + r.range(-150, 150) * u;
+          let y = ground - 20 * u;
+          for (let k = 0; k < 6; k++) {
+            x += r.range(-40, 40) * u;
+            y -= r.range(20, 60) * u;
+            d += ` Q${f(x + r.range(-30, 30) * u)} ${f(y + 20 * u)} ${f(x)} ${f(y)}`;
+          }
+          body += `<path d="${d}" stroke="${ac}" stroke-width="${f(r.range(1.5, 4) * u)}" fill="none" opacity="0.75"/>`;
+        }
+        for (let i = 0; i < 160; i++) body += `<circle cx="${f(fx + r.range(-0.5, 0.5) * w)}" cy="${f(r.range(0.15, 0.9) * h)}" r="${f(r.range(1, 4) * u)}" fill="${ac}" opacity="${f(r.range(0.2, 0.9))}"/>`;
+      } else {
+        const nTrees = P ? 3 : 5;
+        for (let i = 0; i < nTrees; i++) {
+          const tx = w * (0.08 + (0.84 * i) / Math.max(1, nTrees - 1)) + r.range(-30, 30);
+          body += tree(r, tx, ground, h * r.range(0.13, 0.2), -Math.PI / 2 + r.range(-0.12, 0.12), 8, '#020202', w * 0.012);
+        }
       }
-      // a lit window in a distant house
-      const hx = w * (focusX > 0.5 ? 0.3 : 0.7);
-      body += `<path d="M${f(hx - w * 0.05)} ${f(h * 0.84)} L${f(hx - w * 0.05)} ${f(h * 0.74)} L${f(hx)} ${f(h * 0.69)} L${f(hx + w * 0.05)} ${f(h * 0.74)} L${f(hx + w * 0.05)} ${f(h * 0.84)} Z" fill="#030303"/><rect x="${f(hx - w * 0.01)}" y="${f(h * 0.76)}" width="${f(w * 0.02)}" height="${f(h * 0.025)}" fill="${ac}"/><rect x="${f(hx - w * 0.02)}" y="${f(h * 0.75)}" width="${f(w * 0.04)}" height="${f(h * 0.045)}" fill="${ac}" opacity="0.4" filter="url(#${id}fog)"/>`;
-      for (let i = 0; i < 4; i++) body += `<ellipse cx="${f(w * r.range(0.1, 0.9))}" cy="${f(h * r.range(0.8, 0.95))}" rx="${f(w * r.range(0.3, 0.6))}" ry="${f(h * 0.04)}" fill="${lt}" opacity="0.13" filter="url(#${id}fog)"/>`;
+      for (let i = 0; i < 4; i++) body += `<ellipse cx="${f(w * r.range(0.1, 0.9))}" cy="${f(h * r.range(0.8, 0.95))}" rx="${f(w * r.range(0.3, 0.6))}" ry="${f(h * 0.04)}" fill="${lt}" opacity="0.12" filter="url(#${id}bl2)"/>`;
       body += `<rect width="${w}" height="${h}" fill="url(#${id}vig)"/>`;
       break;
     }
@@ -246,81 +401,78 @@ function scene(style, pal, w, h, seed, opts = {}) {
       defs += `<linearGradient id="${id}sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c0}"/><stop offset="0.5" stop-color="${c1}"/><stop offset="0.78" stop-color="${ac}"/><stop offset="1" stop-color="${c0}"/></linearGradient>
         <radialGradient id="${id}boom" cx="${focusX}" cy="0.72" r="0.5"><stop offset="0" stop-color="${lt}"/><stop offset="0.25" stop-color="${ac}"/><stop offset="1" stop-color="${ac}" stop-opacity="0"/></radialGradient>`;
       body += `<rect width="${w}" height="${h}" fill="url(#${id}sky)"/><rect width="${w}" height="${h}" fill="url(#${id}boom)" opacity="0.85"/>`;
-      // mesas
       body += `<path d="${ridge(r, w, h, h * 0.76, h * 0.12, 7, false)}" fill="${mix(c0, c1, 0.3)}"/>`;
-      // train silhouette on a bridge
       const ty = h * 0.8;
       body += `<rect x="0" y="${f(ty)}" width="${w}" height="${f(h * 0.012)}" fill="#000"/>`;
-      for (let i = 0; i < 12; i++) body += `<rect x="${f(w * 0.06 + i * w * 0.075)}" y="${f(ty - h * 0.045)}" width="${f(w * 0.07)}" height="${f(h * 0.042)}" rx="3" fill="#000"/>`;
+      for (let i = 0; i < 16; i++) body += `<rect x="${f(w * 0.02 + i * w * 0.075)}" y="${f(ty - h * 0.045)}" width="${f(w * 0.07)}" height="${f(h * 0.042)}" rx="3" fill="#000"/>`;
       for (let i = 0; i < 14; i++) body += `<rect x="${f(i * w * 0.08)}" y="${f(ty)}" width="${f(w * 0.01)}" height="${f(h)}" fill="#000"/>`;
       body += `<rect x="0" y="${f(h * 0.86)}" width="${w}" height="${f(h * 0.14)}" fill="#000"/>`;
-      // slashes and sparks
       for (let i = 0; i < 3; i++) body += `<rect x="${f(w * r.range(-0.2, 0.8))}" y="${f(-h * 0.1)}" width="${f(w * 0.05)}" height="${f(h * 1.4)}" fill="${ac}" opacity="0.08" transform="rotate(28 ${w / 2} ${h / 2})"/>`;
-      for (let i = 0; i < 120; i++) {
-        const x = w * focusX + r.range(-0.4, 0.4) * w;
+      for (let i = 0; i < 140; i++) {
+        const x = fx + r.range(-0.4, 0.4) * w;
         const y = h * 0.72 + r.range(-0.4, 0.15) * h;
-        body += `<line x1="${f(x)}" y1="${f(y)}" x2="${f(x + r.range(-8, 8))}" y2="${f(y - r.range(4, 18))}" stroke="${r() < 0.5 ? lt : ac}" stroke-width="${f(r.range(1, 2.5))}" opacity="${f(r.range(0.4, 1))}" stroke-linecap="round"/>`;
+        body += `<line x1="${f(x)}" y1="${f(y)}" x2="${f(x + r.range(-8, 8) * u)}" y2="${f(y - r.range(4, 18) * u)}" stroke="${r() < 0.5 ? lt : ac}" stroke-width="${f(r.range(1, 2.5) * u)}" opacity="${f(r.range(0.4, 1))}" stroke-linecap="round"/>`;
       }
       break;
     }
     case 'adventure': {
       defs += `<radialGradient id="${id}bg" cx="0.5" cy="0.45" r="0.8"><stop offset="0" stop-color="${lt}"/><stop offset="0.7" stop-color="${mix(lt, ac, 0.45)}"/><stop offset="1" stop-color="${c1}"/></radialGradient>`;
       body += `<rect width="${w}" height="${h}" fill="url(#${id}bg)"/>`;
-      // island contours
-      const ix = w * focusX;
-      const iy = h * 0.5;
+      const iy = h * (P ? 0.38 : 0.5);
       for (let k = 0; k < 7; k++) {
-        const rr = Math.min(w, h) * (0.32 - k * 0.04);
+        const rr = Math.min(w, h) * (0.3 - k * 0.038);
         let d = '';
-        const n = 14;
+        const n = 24;
         for (let i = 0; i <= n; i++) {
           const a = (i / n) * Math.PI * 2;
-          const rad = rr * (1 + 0.18 * Math.sin(a * 3 + k) + 0.08 * Math.cos(a * 5));
-          d += `${i ? 'L' : 'M'}${f(ix + Math.cos(a) * rad * 1.3)} ${f(iy + Math.sin(a) * rad)}`;
+          const rad = rr * (1 + 0.16 * Math.sin(a * 3 + k * 0.4) + 0.07 * Math.cos(a * 5 + 1));
+          d += `${i ? 'L' : 'M'}${f(fx + Math.cos(a) * rad * 1.25)} ${f(iy + Math.sin(a) * rad)}`;
         }
-        body += `<path d="${d}Z" fill="${k === 6 ? ac : 'none'}" stroke="${c1}" stroke-width="${k === 0 ? 3 : 1.5}" opacity="${k === 6 ? 0.5 : 0.55}"/>`;
+        body += `<path d="${d}Z" fill="${k === 6 ? ac : 'none'}" stroke="${c1}" stroke-width="${f((k === 0 ? 3 : 1.5) * u)}" opacity="${k === 6 ? 0.5 : 0.55}" stroke-linejoin="round"/>`;
       }
-      // waves
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 50; i++) {
         const x = r() * w;
         const y = r() * h;
-        if (Math.hypot(x - ix, y - iy) < Math.min(w, h) * 0.45) continue;
-        body += `<path d="M${f(x)} ${f(y)} q8 -6 16 0 q8 6 16 0" stroke="${c1}" stroke-width="1.6" fill="none" opacity="0.45"/>`;
+        if (Math.hypot(x - fx, y - iy) < Math.min(w, h) * 0.42) continue;
+        body += `<path d="M${f(x)} ${f(y)} q${f(8 * u)} ${f(-6 * u)} ${f(16 * u)} 0 q${f(8 * u)} ${f(6 * u)} ${f(16 * u)} 0" stroke="${c1}" stroke-width="${f(1.6 * u)}" fill="none" opacity="0.45"/>`;
       }
-      // dashed route and X
-      const ex = ix + w * 0.08;
-      const ey = iy - h * 0.03;
-      body += `<path d="M${f(w * 0.05)} ${f(h * 0.9)} C${f(w * 0.3)} ${f(h * 0.7)} ${f(w * 0.2)} ${f(h * 0.4)} ${f(ex)} ${f(ey)}" stroke="#8a1c1c" stroke-width="4" stroke-dasharray="12 10" fill="none"/>`;
-      body += `<g stroke="#8a1c1c" stroke-width="7" stroke-linecap="round"><line x1="${f(ex - 16)}" y1="${f(ey - 16)}" x2="${f(ex + 16)}" y2="${f(ey + 16)}"/><line x1="${f(ex + 16)}" y1="${f(ey - 16)}" x2="${f(ex - 16)}" y2="${f(ey + 16)}"/></g>`;
-      // compass rose
-      const cx = w * (focusX > 0.5 ? 0.18 : 0.82);
-      const cy = h * 0.2;
-      const cr = Math.min(w, h) * 0.09;
-      body += `<g fill="${c1}" opacity="0.8"><circle cx="${f(cx)}" cy="${f(cy)}" r="${f(cr)}" fill="none" stroke="${c1}" stroke-width="2"/>${[0, 90, 180, 270].map((a) => `<path d="M${f(cx)} ${f(cy - cr * 1.3)} L${f(cx + cr * 0.18)} ${f(cy)} L${f(cx - cr * 0.18)} ${f(cy)} Z" transform="rotate(${a} ${f(cx)} ${f(cy)})"/>`).join('')}</g>`;
-      body += `<rect width="${w}" height="${h}" fill="none" stroke="${c1}" stroke-width="${f(w * 0.02)}" opacity="0.35"/>`;
+      const ex = fx + w * 0.06;
+      const ey = iy - h * 0.02;
+      body += `<path d="M${f(w * 0.04)} ${f(h * 0.96)} C${f(w * 0.3)} ${f(h * 0.75)} ${f(w * 0.12)} ${f(iy + h * 0.1)} ${f(ex)} ${f(ey)}" stroke="#8a1c1c" stroke-width="${f(4 * u)}" stroke-dasharray="${f(12 * u)} ${f(10 * u)}" fill="none"/>`;
+      body += `<g stroke="#8a1c1c" stroke-width="${f(7 * u)}" stroke-linecap="round"><line x1="${f(ex - 16 * u)}" y1="${f(ey - 16 * u)}" x2="${f(ex + 16 * u)}" y2="${f(ey + 16 * u)}"/><line x1="${f(ex + 16 * u)}" y1="${f(ey - 16 * u)}" x2="${f(ex - 16 * u)}" y2="${f(ey + 16 * u)}"/></g>`;
+      const cx = w * (focusX > 0.5 ? 0.16 : 0.84);
+      const cy = h * 0.16;
+      const cr = 60 * u;
+      body += `<g fill="${c1}" opacity="0.8"><circle cx="${f(cx)}" cy="${f(cy)}" r="${f(cr)}" fill="none" stroke="${c1}" stroke-width="${f(2 * u)}"/>${[0, 90, 180, 270].map((a) => `<path d="M${f(cx)} ${f(cy - cr * 1.3)} L${f(cx + cr * 0.18)} ${f(cy)} L${f(cx - cr * 0.18)} ${f(cy)} Z" transform="rotate(${a} ${f(cx)} ${f(cy)})"/>`).join('')}</g>`;
+      // a tall ship
+      const sx = w * (focusX > 0.5 ? 0.2 : 0.8);
+      body += `<g fill="${c1}" opacity="0.85" transform="translate(${f(sx)} ${f(h * 0.78)}) scale(${f(u)})"><path d="M-70 0 L70 0 L50 26 L-55 26 Z"/><rect x="-3" y="-120" width="5" height="120"/><path d="M5 -110 Q50 -70 5 -20 Z"/><path d="M-5 -100 Q-45 -60 -5 -20 Z"/></g>`;
+      body += `<rect width="${w}" height="${h}" fill="none" stroke="${c1}" stroke-width="${f(16 * u)}" opacity="0.35"/>`;
       break;
     }
     case 'comedy': {
       body += `<rect width="${w}" height="${h}" fill="${c0}"/>`;
-      // sunburst
       let rays = '';
-      const cx = w * focusX;
-      const cy = h * 0.42;
+      const cy = h * (P ? 0.55 : 0.45);
       for (let i = 0; i < 24; i += 2) {
         const a1 = (i / 24) * Math.PI * 2;
         const a2 = ((i + 1) / 24) * Math.PI * 2;
         const R = Math.max(w, h) * 1.2;
-        rays += `<path d="M${f(cx)} ${f(cy)} L${f(cx + Math.cos(a1) * R)} ${f(cy + Math.sin(a1) * R)} L${f(cx + Math.cos(a2) * R)} ${f(cy + Math.sin(a2) * R)} Z"/>`;
+        rays += `<path d="M${f(fx)} ${f(cy)} L${f(fx + Math.cos(a1) * R)} ${f(cy + Math.sin(a1) * R)} L${f(fx + Math.cos(a2) * R)} ${f(cy + Math.sin(a2) * R)} Z"/>`;
       }
       body += `<g fill="#fff" opacity="0.25">${rays}</g>`;
-      // halftone dots
       let dots = '';
       const step = w / 40;
-      for (let y = h * 0.65; y < h; y += step) for (let x = 0; x < w; x += step) dots += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(((y - h * 0.65) / (h * 0.35)) * step * 0.42)}"/>`;
-      body += `<g fill="${c1}" opacity="0.6">${dots}</g>`;
-      body += `<circle cx="${f(cx + w * 0.25)}" cy="${f(h * 0.2)}" r="${f(w * 0.08)}" fill="${ac}"/><circle cx="${f(cx - w * 0.3)}" cy="${f(h * 0.62)}" r="${f(w * 0.05)}" fill="${c1}"/>`;
-      // two rings (wedding)
-      body += `<g fill="none" stroke="${lt}" stroke-width="${f(w * 0.018)}"><circle cx="${f(cx - w * 0.05)}" cy="${f(cy)}" r="${f(w * 0.09)}"/><circle cx="${f(cx + w * 0.05)}" cy="${f(cy)}" r="${f(w * 0.09)}"/></g>`;
+      for (let y = h * 0.7; y < h; y += step) for (let x = 0; x < w; x += step) dots += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(((y - h * 0.7) / (h * 0.3)) * step * 0.42)}"/>`;
+      body += `<g fill="${c1}" opacity="0.55">${dots}</g>`;
+      body += `<circle cx="${f(w * 0.86)}" cy="${f(h * (P ? 0.5 : 0.18))}" r="${f(50 * u)}" fill="${ac}"/><circle cx="${f(w * 0.12)}" cy="${f(h * 0.68)}" r="${f(34 * u)}" fill="${c1}"/>`;
+      if (motif === 'bakery') {
+        const crois = (x, y, s, rot) => `<g transform="translate(${f(x)} ${f(y)}) rotate(${f(rot)}) scale(${f(s)})"><path d="M-90 10 Q-60 -60 0 -62 Q60 -60 90 10 Q60 -10 40 0 Q20 -30 0 -30 Q-20 -30 -40 0 Q-60 -10 -90 10 Z" fill="#e9a03b" stroke="#8a4b12" stroke-width="5"/><path d="M-40 0 Q-30 -40 0 -40 M40 0 Q30 -40 0 -40" stroke="#8a4b12" stroke-width="4" fill="none"/></g>`;
+        body += crois(fx, cy, u * 2.2, -8) + crois(fx - w * 0.28, cy + h * 0.14, u * 1.1, 20) + crois(fx + w * 0.3, cy + h * 0.12, u * 1.2, -24);
+        for (let i = 0; i < 26; i++) body += `<circle cx="${f(r() * w)}" cy="${f(r() * h * 0.6)}" r="${f(r.range(2, 5) * u)}" fill="#fff" opacity="0.8"/>`;
+      } else {
+        body += `<g fill="none" stroke="${lt}" stroke-width="${f(14 * u)}"><circle cx="${f(fx - 40 * u)}" cy="${f(cy)}" r="${f(72 * u)}"/><circle cx="${f(fx + 40 * u)}" cy="${f(cy)}" r="${f(72 * u)}"/></g>`;
+      }
       break;
     }
     default:
@@ -328,6 +480,7 @@ function scene(style, pal, w, h, seed, opts = {}) {
   }
   return `<svg class="scene" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice"><defs>${defs}</defs>${body}</svg>`;
 }
+const c2 = (c) => mix(c, '#ffffff', 0.45);
 
 /** Hex colour mix. */
 function mix(a, b, t) {
