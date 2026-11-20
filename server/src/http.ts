@@ -1,3 +1,4 @@
+import { securityEvent } from './util/securityLog.js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { DeviceInfo } from '@mediamax/shared';
 import { authenticate, authenticateApiKey, type AuthContext } from './services/auth.js';
@@ -22,6 +23,8 @@ export function extractToken(req: FastifyRequest): string | null {
 export async function authHook(req: FastifyRequest) {
   const apiKey = (req.headers['x-api-key'] as string | undefined) ?? ((req.query as Record<string, unknown> | undefined)?.api_key as string | undefined);
   req.auth = apiKey ? authenticateApiKey(apiKey) : authenticate(extractToken(req));
+  // A wrong API key is a guessing attempt worth banning for; expired session tokens are normal and are not logged.
+  if (apiKey && !req.auth) securityEvent('AUTH_FAIL', req.ip, { reason: 'api_key' });
 }
 
 export function requireUser(req: FastifyRequest): AuthContext {

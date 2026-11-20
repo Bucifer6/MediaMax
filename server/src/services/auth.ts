@@ -1,3 +1,4 @@
+import { securityEvent } from '../util/securityLog.js';
 import crypto from 'node:crypto';
 import type {
   ApiKey, AuthResponse, CreatedApiKey, CreateUserRequest, TotpEnabled, TotpSetup, Device, DeviceInfo, LinkCodeResponse, LinkPollResponse, Platform,
@@ -243,9 +244,10 @@ export function authenticate(token: string | undefined | null): AuthContext | nu
 
 /* Per-account lockout: 5 failures → 15 minutes, independent of client IP (which can't be trusted). */
 const failures = new Map<string, { n: number; until: number }>();
-function assertNotLocked(key: string) {
+function assertNotLocked(key: string, ip?: string) {
   const f = failures.get(key);
   if (f && f.n >= 5 && f.until > Date.now()) {
+    securityEvent('AUTH_LOCKED', ip, { account: key });
     throw Object.assign(unauthorized(`Too many failed attempts. Try again in ${Math.ceil((f.until - Date.now()) / 60000)} minute(s).`), { statusCode: 429 });
   }
 }
@@ -264,22 +266,24 @@ export const passwordlessAllowed = (r: Row) => !r.password_hash && !r.pin_hash &
 
 export function login(username: string, password: string, device: Partial<DeviceInfo>, remoteAddr?: string, totpCode?: string): AuthResponse {
   const key = `u:${String(username ?? '').trim().toLowerCase()}`;
-  assertNotLocked(key);
+  assertNotLocked(key, remoteAddr);
   const row = db.get('SELECT * FROM users WHERE username = ?', (username ?? '').trim());
   // Constant-ish time: always run a hash compare.
   const ok = row ? (row.password_hash ? verifySecret(password ?? '', row.password_hash) : !password && passwordlessAllowed(row)) : verifySecret('x', hashSecret('y'));
   if (!row || !ok) {
     recordFailure(key);
     logActivity('user.login.failed', `Failed sign-in for "${username}" from ${remoteAddr ?? 'unknown'}`, { severity: 'warning' });
+    securityEvent('AUTH_FAIL', remoteAddr, { user: String(username ?? ''), reason: 'password' });
     throw unauthorized('Invalid username or password');
   }
-  checkSecondFactor(row, totpCode, key);
+  checkSecondFactor(row, totpCode, key, remoteAddr);
   clearFailures(key);
+  securityEvent('AUTH_OK', remoteAddr, { user: row.username });
   return issueToken(row.id, device, remoteAddr);
 }
 
 /** Second factor for accounts with TOTP enabled. Throws 401 `totp_required` when no code was sent. */
-function checkSecondFactor(row: Row, code: string | undefined, key: string) {
+function checkSecondFactor(row: Row, code: string | undefined, key: string, ip?: string) {
   if (!row.totp_enabled) return;
   if (!code) throw new HttpError(401, 'Enter the 6-digit code from your authenticator app', 'totp_required');
   if (row.totp_secret && verifyTotp(row.totp_secret, code)) return;
@@ -294,6 +298,7 @@ function checkSecondFactor(row: Row, code: string | undefined, key: string) {
     return;
   }
   recordFailure(key);
+  securityEvent('AUTH_FAIL', ip, { user: row.username, reason: 'totp' });
   throw new HttpError(401, 'That code is not valid', 'totp_invalid');
 }
 
@@ -377,18 +382,19 @@ export function profileLogin(userId: string, pin: string | undefined, device: Pa
   if (!getBranding().features.profilePicker) throw forbidden('Profile sign-in is disabled');
   const row = getUserRow(userId);
   const key = `p:${userId}`;
-  assertNotLocked(key);
+  assertNotLocked(key, remoteAddr);
   if (row.pin_hash) {
     if (!verifySecret(pin ?? '', row.pin_hash)) {
       recordFailure(key);
       logActivity('user.login.failed', `Wrong PIN for ${row.display_name}`, { severity: 'warning' });
+      securityEvent('AUTH_FAIL', remoteAddr, { user: row.username, reason: 'pin' });
       throw unauthorized('Incorrect PIN');
     }
   } else if (!passwordlessAllowed(row)) {
     throw unauthorized('This profile requires a password');
   }
   // A PIN never replaces the second factor.
-  checkSecondFactor(row, totpCode, key);
+  checkSecondFactor(row, totpCode, key, remoteAddr);
   clearFailures(key);
   return issueToken(userId, device, remoteAddr);
 }
