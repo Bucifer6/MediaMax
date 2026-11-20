@@ -75,6 +75,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register(djRoutes);
     await api.register(securityRoutes);
     await api.register(discoveryRoutes);
+    await api.register((await import('./routes/arr.js')).default);
   }, { prefix: '/api/v1' });
 
   await app.register(dlnaRoutes);

@@ -1,4 +1,4 @@
-import type { ServerSettings } from '@mediamax/shared';
+import type { ArrInstance, ArrKind, ArrService, ServerSettings } from '@mediamax/shared';
 import { db } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
@@ -54,15 +54,75 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   remoteAccess: { upnp: false, externalPort: null },
   backups: { intervalDays: 7, keep: 5 },
   requests: { enabled: true, autoApproveUserIds: [], weeklyLimit: 10, radarr: null, sonarr: null },
+  arr: [],
   oidc: { enabled: false, issuer: null, clientId: null, clientSecret: null, buttonLabel: 'Sign in with SSO', autoCreateUsers: true, groupsClaim: 'groups', adminGroup: null, allowedGroup: null },
   sessionTimeoutDays: 90,
 };
 
 let cache: ServerSettings | null = null;
 
+const ARR_KINDS: ArrKind[] = ['radarr', 'sonarr', 'lidarr', 'readarr', 'bazarr'];
+const ARR_NAMES: Record<ArrKind, string> = { radarr: 'Radarr', sonarr: 'Sonarr', lidarr: 'Lidarr', readarr: 'Readarr', bazarr: 'Bazarr' };
+
+/** The old single Radarr/Sonarr config as instances (used for the one-time migration and as a fallback). */
+export function legacyArrInstances(req: Partial<ServerSettings['requests']> | undefined, ids: { radarr?: string; sonarr?: string } = {}): ArrInstance[] {
+  const out: ArrInstance[] = [];
+  for (const kind of ['radarr', 'sonarr'] as const) {
+    const svc = req?.[kind] as ArrService | null | undefined;
+    if (!svc?.url) continue;
+    out.push({
+      id: ids[kind] ?? `legacy-${kind}`, kind, name: ARR_NAMES[kind], url: svc.url, apiKey: svc.apiKey ?? '', enabled: true, is4k: false,
+      qualityProfileId: svc.qualityProfileId ?? null, rootFolderPath: svc.rootFolder ?? null, searchOnAdd: svc.searchOnAdd ?? true,
+      seasonFolders: true, tags: [], pathMappings: [],
+    });
+  }
+  return out;
+}
+
+/** Validate and normalise *arr instances coming from the admin UI; "••••" keeps the stored API key. */
+function normaliseArr(list: unknown, current: ArrInstance[]): ArrInstance[] {
+  if (!Array.isArray(list)) return current;
+  const seen = new Set<string>();
+  return list.slice(0, 50).flatMap((raw): ArrInstance[] => {
+    const x = (raw ?? {}) as Partial<ArrInstance>;
+    if (!ARR_KINDS.includes(x.kind as ArrKind)) return [];
+    let id = typeof x.id === 'string' && /^[\w-]{1,64}$/.test(x.id) ? x.id : newId();
+    if (seen.has(id)) id = newId();
+    seen.add(id);
+    const prev = current.find((c) => c.id === id);
+    const num = (v: unknown) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Math.trunc(Number(v)));
+    const str = (v: unknown, max = 1000) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+    const kind = x.kind as ArrKind;
+    return [{
+      id, kind, name: str(x.name, 80) ?? ARR_NAMES[kind],
+      url: (str(x.url) ?? '').replace(/\/+$/, ''),
+      apiKey: x.apiKey === SECRET_MASK ? prev?.apiKey ?? '' : str(x.apiKey, 200) ?? '',
+      enabled: x.enabled !== false,
+      is4k: !!x.is4k,
+      qualityProfileId: num(x.qualityProfileId),
+      rootFolderPath: str(x.rootFolderPath),
+      languageProfileId: num(x.languageProfileId),
+      metadataProfileId: num(x.metadataProfileId),
+      tags: Array.isArray(x.tags) ? x.tags.map(Number).filter((n) => Number.isInteger(n)).slice(0, 50) : [],
+      seasonFolders: x.seasonFolders !== false,
+      monitor: str(x.monitor, 40) ?? undefined,
+      searchOnAdd: x.searchOnAdd !== false,
+      pathMappings: Array.isArray(x.pathMappings)
+        ? x.pathMappings.map((m) => ({ remotePath: str(m?.remotePath) ?? '', localPath: str(m?.localPath) ?? '' })).filter((m) => m.remotePath && m.localPath).slice(0, 20)
+        : [],
+    }];
+  });
+}
+
 export function getSettings(): ServerSettings {
   if (cache) return cache;
   const stored = getKv<Partial<ServerSettings>>('server', {});
+  // One-time migration: the single Radarr/Sonarr under `requests` becomes the first entries of `arr`.
+  // The old fields stay in place (and are still read as a fallback if `arr` is missing).
+  if (stored.arr === undefined && (stored.requests?.radarr?.url || stored.requests?.sonarr?.url)) {
+    stored.arr = legacyArrInstances(stored.requests, { radarr: newId(), sonarr: newId() });
+    setKv('server', stored);
+  }
   cache = {
     ...DEFAULT_SETTINGS,
     ...stored,
@@ -81,6 +141,7 @@ export function getSettings(): ServerSettings {
     backups: { ...DEFAULT_SETTINGS.backups, ...(stored.backups ?? {}) },
     oidc: { ...DEFAULT_SETTINGS.oidc, ...(stored.oidc ?? {}) },
     webhooks: stored.webhooks ?? [],
+    arr: Array.isArray(stored.arr) ? stored.arr : legacyArrInstances(stored.requests),
   };
   return cache;
 }
@@ -89,8 +150,11 @@ export const SECRET_MASK = '••••';
 
 /** Settings as sent to the admin UI: AI service keys are write-only. */
 export function publicSettings(s: ServerSettings = getSettings()): ServerSettings {
+  const maskSvc = (v: ArrService | null) => (v ? { ...v, apiKey: v.apiKey ? SECRET_MASK : '' } : v);
   return {
     ...s,
+    requests: { ...s.requests, radarr: maskSvc(s.requests.radarr), sonarr: maskSvc(s.requests.sonarr) },
+    arr: s.arr.map((a) => ({ ...a, apiKey: a.apiKey ? SECRET_MASK : '' })),
     aiDj: { ...s.aiDj, llm: { ...s.aiDj.llm, apiKey: s.aiDj.llm.apiKey ? SECRET_MASK : null }, tts: { ...s.aiDj.tts, apiKey: s.aiDj.tts.apiKey ? SECRET_MASK : null } },
   };
 }
@@ -100,6 +164,10 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
   // The masked placeholder means "keep the stored key".
   if (patch.aiDj?.llm?.apiKey === SECRET_MASK) patch = { ...patch, aiDj: { ...patch.aiDj, llm: { ...patch.aiDj.llm, apiKey: cur.aiDj.llm.apiKey } } };
   if (patch.aiDj?.tts?.apiKey === SECRET_MASK) patch = { ...patch, aiDj: { ...patch.aiDj!, tts: { ...patch.aiDj!.tts!, apiKey: cur.aiDj.tts.apiKey } } };
+  for (const k of ['radarr', 'sonarr'] as const) {
+    const svc = patch.requests?.[k];
+    if (svc && svc.apiKey === SECRET_MASK) patch = { ...patch, requests: { ...patch.requests!, [k]: { ...svc, apiKey: cur.requests[k]?.apiKey ?? '' } } };
+  }
   const next: ServerSettings = {
     ...cur,
     ...patch,
@@ -118,6 +186,7 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     plugins: { repositories: (patch.plugins?.repositories ?? cur.plugins.repositories).map((u) => String(u).trim()).filter(Boolean).slice(0, 20) },
     oidc: { ...cur.oidc, ...(patch.oidc ?? {}) },
     webhooks: (patch.webhooks ?? cur.webhooks).map((w) => ({ ...w, id: w.id || newId() })),
+    arr: patch.arr !== undefined ? normaliseArr(patch.arr, cur.arr) : cur.arr,
   };
   setKv('server', next);
   cache = next;

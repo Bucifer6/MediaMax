@@ -1,6 +1,9 @@
 import { AiDjSettingsPanel } from './AiDjSettings';
 import { useEffect, useState, type ReactNode } from 'react';
-import type { ArrOptions, ArrService, HwAccel, ServerSettings, User, Webhook, WebhookEvent } from '@mediamax/shared';
+import { useSearchParams } from 'react-router-dom';
+import type { HwAccel, ServerSettings, User, Webhook, WebhookEvent } from '@mediamax/shared';
+import { ArrSettingsPanel } from './ArrSettings';
+import { ARR_ICON, ARR_NAME } from './Downloads';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useAsync } from '../hooks';
@@ -8,9 +11,8 @@ import { useToast } from '../state/toast';
 import { ErrorState, Field, Skeleton, Spinner, Switch, Tabs } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { AdminHeader } from './AdminRoutes';
-import { formatBytes } from '../utils/format';
 
-type Tab = 'general' | 'transcoding' | 'cinema' | 'aidj' | 'dvr' | 'requests' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks';
+type Tab = 'general' | 'transcoding' | 'cinema' | 'aidj' | 'dvr' | 'requests' | 'arr' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks';
 const HW: { value: HwAccel; label: string }[] = [
   { value: 'none', label: 'None (CPU)' },
   { value: 'vaapi', label: 'VA-API (Intel/AMD, Linux)' },
@@ -30,7 +32,6 @@ const OIDC_DEFAULTS: ServerSettings['oidc'] = {
 };
 const DLNA_DEFAULTS: ServerSettings['dlna'] = { enabled: false, friendlyName: null, userId: null };
 const REQUESTS_DEFAULTS: ServerSettings['requests'] = { enabled: true, autoApproveUserIds: [], weeklyLimit: 10, radarr: null, sonarr: null };
-const ARR_DEFAULTS: ArrService = { url: '', apiKey: '', qualityProfileId: null, rootFolder: null, searchOnAdd: true };
 
 /** "en, fr ,de" → ["en","fr","de"] */
 function parseLanguages(text: string): string[] {
@@ -49,7 +50,8 @@ export function ServerSettingsAdmin() {
   const { refreshSystem } = useApp();
   const [s, setS] = useState<ServerSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('general');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => (params.get('tab') === 'arr' ? 'arr' : params.get('tab') === 'requests' ? 'requests' : 'general'));
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
@@ -139,6 +141,7 @@ export function ServerSettingsAdmin() {
         { value: 'aidj', label: 'AI DJ' },
         { value: 'dvr', label: 'DVR' },
         { value: 'requests', label: 'Requests' },
+        { value: 'arr', label: 'Media automation (*arr)' },
         { value: 'sso', label: 'SSO' },
         { value: 'trickplay', label: 'Trickplay' },
         { value: 'subtitles', label: 'OpenSubtitles' },
@@ -236,8 +239,9 @@ export function ServerSettingsAdmin() {
         {tab === 'requests' && (
           <div className="form-grid">
             <p className="muted">
-              People can request movies and shows from the <strong>Discover</strong> page. Approved requests are sent to Radarr (movies) or Sonarr (shows) and
-              marked available once the title shows up in a library. Discover needs a TMDB API key (General tab){s.tmdbApiKey ? '' : ' — none is set yet'}.
+              People can request movies, shows, music and books from the <strong>Discover</strong> page. Approved requests are sent to Radarr (movies),
+              Sonarr (shows), Lidarr (music) or Readarr (books) and marked available once the title shows up in a library. Movies and shows need a
+              TMDB API key (General tab){s.tmdbApiKey ? '' : ' — none is set yet'}; music and books use Lidarr’s and Readarr’s own search.
             </p>
             <Switch checked={rq.enabled} onChange={(v) => setRq({ enabled: v })} label="Enable requests" hint="The Discover tab also has to be on in Branding → Features." />
             <div className="form-row">
@@ -263,10 +267,31 @@ export function ServerSettingsAdmin() {
                 </div>
               )}
             </fieldset>
-            <ArrCard kind="radarr" value={rq.radarr} onChange={(v) => setRq({ radarr: v })} />
-            <ArrCard kind="sonarr" value={rq.sonarr} onChange={(v) => setRq({ sonarr: v })} />
+            <div className="arr-card">
+              <div className="arr-head">
+                <strong><Icon name="download" size={18} /> Where requests go</strong>
+                <button type="button" className="btn btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setTab('arr')}><Icon name="settings" size={14} /> Manage instances</button>
+              </div>
+              {(s.arr ?? []).filter((a) => a.kind !== 'bazarr').length === 0 ? (
+                <p className="muted" style={{ margin: 0 }}>No Radarr, Sonarr, Lidarr or Readarr yet. Approved requests stay “approved” until one is added in <strong>Media automation (*arr)</strong>.</p>
+              ) : (
+                <ul className="muted" style={{ margin: 0, paddingLeft: 18 }}>
+                  {(['radarr', 'sonarr', 'lidarr', 'readarr'] as const).map((k) => {
+                    const list = (s.arr ?? []).filter((a) => a.kind === k && a.enabled);
+                    const main = list.find((a) => !a.is4k) ?? list[0];
+                    const uhd = list.find((a) => a.is4k);
+                    return (
+                      <li key={k}>
+                        <Icon name={ARR_ICON[k]} size={13} /> {k === 'radarr' ? 'Movies' : k === 'sonarr' ? 'Shows' : k === 'lidarr' ? 'Music' : 'Books'}: {main ? <strong>{main.name}</strong> : `no ${ARR_NAME[k]}`}{uhd && uhd !== main ? <> · 4K: <strong>{uhd.name}</strong></> : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
           </div>
         )}
+        {tab === 'arr' && <ArrSettingsPanel value={s.arr ?? []} onChange={(arr) => set({ arr })} publicUrl={s.publicUrl} />}
         {tab === 'trickplay' && (
           <div className="form-grid">
             <p className="muted">Trickplay thumbnails show a preview of the picture while you hover or drag the seek bar. They’re built in the background from keyframes and take a little disk space per title.</p>
@@ -431,79 +456,6 @@ export function ServerSettingsAdmin() {
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-/** Radarr / Sonarr connection card. `null` = not configured. */
-function ArrCard({ kind, value, onChange }: { kind: 'radarr' | 'sonarr'; value: ArrService | null; onChange: (v: ArrService | null) => void }) {
-  const toast = useToast();
-  const [opts, setOpts] = useState<ArrOptions | null>(null);
-  const [testing, setTesting] = useState(false);
-  const name = kind === 'radarr' ? 'Radarr' : 'Sonarr';
-  const v = { ...ARR_DEFAULTS, ...(value ?? {}) };
-  const set = (p: Partial<ArrService>) => {
-    const next = { ...v, ...p };
-    onChange(!next.url.trim() && !next.apiKey.trim() ? null : next);
-  };
-  const test = async () => {
-    setTesting(true);
-    try {
-      const r = await api.requests.testArr(v.url.trim(), v.apiKey.trim());
-      setOpts(r);
-      if (!r.ok) {
-        toast.show(`${name}: ${r.message || 'connection failed'}`, 'error');
-        return;
-      }
-      toast.success(`${name} connected${r.message ? ` — ${r.message}` : ''}`);
-      // Fill in sensible defaults when nothing valid is chosen yet.
-      const p: Partial<ArrService> = {};
-      if (!r.qualityProfiles.some((q) => q.id === v.qualityProfileId)) p.qualityProfileId = r.qualityProfiles[0]?.id ?? null;
-      if (!r.rootFolders.some((f) => f.path === v.rootFolder)) p.rootFolder = r.rootFolders[0]?.path ?? null;
-      if (Object.keys(p).length) set(p);
-    } catch (e) {
-      setOpts(null);
-      toast.error(e);
-    } finally {
-      setTesting(false);
-    }
-  };
-  const profiles = opts?.ok ? opts.qualityProfiles : v.qualityProfileId != null ? [{ id: v.qualityProfileId, name: `Profile #${v.qualityProfileId}` }] : [];
-  const folders = opts?.ok ? opts.rootFolders : v.rootFolder ? [{ path: v.rootFolder, freeSpace: null }] : [];
-  return (
-    <div className="arr-card">
-      <div className="arr-head">
-        <strong><Icon name={kind === 'radarr' ? 'film' : 'shows'} size={18} /> {name}</strong>
-        <span className="muted">{kind === 'radarr' ? 'Movies' : 'TV shows'}</span>
-        {value ? (opts?.ok ? <span className="badge badge-success">Connected</span> : <span className="badge badge-muted">Not tested</span>) : <span className="badge badge-muted">Off</span>}
-      </div>
-      <div className="form-row">
-        <Field label="URL"><input className="input mono" value={v.url} onChange={(e) => set({ url: e.target.value })} placeholder={kind === 'radarr' ? 'http://radarr:7878' : 'http://sonarr:8989'} spellCheck={false} /></Field>
-        <Field label="API key" hint={`${name} → Settings → General → Security.`}>
-          <input className="input mono" type="password" value={v.apiKey} onChange={(e) => set({ apiKey: e.target.value.trim() })} autoComplete="new-password" spellCheck={false} />
-        </Field>
-      </div>
-      <div>
-        <button className="btn btn-sm" onClick={() => void test()} disabled={!v.url.trim() || !v.apiKey.trim() || testing}>
-          {testing ? <Spinner size={14} /> : <Icon name="zap" size={14} />} Test & load options
-        </button>
-        {opts && !opts.ok && <span className="form-error" style={{ marginLeft: 12 }}>{opts.message}</span>}
-      </div>
-      <div className="form-row">
-        <Field label="Quality profile">
-          <select className="select" value={v.qualityProfileId ?? ''} onChange={(e) => set({ qualityProfileId: e.target.value ? Number(e.target.value) : null })} disabled={!profiles.length}>
-            <option value="">{profiles.length ? 'Choose…' : 'Test the connection first'}</option>
-            {profiles.map((q) => <option key={q.id} value={q.id}>{q.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Root folder">
-          <select className="select" value={v.rootFolder ?? ''} onChange={(e) => set({ rootFolder: e.target.value || null })} disabled={!folders.length}>
-            <option value="">{folders.length ? 'Choose…' : 'Test the connection first'}</option>
-            {folders.map((f) => <option key={f.path} value={f.path}>{f.path}{f.freeSpace != null ? ` (${formatBytes(f.freeSpace)} free)` : ''}</option>)}
-          </select>
-        </Field>
-      </div>
-      <Switch checked={v.searchOnAdd} onChange={(c) => set({ searchOnAdd: c })} label="Search on add" hint={`Ask ${name} to start searching as soon as a request is approved.`} disabled={!value} />
     </div>
   );
 }

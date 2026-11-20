@@ -310,6 +310,8 @@ export interface User {
   allowDownloads: boolean;
   allowTranscode: boolean;
   allowDvr: boolean;
+  /** May ask for a 4K copy when requesting titles ("Also request in 4K"). Admins always can. */
+  allowRequest4k: boolean;
   disabled: boolean;
   /** Allowed to stream from outside the local network. */
   allowRemote: boolean;
@@ -334,6 +336,7 @@ export interface CreateUserRequest {
   allowDownloads?: boolean;
   allowTranscode?: boolean;
   allowDvr?: boolean;
+  allowRequest4k?: boolean;
   allowRemote?: boolean;
   maxStreams?: number | null;
 }
@@ -576,6 +579,14 @@ export interface Item {
   series?: { name: string; index: number | null } | null;
   /** Tracks: ReplayGain loudness tags, when the file has them. */
   replayGain?: ReplayGain | null;
+  /** IMDb / Rotten Tomatoes / Metacritic (OMDb) and TMDB ratings. */
+  ratings?: ItemRatings | null;
+  /** Shows: episode ordering used to match episodes (set on the Edit page; default aired). */
+  episodeOrder?: EpisodeOrder;
+  /** GET /items/:id only: extra artwork from fanart.tv / TheAudioDB. */
+  extraArt?: { clearArtUrl?: string | null; discArtUrl?: string | null; bannerUrl?: string | null };
+  /** Artists, GET /items/:id only: facts from TheAudioDB. */
+  artistInfo?: { formedYear?: number | null; country?: string | null; mood?: string | null; style?: string | null };
 }
 
 export type ExtraType = 'trailer' | 'featurette' | 'behindthescenes' | 'deleted' | 'interview' | 'scene' | 'short' | 'other';
@@ -632,6 +643,8 @@ export interface UpdateItemRequest {
   /** Locked fields are not overwritten by metadata refreshes. */
   lockedFields?: string[];
   markers?: Marker[];
+  /** Shows only: episode ordering (TheTVDB); changing it re-matches the episodes. */
+  episodeOrder?: EpisodeOrder;
 }
 
 export interface ProgressReport {
@@ -879,6 +892,14 @@ export interface Channel {
   favorite: boolean;
   hidden: boolean;
   epgChannelId: string | null;
+  /** The guide source (`EpgSource.id`) the channel's guide data comes from, when matched. */
+  epgSourceId?: string | null;
+  /** How the guide match was made: `manual`, `auto`, `review` (suggestion waiting for an admin) or `none`. */
+  guideStatus?: GuideMatchStatus | null;
+  /** Programme times are shifted by this many hours (manual time-shift, or +1 channels). */
+  epgOffsetHours?: number;
+  /** Admin channel lists with `guideStatus=true`: the channel has guide data from now on. */
+  hasGuide?: boolean;
   nowPlaying?: Program | null;
   next?: Program | null;
 }
@@ -892,6 +913,168 @@ export interface ChannelQuery {
   offset?: number;
   /** Include nowPlaying/next. Default true. */
   withEpg?: boolean;
+  /** Admin only: include `hasGuide` (a "missing guide" badge in admin lists). */
+  guideStatus?: boolean;
+}
+
+/* ------------------------------ TV guide (EPG) providers ------------------------------ */
+
+/** `xmltv` covers plain XMLTV URLs/files and the iptv-org / epg.pw presets. `provider` is a live source's own guide. */
+export type EpgSourceKind = 'xmltv' | 'schedulesdirect' | 'hdhomerun' | 'provider';
+export type GuideMatchStatus = 'manual' | 'auto' | 'review' | 'none';
+
+export interface EpgSourceConfig {
+  /** xmltv: http(s) URL (.xml, .xml.gz or .xml.xz). */
+  url?: string | null;
+  /** xmltv: absolute path of a local XMLTV file instead of a URL. */
+  path?: string | null;
+  /** xmltv: id of the built-in preset this guide came from (see GET /livetv/epg-presets). */
+  preset?: string | null;
+  /** xmltv: reinterpret the guide's times in this IANA zone (e.g. "Europe/London") or fixed offset ("+01:00"). */
+  timezone?: string | null;
+  /** schedulesdirect: account username. */
+  username?: string | null;
+  /** schedulesdirect: write-only. Send it to set it; responses only say `hasPassword`. */
+  password?: string | null;
+  /** schedulesdirect: days of guide data to fetch (1–21, default 7). */
+  days?: number;
+  /** schedulesdirect: also fetch programme artwork. */
+  artwork?: boolean;
+  /** hdhomerun: the HDHomeRun live source whose tuner provides the DeviceAuth. */
+  liveSourceId?: string | null;
+  /** hdhomerun: or a device address (http://192.168.1.50). */
+  deviceUrl?: string | null;
+}
+
+export interface EpgSource {
+  id: string;
+  name: string;
+  kind: EpgSourceKind;
+  /** Kind-specific settings. Secrets are never returned. */
+  config: EpgSourceConfig & { hasPassword?: boolean; lineups?: SdLineup[] };
+  /** Higher wins: each channel takes its programmes from the highest-priority guide that has it; lower ones fill gaps. */
+  priority: number;
+  enabled: boolean;
+  /** null = applies to every live source; otherwise only these live source ids. */
+  liveSourceIds: string[] | null;
+  /** Set when the guide belongs to one live source (its provider guide, or a URL from its `epgUrl` field). */
+  ownerSourceId: string | null;
+  /** `epgUrl` = created from the live source's EPG URL field; `provider` = the provider's own guide. Managed guides can only change priority/enabled. */
+  managedBy: 'epgUrl' | 'provider' | null;
+  refreshIntervalHours: number;
+  lastRefreshAt: string | null;
+  lastError: string | null;
+  refreshing: boolean;
+  channelCount: number;
+  report: EpgSourceReport;
+}
+
+export interface EpgSourceReport {
+  /** Guide channels in the source. */
+  channels: number;
+  /** Programmes stored (from 8 days ago to 14 days ahead). */
+  programmes: number;
+  /** Live channels whose guide currently comes from this source. */
+  matchedChannels: number;
+  /** Days of guide data ahead of now (latest programme end). */
+  daysAhead: number;
+  /** Duration of the last successful refresh. */
+  lastDurationMs: number | null;
+  /** Non-fatal notes from the last refresh (a URL that failed, a skipped lineup...). */
+  warnings: string[];
+}
+
+export interface CreateEpgSourceRequest {
+  name: string;
+  kind: Exclude<EpgSourceKind, 'provider'>;
+  config: EpgSourceConfig;
+  priority?: number;
+  enabled?: boolean;
+  liveSourceIds?: string[] | null;
+  refreshIntervalHours?: number;
+}
+export type UpdateEpgSourceRequest = Partial<CreateEpgSourceRequest>;
+
+export interface EpgPreset {
+  id: string;
+  provider: 'iptv-org' | 'epg.pw';
+  country: string;
+  countryName: string;
+  name: string;
+  url: string;
+}
+
+/** A channel inside a guide source. */
+export interface EpgGuideChannel {
+  epgSourceId: string;
+  epgSourceName: string;
+  id: string;
+  name: string;
+  altNames: string[];
+  callsign: string | null;
+  number: string | null;
+  iconUrl: string | null;
+  programmes: number;
+}
+
+export interface ChannelMatch {
+  channelId: string;
+  channelName: string;
+  channelNumber: number | null;
+  logoUrl: string | null;
+  sourceId: string;
+  sourceName: string;
+  status: GuideMatchStatus;
+  /** Current (or, for `review`, suggested) guide channel. */
+  epgSourceId: string | null;
+  epgSourceName: string | null;
+  epgChannelId: string | null;
+  epgChannelName: string | null;
+  /** 0–1. */
+  confidence: number | null;
+  /** id, number, callsign, name, fuzzy, manual. */
+  method: string | null;
+  offsetHours: number;
+  hasGuide: boolean;
+}
+
+export interface MatchingResponse {
+  items: ChannelMatch[];
+  total: number;
+  counts: { all: number; matched: number; review: number; unmatched: number; missingGuide: number };
+  thresholds: { auto: number; suggest: number };
+}
+
+export interface SetChannelMatchRequest {
+  /** Pick a guide channel; omit both (or send null) to clear the manual match and go back to automatic matching. */
+  epgSourceId?: string | null;
+  epgChannelId?: string | null;
+  /** Explicitly "no guide" for this channel. */
+  none?: boolean;
+  /** Shift this channel's programmes (hours, -24..24). null clears it. */
+  offsetHours?: number | null;
+}
+
+export interface SdHeadend {
+  headend: string;
+  transport: string;
+  location: string;
+  lineups: { name: string; lineup: string }[];
+}
+export interface SdLineup {
+  lineup: string;
+  name: string;
+  transport: string;
+  location: string;
+  isDeleted?: boolean;
+}
+export interface SdStatus {
+  accountExpires: string | null;
+  maxLineups: number | null;
+  lastDataUpdate: string | null;
+  systemStatus: string | null;
+  messages: string[];
+  lineups: SdLineup[];
 }
 
 export interface GuideResponse {
@@ -916,10 +1099,11 @@ export interface LivePlayRequest {
 /* DVR                                                                 */
 /* ------------------------------------------------------------------ */
 
+/** @deprecated Single Radarr/Sonarr config; replaced by `ServerSettings.arr` (still read as a fallback). */
 export interface ArrService {
   url: string;
   apiKey: string;
-  /** Quality profile id (see GET /requests/arr/:kind/options). */
+  /** Quality profile id (see POST /arr/test). */
   qualityProfileId: number | null;
   /** Root folder path for new titles. */
   rootFolder: string | null;
@@ -930,8 +1114,203 @@ export interface ArrService {
 export interface ArrOptions {
   ok: boolean;
   message: string;
+  /** App name and version reported by the instance (e.g. "Radarr", "5.14.0"). */
+  appName?: string | null;
+  version?: string | null;
   qualityProfiles: { id: number; name: string }[];
   rootFolders: { path: string; freeSpace: number | null }[];
+  tags?: { id: number; label: string }[];
+  /** Lidarr/Readarr metadata profiles. */
+  metadataProfiles?: { id: number; name: string }[];
+  /** Sonarr v3 language profiles (absent on Sonarr v4). */
+  languageProfiles?: { id: number; name: string }[];
+}
+
+/* ------------------------------------------------------------------ */
+/* *arr suite: Radarr, Sonarr, Lidarr, Readarr, Bazarr                 */
+/* ------------------------------------------------------------------ */
+
+export type ArrKind = 'radarr' | 'sonarr' | 'lidarr' | 'readarr' | 'bazarr';
+
+/** Rewrites a path as the *arr sees it (`remotePath`) into the path MediaMax sees (`localPath`). */
+export interface ArrPathMapping {
+  remotePath: string;
+  localPath: string;
+}
+
+/** One Radarr/Sonarr/Lidarr/Readarr/Bazarr server. */
+export interface ArrInstance {
+  id: string;
+  kind: ArrKind;
+  name: string;
+  /** Base URL, e.g. http://radarr:7878 (LAN addresses are fine). */
+  url: string;
+  /** Write-only: settings reads return "••••" when a key is set; saving "••••" keeps the stored key. */
+  apiKey: string;
+  enabled: boolean;
+  /** A 4K instance: used for "Also request in 4K". */
+  is4k?: boolean;
+  qualityProfileId?: number | null;
+  rootFolderPath?: string | null;
+  /** Sonarr v3 only. */
+  languageProfileId?: number | null;
+  /** Lidarr/Readarr. */
+  metadataProfileId?: number | null;
+  /** Tag ids applied to titles added from requests. */
+  tags?: number[];
+  /** Sonarr: put episodes in season folders (default true). */
+  seasonFolders?: boolean;
+  /** What to monitor when adding: Sonarr `all|future|missing|existing|firstSeason|latestSeason|none`, Lidarr/Readarr `all|future|none`. */
+  monitor?: string;
+  /** Start searching as soon as a title is added (default true). */
+  searchOnAdd?: boolean;
+  /** Docker-style path translation for webhook events. */
+  pathMappings?: ArrPathMapping[];
+}
+
+/** Body of POST /arr/test. Pass `id` with apiKey "••••" to test a saved instance with its stored key. */
+export interface ArrTestRequest {
+  id?: string;
+  kind: ArrKind;
+  url: string;
+  apiKey: string;
+}
+
+export interface ArrInstanceRef {
+  id: string;
+  kind: ArrKind;
+  name: string;
+  is4k: boolean;
+  /** Link to the instance's web UI. */
+  url: string;
+}
+
+/** One instance's slice of a dashboard list. Instances fail independently (`ok: false` + `error`). */
+export interface ArrSection<T> {
+  instance: ArrInstanceRef;
+  ok: boolean;
+  error: string | null;
+  items: T[];
+}
+
+/** External ids used to match *arr titles with requests and library items. */
+export interface ArrMediaIds {
+  tmdbId?: string | null;
+  tvdbId?: string | null;
+  foreignArtistId?: string | null;
+  foreignAlbumId?: string | null;
+  foreignBookId?: string | null;
+}
+
+export interface ArrQueueItem {
+  id: number;
+  title: string;
+  /** e.g. "S02E05 · Episode title", album or book title. */
+  subtitle: string | null;
+  quality: string | null;
+  /** 0–100 */
+  progress: number;
+  size: number;
+  sizeLeft: number;
+  /** "hh:mm:ss" as reported by the download client. */
+  timeLeft: string | null;
+  estimatedCompletion: string | null;
+  status: string;
+  trackedState: string | null;
+  warnings: string[];
+  protocol: string | null;
+  downloadClient: string | null;
+  ids: ArrMediaIds;
+}
+
+export interface ArrCalendarEntry {
+  /** Movie/episode/album/book id inside the *arr. */
+  id: number;
+  title: string;
+  subtitle: string | null;
+  /** ISO date/time of the release or air date. */
+  date: string;
+  /** e.g. "Digital release", "Airs", "Album release". */
+  releaseType: string;
+  hasFile: boolean;
+  monitored: boolean;
+}
+
+export interface ArrWantedEntry {
+  /** Id to pass to POST /arr/:instanceId/search. */
+  id: number;
+  title: string;
+  subtitle: string | null;
+  date: string | null;
+}
+
+export interface ArrHealthCheck {
+  source: string;
+  type: 'ok' | 'notice' | 'warning' | 'error';
+  message: string;
+  wikiUrl: string | null;
+}
+
+export interface ArrDisk {
+  path: string;
+  label: string | null;
+  freeSpace: number;
+  totalSpace: number;
+}
+
+export interface ArrHealthSection {
+  instance: ArrInstanceRef;
+  ok: boolean;
+  error: string | null;
+  version: string | null;
+  checks: ArrHealthCheck[];
+  disks: ArrDisk[];
+}
+
+export interface ArrListResponse<T> {
+  sections: ArrSection<T>[];
+  fetchedAt: string;
+}
+
+export interface ArrHealthResponse {
+  sections: ArrHealthSection[];
+  fetchedAt: string;
+}
+
+/** POST /arr/:instanceId/search. Without `command`, the kind's default is used (MoviesSearch, EpisodeSearch, AlbumSearch, BookSearch). */
+export interface ArrSearchRequest {
+  ids: number[];
+  command?: 'MoviesSearch' | 'EpisodeSearch' | 'SeriesSearch' | 'SeasonSearch' | 'AlbumSearch' | 'ArtistSearch' | 'BookSearch' | 'AuthorSearch';
+  /** SeasonSearch only. */
+  seasonNumber?: number;
+}
+
+/** GET /arr/webhook (admin): what to paste into each *arr's Settings → Connect → Webhook. */
+export interface ArrWebhookInfo {
+  /** Path relative to the server, e.g. /api/v1/arr/webhook/<token>. */
+  path: string;
+  /** Full URL built from the server's public URL (when set). */
+  url: string | null;
+  token: string;
+}
+
+/** A library title as found in the *arr instances (GET /arr/item/:itemId, admin). */
+export interface ArrItemMatch {
+  instance: ArrInstanceRef;
+  /** Movie/series/artist id inside the *arr. */
+  arrId: number;
+  title: string;
+  /** Deep link into the *arr web UI. */
+  webUrl: string;
+  /** Command for "Search for upgrade". */
+  searchCommand: NonNullable<ArrSearchRequest['command']>;
+  hasFile: boolean | null;
+}
+
+export interface ArrItemInfo {
+  matches: ArrItemMatch[];
+  /** A Bazarr instance is enabled and this item is a movie/show/episode. */
+  bazarr: boolean;
 }
 
 export interface DvrDefaults {
@@ -1087,9 +1466,13 @@ export interface ServerSettings {
     autoApproveUserIds: string[];
     /** Max open requests per user per 7 days (0 = unlimited). */
     weeklyLimit: number;
+    /** @deprecated Moved to `ServerSettings.arr` (migrated once; still read as a fallback). */
     radarr: ArrService | null;
+    /** @deprecated Moved to `ServerSettings.arr` (migrated once; still read as a fallback). */
     sonarr: ArrService | null;
   };
+  /** Radarr/Sonarr/Lidarr/Readarr/Bazarr instances (requests, downloads dashboard, webhooks). */
+  arr: ArrInstance[];
   /** Single sign-on via any OpenID Connect provider (Authentik, Keycloak, Authelia, Google, Entra…). */
   oidc: {
     enabled: boolean;
@@ -1402,21 +1785,115 @@ export interface LyricLine {
 export interface Lyrics {
   itemId: string;
   synced: boolean;
-  source: 'lrc' | 'embedded' | 'txt';
+  /** `lrclib`: fetched from LRCLIB (no local .lrc or embedded lyrics). */
+  source: 'lrc' | 'embedded' | 'txt' | 'lrclib';
   lines: LyricLine[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Built-in metadata providers                                          */
+/* ------------------------------------------------------------------ */
+
+export type MetadataProviderId = 'tmdb' | 'tvdb' | 'fanart' | 'audiodb' | 'audnexus' | 'openlibrary' | 'googlebooks' | 'lrclib' | 'omdb' | 'musicbrainz';
+/** Providers configured under Server settings → Metadata (TMDB keeps its key on the General tab). */
+export type BuiltinProviderId = Exclude<MetadataProviderId, 'tmdb'>;
+/** Episode ordering used to match a show's episodes (TheTVDB season types). */
+export type EpisodeOrder = 'aired' | 'dvd' | 'absolute';
+/** Third-party ratings: imdb and tmdb are 0–10, rottenTomatoes and metacritic 0–100. */
+export interface ItemRatings {
+  imdb?: number;
+  rottenTomatoes?: number;
+  metacritic?: number;
+  tmdb?: number;
+}
+export interface MetadataProviderConfig {
+  enabled: boolean;
+  /** Write-only: reads return "••••" when a key is stored; sending "••••" back keeps it. */
+  apiKey: string | null;
+  /** TheTVDB subscriber PIN (optional, write-only like apiKey). */
+  pin?: string | null;
+}
+export type ArtworkTarget = 'movie' | 'show' | 'artist' | 'album' | 'audiobook';
+export interface MetadataSettings {
+  providers: Record<BuiltinProviderId, MetadataProviderConfig>;
+  /** Priority, highest first. Providers only fill empty, unlocked fields, so earlier ones win. */
+  order: MetadataProviderId[];
+  /** Preferred artwork source per type. `auto`: local art first, providers only fill gaps. */
+  artwork: Record<ArtworkTarget, MetadataProviderId | 'auto'>;
+  /** How long provider responses are cached (hours). */
+  cacheTtlHours: number;
+}
+export interface MetadataProviderInfo {
+  id: MetadataProviderId;
+  name: string;
+  types: ItemType[];
+  key: 'required' | 'optional' | 'none';
+  /** Supports a subscriber PIN (TheTVDB). */
+  pin?: boolean;
+  homepage: string;
+  keyUrl: string | null;
+  cost: string;
+  description: string;
+  rateLimit: string;
+  /** Artwork targets this provider can supply art for. */
+  artwork: ArtworkTarget[];
+  enabled: boolean;
+  /** Enabled and has the key it needs. */
+  ready: boolean;
+  /** Items this provider could still fill (null when not counted). */
+  missing: number | null;
+  missingLabel: string | null;
+}
+export interface MetadataSettingsResponse {
+  settings: MetadataSettings;
+  providers: MetadataProviderInfo[];
+  cache: { entries: number; bytes: number };
+}
+export interface MetadataTestResult {
+  ok: boolean;
+  message: string;
+  ms: number;
+}
+/** A "Fix match" search hit. */
+export interface MatchCandidate {
+  provider: MetadataProviderId;
+  id: string;
+  title: string;
+  year: number | null;
+  subtitle: string | null;
+  overview: string | null;
+  imageUrl: string | null;
+}
+export interface MatchSearchResponse {
+  /** Providers that can be searched for this item type. */
+  providers: MetadataProviderId[];
+  provider: MetadataProviderId;
+  results: MatchCandidate[];
+}
+export interface ApplyMatchRequest {
+  provider: MetadataProviderId;
+  id: string;
 }
 
 /* ------------------------------------------------------------------ */
 /* Media requests (Overseerr-style, with Radarr/Sonarr)                */
 /* ------------------------------------------------------------------ */
 
-export type RequestMediaType = 'movie' | 'show';
+/** movie → Radarr, show → Sonarr, artist/album → Lidarr, book → Readarr. */
+export type RequestMediaType = 'movie' | 'show' | 'artist' | 'album' | 'book';
+/** Which seasons of a show to request. */
+export type SeasonMode = 'all' | 'first' | 'latest' | 'specific';
 export type RequestStatus = 'pending' | 'approved' | 'declined' | 'processing' | 'available' | 'failed';
 
 export interface DiscoverResult {
+  /** TMDB id for movies/shows; for music and books the same value as `externalId`. */
   tmdbId: string;
+  /** TMDB id, MusicBrainz artist/album id (Lidarr) or Readarr foreign book id. */
+  externalId: string;
   mediaType: RequestMediaType;
   title: string;
+  /** Artist of an album, author of a book. */
+  subtitle?: string | null;
   year: number | null;
   overview: string | null;
   posterUrl: string | null;
@@ -1431,13 +1908,24 @@ export interface DiscoverResult {
 
 export interface MediaRequest {
   id: string;
+  /** TMDB id (movies/shows) or the external id for music/books (same as `externalId`). */
   tmdbId: string;
+  externalId: string;
   mediaType: RequestMediaType;
   title: string;
+  /** Artist of an album, author of a book. */
+  subtitle: string | null;
   year: number | null;
   posterUrl: string | null;
   /** Requested seasons for shows (empty = all). */
   seasons: number[];
+  seasonMode: SeasonMode;
+  /** Artist requests: monitor all albums or only future ones. */
+  monitor: 'all' | 'future' | null;
+  /** Also sent to the 4K instance. */
+  also4k: boolean;
+  /** Live download progress while it's in an *arr queue. */
+  download: { progress: number; status: string; timeLeft: string | null; instance: string } | null;
   status: RequestStatus;
   requestedBy: { id: string; displayName: string };
   requestedAt: string;
@@ -1450,10 +1938,31 @@ export interface MediaRequest {
 }
 
 export interface CreateMediaRequest {
-  tmdbId: string;
+  /** TMDB id for movies/shows. For music/books send `externalId` (either field is accepted). */
+  tmdbId?: string;
+  externalId?: string;
   mediaType: RequestMediaType;
+  /** Title as shown in Discover; helps the Lidarr/Readarr lookup. */
+  title?: string;
+  /** Specific seasons (with seasonMode "specific", or alone for backwards compatibility). */
   seasons?: number[];
+  seasonMode?: SeasonMode;
+  /** Artist requests (default "all"). */
+  monitor?: 'all' | 'future';
+  /** Also request in 4K (admins, or users with allowRequest4k; needs a 4K instance). */
+  also4k?: boolean;
   note?: string;
+}
+
+/** GET /requests/options: which request kinds this server can handle. */
+export interface RequestOptions {
+  movies: boolean;
+  shows: boolean;
+  music: boolean;
+  books: boolean;
+  /** Kinds with a 4K instance the current user may use. */
+  can4k: { movie: boolean; show: boolean };
+  tmdb: boolean;
 }
 
 export interface DiscoverResponse {

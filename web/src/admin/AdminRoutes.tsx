@@ -17,6 +17,7 @@ import { PluginsAdmin } from './Plugins';
 import { InvitesAdmin } from './Invites';
 import { BackupsAdmin } from './Backups';
 import { RemoteAccessAdmin } from './RemoteAccess';
+import { DownloadsAdmin } from './Downloads';
 import WrappedPage from '../pages/Wrapped';
 
 const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
@@ -27,6 +28,7 @@ const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/admin/invites', label: 'Invites', icon: 'link' },
   { to: '/admin/livetv', label: 'Live TV sources', icon: 'antenna' },
   { to: '/admin/channels', label: 'Channels', icon: 'tv' },
+  { to: '/admin/downloads', label: 'Downloads', icon: 'download' },
   { to: '/admin/branding', label: 'Branding studio', icon: 'palette' },
   { to: '/admin/settings', label: 'Server settings', icon: 'server' },
   { to: '/admin/remote', label: 'Remote access', icon: 'globe' },
@@ -61,6 +63,7 @@ export default function AdminRoutes() {
             <Route path="channels" element={<ChannelsAdmin />} />
             <Route path="branding" element={<BrandingStudio />} />
             <Route path="settings" element={<ServerSettingsAdmin />} />
+            <Route path="downloads" element={<DownloadsAdmin />} />
             <Route path="invites" element={<InvitesAdmin />} />
             <Route path="remote" element={<RemoteAccessAdmin />} />
             <Route path="backups" element={<BackupsAdmin />} />

@@ -357,6 +357,58 @@ const MIGRATIONS: string[] = [
     WHERE i.type IN ('movie','show') AND json_extract(j.value, '$.name') IS NOT NULL
       AND ((json_extract(j.value, '$.kind') = 'actor' AND CAST(j.key AS INTEGER) < 10) OR json_extract(j.value, '$.kind') IN ('director', 'writer'));
   `,
+  /* 14: *arr suite — music/book/4K requests, per-user 4K permission */ `
+  ALTER TABLE media_requests ADD COLUMN subtitle TEXT;
+  ALTER TABLE media_requests ADD COLUMN also_4k INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE media_requests ADD COLUMN options TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE users ADD COLUMN allow_request_4k INTEGER NOT NULL DEFAULT 0;
+  `,
+  /* metadata providers: response cache, third-party ratings, provider extras */ `
+  CREATE TABLE IF NOT EXISTS metadata_cache (
+    key TEXT PRIMARY KEY, provider TEXT NOT NULL, status INTEGER NOT NULL, body TEXT, expires_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS metadata_cache_expires ON metadata_cache(expires_at);
+  ALTER TABLE items ADD COLUMN ratings TEXT;
+  ALTER TABLE items ADD COLUMN provider_meta TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE items ADD COLUMN providers_fetched_at TEXT;
+  `,
+  /* EPG providers: guide sources, guide channel lists, channel↔guide matching, Schedules Direct caches */ `
+  CREATE TABLE epg_sources (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, config TEXT NOT NULL DEFAULT '{}', secret TEXT, state TEXT NOT NULL DEFAULT '{}',
+    priority INTEGER NOT NULL DEFAULT 50, enabled INTEGER NOT NULL DEFAULT 1, live_source_ids TEXT,
+    owner_source_id TEXT REFERENCES live_sources(id) ON DELETE CASCADE, managed_by TEXT, refresh_hours INTEGER NOT NULL DEFAULT 12,
+    last_refresh_at TEXT, last_success_at TEXT, last_error TEXT, channel_count INTEGER NOT NULL DEFAULT 0, stats TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+  );
+  CREATE TABLE epg_channels (
+    epg_source_id TEXT NOT NULL REFERENCES epg_sources(id) ON DELETE CASCADE, id TEXT NOT NULL, name TEXT NOT NULL,
+    alt_names TEXT NOT NULL DEFAULT '[]', callsign TEXT, number TEXT, icon TEXT, programmes INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (epg_source_id, id)
+  );
+  CREATE TABLE epg_match_candidates (
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE, epg_source_id TEXT NOT NULL REFERENCES epg_sources(id) ON DELETE CASCADE,
+    guide_channel_id TEXT NOT NULL, confidence REAL NOT NULL, method TEXT NOT NULL, offset_minutes INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (channel_id, epg_source_id)
+  );
+  CREATE INDEX epg_match_candidates_source ON epg_match_candidates(epg_source_id);
+  CREATE TABLE epg_sd_lineups (
+    epg_source_id TEXT NOT NULL REFERENCES epg_sources(id) ON DELETE CASCADE, lineup TEXT NOT NULL, modified TEXT, data TEXT NOT NULL,
+    PRIMARY KEY (epg_source_id, lineup)
+  );
+  CREATE TABLE epg_sd_schedules (
+    epg_source_id TEXT NOT NULL REFERENCES epg_sources(id) ON DELETE CASCADE, station_id TEXT NOT NULL, date TEXT NOT NULL, md5 TEXT NOT NULL, data TEXT NOT NULL,
+    PRIMARY KEY (epg_source_id, station_id, date)
+  );
+  CREATE TABLE epg_sd_programs (program_id TEXT PRIMARY KEY, md5 TEXT NOT NULL, data TEXT NOT NULL, artwork TEXT, fetched_at TEXT NOT NULL);
+  ALTER TABLE channels ADD COLUMN guide_key TEXT;
+  ALTER TABLE channels ADD COLUMN guide_source_id TEXT;
+  ALTER TABLE channels ADD COLUMN guide_channel_id TEXT;
+  ALTER TABLE channels ADD COLUMN guide_confidence REAL;
+  ALTER TABLE channels ADD COLUMN guide_method TEXT;
+  ALTER TABLE channels ADD COLUMN guide_status TEXT;
+  ALTER TABLE channels ADD COLUMN guide_offset INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX channels_guide_key ON channels(guide_key);
+  CREATE INDEX programs_source ON programs(source_id);
+  `,
 ];
 
 function migrate(db: Database) {

@@ -29,6 +29,7 @@ function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged }: { 
     allowDownloads: initial?.allowDownloads ?? true,
     allowTranscode: initial?.allowTranscode ?? true,
     allowDvr: initial?.allowDvr ?? false,
+    allowRequest4k: initial?.allowRequest4k ?? false,
     allowRemote: initial?.allowRemote ?? true,
     maxStreams: initial?.maxStreams ?? null,
     disabled: initial?.disabled ?? false,
@@ -135,6 +136,7 @@ function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged }: { 
           <Switch checked={!!f.isAdmin} onChange={(v) => set('isAdmin', v)} label="Administrator" hint="Full access to server settings, users and branding." disabled={isSelf} />
           <Switch checked={!!f.allowLiveTv} onChange={(v) => set('allowLiveTv', v)} label="Live TV" />
           <Switch checked={!!f.allowDvr} onChange={(v) => set('allowDvr', v)} label="DVR recording" />
+          <Switch checked={!!f.allowRequest4k} onChange={(v) => set('allowRequest4k', v)} label="Request in 4K" hint="Offer “Also request in 4K” when a 4K Radarr/Sonarr is set up. Admins always can." />
           <Switch checked={!!f.allowTranscode} onChange={(v) => set('allowTranscode', v)} label="Allow transcoding" hint="When off, only direct play is allowed." />
           <Switch checked={!!f.allowDownloads} onChange={(v) => set('allowDownloads', v)} label="Downloads" />
           <Switch checked={!!f.allowRemote} onChange={(v) => set('allowRemote', v)} label="Allow streaming outside the home network" hint="When off, playback only works from the local network." />
@@ -210,6 +212,7 @@ export function UsersAdmin() {
                       <Badge tone="muted">{u.libraryIds === null ? 'All libraries' : `${u.libraryIds.length} libraries`}</Badge>
                       {u.allowLiveTv && <Badge tone="muted">Live TV</Badge>}
                       {u.allowDvr && <Badge tone="muted">DVR</Badge>}
+                      {u.allowRequest4k && !u.isAdmin && <Badge tone="muted">4K requests</Badge>}
                     </div>
                   </td>
                   <td>{u.maxContentRating ?? <span className="muted">None</span>}</td>

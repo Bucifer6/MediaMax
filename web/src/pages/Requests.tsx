@@ -1,16 +1,27 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { MediaRequest, RequestStatus } from '@mediamax/shared';
+import type { MediaRequest, RequestMediaType, RequestStatus } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync } from '../hooks';
-import { Badge, EmptyState, ErrorState, Field, Img, Modal, Skeleton, Spinner, useConfirm } from '../components/ui';
-import { Icon } from '../components/Icon';
+import { Badge, EmptyState, ErrorState, Field, Img, Modal, ProgressBar, Skeleton, Spinner, useConfirm } from '../components/ui';
+import { Icon, type IconName } from '../components/Icon';
+import '../styles/arr.css';
 import { formatDateTime, relativeTime } from '../utils/format';
 import { notifyRequestsChanged, REQUEST_STATUS_TONE } from '../utils/requests';
 
 const STATUSES: RequestStatus[] = ['pending', 'approved', 'processing', 'available', 'declined', 'failed'];
+const TYPE_LABEL: Record<RequestMediaType, string> = { movie: 'Movie', show: 'TV', artist: 'Artist', album: 'Album', book: 'Book' };
+const TYPE_ICON: Record<RequestMediaType, IconName> = { movie: 'film', show: 'shows', artist: 'music', album: 'music', book: 'book' };
+const ARR_FOR: Record<RequestMediaType, string> = { movie: 'Radarr', show: 'Sonarr', artist: 'Lidarr', album: 'Lidarr', book: 'Readarr' };
+
+function seasonText(r: MediaRequest): string {
+  if (r.seasonMode === 'first') return 'First season';
+  if (r.seasonMode === 'latest') return 'Latest season';
+  if (r.seasons.length) return `Season${r.seasons.length > 1 ? 's' : ''} ${r.seasons.join(', ')}`;
+  return 'All seasons';
+}
 
 function RequestRow({
   r, isAdmin, mine, busy, onApprove, onDecline, onDelete,
@@ -18,7 +29,7 @@ function RequestRow({
   r: MediaRequest; isAdmin: boolean; mine: boolean; busy: boolean;
   onApprove: (r: MediaRequest) => void; onDecline: (r: MediaRequest) => void; onDelete: (r: MediaRequest) => void;
 }) {
-  const poster = <Img src={r.posterUrl} width={120} alt="" fallback={<Icon name={r.mediaType === 'show' ? 'shows' : 'film'} size={20} />} />;
+  const poster = <Img src={r.posterUrl} width={120} alt="" fallback={<Icon name={TYPE_ICON[r.mediaType] ?? 'film'} size={20} />} />;
   return (
     <li className="req-row">
       {r.itemId ? <Link to={`/item/${r.itemId}`} className="req-poster" tabIndex={-1}>{poster}</Link> : <span className="req-poster">{poster}</span>}
@@ -26,18 +37,29 @@ function RequestRow({
         <div className="req-title">
           {r.itemId ? <Link to={`/item/${r.itemId}`}>{r.title}</Link> : r.title}
           {r.year && <span className="muted">({r.year})</span>}
-          <Badge tone="muted">{r.mediaType === 'show' ? 'TV' : 'Movie'}</Badge>
+          <Badge tone="muted">{TYPE_LABEL[r.mediaType] ?? r.mediaType}</Badge>
+          {r.also4k && <Badge tone="accent">+4K</Badge>}
         </div>
         <div className="muted req-sub">
-          {r.mediaType === 'show' && <span>{r.seasons.length ? `Season${r.seasons.length > 1 ? 's' : ''} ${r.seasons.join(', ')}` : 'All seasons'} · </span>}
+          {r.subtitle && <span>{r.mediaType === 'book' ? 'by ' : ''}{r.subtitle} · </span>}
+          {r.mediaType === 'show' && <span>{seasonText(r)} · </span>}
+          {r.mediaType === 'artist' && <span>{r.monitor === 'future' ? 'Future albums' : 'All albums'} · </span>}
           {isAdmin && !mine && <span>{r.requestedBy.displayName} · </span>}
           <span title={formatDateTime(r.requestedAt)}>requested {relativeTime(r.requestedAt)}</span>
           {r.decidedBy && r.decidedAt && <span> · {r.status === 'declined' ? 'declined' : 'approved'} by {r.decidedBy.displayName}</span>}
         </div>
         {r.note && <p className="req-note"><Icon name="info" size={13} /> {r.note}</p>}
+        {r.download && (
+          <div className="req-download" title={`${r.download.instance}: ${r.download.status}`}>
+            <Icon name="download" size={14} />
+            <span>Downloading {r.download.progress}%</span>
+            <ProgressBar value={r.download.progress} />
+            {r.download.timeLeft && <span className="muted">{r.download.timeLeft.replace(/^00:/, '')}</span>}
+          </div>
+        )}
         {r.error && <p className="form-error">{r.error}</p>}
       </div>
-      <Badge tone={REQUEST_STATUS_TONE[r.status]} className="req-status">{r.status}</Badge>
+      <Badge tone={REQUEST_STATUS_TONE[r.status]} className="req-status">{r.download ? `Downloading ${r.download.progress}%` : r.status}</Badge>
       <div className="req-actions">
         {r.itemId && r.status === 'available' && (
           <Link to={`/item/${r.itemId}`} className="btn btn-sm btn-primary"><Icon name="play" size={14} /> View</Link>
@@ -68,6 +90,17 @@ export default function RequestsPage() {
   const [status, setStatus] = useState<RequestStatus | ''>(isAdmin ? 'pending' : '');
   const [mineOnly, setMineOnly] = useState(false);
   const res = useAsync(() => api.requests.list({ status: status || undefined, mine: isAdmin && mineOnly ? true : undefined }), [status, mineOnly, isAdmin]);
+  // Refresh while something is downloading, so the progress moves.
+  const { setData: setList } = res;
+  const live = (res.data ?? []).some((r) => r.status === 'processing' || !!r.download);
+  useEffect(() => {
+    if (!live) return;
+    const t = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      api.requests.list({ status: status || undefined, mine: isAdmin && mineOnly ? true : undefined }).then((l) => setList(l)).catch(() => undefined);
+    }, 15000);
+    return () => window.clearInterval(t);
+  }, [live, status, mineOnly, isAdmin, setList]);
   const [busy, setBusy] = useState<string | null>(null);
   const [declining, setDeclining] = useState<MediaRequest | null>(null);
   const [note, setNote] = useState('');
@@ -81,7 +114,7 @@ export default function RequestsPage() {
     try {
       const out = await api.requests.approve(r.id);
       replace(out);
-      if (out.status === 'failed') toast.show(`Approved, but sending to ${r.mediaType === 'movie' ? 'Radarr' : 'Sonarr'} failed: ${out.error ?? 'unknown error'}`, 'error');
+      if (out.status === 'failed') toast.show(`Approved, but sending to ${ARR_FOR[r.mediaType] ?? 'the download manager'} failed: ${out.error ?? 'unknown error'}`, 'error');
       else toast.success(`Approved ${r.title}`);
     } catch (e) {
       toast.error(e);

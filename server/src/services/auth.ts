@@ -87,6 +87,7 @@ export function toUser(r: Row): User {
     allowDownloads: !!r.allow_downloads,
     allowTranscode: !!r.allow_transcode,
     allowDvr: !!r.allow_dvr,
+    allowRequest4k: !!r.allow_request_4k,
     disabled: !!r.disabled,
     allowRemote: r.allow_remote === undefined ? true : !!r.allow_remote,
     maxStreams: r.max_streams ?? null,
@@ -132,6 +133,7 @@ export function createUser(req: CreateUserRequest): User {
     allow_downloads: req.allowDownloads ?? true,
     allow_transcode: req.allowTranscode ?? true,
     allow_dvr: req.allowDvr ?? !!req.isAdmin,
+    allow_request_4k: req.allowRequest4k ?? false,
     allow_remote: req.allowRemote ?? true,
     max_streams: req.maxStreams && req.maxStreams > 0 ? Math.min(100, Math.trunc(req.maxStreams)) : null,
     preferences: '{}',
@@ -163,7 +165,7 @@ export function updateUser(id: string, req: UpdateUserRequest, actorId: string):
   }
   if (req.maxContentRating !== undefined) patch.max_rating = req.maxContentRating || null;
   if (req.libraryIds !== undefined) patch.library_ids = req.libraryIds ? JSON.stringify(req.libraryIds) : null;
-  for (const [k, col] of [['allowLiveTv', 'allow_live_tv'], ['allowDownloads', 'allow_downloads'], ['allowTranscode', 'allow_transcode'], ['allowDvr', 'allow_dvr'], ['allowRemote', 'allow_remote'], ['disabled', 'disabled']] as const) {
+  for (const [k, col] of [['allowLiveTv', 'allow_live_tv'], ['allowDownloads', 'allow_downloads'], ['allowTranscode', 'allow_transcode'], ['allowDvr', 'allow_dvr'], ['allowRequest4k', 'allow_request_4k'], ['allowRemote', 'allow_remote'], ['disabled', 'disabled']] as const) {
     if ((req as any)[k] !== undefined) patch[col] = !!(req as any)[k];
   }
   if (req.maxStreams !== undefined) patch.max_streams = req.maxStreams && req.maxStreams > 0 ? Math.min(100, Math.trunc(req.maxStreams)) : null;

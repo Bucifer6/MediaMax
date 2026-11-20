@@ -136,6 +136,12 @@ export async function findByImdb(imdbId: string): Promise<{ movie?: string; tv?:
   return { movie: r?.movie_results?.[0]?.id?.toString(), tv: r?.tv_results?.[0]?.id?.toString() };
 }
 
+/** TMDB show id for a TheTVDB series id. */
+export async function findByTvdb(tvdbId: string): Promise<string | null> {
+  const r = await call<any>(`/find/${encodeURIComponent(tvdbId)}`, { external_source: 'tvdb_id' });
+  return r?.tv_results?.[0]?.id?.toString() ?? null;
+}
+
 export async function searchMovie(title: string, year?: number | null): Promise<string | null> {
   let r = await call<any>('/search/movie', { query: title, year: year ?? undefined, include_adult: 'false' });
   if (!r?.results?.length && year) r = await call<any>('/search/movie', { query: title, primary_release_year: year - 1 });
