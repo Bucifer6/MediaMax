@@ -306,6 +306,38 @@ function MusicSettings() {
             <option value="off">Off</option>
           </select>
         </Field>
+        <Field label="Full-screen player opens on">
+          <select className="select" value={prefs.nowPlayingView ?? 'cover'} onChange={(e) => save({ nowPlayingView: e.target.value as NonNullable<UserPreferences['nowPlayingView']> })}>
+            <option value="cover">Cover</option>
+            <option value="lyrics">Lyrics</option>
+            <option value="visualizer">Visualiser</option>
+            <option value="karaoke">Karaoke</option>
+          </select>
+        </Field>
+        <Field label="Visualiser style">
+          <select className="select" value={prefs.visualizerStyle ?? 'ring'} onChange={(e) => save({ visualizerStyle: e.target.value as NonNullable<UserPreferences['visualizerStyle']> })}>
+            <option value="ring">Cover ring</option>
+            <option value="bars">Bars</option>
+            <option value="wave">Waveform</option>
+            <option value="particles">Starfield</option>
+            <option value="ambient">Ambient</option>
+          </select>
+        </Field>
+        <Field label="Lyrics timing (all tracks)" hint="Positive shows lyrics earlier. Each track can also be adjusted in the full-screen player.">
+          <select className="select" value={prefs.lyricsOffsetMs ?? 0} onChange={(e) => save({ lyricsOffsetMs: Number(e.target.value) })}>
+            {[-1000, -500, -300, -200, -100, 0, 100, 200, 300, 500, 1000].map((v) => <option key={v} value={v}>{v > 0 ? '+' : ''}{(v / 1000).toFixed(1)} s</option>)}
+          </select>
+        </Field>
+        <Field label="Karaoke vocal level">
+          <select className="select" value={prefs.karaokeVocalLevel ?? 15} onChange={(e) => save({ karaokeVocalLevel: Number(e.target.value) })}>
+            {[0, 5, 10, 15, 20, 30, 50].map((v) => <option key={v} value={v}>{v === 0 ? 'Vocals off' : `${v} %`}</option>)}
+          </select>
+        </Field>
+        <Field label="TV music screensaver" hint="TV mode: show the ambient visualiser after this long without a key press while music plays.">
+          <select className="select" value={prefs.musicScreensaverMinutes ?? 3} onChange={(e) => save({ musicScreensaverMinutes: Number(e.target.value) })}>
+            {[0, 1, 3, 5, 10, 30].map((v) => <option key={v} value={v}>{v ? `${v} min` : 'Off'}</option>)}
+          </select>
+        </Field>
       </div>
     </div>
   );

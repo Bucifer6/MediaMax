@@ -77,6 +77,16 @@ function mergePrefs(stored: Partial<UserPreferences>, patch: Partial<UserPrefere
   if (!['off', 'track', 'album', 'auto'].includes(prefs.replayGain as string)) prefs.replayGain = 'auto';
   // Help Centre: the server version whose "What's new" card was dismissed.
   if (prefs.whatsNewSeen !== undefined) prefs.whatsNewSeen = typeof prefs.whatsNewSeen === 'string' && /^[\w.+-]{1,32}$/.test(prefs.whatsNewSeen) ? prefs.whatsNewSeen : null;
+  // Now playing / lyrics / karaoke / visualiser preferences (web, TV and mobile music players).
+  const num = (v: unknown, lo: number, hi: number) => (v === undefined || v === null || !Number.isFinite(Number(v)) ? undefined : Math.max(lo, Math.min(hi, Math.round(Number(v)))));
+  if (prefs.nowPlayingView !== undefined && !['cover', 'lyrics', 'visualizer', 'karaoke'].includes(prefs.nowPlayingView)) delete prefs.nowPlayingView;
+  if (prefs.visualizerStyle !== undefined && !['ring', 'bars', 'wave', 'particles', 'ambient'].includes(prefs.visualizerStyle)) delete prefs.visualizerStyle;
+  for (const [k, lo, hi] of [['lyricsOffsetMs', -5000, 5000], ['karaokeVocalLevel', 0, 100], ['musicScreensaverMinutes', 0, 120]] as const) {
+    if (prefs[k] === undefined) continue;
+    const v = num(prefs[k], lo, hi);
+    if (v === undefined) delete prefs[k];
+    else prefs[k] = v;
+  }
   // Listening comforts (audio.ts): validated; per-device entries merge field by field, an empty one removes the device.
   if (prefs.audio !== undefined) prefs.audio = normalizeComforts(prefs.audio);
   if (prefs.audioDevices !== undefined) {

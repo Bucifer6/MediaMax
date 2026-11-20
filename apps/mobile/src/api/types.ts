@@ -1888,7 +1888,7 @@ export interface Lyrics {
   itemId: string;
   synced: boolean;
   /** `lrclib`: fetched from LRCLIB (no local .lrc or embedded lyrics). */
-  source: 'lrc' | 'embedded' | 'txt' | 'lrclib';
+  source: 'lrc' | 'embedded' | 'txt' | 'lrclib' | 'user';
   lines: LyricLine[];
 }
 
@@ -4117,4 +4117,124 @@ export interface MusicSettingsResponse {
   fingerprinter: { available: boolean; tool: 'fpcalc' | 'ffmpeg' | null; detail: string };
   /** Tracks without an MBID and without artist/title tags. */
   untagged: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Lyrics v2 (word timing, editor, offsets), karaoke stems, visualisers */
+/* ------------------------------------------------------------------ */
+
+/** One word of a line with enhanced (A2) or ID3 SYLT timing. */
+export interface LyricWord {
+  startMs: number;
+  text: string;
+}
+
+export interface LyricLine {
+  /** Word timing (enhanced LRC / SYLT), when the source has it. */
+  words?: LyricWord[];
+  /** End of the line (A2 trailing stamp); otherwise the next line's start. */
+  endMs?: number;
+}
+
+export interface Lyrics {
+  /** The lyrics as LRC text (editor / export). */
+  lrc?: string;
+  /** LRC metadata tags ([ti:], [ar:], ...). */
+  meta?: Record<string, string>;
+  /** The signed-in user's saved offset for this track in ms (+ = lyrics earlier). Add `UserPreferences.lyricsOffsetMs`. */
+  userOffsetMs?: number;
+  /** May save edits (administrators). */
+  canEdit?: boolean;
+  /** When these lyrics were last edited in MediaMax (source 'user'). */
+  editedAt?: string | null;
+}
+
+/** PUT /items/:id/lyrics (admin). Either LRC text (synced or plain) or lines. */
+export interface SaveLyricsRequest {
+  lrc?: string;
+  lines?: LyricLine[];
+  /** Also write `<file>.lrc` next to the audio file (needs `karaoke.writeLrcSidecars` and a writable library). */
+  writeSidecar?: boolean;
+}
+
+export interface SaveLyricsResponse extends Lyrics {
+  /** Path of the .lrc written next to the audio file, when one was written. */
+  wroteSidecar?: string | null;
+  sidecarError?: string | null;
+}
+
+export type NowPlayingView = 'cover' | 'lyrics' | 'visualizer' | 'karaoke';
+export type VisualizerStyle = 'ring' | 'bars' | 'wave' | 'particles' | 'ambient';
+
+export interface UserPreferences {
+  /** Full-screen music player: what it shows first. Default 'cover'. */
+  nowPlayingView?: NowPlayingView;
+  /** Default visualiser style. Default 'ring'. */
+  visualizerStyle?: VisualizerStyle;
+  /** Global lyrics offset in ms (-5000..5000, + = lyrics earlier); per-track offsets add to it. */
+  lyricsOffsetMs?: number;
+  /** Karaoke: vocal level 0-100 % (default 15). */
+  karaokeVocalLevel?: number;
+  /** TV mode: music screensaver after this many idle minutes while music plays (0 = off, default 3). */
+  musicScreensaverMinutes?: number;
+}
+
+export interface KaraokeSettings {
+  /** Allow AI stem separation (model download + stem cache). Default false. */
+  stemsEnabled: boolean;
+  /** Model URL (http(s); `.../x.tgz#path/in/archive.onnx` for an archive member); null = the default HT-Demucs export. */
+  stemsModelUrl: string | null;
+  /** Expected SHA-256 of a custom model (the default model is always pinned). */
+  stemsModelSha256: string | null;
+  /** Saving lyrics also writes an .lrc next to the audio file when the library folder is writable. Default false. */
+  writeLrcSidecars: boolean;
+}
+
+export interface ServerSettings {
+  karaoke?: KaraokeSettings;
+}
+
+export type StemName = 'vocals' | 'drums' | 'bass' | 'other';
+
+export interface StemsModelStatus {
+  id: string;
+  name: string;
+  url: string;
+  licence: string;
+  homepage: string | null;
+  custom: boolean;
+  bytes: number | null;
+  sha256: string | null;
+  /** Downloaded and checked against the pinned SHA-256. */
+  verified: boolean;
+  ready: boolean;
+  downloading: { received: number; total: number } | null;
+  error: string | null;
+}
+
+/** GET /stems/status */
+export interface StemsStatus {
+  enabled: boolean;
+  model: StemsModelStatus | null;
+  /** onnxruntime-web is installed on the server (served same-origin to the browser worker). */
+  ort: boolean;
+  ortVersion: string | null;
+  format: 'flac' | 'wav';
+  sampleRate: number;
+  stemNames: StemName[];
+  /** May download the model / prepare stems (administrators). */
+  canPrepare: boolean;
+}
+
+/** GET /items/:id/stems */
+export interface TrackStems {
+  itemId: string;
+  ready: boolean;
+  preparing: boolean;
+  model?: string;
+  backend?: string;
+  format?: 'flac' | 'wav';
+  frames?: number;
+  sampleRate?: number;
+  at?: number;
 }
