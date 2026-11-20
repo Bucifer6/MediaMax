@@ -294,11 +294,13 @@ export function switchProfile(ctx: AuthContext, targetId: string, pin: string | 
   const key = `p:${target.id}`;
   if (target.pin_hash && target.id !== ctx.user.id) {
     assertNotLocked(key, remoteAddr);
-    if (!verifySecret(String(pin ?? ''), target.pin_hash)) {
+    // No PIN sent: the client is asking whether one is needed; that is not a failed attempt.
+    if (!pin) throw new HttpError(401, 'Enter the profile PIN', 'pin_required');
+    if (!verifySecret(String(pin), target.pin_hash)) {
       recordFailure(key);
       logActivity('user.login.failed', `Wrong PIN for the profile ${target.display_name}`, { severity: 'warning', userId: ctx.user.id });
       securityEvent('AUTH_FAIL', remoteAddr, { user: target.username, reason: 'profile_pin' });
-      throw new HttpError(401, pin ? 'Incorrect PIN' : 'Enter the profile PIN', pin ? 'pin_invalid' : 'pin_required');
+      throw new HttpError(401, 'Incorrect PIN', 'pin_invalid');
     }
     clearFailures(key);
   }

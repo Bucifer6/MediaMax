@@ -255,7 +255,8 @@ export class TextRenderer {
       const tx = col === 'left' ? '0' : col === 'right' ? '-100%' : '-50%';
       const ty = row === 'top' ? '0' : row === 'bottom' ? '-100%' : '-50%';
       s.transform = `translate(${tx}, ${ty})`;
-      s.maxWidth = `${this.rect.width}px`;
+      // Positioned lines don't wrap (as in libass, which only wraps at the margins).
+      s.whiteSpace = 'pre';
     } else {
       s.left = `${a.marginL * sx}px`;
       s.right = `${a.marginR * sx}px`;

@@ -525,7 +525,7 @@ export default function VideoPlayer() {
         if (match && !match.default) ai = match.index;
       }
       setAudioIndex(ai);
-      await start({ startMs, audioIndex: ai, subtitleIndex: null, burn: false, maxBitrate: prefs.maxBitrate });
+      await start({ startMs, audioIndex: ai, subtitleIndex: null, burn: false, maxBitrate: prefs.maxBitrate, auto: autoQuality });
     })();
     return () => {
       cancelled = true;

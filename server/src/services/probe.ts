@@ -36,7 +36,8 @@ export function ffprobeJson(input: string, extraArgs: string[] = [], timeoutMs =
       clearTimeout(t);
       reject(e);
     });
-    p.on('exit', (code) => {
+    // 'close', not 'exit': 'exit' can fire before stdout is fully read (truncated JSON under load).
+    p.on('close', (code) => {
       clearTimeout(t);
       if (code !== 0) return reject(new Error(err.trim() || `ffprobe exited ${code}`));
       try {
@@ -56,7 +57,7 @@ export async function firstFrameSideData(input: string, streamIndex: number): Pr
     const t = setTimeout(() => p.kill('SIGKILL'), 15000);
     p.stdout.on('data', (d) => (out += d));
     p.on('error', () => { clearTimeout(t); resolve([]); });
-    p.on('exit', () => {
+    p.on('close', () => {
       clearTimeout(t);
       try {
         resolve(JSON.parse(out).frames?.[0]?.side_data_list ?? []);

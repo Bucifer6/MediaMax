@@ -111,7 +111,7 @@ async function fetchRemote(id: string, url: string, untrusted: boolean): Promise
 
 function resize(src: string, dest: string, width: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const p = spawn(config.ffmpeg, ['-v', 'error', '-y', '-i', src, '-vf', `scale='min(${width},iw)':-2`, '-frames:v', '1', '-q:v', '3', dest]);
+    const p = spawn(config.ffmpeg, ['-v', 'error', '-y', '-i', src, '-vf', `scale='min(${width},iw)':-2`, '-frames:v', '1', ...(dest.endsWith('.png') ? ['-compression_level', '6'] : ['-q:v', '3']), dest]);
     p.on('error', reject);
     p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}`))));
   });
@@ -149,7 +149,9 @@ export async function resolveImage(id: string, width?: number): Promise<{ path: 
   if (ext === '.svg') throw notFound('Image unavailable');
   if (width && width > 0 && width < 3000 && ext !== '.gif') {
     const w = Math.ceil(width / 80) * 80; // bucket sizes to keep cache small
-    const dest = path.join(config.imageCacheDir, 'w', `${id}_${w}.jpg`);
+    // Keep transparency: PNG/WebP sources (clear logos, channel logos) are resized to PNG, everything else to JPEG.
+    const alpha = ext === '.png' || ext === '.webp';
+    const dest = path.join(config.imageCacheDir, 'w', `${id}_${w}.${alpha ? 'png' : 'jpg'}`);
     if (!fs.existsSync(dest)) {
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       const key = dest;
@@ -164,7 +166,7 @@ export async function resolveImage(id: string, width?: number): Promise<{ path: 
         return { path: file, mime: mimeFor(file) };
       }
     }
-    return { path: dest, mime: 'image/jpeg' };
+    return { path: dest, mime: alpha ? 'image/png' : 'image/jpeg' };
   }
   return { path: file, mime: mimeFor(file) };
 }

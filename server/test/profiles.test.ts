@@ -133,7 +133,7 @@ test('switching: PIN required when set, wrong PINs lock out, previous session on
 
   let r = await call(ownerToken, 'POST', `/auth/profiles/${dad}/switch`, {});
   assert.equal(r.statusCode, 401);
-  assert.equal(r.json().code, 'pin_required');
+  assert.equal(r.json().error, 'pin_required');
   for (let i = 0; i < 5; i++) assert.equal((await call(ownerToken, 'POST', `/auth/profiles/${dad}/switch`, { pin: '9999' })).statusCode, 401);
   r = await call(ownerToken, 'POST', `/auth/profiles/${dad}/switch`, { pin: '2222' });
   assert.equal(r.statusCode, 429, 'locked out even with the right PIN');
@@ -272,7 +272,7 @@ test('request permissions: adults inherit the owner, kids get none, owners can o
 
   // Shared quota: owner limit 2 movies/week; one by the owner, one by the profile → both see 0 left.
   auth.updateUser(owner.id, { requestQuotas: { movie: { limit: 2, days: 7 }, show: { limit: 5, days: 7 }, music: { limit: 5, days: 7 }, book: { limit: 5, days: 7 } } }, admin.id);
-  const ins = (by: string, id: string) => db.insert('media_requests', { id, media_type: 'movie', external_id: id, title: id, status: 'pending', requested_by: by, requested_at: new Date().toISOString() });
+  const ins = (by: string, id: string) => db.insert('media_requests', { id, media_type: 'movie', tmdb_id: id, title: id, status: 'pending', requested_by: by, requested_at: new Date().toISOString() });
   ins(owner.id, 'rq1');
   ins(dad, 'rq2');
   assert.equal(perms.quotaStatus(auth.getUser(dad), 'movie').remaining, 0);
