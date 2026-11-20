@@ -259,6 +259,8 @@ export interface UserPreferences {
   themeId: string | null;
   /** Music loudness levelling: album gain on album playback is the usual choice. Default 'auto'. */
   replayGain?: 'off' | 'track' | 'album' | 'auto';
+  /** Play the server's cinema-mode intros (trailers, pre-roll) before movies. Default true when the server enables it. */
+  cinemaMode?: boolean;
 }
 
 export interface User {
@@ -1000,6 +1002,16 @@ export interface ServerSettings {
     comskipIni: string | null;
   };
   webhooks: Webhook[];
+  /** Cinema mode: trailers and a pre-roll before movies (players ask GET /items/:id/intros). */
+  cinema: {
+    enabled: boolean;
+    /** How many trailers (local "Trailers" extras of other movies) to play first. */
+    trailers: number;
+    /** Only trailers for movies the viewer hasn't watched. */
+    unwatchedOnly: boolean;
+    /** A library of short pre-roll clips; one is picked at random and played last, right before the movie. */
+    prerollLibraryId: string | null;
+  };
   /** Allow sign-in from the public profile picker without a password. */
   allowPasswordlessProfiles: boolean;
   /** Hide items with no content rating from users who have a rating limit. */

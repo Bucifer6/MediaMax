@@ -265,6 +265,16 @@ export default function VideoPlayer() {
       itemRef.current = it;
       const fromParam = sp.get('start');
       const startMs = fromParam != null ? Number(fromParam) || 0 : it && isResumable(it) ? it.userData.positionMs : 0;
+      // Cinema mode: play trailers / a pre-roll first when a movie starts from the beginning.
+      if (it?.type === 'movie' && startMs === 0 && !sp.get('nointro') && !sp.get('then') && prefs.cinemaMode !== false) {
+        const intros = await api.items.intros(itemId).catch(() => []);
+        if (cancelled) return;
+        if (intros.length) {
+          const [first, ...rest] = intros.map((x) => x.id);
+          navigate(`/play/${first}?start=0&then=${encodeURIComponent(itemId)}${rest.length ? `&intros=${rest.join(',')}` : ''}`, { replace: true });
+          return;
+        }
+      }
       // Preferred audio language.
       let ai: number | undefined;
       const media = it?.media?.[0];
@@ -536,6 +546,20 @@ export default function VideoPlayer() {
     },
     load: (id) => navigate(`/play/${id}?start=0`, { replace: true }),
   });
+
+  // Cinema-mode intro chain: ?then=<movie>&intros=<remaining ids>
+  const introThen = sp.get('then');
+  const nextIntro = useCallback(() => {
+    if (!introThen) return;
+    const [n, ...rest] = (sp.get('intros') ?? '').split(',').filter(Boolean);
+    navigate(n ? `/play/${n}?start=0&then=${encodeURIComponent(introThen)}${rest.length ? `&intros=${rest.join(',')}` : ''}` : `/play/${introThen}?start=0&nointro=1`, { replace: true });
+  }, [introThen, sp, navigate]);
+  const skipIntros = useCallback(() => {
+    if (introThen) navigate(`/play/${introThen}?start=0&nointro=1`, { replace: true });
+  }, [introThen, navigate]);
+  useEffect(() => {
+    if (ended && introThen) nextIntro();
+  }, [ended, introThen, nextIntro]);
 
   const goNext = useCallback(() => {
     if (!info?.nextItemId) return;
@@ -834,6 +858,12 @@ export default function VideoPlayer() {
         {info && <span className={`badge player-method method-${info.method}`} title="Playback method">{info.method === 'direct' ? 'Direct play' : info.method === 'remux' ? 'Direct stream' : info.method === 'transcode' ? 'Transcoding' : 'Live'}</span>}
         {sync.room && <span className="badge badge-accent"><Icon name="together" size={12} /> {sync.room.members.length} watching</span>}
       </div>
+
+      {introThen && (
+        <button className="skip-btn" onClick={skipIntros}>
+          {item?.extraType === 'trailer' ? `Trailer · ${item.parentTitle ?? ''} — ` : ''}Skip to movie <Icon name="skipFwd" size={16} />
+        </button>
+      )}
 
       {/* Skip intro / credits */}
       {activeSkip && !prefs.skipIntros && (

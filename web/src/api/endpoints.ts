@@ -91,6 +91,8 @@ export const api = {
     search: (q: string, limit = 24, signal?: AbortSignal) => http.get<SearchResponse>('/search', { q, limit }, signal),
     lyrics: (id: string, signal?: AbortSignal) => http.get<Lyrics>(`/items/${enc(id)}/lyrics`, undefined, signal),
     trickplay: (id: string, mediaId?: string, signal?: AbortSignal) => http.get<TrickplayInfo>(`/items/${enc(id)}/trickplay`, { mediaId }, signal),
+    intros: (id: string) => http.get<Item[]>(`/items/${enc(id)}/intros`),
+    extras: (id: string) => http.get<Item[]>(`/items/${enc(id)}/extras`),
   },
 
   subtitles: {

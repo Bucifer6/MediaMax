@@ -311,3 +311,7 @@ The web app's multiview is at `/watch/multiview?ch=<id>,<id>,…`. Click a tile 
 ## ReplayGain / loudness levelling
 
 Music tracks carry `replayGain: { trackGainDb, trackPeak, albumGainDb, albumPeak }` when the file has `REPLAYGAIN_*` tags. Opus `R128_*_GAIN` tags are converted to the ReplayGain −18 LUFS reference. The OpenSubsonic `replayGain` field on songs carries the same values, so Symfonium, Feishin and similar apps can level volume. Each user picks a mode with the `replayGain` preference (`off`, `track`, `album`, or `auto`, the default, which uses album gain when playing an album in order and track gain otherwise). Tags are read on scan; run a full refresh to pick them up for files that were already scanned.
+
+## Cinema mode (trailers and pre-rolls)
+
+`GET /items/:id/intros` returns the videos to play before a movie: up to `settings.cinema.trailers` local trailers for *other* movies (unwatched ones only, when `unwatchedOnly` is set), then one random clip from `cinema.prerollLibraryId`. It returns `[]` when cinema mode is off, when the item is not a movie, or when the user has turned off the `cinemaMode` preference. Results respect parental limits and library access. The web player chains intros as `/play/<intro>?then=<movie>&intros=<rest>`, and "Skip to movie" jumps straight to the feature.
