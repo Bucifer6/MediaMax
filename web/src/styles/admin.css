@@ -353,3 +353,12 @@ a.stat:hover { transform: translateY(-2px); border-color: var(--c-primary); }
   .invite-actions { flex-direction: row; }
   .row-end { flex-wrap: wrap; }
 }
+
+/* AI DJ presets */
+.ai-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.ai-preset { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--c-line); background: var(--c-surface-alt); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ai-preset.active { border-color: var(--c-primary); box-shadow: 0 0 0 1px var(--c-primary) inset; }
+.ai-tag { flex: none; padding: 1px 7px; border-radius: 999px; font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+.ai-tag-free { background: #14532d; color: #bbf7d0; }
+.ai-tag-free-tier { background: #1e3a8a; color: #bfdbfe; }
+.ai-tag-cheap { background: #713f12; color: #fde68a; }

@@ -354,3 +354,31 @@ Every track after the first carries a `transition` describing how to mix into it
 - **Style:** `blend` (beat-matched, 16–32 beats), `fade`, or `cut` for a clashing key and tempo. `keyMatch` and `bpmDelta` are included for display.
 
 The web app's DJ page (`/dj`) runs two decks on Web Audio with equal-power crossfades, preloads the next track at its mix-in point, and tops up non-stop mixes automatically.
+
+## AI DJ
+
+The AI DJ is free by default and works offline. Admins can connect free or cheap AI services under **Server settings → AI DJ**.
+
+- **Ask in plain words:** `POST /dj/mix {"prompt": "chilled 90s house for a Sunday morning"}`. The built-in parser understands:
+  - genres, including synonyms (EDM, hip hop/rap, R&B, DnB…), matched against your library's genres
+  - decades and years ("90s", "the eighties", "since 2015")
+  - moods, mapped to energy curves (chill, party, workout, build-up, waves)
+  - tempo ("fast", "124 bpm"), mix length, and "nothing over 5 minutes"
+  - "like/start with \<artist, album or song\>"
+
+  The response adds `summary`, `understoodBy` (`llm`/`rules`), `continuous` and the resolved `request`; reuse that request for continuous top-ups. If the filters match nothing, they are relaxed instead of failing.
+- **Language model (optional):** `aiDj.llm.provider` is `ollama`, or `openai` for any OpenAI-compatible API:
+  - **Self-hosted, free:** LM Studio, llama.cpp, LocalAI, vLLM.
+  - **Hosted free tiers:** Groq, Google Gemini (`…/v1beta/openai`), OpenRouter `:free` models, Mistral, Cerebras.
+  - **Very cheap hosted:** DeepSeek, OpenAI mini models.
+
+  Model replies are validated (genres must exist in your library) and merged with the parser's results. `maxRequestsPerDay` (default 300) caps calls so free tiers stay free. Over the cap, the built-in DJ takes over silently. API keys are write-only: settings reads return `••••`.
+- **The host:** `POST /dj/host {previousItemId?, nextItemId, position, prompt?, hour}` returns `{text, audioUrl, by}`. Text comes from varied templates or the model. The model is told to use only the facts it is given: title, artist, year, BPM, key, energy, your play count and favourite status.
+- **Voice:** `aiDj.tts.provider` is one of:
+  - `device`: the browser, phone or TV speaks it, free
+  - `piper`: open-source neural TTS on the server, free
+  - `openai`: any OpenAI-compatible `/audio/speech` API, such as self-hosted Kokoro-FastAPI (free) or a hosted API (cheap)
+
+  Clips are cached as MP3 and served from `GET /dj/voice/:file`. Clients duck the music to about 30% while the host speaks.
+- **Taste:** `POST /dj/feedback {itemId, kind: 'skip'|'love'}`. Skipped tracks and artists are played less for 60 days, and "love" also favourites the track.
+- **Sounds-like:** analysis v2 adds a 26-number timbre fingerprint (MFCC 1–12 mean and deviation, spectral centroid and flatness). Mixes prefer tracks that sound like the previous one and the seed. `GET /dj/status` reports `ai: {enabled, llm, serverVoice, hostName, chattiness}`.

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { DjEnergyCurve, DjMixRequest, DjMixTrack, Item } from '@mediamax/shared';
+import type { DjEnergyCurve, DjMixRequest, DjMixTrack, DjStatus, Item } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
@@ -72,6 +72,50 @@ function Deck({ d, side, live, mixOutMs }: { d: DeckState; side: 'A' | 'B'; live
         <div className="dj-deck-idle muted">Waiting for the next track…</div>
       )}
     </div>
+  );
+}
+
+const VOICE_KEY = 'mm.dj.voice';
+const readVoice = () => {
+  try {
+    return localStorage.getItem(VOICE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+};
+
+/** AI DJ: describe the mix in your own words. */
+function AskTheDj({ onAsk, ai, nowArtist }: { onAsk: (prompt: string) => Promise<void>; ai: NonNullable<DjStatus['ai']>; nowArtist: string | null }) {
+  const [prompt, setPrompt] = useState('');
+  const [busy, setBusy] = useState(false);
+  const examples = [
+    'Chilled Sunday morning', '90s party bangers, all night', 'Workout, fast, 45 minutes', 'Late-night jazz',
+    ...(nowArtist ? [`Something like ${nowArtist}`] : ['Feel-good songs from my favourites']),
+  ];
+  const ask = async (p: string) => {
+    if (!p.trim() || busy) return;
+    setBusy(true);
+    try {
+      await onAsk(p.trim());
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="dj-ask">
+      <div className="dj-ask-head">
+        <span className="dj-ai-badge"><Icon name="sparkles" size={14} /> AI DJ</span>
+        <h2>What do you feel like?</h2>
+        <p className="muted">Describe it in your own words — a mood, an era, an artist, how long. {ai.hostName} builds the mix{ai.llm ? '' : ' (built-in understanding; an admin can connect a free AI model for more)'}.</p>
+      </div>
+      <form className="dj-ask-form" onSubmit={(e) => { e.preventDefault(); void ask(prompt); }}>
+        <input className="input input-lg" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="e.g. chilled 90s house for a Sunday morning" maxLength={500} aria-label="Describe your mix" />
+        <button className="btn btn-primary btn-lg" disabled={!prompt.trim() || busy}>{busy ? <Spinner size={18} /> : <Icon name="play" size={18} />} Play it</button>
+      </form>
+      <div className="chip-row" aria-label="Examples">
+        {examples.map((x) => <button key={x} className="chip" onClick={() => void ask(x)} disabled={busy}>{x}</button>)}
+      </div>
+    </section>
   );
 }
 
@@ -202,15 +246,33 @@ export default function DjPage() {
   const next = s.queue[s.index + 1] ?? null;
   const upcoming = useMemo(() => s.queue.slice(s.index + 1), [s.queue, s.index]);
 
+  const [voice, setVoiceState] = useState(readVoice);
+  const ai = status.data?.ai ?? null;
+  useEffect(() => engine.setVoice(voice, ai), [voice, ai, engine]);
+  const setVoice = (v: boolean) => {
+    setVoiceState(v);
+    try {
+      localStorage.setItem(VOICE_KEY, v ? '1' : '0');
+    } catch {
+      /* private mode */
+    }
+  };
+
   const start = async (req: DjMixRequest, continuous: boolean) => {
     try {
       music.pause();
       const mix = await api.dj.mix(req);
       if (!mix.tracks.length) throw new Error('No tracks matched — try fewer filters');
-      await engine.start(mix, req, continuous);
+      // Prompt mixes come back with the resolved settings; top-ups reuse those instead of re-reading the prompt.
+      await engine.start(mix, mix.request ?? req, mix.continuous ?? continuous);
     } catch (e) {
       toast.error(e);
     }
+  };
+  const nowArtist = music.current?.grandparentTitle ?? null;
+  const love = () => {
+    const it = engine.love();
+    if (it) toast.success(`♥ ${it.title} — added to favourites`);
   };
 
   const saveAsPlaylist = async () => {
@@ -252,10 +314,17 @@ export default function DjPage() {
         <>
           {s.status === 'ended' && <p className="muted">That mix has finished. Start another below.</p>}
           {s.status === 'error' && <p className="form-error">{s.error}</p>}
+          {ai?.enabled && <AskTheDj ai={ai} nowArtist={nowArtist} onAsk={(prompt) => start({ prompt }, false)} />}
+          {ai?.enabled && <Switch checked={voice} onChange={setVoice} label={`DJ voice — ${ai.hostName} talks between songs`} hint={ai.serverVoice ? 'Uses the server\'s DJ voice.' : 'Uses your browser\'s built-in voice.'} />}
+          {ai?.enabled && <h2 className="section-title dj-or">Or set it up yourself</h2>}
           <Setup onStart={start} seed={seed.data ?? null} />
         </>
       ) : (
         <div className="dj-booth">
+          {s.summary && (
+            <p className="dj-summary"><span className="dj-ai-badge"><Icon name="sparkles" size={12} /> {s.understoodBy === 'llm' ? 'AI' : 'DJ'}</span> {s.summary}</p>
+          )}
+          {s.hostSpeaking && <div className="dj-subtitle" role="status" aria-live="polite"><strong>{ai?.hostName ?? 'DJ'}:</strong> {s.hostSpeaking}</div>}
           <div className="dj-decks">
             <Deck d={s.decks[0]} side="A" live={s.live === 0} mixOutMs={s.live === 0 ? next?.transition?.mixOutMs ?? null : null} />
             <div className="dj-mixer">
@@ -269,7 +338,9 @@ export default function DjPage() {
                   <button className="btn btn-primary btn-icon-lg" onClick={() => engine.pause()} aria-label="Pause" disabled={s.status === 'loading'}><Icon name="pause" size={26} /></button>
                 )}
                 <button className="btn" onClick={() => engine.mixNow()} disabled={!next || s.transitioning} title="Start the next transition now (on the next bar)"><Icon name="shuffle" size={16} /> Mix now</button>
-                <button className="btn btn-ghost" onClick={() => engine.skipNext()} disabled={!next || s.transitioning} title="Skip the upcoming track"><Icon name="next" size={16} /> Skip next</button>
+                <button className="btn btn-ghost" onClick={() => engine.skipNext()} disabled={!next || s.transitioning} title="Skip the upcoming track (the DJ learns from skips)"><Icon name="next" size={16} /> Skip next</button>
+                <button className="btn btn-ghost" onClick={love} title="Love this track (adds it to favourites and steers future mixes)"><Icon name="heart" size={16} /> Love</button>
+                {ai?.enabled && <button className={`btn btn-ghost ${voice ? 'active' : ''}`} aria-pressed={voice} onClick={() => setVoice(!voice)} title="DJ voice"><Icon name={voice ? 'volume' : 'mute'} size={16} /> Voice</button>}
               </div>
               {s.transitioning && next?.transition && <Badge tone="accent">{STYLE_LABEL[next.transition.style]}…</Badge>}
             </div>

@@ -9,7 +9,8 @@
  *   - plays the incoming track at `tempoRatio` (pitch preserved) during the blend, then eases it back to 1.0,
  *   - tops up the queue from the server in continuous mode.
  */
-import type { DjMix, DjMixRequest, DjMixTrack, PlaybackInfo } from '@mediamax/shared';
+import type { DjHostLine, DjMix, DjMixRequest, DjMixTrack, DjStatus, PlaybackInfo } from '@mediamax/shared';
+import { getToken } from '../api/client';
 import { api } from '../api/endpoints';
 import { attachStream, type Attached } from './engine';
 import { profileWithBitrate } from './deviceProfile';
@@ -38,6 +39,12 @@ export interface DjState {
   index: number;
   continuous: boolean;
   fetching: boolean;
+  /** AI DJ host: the line being spoken right now (for subtitles). */
+  hostSpeaking: string | null;
+  voice: boolean;
+  /** What the AI DJ understood the request as. */
+  summary: string | null;
+  understoodBy: 'llm' | 'rules' | null;
 }
 
 interface Deck {
@@ -105,12 +112,125 @@ export class DjEngine {
     };
   }
 
+  /* ------------------------------ AI DJ host ---------------------------- */
+
+  private voiceOn = false;
+  private summary: string | null = null;
+  private understoodBy: 'llm' | 'rules' | null = null;
+  private ai: DjStatus['ai'] | null = null;
+  private lines = new Map<number, Promise<DjHostLine | null>>();
+  private hostSpeaking: string | null = null;
+  private voiceEl: HTMLAudioElement | null = null;
+
+  /** Turn the spoken host on/off (it needs the server's AI DJ to be enabled). */
+  setVoice(on: boolean, ai: DjStatus['ai'] | null) {
+    this.ai = ai;
+    this.voiceOn = on && !!ai?.enabled;
+    if (!this.voiceOn) this.silence();
+    this.emit();
+  }
+
+  /** Should the host talk before queue position `i`? Always for the opener, then by chattiness. */
+  private wantsLine(i: number) {
+    if (!this.voiceOn || !this.ai) return false;
+    if (i === 0) return true;
+    const every = this.ai.chattiness === 'chatty' ? 1 : this.ai.chattiness === 'rare' ? 4 : 2;
+    return i % every === 0;
+  }
+
+  private fetchLine(i: number) {
+    if (!this.wantsLine(i) || this.lines.has(i) || !this.queue[i]) return;
+    const p = api.dj.host({
+      previousItemId: i > 0 ? this.queue[i - 1]?.item.id : undefined, nextItemId: this.queue[i].item.id,
+      position: i, prompt: this.request.prompt, hour: new Date().getHours(),
+    }).catch(() => null);
+    this.lines.set(i, p);
+  }
+
+  /** Speak a ready line over the music (ducked). Never waits: a line that isn't ready yet is skipped. */
+  private async speakIfReady(i: number, maxWaitMs = 0) {
+    const p = this.lines.get(i);
+    if (!p) return;
+    const line = await Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), maxWaitMs))]);
+    if (!line?.text || !this.voiceOn || this.status !== 'playing') return;
+    this.duck(true);
+    this.hostSpeaking = line.text;
+    this.emit();
+    const done = () => {
+      if (this.hostSpeaking !== line.text) return;
+      this.hostSpeaking = null;
+      this.duck(false);
+      this.emit();
+    };
+    try {
+      if (line.audioUrl) {
+        const token = getToken();
+        const el = (this.voiceEl ??= new Audio());
+        el.src = `${line.audioUrl}${line.audioUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token ?? '')}`;
+        el.onended = done;
+        el.onerror = done;
+        await el.play();
+      } else if ('speechSynthesis' in window) {
+        const u = new SpeechSynthesisUtterance(line.text);
+        const voices = speechSynthesis.getVoices();
+        // Prefer natural-sounding English voices where the browser has them.
+        u.voice = voices.find((v) => /natural|neural|google uk english|samantha|daniel/i.test(v.name) && v.lang.startsWith('en'))
+          ?? voices.find((v) => v.lang === navigator.language) ?? voices.find((v) => v.lang.startsWith('en')) ?? null;
+        u.rate = 1.03;
+        u.onend = done;
+        u.onerror = done;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(u);
+        // Some browsers never fire onend for long utterances; don't leave the music ducked.
+        setTimeout(done, Math.min(20000, 1500 + line.text.length * 75));
+      } else done();
+    } catch {
+      done();
+    }
+  }
+
+  private silence() {
+    this.voiceEl?.pause();
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    if (this.hostSpeaking) {
+      this.hostSpeaking = null;
+      this.duck(false);
+    }
+  }
+
+  /** Lower the music under the host's voice (Web Audio master gain; element volume as a fallback). */
+  private ducked = false;
+  private duck(on: boolean) {
+    if (this.ducked === on) return;
+    this.ducked = on;
+    if (this.master && this.ctx) {
+      const g = this.master.gain;
+      const t = this.ctx.currentTime;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(g.value, t);
+      g.linearRampToValueAtTime(on ? 0.3 : 1, t + (on ? 0.35 : 1.2));
+    } else {
+      for (const d of this.decks) d.audio.volume = Math.max(0, Math.min(1, d.audio.volume * (on ? 0.3 : 1 / 0.3)));
+    }
+  }
+
+  /** ♥ the track that's playing now: favourites it and steers future mixes. */
+  love() {
+    const t = this.queue[this.index];
+    if (t) void api.dj.feedback({ itemId: t.item.id, kind: 'love' }).catch(() => {});
+    return t?.item ?? null;
+  }
+
   /** Start a mix. `request` is kept for continuous top-ups. */
   async start(mix: DjMix, request: DjMixRequest, continuous: boolean) {
     this.stop(false);
     this.ensureAudioGraph();
     this.queue = mix.tracks;
     this.request = request;
+    this.summary = mix.summary ?? null;
+    this.understoodBy = mix.understoodBy ?? null;
+    this.lines.clear();
+    this.fetchLine(0);
     this.continuous = continuous;
     this.index = 0;
     this.live = 0;
@@ -127,6 +247,8 @@ export class DjEngine {
       this.status = 'playing';
       this.startTicking();
       this.updateMediaSession();
+      // Opening line over the intro (waits up to 4 s for it, the music is already playing).
+      void this.speakIfReady(0, 4000);
     } catch (e) {
       this.fail((e as Error).message);
     }
@@ -136,6 +258,7 @@ export class DjEngine {
   pause() {
     if (this.status !== 'playing') return;
     for (const d of this.decks) if (!d.audio.paused) d.audio.pause();
+    this.silence();
     this.status = 'paused';
     this.report('paused');
     this.emit();
@@ -154,6 +277,8 @@ export class DjEngine {
 
   stop(emit = true) {
     this.stopTicking();
+    this.silence();
+    this.lines.clear();
     for (const d of this.decks) this.unload(d);
     this.transitioning = false;
     this.queue = [];
@@ -191,6 +316,9 @@ export class DjEngine {
     const idle = this.decks[1 - this.live];
     if (idle.queueIndex === this.index + 1) this.unload(idle);
     const removed = this.queue.splice(this.index + 1, 1)[0];
+    if (removed) void api.dj.feedback({ itemId: removed.item.id, kind: 'skip' }).catch(() => {});
+    // Queue positions shifted: drop host lines prepared for anything after the live track.
+    for (const k of [...this.lines.keys()]) if (k > this.index) this.lines.delete(k);
     // The new upcoming track keeps its own mix-in; reuse the removed track's mix-out timing from the live track.
     const next = this.queue[this.index + 1];
     if (next && removed?.transition) next.transition = { ...(next.transition ?? removed.transition), mixOutMs: removed.transition.mixOutMs };
@@ -202,6 +330,7 @@ export class DjEngine {
   removeAt(i: number) {
     if (i <= this.index + (this.decks[1 - this.live].queueIndex === this.index + 1 ? 1 : 0)) return;
     this.queue.splice(i, 1);
+    for (const k of [...this.lines.keys()]) if (k >= i) this.lines.delete(k);
     void this.topUp();
     this.emit();
   }
@@ -227,6 +356,7 @@ export class DjEngine {
     return {
       status: this.status, error: this.error, decks: [deck(0), deck(1)], live: this.live, crossfader: Math.max(-1, Math.min(1, xf)),
       transitioning: this.transitioning, queue: this.queue, index: this.index, continuous: this.continuous, fetching: this.fetching,
+      hostSpeaking: this.hostSpeaking, voice: this.voiceOn, summary: this.summary, understoodBy: this.understoodBy,
     };
   }
 
@@ -384,6 +514,7 @@ export class DjEngine {
     try {
       const idle = this.decks[1 - this.live];
       this.setGain((1 - this.live) as 0 | 1, 0);
+      this.fetchLine(i);
       await this.load(idle, i, next.transition?.mixInMs ?? next.analysis?.cueInMs ?? 0);
     } catch {
       // Unplayable: drop it and let the next tick try the following track.
@@ -422,6 +553,7 @@ export class DjEngine {
       this.decks[this.live].gain!.gain.setValueCurveAtTime(down, t0, this.fadeLen / 1000);
     }
     this.updateMediaSession(next);
+    void this.speakIfReady(this.index + 1);
     this.emit();
   }
 

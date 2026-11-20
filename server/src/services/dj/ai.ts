@@ -339,7 +339,7 @@ function templateLine(host: string, prev: TrackFacts | null, next: TrackFacts, r
 
 const HOST_SYSTEM = (host: string) => `You are ${host}, a warm, upbeat radio DJ hosting a personal music mix for one listener.
 Write what you say between two songs: 1–2 short sentences, at most 35 words, natural spoken English, no emojis, no hashtags, no stage directions.
-Mention the songs by name. Use ONLY the facts provided — never invent chart positions, dates, trivia or quotes. Don't repeat the same opener every time.`;
+If "opening" is true, greet the listener and introduce the first song (there is no previous song). Mention the songs by name. Use ONLY the facts provided — never invent chart positions, dates, trivia or quotes. Don't repeat the same opener every time.`;
 
 /** A short spoken link between tracks (or the opening line). */
 export async function hostLine(user: User, req: DjHostRequest): Promise<DjHostLine> {
@@ -351,7 +351,7 @@ export async function hostLine(user: User, req: DjHostRequest): Promise<DjHostLi
   let by: DjHostLine['by'] = 'template';
   if (cfg.llm.provider !== 'none') {
     const hour = req.hour ?? new Date().getHours();
-    const ctx = { listenerRequest: req.prompt ?? null, localHour: hour, tracksPlayedSoFar: req.position, previous: prev, next };
+    const ctx = { opening: !prev, listenerRequest: req.prompt ?? null, localHour: hour, tracksPlayedSoFar: req.position, previous: prev, next };
     const reply = await llmChat(HOST_SYSTEM(cfg.hostName), JSON.stringify(ctx), { temperature: 0.9, maxTokens: 90 });
     // Keep it short and plain; models occasionally wrap in quotes or add a speaker label.
     const clean = reply?.replace(/^["'“]|["'”]$/g, '').replace(new RegExp(`^${cfg.hostName}:\\s*`, 'i'), '').replace(/[*_#`]/g, '').trim();

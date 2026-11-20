@@ -7,7 +7,7 @@ import type {
   RecordingRule, RecordingStatus, RemoteSubtitle, ScheduledTask, SearchResponse, ServerSettings, ServerStats, SetupRequest, SystemInfo,
   TestSourceResponse, Theme, TraktDeviceCode, TraktStatus, TrickplayInfo, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
   UpdateUserRequest, User, UserItemData, UserStats,
-  ArrOptions, CreateMediaRequest, DjMix, DjMixRequest, DjStatus, TrackAnalysis, ApiKey, CreatedApiKey, TotpSetup, TotpEnabled, Invite, CreateInviteRequest, InvitePreview, AcceptInviteRequest,
+  ArrOptions, CreateMediaRequest, DjMix, DjMixRequest, DjStatus, TrackAnalysis, DjHostRequest, DjHostLine, DjFeedback, ApiKey, CreatedApiKey, TotpSetup, TotpEnabled, Invite, CreateInviteRequest, InvitePreview, AcceptInviteRequest,
   BackupInfo, RemoteAccessStatus, Bookmark, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
 import { http, request, upload } from './client';
@@ -167,6 +167,9 @@ export const api = {
     status: () => http.get<DjStatus>('/dj/status'),
     analyze: () => http.post<Ok>('/dj/analyze'),
     analysis: (itemId: string) => http.get<TrackAnalysis | null>(`/items/${enc(itemId)}/analysis`),
+    host: (body: DjHostRequest) => http.post<DjHostLine>('/dj/host', body),
+    feedback: (body: DjFeedback) => http.post<Ok>('/dj/feedback', body),
+    aiTest: (kind: 'llm' | 'tts') => http.post<{ ok: true; reply?: string; ms?: number; audioUrl?: string; usage?: { used: number; max: number } }>('/dj/ai/test', { kind }),
   },
 
   playlists: {
