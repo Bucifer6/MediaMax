@@ -341,3 +341,32 @@ FFmpeg sit next to the executable rather than inside it: the server serves the w
 as a separate program, so embedding them would mean unpacking them at every start. The release workflow
 (`.github/workflows/release.yml`) builds the three archives on Windows, Linux x64 and Linux arm64 runners,
 smoke-tests each one, and publishes them with the multi-arch Docker image when a `v*` tag is pushed.
+
+## Optional: AI DJ add-ons (free)
+
+The AI DJ works with no extra setup. For richer requests and a more natural voice, run these free, open-source services next to MediaMax and pick them under **Admin → Server settings → AI DJ**:
+
+```yaml
+# Add to your docker-compose.yml next to the mediamax service.
+  ollama:                      # local language model (CPU is fine for small models)
+    image: ollama/ollama
+    volumes: [ "./ollama:/root/.ollama" ]
+    restart: unless-stopped
+  kokoro:                      # natural text-to-speech with an OpenAI-compatible API
+    image: ghcr.io/remsky/kokoro-fastapi-cpu
+    restart: unless-stopped
+```
+
+Then:
+
+1. Run `docker compose exec ollama ollama pull llama3.2:3b`. A 3B model is enough for the DJ.
+2. In the AI DJ settings, choose **Ollama** and set the URL to `http://ollama:11434`.
+3. Choose **Kokoro-FastAPI** and set the URL to `http://kokoro:8880/v1`.
+4. Press **Test** on each.
+
+**No spare CPU?** Use a hosted free tier instead (Groq, Google Gemini, OpenRouter's `:free` models, Mistral or Cerebras). Paste the API key and keep the **Daily limit** on, so you stay inside the free allowance. If you hit the limit, the DJ falls back to its built-in brain for the rest of the day.
+
+**Piper** (another free, offline voice) runs inside the MediaMax container:
+
+1. Download the `piper` release for your CPU and a voice (`.onnx` plus `.onnx.json`) into `/config/voices/`.
+2. Choose **Piper** in the AI DJ settings.
