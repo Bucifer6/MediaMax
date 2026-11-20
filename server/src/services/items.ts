@@ -122,6 +122,7 @@ export function rowToItem(r: Row): Item {
     userData: userData(r),
     trailerUrl: r.trailer_url ?? null,
     ...(r.smart ? { smart: parseJson(r.smart, null) } : {}),
+    ...((extra as any).series ? { series: (extra as any).series } : {}),
   };
 }
 
@@ -198,6 +199,10 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
     where.push('(i.title LIKE ? OR i.original_title LIKE ?)');
     params.push(`%${q.search}%`, `%${q.search}%`);
   }
+  if (q.series) {
+    where.push("json_extract(i.extra, '$.series.name') = ?");
+    params.push(String(q.series));
+  }
   if (q.letter) {
     if (q.letter === '#') where.push("substr(i.sort_title,1,1) NOT BETWEEN 'a' AND 'z'");
     else {
@@ -208,6 +213,7 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
   if (q.played !== undefined) where.push(String(q.played) === 'true' ? 'COALESCE(ud.played,0) = 1' : 'COALESCE(ud.played,0) = 0');
   if (q.favorite !== undefined && String(q.favorite) === 'true') where.push('COALESCE(ud.favorite,0) = 1');
   let sort = SORTS[q.sort as ItemSort] ?? (q.parentId || q.ancestorId ? SORTS.index : SORTS.title);
+  if (q.series && !q.sort) sort = ["COALESCE(json_extract(i.extra, '$.series.index'), 9999)", 'i.year'];
   // Across several parents (an artist's albums, a show's seasons), keep each parent's children together.
   if (q.ancestorId && sort === SORTS.index) {
     sort = ['(SELECT COALESCE(x.year, 0) FROM items x WHERE x.id = i.parent_id)', '(SELECT x.sort_title FROM items x WHERE x.id = i.parent_id)', ...SORTS.index];

@@ -14,7 +14,7 @@ import { events, bus } from '../events.js';
 import { logActivity } from '../activity.js';
 import { homeHooks } from '../items.js';
 import { TranscodeJob } from '../transcoder.js';
-import { registerSession, stopSession, type PlaySession } from '../playback.js';
+import { assertCanStartSession, registerSession, stopSession, type PlaySession } from '../playback.js';
 import type { AuthContext } from '../auth.js';
 import * as xt from './xtream.js';
 import { parseM3u, m3uCatchupUrl } from './m3u.js';
@@ -683,6 +683,7 @@ export function channelUserAgent(r: Row): string {
 
 export async function playChannel(ctx: AuthContext, channelId: string, req: LivePlayRequest & { deviceProfile?: { containers?: string[] } }, remoteAddr: string | null): Promise<PlaybackInfo> {
   const r = accessibleChannelRow(ctx.user, channelId);
+  assertCanStartSession(ctx, remoteAddr);
   const src = getSourceRow(r.source_id);
   const channel = getChannel(ctx.user, channelId);
   let catchup: { start: Date; durationMin: number } | undefined;

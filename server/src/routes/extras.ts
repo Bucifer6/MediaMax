@@ -9,6 +9,7 @@ import { deleteDownloadedSubtitle, downloadSubtitle, searchSubtitles } from '../
 import { disconnect, setScrobble, startDeviceAuth, traktStatus } from '../services/trakt.js';
 import { notFound, badRequest, forbidden } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
+import { newId } from '../util/ids.js';
 import { getLyrics } from '../services/lyrics.js';
 import * as podcasts from '../services/podcasts.js';
 import * as lastfm from '../services/lastfm.js';
@@ -156,6 +157,28 @@ export default async function extraRoutes(app: FastifyInstance) {
     const { user } = requireUser(req);
     canManage(user.id, user.isAdmin, req.params.id);
     podcasts.unsubscribe(req.params.id);
+    return { ok: true };
+  });
+
+  /* ------------------------------- bookmarks ------------------------ */
+  app.get<{ Params: { id: string } }>('/items/:id/bookmarks', async (req) => {
+    const { user } = requireUser(req);
+    assertCanSee(user, req.params.id);
+    return db.all('SELECT * FROM bookmarks WHERE user_id = ? AND item_id = ? ORDER BY position_ms', user.id, req.params.id)
+      .map((b) => ({ id: b.id, itemId: b.item_id, positionMs: b.position_ms, note: b.note ?? null, createdAt: b.created_at }));
+  });
+  app.post<{ Params: { id: string }; Body: { positionMs: number; note?: string } }>('/items/:id/bookmarks', async (req) => {
+    const { user } = requireUser(req);
+    assertCanSee(user, req.params.id);
+    const pos = Math.max(0, Math.round(Number(req.body?.positionMs) || 0));
+    if (db.get<{ n: number }>('SELECT COUNT(*) n FROM bookmarks WHERE user_id = ? AND item_id = ?', user.id, req.params.id)!.n >= 500) throw badRequest('Too many bookmarks');
+    const b = { id: newId(), user_id: user.id, item_id: req.params.id, position_ms: pos, note: req.body?.note ? String(req.body.note).slice(0, 1000) : null, created_at: new Date().toISOString() };
+    db.insert('bookmarks', b);
+    return { id: b.id, itemId: b.item_id, positionMs: pos, note: b.note, createdAt: b.created_at };
+  });
+  app.delete<{ Params: { id: string; bookmarkId: string } }>('/items/:id/bookmarks/:bookmarkId', async (req) => {
+    const { user } = requireUser(req);
+    db.run('DELETE FROM bookmarks WHERE id = ? AND user_id = ?', req.params.bookmarkId, user.id);
     return { ok: true };
   });
 

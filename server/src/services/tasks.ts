@@ -19,6 +19,7 @@ import { enrichLibrary } from './metadata/index.js';
 import { syncWatchers } from './watcher.js';
 import { generateMissing } from './trickplay.js';
 import { pluginTasks } from './plugins.js';
+import { createBackup } from './backup.js';
 import { autoDownload } from './opensubtitles.js';
 import { refreshAll as refreshPodcasts } from './podcasts.js';
 import { checkAvailability } from './requests.js';
@@ -149,6 +150,13 @@ const DEFS: TaskDef[] = [
     id: 'dvr-rules', name: 'Apply series recording rules', description: 'Schedule upcoming programmes that match your series recording rules.',
     interval: () => 60,
     run: async () => applyRules(),
+  },
+  {
+    id: 'backup', name: 'Back up server', description: 'Snapshot the database, branding, artwork, avatars, plugins and subtitles (Admin → Backups).',
+    interval: () => (getSettings().backups.intervalDays > 0 ? getSettings().backups.intervalDays * 24 * 60 : null),
+    run: async () => {
+      createBackup('scheduled');
+    },
   },
   {
     id: 'cleanup', name: 'Clean up', description: 'Prune old activity, guide data, cached images and stale transcode files.',

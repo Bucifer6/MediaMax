@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { DeviceInfo } from '@mediamax/shared';
-import { authenticate, type AuthContext } from './services/auth.js';
+import { authenticate, authenticateApiKey, type AuthContext } from './services/auth.js';
 import { forbidden, unauthorized } from './util/errors.js';
 
 declare module 'fastify' {
@@ -20,7 +20,8 @@ export function extractToken(req: FastifyRequest): string | null {
 }
 
 export async function authHook(req: FastifyRequest) {
-  req.auth = authenticate(extractToken(req));
+  const apiKey = (req.headers['x-api-key'] as string | undefined) ?? ((req.query as Record<string, unknown> | undefined)?.api_key as string | undefined);
+  req.auth = apiKey ? authenticateApiKey(apiKey) : authenticate(extractToken(req));
 }
 
 export function requireUser(req: FastifyRequest): AuthContext {

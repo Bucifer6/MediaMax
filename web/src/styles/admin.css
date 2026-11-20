@@ -275,3 +275,55 @@ a.stat:hover { transform: translateY(-2px); border-color: var(--c-primary); }
 .arr-head strong { display: inline-flex; align-items: center; gap: 8px; font-size: 1rem; }
 .arr-head .badge { margin-left: auto; }
 .settings-fieldset legend, .request-seasons legend { padding: 0; }
+
+/* ------------------------------ plugins ------------------------------ */
+.plugin-warning { margin-bottom: 18px; }
+.plugin-warning p { margin: 0; }
+.plugin-tabs { margin-bottom: 18px; }
+.plugin-toolbar { justify-content: space-between; }
+.plugin-search { flex: 1 1 260px; max-width: 420px; margin-bottom: 0; }
+.plugin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 14px; }
+.plugin-card { display: flex; flex-direction: column; gap: 10px; padding: 18px; border-radius: var(--radius-lg); background: var(--c-surface); border: 1px solid var(--c-line); min-width: 0; }
+.plugin-card.status-error { border-color: color-mix(in srgb, var(--c-danger) 45%, transparent); }
+.plugin-card.status-incompatible { border-color: color-mix(in srgb, var(--c-warning) 45%, transparent); }
+.plugin-card[aria-busy='true'] { opacity: 0.7; }
+.plugin-head { display: flex; align-items: flex-start; gap: 12px; }
+.plugin-icon { width: 42px; height: 42px; flex: none; display: grid; place-items: center; border-radius: 12px; background: var(--c-primary-soft); color: var(--c-primary); }
+.plugin-title { flex: 1; min-width: 0; }
+.plugin-title h3 { margin: 0; font-size: 1rem; font-weight: 700; overflow-wrap: anywhere; }
+.plugin-title p { margin: 2px 0 0; font-size: 0.82rem; overflow-wrap: anywhere; }
+.plugin-version { font-size: 0.8rem; font-weight: 600; }
+.plugin-status { text-transform: capitalize; flex: none; }
+.plugin-desc { margin: 0; font-size: 0.9rem; line-height: 1.5; }
+.plugin-error { display: flex; align-items: flex-start; gap: 6px; margin: 0; overflow-wrap: anywhere; }
+.plugin-error .icon { flex: none; margin-top: 3px; }
+.plugin-caps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.plugin-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 0.8rem; color: var(--c-text-muted); }
+.plugin-meta > span { display: inline-flex; align-items: center; gap: 4px; }
+.plugin-repo { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plugin-changelog { margin: 0; font-size: 0.84rem; }
+.plugin-update { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: var(--radius); background: var(--c-primary-soft); font-size: 0.85rem; font-weight: 600; }
+.plugin-update > span { display: inline-flex; align-items: center; gap: 6px; }
+.plugin-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--c-line); }
+.plugin-foot .switch-row { gap: 12px; padding: 0; flex: 0 0 auto; }
+.plugin-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.plugin-remove:hover:not(:disabled) { color: var(--c-danger); }
+.plugin-versions { font-size: 0.8rem; }
+.plugin-req { color: var(--c-danger); font-weight: 700; }
+.plugin-req-note { margin: 0; font-size: 0.82rem; }
+.plugin-frame { display: block; width: 100%; height: calc(100vh - var(--topbar-h) - 160px); min-height: 520px; border: 1px solid var(--c-line); border-radius: var(--radius-lg); background: #fff; }
+.repo-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-radius: var(--radius-lg); background: var(--c-surface); border: 1px solid var(--c-line); overflow: hidden; }
+.repo-list li { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--c-line); }
+.repo-list li:last-child { border-bottom: 0; }
+.repo-list li > .icon { color: var(--c-text-muted); flex: none; }
+.repo-url { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 0.85rem; }
+.repo-empty { margin: 0; padding: 14px; border-radius: var(--radius); border: 1px dashed var(--c-line); text-align: center; }
+.repo-add { display: flex; gap: 8px; }
+.repo-add .input { flex: 1; min-width: 0; }
+.plugin-docs-link { margin: 10px 0 0; font-size: 0.9rem; }
+@media (max-width: 700px) {
+  .plugin-foot { flex-direction: column; align-items: stretch; }
+  .plugin-actions .btn { flex: 1 1 auto; justify-content: center; }
+  .repo-add { flex-direction: column; }
+  .plugin-frame { min-height: 420px; height: 70vh; }
+}

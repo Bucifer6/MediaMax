@@ -199,11 +199,14 @@ export interface DeviceInfo {
 export interface LoginRequest extends DeviceInfo {
   username: string;
   password: string;
+  /** 6-digit authenticator code or a recovery code, when the account has two-factor enabled. */
+  totpCode?: string;
 }
 
 export interface PinLoginRequest extends DeviceInfo {
   userId: string;
   pin?: string;
+  totpCode?: string;
 }
 
 export interface AuthResponse {
@@ -267,6 +270,12 @@ export interface User {
   allowTranscode: boolean;
   allowDvr: boolean;
   disabled: boolean;
+  /** Allowed to stream from outside the local network. */
+  allowRemote: boolean;
+  /** Max simultaneous playback sessions (null = unlimited). */
+  maxStreams: number | null;
+  /** Two-factor authentication enabled. */
+  totpEnabled: boolean;
   preferences: UserPreferences;
   createdAt: string;
   lastSeenAt: string | null;
@@ -284,6 +293,8 @@ export interface CreateUserRequest {
   allowDownloads?: boolean;
   allowTranscode?: boolean;
   allowDvr?: boolean;
+  allowRemote?: boolean;
+  maxStreams?: number | null;
 }
 
 export type UpdateUserRequest = Partial<CreateUserRequest> & { disabled?: boolean };
@@ -511,6 +522,8 @@ export interface Item {
   chapters?: Chapter[];
   /** Smart collection/playlist rules (null for manual lists). */
   smart?: SmartFilter | null;
+  /** Book series (audiobooks) or movie collection order. */
+  series?: { name: string; index: number | null } | null;
 }
 
 export interface Chapter {
@@ -547,6 +560,8 @@ export interface ItemQuery {
   offset?: number;
   /** Return items whose sortTitle starts with this letter ('#' for digits). */
   letter?: string;
+  /** Audiobooks in this series (sorted by series order). */
+  series?: string;
 }
 
 export interface UpdateItemRequest {
@@ -994,6 +1009,18 @@ export interface ServerSettings {
     /** Plugin repository index URLs (https). */
     repositories: string[];
   };
+  remoteAccess: {
+    /** Ask the router to forward a port via UPnP. */
+    upnp: boolean;
+    /** External port to map (default: same as the server port). */
+    externalPort: number | null;
+  };
+  backups: {
+    /** Automatic backup every N days (0 = off). */
+    intervalDays: number;
+    /** How many automatic backups to keep. */
+    keep: number;
+  };
   /** DLNA / UPnP media server for smart TVs, consoles and players on the local network. */
   dlna: {
     enabled: boolean;
@@ -1416,4 +1443,117 @@ export interface PluginCatalogEntry {
 export interface PluginRepositoryIndex {
   name: string;
   plugins: Omit<PluginCatalogEntry, 'repository' | 'installedVersion'>[];
+}
+
+/* ------------------------------------------------------------------ */
+/* API keys, two-factor, invites                                       */
+/* ------------------------------------------------------------------ */
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  /** First characters of the key, for recognising it. */
+  prefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export interface CreatedApiKey extends ApiKey {
+  /** Shown once. Send as `X-Api-Key: <key>` (or `?api_key=`); acts as the key's owner. */
+  key: string;
+}
+
+export interface TotpSetup {
+  /** Base32 secret for manual entry. */
+  secret: string;
+  /** otpauth:// URL to render as a QR code. */
+  otpauthUrl: string;
+}
+
+export interface TotpEnabled {
+  /** One-time recovery codes, shown once. */
+  recoveryCodes: string[];
+}
+
+export interface InviteTemplate {
+  libraryIds: string[] | null;
+  maxContentRating: string | null;
+  allowLiveTv: boolean;
+  allowDownloads: boolean;
+  allowTranscode: boolean;
+  allowDvr: boolean;
+  allowRemote: boolean;
+  maxStreams: number | null;
+}
+
+export interface Invite {
+  code: string;
+  /** Full link to share: <publicUrl or origin>/invite/<code>. */
+  url: string;
+  note: string | null;
+  createdBy: string;
+  createdAt: string;
+  expiresAt: string | null;
+  maxUses: number | null;
+  uses: number;
+  template: InviteTemplate;
+}
+
+export interface CreateInviteRequest {
+  note?: string;
+  expiresInDays?: number | null;
+  maxUses?: number | null;
+  template?: Partial<InviteTemplate>;
+}
+
+export interface InvitePreview {
+  valid: boolean;
+  serverName: string;
+  message: string | null;
+}
+
+export interface AcceptInviteRequest extends DeviceInfo {
+  username: string;
+  password: string;
+  displayName?: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Backup & remote access                                              */
+/* ------------------------------------------------------------------ */
+
+export interface BackupInfo {
+  id: string;
+  createdAt: string;
+  sizeBytes: number;
+  /** "manual" | "scheduled" | "pre-restore". */
+  reason: string;
+}
+
+export interface RemoteAccessStatus {
+  lanAddress: string;
+  port: number;
+  publicUrl: string | null;
+  upnp: {
+    enabled: boolean;
+    /** Router found and mapping active. */
+    mapped: boolean;
+    externalIp: string | null;
+    externalPort: number | null;
+    router: string | null;
+    error: string | null;
+    lastCheckedAt: string | null;
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Audiobook bookmarks                                                 */
+/* ------------------------------------------------------------------ */
+
+export interface Bookmark {
+  id: string;
+  itemId: string;
+  positionMs: number;
+  note: string | null;
+  createdAt: string;
 }

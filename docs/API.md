@@ -225,3 +225,27 @@ See [PLUGINS.md](PLUGINS.md). Management (🛡️): `GET /admin/plugins` → `Pl
 `POST /admin/plugins/:id/enable|disable` · `PUT /admin/plugins/:id/settings` `{ key: value }` · `DELETE /admin/plugins/:id`.
 Repositories: `ServerSettings.plugins.repositories`. Plugin routes: `/api/v1/plugins/<id>/<path>`; admin pages:
 `PluginInfo.adminPageUrl` (render in a sandboxed iframe).
+
+## Security & sharing
+* **API keys** (for Home Assistant, scripts): `GET/POST /auth/api-keys` (`{ name }` → `CreatedApiKey`, key shown once) ·
+  `DELETE /auth/api-keys/:id`. Send `X-Api-Key: mmk_…` (or `?api_key=`); the key acts as its owner.
+* **Two-factor (TOTP)**: `POST /auth/me/2fa/setup` → `TotpSetup` · `POST /auth/me/2fa/enable` `{ code }` → `TotpEnabled` (recovery codes) ·
+  `POST /auth/me/2fa/disable` `{ code }` · admin reset `DELETE /users/:id/2fa`. Sign-in returns 401 `totp_required` until
+  `LoginRequest.totpCode` / `PinLoginRequest.totpCode` is sent (a PIN never replaces the second factor).
+* **Invites**: `GET/POST /invites` 🛡️ (`CreateInviteRequest` → `Invite` with `url`) · `DELETE /invites/:code` 🛡️ ·
+  `GET /invites/:code/preview` 🔓 → `InvitePreview` · `POST /invites/:code/accept` 🔓 `AcceptInviteRequest` → `AuthResponse`.
+  New users get the invite's `template` (libraries, rating limit, permissions, `maxStreams`, `allowRemote`).
+* **Per-user limits**: `User.maxStreams` (429 `stream_limit` when exceeded) and `User.allowRemote` (403 `remote_not_allowed` off-LAN).
+
+## Backups, remote access, metrics (🛡️)
+* `GET/POST /admin/backups` → `BackupInfo[]` / new backup · `GET /admin/backups/:id/download` · `DELETE /admin/backups/:id` ·
+  `POST /admin/backups/:id/restore` or `POST /admin/backups/restore-upload` (multipart) → `{ restartRequired: true }`;
+  the restore is applied on the next start (a `pre-restore` backup is taken first). `POST /admin/restart` exits so Docker/systemd restarts it.
+  Scheduled backups: `ServerSettings.backups`.
+* `GET /admin/remote-access` → `RemoteAccessStatus` · `POST /admin/remote-access/refresh`. UPnP port mapping: `ServerSettings.remoteAccess`
+  (needs host networking in Docker).
+* `GET /metrics` — Prometheus text format (admin token or API key).
+
+## Audiobooks extras
+* Bookmarks: `GET/POST /items/:id/bookmarks` (`{ positionMs, note? }` → `Bookmark`) · `DELETE /items/:id/bookmarks/:bookmarkId`.
+* Series: `Item.series = { name, index }` (from `series`/`mvnm` tags or `Author/Series/01 - Book` folders); `GET /items?series=<name>`.

@@ -415,7 +415,13 @@ async function scanAudiobooks(ctx: ScanCtx, files: FileEntry[]) {
     const rel = path.relative(first.root, key).split(path.sep);
     const isFile = key === first.path;
     const folderTitle = stripExt(rel[rel.length - 1] ?? 'Unknown book');
-    const folderAuthor = rel.length >= 2 ? rel[rel.length - 2] : null;
+    // Author/Series/01 - Book  →  author = first folder, series = middle folder.
+    const folderAuthor = rel.length >= 3 ? rel[0] : rel.length >= 2 ? rel[rel.length - 2] : null;
+    const folderSeries = rel.length >= 3 ? rel[rel.length - 2] : null;
+    const tagSeries = tags.series || tags.mvnm || tags['movementname'] || tags.grouping || null;
+    const tagSeriesIdx = parseFloat(tags['series-part'] || tags.mvin || tags['movement'] || '') || null;
+    const folderIdx = parseFloat(rel[rel.length - 1]?.match(/^(?:book\s*)?(\d+(?:\.\d+)?)\b/i)?.[1] ?? '') || null;
+    const series = tagSeries ? { name: tagSeries, index: tagSeriesIdx } : folderSeries ? { name: folderSeries, index: folderIdx } : null;
     const title = tags.album || (isFile ? tags.title : null) || folderTitle.replace(/^\d{4}\s*-\s*/, '');
     const author = tags.album_artist || tags.artist || folderAuthor || 'Unknown author';
     const narrator = tags.composer || tags.narrator || null;
@@ -435,7 +441,7 @@ async function scanAudiobooks(ctx: ScanCtx, files: FileEntry[]) {
       people: JSON.stringify(people), studios: JSON.stringify(tags.publisher ? [tags.publisher] : []),
       genres: JSON.stringify(tags.genre ? tags.genre.split(/[;/,]/).map((g) => g.trim()).filter(Boolean) : ['Audiobook']),
       overview: descFile ? fs.readFileSync(descFile, 'utf8').trim().slice(0, 4000) : tags.comment || tags.description || null,
-      extra: JSON.stringify({ parentTitle: author, author, narrator }),
+      extra: JSON.stringify({ parentTitle: author, author, narrator, ...(series ? { series } : {}) }),
     });
     if (!existed) ctx.newItems.push(bookId);
     ctx.seenItems.add(bookId);

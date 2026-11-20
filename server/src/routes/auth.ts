@@ -3,6 +3,8 @@ import type { CreateUserRequest, LoginRequest, PinLoginRequest, UpdateMeRequest,
 import { requireAdmin, requireUser, deviceFromRequest, remoteAddr, noCache } from '../http.js';
 import * as auth from '../services/auth.js';
 import * as oidc from '../services/oidc.js';
+import * as invites from '../services/invites.js';
+import type { AcceptInviteRequest, CreateInviteRequest } from '@mediamax/shared';
 import { getSettings } from '../services/settings.js';
 import { logActivity } from '../services/activity.js';
 import fs from 'node:fs';
@@ -43,7 +45,7 @@ export default async function authRoutes(app: FastifyInstance) {
     const ip = remoteAddr(req);
     rateLimit(ip);
     try {
-      return auth.login(req.body?.username, req.body?.password, deviceFromRequest(req, req.body), ip ?? undefined);
+      return auth.login(req.body?.username, req.body?.password, deviceFromRequest(req, req.body), ip ?? undefined, req.body?.totpCode);
     } catch (e) {
       recordFail(ip);
       throw e;
@@ -60,7 +62,7 @@ export default async function authRoutes(app: FastifyInstance) {
     rateLimit(ip);
     if (!req.body?.userId) throw badRequest('userId required');
     try {
-      return auth.profileLogin(req.body.userId, req.body.pin, deviceFromRequest(req, req.body), ip ?? undefined);
+      return auth.profileLogin(req.body.userId, req.body.pin, deviceFromRequest(req, req.body), ip ?? undefined, req.body.totpCode);
     } catch (e) {
       recordFail(ip);
       throw e;
@@ -117,6 +119,61 @@ export default async function authRoutes(app: FastifyInstance) {
     requireAdmin(req);
     return auth.setAvatar(req.params.id, null);
   });
+  /* Two-factor (TOTP) */
+  app.post('/auth/me/2fa/setup', async (req) => auth.totpSetup(requireUser(req).user.id));
+  app.post<{ Body: { code: string } }>('/auth/me/2fa/enable', async (req) => auth.totpEnable(requireUser(req).user.id, req.body?.code));
+  app.post<{ Body: { code: string } }>('/auth/me/2fa/disable', async (req) => {
+    const { user } = requireUser(req);
+    auth.totpDisable(user.id, req.body?.code);
+    return auth.getUser(user.id);
+  });
+  app.delete<{ Params: { id: string } }>('/users/:id/2fa', async (req) => {
+    const a = requireAdmin(req);
+    auth.totpDisable(req.params.id, '', true);
+    void a;
+    return auth.getUser(req.params.id);
+  });
+
+  /* API keys (act as the owning user) */
+  app.get('/auth/api-keys', async (req) => auth.listApiKeys(requireUser(req).user.id));
+  app.post<{ Body: { name: string } }>('/auth/api-keys', async (req) => {
+    const a = requireUser(req);
+    if (a.deviceRowId.startsWith('apikey:')) throw badRequest('API keys cannot create other API keys');
+    return auth.createApiKey(a.user.id, req.body?.name);
+  });
+  app.delete<{ Params: { id: string } }>('/auth/api-keys/:id', async (req) => {
+    const { user } = requireUser(req);
+    auth.deleteApiKey(user.id, req.params.id, user.isAdmin);
+    return { ok: true };
+  });
+
+  /* Invite links */
+  const origin = (req: FastifyRequest) => `${req.protocol}://${req.host}`;
+  app.get('/invites', async (req) => {
+    requireAdmin(req);
+    return invites.listInvites(origin(req));
+  });
+  app.post<{ Body: CreateInviteRequest }>('/invites', async (req) => invites.createInvite(requireAdmin(req).user, req.body ?? {}, origin(req)));
+  app.delete<{ Params: { code: string } }>('/invites/:code', async (req) => {
+    requireAdmin(req);
+    invites.deleteInvite(req.params.code);
+    return { ok: true };
+  });
+  app.get<{ Params: { code: string } }>('/invites/:code/preview', async (req, reply) => {
+    noCache(reply);
+    return invites.previewInvite(req.params.code);
+  });
+  app.post<{ Params: { code: string }; Body: AcceptInviteRequest }>('/invites/:code/accept', async (req) => {
+    const ip = remoteAddr(req);
+    rateLimit(ip);
+    try {
+      return invites.acceptInvite(req.params.code, { ...(req.body ?? ({} as AcceptInviteRequest)), ...deviceFromRequest(req, req.body) } as AcceptInviteRequest, ip ?? undefined);
+    } catch (e) {
+      recordFail(ip);
+      throw e;
+    }
+  });
+
   app.get<{ Querystring: { all?: string } }>('/auth/devices', async (req) => auth.listDevices(requireUser(req), req.query.all === 'true'));
   app.delete<{ Params: { id: string } }>('/auth/devices/:id', async (req) => {
     auth.revokeDevice(requireUser(req), req.params.id);

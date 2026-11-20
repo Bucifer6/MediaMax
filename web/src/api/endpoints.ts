@@ -7,7 +7,7 @@ import type {
   RecordingRule, RecordingStatus, RemoteSubtitle, ScheduledTask, SearchResponse, ServerSettings, ServerStats, SetupRequest, SystemInfo,
   TestSourceResponse, Theme, TraktDeviceCode, TraktStatus, TrickplayInfo, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
   UpdateUserRequest, User, UserItemData, UserStats,
-  ArrOptions, CreateMediaRequest, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
+  ArrOptions, CreateMediaRequest, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
 import { http, request, upload } from './client';
 import { deviceInfo } from './device';
@@ -220,5 +220,16 @@ export const api = {
     tasks: () => http.get<ScheduledTask[]>('/tasks'),
     runTask: (id: string) => http.post<Ok>(`/tasks/${enc(id)}/run`),
     activity: (limit = 50, offset = 0) => http.get<Paged<ActivityEntry>>('/activity', { limit, offset }),
+    saveRepositories: (repositories: string[]) => http.put<ServerSettings>('/settings', { plugins: { repositories } }),
+  },
+
+  plugins: {
+    list: () => http.get<PluginInfo[]>('/admin/plugins'),
+    catalog: (refresh = false) => http.get<PluginCatalogEntry[]>('/admin/plugins/catalog', { refresh: refresh || undefined }),
+    install: (id: string, version?: string) => http.post<PluginInfo>('/admin/plugins/install', { id, version }),
+    upload: (file: File) => upload<PluginInfo>('/admin/plugins/upload', file),
+    setEnabled: (id: string, enabled: boolean) => http.post<PluginInfo>(`/admin/plugins/${enc(id)}/${enabled ? 'enable' : 'disable'}`),
+    saveSettings: (id: string, values: Record<string, string | number | boolean | null>) => http.put<PluginInfo>(`/admin/plugins/${enc(id)}/settings`, values),
+    uninstall: (id: string) => http.del<Ok>(`/admin/plugins/${enc(id)}`),
   },
 };
