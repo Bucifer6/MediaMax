@@ -34,6 +34,7 @@ export function UserMenu() {
       items={[
         { label: <strong>{user.displayName || user.username}</strong>, disabled: true },
         { divider: true, label: '' },
+        { label: 'Your year', icon: 'sparkles', onClick: () => navigate('/wrapped') },
         { label: 'Settings', icon: 'settings', onClick: () => navigate('/settings') },
         ...(features.linkCodes ? [{ label: 'Link a device', icon: 'link' as const, onClick: () => navigate('/link') }] : []),
         ...(user.isAdmin ? [{ label: 'Admin dashboard', icon: 'shield' as const, onClick: () => navigate('/admin') }] : []),

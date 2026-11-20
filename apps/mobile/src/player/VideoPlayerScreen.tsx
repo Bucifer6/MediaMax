@@ -13,7 +13,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { QUALITY_OPTIONS, videoDeviceProfile } from '@/api/profiles';
-import type { Channel, Item, Marker, PlaybackInfo, ProgressReport, SubtitleTrack } from '@/api/types';
+import type { Channel, Item, Marker, PlaybackInfo, ProgressReport, RemoteSubtitle, SubtitleTrack } from '@/api/types';
 import { Button } from '@/components/Button';
 import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
@@ -24,11 +24,15 @@ import { T } from '@/components/Text';
 import { useDownloads } from '@/state/downloads';
 import { useMusic } from '@/state/music';
 import { useApi, useCapabilities, useSession } from '@/state/session';
+import { useSyncPlay } from '@/state/syncplay';
 import { useTheme } from '@/theme';
 import { useBackHandler, useTVRemote } from '@/tv';
 import { on } from '@/utils/events';
-import { formatTime, languageName, programProgress } from '@/utils/format';
+import { formatClock, formatTime, languageName, programProgress } from '@/utils/format';
+import { OnlineSubtitlesSheet } from './OnlineSubtitlesSheet';
 import { Scrubber } from './Scrubber';
+import { useTrickplay } from './Trickplay';
+import { WatchTogetherSheet } from './WatchTogether';
 import { activeCues, parseVtt, type Cue } from './vtt';
 
 export type PlayerTarget =
@@ -36,7 +40,7 @@ export type PlayerTarget =
   | { kind: 'live'; channelId: string; catchupStart?: string; durationMin?: number; categoryId?: string };
 
 type SubChoice = { kind: 'off' } | { kind: 'server'; track: SubtitleTrack } | { kind: 'embedded'; track: NativeSubtitleTrack };
-type SheetKind = 'audio' | 'subs' | 'quality' | 'channels' | null;
+type SheetKind = 'audio' | 'subs' | 'online' | 'quality' | 'channels' | 'together' | null;
 
 const langMatch = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.slice(0, 2).toLowerCase() === b.slice(0, 2).toLowerCase();
 
@@ -50,6 +54,7 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
   const downloads = useDownloads();
   const prefs = user?.preferences;
   const isLive = target.kind === 'live';
+  const sync = useSyncPlay();
 
   // ----- what we're playing -----
   const [channelId, setChannelId] = useState(target.kind === 'live' ? target.channelId : '');
@@ -80,6 +85,12 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
   const [channel, setChannel] = useState<Channel | null>(null);
   const [channelList, setChannelList] = useState<Channel[]>([]);
   const [offlineItem] = useState<Item | null>(offlineRec?.item ?? null);
+  const vodItemId = target.kind === 'vod' ? target.itemId : null;
+  const trickplay = useTrickplay(vodItemId && !offlineUri ? vodItemId : null);
+  /** Online playback of a library item: can search subtitles online / watch together. */
+  const onlineVod = !!vodItemId && !offlineUri && status === 'signed-in';
+  const syncOn = sync.enabled && onlineVod;
+  const inRoom = syncOn && !!sync.room;
 
   const infoRef = useRef<PlaybackInfo | null>(null);
   const offsetRef = useRef(0);
@@ -92,6 +103,8 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const osdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekDialTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** After an online subtitle download: pick the new track once playback is re-requested. */
+  const autoPickSub = useRef<{ prev: Set<number>; language: string } | null>(null);
   posRef.current = pos;
   durRef.current = dur;
 
@@ -152,6 +165,13 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
         }
         infoRef.current = pi;
         setInfo(pi);
+        const pickNew = autoPickSub.current;
+        if (pickNew && pi) {
+          autoPickSub.current = null;
+          const fresh = pi.subtitles.filter((s) => !pickNew.prev.has(s.index));
+          const pick = fresh.find((s) => langMatch(s.language, pickNew.language)) ?? fresh[0];
+          if (pick) setSub({ kind: 'server', track: pick });
+        }
         pendingStartRef.current = pi ? pi.startMs ?? startMs : startMs;
         offsetRef.current = 0;
         if (pi?.durationMs) setDur(pi.durationMs);
@@ -227,6 +247,7 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
     if (catchup || !pi) {
       if (isFinite(streamMs) && streamMs > 0) setDur(streamMs);
       if (start && start > 500) player.currentTime = start / 1000;
+      if (!catchup) syncAfterLoad(start ?? 0);
       return;
     }
     // Work out whether the stream starts at 0 or at startMs (a transcode started mid-file).
@@ -240,6 +261,7 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
     offsetRef.current = offset;
     setDur(full || (isFinite(streamMs) ? streamMs + offset : 0));
     if (start && start - offset > 500) player.currentTime = (start - offset) / 1000;
+    syncAfterLoad(start ?? 0);
   });
   useEventListener(player, 'playToEnd', () => {
     if (isLive && !catchup) return;
@@ -337,8 +359,9 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
 
   const goNext = useCallback((nextId: string) => {
     report('stopped');
+    if (inRoom) sync.broadcast('load', 0, nextId);
     router.replace(`/player/${nextId}` as never);
-  }, [report]);
+  }, [report, inRoom, sync]);
 
   const canSeek = !isLive || !!catchup;
   const seekTo = useCallback(
@@ -359,15 +382,77 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
     },
     [canSeek, player, load, audioIndex],
   );
+  /** A seek the user asked for: also sent to the watch-together room. */
+  const userSeek = useCallback(
+    (ms: number) => {
+      if (!canSeek) return;
+      seekTo(ms);
+      if (inRoom) sync.broadcast('seek', Math.max(0, ms));
+    },
+    [canSeek, seekTo, inRoom, sync],
+  );
   const seekBy = useCallback((deltaMs: number) => {
-    seekTo(posRef.current + deltaMs);
+    userSeek(posRef.current + deltaMs);
     flash(`${deltaMs > 0 ? '+' : '−'}${Math.abs(deltaMs / 1000)}s`);
-  }, [seekTo, flash]);
+  }, [userSeek, flash]);
 
   const togglePlay = useCallback(() => {
-    if (player.playing) player.pause();
-    else player.play();
-  }, [player]);
+    if (player.playing) {
+      player.pause();
+      if (inRoom) sync.broadcast('pause', posRef.current);
+    } else {
+      player.play();
+      if (inRoom) sync.broadcast('play', posRef.current);
+    }
+  }, [player, inRoom, sync]);
+
+  // ----- watch together -----
+  /** Apply a command from another room member. Never broadcasts (no echo). */
+  const applyRemote = useCallback(
+    (action: 'play' | 'pause' | 'seek', positionMs: number, by: string | null) => {
+      const drift = Math.abs(positionMs - posRef.current);
+      if (action === 'seek' || drift > 1500) {
+        // Source still loading: just move where it will start.
+        if (pendingStartRef.current != null) pendingStartRef.current = positionMs;
+        else seekTo(positionMs);
+      }
+      if (action === 'play') player.play();
+      if (action === 'pause') player.pause();
+      if (by) flash(action === 'play' ? `${by} pressed play` : action === 'pause' ? `${by} paused` : `${by} jumped to ${formatClock(positionMs)}`);
+    },
+    [seekTo, player, flash],
+  );
+  const applyRef = useRef(applyRemote);
+  applyRef.current = applyRemote;
+  useEffect(() => {
+    if (!syncOn || !vodItemId) return;
+    return sync.register({
+      itemId: vodItemId,
+      getPositionMs: () => posRef.current,
+      isPaused: () => !player.playing,
+      apply: (a, p, by) => applyRef.current(a, p, by),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncOn, vodItemId, sync.register, player]);
+
+  /** Once a source has loaded inside a room: start everyone (if we sent the load) or catch up with the room. */
+  const syncAfterLoadRef = useRef<(startMs: number) => void>(() => undefined);
+  syncAfterLoadRef.current = (startMs: number) => {
+    const room = sync.room;
+    if (!inRoom || !room || !vodItemId) return;
+    if (sync.consumeOwnLoad(vodItemId)) {
+      sync.broadcast('play', startMs);
+      return;
+    }
+    if (room.itemId && room.itemId !== vodItemId) return;
+    const roomPos = sync.roomPosition();
+    if (roomPos != null && Math.abs(roomPos - startMs) > 2000) seekTo(roomPos);
+    if (room.state === 'playing') player.play();
+    else player.pause();
+  };
+  function syncAfterLoad(startMs: number) {
+    syncAfterLoadRef.current(startMs);
+  }
 
   const zap = useCallback(
     (dir: 1 | -1) => {
@@ -455,7 +540,7 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
       if (seekDialTimer.current) clearTimeout(seekDialTimer.current);
       seekDialTimer.current = setTimeout(() => {
         setPendingSeek((p) => {
-          if (p != null) seekTo(p);
+          if (p != null) userSeek(p);
           return null;
         });
       }, 900);
@@ -523,9 +608,11 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
         title: 'In stream',
         options: embeddedSubs.map((s, i) => ({ key: `e:${i}`, label: s.label || languageName(s.language), selected: sub.kind === 'embedded' && sub.track.id === s.id && sub.track.language === s.language })),
       });
+    if (onlineVod) sections.push({ title: 'More', options: [{ key: 'online', label: 'Search online…', description: 'Find and download subtitles from OpenSubtitles', icon: 'cloud-download-outline' }] });
     return sections;
-  }, [info, embeddedSubs, sub]);
+  }, [info, embeddedSubs, sub, onlineVod]);
   const selectSub = (key: string) => {
+    if (key === 'online') return setSheet('online');
     setSheet(null);
     if (key === 'off') return setSub({ kind: 'off' });
     const [kind, idx] = key.split(':');
@@ -545,6 +632,14 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
     if (kbps === maxBitrate) return;
     setMaxBitrate(kbps);
     void load(posRef.current, { audio: audioIndex, bitrate: kbps });
+  };
+
+  const onSubtitleDownloaded = (_item: Item, remote: RemoteSubtitle) => {
+    setSheet(null);
+    autoPickSub.current = { prev: new Set((infoRef.current?.subtitles ?? []).map((s) => s.index)), language: remote.language };
+    flash('Subtitles downloaded');
+    // Re-request playback at the current position so the new track is listed.
+    void load(posRef.current, { audio: audioIndex });
   };
 
   const recordNow = async () => {
@@ -637,6 +732,14 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
                 </T>
               </View>
             ) : null}
+            {inRoom ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: t.alpha(t.colors.primary, 0.85), paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 }}>
+                <Icon name="people" size={t.isTV ? t.s(16) : 14} color={t.colors.primaryText} />
+                <T variant="caption" color={t.colors.primaryText}>
+                  {sync.room!.code} · {sync.room!.members.length}
+                </T>
+              </View>
+            ) : null}
             {Platform.OS === 'ios' && !t.isTV ? <VideoAirPlayButton tint="#fff" activeTint={t.colors.primary} style={{ width: 34, height: 34 }} /> : null}
             {pipSupported ? (
               <Focusable onPress={() => viewRef.current?.startPictureInPicture().catch(() => undefined)} style={{ padding: 6 }} accessibilityLabel="Picture in picture">
@@ -695,7 +798,7 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
                 </View>
               ) : null
             ) : dur > 0 ? (
-              <Scrubber positionMs={pos} durationMs={dur} bufferedMs={buffered} markers={markers} onSeek={seekTo} onScrubbing={setScrubbing} onFocusChange={setScrubFocused} pendingMs={pendingSeek} />
+              <Scrubber positionMs={pos} durationMs={dur} bufferedMs={buffered} markers={markers} onSeek={userSeek} onScrubbing={setScrubbing} onFocusChange={setScrubFocused} pendingMs={pendingSeek} trickplay={trickplay} />
             ) : null}
 
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.sm, flexWrap: 'wrap' }}>
@@ -708,11 +811,12 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
               ) : null}
               <View style={{ flex: 1 }} />
               {audioStreams.length > 1 ? <CtrlButton icon="musical-note-outline" label={t.isTV || t.wide ? 'Audio' : undefined} onPress={() => setSheet('audio')} size={iconSize} /> : null}
-              {(info?.subtitles.length ?? 0) + embeddedSubs.length > 0 ? <CtrlButton icon={sub.kind === 'off' ? 'chatbox-outline' : 'chatbox'} label={t.isTV || t.wide ? 'Subtitles' : undefined} onPress={() => setSheet('subs')} size={iconSize} /> : null}
+              {(info?.subtitles.length ?? 0) + embeddedSubs.length > 0 || onlineVod ? <CtrlButton icon={sub.kind === 'off' ? 'chatbox-outline' : 'chatbox'} label={t.isTV || t.wide ? 'Subtitles' : undefined} onPress={() => setSheet('subs')} size={iconSize} /> : null}
               {!offlineUri && !isLive ? <CtrlButton icon="speedometer-outline" label={t.isTV || t.wide ? (maxBitrate ? `${Math.round(maxBitrate / 1000)} Mbps` : 'Quality') : undefined} onPress={() => setSheet('quality')} size={iconSize} /> : null}
               {isLive && channelList.length > 1 ? <CtrlButton icon="list" label={t.isTV || t.wide ? 'Channels' : undefined} onPress={() => setSheet('channels')} size={iconSize} /> : null}
               {isLive ? <CtrlButton icon="grid-outline" label={t.isTV || t.wide ? 'Guide' : undefined} onPress={() => router.push('/live/guide' as never)} size={iconSize} /> : null}
               {isLive && caps.dvr && channel?.nowPlaying && !catchup ? <CtrlButton icon="radio-button-on" label={t.isTV || t.wide ? 'Record' : undefined} onPress={recordNow} size={iconSize} color={t.colors.danger} /> : null}
+              {syncOn ? <CtrlButton icon={inRoom ? 'people' : 'people-outline'} label={t.isTV || t.wide ? (inRoom ? `Together · ${sync.room!.members.length}` : 'Watch together') : undefined} onPress={() => setSheet('together')} size={iconSize} color={inRoom ? t.colors.primary : undefined} /> : null}
               {nextId && !isLive ? <CtrlButton icon="play-skip-forward" label={t.isTV || t.wide ? 'Next' : undefined} onPress={() => goNext(nextId)} size={iconSize} /> : null}
             </View>
           </LinearGradient>
@@ -728,7 +832,7 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
             variant="secondary"
             size="lg"
             hasTVPreferredFocus={!controls}
-            onPress={() => seekTo(activeMarker.endMs)}
+            onPress={() => userSeek(activeMarker.endMs)}
           />
         </View>
       ) : null}
@@ -766,6 +870,8 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
 
       <OptionSheet visible={sheet === 'audio'} title="Audio" options={audioOptions} onSelect={selectAudio} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'subs'} title="Subtitles" sections={subSections} onSelect={selectSub} onClose={() => setSheet(null)} />
+      {onlineVod && vodItemId ? <OnlineSubtitlesSheet visible={sheet === 'online'} itemId={vodItemId} onClose={() => setSheet(null)} onDownloaded={onSubtitleDownloaded} /> : null}
+      {syncOn && vodItemId ? <WatchTogetherSheet visible={sheet === 'together'} itemId={vodItemId} onClose={() => setSheet(null)} /> : null}
       <OptionSheet visible={sheet === 'quality'} title="Quality" options={qualityOptions} onSelect={selectQuality} onClose={() => setSheet(null)} />
       <OptionSheet
         visible={sheet === 'channels'}

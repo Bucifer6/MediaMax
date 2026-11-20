@@ -1,14 +1,17 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import React from 'react';
+import { router } from 'expo-router';
+import React, { useState } from 'react';
 import { ActivityIndicator, FlatList, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Item, UserItemData } from '@/api/types';
-import { useQuery } from '@/api/useQuery';
+import { invalidate, useQuery } from '@/api/useQuery';
+import { AddToPlaylistSheet } from '@/components/AddToPlaylistSheet';
 import { Button } from '@/components/Button';
 import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
 import { Img } from '@/components/Img';
 import { MediaCard } from '@/components/MediaCard';
+import { OptionSheet } from '@/components/OptionSheet';
 import { ItemRow } from '@/components/Row';
 import { BackButton } from '@/components/Screen';
 import { T } from '@/components/Text';
@@ -18,7 +21,7 @@ import { useApi, useCapabilities } from '@/state/session';
 import { useTheme } from '@/theme';
 import { formatClock, formatDuration } from '@/utils/format';
 import { openItem, playItem } from '@/utils/nav';
-import { useUserDataActions } from './common';
+import { RatingStars, useUserDataActions } from './common';
 
 function Header({ item, subtitle, children }: { item: Item; subtitle: string; children?: React.ReactNode }) {
   const t = useTheme();
@@ -59,7 +62,7 @@ function TrackRow({ track, index, onPress, showArt, playingId }: { track: Item; 
   const active = playingId === track.id;
   const isVideo = track.type !== 'track';
   return (
-    <Focusable onPress={onPress} focusScale={t.isTV ? 1.02 : 1} style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.md, paddingVertical: t.space.sm, paddingHorizontal: t.space.sm, borderRadius: t.radius, backgroundColor: active ? t.alpha(t.colors.primary, 0.12) : 'transparent' }}>
+    <Focusable onPress={onPress} focusScale={t.isTV ? 1.02 : 1} containerStyle={{ flex: 1 }} style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.md, paddingVertical: t.space.sm, paddingHorizontal: t.space.sm, borderRadius: t.radius, backgroundColor: active ? t.alpha(t.colors.primary, 0.12) : 'transparent' }}>
       {showArt ? (
         <Img path={track.posterUrl ?? track.thumbUrl} width={44} style={{ width: t.s(44), height: t.s(44), borderRadius: 6 }} />
       ) : (
@@ -87,13 +90,45 @@ export function TrackListDetail({ item, onUserData }: { item: Item; onUserData: 
   const music = useMusic();
   const caps = useCapabilities();
   const downloads = useDownloads();
-  const children = useQuery(`children:${item.id}`, (api) => api.children(item.id, { sort: item.type === 'album' ? 'index' : undefined, order: 'asc', limit: 1000 }));
+  const api = useApi();
+  const isPlaylist = item.type === 'playlist';
+  const children = useQuery(`children:${item.id}`, (a) => a.children(item.id, { sort: item.type === 'album' ? 'index' : undefined, order: 'asc', limit: 1000 }));
+  const [playlistSheet, setPlaylistSheet] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const similar = useQuery(item.type === 'album' ? `similar:${item.id}` : null, (api) => api.similar(item.id, 12), { staleMs: 300000 });
-  const { toggleFavorite } = useUserDataActions(item, onUserData);
+  const { toggleFavorite, setRating } = useUserDataActions(item, onUserData);
   const tracks = children.data?.items ?? [];
   const audio = tracks.filter((x) => x.type === 'track');
   const total = tracks.reduce((n, x) => n + (x.durationMs ?? 0), 0);
   const subtitle = [item.type === 'album' ? item.parentTitle : null, item.year, `${tracks.length} ${audio.length === tracks.length ? 'songs' : 'items'}`, formatDuration(total)].filter(Boolean).join(' · ');
+
+  const removeTrack = async (tr: Item) => {
+    setEditError(null);
+    const before = children.data;
+    children.setData((prev) => (prev ? { ...prev, items: prev.items.filter((x) => x.id !== tr.id), total: Math.max(0, prev.total - 1) } : prev));
+    try {
+      await api.removeFromPlaylist(item.id, tr.id);
+      invalidate('playlists');
+    } catch (e) {
+      children.setData(() => before);
+      setEditError(e instanceof Error ? e.message : 'Could not remove that item');
+    }
+  };
+
+  const deletePlaylist = async () => {
+    setConfirmDelete(false);
+    setEditError(null);
+    try {
+      await api.deletePlaylist(item.id);
+      invalidate('playlists');
+      invalidate(`item:${item.id}`);
+      if (router.canGoBack()) router.back();
+      else router.replace('/(tabs)/libraries');
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Could not delete the playlist');
+    }
+  };
 
   const playAt = (i: number, shuffle = false) => {
     const tr = tracks[i];
@@ -114,13 +149,37 @@ export function TrackListDetail({ item, onUserData }: { item: Item; onUserData: 
             {audio.length > 1 ? <Button label="Shuffle" icon="shuffle" variant="secondary" onPress={() => playAt(Math.floor(Math.random() * tracks.length), true)} /> : null}
             <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" onPress={toggleFavorite} accessibilityLabel="Favourite" />
             {caps.downloads && downloads.supported && audio.length ? <Button icon="arrow-down-circle-outline" variant="secondary" onPress={() => downloads.download(audio, 'original')} accessibilityLabel="Download all" /> : null}
+            {!isPlaylist && tracks.length ? <Button icon="list-outline" label={t.isTV ? 'Playlist' : undefined} variant="secondary" onPress={() => setPlaylistSheet(true)} accessibilityLabel="Add to playlist" /> : null}
+            {isPlaylist ? <Button icon="trash-outline" label={t.isTV ? 'Delete' : undefined} variant="secondary" onPress={() => setConfirmDelete(true)} accessibilityLabel="Delete playlist" /> : null}
           </View>
+          {!isPlaylist ? <RatingStars rating={item.userData.rating} onRate={setRating} /> : null}
+          {editError ? (
+            <T tone="danger" weight="600" center={!t.isTV}>
+              {editError}
+            </T>
+          ) : null}
+          <AddToPlaylistSheet visible={playlistSheet} title={item.title} getItemIds={() => tracks.map((x) => x.id)} onClose={() => setPlaylistSheet(false)} />
+          <OptionSheet
+            visible={confirmDelete}
+            title={`Delete “${item.title}”?`}
+            options={[
+              { key: 'delete', label: 'Delete playlist', description: 'The media itself is not deleted', icon: 'trash-outline', destructive: true },
+              { key: 'cancel', label: 'Cancel', icon: 'close' },
+            ]}
+            onSelect={(k) => (k === 'delete' ? void deletePlaylist() : setConfirmDelete(false))}
+            onClose={() => setConfirmDelete(false)}
+          />
         </Header>
       }
       ListEmptyComponent={children.loading ? <ActivityIndicator color={t.colors.primary} /> : undefined}
       renderItem={({ item: tr, index }) => (
-        <View style={{ paddingHorizontal: t.space.gutter - t.space.sm }}>
-          <TrackRow track={tr} index={index} onPress={() => playAt(index)} showArt={item.type === 'playlist'} playingId={music.current?.id} />
+        <View style={{ paddingHorizontal: t.space.gutter - t.space.sm, flexDirection: 'row', alignItems: 'center', gap: t.space.xs }}>
+          <TrackRow track={tr} index={index} onPress={() => playAt(index)} showArt={isPlaylist} playingId={music.current?.id} />
+          {isPlaylist ? (
+            <Focusable onPress={() => void removeTrack(tr)} ringRadius={999} accessibilityLabel={`Remove ${tr.title} from playlist`} style={{ padding: t.isTV ? t.s(10) : 8, borderRadius: 999 }}>
+              {({ focused }) => <Icon name="remove-circle-outline" size={t.isTV ? t.s(24) : 22} color={focused ? t.colors.danger : t.colors.textMuted} />}
+            </Focusable>
+          ) : null}
         </View>
       )}
       ListFooterComponent={similar.data?.length ? <View style={{ marginTop: t.space.xl }}><ItemRow title="Similar albums" items={similar.data} variant="square" /></View> : undefined}
@@ -134,7 +193,7 @@ export function ArtistDetail({ item, onUserData }: { item: Item; onUserData: (ud
   const music = useMusic();
   const albums = useQuery(`children:${item.id}`, (a) => a.children(item.id, { sort: 'year', order: 'desc', limit: 200 }));
   const similar = useQuery(`similar:${item.id}`, (a) => a.similar(item.id, 12), { staleMs: 300000 });
-  const { toggleFavorite } = useUserDataActions(item, onUserData);
+  const { toggleFavorite, setRating } = useUserDataActions(item, onUserData);
   const list = albums.data?.items ?? [];
 
   const playAll = async (shuffle: boolean) => {
@@ -156,6 +215,7 @@ export function ArtistDetail({ item, onUserData }: { item: Item; onUserData: (ud
           <Button label="Shuffle" icon="shuffle" variant="secondary" onPress={() => playAll(true)} disabled={!list.length} />
           <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" onPress={toggleFavorite} accessibilityLabel="Favourite" />
         </View>
+        <RatingStars rating={item.userData.rating} onRate={setRating} />
       </Header>
       {item.overview ? (
         <T tone="muted" numberOfLines={5} style={{ paddingHorizontal: t.space.gutter, marginBottom: t.space.lg }}>

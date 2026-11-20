@@ -1,13 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Item, PlaybackInfo } from '@mediamax/shared';
+import type { Chapter, Item, PlaybackInfo } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import { attachStream, type Attached } from './engine';
 import { profileWithBitrate } from './deviceProfile';
 import { useToast } from '../state/toast';
 import { findNextEpisode, shuffled, tracksFor } from '../utils/playback';
-import { isAudio, isVideo, playLink } from '../utils/items';
+import { hasAudioResume, isAudio, isResumable, isVideo, playLink } from '../utils/items';
 
 type Repeat = 'off' | 'all' | 'one';
 
@@ -24,6 +24,8 @@ interface MusicApi {
   muted: boolean;
   shuffle: boolean;
   repeat: Repeat;
+  /** Chapters of the current item (audiobooks, podcasts with chapter marks). */
+  chapters: Chapter[];
   playQueue: (items: Item[], start?: number) => void;
   enqueue: (items: Item[], next?: boolean) => void;
   toggle: () => void;
@@ -75,10 +77,14 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const [muted, setMuted] = useState(false);
   const [shuffle, setShuffleState] = useState(false);
   const [repeat, setRepeat] = useState<Repeat>('off');
+  const [chapters, setChapters] = useState<Chapter[]>([]);
   const attached = useRef<Attached | null>(null);
   const sessionRef = useRef<string | null>(null);
-  const stateRef = useRef({ queue, index, repeat });
-  stateRef.current = { queue, index, repeat };
+  /** Media position at stream time 0 (non-zero when the server starts a transcode mid-file). */
+  const offsetRef = useRef(0);
+  const pendingSeek = useRef<number | null>(null);
+  const stateRef = useRef({ queue, index, repeat, durationMs });
+  stateRef.current = { queue, index, repeat, durationMs };
   const current = index >= 0 ? queue[index] ?? null : null;
 
   const report = useCallback((state: 'playing' | 'paused' | 'stopped', keepalive = false) => {
@@ -86,7 +92,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const sid = sessionRef.current;
     if (!a || !sid) return;
     api.playback
-      .progress(sid, { positionMs: Math.round(a.currentTime * 1000), durationMs: isFinite(a.duration) ? Math.round(a.duration * 1000) : undefined, state, sessionId: sid }, keepalive)
+      .progress(sid, { positionMs: Math.round(offsetRef.current + a.currentTime * 1000), durationMs: stateRef.current.durationMs || undefined, state, sessionId: sid }, keepalive)
       .catch(() => {});
   }, []);
 
@@ -114,17 +120,34 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setPosition(0);
     setDuration(current.durationMs ?? 0);
+    setChapters(current.chapters ?? []);
+    // Chapters are only included on GET /items/:id.
+    if (!current.chapters && current.type !== 'track') {
+      api.items.get(current.id).then((full) => { if (!cancelled) setChapters(full.chapters ?? []); }).catch(() => {});
+    }
+    const resumeMs = hasAudioResume(current) && isResumable(current) ? current.userData.positionMs : 0;
     (async () => {
       stopSession();
       attached.current?.destroy();
       attached.current = null;
       try {
-        const pi = await api.playback.start(current.id, { deviceProfile: profileWithBitrate(null) });
+        // Pick up the latest saved position (the queued copy may be stale).
+        let startMs = resumeMs;
+        if (hasAudioResume(current)) {
+          const fresh = await api.items.get(current.id).catch(() => null);
+          if (fresh) {
+            startMs = isResumable(fresh) ? fresh.userData.positionMs : 0;
+            if (!cancelled && fresh.chapters) setChapters(fresh.chapters);
+          }
+        }
+        const pi = await api.playback.start(current.id, { startMs: startMs || undefined, deviceProfile: profileWithBitrate(null) });
         if (cancelled) {
           api.playback.stop(pi.sessionId).catch(() => {});
           return;
         }
         sessionRef.current = pi.sessionId;
+        offsetRef.current = pi.streamStartMs ?? 0;
+        pendingSeek.current = startMs > 0 ? startMs : null;
         setInfo(pi);
         attached.current = await attachStream(a, pi, {
           onFatal: (_k, msg) => {
@@ -157,6 +180,35 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id, index]);
 
+  /** Seek in media time; restarts the stream when the target is before a mid-file transcode start. */
+  const seekRef = useRef<(ms: number) => void>(() => {});
+  seekRef.current = (ms: number) => {
+    const a = audioRef.current;
+    const cur = stateRef.current.queue[stateRef.current.index];
+    if (!a || !cur) return;
+    const local = (ms - offsetRef.current) / 1000;
+    if (local >= 0 && (!info?.isHls || (a.seekable.length && local <= a.seekable.end(a.seekable.length - 1) + 1))) {
+      a.currentTime = local;
+      return;
+    }
+    // Outside what the stream covers: ask the server for a new stream at that point.
+    void (async () => {
+      try {
+        stopSession();
+        attached.current?.destroy();
+        const pi = await api.playback.start(cur.id, { startMs: Math.round(ms), deviceProfile: profileWithBitrate(null) });
+        sessionRef.current = pi.sessionId;
+        offsetRef.current = pi.streamStartMs ?? 0;
+        pendingSeek.current = ms;
+        setInfo(pi);
+        attached.current = await attachStream(a, pi, { onFatal: (_k, msg) => toast.error(msg) });
+        await a.play().catch(() => setPlaying(false));
+      } catch (e) {
+        toast.error(e);
+      }
+    })();
+  };
+
   const goto = useCallback((i: number) => {
     const { queue: q } = stateRef.current;
     if (i < 0 || i >= q.length) return;
@@ -174,8 +226,9 @@ export function MusicProvider({ children }: { children: ReactNode }) {
 
   const prev = useCallback(() => {
     const a = audioRef.current;
-    if (a && a.currentTime > 4) {
-      a.currentTime = 0;
+    if (a && offsetRef.current + a.currentTime * 1000 > 4000) {
+      if (offsetRef.current) seekRef.current(0);
+      else a.currentTime = 0;
       return;
     }
     const { index: i } = stateRef.current;
@@ -188,8 +241,19 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const a = audioRef.current;
     if (!a) return;
     a.volume = volume;
-    const onTime = () => setPosition(a.currentTime * 1000);
-    const onDur = () => isFinite(a.duration) && setDuration(a.duration * 1000);
+    const onTime = () => setPosition(offsetRef.current + a.currentTime * 1000);
+    const onDur = () => {
+      if (!isFinite(a.duration)) return;
+      // Keep the item's full duration when the stream starts part-way through.
+      setDuration((d) => Math.max(offsetRef.current + a.duration * 1000, offsetRef.current ? d : 0));
+    };
+    const onMeta = () => {
+      const target = pendingSeek.current;
+      pendingSeek.current = null;
+      if (target == null) return;
+      const local = (target - offsetRef.current) / 1000;
+      if (local > 0.5) a.currentTime = local;
+    };
     const onPlay = () => {
       setPlaying(true);
       report('playing');
@@ -206,6 +270,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       } else next();
     };
     a.addEventListener('timeupdate', onTime);
+    a.addEventListener('loadedmetadata', onMeta);
     a.addEventListener('durationchange', onDur);
     a.addEventListener('play', onPlay);
     a.addEventListener('pause', onPause);
@@ -217,6 +282,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     window.addEventListener('pagehide', unload);
     return () => {
       a.removeEventListener('timeupdate', onTime);
+      a.removeEventListener('loadedmetadata', onMeta);
       a.removeEventListener('durationchange', onDur);
       a.removeEventListener('play', onPlay);
       a.removeEventListener('pause', onPause);
@@ -255,10 +321,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<MusicApi>(
     () => ({
-      queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat,
+      queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters,
       playQueue: (items, start = 0) => {
         if (!items.length) return;
-        const list = shuffle ? [items[start]!, ...shuffled(items.filter((_, i) => i !== start))] : items;
+        const list = shuffle && !hasAudioResume(items[start]!) ? [items[start]!, ...shuffled(items.filter((_, i) => i !== start))] : items;
         setQueue(list);
         setIndex(-1);
         window.setTimeout(() => setIndex(shuffle ? 0 : start), 0);
@@ -285,9 +351,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       pause: () => audioRef.current?.pause(),
       next,
       prev,
-      seek: (ms) => {
-        if (audioRef.current) audioRef.current.currentTime = ms / 1000;
-      },
+      seek: (ms) => seekRef.current(ms),
       jump: goto,
       removeAt: (i) => {
         setQueue((q) => q.filter((_, j) => j !== i));
@@ -311,7 +375,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       },
       setRepeat,
     }),
-    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, next, prev, goto],
+    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -333,6 +397,27 @@ export function usePlayItem() {
           const ep = await findNextEpisode(item);
           if (ep) navigate(playLink(ep));
           else toast.show('No episodes to play');
+          return;
+        }
+        if (item.type === 'podcastepisode') {
+          music.playQueue([item]);
+          return;
+        }
+        if (item.type === 'podcast') {
+          const ep = await api.items.next(item.id).catch(() => null);
+          if (ep) music.playQueue([ep]);
+          else toast.show('No episodes to play');
+          return;
+        }
+        if (item.type === 'audiobook') {
+          const parts = (await api.items.children(item.id, { sort: 'index', limit: 1000 })).items.filter(isAudio);
+          if (!parts.length) {
+            toast.show('Nothing to play');
+            return;
+          }
+          const resumeAt = opts.fromStart ? null : await api.items.next(item.id).catch(() => null);
+          const i = resumeAt ? parts.findIndex((p) => p.id === resumeAt.id) : 0;
+          music.playQueue(i >= 0 && resumeAt ? parts.map((p) => (p.id === resumeAt.id ? resumeAt : p)) : parts, Math.max(0, i));
           return;
         }
         if (isAudio(item) && item.parentId) {

@@ -158,8 +158,12 @@ export function Field({ label, hint, children, className }: { label: ReactNode; 
 
 /* ---------------- Modal ---------------- */
 export function Modal({
-  open, onClose, title, children, footer, size = 'md', className,
-}: { open: boolean; onClose: () => void; title?: ReactNode; children: ReactNode; footer?: ReactNode; size?: 'sm' | 'md' | 'lg' | 'xl'; className?: string }) {
+  open, onClose, title, children, footer, size = 'md', className, container,
+}: {
+  open: boolean; onClose: () => void; title?: ReactNode; children: ReactNode; footer?: ReactNode; size?: 'sm' | 'md' | 'lg' | 'xl'; className?: string;
+  /** Portal target (defaults to document.body) — e.g. the fullscreen player element. */
+  container?: Element | null;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -200,7 +204,7 @@ export function Modal({
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
     </div>,
-    document.body,
+    container ?? document.body,
   );
 }
 

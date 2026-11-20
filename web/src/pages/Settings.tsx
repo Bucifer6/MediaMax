@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react';
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
-import type { Device, Theme, UserPreferences } from '@mediamax/shared';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import type { Device, Theme, TraktDeviceCode, UserPreferences } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
@@ -257,6 +257,142 @@ function Devices() {
   );
 }
 
+function TraktCard() {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const status = useAsync(() => api.trakt.status(), []);
+  const [code, setCode] = useState<TraktDeviceCode | null>(null);
+  const [expired, setExpired] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const st = status.data;
+
+  // Poll while a device code is waiting for approval.
+  useEffect(() => {
+    if (!code) return;
+    const expiresAt = new Date(code.expiresAt).getTime();
+    const every = Math.max(5, code.intervalSeconds || 5) * 1000;
+    let stopped = false;
+    const t = window.setInterval(async () => {
+      if (Date.now() >= expiresAt) {
+        window.clearInterval(t);
+        setCode(null);
+        setExpired(true);
+        return;
+      }
+      try {
+        const s = await api.trakt.status();
+        if (stopped) return;
+        if (s.connected) {
+          window.clearInterval(t);
+          setCode(null);
+          status.setData(s);
+          toast.success(`Connected to Trakt${s.username ? ` as ${s.username}` : ''}`);
+        }
+      } catch {
+        /* keep polling */
+      }
+    }, every);
+    return () => {
+      stopped = true;
+      window.clearInterval(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code]);
+
+  const connect = async () => {
+    setBusy(true);
+    setExpired(false);
+    try {
+      setCode(await api.trakt.connect());
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const setScrobble = async (scrobble: boolean) => {
+    if (!st) return;
+    status.setData({ ...st, scrobble });
+    try {
+      status.setData(await api.trakt.update({ scrobble }));
+    } catch (e) {
+      status.setData(st);
+      toast.error(e);
+    }
+  };
+  const disconnect = async () => {
+    if (!(await confirm({ title: 'Disconnect Trakt?', message: 'MediaMax will stop scrobbling to your Trakt account.', confirmLabel: 'Disconnect', danger: true }))) return;
+    setBusy(true);
+    try {
+      status.setData(await api.trakt.disconnect());
+      toast.success('Trakt disconnected');
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="settings-card service-card">
+      <div className="service-head">
+        <span className="service-logo trakt-logo" aria-hidden="true">t</span>
+        <div className="service-title">
+          <h2>Trakt</h2>
+          <p className="muted">Keep your watch history, ratings and progress in sync across apps.</p>
+        </div>
+        {st?.connected && <Badge tone="success"><Icon name="check" size={12} /> Connected</Badge>}
+      </div>
+      {status.loading && !st ? <Skeleton h={60} /> : status.error ? (
+        <p className="form-error">{status.error} <button className="btn btn-ghost btn-sm" onClick={status.reload}>Retry</button></p>
+      ) : !st ? null : !st.available ? (
+        <div className="service-note"><Icon name="info" size={18} /> <span>Ask your server admin to set up Trakt.</span></div>
+      ) : st.connected ? (
+        <>
+          <p>Signed in as <strong>{st.username ?? 'your Trakt account'}</strong>.</p>
+          <Switch checked={st.scrobble} onChange={setScrobble} label="Scrobble what I watch" hint="Starting, pausing and finishing movies and episodes is sent to Trakt, and marking something watched adds it to your history." />
+          <div className="form-actions">
+            <button className="btn btn-ghost" onClick={disconnect} disabled={busy}>{busy ? <Spinner size={16} /> : <Icon name="logout" size={16} />} Disconnect</button>
+          </div>
+        </>
+      ) : code ? (
+        <div className="device-code">
+          <p>Go to <a href={code.verificationUrl} target="_blank" rel="noreferrer" className="link-strong">{code.verificationUrl.replace(/^https?:\/\//, '')} <Icon name="external" size={14} /></a> on any device and enter this code:</p>
+          <div className="device-code-value" aria-live="polite">
+            {code.userCode}
+            <button className="btn-icon" onClick={() => { void navigator.clipboard?.writeText(code.userCode); toast.success('Code copied'); }} aria-label="Copy code"><Icon name="copy" size={18} /></button>
+          </div>
+          <p className="muted device-code-wait"><Spinner size={14} /> Waiting for you to approve MediaMax on Trakt…</p>
+          <div className="form-actions"><button className="btn btn-ghost" onClick={() => setCode(null)}>Cancel</button></div>
+        </div>
+      ) : (
+        <>
+          {expired && <p className="form-error">That code expired before it was approved. Start again to get a new one.</p>}
+          <div className="form-actions">
+            <button className="btn btn-primary" onClick={connect} disabled={busy}>{busy ? <Spinner size={16} /> : <Icon name="link" size={16} />} Connect Trakt</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Services() {
+  return (
+    <>
+      <TraktCard />
+      <Link to="/wrapped" className="settings-card wrapped-promo">
+        <span className="wrapped-promo-icon"><Icon name="sparkles" size={22} /></span>
+        <div>
+          <h2>Your year in review</h2>
+          <p className="muted">Hours watched, top shows, favourite genres and more.</p>
+        </div>
+        <Icon name="chevronRight" size={20} />
+      </Link>
+    </>
+  );
+}
+
 function LinkTab() {
   return (
     <div className="settings-card">
@@ -274,6 +410,8 @@ export default function SettingsPage() {
     { to: 'appearance', label: 'Appearance', icon: 'palette' },
     { to: 'playback', label: 'Playback', icon: 'play' },
     { to: 'devices', label: 'Devices', icon: 'device' },
+    { to: 'services', label: 'Connected services', icon: 'globe' },
+    { to: '/wrapped', label: 'Your year', icon: 'sparkles' },
     ...(features.linkCodes ? [{ to: 'link', label: 'Link device', icon: 'link' as IconName }] : []),
   ];
   return (
@@ -297,6 +435,7 @@ export default function SettingsPage() {
             <Route path="appearance" element={<Appearance />} />
             <Route path="playback" element={<Playback />} />
             <Route path="devices" element={<Devices />} />
+            <Route path="services" element={<Services />} />
             <Route path="link" element={<LinkTab />} />
           </Routes>
         </div>

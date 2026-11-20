@@ -373,3 +373,22 @@
   .marker-row > .select { grid-column: 1 / -1; }
   .marker-row > .muted { display: none; }
 }
+
+/* Connected services */
+.service-head { display: flex; align-items: center; gap: 14px; }
+.service-title { flex: 1; min-width: 0; }
+.service-title h2 { font-size: 1.1rem; }
+.service-logo { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border-radius: 12px; font-weight: 900; font-size: 1.4rem; }
+.trakt-logo { background: #ed1c24; color: #fff; }
+.service-note { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--radius); background: var(--c-surface-alt); color: var(--c-text-muted); }
+.service-note .icon { color: var(--c-accent); flex: none; }
+.link-strong { color: var(--c-primary); font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+.link-strong:hover { text-decoration: underline; }
+.device-code { display: flex; flex-direction: column; gap: 14px; }
+.device-code-value { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 18px; border-radius: var(--radius-lg); background: var(--c-primary-soft); border: 1px dashed color-mix(in srgb, var(--c-primary) 50%, transparent); color: var(--c-primary); font-family: ui-monospace, Menlo, monospace; font-size: clamp(1.8rem, 6vw, 2.8rem); font-weight: 800; letter-spacing: 0.2em; word-break: break-all; }
+.device-code-value .btn-icon { color: var(--c-primary); }
+.device-code-wait { display: flex; align-items: center; gap: 8px; }
+.wrapped-promo { flex-direction: row; align-items: center; gap: 16px; background: linear-gradient(120deg, var(--c-primary-soft), color-mix(in srgb, var(--c-accent) 14%, var(--c-surface))); transition: border-color 0.15s, transform 0.15s; }
+.wrapped-promo:hover { border-color: var(--c-primary); transform: translateY(-1px); }
+.wrapped-promo > div { flex: 1; }
+.wrapped-promo-icon { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border-radius: 12px; background: var(--c-primary); color: var(--c-primary-text); }

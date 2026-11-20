@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
-import type { HwAccel, ServerSettings, Webhook, WebhookEvent } from '@mediamax/shared';
+import { useEffect, useState, type ReactNode } from 'react';
+import type { HwAccel, ServerSettings, User, Webhook, WebhookEvent } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
+import { useAsync } from '../hooks';
 import { useToast } from '../state/toast';
 import { ErrorState, Field, Skeleton, Spinner, Switch, Tabs } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { AdminHeader } from './AdminRoutes';
 
-type Tab = 'general' | 'transcoding' | 'dvr' | 'webhooks';
+type Tab = 'general' | 'transcoding' | 'dvr' | 'trickplay' | 'subtitles' | 'trakt' | 'dlna' | 'webhooks';
 const HW: { value: HwAccel; label: string }[] = [
   { value: 'none', label: 'None (CPU)' },
   { value: 'vaapi', label: 'VA-API (Intel/AMD, Linux)' },
@@ -17,6 +18,21 @@ const HW: { value: HwAccel; label: string }[] = [
   { value: 'v4l2m2m', label: 'V4L2 M2M (Raspberry Pi / ARM)' },
 ];
 const EVENTS: WebhookEvent[] = ['playback.start', 'playback.pause', 'playback.resume', 'playback.stop', 'playback.scrobble', 'library.new', 'user.login', 'recording.completed', 'recording.failed'];
+const TRICKPLAY_DEFAULTS: ServerSettings['trickplay'] = { enabled: false, intervalSeconds: 10, width: 320 };
+const OPENSUBS_DEFAULTS: ServerSettings['openSubtitles'] = { apiKey: null, username: null, password: null, autoLanguages: [] };
+const TRAKT_DEFAULTS: ServerSettings['trakt'] = { clientId: null, clientSecret: null };
+const DLNA_DEFAULTS: ServerSettings['dlna'] = { enabled: false, friendlyName: null, userId: null };
+
+/** "en, fr ,de" → ["en","fr","de"] */
+function parseLanguages(text: string): string[] {
+  return Array.from(new Set(text.split(/[,\s]+/).map((x) => x.trim().toLowerCase()).filter(Boolean)));
+}
+
+/** External link that opens in a new tab. */
+function Ext({ href, children }: { href: string; children: ReactNode }) {
+  return <a href={href} target="_blank" rel="noreferrer" className="link-strong">{children} <Icon name="external" size={12} /></a>;
+}
+
 const PRESETS: ServerSettings['transcoding']['preset'][] = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium'];
 
 export function ServerSettingsAdmin() {
@@ -28,6 +44,9 @@ export function ServerSettingsAdmin() {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
+  const [langText, setLangText] = useState<string | null>(null);
+  const [runningTp, setRunningTp] = useState(false);
+  const users = useAsync(async () => (tab === 'dlna' ? api.users.list() : ([] as User[])), [tab === 'dlna']);
 
   const load = () => {
     setError(null);
@@ -41,19 +60,42 @@ export function ServerSettingsAdmin() {
   const set = (p: Partial<ServerSettings>) => { setS({ ...s, ...p }); setDirty(true); };
   const setT = (p: Partial<ServerSettings['transcoding']>) => set({ transcoding: { ...s.transcoding, ...p } });
   const setD = (p: Partial<ServerSettings['dvr']>) => set({ dvr: { ...s.dvr, ...p } });
+  const tp = { ...TRICKPLAY_DEFAULTS, ...(s.trickplay ?? {}) };
+  const os = { ...OPENSUBS_DEFAULTS, ...(s.openSubtitles ?? {}) };
+  const tk = { ...TRAKT_DEFAULTS, ...(s.trakt ?? {}) };
+  const dl = { ...DLNA_DEFAULTS, ...(s.dlna ?? {}) };
+  const setTp = (p: Partial<ServerSettings['trickplay']>) => set({ trickplay: { ...tp, ...p } });
+  const setOs = (p: Partial<ServerSettings['openSubtitles']>) => set({ openSubtitles: { ...os, ...p } });
+  const setTk = (p: Partial<ServerSettings['trakt']>) => set({ trakt: { ...tk, ...p } });
+  const setDl = (p: Partial<ServerSettings['dlna']>) => set({ dlna: { ...dl, ...p } });
   const setHook = (i: number, p: Partial<Webhook>) => set({ webhooks: s.webhooks.map((w, j) => (j === i ? { ...w, ...p } : w)) });
 
-  const save = async () => {
+  const save = async (quiet = false): Promise<boolean> => {
     setSaving(true);
     try {
       setS(await api.admin.saveSettings(s));
       setDirty(false);
-      toast.success('Settings saved');
+      setLangText(null);
+      if (!quiet) toast.success('Settings saved');
       void refreshSystem();
+      return true;
+    } catch (e) {
+      toast.error(e);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+  const runTrickplay = async () => {
+    setRunningTp(true);
+    try {
+      if (dirty && !(await save(true))) return;
+      await api.admin.runTask('trickplay');
+      toast.success('Generating scrub previews — follow progress in Scheduled tasks');
     } catch (e) {
       toast.error(e);
     } finally {
-      setSaving(false);
+      setRunningTp(false);
     }
   };
   const test = async (w: Webhook) => {
@@ -71,8 +113,17 @@ export function ServerSettingsAdmin() {
 
   return (
     <div>
-      <AdminHeader title="Server settings" actions={<button className="btn btn-primary" onClick={save} disabled={!dirty || saving}>{saving ? <Spinner size={18} /> : 'Save changes'}</button>} />
-      <Tabs<Tab> value={tab} onChange={setTab} tabs={[{ value: 'general', label: 'General' }, { value: 'transcoding', label: 'Transcoding' }, { value: 'dvr', label: 'DVR' }, { value: 'webhooks', label: 'Webhooks' }]} />
+      <AdminHeader title="Server settings" actions={<button className="btn btn-primary" onClick={() => void save()} disabled={!dirty || saving}>{saving ? <Spinner size={18} /> : 'Save changes'}</button>} />
+      <Tabs<Tab> value={tab} onChange={setTab} tabs={[
+        { value: 'general', label: 'General' },
+        { value: 'transcoding', label: 'Transcoding' },
+        { value: 'dvr', label: 'DVR' },
+        { value: 'trickplay', label: 'Trickplay' },
+        { value: 'subtitles', label: 'OpenSubtitles' },
+        { value: 'trakt', label: 'Trakt' },
+        { value: 'dlna', label: 'DLNA' },
+        { value: 'webhooks', label: 'Webhooks' },
+      ]} />
       <div className="settings-card">
         {tab === 'general' && (
           <div className="form-grid">
@@ -128,6 +179,100 @@ export function ServerSettingsAdmin() {
             <div className="form-row">
               <Field label="Default start padding (min)"><input className="input" type="number" min={0} value={s.dvr.paddingBeforeMin} onChange={(e) => setD({ paddingBeforeMin: Number(e.target.value) })} /></Field>
               <Field label="Default end padding (min)"><input className="input" type="number" min={0} value={s.dvr.paddingAfterMin} onChange={(e) => setD({ paddingAfterMin: Number(e.target.value) })} /></Field>
+            </div>
+          </div>
+        )}
+        {tab === 'trickplay' && (
+          <div className="form-grid">
+            <p className="muted">Trickplay thumbnails show a preview of the picture while you hover or drag the seek bar. They’re built in the background from keyframes and take a little disk space per title.</p>
+            <Switch checked={tp.enabled} onChange={(v) => setTp({ enabled: v })} label="Generate scrub previews" hint="New and existing movies and episodes get thumbnails during the scheduled task." />
+            <div className="form-row">
+              <Field label="Interval (seconds)" hint="Time between thumbnails. Lower = smoother previews, more disk.">
+                <input className="input" type="number" min={2} max={60} value={tp.intervalSeconds} onChange={(e) => setTp({ intervalSeconds: Number(e.target.value) })} />
+              </Field>
+              <Field label="Thumbnail width (px)" hint="120–480. 320 looks good on most screens.">
+                <input className="input" type="number" min={120} max={480} step={10} value={tp.width} onChange={(e) => setTp({ width: Number(e.target.value) })} />
+              </Field>
+            </div>
+            <div className="settings-inline-action">
+              <div>
+                <strong>Generate now</strong>
+                <p className="muted">Runs the “Generate scrub previews” task right away{dirty ? ' (saves your changes first)' : ''}.</p>
+              </div>
+              <button className="btn" onClick={runTrickplay} disabled={runningTp || saving || !tp.enabled} title={tp.enabled ? undefined : 'Enable scrub previews first'}>
+                {runningTp ? <Spinner size={16} /> : <Icon name="play" size={16} />} Run now
+              </button>
+            </div>
+          </div>
+        )}
+        {tab === 'subtitles' && (
+          <div className="form-grid">
+            <p className="muted">
+              Lets everyone search and download subtitles from OpenSubtitles.com from the player and the item page.
+              Create a free API consumer at <Ext href="https://www.opensubtitles.com/consumers">opensubtitles.com/consumers</Ext> and paste its key below.
+            </p>
+            <Field label="API key">
+              <input className="input mono" value={os.apiKey ?? ''} onChange={(e) => setOs({ apiKey: e.target.value.trim() || null })} autoComplete="off" spellCheck={false} />
+            </Field>
+            <div className="form-row">
+              <Field label="Username" hint="Optional. An account raises the daily download limit.">
+                <input className="input" value={os.username ?? ''} onChange={(e) => setOs({ username: e.target.value || null })} autoComplete="off" />
+              </Field>
+              <Field label="Password">
+                <input className="input" type="password" value={os.password ?? ''} onChange={(e) => setOs({ password: e.target.value || null })} autoComplete="new-password" />
+              </Field>
+            </div>
+            <Field label="Download automatically" hint="Two-letter language codes, comma separated (e.g. en, es). New media without a matching subtitle gets one automatically. Leave empty to turn off.">
+              <input
+                className="input"
+                value={langText ?? os.autoLanguages.join(', ')}
+                onChange={(e) => { setLangText(e.target.value); setOs({ autoLanguages: parseLanguages(e.target.value) }); }}
+                onBlur={() => setLangText(null)}
+                placeholder="en, es"
+                spellCheck={false}
+              />
+            </Field>
+          </div>
+        )}
+        {tab === 'trakt' && (
+          <div className="form-grid">
+            <div className="howto">
+              <strong><Icon name="info" size={16} /> How to set up Trakt</strong>
+              <ol>
+                <li>Sign in at <Ext href="https://trakt.tv/oauth/applications">trakt.tv/oauth/applications</Ext> and choose <em>New application</em>.</li>
+                <li>Give it a name (e.g. “{s.serverName || 'MediaMax'}”) and set the <em>Redirect URI</em> to <code>urn:ietf:wg:oauth:2.0:oob</code>.</li>
+                <li>Save, then copy the <em>Client ID</em> and <em>Client Secret</em> here.</li>
+                <li>Each user connects their own account in <em>Settings → Connected services</em>.</li>
+              </ol>
+            </div>
+            <div className="form-row">
+              <Field label="Client ID"><input className="input mono" value={tk.clientId ?? ''} onChange={(e) => setTk({ clientId: e.target.value.trim() || null })} autoComplete="off" spellCheck={false} /></Field>
+              <Field label="Client secret"><input className="input mono" type="password" value={tk.clientSecret ?? ''} onChange={(e) => setTk({ clientSecret: e.target.value.trim() || null })} autoComplete="new-password" spellCheck={false} /></Field>
+            </div>
+          </div>
+        )}
+        {tab === 'dlna' && (
+          <div className="form-grid">
+            <p className="muted">
+              Share your libraries with smart TVs, game consoles, VLC and other DLNA / UPnP players on your <strong>local network</strong>. They find the server automatically — no app needed.
+            </p>
+            <Switch checked={dl.enabled} onChange={(v) => setDl({ enabled: v })} label="Enable DLNA server" />
+            <div className="form-row">
+              <Field label="Friendly name" hint="What TVs show in their source list.">
+                <input className="input" value={dl.friendlyName ?? ''} onChange={(e) => setDl({ friendlyName: e.target.value || null })} placeholder={s.serverName || 'MediaMax'} />
+              </Field>
+              <Field label="Browse as user" hint="Library access and rating limits of this user apply.">
+                <select className="select" value={dl.userId ?? ''} onChange={(e) => setDl({ userId: e.target.value || null })}>
+                  <option value="">First administrator</option>
+                  {(users.data ?? []).filter((u) => !u.disabled || u.id === dl.userId).map((u) => (
+                    <option key={u.id} value={u.id}>{u.displayName || u.username}{u.isAdmin ? ' (admin)' : ''}{u.maxContentRating ? ` · up to ${u.maxContentRating}` : ''}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <div className="callout-warning">
+              <Icon name="alert" size={18} />
+              <p>DLNA has <strong>no sign-in</strong>: anyone on your network can browse and play everything the chosen user can see. Pick a user whose library access and rating limit suit the whole household (for example a family profile), and only enable this on a network you trust. DLNA never leaves your LAN.</p>
             </div>
           </div>
         )}

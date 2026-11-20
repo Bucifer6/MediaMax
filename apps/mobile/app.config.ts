@@ -89,7 +89,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ...config,
     name: appName,
     slug: brand.slug ?? 'mediamax',
-    scheme: brand.scheme ?? 'mediamax',
+    // `mediamax://` must always be registered: the SSO (OIDC) sign-in redirects back to mediamax://oidc.
+    scheme: brand.scheme && brand.scheme !== 'mediamax' ? [brand.scheme, 'mediamax'] : 'mediamax',
     version: brand.version ?? '0.1.0',
     orientation: isTV ? 'landscape' : 'default',
     icon,

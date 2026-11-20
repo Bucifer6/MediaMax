@@ -36,7 +36,7 @@ export default function ItemScreen() {
       case 'show':
         return <ShowDetail show={item} onUserData={setUserData} />;
       case 'season':
-        return parentShow.data ? <ShowDetail show={parentShow.data as Item} initialSeasonId={item.id} onUserData={() => undefined} /> : <Loading />;
+        return parentShow.data ? <ShowDetail show={parentShow.data as Item} initialSeasonId={item.id} onUserData={(ud) => parentShow.setData((prev) => (prev ? { ...prev, userData: ud } : prev))} /> : <Loading />;
       case 'album':
       case 'playlist':
         return <TrackListDetail item={item} onUserData={setUserData} />;

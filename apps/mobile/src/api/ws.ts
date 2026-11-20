@@ -6,6 +6,7 @@ type Listener = (e: ServerEvent) => void;
 export class RealtimeSocket {
   private ws: WebSocket | null = null;
   private listeners = new Set<Listener>();
+  private openListeners = new Set<() => void>();
   private retry = 0;
   private closed = false;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -29,6 +30,7 @@ export class RealtimeSocket {
     this.ws.onopen = () => {
       this.retry = 0;
       this.pingTimer = setInterval(() => this.send({ type: 'ping' }), 25000);
+      this.openListeners.forEach((l) => l());
     };
     this.ws.onmessage = (msg) => {
       try {
@@ -61,6 +63,16 @@ export class RealtimeSocket {
   subscribe(l: Listener): () => void {
     this.listeners.add(l);
     return () => this.listeners.delete(l);
+  }
+
+  /** Called on every (re)connect, e.g. to rejoin a watch-together room. */
+  onOpen(l: () => void): () => void {
+    this.openListeners.add(l);
+    return () => this.openListeners.delete(l);
+  }
+
+  get connected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
   }
 
   stop() {

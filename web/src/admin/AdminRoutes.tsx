@@ -11,10 +11,13 @@ import { ServerSettingsAdmin } from './ServerSettings';
 import { TasksAdmin } from './Tasks';
 import { ActivityAdmin } from './Activity';
 import { DevicesAdmin } from './Devices';
+import { StatsAdmin } from './Stats';
+import WrappedPage from '../pages/Wrapped';
 
 const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/admin', label: 'Overview', icon: 'activity', end: true },
   { to: '/admin/libraries', label: 'Libraries', icon: 'database' },
+  { to: '/admin/stats', label: 'Statistics', icon: 'gauge' },
   { to: '/admin/users', label: 'Users', icon: 'users' },
   { to: '/admin/livetv', label: 'Live TV sources', icon: 'antenna' },
   { to: '/admin/channels', label: 'Channels', icon: 'tv' },
@@ -41,7 +44,9 @@ export default function AdminRoutes() {
           <Routes>
             <Route index element={<Overview />} />
             <Route path="libraries" element={<LibrariesAdmin />} />
+            <Route path="stats" element={<StatsAdmin />} />
             <Route path="users" element={<UsersAdmin />} />
+            <Route path="users/:userId/wrapped" element={<WrappedPage />} />
             <Route path="livetv" element={<LiveSourcesAdmin />} />
             <Route path="channels" element={<ChannelsAdmin />} />
             <Route path="branding" element={<BrandingStudio />} />

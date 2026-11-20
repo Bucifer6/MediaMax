@@ -1,14 +1,84 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import type { Chapter, Lyrics } from '@mediamax/shared';
+import { api } from '../api/endpoints';
 import { useMusic } from './music';
 import { SeekBar, VolumeControl } from './controls';
 import { Icon } from '../components/Icon';
 import { Img, Spinner } from '../components/ui';
 import { formatClock, formatDuration } from '../utils/format';
 
+/** Index of the chapter containing `ms`. */
+export function chapterAt(chapters: Chapter[], ms: number): number {
+  let idx = -1;
+  chapters.forEach((c, i) => {
+    if (ms >= c.startMs) idx = i;
+  });
+  return idx;
+}
+
+export function ChapterList({ chapters, positionMs, onSeek }: { chapters: Chapter[]; positionMs: number; onSeek: (ms: number) => void }) {
+  const cur = chapterAt(chapters, positionMs);
+  return (
+    <ol className="chapter-list">
+      {chapters.map((c, i) => (
+        <li key={`${c.startMs}-${i}`}>
+          <button className={`chapter-item ${i === cur ? 'current' : ''}`} onClick={() => onSeek(c.startMs)} aria-current={i === cur ? 'true' : undefined}>
+            <span className="chapter-num">{i + 1}</span>
+            <span className="chapter-title">{c.title || `Chapter ${i + 1}`}</span>
+            <small>{formatClock(c.startMs)}</small>
+          </button>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function LyricsView({ itemId, positionMs, onSeek }: { itemId: string; positionMs: number; onSeek: (ms: number) => void }) {
+  const [lyrics, setLyrics] = useState<Lyrics | null | undefined>(undefined);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setLyrics(undefined);
+    api.items.lyrics(itemId, ctrl.signal).then(setLyrics).catch((e) => {
+      if ((e as Error).name !== 'AbortError') setLyrics(null);
+    });
+    return () => ctrl.abort();
+  }, [itemId]);
+  let cur = -1;
+  if (lyrics?.synced) {
+    lyrics.lines.forEach((l, i) => {
+      if (l.startMs != null && positionMs >= l.startMs) cur = i;
+    });
+  }
+  useEffect(() => {
+    const el = box.current?.querySelector<HTMLElement>('.lyric-line.current');
+    const c = box.current;
+    if (!el || !c) return;
+    c.scrollTo({ top: el.offsetTop - c.clientHeight / 2 + el.clientHeight / 2, behavior: 'smooth' });
+  }, [cur]);
+  if (lyrics === undefined) return <div className="lyrics-empty"><Spinner size={24} /></div>;
+  if (!lyrics || !lyrics.lines.length) return <div className="lyrics-empty muted"><Icon name="lyrics" size={28} /><p>No lyrics for this track.</p></div>;
+  return (
+    <div className={`lyrics ${lyrics.synced ? 'synced' : ''}`} ref={box}>
+      {lyrics.lines.map((l, i) => (
+        lyrics.synced && l.startMs != null ? (
+          <button key={i} className={`lyric-line ${i === cur ? 'current' : i < cur ? 'past' : ''}`} onClick={() => onSeek(l.startMs!)}>{l.text || '♪'}</button>
+        ) : (
+          <p key={i} className="lyric-line">{l.text || '\u00a0'}</p>
+        )
+      ))}
+    </div>
+  );
+}
+
+type Panel = null | 'queue' | 'chapters' | 'lyrics';
+
 export function MiniPlayer() {
   const m = useMusic();
-  const [queueOpen, setQueueOpen] = useState(false);
+  const [panel, setPanel] = useState<Panel>(null);
+  const queueOpen = panel === 'queue';
+  const setQueueOpen = (fn: boolean | ((o: boolean) => boolean)) => setPanel((p) => ((typeof fn === 'function' ? fn(p === 'queue') : fn) ? 'queue' : null));
   const loc = useLocation();
   if (!m.current) return null;
   if (loc.pathname.startsWith('/play/') || loc.pathname.startsWith('/watch/')) return null;
@@ -21,7 +91,7 @@ export function MiniPlayer() {
         <SeekBar className="mini-seek" positionMs={m.positionMs} durationMs={m.durationMs} onSeek={m.seek} />
         <div className="mini-left">
           <Link to={t.parentId ? `/item/${t.parentId}` : `/item/${t.id}`} className="mini-art">
-            <Img src={art} width={96} fallback={<Icon name="music" />} />
+            <Img src={art} width={96} fallback={<Icon name={t.type === 'bookpart' ? 'book' : t.type === 'podcastepisode' ? 'podcast' : 'music'} />} />
           </Link>
           <div className="mini-text">
             <div className="mini-title">{t.title}</div>
@@ -57,6 +127,16 @@ export function MiniPlayer() {
           <span className="hide-sm">
             <VolumeControl volume={m.volume} muted={m.muted} onVolume={m.setVolume} onMute={m.setMuted} />
           </span>
+          {m.chapters.length > 0 && (
+            <button className={`btn-icon ${panel === 'chapters' ? 'active' : ''}`} onClick={() => setPanel((p) => (p === 'chapters' ? null : 'chapters'))} aria-label="Chapters" title="Chapters">
+              <Icon name="chapters" />
+            </button>
+          )}
+          {t.type === 'track' && (
+            <button className={`btn-icon ${panel === 'lyrics' ? 'active' : ''}`} onClick={() => setPanel((p) => (p === 'lyrics' ? null : 'lyrics'))} aria-label="Lyrics" title="Lyrics">
+              <Icon name="lyrics" />
+            </button>
+          )}
           <button className={`btn-icon ${queueOpen ? 'active' : ''}`} onClick={() => setQueueOpen((o) => !o)} aria-label="Queue">
             <Icon name="queue" />
           </button>
@@ -65,6 +145,24 @@ export function MiniPlayer() {
           </button>
         </div>
       </div>
+      {panel === 'chapters' && m.chapters.length > 0 && (
+        <aside className="queue-panel" aria-label="Chapters">
+          <div className="queue-head">
+            <h3>Chapters</h3>
+            <button className="btn-icon" onClick={() => setPanel(null)} aria-label="Close chapters"><Icon name="x" size={18} /></button>
+          </div>
+          <ChapterList chapters={m.chapters} positionMs={m.positionMs} onSeek={m.seek} />
+        </aside>
+      )}
+      {panel === 'lyrics' && t.type === 'track' && (
+        <aside className="queue-panel lyrics-panel" aria-label="Lyrics">
+          <div className="queue-head">
+            <h3>Lyrics</h3>
+            <button className="btn-icon" onClick={() => setPanel(null)} aria-label="Close lyrics"><Icon name="x" size={18} /></button>
+          </div>
+          <LyricsView itemId={t.id} positionMs={m.positionMs} onSeek={m.seek} />
+        </aside>
+      )}
       {queueOpen && (
         <aside className="queue-panel">
           <div className="queue-head">

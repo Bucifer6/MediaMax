@@ -24,6 +24,12 @@ function fallbackIcon(item: Item) {
       return 'music' as const;
     case 'photo':
       return 'image' as const;
+    case 'audiobook':
+    case 'bookpart':
+      return 'book' as const;
+    case 'podcast':
+    case 'podcastepisode':
+      return 'podcast' as const;
     case 'show':
     case 'season':
     case 'episode':

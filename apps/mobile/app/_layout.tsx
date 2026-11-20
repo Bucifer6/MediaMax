@@ -10,6 +10,7 @@ import { MiniPlayer } from '@/components/MiniPlayer';
 import { DownloadsProvider } from '@/state/downloads';
 import { MusicProvider } from '@/state/music';
 import { SessionProvider, useSession } from '@/state/session';
+import { SyncPlayProvider } from '@/state/syncplay';
 import { ThemeProvider, resolveTheme, useTheme } from '@/theme';
 import { useTVMenuKeyManager } from '@/tv';
 
@@ -32,7 +33,9 @@ function ThemedApp() {
     <ThemeProvider theme={theme}>
       <DownloadsProvider>
         <MusicProvider>
-          <Navigation />
+          <SyncPlayProvider>
+            <Navigation />
+          </SyncPlayProvider>
         </MusicProvider>
       </DownloadsProvider>
     </ThemeProvider>
@@ -90,6 +93,7 @@ function Navigation() {
         <Stack.Screen name="live/[id]" options={{ presentation: 'fullScreenModal', animation: 'fade', orientation: t.isTV ? undefined : 'all' }} />
         <Stack.Screen name="music" options={{ presentation: t.isTV ? 'fullScreenModal' : 'modal', animation: t.isTV ? 'fade' : 'slide_from_bottom' }} />
         <Stack.Screen name="photo/[id]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+        <Stack.Screen name="settings/wrapped" options={{ presentation: 'fullScreenModal', animation: 'fade', orientation: t.isTV ? undefined : 'all' }} />
       </Stack>
       <FloatingMiniPlayer />
       <BrandSplash />
@@ -111,6 +115,7 @@ function FloatingMiniPlayer() {
     first === 'player' ||
     first === 'music' ||
     first === 'photo' ||
+    (first === 'settings' && segments[1] === 'wrapped') ||
     (first === 'live' && segments[1] === '[id]');
   if (hidden) return null;
   return (

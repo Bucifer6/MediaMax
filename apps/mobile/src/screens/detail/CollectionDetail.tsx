@@ -12,7 +12,7 @@ import { playOrOpen } from '@/components/Hero';
 export function CollectionDetail({ item, onUserData }: { item: Item; onUserData: (ud: UserItemData) => void }) {
   const t = useTheme();
   const children = useQuery(`children:${item.id}`, (api) => api.children(item.id, { sort: 'releaseDate', order: 'asc', limit: 500 }));
-  const { togglePlayed, toggleFavorite } = useUserDataActions(item, onUserData);
+  const { togglePlayed, toggleFavorite, setRating } = useUserDataActions(item, onUserData);
   const list = children.data?.items ?? [];
   const firstUnplayed = list.find((i) => !i.userData.played) ?? list[0];
   const cols = t.isTV ? 6 : t.wide ? 5 : 3;
@@ -21,7 +21,7 @@ export function CollectionDetail({ item, onUserData }: { item: Item; onUserData:
   const header = (
     <View style={{ paddingHorizontal: t.space.gutter, gap: t.space.md, marginTop: t.isTV ? t.height * 0.25 : -t.space.xxl, marginBottom: t.space.xl, maxWidth: t.isTV ? t.width * 0.6 : undefined }}>
       <TitleBlock item={item} />
-      <ActionBar item={item} onPlay={firstUnplayed ? () => playOrOpen(firstUnplayed) : undefined} playLabel="Play" togglePlayed={togglePlayed} toggleFavorite={toggleFavorite} />
+      <ActionBar item={item} onPlay={firstUnplayed ? () => playOrOpen(firstUnplayed) : undefined} playLabel="Play" togglePlayed={togglePlayed} toggleFavorite={toggleFavorite} onRate={setRating} playlistItems={async () => list.map((c) => c.id)} />
       <Overview text={item.overview} />
     </View>
   );

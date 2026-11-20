@@ -2,11 +2,11 @@ import type {
   ActiveSession, ActivityEntry, AuthResponse, Branding, BrandingAssetKind, Channel, ChannelCategory,
   ChannelQuery, CreateCollectionRequest, CreateLibraryRequest, CreateLiveSourceRequest, CreatePlaylistRequest,
   CreateRecordingRequest, CreateRecordingRuleRequest, CreateUserRequest, DashboardStats, Device, DirectoryEntry, DownloadQuality, DvrDefaults,
-  GuideResponse, HomeResponse, Item, ItemQuery, ItemSort, Library, LivePlayRequest, LiveSource, LoginRequest,
+  GuideResponse, HomeResponse, Item, Lyrics, PodcastSearchResult, PodcastSubscription, SubscribePodcastRequest, ItemQuery, ItemSort, Library, LivePlayRequest, LiveSource, LoginRequest,
   Paged, PinLoginRequest, PlaybackInfo, PlaybackRequest, Program, ProgressReport, PublicProfile, Recording,
-  RecordingRule, RecordingStatus, ScheduledTask, SearchResponse, ServerSettings, SetupRequest, SystemInfo,
-  TestSourceResponse, Theme, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
-  UpdateUserRequest, User, UserItemData,
+  RecordingRule, RecordingStatus, RemoteSubtitle, ScheduledTask, SearchResponse, ServerSettings, ServerStats, SetupRequest, SystemInfo,
+  TestSourceResponse, Theme, TraktDeviceCode, TraktStatus, TrickplayInfo, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
+  UpdateUserRequest, User, UserItemData, UserStats,
 } from '@mediamax/shared';
 import { http, request, upload } from './client';
 import { deviceInfo } from './device';
@@ -88,6 +88,40 @@ export const api = {
     genres: (libraryId?: string) => http.get<string[]>('/genres', { libraryId }),
     home: () => http.get<HomeResponse>('/home'),
     search: (q: string, limit = 24, signal?: AbortSignal) => http.get<SearchResponse>('/search', { q, limit }, signal),
+    lyrics: (id: string, signal?: AbortSignal) => http.get<Lyrics>(`/items/${enc(id)}/lyrics`, undefined, signal),
+    trickplay: (id: string, mediaId?: string, signal?: AbortSignal) => http.get<TrickplayInfo>(`/items/${enc(id)}/trickplay`, { mediaId }, signal),
+  },
+
+  subtitles: {
+    search: (itemId: string, languages: string, signal?: AbortSignal) =>
+      http.get<RemoteSubtitle[]>(`/items/${enc(itemId)}/subtitles/search`, { languages }, signal),
+    download: (itemId: string, body: { fileId: string; language: string; hearingImpaired?: boolean; forced?: boolean }) =>
+      http.post<Item>(`/items/${enc(itemId)}/subtitles/download`, body),
+    remove: (itemId: string, index: number) => http.del<Item>(`/items/${enc(itemId)}/subtitles/${index}`),
+  },
+
+  podcasts: {
+    list: () => http.get<PodcastSubscription[]>('/podcasts'),
+    search: (q: string, signal?: AbortSignal) => http.get<PodcastSearchResult[]>('/podcasts/search', { q }, signal),
+    subscribe: (body: SubscribePodcastRequest) => http.post<PodcastSubscription>('/podcasts', body),
+    update: (id: string, body: { autoDownload: boolean }) => http.patch<PodcastSubscription>(`/podcasts/${enc(id)}`, body),
+    refresh: (id: string) => http.post<PodcastSubscription>(`/podcasts/${enc(id)}/refresh`),
+    remove: (id: string) => http.del<Ok>(`/podcasts/${enc(id)}`),
+    importOpml: (opml: string) => http.post<{ added: number; skipped: number; failed: number | string[] }>('/podcasts/import', { opml }),
+  },
+
+  stats: {
+    me: (year?: number | null, signal?: AbortSignal) => http.get<UserStats>('/stats/me', { year: year ?? undefined }, signal),
+    user: (userId: string, year?: number | null, signal?: AbortSignal) =>
+      http.get<UserStats>(`/stats/users/${enc(userId)}`, { year: year ?? undefined }, signal),
+    server: (days: number, signal?: AbortSignal) => http.get<ServerStats>('/stats/server', { days }, signal),
+  },
+
+  trakt: {
+    status: () => http.get<TraktStatus>('/trakt'),
+    connect: () => http.post<TraktDeviceCode>('/trakt/connect'),
+    update: (body: { scrobble: boolean }) => http.patch<TraktStatus>('/trakt', body),
+    disconnect: () => http.del<TraktStatus>('/trakt'),
   },
 
   collections: {

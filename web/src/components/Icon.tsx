@@ -319,6 +319,15 @@ const ICONS = {
     </>
   ),
   external: <>{P('M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3')}</>,
+  book: <>{P('M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5M8 7h8')}</>,
+  podcast: (
+    <>
+      <circle cx="12" cy="11" r="2" />
+      {P('M12 13v8M8.5 15.5a5 5 0 1 1 7 0M5.6 18.4a9 9 0 1 1 12.8 0')}
+    </>
+  ),
+  chapters: <>{P('M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01')}</>,
+  lyrics: <>{P('M4 6h10M4 10h10M4 14h6M18 4v11.5M18 15.5a2.5 2.5 0 1 1-2.5-2.5H18')}</>,
 } satisfies Record<string, ReactElement>;
 
 export type IconName = keyof typeof ICONS;

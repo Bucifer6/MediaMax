@@ -143,6 +143,15 @@ export default function SettingsScreen() {
             <SettingRow icon="play-circle-outline" label="Playback" value={prefs?.maxBitrate ? `${Math.round(prefs.maxBitrate / 1000)} Mbps` : 'Original quality'} onPress={() => router.push('/settings/playback' as never)} />
           </SettingSection>
 
+          <SettingSection title="For you">
+            <SettingRow icon="sparkles-outline" label="Your Year" value="Your stats, Wrapped-style" onPress={() => router.push('/settings/wrapped' as never)} />
+            {caps.syncPlay ? <SettingRow icon="people-outline" label="Join watch party" value="Enter a code" onPress={() => router.push('/watch-party' as never)} /> : null}
+          </SettingSection>
+
+          <SettingSection title="Connected services">
+            <SettingRow icon="sync-circle-outline" label="Trakt" value="Scrobble your watch history" onPress={() => router.push('/settings/trakt' as never)} />
+          </SettingSection>
+
           <SettingSection title="Devices">
             {caps.linkCodes && !t.isTV ? <SettingRow icon="tv-outline" label="Link a TV" value="Enter a code" onPress={() => router.push('/link-tv' as never)} /> : null}
             <SettingRow icon="phone-portrait-outline" label="Signed-in devices" onPress={() => router.push('/settings/devices' as never)} />

@@ -12,6 +12,7 @@ import { Badge, Dropdown, EmptyState, ErrorState, Img, Modal, ProgressBar, Skele
 import { Row } from '../components/Row';
 import { PosterCard } from '../components/Cards';
 import { AddToContainerModal, EditMetadataModal, UploadArtworkModal } from '../components/ItemModals';
+import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
 import { episodeCode, isAudio, isResumable, isVideo, itemLink, playLink, progressPct } from '../utils/items';
 
@@ -270,7 +271,7 @@ export function ItemPage() {
   const navigate = useNavigate();
   const play = usePlayItem();
   const res = useAsync(() => api.items.get(itemId), [itemId]);
-  const [modal, setModal] = useState<null | 'edit' | 'art' | 'playlist' | 'collection' | 'trailer' | 'photo'>(null);
+  const [modal, setModal] = useState<null | 'edit' | 'art' | 'playlist' | 'collection' | 'trailer' | 'photo' | 'subs'>(null);
   const item = res.data;
   const isSeries = item?.id === itemId && (item.type === 'show' || item.type === 'season');
   // Next-up episode of a show/season (server: in progress → next unwatched → first).
@@ -390,6 +391,7 @@ export function ItemPage() {
       ]
     : [];
   const containerOwned = item.type === 'playlist' || (item.type === 'collection' && isAdmin);
+  const subtitleItems: MenuItem[] = canSearchSubtitles(item) ? [{ label: 'Find subtitles online…', icon: 'subtitles', onClick: () => setModal('subs') }] : [];
 
   const crumbs: { label: string; to: string }[] = [];
   if (item.type === 'episode') {
@@ -490,10 +492,12 @@ export function ItemPage() {
                 <Icon name="download" />
               </a>
             ))}
-            {(adminItems.length > 0 || containerOwned) && (
+            {(adminItems.length > 0 || containerOwned || subtitleItems.length > 0) && (
               <Dropdown
-                trigger={({ onClick }) => <button className="btn-round" onClick={onClick} title="More" data-nav><Icon name="more" /></button>}
+                trigger={({ onClick }) => <button className="btn-round" onClick={onClick} title="More" aria-label="More" data-nav><Icon name="more" /></button>}
                 items={[
+                  ...subtitleItems,
+                  ...(subtitleItems.length && (containerOwned || adminItems.length) ? [{ divider: true, label: '' }] : []),
                   ...(containerOwned ? [{ label: `Delete ${item.type}`, icon: 'trash' as const, danger: true, onClick: deleteContainer }] : []),
                   ...(containerOwned && adminItems.length ? [{ divider: true, label: '' }] : []),
                   ...adminItems,
@@ -542,6 +546,9 @@ export function ItemPage() {
       <AddToContainerModal open={modal === 'collection'} onClose={() => setModal(null)} items={[item]} kind="collection" />
       {isAdmin && <EditMetadataModal open={modal === 'edit'} onClose={() => setModal(null)} item={item} onUpdated={(i) => res.setData({ ...item, ...i })} />}
       {isAdmin && <UploadArtworkModal open={modal === 'art'} onClose={() => setModal(null)} item={item} onUpdated={(i) => res.setData({ ...item, ...i })} />}
+      {canSearchSubtitles(item) && (
+        <SubtitleSearchModal open={modal === 'subs'} onClose={() => setModal(null)} item={item} onUpdated={(i) => res.setData((d) => (d ? { ...d, ...i, userData: i.userData ?? d.userData } : i))} />
+      )}
       <Modal open={modal === 'trailer'} onClose={() => setModal(null)} size="xl" className="trailer-modal" title={`${item.title} — Trailer`}>
         {item.trailerUrl && /youtube\.com|youtu\.be/.test(item.trailerUrl) ? (
           <iframe className="trailer-frame" src={youtubeEmbed(item.trailerUrl)} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen title="Trailer" />

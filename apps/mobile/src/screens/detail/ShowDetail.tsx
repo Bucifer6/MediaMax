@@ -35,7 +35,7 @@ export function ShowDetail({ show, initialSeasonId, onUserData }: { show: Item; 
 
   const episodes = useQuery(seasonId ? `children:${seasonId}` : null, (a) => a.children(seasonId!, { sort: 'index', order: 'asc', limit: 500 }));
   const eps = episodes.data?.items ?? [];
-  const { togglePlayed, toggleFavorite } = useUserDataActions(show, onUserData);
+  const { togglePlayed, toggleFavorite, setRating } = useUserDataActions(show, onUserData);
 
   const next = useMemo(() => nextUp.data ?? eps.find((e) => !e.userData.played) ?? eps[0] ?? null, [nextUp.data, eps]);
   const nextP = next ? progressFraction(next) : 0;
@@ -59,6 +59,8 @@ export function ShowDetail({ show, initialSeasonId, onUserData }: { show: Item; 
       toggleFavorite={toggleFavorite}
       downloadable={!!seasonId}
       downloadItems={async () => (await api.children(seasonId!, { sort: 'index', order: 'asc', limit: 500 })).items}
+      onRate={setRating}
+      playlistItems={async () => (await api.items({ ancestorId: show.id, type: 'episode', sort: 'index', order: 'asc', limit: 2000 })).items.map((e) => e.id)}
     />
   );
 
