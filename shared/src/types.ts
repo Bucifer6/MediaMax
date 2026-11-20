@@ -786,6 +786,8 @@ export interface ActiveSession {
     hwFallback?: string | null;
     /** HDR → SDR tone-mapping path in use, when tone-mapping. */
     toneMap?: string | null;
+    /** Audio output, e.g. "E-AC-3 5.1 (TrueHD Atmos → E-AC-3 5.1: device can't play TrueHD)". */
+    audioDetail?: string | null;
   } | null;
 }
 
@@ -3716,4 +3718,94 @@ export interface UpdateMeRequest {
   avatarId?: string | null;
   /** Profile colour (#rrggbb); null clears it. */
   profileColor?: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Audio: format detection, smart delivery, listening comforts         */
+/* ------------------------------------------------------------------ */
+
+/** Extra audio-stream details from ffprobe (media scanned before audio detection gets them the first time it is played). */
+export interface AudioStream {
+  /** ffprobe codec profile, e.g. "Dolby TrueHD + Dolby Atmos", "DTS-HD MA + DTS:X", "Dolby Digital Plus + Dolby Atmos", "LC". */
+  profile?: string | null;
+  /** e.g. "5.1(side)", "7.1", "stereo". */
+  channelLayout?: string | null;
+  sampleRate?: number | null;
+  /** Bits per sample for lossless / PCM streams. */
+  bitDepth?: number | null;
+  /** kbps, when the container reports it. */
+  bitrate?: number | null;
+  /** Dolby Atmos: TrueHD with Atmos metadata, or E-AC-3 JOC (Dolby Digital Plus + Atmos). */
+  atmos?: boolean;
+  /** DTS:X (object-based DTS, carried in a DTS-HD MA stream). */
+  dtsX?: boolean;
+  /** DTS-HD Master Audio (lossless; plays as its DTS core on DTS-only devices). */
+  dtsHdMa?: boolean;
+  /** Lossless format (TrueHD, DTS-HD MA, FLAC, ALAC, PCM). */
+  lossless?: boolean;
+  /** Short format name for badges and menus, e.g. "TrueHD Atmos", "DTS:X", "DTS-HD MA", "E-AC-3 Atmos", "AAC". */
+  formatLabel?: string;
+}
+
+/** Listening comforts. Applied by the server when it encodes the audio; web players apply some of them locally (Web Audio) during direct play. */
+export interface AudioComforts {
+  /** Dynamic range compression ("night mode"): quiet scenes louder, explosions softer. */
+  nightMode?: boolean;
+  /** Clearer dialogue: centre channel lifted before the downmix, speech-band EQ on stereo sources. */
+  dialogueBoost?: boolean;
+  /** EBU R128 loudness normalisation (single-pass loudnorm). */
+  normalize?: boolean;
+  /** Lip-sync offset in ms: positive delays the sound, negative plays it earlier. */
+  delayMs?: number;
+}
+
+export interface UserPreferences {
+  /** Listening comforts, user-wide defaults. */
+  audio?: AudioComforts;
+  /** Per-device overrides (keyed by the client's deviceId), mostly the lip-sync delay of a TV / soundbar setup. */
+  audioDevices?: Record<string, AudioComforts>;
+}
+
+export interface DeviceProfile {
+  /**
+   * Speaker channels the client can output from decoded (PCM) audio, e.g. 2 for a laptop, 6 / 8 for an AV receiver
+   * over HDMI. Sending it opts the client into the smart audio decisions (E-AC-3 / DTS core / AAC 7.1 targets).
+   * Omitted = legacy client: audio is copied when its codec is listed, otherwise transcoded to AAC (up to 5.1).
+   */
+  maxAudioChannels?: number;
+  /** Codecs decoded with more than two channels, e.g. ["aac","ac3","eac3"]. Omitted = every listed codec. */
+  multichannelAudioCodecs?: string[];
+}
+
+export interface PlaybackRequest {
+  /** Listening comforts the server should apply when it encodes the audio. */
+  audioProcessing?: AudioComforts;
+  /** Re-encode the audio (cheap: the video is still copied) so `audioProcessing` is applied even when the audio could be copied. */
+  forceAudioProcessing?: boolean;
+}
+
+/** How the chosen audio track reaches the client. */
+export type AudioDelivery = 'direct' | 'copy' | 'dts-core' | 'transcode';
+
+export interface AudioDecisionInfo {
+  /** Source stream label, e.g. "TrueHD Atmos 7.1". */
+  source: string;
+  /** What the client receives, e.g. "E-AC-3 5.1". */
+  output: string;
+  delivery: AudioDelivery;
+  /** Output codec ("copy" when the source bitstream is passed on as is). */
+  codec: string;
+  channels: number | null;
+  bitrateKbps: number | null;
+  /** Why the audio isn't delivered as is, e.g. "TrueHD Atmos → E-AC-3 5.1: device can't play TrueHD". */
+  reason: string | null;
+  /** Atmos / DTS:X object audio: kept, lost (converted to plain channels), or not applicable. */
+  objects: 'kept' | 'lost' | null;
+  /** Comforts the server applied to this stream; the client must not apply them again. */
+  applied: (keyof AudioComforts)[];
+}
+
+export interface PlaybackInfo {
+  /** Audio delivery decision for the selected track (absent from older servers). */
+  audio?: AudioDecisionInfo | null;
 }

@@ -9,6 +9,7 @@ import { config } from '../config.js';
 import { getSettings } from './settings.js';
 import { logger } from '../util/log.js';
 import { sleep, REMOTE_PROTOCOLS } from '../util/misc.js';
+import { audioArgs, audioNeedsFmp4, planDetail, type AudioPlan } from './audio.js';
 
 const log = logger('transcoder');
 
@@ -73,6 +74,8 @@ export interface TranscodeOptions {
   toneMap?: boolean;
   /** Bitstream filter for copied video, e.g. stripping Dolby Vision RPU/EL NAL units (see hdr.ts STRIP_DOVI_BSF). */
   videoBsf?: string | null;
+  /** Audio delivery from the audio decision (audio.ts): codec, channels, downmix and comfort filters, DTS core copy. */
+  audioPlan?: AudioPlan | null;
 }
 
 export interface TranscodeInfo {
@@ -83,6 +86,10 @@ export interface TranscodeInfo {
   /** Set when the hardware transcode failed and the job fell back. */
   hwFallback?: string | null;
   toneMap?: string | null;
+  /** RFC 6381 audio codec of the output (HLS CODECS), when known. */
+  audioCodecString?: string | null;
+  /** Audio output and why, for the dashboard (see audio.ts planDetail). */
+  audioDetail?: string | null;
 }
 
 export type SegmentType = 'mpegts' | 'fmp4';
@@ -148,6 +155,12 @@ export function pickToneMap(hw: HwAccel, platform: string, gpuPathsPossible: boo
 
 /* ------------------------------- args -------------------------------- */
 
+/** Audio formats other than AAC/MP3 (E-AC-3, AC-3, DTS, TrueHD, FLAC …) go in fMP4 segments, which every HLS player demuxes. */
+function planWantsFmp4(o: Pick<TranscodeOptions, 'audioPlan' | 'audioCopy' | 'hasVideo'>): boolean {
+  if (!o.audioPlan || !o.hasVideo) return false;
+  return audioNeedsFmp4(o.audioCopy && o.audioPlan.codec !== 'copy' ? { ...o.audioPlan, codec: 'copy' } : o.audioPlan, o.audioCopy);
+}
+
 /**
  * Whether this transcode tone-maps HDR to SDR. The explicit `opts.toneMap` decision (HDR source + client without
  * HDR support) wins; otherwise any HDR source is tone-mapped when the admin setting is on. Copying video never tone-maps.
@@ -168,7 +181,7 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
   let hw: HwAccel = encodeVideo ? ctx.hw : 'none';
   let codec: TranscodeVideoCodec = hw === 'none' ? 'h264' : ctx.codec ?? o.videoCodec ?? 'h264';
   if (!encoderFor(hw, codec)) codec = 'h264';
-  const segmentType: SegmentType = ctx.segmentType ?? (o.mode !== 'live' && needsFmp4(o.videoCopy ? normCodec(o.sourceCodec) : encodeVideo ? codec : null) ? 'fmp4' : 'mpegts');
+  const segmentType: SegmentType = ctx.segmentType ?? (o.mode !== 'live' && (needsFmp4(o.videoCopy ? normCodec(o.sourceCodec) : encodeVideo ? codec : null) || planWantsFmp4(o)) ? 'fmp4' : 'mpegts');
 
   // Video pipeline
   const h = targetHeight(o.bitrate, o.sourceHeight, o.maxHeight);
@@ -214,8 +227,13 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
     }
   }
   let audioCodec = 'copy';
-  if (o.audioCopy) args.push('-c:a', 'copy');
-  else {
+  if (o.audioCopy) {
+    args.push('-c:a', 'copy');
+    if (o.audioPlan?.codec === 'copy' && !o.audioPlan.bsf && o.audioPlan.sourceCodec === 'truehd') args.push('-strict', '-2');
+  } else if (o.audioPlan && o.hasVideo) {
+    args.push(...audioArgs(o.audioPlan));
+    audioCodec = o.audioPlan.codec;
+  } else {
     audioCodec = 'aac';
     const ch = Math.min(o.audioChannels ?? 2, 6);
     args.push('-c:a', 'aac', '-ac', String(ch > 2 ? 6 : 2), '-b:a', ch > 2 ? '384k' : '192k');
@@ -234,7 +252,14 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
   return {
     args,
     segmentType,
-    info: { videoCodec: pipeline?.encoder ?? 'copy', audioCodec, bitrate: videoBitrate, hwAccel: hw, toneMap: pipeline?.toneMap ?? null, hwFallback: null },
+    info: {
+      videoCodec: pipeline?.encoder ?? 'copy', audioCodec, bitrate: videoBitrate, hwAccel: hw, toneMap: pipeline?.toneMap ?? null, hwFallback: null,
+      // Audio decision details (only with an audio plan, so other callers see the same info as before).
+      ...(o.audioPlan && o.hasVideo ? {
+        audioCodecString: o.audioCopy && o.audioPlan.codec !== 'copy' ? null : o.audioPlan.codecString,
+        audioDetail: o.audioCopy ? null : planDetail(o.audioPlan),
+      } : {}),
+    },
   };
 }
 
@@ -276,7 +301,7 @@ export class TranscodeJob {
       this.hw = 'none';
     }
     if (this.hw === 'none' || !encoderWorks(this.hw, this.codec)) this.codec = 'h264';
-    this.segmentType = opts.mode !== 'live' && needsFmp4(opts.videoCopy ? normCodec(opts.sourceCodec) : encodes ? this.codec : null) ? 'fmp4' : 'mpegts';
+    this.segmentType = opts.mode !== 'live' && (needsFmp4(opts.videoCopy ? normCodec(opts.sourceCodec) : encodes ? this.codec : null) || planWantsFmp4(opts)) ? 'fmp4' : 'mpegts';
   }
 
   get segmentSeconds() {

@@ -1,7 +1,8 @@
 # Playback: subtitles and automatic quality
 
 This page explains how MediaMax players show subtitles and pick the stream quality, what you can change, and what
-the server does behind the scenes.
+the server does behind the scenes. Audio (Dolby Atmos, DTS:X, passthrough, downmix, night mode, lip-sync) has its own
+page: [AUDIO.md](AUDIO.md).
 
 ## Subtitles
 

@@ -9,6 +9,8 @@ import { T } from '@/components/Text';
 import { useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 import { languageName } from '@/utils/format';
+import { LIP_SYNC_OPTIONS, formatDelay } from '@/api/audio';
+import { deviceInfoSync } from '@/api/device';
 
 const LANGS = ['en', 'fr', 'de', 'es', 'it', 'pt', 'nl', 'sv', 'da', 'no', 'fi', 'pl', 'ru', 'ja', 'ko', 'zh', 'ar', 'hi', 'tr'];
 const SUB_MODES: { key: UserPreferences['subtitleMode']; label: string; description: string }[] = [
@@ -25,7 +27,7 @@ const RG_MODES: { key: NonNullable<UserPreferences['replayGain']>; label: string
   { key: 'off', label: 'Off', description: 'Play files at their own level' },
 ];
 
-type Sheet = 'quality' | 'subMode' | 'audioLang' | 'subLang' | 'rg' | null;
+type Sheet = 'quality' | 'subMode' | 'audioLang' | 'subLang' | 'rg' | 'lipSync' | null;
 
 export default function PlaybackSettings() {
   const t = useTheme();
@@ -44,6 +46,9 @@ export default function PlaybackSettings() {
       setError(e instanceof Error ? e.message : 'Could not save');
     }
   };
+  const audio = p.audio ?? {};
+  const deviceId = deviceInfoSync()?.deviceId ?? null;
+  const lipSync = (deviceId && p.audioDevices?.[deviceId]?.delayMs) || 0;
   const langOptions = (sel: string | null) => [{ key: '__none', label: 'No preference', selected: !sel }, ...LANGS.map((l) => ({ key: l, label: languageName(l), selected: sel === l }))];
 
   return (
@@ -60,6 +65,16 @@ export default function PlaybackSettings() {
             <SettingRow icon="flash-outline" label="Skip intros automatically" toggle={p.skipIntros} onToggle={(v) => set({ skipIntros: v })} />
             <SettingRow icon="film-outline" label="Cinema mode (trailers before movies)" toggle={p.cinemaMode !== false} onToggle={(v) => set({ cinemaMode: v })} />
           </SettingSection>
+          <SettingSection title="Audio">
+            <SettingRow icon="moon-outline" label="Night mode (softer loud scenes)" toggle={!!audio.nightMode} onToggle={(v) => set({ audio: { ...audio, nightMode: v } })} />
+            <SettingRow icon="chatbubbles-outline" label="Dialogue boost" toggle={!!audio.dialogueBoost} onToggle={(v) => set({ audio: { ...audio, dialogueBoost: v } })} />
+            <SettingRow icon="pulse-outline" label="Normalise volume" toggle={!!audio.normalize} onToggle={(v) => set({ audio: { ...audio, normalize: v } })} />
+            {deviceId ? <SettingRow icon="timer-outline" label="Lip-sync on this device" value={formatDelay(lipSync)} onPress={() => setSheet('lipSync')} /> : null}
+            <T tone="muted" style={{ marginTop: t.space.xs, marginHorizontal: t.space.sm }}>
+              The server applies these by re-encoding the sound (the picture is untouched). While one is on, Dolby Atmos / DTS:X
+              passthrough to a receiver is replaced by E-AC-3 / AAC.
+            </T>
+          </SettingSection>
           <SettingSection title="Music">
             <SettingRow icon="volume-medium-outline" label="Volume levelling (ReplayGain)" value={RG_MODES.find((m) => m.key === (p.replayGain ?? 'auto'))?.label} onPress={() => setSheet('rg')} />
           </SettingSection>
@@ -71,6 +86,7 @@ export default function PlaybackSettings() {
         </View>
       </ScrollView>
       <OptionSheet visible={sheet === 'quality'} title="Maximum quality" options={QUALITY_OPTIONS.map((q) => ({ key: String(q.kbps ?? 'orig'), label: q.label, selected: q.kbps === p.maxBitrate }))} onSelect={(k) => set({ maxBitrate: k === 'orig' ? null : Number(k) })} onClose={() => setSheet(null)} />
+      <OptionSheet visible={sheet === 'lipSync'} title="Lip-sync on this device" options={LIP_SYNC_OPTIONS.map((ms) => ({ key: String(ms), label: formatDelay(ms), selected: ms === lipSync }))} onSelect={(k) => deviceId && set({ audioDevices: { [deviceId]: Number(k) ? { delayMs: Number(k) } : {} } })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'rg'} title="Volume levelling" options={RG_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === (p.replayGain ?? 'auto') }))} onSelect={(k) => set({ replayGain: k })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'subMode'} title="Subtitles" options={SUB_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === p.subtitleMode }))} onSelect={(k) => set({ subtitleMode: k })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'audioLang'} title="Audio language" options={langOptions(p.audioLanguage)} onSelect={(k) => set({ audioLanguage: k === '__none' ? null : k })} onClose={() => setSheet(null)} />

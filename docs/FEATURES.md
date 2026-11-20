@@ -48,6 +48,17 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Per-device HDR decisions (direct play when the device supports the range, DV 8.x → HDR10/HLG base layer, tone-map otherwise) | 🟡 | ✅ | 🟡 | ✅ |
 | Dolby Vision profile 7 (dual-layer) → HDR10 base layer by stream copy, no re-encode | ❌ | 🟡 | ❌ | ✅ |
 | HDR10 / HDR10+ / HLG / Dolby Vision badges in item info and the player's info overlay | ✅ | ✅ | ✅ | ✅ |
+| Audio format detection: Dolby Atmos (TrueHD / E-AC-3 JOC), DTS:X, DTS-HD MA, lossless, channel layout ([docs/AUDIO.md](AUDIO.md)) | 🟡 | 🟡 | 🟡 | ✅ |
+| Dolby Atmos / DTS:X / DTS-HD MA / TrueHD / 7.1 badges in item info, the player's audio menu and stats | ✅ | 🟡 | 🟡 | ✅ |
+| Per-device audio decisions: passthrough when the device or its receiver takes the format, else the best target it plays | 🟡 | 🟡 | 🟡 | ✅ |
+| DTS-HD MA / DTS:X → DTS core by stream copy (no re-encode) for DTS-only soundbars | ❌ | ❌ | ❌ | ✅ |
+| TrueHD (Atmos) / DTS → E-AC-3 5.1 for TVs + soundbars (ARC) and Apple TV | 🟡 | 🟡 | 🟡 | ✅ |
+| AAC 7.1 / 5.1 transcodes by output channels; Dolby-style stereo downmix that keeps dialogue clear (level-tested) | 🟡 | 🟡 (downmix options) | 🟡 | ✅ |
+| Audio-only re-encode when only the audio is the problem (video copied) | ✅ | ✅ | ✅ | ✅ |
+| Night mode (dynamic range compression) and dialogue boost: server-side, or in the browser during direct play | 🟡 (boost voices, Plexamp-style loudness) | 🟡 (downmix "night mode") | ❌ | ✅ |
+| Loudness normalisation for video (EBU R128) | 🟡 | 🟡 | ❌ | ✅ |
+| Audio delay / lip-sync per device (browser delay during direct play, server shift for negative offsets) | 🟡 | ✅ (client) | 🟡 | ✅ |
+| HLS master playlists list E-AC-3 as `ec-3`, Atmos as `CHANNELS="16/JOC"` | ✅ | 🟡 | ❓ | ✅ |
 | Apple TV display matching (range + frame rate) | ✅ | ✅ | ✅ | ✅ (tvOS 17+) |
 | TV remote keys: media, channel ±, digits, colour keys, Info/Guide (Tizen, webOS, Android TV) | ✅ | 🟡 | 🟡 | ✅ |
 | "Hardware failed, used software" shown on the session | ❌ | ❌ | ❌ | ✅ |

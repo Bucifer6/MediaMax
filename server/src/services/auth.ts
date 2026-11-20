@@ -2,7 +2,7 @@ import { securityEvent } from '../util/securityLog.js';
 import crypto from 'node:crypto';
 import type {
   ApiKey, AuthResponse, CreatedApiKey, CreateUserRequest, TotpEnabled, TotpSetup, Device, DeviceInfo, LinkCodeResponse, LinkPollResponse, Platform,
-  ProfileSettings, PublicProfile, SubtitleStyle, UpdateMeRequest, UpdateUserRequest, User, UserPreferences,
+  AudioComforts, ProfileSettings, PublicProfile, SubtitleStyle, UpdateMeRequest, UpdateUserRequest, User, UserPreferences,
 } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { newId, newToken, sha256, shortCode } from '../util/ids.js';
@@ -16,6 +16,7 @@ import { bus } from './events.js';
 import { imageUrl, registerImage } from './images.js';
 import { defaultPermissions, defaultQuotas, normalizePermissions, normalizeQuotas, storedPermissions, storedQuotas } from './requestPerms.js';
 import { builtinAvatarUrl, isBuiltinAvatar } from './avatars.js';
+import { normalizeComforts } from './audio.js';
 
 /* ----------------------------- hashing ----------------------------- */
 
@@ -74,6 +75,19 @@ function mergePrefs(stored: Partial<UserPreferences>, patch: Partial<UserPrefere
   const xf = Number(prefs.musicCrossfadeSec);
   prefs.musicCrossfadeSec = Number.isFinite(xf) ? Math.max(0, Math.min(12, Math.round(xf))) : 0;
   if (!['off', 'track', 'album', 'auto'].includes(prefs.replayGain as string)) prefs.replayGain = 'auto';
+  // Listening comforts (audio.ts): validated; per-device entries merge field by field, an empty one removes the device.
+  if (prefs.audio !== undefined) prefs.audio = normalizeComforts(prefs.audio);
+  if (prefs.audioDevices !== undefined) {
+    const merged: Record<string, AudioComforts> = {};
+    const src = { ...(stored.audioDevices ?? {}), ...(patch.audioDevices ?? {}) };
+    for (const id of Object.keys(src).slice(-50)) {
+      const old = normalizeComforts(stored.audioDevices?.[id]);
+      const next = patch.audioDevices && id in patch.audioDevices ? normalizeComforts(patch.audioDevices[id]) : null;
+      if (next && !Object.keys(next).length) continue;
+      merged[id.slice(0, 128)] = { ...old, ...(next ?? {}) };
+    }
+    prefs.audioDevices = merged;
+  }
   return prefs;
 }
 

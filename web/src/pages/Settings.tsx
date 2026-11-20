@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { DeviceCapabilitiesCard } from '../components/DeviceCapabilities';
+import { AudioSettingsCard } from '../components/AudioSettings';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import type { Device, SubtitleStyle, Theme, TraktDeviceCode, UserPreferences } from '@mediamax/shared';
 import { api } from '../api/endpoints';
@@ -643,7 +644,7 @@ export default function SettingsPage() {
             <Route path="security" element={<Security />} />
             <Route path="appearance" element={<Appearance />} />
             <Route path="browsing" element={<BrowsingSettings />} />
-            <Route path="playback" element={<><Playback /><SubtitleSettings /><MusicSettings /><DeviceCapabilitiesCard /></>} />
+            <Route path="playback" element={<><Playback /><SubtitleSettings /><AudioSettingsCard /><MusicSettings /><DeviceCapabilitiesCard /></>} />
             <Route path="devices" element={<Devices />} />
             <Route path="services" element={<Services />} />
             <Route path="link" element={<LinkTab />} />
