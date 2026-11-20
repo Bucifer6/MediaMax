@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { FlatList, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CastButton } from '@/cast';
 import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
 import { Img } from '@/components/Img';
@@ -144,7 +145,16 @@ export default function NowPlaying() {
           <Focusable onPress={() => router.back()} style={{ padding: 8 }} accessibilityLabel="Close">
             <Icon name="chevron-down" color="#fff" size={28} />
           </Focusable>
-          <T variant="caption" color="rgba(255,255,255,0.7)" style={{ flex: 1, textAlign: 'center', textTransform: 'uppercase' }}>Now playing</T>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <T variant="caption" color="rgba(255,255,255,0.7)" style={{ textTransform: 'uppercase' }}>Now playing</T>
+            {m.castingTo ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Icon name="tv-outline" size={13} color={t.colors.primary} />
+                <T variant="caption" color={t.colors.primary} numberOfLines={1}>Casting to {m.castingTo}</T>
+              </View>
+            ) : null}
+          </View>
+          <CastButton tint="#fff" size={30} style={{ marginHorizontal: 4 }} />
           <Focusable onPress={() => { m.stop(); router.back(); }} style={{ padding: 8 }} accessibilityLabel="Stop">
             <Icon name="stop-circle-outline" color="#fff" size={26} />
           </Focusable>

@@ -12,6 +12,7 @@ import { OptionSheet } from '@/components/OptionSheet';
 import { Img } from '@/components/Img';
 import { ProgressBar } from '@/components/ProgressBar';
 import { RowHeader } from '@/components/Row';
+import { SmartBadge } from '@/components/SmartBadge';
 import { BackButton } from '@/components/Screen';
 import { T } from '@/components/Text';
 import { DOWNLOAD_QUALITIES, effectiveQuality, useDownloads } from '@/state/downloads';
@@ -128,6 +129,7 @@ export function TitleBlock({ item, center }: { item: Item; center?: boolean }) {
           </T>
         </>
       )}
+      {item.smart ? <SmartBadge /> : null}
       <MetaLine item={item} center={center} />
       <MediaBadges item={item} />
       {item.tagline ? (

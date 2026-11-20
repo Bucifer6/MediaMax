@@ -3,6 +3,10 @@
  * catch-up. Custom overlay controls (scrubber, audio / subtitle / quality
  * menus, skip intro/credits, up-next countdown), D-pad support on TV, PiP and
  * background audio on phones, and progress reporting every 10 s.
+ *
+ * Chromecast (phones): while a cast session is connected the stream is requested
+ * with a Chromecast profile and loaded on the receiver; the local player pauses,
+ * the controls drive the receiver and progress is reported from its status.
  */
 import { useEventListener } from 'expo';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,8 +16,9 @@ import { VideoAirPlayButton, VideoView, isPictureInPictureSupported, useVideoPla
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { QUALITY_OPTIONS, videoDeviceProfile } from '@/api/profiles';
+import { QUALITY_OPTIONS, castDeviceProfile, videoDeviceProfile } from '@/api/profiles';
 import type { Channel, Item, Marker, PlaybackInfo, ProgressReport, RemoteSubtitle, SubtitleTrack } from '@/api/types';
+import { CastButton, castMediaInfo, isOurMedia, useCast } from '@/cast';
 import { Button } from '@/components/Button';
 import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
@@ -92,6 +97,22 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
   const syncOn = sync.enabled && onlineVod;
   const inRoom = syncOn && !!sync.room;
 
+  // ----- Chromecast -----
+  const cast = useCast();
+  const canCast = cast.supported && !offlineUri && status === 'signed-in';
+  const casting = canCast && cast.connected && !!cast.client;
+  const castingRef = useRef(casting);
+  castingRef.current = casting;
+  const castClientRef = useRef(cast.client);
+  castClientRef.current = cast.client;
+  /** URL loaded on the receiver (to ignore status updates for someone else's media). */
+  const castUrlRef = useRef<string | null>(null);
+  /** Media position that receiver stream time 0 corresponds to. */
+  const castOffsetRef = useRef(0);
+  /** Bumped after each successful load on the receiver (re-applies the subtitle track). */
+  const [castTick, setCastTick] = useState(0);
+  const castStatus = casting && castUrlRef.current && isOurMedia(cast.mediaStatus, castUrlRef.current) ? cast.mediaStatus : null;
+
   const infoRef = useRef<PlaybackInfo | null>(null);
   const offsetRef = useRef(0);
   const pendingStartRef = useRef<number | null>(null);
@@ -107,6 +128,8 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
   const autoPickSub = useRef<{ prev: Set<number>; language: string } | null>(null);
   posRef.current = pos;
   durRef.current = dur;
+  const playingRef = useRef(false);
+  playingRef.current = playing;
 
   const player = useVideoPlayer(null, (p) => {
     p.timeUpdateEventInterval = 0.5;
@@ -136,9 +159,91 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
     [api, target, offlineUri, downloads],
   );
 
+  /** Pick subtitles for fresh PlaybackInfo: a just-downloaded track, or the user's defaults on first load. */
+  const applySubtitleDefaults = useCallback(
+    (pi: PlaybackInfo) => {
+      const pickNew = autoPickSub.current;
+      if (pickNew) {
+        autoPickSub.current = null;
+        const fresh = pi.subtitles.filter((s) => !pickNew.prev.has(s.index));
+        const pick = fresh.find((s) => langMatch(s.language, pickNew.language)) ?? fresh[0];
+        if (pick) setSub({ kind: 'server', track: pick });
+      }
+      if (firstLoad.current) {
+        firstLoad.current = false;
+        const mode = prefs?.subtitleMode ?? 'auto';
+        const lang = prefs?.subtitleLanguage;
+        const tracks = pi.subtitles;
+        let pick: SubtitleTrack | undefined;
+        if (mode === 'forced') pick = tracks.find((s) => s.forced);
+        else if (mode === 'always') pick = tracks.find((s) => !s.forced && langMatch(s.language, lang)) ?? tracks.find((s) => s.default) ?? tracks[0];
+        else if (mode === 'auto') pick = tracks.find((s) => s.forced && (!lang || langMatch(s.language, lang))) ?? tracks.find((s) => s.default);
+        setSub(pick ? { kind: 'server', track: pick } : { kind: 'off' });
+      }
+    },
+    [prefs],
+  );
+
+  // ----- casting -----
+  /** Request a Chromecast-friendly stream and load it on the receiver. */
+  const castLoadRef = useRef<(startMs: number, opts: { audio?: number; bitrate?: number | null }) => Promise<void>>(async () => undefined);
+  castLoadRef.current = async (startMs, opts) => {
+    const client = castClientRef.current;
+    if (!client) return;
+    setLoading(true);
+    setError(null);
+    try {
+      try {
+        player.pause();
+      } catch {
+        /* nothing loaded */
+      }
+      const prev = infoRef.current;
+      if (prev) {
+        infoRef.current = null;
+        api.stopSession(prev.sessionId).catch(() => undefined);
+      }
+      const liveNow = target.kind === 'live' && !catchup;
+      const pi =
+        target.kind === 'live'
+          ? await api.playChannel(channelId, { ...(catchup ? { catchupStart: catchup.start, catchupDurationMin: catchup.durationMin } : {}), forceHls: true })
+          : await api.playback(target.itemId, {
+              startMs: Math.round(startMs),
+              audioStreamIndex: opts.audio,
+              subtitleStreamIndex: null, // sidecar WebVTT tracks are sent to the receiver instead
+              deviceProfile: castDeviceProfile('video', opts.bitrate === undefined ? maxBitrate : opts.bitrate),
+            });
+      if (!castingRef.current) {
+        api.stopSession(pi.sessionId).catch(() => undefined);
+        return;
+      }
+      infoRef.current = pi;
+      setInfo(pi);
+      applySubtitleDefaults(pi);
+      castOffsetRef.current = pi.streamStartMs ?? 0;
+      if (pi.durationMs) setDur(pi.durationMs);
+      const mediaInfo = castMediaInfo(api, pi, {
+        live: liveNow,
+        title: target.kind === 'live' && channel ? channel.name : pi.title,
+        subtitle: target.kind === 'live' ? channel?.nowPlaying?.title ?? pi.subtitle : pi.subtitle,
+        posterPath: pi.posterUrl ?? pi.backdropUrl ?? channel?.logoUrl,
+      });
+      castUrlRef.current = mediaInfo.contentUrl;
+      const from = pi.startMs || startMs;
+      await client.loadMedia({ mediaInfo, autoplay: true, startTime: liveNow ? undefined : Math.max(0, (from - castOffsetRef.current) / 1000) });
+      if (!liveNow) setPos(from);
+      setCastTick((n) => n + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not start casting');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ----- loading -----
   const load = useCallback(
-    async (startMs: number, opts: { audio?: number; bitrate?: number | null } = {}) => {
+    async (startMs: number, opts: { audio?: number; bitrate?: number | null; paused?: boolean } = {}) => {
+      if (castingRef.current) return castLoadRef.current(startMs, opts);
       setLoading(true);
       setError(null);
       try {
@@ -165,13 +270,7 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
         }
         infoRef.current = pi;
         setInfo(pi);
-        const pickNew = autoPickSub.current;
-        if (pickNew && pi) {
-          autoPickSub.current = null;
-          const fresh = pi.subtitles.filter((s) => !pickNew.prev.has(s.index));
-          const pick = fresh.find((s) => langMatch(s.language, pickNew.language)) ?? fresh[0];
-          if (pick) setSub({ kind: 'server', track: pick });
-        }
+        if (pi) applySubtitleDefaults(pi);
         pendingStartRef.current = pi ? pi.startMs ?? startMs : startMs;
         offsetRef.current = 0;
         if (pi?.durationMs) setDur(pi.durationMs);
@@ -183,25 +282,13 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
           headers: offlineUri ? undefined : api.headers(false),
           metadata: { title: pi?.title ?? offlineItem?.title, artist: pi?.subtitle ?? undefined, artwork },
         });
-        player.play();
-        // Default subtitles from the user's preferences (first load only).
-        if (firstLoad.current && pi) {
-          firstLoad.current = false;
-          const mode = prefs?.subtitleMode ?? 'auto';
-          const lang = prefs?.subtitleLanguage;
-          const tracks = pi.subtitles;
-          let pick: SubtitleTrack | undefined;
-          if (mode === 'forced') pick = tracks.find((s) => s.forced);
-          else if (mode === 'always') pick = tracks.find((s) => !s.forced && langMatch(s.language, lang)) ?? tracks.find((s) => s.default) ?? tracks[0];
-          else if (mode === 'auto') pick = tracks.find((s) => s.forced && (!lang || langMatch(s.language, lang))) ?? tracks.find((s) => s.default);
-          setSub(pick ? { kind: 'server', track: pick } : { kind: 'off' });
-        }
+        if (!opts.paused) player.play();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Playback failed');
         setLoading(false);
       }
     },
-    [api, target, offlineUri, channelId, catchup, maxBitrate, player, prefs, offlineItem],
+    [api, target, offlineUri, channelId, catchup, maxBitrate, player, offlineItem, applySubtitleDefaults],
   );
 
   // Initial load + live channel changes.
@@ -217,6 +304,8 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
       report('stopped');
       const pi = infoRef.current;
       if (pi) api.stopSession(pi.sessionId).catch(() => undefined);
+      // The server session is gone, so stop the receiver too (the cast session itself stays connected).
+      if (castingRef.current && castUrlRef.current) void castClientRef.current?.stop().catch(() => undefined);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -224,20 +313,24 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
 
   // ----- player events -----
   useEventListener(player, 'timeUpdate', ({ currentTime, bufferedPosition }) => {
+    if (castingRef.current) return;
     const ms = currentTime * 1000 + offsetRef.current;
     setPos(ms);
     setBuffered(bufferedPosition > 0 ? bufferedPosition * 1000 + offsetRef.current : 0);
   });
   useEventListener(player, 'playingChange', ({ isPlaying }) => {
+    if (castingRef.current) return;
     setPlaying(isPlaying);
     if (!isPlaying && infoRef.current) report('paused');
   });
   useEventListener(player, 'statusChange', ({ status: s, error: err }) => {
+    if (castingRef.current) return;
     setLoading(s === 'loading');
     if (s === 'error') setError(err?.message ?? 'The video could not be played');
   });
   useEventListener(player, 'availableSubtitleTracksChange', ({ availableSubtitleTracks }) => setEmbeddedSubs(availableSubtitleTracks));
   useEventListener(player, 'sourceLoad', ({ duration, availableSubtitleTracks }) => {
+    if (castingRef.current) return;
     setEmbeddedSubs(availableSubtitleTracks);
     const start = pendingStartRef.current;
     pendingStartRef.current = null;
@@ -263,23 +356,88 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
     if (start && start - offset > 500) player.currentTime = (start - offset) / 1000;
     syncAfterLoad(start ?? 0);
   });
-  useEventListener(player, 'playToEnd', () => {
+  const onEnded = () => {
     if (isLive && !catchup) return;
     const next = infoRef.current?.nextItemId;
     if (next && prefs?.autoplayNext !== false) goNext(next);
     else exit();
+  };
+  useEventListener(player, 'playToEnd', () => {
+    if (castingRef.current) return;
+    onEnded();
   });
+
+  // ----- Chromecast session / status -----
+  // Connect: move playback to the receiver at the current position. Disconnect: back to this device, paused.
+  const wasCasting = useRef(casting);
+  useEffect(() => {
+    if (casting === wasCasting.current) return;
+    wasCasting.current = casting;
+    if (casting) {
+      void castLoadRef.current(posRef.current, { audio: audioIndex });
+    } else {
+      castUrlRef.current = null;
+      setControls(true);
+      void load(posRef.current, { audio: audioIndex, paused: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [casting]);
+
+  // Mirror the receiver's state into the UI and the progress reports.
+  const castEndedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!castStatus) return;
+    const st = castStatus.playerState;
+    const nowPlaying = st === 'playing' || st === 'buffering';
+    if (playingRef.current && st === 'paused') report('paused');
+    setPlaying(nowPlaying);
+    setLoading(st === 'loading' || st === 'buffering');
+    const sid = infoRef.current?.sessionId ?? null;
+    if (st === 'idle' && sid && castEndedFor.current !== sid) {
+      if (castStatus.idleReason === 'finished') {
+        castEndedFor.current = sid;
+        report('stopped');
+        onEnded();
+      } else if (castStatus.idleReason === 'error') {
+        castEndedFor.current = sid;
+        setError('The Chromecast could not play this stream');
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [castStatus]);
+  useEffect(() => {
+    if (!castStatus || (isLive && !catchup)) return;
+    setPos(cast.positionMs + castOffsetRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cast.positionMs, !!castStatus]);
+  // Subtitles on the receiver: WebVTT text tracks 1..n in `info.subtitles` order.
+  useEffect(() => {
+    if (!casting || !castUrlRef.current) return;
+    const subs = infoRef.current?.subtitles ?? [];
+    const id = sub.kind === 'server' ? subs.findIndex((x) => x.index === sub.track.index) + 1 : 0;
+    void castClientRef.current?.setActiveTrackIds(id > 0 ? [id] : []).catch(() => undefined);
+  }, [casting, sub, castTick]);
+
+  /** Play / pause whichever player is active. */
+  const playAny = useCallback(() => {
+    if (castingRef.current) void castClientRef.current?.play().catch(() => undefined);
+    else player.play();
+  }, [player]);
+  const pauseAny = useCallback(() => {
+    if (castingRef.current) void castClientRef.current?.pause().catch(() => undefined);
+    else player.pause();
+  }, [player]);
 
   // Session killed by an admin.
   useEffect(
     () =>
       on('sessionTerminated', (e) => {
         if (e.sessionId === infoRef.current?.sessionId) {
-          player.pause();
+          pauseAny();
           setError(`Playback was stopped by the server${e.reason ? `: ${e.reason}` : ''}`);
         }
       }),
-    [player],
+    [pauseAny],
   );
 
   // Progress every 10 s while playing.
@@ -370,6 +528,12 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
       const d = durRef.current;
       const target = Math.max(0, d > 0 ? Math.min(ms, d - 1000) : ms);
       const pi = infoRef.current;
+      if (castingRef.current) {
+        void castClientRef.current?.seek({ position: Math.max(0, (target - castOffsetRef.current) / 1000) }).catch(() => undefined);
+        setPos(target);
+        setUpNextDismissed(false);
+        return;
+      }
       const streamS = (target - offsetRef.current) / 1000;
       const streamDur = player.duration;
       if (pi && pi.method === 'transcode' && (streamS < 0 || (isFinite(streamDur) && streamDur > 0 && streamS > streamDur - 1))) {
@@ -397,14 +561,15 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
   }, [userSeek, flash]);
 
   const togglePlay = useCallback(() => {
-    if (player.playing) {
-      player.pause();
+    const isPlaying = castingRef.current ? playingRef.current : player.playing;
+    if (isPlaying) {
+      pauseAny();
       if (inRoom) sync.broadcast('pause', posRef.current);
     } else {
-      player.play();
+      playAny();
       if (inRoom) sync.broadcast('play', posRef.current);
     }
-  }, [player, inRoom, sync]);
+  }, [player, inRoom, sync, playAny, pauseAny]);
 
   // ----- watch together -----
   /** Apply a command from another room member. Never broadcasts (no echo). */
@@ -416,11 +581,11 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
         if (pendingStartRef.current != null) pendingStartRef.current = positionMs;
         else seekTo(positionMs);
       }
-      if (action === 'play') player.play();
-      if (action === 'pause') player.pause();
+      if (action === 'play') playAny();
+      if (action === 'pause') pauseAny();
       if (by) flash(action === 'play' ? `${by} pressed play` : action === 'pause' ? `${by} paused` : `${by} jumped to ${formatClock(positionMs)}`);
     },
-    [seekTo, player, flash],
+    [seekTo, playAny, pauseAny, flash],
   );
   const applyRef = useRef(applyRemote);
   applyRef.current = applyRemote;
@@ -429,7 +594,7 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
     return sync.register({
       itemId: vodItemId,
       getPositionMs: () => posRef.current,
-      isPaused: () => !player.playing,
+      isPaused: () => (castingRef.current ? !playingRef.current : !player.playing),
       apply: (a, p, by) => applyRef.current(a, p, by),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -447,8 +612,8 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
     if (room.itemId && room.itemId !== vodItemId) return;
     const roomPos = sync.roomPosition();
     if (roomPos != null && Math.abs(roomPos - startMs) > 2000) seekTo(roomPos);
-    if (room.state === 'playing') player.play();
-    else player.pause();
+    if (room.state === 'playing') playAny();
+    else pauseAny();
   };
   function syncAfterLoad(startMs: number) {
     syncAfterLoadRef.current(startMs);
@@ -581,7 +746,7 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
     const pi = infoRef.current;
     const native = player.availableAudioTracks;
     const pos0 = audioStreams.findIndex((a) => a.index === index);
-    if ((!pi || pi.method === 'direct' || pi.method === 'remux') && native.length === audioStreams.length && native[pos0]) {
+    if (!castingRef.current && (!pi || pi.method === 'direct' || pi.method === 'remux') && native.length === audioStreams.length && native[pos0]) {
       player.audioTrack = native[pos0];
     } else {
       void load(posRef.current, { audio: index });
@@ -603,14 +768,14 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
           selected: sub.kind === 'server' && sub.track.index === s.index,
         })),
       });
-    if (embeddedSubs.length)
+    if (embeddedSubs.length && !casting)
       sections.push({
         title: 'In stream',
         options: embeddedSubs.map((s, i) => ({ key: `e:${i}`, label: s.label || languageName(s.language), selected: sub.kind === 'embedded' && sub.track.id === s.id && sub.track.language === s.language })),
       });
     if (onlineVod) sections.push({ title: 'More', options: [{ key: 'online', label: 'Search online…', description: 'Find and download subtitles from OpenSubtitles', icon: 'cloud-download-outline' }] });
     return sections;
-  }, [info, embeddedSubs, sub, onlineVod]);
+  }, [info, embeddedSubs, sub, onlineVod, casting]);
   const selectSub = (key: string) => {
     if (key === 'online') return setSheet('online');
     setSheet(null);
@@ -653,10 +818,12 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
   };
 
   // ----- render -----
-  const subtitleText = sub.kind === 'server' ? activeCues(cues, pos).map((c) => c.text).join('\n') : '';
+  const subtitleText = sub.kind === 'server' && !casting ? activeCues(cues, pos).map((c) => c.text).join('\n') : '';
   const title = info?.title ?? offlineItem?.title ?? channel?.name ?? '';
   const subtitle = isLive ? (catchup ? `Catch-up · ${formatTime(catchup.start)}` : channel?.nowPlaying?.title ?? null) : info?.subtitle ?? null;
-  const pipSupported = !t.isTV && isPictureInPictureSupported();
+  const pipSupported = !t.isTV && !casting && isPictureInPictureSupported();
+  // The receiver is the screen while casting: keep the remote-control UI up.
+  const showControls = (controls || casting) && !error;
   const iconSize = t.isTV ? t.s(30) : 26;
 
   return (
@@ -672,6 +839,8 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
         startsPictureInPictureAutomatically={pipSupported}
         focusable={false}
       />
+
+      {casting ? <CastingPanel deviceName={cast.deviceName} title={title} art={info?.backdropUrl ?? info?.posterUrl ?? channel?.logoUrl ?? null} /> : null}
 
       {/* Tap layer (phones) */}
       {!t.isTV ? <Pressable style={StyleSheet.absoluteFill} onPress={() => (controls ? setControls(false) : poke())} /> : null}
@@ -706,7 +875,7 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
       ) : null}
 
       {/* Controls */}
-      {controls && !error ? (
+      {showControls ? (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <LinearGradient colors={['rgba(0,0,0,0.75)', 'transparent']} pointerEvents="box-none" style={{ paddingTop: t.isTV ? t.s(40) : insets.top + 8, paddingHorizontal: t.isTV ? t.space.gutter : Math.max(insets.left, 12), paddingBottom: 40, flexDirection: 'row', alignItems: 'center', gap: t.space.md }}>
             {!t.isTV ? (
@@ -740,7 +909,8 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
                 </T>
               </View>
             ) : null}
-            {Platform.OS === 'ios' && !t.isTV ? <VideoAirPlayButton tint="#fff" activeTint={t.colors.primary} style={{ width: 34, height: 34 }} /> : null}
+            {canCast ? <CastButton tint={casting ? t.colors.primary : '#fff'} /> : null}
+            {Platform.OS === 'ios' && !t.isTV && !casting ? <VideoAirPlayButton tint="#fff" activeTint={t.colors.primary} style={{ width: 34, height: 34 }} /> : null}
             {pipSupported ? (
               <Focusable onPress={() => viewRef.current?.startPictureInPicture().catch(() => undefined)} style={{ padding: 6 }} accessibilityLabel="Picture in picture">
                 <Icon name="albums-outline" color="#fff" />
@@ -927,6 +1097,27 @@ function UpNextCard({ item, seconds, onPlay, onCancel }: { item: Item | null; se
       <View style={{ flexDirection: 'row', gap: t.space.sm }}>
         <Button label="Play now" icon="play" size="sm" onPress={onPlay} hasTVPreferredFocus />
         <Button label="Cancel" variant="secondary" size="sm" onPress={onCancel} />
+      </View>
+    </View>
+  );
+}
+
+/** Shown in place of the picture while the video plays on a Chromecast. */
+function CastingPanel({ deviceName, title, art }: { deviceName: string | null; title: string; art: string | null }) {
+  const t = useTheme();
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }]}>
+      {art ? <Img path={art} width={600} blurRadius={30} style={[StyleSheet.absoluteFill, { opacity: 0.45 }]} /> : null}
+      <View style={{ alignItems: 'center', gap: t.space.sm, paddingHorizontal: t.space.xl }}>
+        <Icon name="tv-outline" size={56} color={t.colors.primary} />
+        <T variant="heading" color="#fff" center>
+          Casting to {deviceName ?? 'Chromecast'}
+        </T>
+        {title ? (
+          <T color="rgba(255,255,255,0.75)" center numberOfLines={2}>
+            {title}
+          </T>
+        ) : null}
       </View>
     </View>
   );

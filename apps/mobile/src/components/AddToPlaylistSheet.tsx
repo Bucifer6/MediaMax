@@ -41,7 +41,8 @@ export function AddToPlaylistSheet({
     let alive = true;
     api
       .playlists()
-      .then((l) => alive && setLists(l))
+      // Smart playlists fill themselves from their rules: no manual adding.
+      .then((l) => alive && setLists(l.filter((pl) => !pl.smart)))
       .catch((e) => {
         if (!alive) return;
         setLists([]);

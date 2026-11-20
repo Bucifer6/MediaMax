@@ -42,6 +42,8 @@ export const ALL_FEATURES: FeatureFlags = {
   dvr: true,
   profilePicker: true,
   linkCodes: true,
+  // Off until the server says otherwise: it needs TMDB plus Radarr/Sonarr configured.
+  requests: false,
 };
 
 export function resolveTheme(branding: Branding | null, userThemeId: string | null | undefined): Theme {

@@ -14,6 +14,8 @@ import { MediaCard } from '@/components/MediaCard';
 import { OptionSheet } from '@/components/OptionSheet';
 import { ItemRow } from '@/components/Row';
 import { BackButton } from '@/components/Screen';
+import { SmartBadge } from '@/components/SmartBadge';
+import { SmartPlaylistSheet } from '@/components/SmartPlaylistSheet';
 import { T } from '@/components/Text';
 import { useDownloads } from '@/state/downloads';
 import { useMusic } from '@/state/music';
@@ -42,9 +44,12 @@ export function Header({ item, subtitle, children }: { item: Item; subtitle: str
         {item.posterUrl || item.thumbUrl ? <Img path={item.posterUrl ?? item.thumbUrl} width={art} style={{ width: '100%', height: '100%' }} /> : <Icon name="musical-notes" size={art / 3} color={t.colors.textMuted} />}
       </View>
       <View style={{ gap: t.space.sm, alignItems: t.isTV ? 'flex-start' : 'center', flex: t.isTV ? 1 : undefined, justifyContent: 'flex-end', alignSelf: t.isTV ? 'stretch' : undefined }}>
-        <T variant="caption" tone="primary" style={{ textTransform: 'uppercase' }}>
-          {item.type}
-        </T>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.sm }}>
+          <T variant="caption" tone="primary" style={{ textTransform: 'uppercase' }}>
+            {item.type}
+          </T>
+          {item.smart ? <SmartBadge /> : null}
+        </View>
         <T variant={t.isTV ? 'hero' : 'title'} center={!t.isTV}>
           {item.title}
         </T>
@@ -92,13 +97,16 @@ function TrackRow({ track, index, onPress, showArt, playingId }: { track: Item; 
 }
 
 /** Album and playlist: header + track list. */
-export function TrackListDetail({ item, onUserData }: { item: Item; onUserData: (ud: UserItemData) => void }) {
+export function TrackListDetail({ item, onUserData, onItem }: { item: Item; onUserData: (ud: UserItemData) => void; /** Replace the item (e.g. after editing a smart playlist). */ onItem?: (item: Item) => void }) {
   const t = useTheme();
   const music = useMusic();
   const caps = useCapabilities();
   const downloads = useDownloads();
   const api = useApi();
   const isPlaylist = item.type === 'playlist';
+  /** Smart playlists fill themselves from their rules: no manual add/remove. */
+  const isSmart = !!item.smart;
+  const [editRules, setEditRules] = useState(false);
   const isBook = item.type === 'audiobook';
   const children = useQuery(`children:${item.id}`, (a) => a.children(item.id, { sort: item.type === 'album' || isBook ? 'index' : undefined, order: 'asc', limit: 1000 }));
   const [playlistSheet, setPlaylistSheet] = useState(false);
@@ -180,6 +188,7 @@ export function TrackListDetail({ item, onUserData }: { item: Item; onUserData: 
             <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" onPress={toggleFavorite} accessibilityLabel="Favourite" />
             {caps.downloads && downloads.supported && audio.length ? <Button icon="arrow-down-circle-outline" variant="secondary" onPress={() => downloads.download(audio, 'original')} accessibilityLabel="Download all" /> : null}
             {!isPlaylist && tracks.length ? <Button icon="list-outline" label={t.isTV ? 'Playlist' : undefined} variant="secondary" onPress={() => setPlaylistSheet(true)} accessibilityLabel="Add to playlist" /> : null}
+            {isPlaylist && isSmart ? <Button icon="options-outline" label={t.isTV ? 'Edit rules' : undefined} variant="secondary" onPress={() => setEditRules(true)} accessibilityLabel="Edit smart playlist rules" /> : null}
             {isPlaylist ? <Button icon="trash-outline" label={t.isTV ? 'Delete' : undefined} variant="secondary" onPress={() => setConfirmDelete(true)} accessibilityLabel="Delete playlist" /> : null}
           </View>
           {!isPlaylist ? <RatingStars rating={item.userData.rating} onRate={setRating} /> : null}
@@ -187,6 +196,17 @@ export function TrackListDetail({ item, onUserData }: { item: Item; onUserData: 
             <T tone="danger" weight="600" center={!t.isTV}>
               {editError}
             </T>
+          ) : null}
+          {isSmart && isPlaylist ? (
+            <SmartPlaylistSheet
+              visible={editRules}
+              existing={item}
+              onClose={() => setEditRules(false)}
+              onSaved={(updated) => {
+                onItem?.(updated);
+                void children.refresh();
+              }}
+            />
           ) : null}
           <AddToPlaylistSheet visible={playlistSheet} title={item.title} getItemIds={() => tracks.map((x) => x.id)} onClose={() => setPlaylistSheet(false)} />
           <OptionSheet
@@ -205,7 +225,7 @@ export function TrackListDetail({ item, onUserData }: { item: Item; onUserData: 
       renderItem={({ item: tr, index }) => (
         <View style={{ paddingHorizontal: t.space.gutter - t.space.sm, flexDirection: 'row', alignItems: 'center', gap: t.space.xs }}>
           <TrackRow track={tr} index={index} onPress={() => playAt(index)} showArt={isPlaylist} playingId={music.current?.id} />
-          {isPlaylist ? (
+          {isPlaylist && !isSmart ? (
             <Focusable onPress={() => void removeTrack(tr)} ringRadius={999} accessibilityLabel={`Remove ${tr.title} from playlist`} style={{ padding: t.isTV ? t.s(10) : 8, borderRadius: 999 }}>
               {({ focused }) => <Icon name="remove-circle-outline" size={t.isTV ? t.s(24) : 22} color={focused ? t.colors.danger : t.colors.textMuted} />}
             </Focusable>
