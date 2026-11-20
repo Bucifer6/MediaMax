@@ -56,7 +56,15 @@ type SheetKind = 'audio' | 'subs' | 'online' | 'quality' | 'channels' | 'togethe
 
 const langMatch = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.slice(0, 2).toLowerCase() === b.slice(0, 2).toLowerCase();
 
-export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
+/** Cinema-mode intro (trailer / pre-roll) shown before a movie. */
+export interface IntroChain {
+  /** Continue to the next intro or the movie. */
+  next: () => void;
+  /** Go straight to the movie. */
+  skip: () => void;
+}
+
+export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; intro?: IntroChain }) {
   const t = useTheme();
   const api = useApi();
   const insets = useSafeAreaInsets();
@@ -367,6 +375,7 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
     syncAfterLoad(start ?? 0);
   });
   const onEnded = () => {
+    if (intro) return intro.next();
     if (isLive && !catchup) return;
     const next = infoRef.current?.nextItemId;
     if (next && prefs?.autoplayNext !== false) goNext(next);
@@ -1079,6 +1088,12 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
               {canPlayOn && t.isTV ? <CtrlButton icon="phone-portrait-outline" label="Play on…" onPress={() => setSheet('playon')} size={iconSize} /> : null}
             </View>
           </LinearGradient>
+        </View>
+      ) : null}
+
+      {intro && !error ? (
+        <View style={{ position: 'absolute', right: t.isTV ? t.space.gutter : Math.max(insets.right, 20), top: t.isTV ? t.s(60) : Math.max(insets.top, 16) + 56 }}>
+          <Button label="Skip to movie" icon="play-skip-forward" variant="secondary" size="lg" hasTVPreferredFocus onPress={intro.skip} />
         </View>
       ) : null}
 

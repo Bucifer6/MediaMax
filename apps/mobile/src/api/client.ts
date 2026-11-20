@@ -320,6 +320,10 @@ export class MediaMaxClient {
   item(id: string) {
     return this.get<Item>(`/items/${encodeURIComponent(id)}`);
   }
+  /** Cinema mode: trailers / pre-roll to play before a movie ([] when off). */
+  intros(id: string) {
+    return this.get<Item[]>(`/items/${encodeURIComponent(id)}/intros`);
+  }
   children(id: string, q: { sort?: ItemSort; order?: 'asc' | 'desc'; limit?: number; offset?: number } = {}) {
     return this.get<Paged<Item>>(`/items/${encodeURIComponent(id)}/children`, q);
   }
