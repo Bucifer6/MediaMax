@@ -2330,7 +2330,30 @@ export interface TrackAnalysis {
   outroStartMs: number | null;
   durationMs: number;
   analyzedAt: string;
+  /** First downbeat (bar 1, beat 1) of the beat grid; phrases count bars from here. */
+  downbeatMs?: number | null;
+  /** Song structure on 8/16/32-bar phrase boundaries (intro, verse, build, drop, breakdown, outro). */
+  phrases?: DjPhrase[] | null;
 }
+
+export type DjPhraseType = 'intro' | 'verse' | 'buildup' | 'drop' | 'breakdown' | 'outro';
+
+/** One phrase of a track's structure (from DJ analysis). */
+export interface DjPhrase {
+  startMs: number;
+  endMs: number;
+  type: DjPhraseType;
+  /** Length in bars (usually 8, 16 or 32). */
+  bars: number;
+  /** Relative energy of the section, 0–1 (1 = the loudest section of the track). */
+  energy: number;
+}
+
+/** How transitions should feel: auto picks per pair; smooth = long EQ/filter blends; energetic = bass swaps and echo-outs; minimal = short fades. */
+export type DjTransitionPreference = 'auto' | 'smooth' | 'energetic' | 'minimal';
+
+/** Mixer effect used during a transition (on top of the volume crossfade). */
+export type DjTransitionFx = 'none' | 'bassSwap' | 'filter' | 'echo';
 
 /** Shape of the mix over time. */
 export type DjEnergyCurve = 'steady' | 'build' | 'peak' | 'wave' | 'chill';
@@ -2363,6 +2386,10 @@ export interface DjMixRequest {
   artistGap?: number;
   /** Favourites and highly rated tracks get a boost. Default true. */
   preferFavorites?: boolean;
+  /** Transition feel (default auto). */
+  transitions?: DjTransitionPreference;
+  /** Largest tempo change used to beat-match two tracks, in percent (default 8, max 16). Half/double time counts as a match. */
+  maxStretchPct?: number;
 }
 
 export interface DjTransition {
@@ -2378,6 +2405,19 @@ export interface DjTransition {
   style: 'blend' | 'fade' | 'cut';
   keyMatch: 'perfect' | 'compatible' | 'energy' | 'clash' | 'unknown';
   bpmDelta: number | null;
+  /** Mixer effect on top of the crossfade: EQ bass swap, filter fade (HPF out / LPF in), echo-out. Absent = 'none'. */
+  fx?: DjTransitionFx;
+  /** Bass swap: when (ms after the transition starts) the lows change over; on a phrase/bar line of the incoming track. */
+  swapAtMs?: number;
+  /** The mix-out / mix-in points sit on phrase boundaries (outro of A → intro of B) rather than plain bars. */
+  phraseAligned?: boolean;
+  /** Phrase types at the mix points, for display ("outro → intro"). */
+  outPhrase?: DjPhraseType | null;
+  inPhrase?: DjPhraseType | null;
+  /** Beat length of the outgoing track in ms (echo-out delay and tempo glides are timed from it). */
+  beatMs?: number | null;
+  /** Why this transition was chosen (short, for the UI). */
+  reason?: string;
 }
 
 export interface DjMixTrack {

@@ -183,6 +183,14 @@ export default function VideoPlayer() {
   const [osd, setOsd] = useState<string | null>(null);
   const [joinCode, setJoinCode] = useState('');
   const [trickplay, setTrickplay] = useState<TrickplayInfo | null>(null);
+  /** Arrow-key / TV-remote seeks: where the preview should show for a moment. */
+  const [keySeekMs, setKeySeekMs] = useState<number | null>(null);
+  const keySeekTimer = useRef<number | null>(null);
+  const previewKeySeek = (ms: number) => {
+    setKeySeekMs(Math.max(0, durationMs ? Math.min(durationMs, ms) : ms));
+    if (keySeekTimer.current) window.clearTimeout(keySeekTimer.current);
+    keySeekTimer.current = window.setTimeout(() => setKeySeekMs(null), 1500);
+  };
   const [subSearch, setSubSearch] = useState(false);
   /** Subtitle index to select once the next PlaybackInfo arrives (after an online download). */
   const pendingSubPick = useRef<number | null>(null);
@@ -1123,15 +1131,22 @@ export default function VideoPlayer() {
           flash(v.paused ? 'Play' : 'Pause');
           break;
         case 'ArrowLeft':
-        case 'j':
-          seekTo(currentMs() - (e.shiftKey ? 30000 : 10000));
-          flash('« 10s');
+        case 'j': {
+          // Step from the target still being previewed, so holding the D-pad keeps moving.
+          const to = (keySeekMs ?? currentMs()) - (e.shiftKey ? 30000 : 10000);
+          seekTo(to);
+          previewKeySeek(to);
+          if (!trickplay) flash('« 10s');
           break;
+        }
         case 'ArrowRight':
-        case 'l':
-          seekTo(currentMs() + (e.shiftKey ? 30000 : 10000));
-          flash('10s »');
+        case 'l': {
+          const to = (keySeekMs ?? currentMs()) + (e.shiftKey ? 30000 : 10000);
+          seekTo(to);
+          previewKeySeek(to);
+          if (!trickplay) flash('10s »');
           break;
+        }
         case 'ArrowUp':
           setVolume((x) => Math.min(1, +(x + 0.05).toFixed(2)));
           setMuted(false);
@@ -1406,7 +1421,7 @@ export default function VideoPlayer() {
       <div className="player-bottom" onClick={(e) => e.stopPropagation()}>
         <div className="player-seek-row">
           <span className="player-time">{formatClock(positionMs)}</span>
-          <SeekBar positionMs={positionMs} durationMs={durationMs} bufferedMs={bufferedMs} onSeek={(ms) => seekTo(ms)} markers={markers} trickplay={trickplay} />
+          <SeekBar positionMs={positionMs} durationMs={durationMs} bufferedMs={bufferedMs} onSeek={(ms) => seekTo(ms)} markers={markers} trickplay={trickplay} previewMs={keySeekMs} chapters={item?.chapters} />
           <span className="player-time">-{formatClock(Math.max(0, durationMs - positionMs))}</span>
         </div>
         <div className="player-controls">

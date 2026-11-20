@@ -653,8 +653,22 @@ MediaMax analyses every music track and can build and play continuous, beat-matc
 - `energy` (0–1) and `loudnessDb`
 - cue-in/out (leading and trailing silence skipped)
 - intro end and outro start
+- `downbeatMs` (bar 1, beat 1) and `phrases`: the song's structure as `{startMs, endMs, type, bars, energy}` with
+  `type` = `intro`, `verse`, `buildup`, `drop`, `breakdown` or `outro`, on 8/16/32-bar boundaries
 
 Analysis is pure TypeScript DSP on PCM decoded by ffmpeg. Tempo comes from spectral-flux onsets, autocorrelation and a beat-grid fit across the whole track. Key comes from chroma matched against Krumhansl–Kessler profiles. Tracks without a steady beat get `bpm: null`.
+
+Phrases (adapted from OpenDJ, MIT): per-beat low/mid/high energy from a 3-band waveform, the downbeat phase where
+big energy changes line up, a multi-scale novelty curve between bars (a checkerboard kernel on the bar self-similarity)
+with a prior for 16/8/4-bar lines, then sections labelled by relative energy, bass and slope (a full-energy section is
+a drop, the quieter one after a drop a breakdown, a rising one before a drop a build). Sections longer than 32 bars are
+split into 16-bar phrases.
+
+**Re-analysis is lazy.** When the algorithm changes (analysis version 3 added phrases), existing analyses stay in use.
+They are upgraded on demand (the track a mix continues from, the tracks a new mix picks — a few per request, one at a
+time in the background — and `GET /items/:id/analysis`), and the scheduled task upgrades at most 150 per run (new or
+changed files are never capped), so a library is never re-analysed all at once. `GET /dj/status` counts outdated
+analyses as analysed.
 
 **Mixes.** `POST /dj/mix` with a `DjMixRequest` returns a `DjMix`.
 
@@ -662,6 +676,7 @@ Analysis is pure TypeScript DSP on PCM decoded by ffmpeg. Tempo comes from spect
 - **Filters:** `genres`, `libraryId`, `bpmMin`/`bpmMax`. Half and double time count, so 70 BPM matches 140.
 - **Shape:** `curve` is `steady`, `build`, `peak`, `wave` or `chill`; `durationMin` sets the length.
 - **Mixing rules:** `harmonic` (default true), `artistGap` (default 3), `preferFavorites` (default true).
+- **Transitions:** `transitions` is `auto` (default), `smooth`, `energetic` or `minimal`; `maxStretchPct` (default 8, 1–16) is the largest tempo change used to beat-match.
 - **Continuous mode:** send `history` (ids already played or queued) plus `count` to get the next tracks. Tracks are never repeated, and the energy curve keeps moving.
 
 Tracks are ordered by scoring each candidate on:
@@ -674,12 +689,30 @@ Tracks are ordered by scoring each candidate on:
 
 Every track after the first carries a `transition` describing how to mix into it:
 
-- **When:** start the incoming track at `mixInMs` (on its beat grid) when the outgoing track reaches `mixOutMs`, which is snapped to a bar line of the outgoing track.
-- **How long:** crossfade over `crossfadeMs`.
-- **Tempo:** play the incoming track at `tempoRatio` during the blend, then ease it back to 1.0.
-- **Style:** `blend` (beat-matched, 16–32 beats), `fade`, or `cut` for a clashing key and tempo. `keyMatch` and `bpmDelta` are included for display.
+- **When:** start the incoming track at `mixInMs` (its first downbeat — bar 1 of its intro phrase) when the outgoing track reaches `mixOutMs`: the start of its outro phrase when it has one (8–64 bars), else its last 32 (short tracks 16) bars on an 8-bar line, else a bar line. `phraseAligned`, `outPhrase` and `inPhrase` say which (e.g. outro → intro).
+- **How long:** `crossfadeMs`, whole phrases of 4/8/16/32 bars for beat-matched blends, shaped by the outro/intro length and the preference.
+- **Tempo:** play the incoming track at `tempoRatio` during the blend (within `maxStretchPct`, half/double time aware), key locked, then glide back to its own tempo (or stay, per player setting).
+- **Style:** `blend` (beat-matched), `fade`, or `cut` for a clashing key and tempo. `keyMatch` and `bpmDelta` are included for display.
+- **Effect:** `fx` is `bassSwap` (the lows change over at `swapAtMs`, a phrase line of the incoming track near the middle, while mids/highs crossfade), `filter` (high-pass sweeps the outgoing track out, low-pass opens the incoming one), `echo` (a 3/4-beat feedback echo of the outgoing track, its dry signal cut on a beat, the new track drops in; `beatMs` times it) or `none`. `reason` explains the pick. The chooser: beat-matched dance/hip-hop → bass swap; energy falling or a breakdown → filter fade; tempos too far apart or keys clashing → echo-out; acoustic or no steady beat → plain crossfade; `energetic` prefers swaps and echo-outs, `smooth` filter fades and longer blends, `minimal` plain short fades.
 
-The web app's DJ page (`/dj`) runs two decks on Web Audio with equal-power crossfades, preloads the next track at its mix-in point, and tops up non-stop mixes automatically.
+`GET /dj/transition-preview?from=<id>&to=<id>&transitions=auto&maxStretchPct=8` renders that transition with ffmpeg
+(8 s of A, the transition, 10 s of B) as MP3, so it can be heard on any client. The graph uses complementary 2×
+Butterworth low/high-pass splits with per-band volume automation for the bass swap, a stepped `highpass` sweep via
+`asendcmd` for the filter fade and `aecho` taps for the echo-out. Tempo matching uses `rubberband` (pitch-preserving)
+when the ffmpeg build has it, otherwise `atempo`, which also keeps the pitch (it is a WSOLA-style time-stretch, not a
+resampler) and glides back to 1.0 with `asendcmd`. The `X-DJ-Transition` header reports style, effect and stretch filter.
+The server does not render whole mixes otherwise: the web and mobile apps mix on the device.
+
+The web app's DJ page (`/dj`) runs two decks on Web Audio. Each deck has a small mixer strip — a Linkwitz-Riley
+200 Hz band split (bass swap), high/low-pass filters (filter fade) and a send into a shared beat-synced echo — and every
+control is automated on the audio clock. Tempo matching keeps the key: the browser's pitch-preserving playback where
+available (Chromium, Firefox, Safari), else MediaMax's WSOLA AudioWorklet (adapted from OpenDJ): the deck plays at the
+matched rate without pitch preservation and the worklet shifts the pitch back by 1/rate with a fixed 1024-frame latency
+on both decks. Without either (very old TV browsers), tracks play at their own tempo. DJ settings: transition feel,
+key-lock engine, largest tempo change (±8 % default) and "glide back over N bars" or "stay at the matched tempo". It
+preloads the next track at its mix-in point and tops up non-stop mixes automatically. Phrase markers are drawn under
+each deck. The phone and TV apps play the same plan on two expo-audio players; they have no EQ or delay, so each
+effect is approximated with the two volumes on the same timing (bass swap = volume swap on the phrase line).
 
 ## AI DJ
 

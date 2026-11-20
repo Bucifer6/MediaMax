@@ -30,6 +30,10 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Subsonic/OpenSubsonic API (Symfonium, Feishin, play:Sub…) | ❌ | Plugin | ❌ | ✅ |
 | ReplayGain / R128 loudness levelling (track & album) | ✅ (Plexamp) | 🟡 | 🟡 | ✅ |
 | DJ mode: BPM/key/energy analysis, automatic beat-matched crossfades, harmonic auto-playlists, non-stop mixes | 🟡 (Plexamp sweet fades) | ❌ | ❌ | ✅ |
+| DJ phrase detection (intro/verse/build/drop/breakdown/outro on 8/16/32-bar lines); mixes start on phrase boundaries (outro → intro) | ❌ | ❌ | ❌ | ✅ |
+| DJ transition styles: EQ bass swap, filter fade, echo-out, blend/fade/cut — chosen per pair, with an auto/smooth/energetic/minimal preference | ❌ | ❌ | ❌ | ✅ (full effects on web; volume-shaped on phone/TV) |
+| DJ tempo matching with key lock (±8 % default, half/double time aware), glide back over N bars or stay | 🟡 (Plexamp sweet fades, no beat-matching) | ❌ | ❌ | ✅ (browser time-stretch or WSOLA AudioWorklet) |
+| Hear a planned DJ transition rendered by the server (ffmpeg: bass swap, filter, echo, rubberband/atempo) | ❌ | ❌ | ❌ | ✅ |
 | Anime (AniList) and MusicBrainz/Cover Art Archive metadata | 🟡 | Plugin | Plugin | ✅ (MusicBrainz built in; AniList plugin) |
 | Audiobooks (multi-file & .m4b, chapters, author/narrator, resume) | 🟡 | ✅ | ✅ | ✅ |
 | Podcasts (RSS, iTunes directory search, OPML import, auto-download) | ✅ | Plugin? | Plugin? | ✅ |
@@ -90,6 +94,8 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Play to Kodi (JSON-RPC, mDNS discovery) | ❌ | 🟡 (as DLNA) | 🟡 (as DLNA) | ✅ |
 | AirPlay from the web player (Safari) and iOS app | ✅ | ✅ | ✅ | ✅ |
 | Seek-bar preview thumbnails (trickplay) | ✅ | ✅ | ✅ | ✅ |
+| Trickplay in the native apps (phone drag, Android TV / Apple TV D-pad and Siri Remote seek) with chapter names, offline with downloads, data-saver mode | ✅ | 🟡 | ✅ | ✅ |
+| Trickplay on Samsung/LG TV (web TV mode) while seeking with the remote | ✅ | 🟡 | 🟡 | ✅ |
 | Online subtitle search & auto-download (OpenSubtitles, hash matching) | ✅ | Plugin | ✅ | ✅ |
 | Converted downloads (device-friendly MP4 at 1080p/720p/480p) | Pass | ✅ | Premiere | ✅ |
 
