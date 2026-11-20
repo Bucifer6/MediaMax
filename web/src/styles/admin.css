@@ -274,3 +274,4 @@ a.stat:hover { transform: translateY(-2px); border-color: var(--c-primary); }
 .arr-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .arr-head strong { display: inline-flex; align-items: center; gap: 8px; font-size: 1rem; }
 .arr-head .badge { margin-left: auto; }
+.settings-fieldset legend, .request-seasons legend { padding: 0; }

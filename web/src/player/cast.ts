@@ -5,7 +5,7 @@
  * when a player asks for it. Everything here is optional: if the SDK can't load, `useCast` simply
  * reports `available: false` and the UI hides its cast button.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { DeviceProfile } from '@mediamax/shared';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -157,15 +157,6 @@ export function useCast(enabled: boolean): CastHandle {
   const [castState, setCastState] = useState<string>('NO_DEVICES_AVAILABLE');
   const [deviceName, setDeviceName] = useState<string | null>(null);
   const [state, setState] = useState<RemoteState>(EMPTY_REMOTE);
-  const alive = useRef(true);
-
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-
   useEffect(() => {
     if (!enabled || ready) return;
     let cancelled = false;

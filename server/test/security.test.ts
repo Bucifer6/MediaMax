@@ -52,3 +52,10 @@ test('smart list rules compile to bound parameters only', async () => {
   assert.throws(() => buildSmartWhere(normaliseFilter({ match: 'all', rules: [{ field: 'year', op: 'gte', value: '1; DROP' }], sort: 'title', order: 'asc', limit: null })));
   assert.throws(() => normaliseFilter({ match: 'all', rules: [], sort: 'title', order: 'asc', limit: null } as any) && buildSmartWhere({ match: 'all', rules: [{ field: 'bogus' as any, op: 'is', value: 1 }], sort: 'title', order: 'asc', limit: null }));
 });
+
+test('smart lists never include collections or playlists', async () => {
+  const { buildSmartWhere, normaliseFilter } = await import('../src/services/smart.ts');
+  const w = buildSmartWhere(normaliseFilter({ match: 'any', rules: [{ field: 'type', op: 'is', value: 'track' }, { field: 'year', op: 'gte', value: 2000 }], sort: 'title', order: 'asc', limit: null }));
+  assert.ok(!w.params.includes('collection') && !w.params.includes('playlist'));
+  assert.ok(w.params.includes('track') && w.params.includes('movie'));
+});

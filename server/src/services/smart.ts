@@ -113,9 +113,12 @@ export function buildSmartWhere(filter: SmartFilter): { sql: string; params: Par
     params.push(...p.params);
     return `(${p.sql})`;
   }).join(filter.match === 'any' ? ' OR ' : ' AND ');
-  const hasType = filter.rules.some((r) => r.field === 'type' && r.op === 'is');
-  const typeSql = hasType ? '1' : `i.type IN (${DEFAULT_TYPES.map(() => '?').join(',')})`;
-  if (!hasType) params.unshift(...DEFAULT_TYPES);
+  // Allowed item types: with "match all" a `type is X` rule narrows on its own; otherwise the default
+  // types plus any types the rules mention. Lists never contain collections/playlists (or themselves).
+  const typeRules = filter.rules.filter((r) => r.field === 'type' && r.op === 'is').map((r) => String(r.value));
+  const allowed = filter.match === 'all' && typeRules.length ? typeRules : [...new Set([...DEFAULT_TYPES, ...typeRules])];
+  const typeSql = `i.type IN (${allowed.map(() => '?').join(',')})`;
+  params.unshift(...allowed);
   return { sql: `${typeSql} AND (${joined || '1'})`, params };
 }
 
