@@ -35,7 +35,7 @@ export const DEFAULT_SETTINGS: ServerSettings = {
     segmentSeconds: 4,
     toneMapHdr: true,
   },
-  dvr: { recordingsPath: config.recordingsDir, paddingBeforeMin: 1, paddingAfterMin: 5 },
+  dvr: { recordingsPath: config.recordingsDir, paddingBeforeMin: 1, paddingAfterMin: 5, commercialDetection: false, comskipPath: null, comskipIni: null },
   webhooks: [],
   allowPasswordlessProfiles: true,
   blockUnratedForRestricted: false,

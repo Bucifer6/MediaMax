@@ -476,7 +476,8 @@ export interface MediaSource {
 }
 
 export interface Marker {
-  type: 'intro' | 'credits' | 'recap';
+  /** commercial: ad breaks from comskip or a `.edl` sidecar; preview: "next time on" scenes. */
+  type: 'intro' | 'credits' | 'recap' | 'preview' | 'commercial';
   startMs: number;
   endMs: number;
 }
@@ -977,6 +978,12 @@ export interface ServerSettings {
     recordingsPath: string;
     paddingBeforeMin: number;
     paddingAfterMin: number;
+    /** Run comskip on finished recordings and add commercial markers (requires comskip on the server). */
+    commercialDetection: boolean;
+    /** Path to the comskip binary; defaults to `comskip` on PATH. */
+    comskipPath: string | null;
+    /** Optional comskip.ini; MediaMax supplies a minimal EDL-only ini otherwise. */
+    comskipIni: string | null;
   };
   webhooks: Webhook[];
   /** Allow sign-in from the public profile picker without a password. */

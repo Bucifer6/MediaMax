@@ -12,8 +12,8 @@ Channels DVR, TiviMate, Audiobookshelf, Navidrome, Infuse and Kodi. It was resea
 4. ✅ (API) **Subsonic/OpenSubsonic API** so Symfonium, Feishin, Sonos and similar apps work. Plus gapless playback and loudness levelling. (M)
 5. ⏳ **CarPlay & Android Auto**, with offline downloads playable in the car, audiobook/podcast controls, voice search and an in-app car mode. (M)
 6. ✅ **Backup & restore** of the database, settings, branding and plugins. (S)
-7. **DVR robustness**: priorities and conflict resolution, rules on EPG series id and time slot, cross-channel de-duplication,
-   commercial detection. Plus **IPTV multiview**. (M)
+7. ✅ (multiview next) **DVR robustness**: ✅ priorities and tuner-conflict detection, ✅ day/time-slot rules, ✅ repeat skipping,
+   ✅ commercial detection (comskip/EDL). Plus **IPTV multiview**. (M)
 8. **Metadata breadth**: TVDB episode orderings, anime (AniList/AniDB), music (MusicBrainz, TheAudioDB, fanart.tv), RT/IMDb
    ratings. Ship these as metadata-provider plugins. (M)
 9. ⏳ **Audiobook basics**: sleep timer, ✅ bookmarks, ✅ series, Audnexus metadata, per-book speed. (S/M)
@@ -21,13 +21,13 @@ Channels DVR, TiviMate, Audiobookshelf, Navidrome, Infuse and Kodi. It was resea
 
 ## By area
 **Playback & video:** HEVC/AV1 transcode output and multichannel passthrough · per-user and remote bandwidth caps ·
-remote control of other clients ("play on TV") · cinema mode (pre-rolls, trailers) · local extras (trailers, featurettes) ·
-user-visible movie editions · subtitle/audio sync offset · commercial/preview segment types · client-side ASS/PGS rendering.
+✅ remote control of other clients ("play on TV") · cinema mode (pre-rolls, trailers) · ✅ local extras (trailers, featurettes) ·
+✅ user-visible movie editions · subtitle/audio sync offset · ✅ commercial/preview segment types · client-side ASS/PGS rendering.
 
 **Music:** gapless · ReplayGain/loudness · crossfade · artist/album/track radio and mixes, later sonic similarity · music videos ·
 public share links · bulk offline sync of albums and playlists · headless player.
 
-**Live TV / DVR / IPTV:** multiview · comskip markers · multiple EPG sources per playlist and a fuzzy EPG mapping UI · virtual
+**Live TV / DVR / IPTV:** multiview · ✅ comskip markers · ✅ multiple EPG sources per playlist and a fuzzy EPG mapping UI · virtual
 channels built from the library · post-processing (convert) · Schedules Direct · last-channel recall, number entry, mini guide,
 reminders, channel PIN lock.
 

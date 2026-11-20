@@ -8,6 +8,7 @@ import { newId } from '../util/ids.js';
 import { badRequest, forbidden, notFound } from '../util/errors.js';
 import { nowIso, parseJson, REMOTE_PROTOCOLS } from '../util/misc.js';
 import { logger } from '../util/log.js';
+import { runComskip, edlPathFor } from './edl.js';
 import { getSettings } from './settings.js';
 import { events, bus } from './events.js';
 import { logActivity } from './activity.js';
@@ -139,7 +140,7 @@ export function cancelRecording(user: User, id: string) {
     db.run("UPDATE recordings SET status = 'cancelled' WHERE id = ?", id);
   } else {
     // Completed/failed: delete file + item.
-    if (r.path) fs.rmSync(r.path, { force: true });
+    if (r.path) fs.rmSync(r.path, { force: true }), fs.rmSync(edlPathFor(r.path), { force: true });
     if (r.item_id) db.run('DELETE FROM items WHERE id = ?', r.item_id);
     db.run('DELETE FROM recordings WHERE id = ?', id);
     return;
@@ -190,6 +191,7 @@ function startRecording(r: Row) {
     if (size > 100_000) {
       db.run("UPDATE recordings SET status = ?, size_bytes = ?, error = ? WHERE id = ?", cur?.status === 'cancelled' ? 'cancelled' : 'completed', size, code === 0 ? null : err.trim().slice(-300) || null, r.id);
       const libId = ensureRecordingsLibrary(getSettings().dvr.recordingsPath);
+      if (await runComskip(file)) log.info(`Commercial markers found for "${r.title}"`);
       await scanLibrary(libId);
       const item = db.get('SELECT i.id FROM items i JOIN media m ON m.item_id = i.id WHERE m.path = ?', file);
       if (item) db.run('UPDATE items SET overview = COALESCE(overview, ?), title = ? WHERE id = ?', r.description, r.title, item.id), db.run('UPDATE recordings SET item_id = ? WHERE id = ?', item.id, r.id);

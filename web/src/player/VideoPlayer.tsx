@@ -706,7 +706,7 @@ export default function VideoPlayer() {
   });
 
   /* ---------------- markers, up next ---------------- */
-  const activeSkip = markers.find((m) => (m.type === 'intro' || m.type === 'recap') && positionMs >= m.startMs && positionMs < m.endMs - 1000);
+  const activeSkip = markers.find((m) => m.type !== 'credits' && positionMs >= m.startMs && positionMs < m.endMs - 1000);
   const inCredits = markers.find((m) => m.type === 'credits' && positionMs >= m.startMs && positionMs < m.endMs);
 
   useEffect(() => {
@@ -838,7 +838,7 @@ export default function VideoPlayer() {
       {/* Skip intro / credits */}
       {activeSkip && !prefs.skipIntros && (
         <button className="skip-btn" onClick={() => seekTo(activeSkip.endMs)}>
-          Skip {activeSkip.type === 'recap' ? 'recap' : 'intro'} <Icon name="skipFwd" size={16} />
+          Skip {activeSkip.type === 'commercial' ? 'ad break' : activeSkip.type} <Icon name="skipFwd" size={16} />
         </button>
       )}
       {inCredits && !showUpNext && (

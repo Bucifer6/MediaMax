@@ -294,3 +294,10 @@ A live source's `epgUrl` may contain up to 10 XMLTV URLs, separated by commas or
 - Each channel takes its programmes from the first guide that covers it.
 - The provider's own guide (the Xtream `xmltv.php`, or the M3U `url-tvg` list) is always appended last, so it fills any gaps.
 - A guide that fails is skipped and logged. Existing programmes are replaced only once at least one guide has loaded, so a broken guide never empties the EPG.
+
+## Commercial and preview markers
+
+`Marker.type` can also be `preview` ("next time on" scenes) or `commercial` (ad breaks). Players show "Skip ad break" or "Skip preview". When auto-skip is on, intros, recaps and ad breaks are skipped automatically.
+
+- **Sidecar EDL:** a Kodi/MythTV/comskip `.edl` file next to any video (same base name) is imported on every scan. Each line is `start end action`, in seconds. Actions `0` (cut) and `3` (commercial) become `commercial` markers.
+- **DVR:** with `settings.dvr.commercialDetection` on, finished recordings are passed to comskip (`dvr.comskipPath`, default `comskip` on PATH). If `dvr.comskipIni` is not set, MediaMax supplies an EDL-only ini. The resulting `.edl` is imported straight away and deleted along with the recording.

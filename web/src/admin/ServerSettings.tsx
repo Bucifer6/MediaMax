@@ -199,6 +199,14 @@ export function ServerSettingsAdmin() {
               <Field label="Default start padding (min)"><input className="input" type="number" min={0} value={s.dvr.paddingBeforeMin} onChange={(e) => setD({ paddingBeforeMin: Number(e.target.value) })} /></Field>
               <Field label="Default end padding (min)"><input className="input" type="number" min={0} value={s.dvr.paddingAfterMin} onChange={(e) => setD({ paddingAfterMin: Number(e.target.value) })} /></Field>
             </div>
+            <Switch checked={!!s.dvr.commercialDetection} onChange={(v) => setD({ commercialDetection: v })} label="Detect commercials"
+              hint="Runs comskip on finished recordings and adds “Skip ad break” markers. comskip must be installed on the server. Any video with a .edl file next to it gets markers too." />
+            {s.dvr.commercialDetection && (
+              <div className="form-row">
+                <Field label="comskip binary"><input className="input mono" placeholder="comskip" value={s.dvr.comskipPath ?? ''} onChange={(e) => setD({ comskipPath: e.target.value || null })} /></Field>
+                <Field label="comskip.ini (optional)"><input className="input mono" placeholder="Built-in EDL-only settings" value={s.dvr.comskipIni ?? ''} onChange={(e) => setD({ comskipIni: e.target.value || null })} /></Field>
+              </div>
+            )}
           </div>
         )}
         {tab === 'requests' && (

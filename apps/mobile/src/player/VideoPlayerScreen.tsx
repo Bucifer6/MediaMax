@@ -640,10 +640,10 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
   useEffect(() => {
     if (!activeMarker || activeMarker.type === 'credits') return;
     const key = activeMarker.startMs;
-    if (prefs?.skipIntros && activeMarker.type === 'intro' && !skipped.current.has(key)) {
+    if (prefs?.skipIntros && activeMarker.type !== 'preview' && !skipped.current.has(key)) {
       skipped.current.add(key);
       seekTo(activeMarker.endMs);
-      flash('Intro skipped');
+      flash(activeMarker.type === 'commercial' ? 'Ad break skipped' : activeMarker.type === 'recap' ? 'Recap skipped' : 'Intro skipped');
     }
   }, [activeMarker, prefs?.skipIntros, seekTo, flash]);
 
@@ -997,7 +997,7 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
       {activeMarker && !upNext && !error && (activeMarker.type !== 'credits' || !nextId) ? (
         <View style={{ position: 'absolute', right: t.isTV ? t.space.gutter : Math.max(insets.right, 20), bottom: controls ? (t.isTV ? t.s(200) : 140) : t.isTV ? t.s(60) : 40 }}>
           <Button
-            label={activeMarker.type === 'intro' ? 'Skip Intro' : activeMarker.type === 'recap' ? 'Skip Recap' : 'Skip Credits'}
+            label={({ intro: 'Skip Intro', recap: 'Skip Recap', credits: 'Skip Credits', preview: 'Skip Preview', commercial: 'Skip Ad Break' } as const)[activeMarker.type]}
             icon="play-skip-forward"
             variant="secondary"
             size="lg"

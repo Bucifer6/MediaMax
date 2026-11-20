@@ -149,7 +149,7 @@ export function UploadArtworkModal({ open, onClose, item, onUpdated }: { open: b
 }
 
 /* ---------------- Edit metadata ---------------- */
-const MARKER_TYPES: Marker['type'][] = ['intro', 'credits', 'recap'];
+const MARKER_TYPES: Marker['type'][] = ['intro', 'credits', 'recap', 'preview', 'commercial'];
 const FIELD_LABELS: Record<string, string> = {
   title: 'Title', sortTitle: 'Sort title', originalTitle: 'Original title', tagline: 'Tagline', year: 'Year',
   communityRating: 'Rating', contentRating: 'Content rating', overview: 'Overview', genres: 'Genres', studios: 'Studios',

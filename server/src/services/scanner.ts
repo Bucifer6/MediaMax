@@ -10,6 +10,7 @@ import { logger } from '../util/log.js';
 import { probe, normLang, type ProbeResult } from './probe.js';
 import { registerImage } from './images.js';
 import { readNfo, type NfoData } from './metadata/nfo.js';
+import { importSidecarEdl } from './edl.js';
 import {
   AUDIO_EXT, IMAGE_EXT, SUB_EXT, VIDEO_EXT, ext, isExtra, parseEpisodeName, parseMovieName, parseSeasonFolder, parseShowFolder,
   parseSubtitleName, stripExt,
@@ -176,6 +177,7 @@ async function upsertMedia(itemId: string, f: FileEntry, force = false, preProbe
     // Keep sidecar subtitles fresh even when the file itself is unchanged.
     const embedded = parseJson<SubtitleStream[]>(existing.subs, []).filter((s) => !s.external);
     db.run('UPDATE media SET item_id = ?, subs = ? WHERE id = ?', itemId, JSON.stringify([...embedded, ...subsSide]), id);
+    importSidecarEdl(itemId, f.path);
     return { mediaId: id, probe: null, changed: false };
   }
   let pr: ProbeResult | null = preProbed ?? null;
@@ -191,6 +193,7 @@ async function upsertMedia(itemId: string, f: FileEntry, force = false, preProbe
     mtime: f.mtime, probed_at: pr ? nowIso() : null, chapters: JSON.stringify(pr?.chapters ?? []),
   };
   db.upsert('media', row);
+  importSidecarEdl(itemId, f.path);
   return { mediaId: id, probe: pr, changed: true };
 }
 
