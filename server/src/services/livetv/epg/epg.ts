@@ -70,6 +70,7 @@ function publicConfig(r: Row): EpgSource['config'] {
     if (c.urls) out.url = (c.urls as string[]).map(redactUrl).join('\n');
     if (c.path) out.path = c.path;
     if (c.preset) out.preset = c.preset;
+    if (c.driver) out.url = `${c.driver === 'tvheadend' ? 'TVHeadend' : c.driver === 'enigma2' ? 'OpenWebif' : c.driver} EPG API`;
     if (c.timezone) out.timezone = c.timezone;
   } else if (r.kind === 'schedulesdirect') {
     out.username = c.username ?? null;
@@ -282,12 +283,37 @@ export function syncLegacyGuides(liveSourceId: string): boolean {
   return changed;
 }
 
+/**
+ * Guide drivers: provider guides that come from a device API instead of XMLTV (TVHeadend, Enigma2/OpenWebif).
+ * Registered by services/livetv/tuners; the provider-guide row then holds `{ driver }` instead of `{ urls }`.
+ */
+export interface GuideDriverSink {
+  channel(c: GuideChannelRec): void;
+  decide(): void;
+  programme(p: ProgrammeRec): void;
+}
+export type GuideDriver = (liveSource: Row, sink: GuideDriverSink, warnings: string[]) => Promise<void>;
+const guideDrivers = new Map<string, GuideDriver>();
+export function registerGuideDriver(name: string, fn: GuideDriver) {
+  guideDrivers.set(name, fn);
+}
+
+async function loadDriverGuide(g: Row, w: GuideWriter, warnings: string[], driver: string) {
+  const fn = guideDrivers.get(driver);
+  if (!fn) throw new Error(`No guide driver "${driver}"`);
+  const src = db.get('SELECT * FROM live_sources WHERE id = ?', g.owner_source_id);
+  if (!src) throw new Error('Live source not found');
+  await fn(src, w, warnings);
+}
+
 /** Ensure the provider-guide row for a live source exists (or is removed when the provider has none). */
-function ensureProviderGuide(liveSourceId: string, urls: string[]): Row | null {
+function ensureProviderGuide(liveSourceId: string, input: string[] | { driver: string }): Row | null {
+  const urls = Array.isArray(input) ? input : [];
+  const cfg = Array.isArray(input) ? { urls } : { driver: input.driver };
   const src = db.get('SELECT * FROM live_sources WHERE id = ?', liveSourceId);
   const ex = db.get("SELECT * FROM epg_sources WHERE owner_source_id = ? AND managed_by = 'provider'", liveSourceId);
   if (!src) return null;
-  if (!urls.length) {
+  if (Array.isArray(input) && !urls.length) {
     if (ex) {
       dropGuideData([ex.id]);
       db.run('DELETE FROM epg_sources WHERE id = ?', ex.id);
@@ -295,12 +321,12 @@ function ensureProviderGuide(liveSourceId: string, urls: string[]): Row | null {
     return null;
   }
   if (ex) {
-    db.run('UPDATE epg_sources SET config = ?, name = ? WHERE id = ?', JSON.stringify({ urls }), `${src.name} · provider guide`, ex.id);
+    db.run('UPDATE epg_sources SET config = ?, name = ? WHERE id = ?', JSON.stringify(cfg), `${src.name} · provider guide`, ex.id);
     return db.get('SELECT * FROM epg_sources WHERE id = ?', ex.id)!;
   }
   const id = newId();
   db.insert('epg_sources', {
-    id, name: `${src.name} · provider guide`, kind: 'provider', config: JSON.stringify({ urls }), state: '{}', priority: 0, enabled: 1,
+    id, name: `${src.name} · provider guide`, kind: 'provider', config: JSON.stringify(cfg), state: '{}', priority: 0, enabled: 1,
     live_source_ids: null, owner_source_id: liveSourceId, managed_by: 'provider', refresh_hours: src.refresh_hours ?? 12, created_at: nowIso(),
   });
   return db.get('SELECT * FROM epg_sources WHERE id = ?', id)!;
@@ -310,7 +336,7 @@ function ensureProviderGuide(liveSourceId: string, urls: string[]): Row | null {
  * Live-source refresh hook: refresh the provider's own guide and the source's EPG-URL guides. Throws only when
  * every guide of the source failed (so the source shows an error), never empties existing data.
  */
-export async function refreshLiveSourceGuides(liveSourceId: string, providerUrls: string[], userAgent: string | null): Promise<void> {
+export async function refreshLiveSourceGuides(liveSourceId: string, providerUrls: string[] | { driver: string }, userAgent: string | null): Promise<void> {
   syncLegacyGuides(liveSourceId);
   ensureProviderGuide(liveSourceId, providerUrls);
   const guides = db.all('SELECT id FROM epg_sources WHERE owner_source_id = ? AND enabled = 1 ORDER BY priority DESC', liveSourceId);
@@ -332,7 +358,7 @@ export async function refreshLiveSourceGuides(liveSourceId: string, providerUrls
 
 /* ------------------------------ refresh ------------------------------ */
 
-interface GuideChannelRec {
+export interface GuideChannelRec {
   id: string;
   name: string;
   altNames: string[];
@@ -341,7 +367,7 @@ interface GuideChannelRec {
   icon: string | null;
 }
 
-interface ProgrammeRec {
+export interface ProgrammeRec {
   channel: string;
   start: string;
   end: string;
@@ -549,7 +575,9 @@ async function doRefresh(id: string, opts: RefreshOpts) {
   const w = new GuideWriter(g);
   const warnings: string[] = [];
   try {
-    if (g.kind === 'xmltv' || g.kind === 'provider') await loadXmltv(g, w, warnings, opts.userAgent ?? null);
+    const driver = g.kind === 'provider' ? parseJson<{ driver?: string }>(g.config, {}).driver : undefined;
+    if (driver) await loadDriverGuide(g, w, warnings, driver);
+    else if (g.kind === 'xmltv' || g.kind === 'provider') await loadXmltv(g, w, warnings, opts.userAgent ?? null);
     else if (g.kind === 'schedulesdirect') await loadSchedulesDirect(g, w, warnings);
     else if (g.kind === 'hdhomerun') await loadHdhomerun(g, w);
     else throw new Error(`Unknown guide kind ${g.kind}`);

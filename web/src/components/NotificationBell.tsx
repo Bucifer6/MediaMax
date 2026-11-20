@@ -82,8 +82,8 @@ export function NotificationBell() {
             <ul className="notif-list">
               {items.map((n) => (
                 <li key={n.id} className={n.readAt ? '' : 'unread'}>
-                  <Link to={n.itemId ? `/item/${n.itemId}` : '/calendar'} onClick={() => openOne(n)} className="notif-item">
-                    <span className="notif-art"><Img src={n.imageUrl} width={160} alt="" fallback={<Icon name="shows" size={18} />} /></span>
+                  <Link to={n.link || (n.itemId ? `/item/${n.itemId}` : '/calendar')} onClick={() => openOne(n)} className="notif-item">
+                    <span className="notif-art"><Img src={n.imageUrl} width={160} alt="" fallback={<Icon name={n.kind === 'request' ? 'inbox' : n.kind === 'issue' ? 'flag' : 'shows'} size={18} />} /></span>
                     <span className="notif-text">
                       <span className="notif-title">{n.title}</span>
                       {n.body && <span className="notif-body">{n.body}</span>}

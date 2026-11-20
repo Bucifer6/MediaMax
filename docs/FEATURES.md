@@ -39,8 +39,12 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 |---|:-:|:-:|:-:|:-:|
 | Direct play / remux / transcode decision per device | ✅ | ✅ | ✅ | ✅ |
 | On-demand HLS segments (instant seek anywhere) | ✅ | ✅ | ✅ | ✅ |
-| Hardware transcoding (VAAPI, QSV, NVENC, VideoToolbox, V4L2) | Pass | ✅ | Premiere | ✅ (free, auto-fallback to software) |
+| Hardware transcoding (VAAPI Intel/AMD, QSV Linux/Windows, NVENC Linux/Windows, AMF, VideoToolbox, V4L2, Rockchip MPP) | Pass | ✅ | Premiere | ✅ (free, auto-fallback to software) |
+| Hardware detection with test transcodes and one-click setup | ❌ | ❌ | ❌ | ✅ |
+| HEVC / AV1 transcode output for capable clients (fMP4 HLS) | ✅ | ✅ | Premiere | ✅ (hardware encoders) |
 | HDR → SDR tone mapping | Pass | ✅ | Premiere | ✅ |
+| Hardware HDR tone mapping (VA-API, QSV, CUDA, OpenCL) | Pass | ✅ | Premiere | ✅ (CPU fallback) |
+| "Hardware failed, used software" shown on the session | ❌ | ❌ | ❌ | ✅ |
 | Encoder throttling (pauses ffmpeg when far ahead) | ✅ | ✅ | ✅ | ✅ |
 | Sidecar & embedded text subtitles → WebVTT | ✅ | ✅ | ✅ | ✅ |
 | Image subtitle (PGS/VobSub) burn-in | ✅ | ✅ | ✅ | ✅ |

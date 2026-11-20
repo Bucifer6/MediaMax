@@ -15,6 +15,7 @@ import { SmartListModal } from '../components/SmartListModal';
 import { BookmarksSection } from '../components/Bookmarks';
 import { AddToContainerModal, EditMetadataModal, UploadArtworkModal } from '../components/ItemModals';
 import { RatingBadges } from '../components/RatingBadges';
+import { MediaRangeBadge, rangeDetails } from '../components/HdrBadge';
 import { ArrItemActions } from '../components/ArrItemActions';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
@@ -28,7 +29,7 @@ export function MediaBadges({ media }: { media?: MediaSource[] }) {
   return (
     <span className="media-badges">
       {m.resolutionLabel && <Badge tone="muted" className="badge-res">{m.resolutionLabel}</Badge>}
-      {m.hdr && <Badge tone="warning">HDR</Badge>}
+      <MediaRangeBadge media={m} />
       {m.videoCodec && <Badge tone="muted">{m.videoCodec.toUpperCase()}</Badge>}
       {audio && (
         <Badge tone="muted">
@@ -50,7 +51,8 @@ function MediaInfo({ media }: { media: MediaSource[] }) {
           {media.length > 1 && <h3>Version {i + 1}</h3>}
           <dl className="kv">
             <dt>Container</dt><dd>{m.container?.toUpperCase() ?? '—'}</dd>
-            <dt>Video</dt><dd>{[m.videoCodec?.toUpperCase(), m.width && m.height ? `${m.width}×${m.height}` : null, m.resolutionLabel, m.hdr ? 'HDR' : null].filter(Boolean).join(' · ') || '—'}</dd>
+            <dt>Video</dt><dd>{[m.videoCodec?.toUpperCase(), m.width && m.height ? `${m.width}×${m.height}` : null, m.resolutionLabel, m.videoRange && m.videoRange.hdrFormat !== 'sdr' ? null : m.hdr ? 'HDR' : null].filter(Boolean).join(' · ') || '—'}</dd>
+            {m.videoRange && m.videoRange.hdrFormat !== 'sdr' && <><dt>HDR</dt><dd><MediaRangeBadge media={m} /> {rangeDetails(m.videoRange)}</dd></>}
             <dt>Bitrate</dt><dd>{formatBitrate(m.bitrate)}</dd>
             <dt>Size</dt><dd>{formatBytes(m.size)}</dd>
             <dt>Duration</dt><dd>{formatClock(m.durationMs)}</dd>

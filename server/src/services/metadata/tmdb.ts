@@ -288,3 +288,115 @@ export async function tvExternalIds(id: string): Promise<{ tvdb: string | null; 
   const r = await call<any>(`/tv/${id}/external_ids`);
   return { tvdb: r?.tvdb_id ? String(r.tvdb_id) : null, imdb: r?.imdb_id ?? null };
 }
+
+/* ------------------------ requests / Discover ------------------------ */
+
+export interface TmdbSeason {
+  seasonNumber: number;
+  name: string;
+  episodeCount: number;
+  airDate: string | null;
+}
+
+/** A show's seasons (with episode counts) for the request dialog and quota counting. */
+export async function tvSeasons(id: string): Promise<{ title: string; seasons: TmdbSeason[]; tvdbId: string | null; rating: number | null } | null> {
+  const t = await call<any>(`/tv/${id}`, { append_to_response: 'external_ids' });
+  if (!t) return null;
+  return {
+    title: t.name,
+    tvdbId: t.external_ids?.tvdb_id ? String(t.external_ids.tvdb_id) : null,
+    rating: t.vote_average ? Math.round(t.vote_average * 10) / 10 : null,
+    seasons: (t.seasons ?? []).map((s: any) => ({ seasonNumber: s.season_number, name: s.name || `Season ${s.season_number}`, episodeCount: s.episode_count ?? 0, airDate: s.air_date || null }))
+      .sort((a: TmdbSeason, b: TmdbSeason) => a.seasonNumber - b.seasonNumber),
+  };
+}
+
+const LIST_PATHS: Record<string, [string, 'movie' | 'show' | undefined, Record<string, string>?]> = {
+  trending: ['/trending/all/week', undefined],
+  'popular-movies': ['/movie/popular', 'movie'],
+  'popular-shows': ['/tv/popular', 'show'],
+  'upcoming-movies': ['/movie/upcoming', 'movie'],
+  'upcoming-shows': ['/tv/on_the_air', 'show'],
+  'top-movies': ['/movie/top_rated', 'movie'],
+  'top-shows': ['/tv/top_rated', 'show'],
+};
+
+/** One page of a Discover slider: fixed lists, or by genre / studio (movies) / network (shows). */
+export async function discoverList(key: string, page = 1): Promise<{ results: TmdbListResult[]; page: number; totalPages: number } | null> {
+  let path: string;
+  let forced: 'movie' | 'show' | undefined;
+  let params: Record<string, string | number> = { page };
+  const m = key.match(/^(movie-genre|show-genre|studio|network)-(\d{1,9})$/);
+  if (LIST_PATHS[key]) {
+    [path, forced] = LIST_PATHS[key];
+  } else if (m) {
+    const show = m[1] === 'show-genre' || m[1] === 'network';
+    path = show ? '/discover/tv' : '/discover/movie';
+    forced = show ? 'show' : 'movie';
+    const filter = m[1].endsWith('genre') ? 'with_genres' : m[1] === 'studio' ? 'with_companies' : 'with_networks';
+    params = { ...params, [filter]: m[2], sort_by: 'popularity.desc', include_adult: 'false' };
+  } else return null;
+  const r = await call<any>(path, params);
+  return {
+    results: (r?.results ?? []).map((x: any) => mapListItem(x, forced)).filter(Boolean) as TmdbListResult[],
+    page: r?.page ?? page,
+    totalPages: Math.min(r?.total_pages ?? 1, 50),
+  };
+}
+
+export async function genres(): Promise<{ movie: { id: number; name: string }[]; show: { id: number; name: string }[] }> {
+  const [m, t] = await Promise.all([call<any>('/genre/movie/list'), call<any>('/genre/tv/list')]);
+  return { movie: m?.genres ?? [], show: t?.genres ?? [] };
+}
+
+/** Name of a studio (company) or TV network, for slider titles. */
+export async function companyName(kind: 'studio' | 'network', id: string): Promise<string | null> {
+  const r = await call<any>(kind === 'studio' ? `/company/${id}` : `/network/${id}`);
+  return r?.name ?? null;
+}
+
+export interface TmdbPerson {
+  id: string;
+  name: string;
+  biography: string | null;
+  birthday: string | null;
+  deathday: string | null;
+  placeOfBirth: string | null;
+  knownFor: string | null;
+  profile: string | null;
+  cast: (TmdbListResult & { character: string | null })[];
+  crew: (TmdbListResult & { job: string | null })[];
+}
+
+export async function person(id: string): Promise<TmdbPerson | null> {
+  const p = await call<any>(`/person/${id}`, { append_to_response: 'combined_credits' });
+  if (!p) return null;
+  const pop = (a: any, b: any) => (b.popularity ?? 0) - (a.popularity ?? 0);
+  const seen = new Set<string>();
+  const uniq = <T extends TmdbListResult>(x: T | null): x is T => {
+    if (!x) return false;
+    const k = `${x.mediaType}:${x.id}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  };
+  const cast = [...(p.combined_credits?.cast ?? [])].sort(pop).map((c: any) => {
+    const x = mapListItem(c);
+    return x ? { ...x, character: c.character || null } : null;
+  }).filter(uniq).slice(0, 80);
+  seen.clear();
+  const crew = [...(p.combined_credits?.crew ?? [])].sort(pop).map((c: any) => {
+    const x = mapListItem(c);
+    return x ? { ...x, job: c.job || null } : null;
+  }).filter(uniq).slice(0, 60);
+  return {
+    id: String(p.id), name: p.name, biography: p.biography || null, birthday: p.birthday || null, deathday: p.deathday || null,
+    placeOfBirth: p.place_of_birth || null, knownFor: p.known_for_department || null, profile: img(p.profile_path, 'h632'), cast, crew,
+  };
+}
+
+/** Search people (for the Discover person search). */
+export async function searchPeople(q: string): Promise<{ id: string; name: string; profile: string | null; knownFor: string | null }[]> {
+  const r = await call<any>('/search/person', { query: q, include_adult: 'false' });
+  return (r?.results ?? []).slice(0, 20).map((p: any) => ({ id: String(p.id), name: p.name, profile: img(p.profile_path, 'w185'), knownFor: p.known_for_department || null }));
+}

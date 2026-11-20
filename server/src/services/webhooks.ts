@@ -5,6 +5,7 @@ import { db } from '../db.js';
 import { config } from '../config.js';
 import { logger } from '../util/log.js';
 import type { PlaySession } from './playback.js';
+import { haWebhookPayload } from './smarthome/hawebhook.js';
 
 const log = logger('webhooks');
 
@@ -17,12 +18,15 @@ export async function sendWebhook(url: string, payload: unknown): Promise<{ ok: 
   }
 }
 
-function dispatch(event: WebhookEvent, data: Record<string, unknown>) {
+function dispatch(event: WebhookEvent, data: Record<string, unknown>, session?: PlaySession) {
   const hooks = getSettings().webhooks.filter((w) => w.enabled && w.events.includes(event));
   if (!hooks.length) return;
   const payload = { event, at: new Date().toISOString(), server: { id: serverId(), name: getSettings().serverName, version: config.version }, ...data };
+  let haPayload: Record<string, unknown> | null = null;
   for (const h of hooks) {
-    void sendWebhook(h.url, payload).then((r) => {
+    // Home Assistant preset: flat body for HA's webhook trigger (see docs/HOME_ASSISTANT.md).
+    const body = h.format === 'home-assistant' ? (haPayload ??= haWebhookPayload(event, data, session)) : payload;
+    void sendWebhook(h.url, body).then((r) => {
       if (!r.ok) log.warn(`Webhook ${h.url} failed for ${event}: ${r.error ?? r.status}`);
     });
   }
@@ -40,10 +44,10 @@ function sessionPayload(s: PlaySession) {
 }
 
 export function initWebhooks() {
-  bus.on('playback.start', (s: PlaySession) => dispatch('playback.start', sessionPayload(s)));
-  bus.on('playback.stop', (s: PlaySession) => dispatch('playback.stop', sessionPayload(s)));
-  bus.on('playback.pause', (s: PlaySession) => dispatch('playback.pause', sessionPayload(s)));
-  bus.on('playback.resume', (s: PlaySession) => dispatch('playback.resume', sessionPayload(s)));
+  bus.on('playback.start', (s: PlaySession) => dispatch('playback.start', sessionPayload(s), s));
+  bus.on('playback.stop', (s: PlaySession) => dispatch('playback.stop', sessionPayload(s), s));
+  bus.on('playback.pause', (s: PlaySession) => dispatch('playback.pause', sessionPayload(s), s));
+  bus.on('playback.resume', (s: PlaySession) => dispatch('playback.resume', sessionPayload(s), s));
   bus.on('playback.scrobble', ({ user, itemId }: any) => dispatch('playback.scrobble', { user: { id: user.id, name: user.displayName }, item: db.get('SELECT id, type, title, year FROM items WHERE id = ?', itemId) }));
   bus.on('library.new', ({ libraryId, itemIds }: any) => dispatch('library.new', { libraryId, items: itemIds.slice(0, 50).map((id: string) => db.get('SELECT id, type, title, year FROM items WHERE id = ?', id)).filter(Boolean) }));
   bus.on('user.login', ({ user, device }: any) => dispatch('user.login', { user: { id: user.id, name: user.displayName }, device }));

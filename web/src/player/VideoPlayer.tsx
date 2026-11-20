@@ -8,6 +8,8 @@ import { useToast } from '../state/toast';
 import { useMusic } from './music';
 import { attachStream, type Attached } from './engine';
 import { profileWithBitrate, QUALITY_OPTIONS } from './deviceProfile';
+import { capabilitiesReady } from './capabilities';
+import { RangeBadge, rangeDeliveryText } from '../components/HdrBadge';
 import { OptionList, Popover, SeekBar, VolumeControl } from './controls';
 import { useSyncPlay } from './syncplay';
 import { absoluteUrl, castContentType, castDeviceProfile, claimCast, useCast } from './cast';
@@ -67,6 +69,10 @@ interface Stats {
   buffer: string;
   dropped: string;
   extra: string;
+  /** HDR format and how it reaches this device (e.g. "Dolby Vision 8.1 → HDR10 base layer"). */
+  range?: string;
+  /** Why the server remuxes / transcodes. */
+  why?: string;
 }
 
 interface StartOpts {
@@ -268,6 +274,7 @@ export default function VideoPlayer() {
     attached.current?.destroy();
     attached.current = null;
     try {
+      await capabilitiesReady(); // HDR / 10-bit detection (bounded wait), so the profile carries videoRange
       const pi = await api.playback.start(itemId, {
         startMs: Math.round(opts.startMs),
         audioStreamIndex: opts.audioIndex,
@@ -675,6 +682,8 @@ export default function VideoPlayer() {
         buffer: `${ahead.toFixed(1)} s`,
         dropped,
         extra: `${rate}× · subs ${formatDelay(subDelayRef.current)} · audio ${formatDelay(audioDelayMs)}`,
+        range: pi?.videoRange ? rangeDeliveryText(pi.videoRange) : media?.videoRange?.label ?? (media?.hdr ? 'HDR' : 'SDR'),
+        why: pi?.reasons?.length ? pi.reasons.join('; ') : undefined,
       });
     };
     tick();
@@ -935,6 +944,16 @@ export default function VideoPlayer() {
         case 'c':
           cycleSubtitles();
           break;
+        case 'a':
+        case 'A': {
+          // Next audio track (TV remotes: green key).
+          if (audioStreams.length < 2) break;
+          const i = audioStreams.findIndex((x) => x.index === currentAudio);
+          const nx = audioStreams[(i + 1) % audioStreams.length];
+          selectAudio(nx.index);
+          flash(`Audio: ${nx.title ?? languageName(nx.language)}`);
+          break;
+        }
         case 'p':
           void togglePip();
           break;
@@ -1094,6 +1113,8 @@ export default function VideoPlayer() {
             <dt>Playback</dt><dd>{stats.method} · {stats.engine}</dd>
             <dt>Resolution</dt><dd>{stats.resolution}</dd>
             <dt>Video codec</dt><dd>{stats.videoCodec}</dd>
+            {stats.range && <><dt>Dynamic range</dt><dd>{info?.videoRange && <RangeBadge format={info.videoRange.source} label={info.videoRange.label} />} {stats.range}</dd></>}
+            {stats.why && <><dt>Why</dt><dd>{stats.why}</dd></>}
             <dt>Audio codec</dt><dd>{stats.audioCodec}</dd>
             <dt>Bitrate</dt><dd>{stats.bitrate}</dd>
             <dt>Network</dt><dd>{stats.bandwidth}</dd>

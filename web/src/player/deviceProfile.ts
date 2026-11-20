@@ -1,4 +1,5 @@
 import type { DeviceProfile } from '@mediamax/shared';
+import { platformTag, videoCaps } from './capabilities';
 
 let cached: DeviceProfile | null = null;
 
@@ -65,12 +66,26 @@ export function detectDeviceProfile(): DeviceProfile {
   const hlsJs = supportsMse() && (mse('video/mp4; codecs="avc1.42E01E,mp4a.40.2"') || mse('video/mp4; codecs="avc1.42E01E"'));
   const maxWidth = Math.round(Math.max(window.screen?.width ?? 1920, window.screen?.height ?? 1080) * Math.min(window.devicePixelRatio || 1, 2));
 
-  cached = {
+  // Samsung/LG TVs: never hand a video file to the TV's built-in progressive pipeline. Leaving video containers out
+  // makes the server remux to fMP4/HLS (cheap: video and audio are copied), which our hls.js engine feeds to the
+  // hardware decoder through MSE. Audio-only files still play directly.
+  const tv = platformTag() === 'tizen' || platformTag() === 'webos';
+  const base: DeviceProfile = {
     videoCodecs,
     audioCodecs,
-    containers,
+    containers: tv && hlsJs ? containers.filter((c) => !['mp4', 'm4v', 'mov', 'webm'].includes(c)) : containers,
     supportsHls: hlsJs || supportsNativeHls(),
     maxWidth: maxWidth >= 3000 ? 3840 : maxWidth >= 1800 ? 1920 : maxWidth >= 1200 ? 1280 : 854,
+    player: tv ? `${platformTag()}-mse` : 'html5',
+  };
+  // HDR / 10-bit capabilities arrive asynchronously (capabilities.ts); only cache the profile once they're known.
+  const vc = videoCaps();
+  if (!vc) return base;
+  cached = {
+    ...base,
+    videoRange: vc.videoRange,
+    tenBitCodecs: vc.tenBitCodecs,
+    ...(vc.maxHeight ? { maxHeight: vc.maxHeight, maxWidth: Math.max(base.maxWidth ?? 0, Math.round((vc.maxHeight * 16) / 9)) } : {}),
   };
   return cached;
 }

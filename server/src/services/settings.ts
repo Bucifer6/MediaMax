@@ -2,6 +2,7 @@ import type { ArrInstance, ArrKind, ArrService, ServerSettings } from '@mediamax
 import { db } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
+import { maskAgents, mergeAgents } from './notify/kinds.js';
 
 export function getKv<T>(key: string, fallback: T): T {
   const row = db.get<{ value: string }>('SELECT value FROM settings WHERE key = ?', key);
@@ -60,6 +61,7 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   backups: { intervalDays: 7, keep: 5 },
   requests: { enabled: true, autoApproveUserIds: [], weeklyLimit: 10, radarr: null, sonarr: null },
   arr: [],
+  notificationAgents: [],
   oidc: { enabled: false, issuer: null, clientId: null, clientSecret: null, buttonLabel: 'Sign in with SSO', autoCreateUsers: true, groupsClaim: 'groups', adminGroup: null, allowedGroup: null },
   sessionTimeoutDays: 90,
 };
@@ -147,6 +149,7 @@ export function getSettings(): ServerSettings {
     oidc: { ...DEFAULT_SETTINGS.oidc, ...(stored.oidc ?? {}) },
     webhooks: stored.webhooks ?? [],
     arr: Array.isArray(stored.arr) ? stored.arr : legacyArrInstances(stored.requests),
+    notificationAgents: Array.isArray(stored.notificationAgents) ? stored.notificationAgents : [],
   };
   return cache;
 }
@@ -160,6 +163,7 @@ export function publicSettings(s: ServerSettings = getSettings()): ServerSetting
     ...s,
     requests: { ...s.requests, radarr: maskSvc(s.requests.radarr), sonarr: maskSvc(s.requests.sonarr) },
     arr: s.arr.map((a) => ({ ...a, apiKey: a.apiKey ? SECRET_MASK : '' })),
+    notificationAgents: maskAgents(s.notificationAgents),
     aiDj: { ...s.aiDj, llm: { ...s.aiDj.llm, apiKey: s.aiDj.llm.apiKey ? SECRET_MASK : null }, tts: { ...s.aiDj.tts, apiKey: s.aiDj.tts.apiKey ? SECRET_MASK : null } },
   };
 }
@@ -192,6 +196,7 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     oidc: { ...cur.oidc, ...(patch.oidc ?? {}) },
     webhooks: (patch.webhooks ?? cur.webhooks).map((w) => ({ ...w, id: w.id || newId() })),
     arr: patch.arr !== undefined ? normaliseArr(patch.arr, cur.arr) : cur.arr,
+    notificationAgents: patch.notificationAgents !== undefined ? mergeAgents(patch.notificationAgents, cur.notificationAgents, newId) : cur.notificationAgents ?? [],
   };
   setKv('server', next);
   cache = next;

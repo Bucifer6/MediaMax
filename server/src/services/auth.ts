@@ -14,6 +14,7 @@ import { getBranding } from './branding.js';
 import { logActivity } from './activity.js';
 import { bus } from './events.js';
 import { imageUrl, registerImage } from './images.js';
+import { defaultPermissions, defaultQuotas, normalizePermissions, normalizeQuotas, storedPermissions, storedQuotas } from './requestPerms.js';
 
 /* ----------------------------- hashing ----------------------------- */
 
@@ -88,6 +89,8 @@ export function toUser(r: Row): User {
     allowTranscode: !!r.allow_transcode,
     allowDvr: !!r.allow_dvr,
     allowRequest4k: !!r.allow_request_4k,
+    requestPermissions: storedPermissions(r),
+    requestQuotas: storedQuotas(r),
     disabled: !!r.disabled,
     allowRemote: r.allow_remote === undefined ? true : !!r.allow_remote,
     maxStreams: r.max_streams ?? null,
@@ -119,6 +122,10 @@ export function createUser(req: CreateUserRequest): User {
   if (req.password && req.password.length < 4) throw badRequest('Password must be at least 4 characters');
   if (req.pin) validatePin(req.pin);
   const id = newId();
+  // New users start from the server's default request permissions; the legacy `allowRequest4k` flag still grants 4K.
+  const base = defaultPermissions();
+  if (req.allowRequest4k) Object.assign(base, { movie4k: base.movie4k === 'none' ? 'request' : base.movie4k, show4k: base.show4k === 'none' ? 'request' : base.show4k });
+  const perms = normalizePermissions(req.requestPermissions ?? {}, base);
   db.insert('users', {
     id,
     username,
@@ -133,7 +140,9 @@ export function createUser(req: CreateUserRequest): User {
     allow_downloads: req.allowDownloads ?? true,
     allow_transcode: req.allowTranscode ?? true,
     allow_dvr: req.allowDvr ?? !!req.isAdmin,
-    allow_request_4k: req.allowRequest4k ?? false,
+    allow_request_4k: perms.movie4k !== 'none' || perms.show4k !== 'none',
+    request_perms: JSON.stringify(perms),
+    request_quotas: req.requestQuotas ? JSON.stringify(normalizeQuotas(req.requestQuotas, defaultQuotas())) : null,
     allow_remote: req.allowRemote ?? true,
     max_streams: req.maxStreams && req.maxStreams > 0 ? Math.min(100, Math.trunc(req.maxStreams)) : null,
     preferences: '{}',
@@ -169,12 +178,34 @@ export function updateUser(id: string, req: UpdateUserRequest, actorId: string):
     if ((req as any)[k] !== undefined) patch[col] = !!(req as any)[k];
   }
   if (req.maxStreams !== undefined) patch.max_streams = req.maxStreams && req.maxStreams > 0 ? Math.min(100, Math.trunc(req.maxStreams)) : null;
+  Object.assign(patch, requestPermsPatch(cur, req));
   if (patch.disabled && id === actorId) throw badRequest('You cannot disable yourself');
   db.update('users', id, patch);
   if (patch.disabled || patch.password_hash !== undefined) {
     db.run('DELETE FROM devices WHERE user_id = ?', id);
   }
   return getUser(id);
+}
+
+/** Columns for a permissions/quotas change. Old clients that only send `allowRequest4k` toggle the 4K permissions. */
+export function requestPermsPatch(cur: Row, req: Pick<UpdateUserRequest, 'requestPermissions' | 'requestQuotas' | 'allowRequest4k'>): Row {
+  const patch: Row = {};
+  let perms = storedPermissions(cur);
+  let changed = false;
+  if (req.requestPermissions) {
+    perms = normalizePermissions(req.requestPermissions, perms);
+    changed = true;
+  } else if (req.allowRequest4k !== undefined) {
+    const lvl = req.allowRequest4k ? 'request' : 'none';
+    perms = { ...perms, movie4k: req.allowRequest4k && perms.movie4k !== 'none' ? perms.movie4k : lvl, show4k: req.allowRequest4k && perms.show4k !== 'none' ? perms.show4k : lvl };
+    changed = true;
+  }
+  if (changed) {
+    patch.request_perms = JSON.stringify(perms);
+    patch.allow_request_4k = perms.movie4k !== 'none' || perms.show4k !== 'none';
+  }
+  if (req.requestQuotas !== undefined) patch.request_quotas = req.requestQuotas ? JSON.stringify(normalizeQuotas(req.requestQuotas, defaultQuotas())) : null;
+  return patch;
 }
 
 const adminCount = () => db.get<{ n: number }>('SELECT COUNT(*) n FROM users WHERE is_admin = 1 AND disabled = 0')!.n;

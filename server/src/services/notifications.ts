@@ -19,7 +19,7 @@ const KEEP = 200;
 function toNotification(r: Row): AppNotification {
   return {
     id: r.id, kind: r.kind, itemId: r.item_id ?? null, title: r.title, body: r.body ?? null,
-    imageUrl: imageUrl(r.img ?? null), createdAt: r.created_at, readAt: r.read_at ?? null,
+    imageUrl: imageUrl(r.img ?? null), createdAt: r.created_at, readAt: r.read_at ?? null, link: r.link ?? null,
   };
 }
 
@@ -45,9 +45,9 @@ export function markRead(user: User, ids?: string[] | null): { unread: number } 
   return { unread: unreadCount(user.id) };
 }
 
-export function notify(userId: string, n: { kind: NotificationKind; itemId: string | null; title: string; body?: string | null }): AppNotification {
+export function notify(userId: string, n: { kind: NotificationKind; itemId: string | null; title: string; body?: string | null; link?: string | null }): AppNotification {
   const id = newId();
-  db.insert('notifications', { id, user_id: userId, kind: n.kind, item_id: n.itemId, title: n.title, body: n.body ?? null, created_at: nowIso(), read_at: null });
+  db.insert('notifications', { id, user_id: userId, kind: n.kind, item_id: n.itemId, title: n.title, body: n.body ?? null, created_at: nowIso(), read_at: null, ...(n.link ? { link: n.link } : {}) });
   db.run(`DELETE FROM notifications WHERE user_id = ? AND id NOT IN (SELECT id FROM notifications WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ${KEEP})`, userId, userId);
   const notification = toNotification(db.get(`${SELECT} WHERE n.id = ?`, id)!);
   events.toUser(userId, { type: 'notification', notification, unread: unreadCount(userId) });

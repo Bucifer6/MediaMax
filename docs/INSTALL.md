@@ -282,12 +282,106 @@ Upgrade: select the file and press **Pull**, then **Up**. Hardware transcoding: 
 
 ## Hardware transcoding
 
-Software transcoding works everywhere. To use the GPU: give MediaMax the device (Docker: `/dev/dri` for
-Intel/AMD, or the NVIDIA runtime; Linux service: `render`/`video` groups; Windows: nothing to do), then choose the
-accelerator in **Admin → Settings → Transcoding** (`vaapi`, `qsv`, `nvenc`, `v4l2m2m`). MediaMax falls back to
-software when the GPU fails. The Docker image includes Intel's iHD and i965 drivers (amd64) and Mesa (all
-architectures). The Windows and Linux archives ship BtbN's static FFmpeg builds with NVENC/QSV/VA-API/D3D11
-support; the system drivers must be installed.
+Software transcoding works everywhere. To use the GPU, give MediaMax the device (see your platform below), then
+open **Admin → Settings → Transcoding** and press **Detect hardware**. MediaMax lists the GPUs it can see and the
+encoders in its FFmpeg build, then runs a 2-second test transcode with every method: H.264, HEVC and AV1 encoding,
+hardware decoding, 10-bit HEVC decoding and HDR → SDR tone mapping. Each card says what works (with the speed in fps)
+or shows FFmpeg's error. Press **Use this** on the recommended card and **Save changes**. Results are kept until the
+server restarts; press **Re-run detection** after changing drivers or devices.
+
+| Method | Platform | Hardware | Notes |
+|---|---|---|---|
+| `vaapi` | Linux | Intel (iHD/i965) and **AMD** (Mesa radeonsi) | AMD on Linux uses VA-API; the detect card says "VA-API (AMD Radeon)". Pick the render node if there are several. |
+| `qsv` | Linux, Windows | Intel iGPU / Arc | Linux: through VA-API (`/dev/dri/renderD*`). Windows: through D3D11 (GPU index). |
+| `nvenc` | Linux, Windows | NVIDIA GTX 10-series and newer | GPU index selects the card. GeForce drivers allow 8 encode sessions at once. |
+| `amf` | Windows | AMD Radeon | `h264_amf` / `hevc_amf` / `av1_amf` with D3D11 decoding. |
+| `videotoolbox` | macOS | Apple Silicon / Intel Macs | |
+| `v4l2m2m` | Linux ARM | Raspberry Pi 4 | H.264 only, about one 1080p stream. The Pi 5 has **no** hardware encoder: use software. |
+| `rkmpp` | Linux ARM | Rockchip RK3588/RK3568 | Needs an FFmpeg built with rkmpp/RGA ([ffmpeg-rockchip](https://github.com/nyanmisaka/ffmpeg-rockchip) or jellyfin-ffmpeg); stock FFmpeg is detect-only. |
+
+**HEVC and AV1 output.** With a hardware encoder, clients that can play HEVC (Safari, Chrome/Edge with HEVC
+decoding, the iOS and Android apps) or AV1 get it instead of H.264, at about 65% (HEVC) / 60% (AV1) of the H.264
+bitrate for the same quality. Those streams use fragmented-MP4 HLS segments, which these players need for HEVC/AV1;
+H.264 stays on MPEG-TS. HEVC and AV1 are never encoded on the CPU. Set the order and turn them on or off under
+**Preferred output codecs**, **Allow HEVC encoding** and **Allow AV1 encoding** (AV1 is off by default and needs
+Intel Arc, NVIDIA RTX 40 or AMD RX 7000).
+
+**HDR tone mapping on the GPU.** HDR sources are tone-mapped with `tonemap_vaapi` (VA-API, Intel only),
+`vpp_qsv` (Quick Sync), `tonemap_cuda` (NVIDIA, jellyfin-ffmpeg builds) or `tonemap_opencl`, when the FFmpeg build
+and driver support it, otherwise on the CPU (`zscale` + `tonemap`). The detect step shows which path works.
+
+**Automatic fallback.** If a hardware transcode fails to start or dies in the first seconds, MediaMax retries once,
+first with CPU tone mapping (if GPU tone mapping was used) and then fully in software, and logs why. The session
+shows "Hardware transcoding failed, used software" on the admin dashboard.
+
+### Docker (Intel / AMD)
+
+```yaml
+services:
+  mediamax:
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "render"   # or the numeric id: stat -c %g /dev/dri/renderD128
+      - "video"
+```
+
+With `PUID`/`PGID` set, the container joins the group that owns `/dev/dri/renderD*` at start by itself (see
+PUID/PGID above), so `group_add` is only needed when you run it with Docker's own `user:`. Use the numeric group id
+there if the host's render group name does not exist in the image. The image includes Intel's iHD and i965
+drivers (amd64) and Mesa (all architectures), so Intel and AMD work without anything installed on the host besides the
+kernel driver.
+
+### Docker (NVIDIA)
+
+Install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+on the host, then:
+
+```yaml
+services:
+  mediamax:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, video]
+```
+
+(`docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all …` with plain Docker.) `nvidia-smi` must work inside the
+container for detection to find the GPU; the `video` capability is what enables NVENC/NVDEC.
+
+### Linux service
+
+`sudo usermod -aG render,video mediamax && sudo systemctl restart mediamax`. Install the VA-API driver
+(`intel-media-va-driver-non-free` or `mesa-va-drivers`) and optionally `vainfo` so detection can show the driver
+name. NVIDIA: the proprietary driver (`nvidia-smi` must work).
+
+### Synology, Unraid and other NAS units
+
+- **Synology** (Intel models with an iGPU): map `/dev/dri` (see [Synology](#synology)). If the test says
+  `permission denied` on `/dev/dri/renderD128`, run `sudo chmod 666 /dev/dri/renderD128` once (DSM resets it on
+  reboot; add it as a boot-up Task). AMD Ryzen models have no GPU.
+- **Unraid**: install **Intel GPU TOP** (Intel) or **Radeon TOP** (AMD), add the device `/dev/dri` to the
+  container; for NVIDIA install the **Nvidia Driver** plugin, add `--runtime=nvidia` to Extra Parameters and set
+  `NVIDIA_VISIBLE_DEVICES` (the GPU UUID) and `NVIDIA_DRIVER_CAPABILITIES=all`.
+- **QNAP / TrueNAS / OpenMediaVault**: pass `/dev/dri` as above.
+
+### Windows
+
+Install the current GPU driver from NVIDIA, AMD (Adrenalin) or Intel (Arc & Iris Xe driver). The bundled FFmpeg
+(BtbN build) includes NVENC, QSV, AMF and D3D11; nothing else is needed. With several GPUs, set the **GPU index**
+(the order Windows lists them in Device Manager → Display adapters; Detect hardware shows each one).
+
+### macOS
+
+VideoToolbox works out of the box with Homebrew's FFmpeg.
+
+### Raspberry Pi
+
+Pi 4: `v4l2m2m` (H.264 encode, about one 1080p30 stream). In Docker add `--device /dev/video11` (encoder) and
+`/dev/video10` (decoder) and the `video` group. Pi 5: software only (no hardware encoder); prefer direct play.
 
 ## Where your data lives and backups
 

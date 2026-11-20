@@ -102,7 +102,7 @@ the WebSocket emits `branding.updated`.
 | DELETE 🔑 | `/playback/sessions/:sessionId` | | `{ ok: true }` (stop, kills transcode) |
 | GET 🔑 | `/stream/direct/:mediaId` | Range supported | file bytes |
 | GET 🔑 | `/stream/hls/:sessionId/master.m3u8` | | HLS playlist |
-| GET 🔑 | `/stream/hls/:sessionId/:segment` | | `.ts` segment |
+| GET 🔑 | `/stream/hls/:sessionId/:segment` | | `segN.ts` (H.264, MPEG-TS) or `segN.m4s` + `init.mp4` (HEVC/AV1, fMP4; the playlist has `#EXT-X-MAP`) |
 | GET 🔑 | `/stream/subtitles/:mediaId/:index.vtt` | | WebVTT |
 | GET 🔑 | `/stream/download/:itemId` | | original file as attachment (needs `allowDownloads`) |
 | GET 🛡️ | `/sessions` | | `ActiveSession[]` |
@@ -144,6 +144,21 @@ browse, search, resume and play exactly like local media through `/items` and `/
 * `GET /tasks` 🛡️ `ScheduledTask[]` · `POST /tasks/:id/run` 🛡️
 * `GET /activity?limit=&offset=` 🛡️ `Paged<ActivityEntry>`
 * `POST /settings/webhooks/test` 🛡️ `{ url }`
+
+## Hardware transcoding detection (🛡️)
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| GET | `/admin/transcoding/detect` | | `{ report: HwDetectReport \| null }` — the last run in this server session |
+| POST | `/admin/transcoding/detect` | | `{ report: HwDetectReport }` — runs now (concurrent calls share one run; takes seconds to a minute) |
+
+`HwDetectReport` = `{ ranAt, durationMs, platform, arch, ffmpeg: { version, hwaccels, encoders, filters }, devices: HwDevice[],
+methods: HwMethodResult[], recommendation: { id, hwAccel, device, gpuIndex, reason } }`. Each `HwMethodResult` has `available`
+(device/encoder present), `works` (H.264 encode), `error`, `encode.{h264,hevc,av1}` / `decode` / `tenBit` test results
+(`{ works, error, fps, skipped? }`), `toneMapping: { path, tried[] }` and `notes`. Apply one by saving `transcoding.hwAccel`
+plus `vaapiDevice` (VA-API/QSV on Linux) or `gpuIndex` (NVENC, QSV/AMF on Windows) with `PUT /settings`.
+Related settings in `ServerSettings.transcoding`: `preferredCodecs` (e.g. `["hevc","h264"]`), `allowHevcEncoding`,
+`allowAv1Encoding`, `hardwareToneMapping`, `gpuIndex`. `ActiveSession.transcodeInfo` adds `hwFallback` (why a session left
+the hardware path) and `toneMap`.
 
 ## Discovery: recommendations, My List, calendar, notifications
 | Method | Path | Body / Query | Returns |

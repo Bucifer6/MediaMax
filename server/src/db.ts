@@ -443,6 +443,9 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (user_id, media_type, external_id)
   );
   `,
+  /* Hardware tuner / set-top-box live sources (TVHeadend, SAT>IP, Enigma2): per-source driver options */ `
+  ALTER TABLE live_sources ADD COLUMN options TEXT NOT NULL DEFAULT '{}';
+  `,
 ];
 
 function migrate(db: Database) {

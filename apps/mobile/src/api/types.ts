@@ -793,7 +793,7 @@ export interface ActiveSession {
 /* Live TV & IPTV                                                      */
 /* ------------------------------------------------------------------ */
 
-export type LiveSourceType = 'xtream' | 'm3u' | 'hdhomerun';
+export type LiveSourceType = 'xtream' | 'm3u' | 'hdhomerun' | 'tvheadend' | 'satip' | 'enigma2';
 
 export interface LiveSource {
   id: string;
@@ -3348,4 +3348,109 @@ export interface RendererAdminView {
   manual: { id: string; kind: 'kodi' | 'dlna'; name: string; host: string; port: number | null; username: string | null; hasPassword: boolean; descriptionUrl: string | null }[];
   renderers: Renderer[];
   lastDiscoveryAt: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Hardware tuners & set-top boxes: TVHeadend, SAT>IP, Enigma2         */
+/* (extends LiveSource / CreateLiveSourceRequest / TestSourceResponse  */
+/*  through declaration merging, so this block stays append-only)      */
+/* ------------------------------------------------------------------ */
+
+/** Driver settings of tuner sources (`tvheadend`, `satip`, `enigma2`). Unknown keys are ignored. */
+export interface LiveSourceOptions {
+  /** All tuner types: limit concurrent streams (default: the device's tuner count). */
+  maxStreams?: number | null;
+  /** TVHeadend / Enigma2: HTTP auth scheme. `auto` answers whatever the device asks for (Digest or Basic). */
+  authType?: 'auto' | 'basic' | 'digest' | null;
+  /** TVHeadend: stream profile name (default `pass` = untouched MPEG-TS). */
+  profile?: string | null;
+  /** SAT>IP: `fritzbox` reads the FRITZ!Box's own lists; `m3u` reads `playlistUrl` (default: detected). */
+  satipMode?: 'fritzbox' | 'm3u' | null;
+  /** SAT>IP FRITZ!Box: which built-in lists to import (`tvhd`, `tvsd`, `radio`; default HD + SD). */
+  fritzLists?: string[] | null;
+  /** SAT>IP: M3U with rtsp:// or http://<ip>/?src=…&freq=… entries (`sat.ip` placeholder hosts are replaced by the device). */
+  playlistUrl?: string | null;
+  /** SAT>IP: RTSP transport FFmpeg uses (default: UDP for FRITZ!Box, TCP otherwise). */
+  rtspTransport?: 'tcp' | 'udp' | null;
+  /** SAT>IP: the UPnP description URL (from discovery); used for the tuner count. */
+  descriptionUrl?: string | null;
+  /** Enigma2: service references of the bouquets to import (default: the first bouquet). */
+  bouquets?: string[] | null;
+  /** Enigma2: streaming port (default 8001). */
+  streamPort?: number | null;
+  /** Enigma2: use the receiver's transcoding port instead (default 8002). */
+  useTranscoding?: boolean | null;
+  transcodePort?: number | null;
+  /** Enigma2: OpenWebif "streamauth" is on — send the login to the streaming port too. */
+  streamAuth?: boolean | null;
+  /** Enigma2: days of guide to read (1–14, default 7). */
+  guideDays?: number | null;
+}
+
+/** What a tuner source reported about the device at its last refresh / test. */
+export interface TunerDeviceInfo {
+  name: string | null;
+  model: string | null;
+  version: string | null;
+  /** One line per tuner, e.g. "DVB-S2 ×2" or "Tuner A: DVB-S2 NIM". */
+  tuners: string[];
+}
+
+export interface TunerBouquet {
+  /** Enigma2 bouquet service reference. */
+  ref: string;
+  name: string;
+}
+
+export interface LiveSource {
+  /** Tuner sources: driver settings (secrets are never in here). */
+  options?: LiveSourceOptions;
+  /** Tuner sources: tuners the device reported (`maxConnections` is the effective stream limit). */
+  tunerCount?: number | null;
+  deviceInfo?: TunerDeviceInfo | null;
+}
+
+export interface CreateLiveSourceRequest {
+  options?: LiveSourceOptions;
+  /** POST /livetv/sources/test only: an existing source whose saved password is used when none is sent. */
+  sourceId?: string;
+}
+
+export interface TestSourceResponse {
+  tunerCount?: number | null;
+  deviceInfo?: TunerDeviceInfo | null;
+  /** Enigma2: every TV bouquet on the receiver, for the bouquet picker. */
+  bouquets?: TunerBouquet[];
+  /** TVHeadend: stream profiles the user may pick. */
+  profiles?: string[];
+  warnings?: string[];
+}
+
+/** GET /livetv/tuners/discover: a device found on the LAN. */
+export interface DiscoveredTuner {
+  kind: 'satip' | 'hdhomerun';
+  name: string;
+  manufacturer: string | null;
+  model: string | null;
+  /** Address to use as the source URL. */
+  address: string;
+  descriptionUrl: string | null;
+  tunerCount: number | null;
+  /** SAT>IP X_SATIPCAP, e.g. "DVBS2-2,DVBT-2". */
+  capabilities: string | null;
+  isFritzBox: boolean;
+  deviceId: string | null;
+}
+
+/** GET /livetv/sources/:id/recordings (TVHeadend): a finished recording on the backend. */
+export interface TunerRecording {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  description: string | null;
+  channelName: string | null;
+  start: string | null;
+  end: string | null;
+  sizeBytes: number | null;
+  status: string | null;
 }
