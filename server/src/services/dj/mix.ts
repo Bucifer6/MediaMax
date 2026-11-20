@@ -101,7 +101,8 @@ function loadCandidates(user: User, req: DjMixRequest): Cand[] {
   return rows
     .map((r) => ({
       id: r.id, artistId: r.artist_id, albumId: r.album_id,
-      genres: [...new Set([...parseJson<string[]>(r.genres, []), ...parseJson<string[]>(r.album_genres, [])].map(lc))],
+      // A track's own genre tags win; the album's genres are only a fallback for untagged tracks.
+      genres: [...new Set((parseJson<string[]>(r.genres, []).length ? parseJson<string[]>(r.genres, []) : parseJson<string[]>(r.album_genres, [])).map(lc))],
       durationMs: r.duration_ms ?? 0, favorite: !!r.favorite, rating: r.rating ?? null, a: analyses.get(r.id) ?? null,
     }))
     .filter((c) => !wantGenres.length || c.genres.some((g) => wantGenres.includes(g)))

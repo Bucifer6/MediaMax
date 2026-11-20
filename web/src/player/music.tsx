@@ -82,6 +82,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   if (!audioRef.current && typeof Audio !== 'undefined') {
     audioRef.current = new Audio();
     audioRef.current.preload = 'auto';
+    // Lets DJ mode step aside when normal music starts (detached elements' events don't reach the document).
+    audioRef.current.addEventListener('play', () => window.dispatchEvent(new Event('mediamax:media-play')));
   }
   const toast = useToast();
   const [queue, setQueue] = useState<Item[]>([]);

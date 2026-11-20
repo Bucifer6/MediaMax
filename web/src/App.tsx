@@ -49,6 +49,7 @@ const SettingsPage = lazyPage(() => import('./pages/Settings'));
 const ContainersPage = lazyPage(() => import('./pages/Containers'));
 const WrappedPage = lazyPage(() => import('./pages/Wrapped'));
 const PodcastsPage = lazyPage(() => import('./pages/Podcasts'));
+const DjPage = lazyPage(() => import('./pages/Dj'));
 const DiscoverPage = lazyPage(() => import('./pages/Discover'));
 const RequestsPage = lazyPage(() => import('./pages/Requests'));
 const AdminRoutes = lazyPage(() => import('./admin/AdminRoutes'));
@@ -146,6 +147,7 @@ function Gate() {
           <Route path="link" element={<LinkDevicePage />} />
           <Route path="wrapped" element={<WrappedPage />} />
           <Route path="podcasts" element={<PodcastsPage />} />
+          <Route path="dj" element={<DjPage />} />
           <Route path="discover" element={<DiscoverPage />} />
           <Route path="requests" element={<RequestsPage />} />
           <Route path="settings/*" element={<SettingsPage />} />

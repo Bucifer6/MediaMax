@@ -7,7 +7,7 @@ import type {
   RecordingRule, RecordingStatus, RemoteSubtitle, ScheduledTask, SearchResponse, ServerSettings, ServerStats, SetupRequest, SystemInfo,
   TestSourceResponse, Theme, TraktDeviceCode, TraktStatus, TrickplayInfo, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
   UpdateUserRequest, User, UserItemData, UserStats,
-  ArrOptions, CreateMediaRequest, ApiKey, CreatedApiKey, TotpSetup, TotpEnabled, Invite, CreateInviteRequest, InvitePreview, AcceptInviteRequest,
+  ArrOptions, CreateMediaRequest, DjMix, DjMixRequest, DjStatus, TrackAnalysis, ApiKey, CreatedApiKey, TotpSetup, TotpEnabled, Invite, CreateInviteRequest, InvitePreview, AcceptInviteRequest,
   BackupInfo, RemoteAccessStatus, Bookmark, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
 import { http, request, upload } from './client';
@@ -160,6 +160,13 @@ export const api = {
     addItems: (id: string, itemIds: string[]) => http.post<Ok>(`/collections/${enc(id)}/items`, { itemIds }),
     removeItem: (id: string, itemId: string) => http.del<Ok>(`/collections/${enc(id)}/items/${enc(itemId)}`),
     remove: (id: string) => http.del<Ok>(`/collections/${enc(id)}`),
+  },
+
+  dj: {
+    mix: (body: DjMixRequest) => http.post<DjMix>('/dj/mix', body),
+    status: () => http.get<DjStatus>('/dj/status'),
+    analyze: () => http.post<Ok>('/dj/analyze'),
+    analysis: (itemId: string) => http.get<TrackAnalysis | null>(`/items/${enc(itemId)}/analysis`),
   },
 
   playlists: {
