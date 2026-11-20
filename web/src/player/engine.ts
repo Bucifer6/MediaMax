@@ -39,8 +39,8 @@ export interface Attached {
   stats?: () => StreamStats;
   /** Variants of a multi-variant HLS stream (hls.js only), lowest bitrate first. */
   levels?: () => EngineLevel[];
-  /** Switch variant at the next fragment boundary (hls.js `nextLevel`). */
-  setLevel?: (level: number) => void;
+  /** Switch variant at the next fragment boundary (hls.js `nextLevel`), or at once, dropping the buffer (`immediate`). */
+  setLevel?: (level: number, immediate?: boolean) => void;
   currentLevel?: () => number;
 }
 
@@ -102,8 +102,10 @@ export async function attachStream(el: HTMLMediaElement, info: PlaybackInfo, opt
         engine: 'hls.js',
         destroy: () => hls.destroy(),
         levels: () => hls.levels.map((l) => ({ bitrate: l.bitrate, width: l.width, height: l.height })),
-        setLevel: (level: number) => {
-          if (level >= 0 && level < hls.levels.length) hls.nextLevel = level;
+        setLevel: (level: number, immediate?: boolean) => {
+          if (level < 0 || level >= hls.levels.length) return;
+          if (immediate) hls.currentLevel = level;
+          else hls.nextLevel = level;
         },
         currentLevel: () => hls.currentLevel,
         stats: () => {

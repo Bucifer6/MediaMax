@@ -3,7 +3,7 @@ import { HardwareDetect } from './HardwareDetect';
 import { MetadataSettingsPanel } from './MetadataSettings';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import type { HwAccel, ServerSettings, TranscodeVideoCodec, User, Webhook, WebhookEvent } from '@mediamax/shared';
+import type { HwAccel, ServerSettings, StreamingSettings, TranscodeVideoCodec, User, Webhook, WebhookEvent } from '@mediamax/shared';
 import { ArrSettingsPanel } from './ArrSettings';
 import { ARR_ICON, ARR_NAME } from './Downloads';
 import { api } from '../api/endpoints';
@@ -86,6 +86,8 @@ export function ServerSettingsAdmin() {
 
   const set = (p: Partial<ServerSettings>) => { setS({ ...s, ...p }); setDirty(true); };
   const setT = (p: Partial<ServerSettings['transcoding']>) => set({ transcoding: { ...s.transcoding, ...p } });
+  const st: StreamingSettings = { adaptive: true, renditionIdleSeconds: 20, remoteMaxBitrate: null, bandwidthTestMaxBytes: 20 * 1024 * 1024, ...(s.streaming ?? {}) };
+  const setSt = (p: Partial<StreamingSettings>) => set({ streaming: { ...st, ...p } });
   const setD = (p: Partial<ServerSettings['dvr']>) => set({ dvr: { ...s.dvr, ...p } });
   const tp = { ...TRICKPLAY_DEFAULTS, ...(s.trickplay ?? {}) };
   const os = { ...OPENSUBS_DEFAULTS, ...(s.openSubtitles ?? {}) };
@@ -227,6 +229,21 @@ export function ServerSettingsAdmin() {
             </div>
             <Switch checked={s.transcoding.toneMapHdr} onChange={(v) => setT({ toneMapHdr: v })} label="Tone-map HDR to SDR" hint="Keeps colours correct on non-HDR screens when transcoding." />
             <Switch checked={s.transcoding.hardwareToneMapping ?? true} onChange={(v) => setT({ hardwareToneMapping: v })} disabled={!s.transcoding.toneMapHdr} label="Tone-map on the GPU when possible" hint="VA-API, Quick Sync, CUDA or OpenCL tone-mapping; falls back to the CPU automatically." />
+            <h3 className="section-title">Adaptive streaming</h3>
+            <Switch
+              checked={st.adaptive}
+              onChange={(v) => setSt({ adaptive: v })}
+              label="Offer quality levels (renditions) for transcodes"
+              hint="Players on Auto quality get a 1080p/720p/480p/360p ladder and switch with the connection. Only the level being watched is encoded; with a single hardware encoder session, switches restart the encoder at the new bitrate."
+            />
+            <div className="form-row">
+              <Field label="Remote bitrate limit (kbps)" hint="For clients outside your network. Empty = no limit. Local clients are never limited unless they measure a slower connection.">
+                <input className="input" type="number" min={0} step={500} value={st.remoteMaxBitrate ?? ''} placeholder="No limit" onChange={(e) => setSt({ remoteMaxBitrate: e.target.value ? Number(e.target.value) : null })} />
+              </Field>
+              <Field label="Stop idle quality levels after (s)">
+                <input className="input" type="number" min={5} max={300} value={st.renditionIdleSeconds} onChange={(e) => setSt({ renditionIdleSeconds: Number(e.target.value) })} />
+              </Field>
+            </div>
           </div>
         )}
         {tab === 'metadata' && <MetadataSettingsPanel />}

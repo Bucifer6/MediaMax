@@ -3558,7 +3558,7 @@ export interface SubtitleStyle {
    * otherwise; 'file' = always use the file's own styles (libass, even on slow devices); 'user' = plain text in this style.
    */
   assStyles?: 'auto' | 'file' | 'user';
-  /** Extra lift above the bottom edge, % of the video height (0–25); overrides `position` when set. */
+  /** Lift above the bottom edge, % of the video height (5–20); 0 / unset = automatic (follows `position`). */
   verticalOffset?: number;
   /** Text outline / edge (applies to shadow/none backgrounds). Default 'outline'. */
   edge?: 'outline' | 'shadow' | 'none';

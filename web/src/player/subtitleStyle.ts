@@ -1,7 +1,7 @@
 import { useEffect, type CSSProperties } from 'react';
 import type { SubtitleStyle } from '@mediamax/shared';
 
-export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = { size: 'medium', color: 'white', background: 'shadow', font: 'default', position: 'bottom' };
+export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = { size: 'medium', color: 'white', background: 'shadow', font: 'default', position: 'bottom', verticalOffset: 0, edge: 'outline', assStyles: 'auto' };
 
 export function subtitleStyleOf(s: Partial<SubtitleStyle> | null | undefined): SubtitleStyle {
   return { ...DEFAULT_SUBTITLE_STYLE, ...(s ?? {}) };
@@ -37,7 +37,7 @@ export const SUBTITLE_OPTIONS: { [K in keyof SubtitleStyle]-?: { value: Subtitle
     { value: 'raised', label: 'Raised' },
   ],
   verticalOffset: [
-    { value: undefined, label: 'Auto' },
+    { value: 0, label: 'Auto' },
     { value: 5, label: '5%' },
     { value: 10, label: '10%' },
     { value: 15, label: '15%' },

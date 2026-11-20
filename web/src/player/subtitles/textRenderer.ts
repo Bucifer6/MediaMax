@@ -97,7 +97,7 @@ export class TextRenderer {
 
   private bottomOffsetPct() {
     const s = this.opts.style;
-    if (s.verticalOffset != null) return Math.max(0, Math.min(25, s.verticalOffset));
+    if (s.verticalOffset) return Math.max(0, Math.min(25, s.verticalOffset));
     return s.position === 'raised' ? 14 : this.opts.tv ? 6 : 4.5;
   }
 

@@ -49,6 +49,10 @@ const SUBTITLE_CHOICES: { [K in keyof SubtitleStyle]: readonly SubtitleStyle[K][
   background: ['none', 'shadow', 'box', 'boxSolid'],
   font: ['default', 'serif', 'mono', 'rounded'],
   position: ['bottom', 'raised'],
+  // Client-rendered subtitles (web/src/player/subtitles): 0 = automatic lift (follows `position`).
+  verticalOffset: [0, 5, 10, 15, 20],
+  edge: ['outline', 'shadow', 'none'],
+  assStyles: ['auto', 'file', 'user'],
 };
 
 /** Fill in / validate a (possibly partial) subtitle style; unknown values fall back to the current or default value. */

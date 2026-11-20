@@ -192,7 +192,7 @@ export function useAdaptive(o: Opts) {
       const target = c.levels[d.level];
       const label = target.label;
       if (c.mode === 'renditions' && target.kind === 'variant') {
-        attached.current?.setLevel?.(target.index!);
+        attached.current?.setLevel?.(target.index!, d.immediate);
         setState((s) => ({ ...s, level: label, lastSwitch: `${d.direction} → ${label} (${d.reason})` }));
         live.current.notify(d.direction === 'down' ? `Lowered quality to ${label} due to connection speed` : `Quality raised to ${label}`, d.direction);
         return;

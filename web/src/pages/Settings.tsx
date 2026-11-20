@@ -218,7 +218,12 @@ function Playback() {
           </select>
         </Field>
         <Field label="Streaming quality">
-          <select className="select" value={prefs.maxBitrate ?? ''} onChange={(e) => save({ maxBitrate: e.target.value ? Number(e.target.value) : null })}>
+          <select
+            className="select"
+            value={prefs.maxBitrate != null ? String(prefs.maxBitrate) : prefs.autoQuality === false ? '' : 'auto'}
+            onChange={(e) => save(e.target.value === 'auto' ? { maxBitrate: null, autoQuality: true } : { maxBitrate: e.target.value ? Number(e.target.value) : null, autoQuality: false })}
+          >
+            <option value="auto">Auto (adapts to your connection)</option>
             {QUALITY_OPTIONS.map((q) => <option key={q.label} value={q.kbps ?? ''}>{q.label}</option>)}
           </select>
         </Field>

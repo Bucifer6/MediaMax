@@ -138,6 +138,8 @@ export interface AbrDecision {
   level: number;
   direction: 'up' | 'down';
   reason: 'bandwidth' | 'buffer' | 'dropped-frames';
+  /** Switch now (abort the fragment in flight) instead of at the next fragment: the buffer is about to run dry. */
+  immediate?: boolean;
 }
 
 export class AbrController {
@@ -150,6 +152,7 @@ export class AbrController {
   private capUntil = 0;
   private cap = Infinity;
   private lastFlapAt = -Infinity;
+  private lowSince: number | null = null;
   flaps = 0;
 
   /** `levels` in any order; they are sorted by bitrate (index 0 = lowest). `start` is an index into the sorted list. */
@@ -184,7 +187,7 @@ export class AbrController {
     this.downSince = this.upSince = null;
   }
 
-  private commit(level: number, now: number, reason: AbrDecision['reason']): AbrDecision {
+  private commit(level: number, now: number, reason: AbrDecision['reason'], immediate = false): AbrDecision {
     const direction = level > this.current ? 'up' : 'down';
     if (direction === 'down' && now - this.lastUpAt < this.cfg.flapWindowMs) {
       this.flaps++;
@@ -193,8 +196,8 @@ export class AbrController {
     if (direction === 'up') this.lastUpAt = now;
     this.current = level;
     this.lastSwitch = now;
-    this.downSince = this.upSince = null;
-    return { level, direction, reason };
+    this.downSince = this.upSince = this.lowSince = null;
+    return { level, direction, reason, ...(immediate ? { immediate: true } : {}) };
   }
 
   update(i: AbrInput): AbrDecision | null {
@@ -213,15 +216,25 @@ export class AbrController {
       return null;
     }
     const target = Math.min(this.fit(i.bandwidth), maxLevel);
+    const empty = i.bufferS < this.cfg.emergencyBufferS;
 
     if (target < this.current) {
       this.upSince = null;
-      if (i.bufferS < this.cfg.emergencyBufferS) return this.commit(target, now, 'buffer');
+      if (empty) return this.commit(target, now, 'buffer', true);
       this.downSince ??= now;
       if (i.bufferS < this.cfg.lowBufferS || now - this.downSince >= this.cfg.downHoldMs) return this.commit(target, now, i.bufferS < this.cfg.lowBufferS ? 'buffer' : 'bandwidth');
       return null;
     }
     this.downSince = null;
+
+    // Buffer-based safety net: the buffer stays nearly empty although the (lagging) estimate says this level fits —
+    // e.g. the link just dropped while a big segment is still downloading. Step down one level, now.
+    if (empty && this.current > 0) {
+      this.lowSince ??= now;
+      if (now - this.lowSince >= 2000) return this.commit(this.current - 1, now, 'buffer', true);
+      return null;
+    }
+    this.lowSince = null;
 
     const next = this.current + 1;
     const upOk = next <= maxLevel && this.levels[next].bitrate <= i.bandwidth * this.cfg.upSafety && i.bufferS >= this.cfg.minUpBufferS;
