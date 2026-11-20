@@ -47,6 +47,8 @@
 .arr-progress .progress { flex: 1; min-width: 80px; }
 .arr-progress span { font-variant-numeric: tabular-nums; font-size: 0.82rem; min-width: 3.2em; text-align: right; }
 .arr-status { text-transform: capitalize; }
+.arr-queue td:last-child { min-width: 120px; }
+.arr-queue td:nth-child(3) { white-space: nowrap; }
 .nowrap { white-space: nowrap; }
 .arr-updated { font-size: 0.78rem; margin-top: 10px; }
 
@@ -78,7 +80,7 @@
 .arr-steps { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 0.88rem; }
 .arr-apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-top: 10px; }
 .arr-app-help { padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--c-line); background: var(--c-surface); font-size: 0.85rem; }
-.arr-app-help strong { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.arr-app-help > strong { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .arr-app-help p { margin: 0; color: var(--c-text-muted); }
 
 /* item page */
@@ -93,3 +95,7 @@
   .arr-mapping { grid-template-columns: 1fr auto; }
   .arr-mapping > .icon { display: none; }
 }
+
+/* `.howto strong` is a flex heading elsewhere; keep inline emphasis inline here. */
+.howto .arr-steps strong, .howto p strong { display: inline; }
+.arr-test-ok, .arr-test-bad { display: inline-flex; align-items: center; gap: 4px; }

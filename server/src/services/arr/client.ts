@@ -35,8 +35,10 @@ export async function arrFetch<T = any>(inst: Conn, path: string, init: RequestI
       signal: AbortSignal.timeout(timeoutMs ?? 20000),
     });
   } catch (e) {
-    const err = e as Error & { cause?: { code?: string } };
-    const msg = err.name === 'TimeoutError' ? 'Timed out' : err.cause?.code ? `${err.cause.code}` : err.message;
+    const err = e as Error & { cause?: { code?: string; message?: string; errors?: { code?: string }[] } };
+    const code = err.cause?.code ?? err.cause?.errors?.[0]?.code;
+    const FRIENDLY: Record<string, string> = { ECONNREFUSED: 'connection refused', ENOTFOUND: 'host not found', EAI_AGAIN: 'host not found', ETIMEDOUT: 'timed out', EHOSTUNREACH: 'host unreachable', ECONNRESET: 'connection reset' };
+    const msg = err.name === 'TimeoutError' ? 'timed out' : code ? FRIENDLY[code] ?? code : err.cause?.message ?? err.message;
     throw new HttpError(502, `Can't reach ${ARR_LABEL[inst.kind]}: ${msg}`, 'arr_unreachable');
   }
   const text = await res.text();

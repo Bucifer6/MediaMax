@@ -3,6 +3,12 @@ import path from 'node:path';
 import type { LyricLine, Lyrics } from '@mediamax/shared';
 import { db } from '../db.js';
 import { ffprobeJson } from './probe.js';
+import { parseJson } from '../util/misc.js';
+import { logger } from '../util/log.js';
+import { lrclibGet } from './metadata/providers/lrclib.js';
+import { providerConfig } from './metadata/config.js';
+
+const log = logger('lyrics');
 
 /** Parse LRC ("[mm:ss.xx] text", multiple timestamps per line, [offset:+/-ms]). */
 export function parseLrc(text: string): LyricLine[] {
@@ -47,5 +53,27 @@ export async function getLyrics(itemId: string): Promise<Lyrics | null> {
     /* no tags */
   }
   void path;
-  return null;
+  return fetchLrclib(itemId);
+}
+
+/** LRCLIB fallback (Server settings → Metadata): synced lyrics by track/artist/album/duration; hits and misses are cached. */
+export async function fetchLrclib(itemId: string): Promise<Lyrics | null> {
+  if (!providerConfig('lrclib').enabled) return null;
+  const r = db.get(
+    `SELECT t.type, t.title, t.duration_ms, t.extra, a.title album, ar.title artist FROM items t
+     LEFT JOIN items a ON a.id = t.parent_id LEFT JOIN items ar ON ar.id = t.grandparent_id WHERE t.id = ?`, itemId);
+  if (!r || r.type !== 'track') return null;
+  const tags = parseJson<{ tags?: Record<string, string | null> }>(r.extra, {}).tags ?? {};
+  const artist = tags.artist || r.artist;
+  if (!r.title || !artist) return null;
+  try {
+    const hit = await lrclibGet({ track: tags.title || r.title, artist, album: tags.album || r.album, durationSec: r.duration_ms ? r.duration_ms / 1000 : null });
+    const text = hit?.synced || hit?.plain;
+    if (!text) return null;
+    const lines = parseLrc(text);
+    return lines.length ? { itemId, synced: lines[0].startMs !== null, source: 'lrclib', lines } : null;
+  } catch (e) {
+    log.debug(`LRCLIB lookup failed: ${(e as Error).message}`);
+    return null;
+  }
 }

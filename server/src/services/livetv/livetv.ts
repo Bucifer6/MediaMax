@@ -18,7 +18,7 @@ import { assertCanStartSession, registerSession, stopSession, type PlaySession }
 import type { AuthContext } from '../auth.js';
 import * as xt from './xtream.js';
 import { parseM3u, m3uCatchupUrl } from './m3u.js';
-import { parseXmltvStream } from './xmltv.js';
+import * as epg from './epg/epg.js';
 
 const log = logger('livetv');
 
@@ -52,11 +52,13 @@ function toChannel(r: Row): Channel {
   return {
     id: r.id, sourceId: r.source_id, number: custom.number ?? r.number ?? null, name: custom.name ?? r.name,
     logoUrl: imageUrl(custom.logo ? registerRemoteImage(custom.logo) : r.logo), categoryId: r.category_id ?? null, categoryName: r.cat_name ?? null,
-    hasArchive: !!r.has_archive, archiveDays: r.archive_days ?? 0, favorite: !!r.fav, hidden: !!r.hidden, epgChannelId: custom.epgChannelId ?? r.epg_channel_id ?? null,
+    hasArchive: !!r.has_archive, archiveDays: r.archive_days ?? 0, favorite: !!r.fav, hidden: !!r.hidden,
+    epgChannelId: r.guide_status != null ? (r.guide_key ? r.guide_channel_id ?? null : null) : custom.epgChannelId ?? r.epg_channel_id ?? null,
+    epgSourceId: r.guide_key ? r.guide_source_id ?? null : null, guideStatus: r.guide_status ?? null, epgOffsetHours: (r.guide_offset ?? 0) / 60,
   };
 }
 
-const effEpg = (r: Row) => parseJson<Record<string, any>>(r.custom, {}).epgChannelId ?? r.epg_channel_id ?? null;
+const effEpg = epg.effEpg;
 
 function attachNowNext(channels: Channel[], rows: Row[]) {
   const ids = [...new Set(rows.map(effEpg).filter(Boolean))] as string[];
@@ -119,6 +121,7 @@ export function createSource(req: CreateLiveSourceRequest): LiveSource {
     import_series: req.importSeries ?? req.type === 'xtream', user_agent: req.userAgent || null, refresh_hours: req.refreshIntervalHours ?? 12, created_at: nowIso(),
   });
   logActivity('livetv.source', `Live TV source "${req.name}" added`);
+  epg.syncLegacyGuides(id);
   void refreshSource(id);
   return toSource(getSourceRow(id));
 }
@@ -139,6 +142,7 @@ export function updateSource(id: string, req: UpdateLiveSourceRequest): LiveSour
   if (req.userAgent !== undefined) patch.user_agent = req.userAgent || null;
   if (req.refreshIntervalHours !== undefined) patch.refresh_hours = Math.max(1, req.refreshIntervalHours);
   db.update('live_sources', id, patch);
+  if (patch.epg_url !== undefined || patch.name !== undefined) epg.syncLegacyGuides(id);
   if (patch.url || patch.username || patch.password || patch.import_vod !== undefined || patch.import_series !== undefined || patch.epg_url !== undefined) void refreshSource(id);
   return toSource(getSourceRow(id));
 }
@@ -146,6 +150,7 @@ export function updateSource(id: string, req: UpdateLiveSourceRequest): LiveSour
 export function deleteSource(id: string) {
   getSourceRow(id);
   db.tx(() => {
+    epg.beforeLiveSourceDelete(id);
     db.run('DELETE FROM programs WHERE source_id = ?', id);
     db.run('DELETE FROM libraries WHERE source_id = ?', id);
     db.run('DELETE FROM live_sources WHERE id = ?', id);
@@ -244,7 +249,6 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
   const src = getSourceRow(id);
   if (!src.enabled) return;
   log.info(`Refreshing live source "${src.name}" (${src.type})`);
-  const epgUrls = splitEpgUrls(src.epg_url);
   let providerEpg: string[] = [];
   try {
     if (!opts.epgOnly) {
@@ -293,10 +297,13 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
         })));
       }
     }
-    // Custom guides first (highest priority), then the provider's own guide fills any gaps.
-    if (opts.epgOnly && !providerEpg.length && src.type === 'xtream') providerEpg = [xt.epgUrl(creds(src))];
-    const allEpg = [...new Set([...epgUrls, ...providerEpg])];
-    if (allEpg.length) await refreshEpg(id, allEpg, src.user_agent);
+    if (!opts.epgOnly) epg.afterChannelSync(id);
+    // The source's EPG-URL guides and the provider's own guide (lowest priority) are guide sources too; see epg/epg.ts.
+    if (opts.epgOnly && !providerEpg.length) {
+      if (src.type === 'xtream') providerEpg = [xt.epgUrl(creds(src))];
+      else providerEpg = splitEpgUrls(parseJson<{ urls?: string[] }>(db.get("SELECT config FROM epg_sources WHERE owner_source_id = ? AND managed_by = 'provider'", id)?.config, {}).urls?.join('\n'));
+    }
+    await epg.refreshLiveSourceGuides(id, [...new Set(providerEpg)], src.user_agent);
     db.run('UPDATE live_sources SET last_refresh_at = ?, last_error = NULL WHERE id = ?', nowIso(), id);
     bus.emit('epg.refreshed', id);
     log.info(`Live source "${src.name}" refreshed`);
@@ -306,88 +313,6 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
     logActivity('livetv.source', `Refresh of "${src.name}" failed: ${msg}`, { severity: 'error' });
     log.warn(`Refresh of "${src.name}" failed: ${msg}`);
   }
-}
-
-const redactUrl = (u: string) => u.replace(/(password|pass|token|key)=[^&]*/gi, '$1=***');
-
-async function refreshEpg(sourceId: string, urls: string[], ua: string | null) {
-  // Map XMLTV channel ids (and display names) onto our channels' epg ids.
-  const chans = db.all<{ epg_channel_id: string | null; name: string; custom: string }>('SELECT epg_channel_id, name, custom FROM channels WHERE source_id = ?', sourceId);
-  const wanted = new Set<string>();
-  for (const c of chans) {
-    const e = effEpg(c);
-    if (e) wanted.add(e);
-  }
-  const nameToEpg = new Map<string, string>();
-  for (const c of chans) if (!effEpg(c)) nameToEpg.set(c.name.toLowerCase(), '');
-  const aliases = new Map<string, string>(); // xmltv id → our epg id
-  const keepFrom = new Date(Date.now() - 8 * 86400000).toISOString();
-  const keepTo = new Date(Date.now() + 14 * 86400000).toISOString();
-  const batch: Row[] = [];
-  const flush = () => {
-    if (!batch.length) return;
-    db.tx(() => {
-      for (const p of batch) db.upsert('programs', p);
-    });
-    batch.length = 0;
-  };
-  // Parse every guide before replacing the old programmes so a failing guide never empties the EPG.
-  db.run('DELETE FROM programs WHERE source_id = ? AND id LIKE ?', sourceId, 'tmp:%');
-  const covered = new Set<string>(); // channels already filled by a higher-priority guide
-  let ok = 0;
-  let totalProgrammes = 0;
-  for (const url of urls) {
-  const filled = new Set<string>();
-  let res: { channels: number; programmes: number };
-  try {
-  res = await parseXmltvStream(url, {
-    userAgent: ua,
-    onChannel: (c) => {
-      if (wanted.has(c.id)) return;
-      // Match channels whose epg id equals a display-name (common for M3U tvg-name).
-      for (const n of c.names) {
-        if (wanted.has(n)) aliases.set(c.id, n);
-        const lower = n.toLowerCase();
-        if (nameToEpg.has(lower) && !nameToEpg.get(lower)) nameToEpg.set(lower, c.id);
-      }
-    },
-    onProgramme: (p) => {
-      const target = wanted.has(p.channel) ? p.channel : aliases.get(p.channel) ?? ([...nameToEpg.values()].includes(p.channel) ? p.channel : null);
-      if (!target || covered.has(target) || p.end < keepFrom || p.start > keepTo) return;
-      filled.add(target);
-      batch.push({
-        id: `tmp:${stableId(sourceId, target, p.start)}`, source_id: sourceId, epg_channel_id: `tmp:${target}`, title: p.title, subtitle: p.subtitle,
-        description: p.description, start: p.start, end: p.end, category: p.category, icon: p.icon, episode_num: p.episodeNum, is_new: p.isNew,
-      });
-      if (batch.length >= 2000) flush();
-    },
-  });
-  flush();
-  } catch (e) {
-    batch.length = 0;
-    log.warn(`EPG ${redactUrl(url)} failed for source ${sourceId}: ${(e as Error).message}`);
-    continue;
-  }
-  ok++;
-  totalProgrammes += res.programmes;
-  for (const t of filled) covered.add(t);
-  log.info(`EPG ${redactUrl(url)}: ${res.channels} channels, ${res.programmes} programmes parsed, ${filled.size} channels matched`);
-  }
-  if (!ok) {
-    db.run('DELETE FROM programs WHERE source_id = ? AND id LIKE ?', sourceId, 'tmp:%');
-    throw new Error(urls.length > 1 ? 'All EPG downloads failed' : 'EPG download failed');
-  }
-  db.tx(() => {
-    db.run("DELETE FROM programs WHERE source_id = ? AND id NOT LIKE 'tmp:%'", sourceId);
-    db.run("UPDATE programs SET id = substr(id, 5), epg_channel_id = substr(epg_channel_id, 5) WHERE source_id = ? AND id LIKE 'tmp:%'", sourceId);
-  });
-  // Auto-assign epg ids for channels matched by display name.
-  for (const c of db.all('SELECT id, name, custom, epg_channel_id FROM channels WHERE source_id = ?', sourceId)) {
-    if (effEpg(c)) continue;
-    const m = nameToEpg.get(c.name.toLowerCase());
-    if (m) db.run('UPDATE channels SET epg_channel_id = ? WHERE id = ?', m, c.id);
-  }
-  log.info(`EPG for source ${sourceId}: ${ok}/${urls.length} guides, ${totalProgrammes} programmes, ${covered.size} channels covered`);
 }
 
 /* ---------------------------- VOD import ---------------------------- */
@@ -598,6 +523,10 @@ export function listChannels(user: User, q: ChannelQuery & { favorite?: boolean 
   const rows = db.all(`${CHANNEL_SELECT} WHERE ${w.sql} ORDER BY COALESCE(json_extract(c.custom,'$.number'), c.number), c.sort_order LIMIT ? OFFSET ?`, user.id, ...w.params, limit, offset);
   const items = rows.map(toChannel);
   if (String(q.withEpg) !== 'false') attachNowNext(items, rows);
+  if (user.isAdmin && String(q.guideStatus) === 'true') {
+    const has = epg.channelsWithGuide(items.map((c) => c.id));
+    for (const c of items) c.hasGuide = has.has(c.id);
+  }
   return { items, total, limit, offset };
 }
 
@@ -627,7 +556,13 @@ export function updateChannel(id: string, patch: { number?: number; name?: strin
   if (patch.name !== undefined) custom.name = patch.name || undefined;
   if (patch.epgChannelId !== undefined) custom.epgChannelId = patch.epgChannelId || undefined;
   if (patch.logoUrl !== undefined) custom.logo = patch.logoUrl || undefined;
+  if (patch.epgChannelId !== undefined) {
+    // A bare guide id (older API): resolved against the guides by priority. PUT /livetv/channels/:id/match picks a guide too.
+    delete custom.epgSourceId;
+    delete custom.epgNone;
+  }
   db.run('UPDATE channels SET custom = ?, hidden = ? WHERE id = ?', JSON.stringify(custom), patch.hidden ?? r.hidden, id);
+  if (patch.epgChannelId !== undefined) epg.resolveMatches([id]);
 }
 
 export function setChannelFavorite(user: User, id: string, fav: boolean) {
@@ -682,7 +617,7 @@ export function searchLive(user: User, q: string, limit = 20): { channels: Chann
   const channels = listChannels(user, { search: q, limit }).items;
   const now = nowIso();
   const rows = db.all(
-    `SELECT p.*, c.id cid FROM programs p JOIN channels c ON COALESCE(json_extract(c.custom,'$.epgChannelId'), c.epg_channel_id) = p.epg_channel_id JOIN live_sources s ON s.id = c.source_id
+    `SELECT p.*, c.id cid FROM programs p JOIN channels c ON (${epg.EFF_EPG_SQL}) = p.epg_channel_id JOIN live_sources s ON s.id = c.source_id
      WHERE s.enabled = 1 AND c.hidden = 0 AND COALESCE((SELECT hidden FROM channel_categories x WHERE x.id = c.category_id), 0) = 0 AND p.title LIKE ? AND p.end > ? GROUP BY p.id ORDER BY p.start LIMIT ?`, `%${q}%`, now, limit);
   return { channels, programs: rows.map((r) => toProgram(r, r.cid)) };
 }
@@ -837,6 +772,7 @@ export async function refreshDueSources() {
     const hours = Math.min(s.refresh_hours || 12, epgHours || 12);
     if (Date.now() - last > hours * 3600000) await refreshSource(s.id);
   }
+  await epg.refreshDueGuides().catch((e) => log.warn(`Guide refresh failed: ${(e as Error).message}`));
 }
 
 bus.on('iptv.refreshLibrary', (sourceId: string) => {
@@ -846,5 +782,7 @@ bus.on('iptv.refreshLibrary', (sourceId: string) => {
 export function pruneOldPrograms() {
   db.run('DELETE FROM programs WHERE end < ?', new Date(Date.now() - 8 * 86400000).toISOString());
 }
+
+epg.initEpg();
 
 export { stopSession };

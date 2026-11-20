@@ -9,8 +9,10 @@ import { touchSession, getSession } from '../services/playback.js';
 import { forbidden, notFound } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
 import { getSettings } from '../services/settings.js';
+import epgRoutes from './epg.js';
 
 export default async function liveRoutes(app: FastifyInstance) {
+  await app.register(epgRoutes);
   /* ------------------------------ sources --------------------------- */
   app.get('/livetv/sources', async (req) => {
     requireAdmin(req);
@@ -48,7 +50,7 @@ export default async function liveRoutes(app: FastifyInstance) {
   });
   app.get<{ Querystring: ChannelQuery & Record<string, string> }>('/livetv/channels', async (req) => {
     const q = req.query;
-    return live.listChannels(requireUser(req).user, { ...q, limit: toInt(q.limit, 200, 1, 2000), offset: toInt(q.offset, 0, 0), favorite: q.favorite as any, withEpg: q.withEpg === undefined ? true : String(q.withEpg) !== 'false' });
+    return live.listChannels(requireUser(req).user, { ...q, limit: toInt(q.limit, 200, 1, 2000), offset: toInt(q.offset, 0, 0), favorite: q.favorite as any, withEpg: q.withEpg === undefined ? true : String(q.withEpg) !== 'false', guideStatus: String(q.guideStatus) === 'true' });
   });
   app.get<{ Params: { id: string } }>('/livetv/channels/:id', async (req) => live.getChannel(requireUser(req).user, req.params.id));
   app.patch<{ Params: { id: string }; Body: { number?: number; name?: string; hidden?: boolean; epgChannelId?: string; logoUrl?: string } }>('/livetv/channels/:id', async (req) => {

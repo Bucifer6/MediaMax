@@ -52,7 +52,7 @@ export async function fetchHdhrGuide(auth: string, hours = 24): Promise<HdhrGuid
     if (!res.ok) throw new Error(`HDHomeRun guide returned HTTP ${res.status}`);
     const page = (await res.json()) as HdhrGuideChannel[] | null;
     if (!Array.isArray(page) || !page.length) break;
-    let maxEnd = start ?? 0;
+    let maxEnd: number = start ?? 0;
     for (const ch of page) {
       const cur = byNum.get(ch.GuideNumber) ?? { ...ch, Guide: [] };
       const seen = new Set(cur.Guide!.map((p) => p.StartTime));

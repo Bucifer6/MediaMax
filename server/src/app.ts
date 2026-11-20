@@ -23,6 +23,7 @@ import subsonicRoutes from './routes/subsonic.js';
 import djRoutes from './routes/dj.js';
 import securityRoutes from './routes/security.js';
 import discoveryRoutes from './routes/discovery.js';
+import metadataRoutes from './routes/metadata.js';
 
 const log = logger('http');
 
@@ -75,6 +76,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register(djRoutes);
     await api.register(securityRoutes);
     await api.register(discoveryRoutes);
+    await api.register(metadataRoutes);
     await api.register((await import('./routes/arr.js')).default);
   }, { prefix: '/api/v1' });
 

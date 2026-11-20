@@ -13,6 +13,7 @@ import { getSettings } from './settings.js';
 import { events, bus } from './events.js';
 import { logActivity } from './activity.js';
 import { accessibleChannelRow, channelStreamUrl, channelUserAgent, trackUpstream } from './livetv/livetv.js';
+import { effEpg } from './livetv/epg/epg.js';
 import { scanLibrary } from './scanner.js';
 import { homeHooks, getItem } from './items.js';
 import { getBranding } from './branding.js';
@@ -339,7 +340,7 @@ export function applyRules() {
     const chans = rule.channel_id ? db.all('SELECT * FROM channels WHERE id = ?', rule.channel_id) : db.all('SELECT * FROM channels WHERE hidden = 0');
     const epgToChannel = new Map<string, Row>();
     for (const c of chans) {
-      const e = parseJson<any>(c.custom, {}).epgChannelId ?? c.epg_channel_id;
+      const e = effEpg(c);
       if (e && !epgToChannel.has(e)) epgToChannel.set(e, c);
     }
     if (!epgToChannel.size) continue;

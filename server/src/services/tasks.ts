@@ -81,12 +81,13 @@ const DEFS: TaskDef[] = [
     },
   },
   {
-    id: 'refresh-metadata', name: 'Refresh all metadata', description: 'Re-fetch posters, artwork, cast and descriptions from TMDB for every movie and show.',
+    id: 'refresh-metadata', name: 'Refresh all metadata',
+    description: 'Re-fetch metadata and artwork for every movie, show, artist, album and audiobook from TMDB and the providers enabled under Server settings → Metadata.',
     interval: () => null,
     run: async (progress) => {
-      const libs = db.all<{ id: string }>("SELECT id FROM libraries WHERE type IN ('movies','shows') AND fetch_metadata = 1");
+      const libs = db.all<{ id: string }>("SELECT id FROM libraries WHERE type IN ('movies','shows','music','audiobooks') AND fetch_metadata = 1");
       for (let i = 0; i < libs.length; i++) {
-        await enrichLibrary(libs[i].id, { refresh: true });
+        await enrichLibrary(libs[i].id, { refresh: true, onProgress: (d, t) => progress(Math.min(99, Math.round(((i + d / Math.max(t, 1)) / libs.length) * 100))) });
         progress(Math.round(((i + 1) / libs.length) * 100));
       }
     },

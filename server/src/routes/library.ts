@@ -130,8 +130,12 @@ export default async function libraryRoutes(app: FastifyInstance) {
 
   app.patch<{ Params: { id: string }; Body: UpdateItemRequest }>('/items/:id', async (req) => {
     const a = requireAdmin(req);
+    const before = req.body?.episodeOrder !== undefined ? getItem(a.user, req.params.id, false).episodeOrder : undefined;
     updateItem(req.params.id, req.body ?? {});
-    return getItem(a.user, req.params.id, true);
+    const item = getItem(a.user, req.params.id, true);
+    // A new episode ordering re-matches the show's episodes (TheTVDB) in the background.
+    if (before !== undefined && item.episodeOrder !== before) void refreshItem(req.params.id).catch(() => undefined);
+    return item;
   });
 
   app.post<{ Params: { id: string } }>('/items/:id/refresh', async (req) => {
