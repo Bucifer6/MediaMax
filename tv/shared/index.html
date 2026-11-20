@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=1920, height=1080" />
 <title>MediaMax</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #0b0d12; color: #f5f6f8; font: 28px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  html, body { margin: 0; height: 100%; background: #0A0F22; color: #F2F5FF; font: 28px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   main { height: 100%; display: grid; place-items: center; align-content: center; gap: 28px; text-align: center; padding: 0 10vw; }
   h1 { margin: 0; font-size: 64px; letter-spacing: -0.02em; }
-  p { margin: 0; color: #a3a8b5; max-width: 34em; }
-  input { width: 900px; max-width: 80vw; font: inherit; padding: 18px 24px; border-radius: 14px; border: 3px solid #2a2f3a; background: #151922; color: inherit; }
-  input:focus { outline: none; border-color: #f5b301; }
-  button { font: inherit; font-weight: 700; padding: 16px 48px; border-radius: 14px; border: 0; background: #f5b301; color: #111; }
+  p { margin: 0; color: #9AA6CC; max-width: 34em; }
+  .logo { display: block; height: 120px; width: auto; }
+  input { width: 900px; max-width: 80vw; font: inherit; padding: 18px 24px; border-radius: 14px; border: 3px solid #27315C; background: #121936; color: inherit; }
+  input:focus { outline: none; border-color: #1FB6F5; }
+  button { font: inherit; font-weight: 700; padding: 16px 48px; border-radius: 14px; border: 0; background: #1FB6F5; color: #04101F; }
   button:focus { outline: 5px solid #fff; outline-offset: 5px; }
   .err { color: #ff8a8a; min-height: 1.4em; }
   .hint { font-size: 22px; }
@@ -19,7 +20,8 @@
 </head>
 <body>
 <main>
-  <h1>MediaMax</h1>
+  <!-- tv/build.mjs swaps this for the outlined MediaMax wordmark (logo.svg), or keeps the text for a white-label --name. -->
+  <h1 id="brand">MediaMax</h1>
   <p>Enter the address of your MediaMax server. You'll find it under Settings → Devices in the web app, for example <b>http://192.168.1.20:8484</b>.</p>
   <input id="url" type="url" inputmode="url" placeholder="http://192.168.1.20:8484" autocomplete="off" spellcheck="false" />
   <button id="go">Connect</button>

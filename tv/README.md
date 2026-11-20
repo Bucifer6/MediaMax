@@ -16,7 +16,7 @@ node tv/build.mjs                                   # → tv/dist/tizen and tv/d
 node tv/build.mjs --name "Smith Cinema" --icon brand/icon.png   # white-label
 ```
 
-The script needs `ffmpeg` (already required by the server) to render the icons.
+Without options the wrappers use the stock MediaMax artwork in `tv/shared/brand/` (app icon at 512/130/80 px and the 1920×1080 splash, rendered by `node scripts/brand-export.mjs`) and show the outlined MediaMax wordmark on the start screen. With `--icon`, the script letterboxes your square icon with `ffmpeg` (already required by the server); with `--name`, the start screen shows your name as text.
 
 ## Samsung Tizen
 

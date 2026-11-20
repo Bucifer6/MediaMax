@@ -8,6 +8,7 @@ import { useQuery } from '@/api/useQuery';
 import { Focusable } from '@/components/Focusable';
 import { HeroCarousel, TVSpotlightBackground, TVSpotlightInfo } from '@/components/Hero';
 import { Icon } from '@/components/Icon';
+import { BrandWordmark } from '@/components/BrandWordmark';
 import { Img } from '@/components/Img';
 import type { CardVariant } from '@/components/MediaCard';
 import { ChannelRow, ItemRow } from '@/components/Row';
@@ -114,7 +115,7 @@ function PhoneHome({ rows, refreshing, onRefresh }: { rows: HomeRow[]; refreshin
       {/* Floating translucent header */}
       <LinearGradient colors={[t.alpha(t.colors.background, 0.85), 'transparent']} pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top + 6, paddingBottom: 18, paddingHorizontal: t.space.gutter, flexDirection: 'row', alignItems: 'center' }}>
         <View style={{ flex: 1 }}>
-          {logo ? <Img path={logo} width={160} contentFit="contain" style={{ width: 140, height: 34 }} /> : <T variant="heading">{branding?.serverName ?? 'MediaMax'}</T>}
+          {logo ? <Img path={logo} width={160} contentFit="contain" style={{ width: 140, height: 34 }} /> : <BrandWordmark name={branding?.serverName} width={140} textVariant="heading" />}
         </View>
         <Focusable onPress={() => router.push('/(tabs)/search')} style={{ padding: 8 }} accessibilityLabel="Search">
           <Icon name="search" />

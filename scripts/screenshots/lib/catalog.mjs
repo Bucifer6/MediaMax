@@ -292,4 +292,4 @@ export const USERS = {
 };
 
 /** Twelve themes for the themes gallery. */
-export const THEMES = ['midnight', 'cinema', 'nordic', 'velvet', 'sunset', 'aurora', 'noir', 'arcade', 'paper', 'sakura', 'kids', 'contrast'];
+export const THEMES = ['mediamax', 'cinema', 'nordic', 'velvet', 'sunset', 'aurora', 'noir', 'arcade', 'paper', 'sakura', 'kids', 'contrast'];

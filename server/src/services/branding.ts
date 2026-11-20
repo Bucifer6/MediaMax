@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Branding, BrandingAssetKind, HomeRowConfig, Theme } from '@mediamax/shared';
 import { getKv, setKv, getSettings } from './settings.js';
-import { BUILTIN_THEMES } from './themes.js';
+import { BUILTIN_THEMES, DEFAULT_THEME_ID } from './themes.js';
+import { db } from '../db.js';
 import { config } from '../config.js';
 import { events } from './events.js';
 import { badRequest, notFound } from '../util/errors.js';
@@ -41,10 +42,10 @@ const DEFAULTS: StoredBranding = {
   loginMessage: '',
   footerText: '',
   supportUrl: null,
-  splash: { backgroundColor: '#0b0c10', logoUrl: null },
+  splash: { backgroundColor: '#0A0F22', logoUrl: null },
   tvBannerUrl: null,
   topShelfUrl: null,
-  defaultThemeId: 'midnight',
+  defaultThemeId: DEFAULT_THEME_ID,
   customThemes: [],
   allowUserThemes: true,
   homeRows: DEFAULT_HOME_ROWS,
@@ -57,7 +58,24 @@ const DEFAULT_FEATURES: Branding['features'] = {
   liveTv: true, iptvVod: true, music: true, photos: true, downloads: true, syncPlay: true, dvr: true, profilePicker: true, linkCodes: true, requests: true,
 };
 
+/**
+ * The MediaMax theme became the default in branding v2. Installs that were already set up keep the
+ * theme they had (Midnight, the old default) unless an admin had picked one; new installs get MediaMax.
+ * Runs once per database: the marker is written on the first look.
+ */
+let defaultsChecked = false;
+function keepLegacyDefaultTheme() {
+  if (defaultsChecked) return;
+  defaultsChecked = true;
+  if (getKv<number>('branding.defaultsVersion', 0) >= 2) return;
+  const s = getKv<Partial<StoredBranding> | null>('branding', null);
+  const hasAccounts = !!db.get('SELECT 1 AS x FROM users LIMIT 1');
+  if (hasAccounts && !s?.defaultThemeId) setKv('branding', { ...(s ?? {}), defaultThemeId: 'midnight' });
+  setKv('branding.defaultsVersion', 2);
+}
+
 function stored(): StoredBranding {
+  keepLegacyDefaultTheme();
   const s = getKv<Partial<StoredBranding>>('branding', {});
   return { ...DEFAULTS, ...s, splash: { ...DEFAULTS.splash, ...(s.splash ?? {}) } };
 }
@@ -70,7 +88,7 @@ export function getBranding(): Branding {
     ...rest,
     serverName: s.serverName || getSettings().serverName,
     themes,
-    defaultThemeId: themes.some((t) => t.id === s.defaultThemeId) ? s.defaultThemeId : 'midnight',
+    defaultThemeId: themes.some((t) => t.id === s.defaultThemeId) ? s.defaultThemeId : DEFAULT_THEME_ID,
     features: { ...DEFAULT_FEATURES, ...s.features },
   };
 }
@@ -140,7 +158,7 @@ export function upsertTheme(theme: Theme, id?: string): Branding {
 export function deleteTheme(id: string): Branding {
   const cur = stored();
   if (!cur.customThemes.some((t) => t.id === id)) throw notFound('Theme not found');
-  return save({ ...cur, customThemes: cur.customThemes.filter((t) => t.id !== id), defaultThemeId: cur.defaultThemeId === id ? 'midnight' : cur.defaultThemeId });
+  return save({ ...cur, customThemes: cur.customThemes.filter((t) => t.id !== id), defaultThemeId: cur.defaultThemeId === id ? DEFAULT_THEME_ID : cur.defaultThemeId });
 }
 
 const ASSET_FIELD: Record<BrandingAssetKind, (b: StoredBranding, url: string | null) => void> = {
@@ -183,4 +201,32 @@ export function brandingCss(): string {
   const vars = Object.entries(t.colors).map(([k, v]) => `  --mm-${k.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase())}: ${v};`);
   vars.push(`  --mm-radius: ${t.radius}px;`, `  --mm-font: ${t.fontFamily};`);
   return `${t.fontUrl ? `@import url('${t.fontUrl}');\n` : ''}:root {\n${vars.join('\n')}\n}\n${b.customCss ?? ''}`;
+}
+
+/**
+ * PWA manifest that follows the branding: the server's name and theme colours, and the uploaded app
+ * icon when there is one (else the stock MediaMax icons in the web client, including a maskable one).
+ */
+export function webManifest() {
+  const b = getBranding();
+  const t = b.themes.find((x) => x.id === b.defaultThemeId) ?? b.themes[0];
+  const icons = b.appIconUrl
+    ? [{ src: b.appIconUrl, sizes: '512x512 1024x1024', purpose: 'any' }]
+    : [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        { src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+      ];
+  return {
+    name: b.serverName || 'MediaMax',
+    short_name: (b.serverName || 'MediaMax').slice(0, 12),
+    description: b.tagline,
+    start_url: '/',
+    scope: '/',
+    display: 'standalone',
+    background_color: b.splash.backgroundColor || t.colors.background,
+    theme_color: t.colors.background,
+    icons,
+  };
 }
