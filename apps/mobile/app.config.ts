@@ -32,6 +32,11 @@ interface BrandFile {
   primaryColor?: string;
   version?: string;
   easProjectId?: string;
+  /**
+   * iOS: Siri "Play … in MediaMax" (INPlayMediaIntent + com.apple.developer.siri entitlement).
+   * Needs the Siri capability on the App ID; also enabled by MEDIAMAX_SIRI=1. See README › Siri.
+   */
+  siri?: boolean;
 }
 
 const isTV = process.env.EXPO_TV === '1' || process.env.EXPO_TV === 'true';
@@ -150,7 +155,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // CarPlay (audio entitlement + CarPlay scene) and Android Auto (Media3 MediaLibraryService), backed
       // by the local module in modules/mediamax-car. On TV builds the plugin only removes the module
       // from Android autolinking; the iOS pod is iOS-only, so tvOS skips it. See README › CarPlay & Android Auto.
-      ['./plugins/withMediaMaxCar', { isTV }],
+      // Siri media intents are opt-in (`siri` in brand.json or MEDIAMAX_SIRI=1): the entitlement needs
+      // the Siri capability on the App ID. Simulator CI builds are unsigned, so either way compiles.
+      ['./plugins/withMediaMaxCar', { isTV, siri: !isTV && (brand.siri === true || process.env.MEDIAMAX_SIRI === '1') }],
       [
         '@react-native-tvos/config-tv',
         {

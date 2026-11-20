@@ -1,13 +1,19 @@
 // @ts-check
 /**
- * Expo config plugin for CarPlay (iOS) and Android Auto, backed by the local Expo module in
- * modules/mediamax-car. Used from app.config.ts as ['./plugins/withMediaMaxCar', { isTV }].
+ * Expo config plugin for CarPlay (iOS), Siri and Android Auto, backed by the local Expo module in
+ * modules/mediamax-car. Used from app.config.ts as ['./plugins/withMediaMaxCar', { isTV, siri }].
  *
  * iOS (phones only):
  *   - entitlement com.apple.developer.carplay-audio (Apple must grant it to the team first, see README)
  *   - UIApplicationSceneManifest: a CarPlay template scene (MediaMaxCarSceneDelegate) and the phone
  *     scene switched to MediaMaxPhoneSceneDelegate (an ExpoAppSceneDelegate subclass that can adopt the
  *     React Native window after a CarPlay-first launch)
+ *   - AppDelegate.swift: `application(_:handlerFor:)` handing Siri's INPlayMediaIntent to the module
+ *     (always added, so CI compiles it; inert until the Info.plist lists the intent)
+ *   - `siri: true` only (MEDIAMAX_SIRI=1): INIntentsSupported / INSupportedMediaCategories /
+ *     NSSiriUsageDescription and the com.apple.developer.siri entitlement, which turn on
+ *     "Play … in MediaMax". Off by default: the entitlement needs the Siri capability on the App ID
+ *     (a paid Apple developer account), see README › Siri.
  *
  * Android (phones only):
  *   - the Media3 MediaLibraryService (tv.mediamax.car.MediaMaxCarService) with the
@@ -15,8 +21,8 @@
  *   - the artwork ContentProvider (Android Auto only loads content:// artwork)
  *   - com.google.android.gms.car.application meta-data + res/xml/automotive_app_desc.xml (<uses name="media"/>)
  *
- * TV builds (isTV): nothing is added, and the Android project excludes the module from Expo
- * autolinking (the iOS pod is iOS-only, so tvOS targets skip it on their own).
+ * TV builds (isTV): nothing is added (no Siri either), and the Android project excludes the module
+ * from Expo autolinking (the iOS pod is iOS-only, so tvOS targets skip it on their own).
  */
 const fs = require('fs');
 const path = require('path');
@@ -25,6 +31,7 @@ const {
   WarningAggregator,
   createRunOncePlugin,
   withAndroidManifest,
+  withAppDelegate,
   withDangerousMod,
   withEntitlementsPlist,
   withInfoPlist,
@@ -39,7 +46,7 @@ const PROVIDER_CLASS = 'tv.mediamax.car.ArtworkProvider';
 const AUTOMOTIVE_META = 'com.google.android.gms.car.application';
 const AUTOMOTIVE_XML = 'automotive_app_desc';
 
-/** @typedef {import('expo/config-plugins').ConfigPlugin<{ isTV?: boolean } | void>} Plugin */
+/** @typedef {import('expo/config-plugins').ConfigPlugin<{ isTV?: boolean; siri?: boolean } | void>} Plugin */
 
 // ----------------------------------------------------------------------------- iOS
 
@@ -92,6 +99,73 @@ const withCarPlay = (config) => {
   ]);
   return config;
 };
+
+// ---------------------------------------------------------------------------- Siri
+
+const SIRI_TAG = 'mediamax-siri';
+const SIRI_METHOD = [
+  `  // @generated begin ${SIRI_TAG}: Siri "Play … in MediaMax" (modules/mediamax-car/ios/SiriIntents.swift)`,
+  '  @objc(application:handlerForIntent:)',
+  '  public func application(_ application: UIApplication, handlerFor intent: INIntent) -> Any? {',
+  '    MediaMaxSiri.handler(for: intent)',
+  '  }',
+  `  // @generated end ${SIRI_TAG}`,
+].join('\n');
+
+/**
+ * Adds the in-app intent handler to AppDelegate.swift (idempotent). Returns the source unchanged when
+ * the class cannot be found.
+ * @param {string} src
+ */
+function addSiriHandler(src) {
+  if (src.includes(`@generated begin ${SIRI_TAG}`)) return src;
+  const cls = /^[ \t]*(?:@\w+[ \t]+)*(?:public[ \t]+|open[ \t]+|final[ \t]+)*class[ \t]+AppDelegate\b[^{]*\{[ \t]*$/m.exec(src);
+  if (!cls) return src;
+  const at = cls.index + cls[0].length;
+  let out = `${src.slice(0, at)}\n${SIRI_METHOD}\n${src.slice(at)}`;
+  for (const mod of ['MediaMaxCar', 'Intents']) {
+    if (!new RegExp(`^import ${mod}$`, 'm').test(out)) out = out.replace(/^(import [^\n]+\n)/m, `$1import ${mod}\n`);
+  }
+  return out;
+}
+
+/** @type {import('expo/config-plugins').ConfigPlugin<{ enabled: boolean }>} */
+const withSiri = (config, { enabled }) => {
+  config = withAppDelegate(config, (cfg) => {
+    if (cfg.modResults.language !== 'swift') {
+      WarningAggregator.addWarningIOS('withMediaMaxCar', 'AppDelegate is not Swift; Siri "Play … in MediaMax" is not wired up.');
+      return cfg;
+    }
+    const next = addSiriHandler(cfg.modResults.contents);
+    if (next === cfg.modResults.contents && !next.includes(`@generated begin ${SIRI_TAG}`)) {
+      WarningAggregator.addWarningIOS('withMediaMaxCar', 'Could not find `class AppDelegate` in AppDelegate.swift; Siri "Play … in MediaMax" is not wired up.');
+    }
+    cfg.modResults.contents = next;
+    return cfg;
+  });
+  if (!enabled) return config;
+  config = withEntitlementsPlist(config, (cfg) => {
+    cfg.modResults['com.apple.developer.siri'] = true;
+    return cfg;
+  });
+  config = withInfoPlist(config, (cfg) => {
+    cfg.modResults = applySiriInfoPlist(cfg.modResults, cfg.name ?? 'MediaMax');
+    return cfg;
+  });
+  return config;
+};
+
+/**
+ * @param {Record<string, any>} infoPlist
+ * @param {string} appName
+ */
+function applySiriInfoPlist(infoPlist, appName) {
+  const intents = Array.isArray(infoPlist.INIntentsSupported) ? infoPlist.INIntentsSupported : [];
+  if (!intents.includes('INPlayMediaIntent')) infoPlist.INIntentsSupported = [...intents, 'INPlayMediaIntent'];
+  infoPlist.INSupportedMediaCategories = ['INMediaCategoryMusic', 'INMediaCategoryAudiobooks', 'INMediaCategoryPodcasts'];
+  infoPlist.NSSiriUsageDescription = infoPlist.NSSiriUsageDescription ?? `Siri can play music, audiobooks and podcasts from your server in ${appName}.`;
+  return infoPlist;
+}
 
 // ------------------------------------------------------------------------- Android
 
@@ -180,9 +254,12 @@ const withTvExclusion = (config) =>
 const withMediaMaxCar = (config, props) => {
   if (props && props.isTV) return withTvExclusion(config);
   config = withCarPlay(config);
+  config = withSiri(config, { enabled: !!(props && props.siri) });
   config = withAndroidAuto(config);
   return config;
 };
 
 module.exports = createRunOncePlugin(withMediaMaxCar, 'withMediaMaxCar', '1.0.0');
 module.exports.applySceneManifest = applySceneManifest;
+module.exports.addSiriHandler = addSiriHandler;
+module.exports.applySiriInfoPlist = applySiriInfoPlist;

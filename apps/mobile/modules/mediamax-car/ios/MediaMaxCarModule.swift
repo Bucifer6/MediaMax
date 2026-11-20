@@ -1,7 +1,8 @@
 import ExpoModulesCore
 
-/// JS bridge for CarPlay. See `CarPlayController` for the template logic and
-/// `CarPlaySceneDelegate.swift` for the scene wiring added to Info.plist by plugins/withMediaMaxCar.js.
+/// JS bridge for CarPlay and Siri. See `CarPlayController` for the template logic,
+/// `CarPlaySceneDelegate.swift` for the scene wiring added to Info.plist by plugins/withMediaMaxCar.js
+/// and `SiriIntents.swift` for "Play … in MediaMax".
 public class MediaMaxCarModule: Module {
   public func definition() -> ModuleDefinition {
     Name("MediaMaxCar")
@@ -42,9 +43,10 @@ public class MediaMaxCarModule: Module {
     }
 
     // Diagnostics. Also keeps the scene delegate classes (instantiated by UIKit from their Info.plist
-    // names, never referenced in code) linked into the static framework.
+    // names, never referenced in code) and the Siri handler (looked up by name from AppDelegate)
+    // linked into the static framework.
     Function("sceneDelegateClasses") { () -> [String] in
-      [NSStringFromClass(CarPlaySceneDelegate.self), NSStringFromClass(PhoneSceneDelegate.self)]
+      [NSStringFromClass(CarPlaySceneDelegate.self), NSStringFromClass(PhoneSceneDelegate.self), NSStringFromClass(MediaMaxSiri.self)]
     }
   }
 }

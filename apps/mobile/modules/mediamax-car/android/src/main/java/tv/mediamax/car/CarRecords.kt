@@ -31,6 +31,8 @@ class NowPlayingRecord : Record {
   @Field val playing: Boolean = false
   @Field val buffering: Boolean = false
   @Field val spoken: Boolean = false
+  /** Music longer than LONG_TRACK_MS (src/car/policy.ts): ±15/30 s custom actions next to prev/next. */
+  @Field val longTrack: Boolean = false
   @Field val rate: Double = 1.0
   @Field val hasNext: Boolean = false
   @Field val hasPrevious: Boolean = false

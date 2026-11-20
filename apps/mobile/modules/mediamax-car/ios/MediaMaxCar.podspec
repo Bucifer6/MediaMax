@@ -18,7 +18,8 @@ Pod::Spec.new do |s|
   # ExpoAppSceneDelegate / ExpoReactNativeFactoryProvider: the scene delegates start or adopt the
   # React Native window (CarPlay-first cold launch).
   s.dependency 'Expo'
-  s.frameworks = 'CarPlay', 'MediaPlayer'
+  # Intents: Siri "Play … in MediaMax" (INPlayMediaIntent, SiriIntents.swift).
+  s.frameworks = 'CarPlay', 'MediaPlayer', 'Intents'
 
   # Swift/Objective-C compatibility
   s.pod_target_xcconfig = {

@@ -14,6 +14,7 @@ import { T } from '@/components/Text';
 import { BookmarksPanel } from '@/player/Bookmarks';
 import { LyricsView, useLyrics } from '@/player/Lyrics';
 import { Scrubber } from '@/player/Scrubber';
+import { SKIP_BACK_MS, SKIP_FORWARD_MS } from '@/car/policy';
 import { SPEEDS, useMusic, type SleepOption } from '@/state/music';
 import { useRemote } from '@/state/remote';
 import { useSession } from '@/state/session';
@@ -38,6 +39,8 @@ export default function NowPlaying() {
   const { status } = useSession();
   const cur = m.current;
   const isTrack = cur?.type === 'track';
+  /** ±15/30 s buttons: spoken audio, and music longer than LONG_TRACK_MS (mixes, live sets…). */
+  const intervalSkip = m.spoken || m.longTrack;
   const lyrics = useLyrics(isTrack && panel === 'lyrics' ? cur.id : null);
   // A panel that no longer applies (track ↔ episode) falls back to the queue.
   useEffect(() => {
@@ -45,8 +48,8 @@ export default function NowPlaying() {
   }, [panel, isTrack, m.chapters.length, m.spoken]);
   useTVRemote((e) => {
     if (e.eventType === 'playPause') m.toggle();
-    if (e.eventType === 'fastForward') (m.spoken ? m.skip(30000) : m.next());
-    if (e.eventType === 'rewind') (m.spoken ? m.skip(-15000) : m.previous());
+    if (e.eventType === 'fastForward') (m.spoken || m.longTrack ? m.skip(SKIP_FORWARD_MS) : m.next());
+    if (e.eventType === 'rewind') (m.spoken || m.longTrack ? m.skip(-SKIP_BACK_MS) : m.previous());
   });
   if (!cur) return <View style={{ flex: 1, backgroundColor: t.colors.background }}><EmptyState icon="musical-notes-outline" title="Nothing playing" action="Close" onAction={() => router.back()} /></View>;
 
@@ -67,10 +70,10 @@ export default function NowPlaying() {
       </View>
       <Scrubber positionMs={m.positionMs} durationMs={m.durationMs} onSeek={m.seek} />
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        {m.spoken ? (
-          <Focusable onPress={() => m.skip(-15000)} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel="Back 15 seconds">
+        {intervalSkip ? (
+          <Focusable onPress={() => m.skip(-SKIP_BACK_MS)} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel={`Back ${SKIP_BACK_MS / 1000} seconds`}>
             <Icon name="play-back-outline" size={t.isTV ? t.s(28) : 26} color="#fff" />
-            <T variant="caption" color="rgba(255,255,255,0.8)" center style={{ letterSpacing: 0 }}>15</T>
+            <T variant="caption" color="rgba(255,255,255,0.8)" center style={{ letterSpacing: 0 }}>{SKIP_BACK_MS / 1000}</T>
           </Focusable>
         ) : (
           <Focusable onPress={() => m.setShuffle(!m.shuffle)} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel="Shuffle">
@@ -86,10 +89,10 @@ export default function NowPlaying() {
         <Focusable onPress={m.next} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel="Next">
           <Icon name="play-skip-forward" size={transportIcon} color="#fff" />
         </Focusable>
-        {m.spoken ? (
-          <Focusable onPress={() => m.skip(30000)} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel="Forward 30 seconds">
+        {intervalSkip ? (
+          <Focusable onPress={() => m.skip(SKIP_FORWARD_MS)} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel={`Forward ${SKIP_FORWARD_MS / 1000} seconds`}>
             <Icon name="play-forward-outline" size={t.isTV ? t.s(28) : 26} color="#fff" />
-            <T variant="caption" color="rgba(255,255,255,0.8)" center style={{ letterSpacing: 0 }}>30</T>
+            <T variant="caption" color="rgba(255,255,255,0.8)" center style={{ letterSpacing: 0 }}>{SKIP_FORWARD_MS / 1000}</T>
           </Focusable>
         ) : (
           <Focusable onPress={m.cycleRepeat} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel="Repeat">
@@ -104,6 +107,9 @@ export default function NowPlaying() {
         <PanelChip icon="list" label="Up next" active={panel === 'queue'} onPress={() => setPanel('queue')} />
         {isTrack ? <PanelChip icon="chatbubble-ellipses-outline" label="Lyrics" active={panel === 'lyrics'} onPress={() => setPanel(panel === 'lyrics' ? 'queue' : 'lyrics')} /> : null}
         {m.chapters.length ? <PanelChip icon="bookmarks-outline" label="Chapters" active={panel === 'chapters'} onPress={() => setPanel(panel === 'chapters' ? 'queue' : 'chapters')} /> : null}
+        {/* Long music: the ±15/30 s buttons took the shuffle / repeat places on the transport row. */}
+        {m.longTrack ? <PanelChip icon="shuffle" label="Shuffle" active={m.shuffle} onPress={() => m.setShuffle(!m.shuffle)} /> : null}
+        {m.longTrack ? <PanelChip icon="repeat" label={m.repeat === 'one' ? 'Repeat one' : 'Repeat'} active={m.repeat !== 'off'} onPress={m.cycleRepeat} /> : null}
         {m.spoken ? <PanelChip icon="bookmark-outline" label="Bookmarks" active={panel === 'bookmarks'} onPress={() => setPanel(panel === 'bookmarks' ? 'queue' : 'bookmarks')} /> : null}
         {m.spoken ? <PanelChip icon="speedometer-outline" label={speedLabel(m.rate)} active={m.rate !== 1} onPress={() => setSpeedSheet(true)} /> : null}
         <PanelChip icon={m.sleep ? 'moon' : 'moon-outline'} label={sleepLabel} active={!!m.sleep} onPress={() => setSleepSheet(true)} />

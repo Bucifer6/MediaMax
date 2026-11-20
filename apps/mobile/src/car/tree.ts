@@ -22,6 +22,7 @@ import type { SessionStatus } from '@/state/session';
 import { formatDate, formatDuration, progressFraction } from '@/utils/format';
 import { isAudioItem } from '@/utils/library';
 import type { CarNode } from '../../modules/mediamax-car';
+import { pickBestMatch, voiceQuery, type VoiceSearchHints } from './policy';
 
 const ART = 300;
 
@@ -318,12 +319,14 @@ export class CarTree {
   }
 
   /**
-   * Voice / "play from search" (Android Auto, Assistant). An empty query means "play something":
-   * the caller resumes the current queue; otherwise continue listening, else shuffle the music.
+   * Voice / "play from search" (Android Auto and Google Assistant, Siri "Play … in MediaMax"). An
+   * empty query means "play something": the caller resumes the current queue; otherwise continue
+   * listening, else shuffle the music. `hints` (media type, artist, album) come from the assistant's
+   * structured request when it sends one and steer which search result is played.
    */
-  async resolveSearchPlay(query: string): Promise<PlayRequest> {
+  async resolveSearchPlay(query: string, hints?: VoiceSearchHints | null): Promise<PlayRequest> {
     const api = this.requireApi();
-    const q = query.trim();
+    const q = voiceQuery(query, hints);
     if (!q) {
       const has = await this.sections();
       if (has.books || has.podcasts) {
@@ -333,7 +336,7 @@ export class CarTree {
       return has.music ? this.shuffleAll(api) : { kind: 'none' };
     }
     const res = await api.search(q, LIMIT.search);
-    const best = res.items.find((it) => SEARCH_ORDER.includes(it.type));
+    const best = pickBestMatch(res.items, SEARCH_ORDER, hints);
     if (!best) return { kind: 'none' };
     switch (best.type) {
       case 'track': {

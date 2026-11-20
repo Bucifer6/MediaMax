@@ -49,6 +49,12 @@ export interface CarNowPlaying {
   buffering: boolean;
   /** Audiobook part / podcast episode: ±15/30 s buttons and a speed button instead of track skip. */
   spoken: boolean;
+  /**
+   * Music longer than `LONG_TRACK_MS` (src/car/policy.ts): ±15/30 s buttons *in addition to*
+   * next/previous (CarPlay: extra Now Playing buttons; Android Auto: extra custom actions).
+   * Optional for older JS bundles; treated as false when missing.
+   */
+  longTrack?: boolean;
   rate: number;
   hasNext: boolean;
   hasPrevious: boolean;
@@ -56,13 +62,31 @@ export interface CarNowPlaying {
   error: string | null;
 }
 
+/**
+ * Transport commands from the car / system. `seekTo` and `seekBy` carry milliseconds. `rate` without
+ * a value means "next speed" (speed button); with a value it is the speed the system asked for
+ * (Android: Assistant "play at 1.5x speed" / `setPlaybackParameters`).
+ */
 export type CarCommand = 'play' | 'pause' | 'toggle' | 'next' | 'previous' | 'seekTo' | 'seekBy' | 'rate' | 'stop';
+
+/** Structured hints a voice assistant may send with "play …" (Siri INMediaSearch, Assistant extras). */
+export type CarSearchType = 'track' | 'album' | 'artist' | 'playlist' | 'audiobook' | 'podcast' | 'episode' | 'music';
+
+export interface CarPlayFromSearch {
+  /** Free text ("" = "play something" / resume). */
+  query: string;
+  type?: CarSearchType | null;
+  artist?: string | null;
+  album?: string | null;
+  /** Where it came from: 'siri', 'assistant' (Android) or undefined (older native builds). */
+  source?: string | null;
+}
 
 export type CarEvents = {
   onGetChildren: (e: { requestId: string; parentId: string }) => void;
   onSearch: (e: { requestId: string; query: string }) => void;
   onPlay: (e: { mediaId: string }) => void;
-  onPlayFromSearch: (e: { query: string }) => void;
+  onPlayFromSearch: (e: CarPlayFromSearch) => void;
   onCommand: (e: { command: CarCommand; value?: number | null }) => void;
   onConnectionChange: (e: { connected: boolean; platform: 'carplay' | 'androidauto' }) => void;
 };
@@ -79,6 +103,7 @@ export declare class MediaMaxCarNativeModule extends NativeModule<CarEvents> {
   /**
    * iOS: (re)installs next/previous-track remote commands after expo-audio re-registered its own.
    * `trackSkip` = music (track skip) rather than spoken audio (±15/30 s). No-op on Android.
+   * Long music keeps track skip here; its ±15/30 s buttons come from `CarNowPlaying.longTrack`.
    */
   syncRemoteCommands(trackSkip: boolean): void;
 }

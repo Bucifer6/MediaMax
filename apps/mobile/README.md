@@ -165,10 +165,20 @@ The phone apps show up in **Apple CarPlay** and **Android Auto** as audio apps. 
 
 * A tab only appears when the user can see a library of that kind. Music also needs the server's `features.music` flag. Signed-out, offline and "no audio libraries" states show a single message row.
 * Lists are capped (200 artists or tracks, 100 books, 50 playlists or shows, 20 episodes), and both cars may shorten them further while driving. CarPlay allows 4 tabs and 5 levels for audio apps, and the tree fits within both limits.
-* **Now Playing** shows artwork, title and artist. Music gets play/pause and previous/next track. Audiobooks and podcasts get play/pause and −15 s / +30 s, plus a speed button on CarPlay. CarPlay's **Up Next** lists the rest of the queue.
+* **Now Playing** shows artwork, title and artist. CarPlay's **Up Next** lists the rest of the queue.
+
+  | Playing | Phone now-playing screen | Lock screen / notification | CarPlay | Android Auto |
+  |---|---|---|---|---|
+  | Music | prev / next, shuffle, repeat | prev / next (iOS; the Android notification has play/pause only) | prev / next | prev / next |
+  | **Long music** (over 10 min: DJ mixes, live sets, concerts, long classical tracks) | −15 s / +30 s **and** prev / next (shuffle and repeat move to the chips row) | iOS: prev / next. Android: −15 s / +30 s | prev / next, plus −15 s / +30 s buttons under the controls | prev / next, plus −15 s / +30 s custom actions |
+  | Audiobook / podcast | −15 s / +30 s, prev / next, speed | −15 s / +30 s | −15 s / +30 s, speed button | −15 s / +30 s, **speed button** (its icon shows the current speed) |
+
+  The long-track threshold is one constant, `LONG_TRACK_MS` in `src/car/policy.ts`. On iOS the lock screen, Control Centre and AirPods/steering-wheel buttons keep previous/next for long tracks on purpose: iOS shows interval skip *instead of* track skip whenever both are enabled. MediaMax DJ mode plays its own crossfading players and short tracks, so it does not get these buttons.
 * **Search and voice:**
-  * Android Auto supports in-car search (`onSearch`), and Assistant requests such as "play *X* on MediaMax" (`onPlayFromSearch`). Both use `GET /search?q=`. Voice plays the best audio match: a track, an album, a playlist, an artist (shuffled), a book (resumed), or a show (its in-progress or newest episode). "Play MediaMax" with an empty query resumes the queue, or else continue listening, or else shuffles the music library.
-  * CarPlay shows a Search row on the Home tab on **iOS 27 and later**, because Apple only lets audio apps use the search template from iOS 27. Siri voice search would need SiriKit `INPlayMediaIntent` support, which is not implemented.
+  * Android Auto supports in-car search (`onSearch`), and Assistant requests such as "play *X* on MediaMax" (`onPlayFromSearch`). Both use `GET /search?q=`. Voice plays the best audio match: a track, an album, a playlist, an artist (shuffled), a book (resumed), or a show (its in-progress or newest episode). When Assistant sends structured extras (focus = artist / album / song / playlist, artist name, album name), they steer the pick ("play the album *Discovery* by Daft Punk" plays the album, not a same-named track). "Play MediaMax" with an empty query resumes the queue, or else continue listening, or else shuffles the music library. A request that cold-starts the app waits until the saved session has been restored.
+  * **Assistant transport commands** reach the Android Auto session player: "pause", "next song", "skip forward 2 minutes" / "go back 30 seconds" (absolute seeks computed from the reported position, which is extrapolated natively while playing and clamped to the duration), "jump to 10 minutes", and, for audiobooks and podcasts, "play at 1.5x speed" (`setPlaybackParameters`, forwarded to JS as a `rate` command with the value, snapped to the app's speeds).
+  * **Siri:** transport commands ("pause", "next", "skip ahead 30 seconds") go through `MPRemoteCommandCenter` as before; relative seeks on music use `changePlaybackPositionCommand`, which expo-audio keeps enabled. **"Play *X* in MediaMax"** (SiriKit `INPlayMediaIntent`, handled in the app) is implemented but **off by default**, because it needs the Siri capability; see [Siri](#siri-play--in-mediamax).
+  * CarPlay shows a Search row on the Home tab on **iOS 27 and later**, because Apple only lets audio apps use the search template from iOS 27.
 * Live TV and radio are not in the car. The shared player only queues library items, and channels would need their own playback path through `POST /livetv/channels/:id/play`.
 
 ### Architecture
@@ -189,31 +199,35 @@ The phone apps show up in **Apple CarPlay** and **Android Auto** as audio apps. 
 
 * **One player.** The car never plays audio itself. Anything picked in the car becomes `useMusic().playQueue(…)`, and every car button becomes `toggle` / `next` / `previous` / `skip` / `seek` / `setRate`. The phone's mini player, the lock screen, Chromecast hand-off and server progress reporting therefore keep working unchanged.
 * **The browse tree lives in JS** (`src/car/tree.ts`). Native code asks for the children of an opaque id and renders what comes back: a tab bar of `CPListTemplate`s on CarPlay, and `MediaItem`s on Android Auto. Ids look like `tab:music`, `artist:<id>`, `book:<id>`, `episode:<id>` or `play:<context>:<index>:<itemId>`. Requests time out after 20 s, and the car then shows an error.
-* **CarPlay Now Playing** is the shared `CPNowPlayingTemplate`. It reads expo-audio's `MPNowPlayingInfoCenter` metadata and `MPRemoteCommandCenter` handlers. A single expo-audio player cannot skip tracks, so after every `setActiveForLockScreen` the player calls `syncCarRemoteCommands` (`src/car/remote.ts`), and the module installs next/previous-track handlers that drive the JS queue. As a result, music on the iPhone lock screen now has working previous/next buttons as well. Spoken audio uses expo-audio's −15/+30 s skip commands, with the intervals set in `music.tsx`.
-* **Android Auto Now Playing** is the session of `MediaMaxCarService`. Its player is a `SimpleBasePlayer` that mirrors `updateNowPlaying` (position extrapolated natively) and forwards commands to JS. Spoken audio gets −15 s / +30 s custom buttons in place of previous/next. expo-audio's own service still owns the phone notification and foreground state, so this service never posts a notification and only lives while Android Auto is bound to it.
+* **CarPlay Now Playing** is the shared `CPNowPlayingTemplate`. It reads expo-audio's `MPNowPlayingInfoCenter` metadata and `MPRemoteCommandCenter` handlers. A single expo-audio player cannot skip tracks, so after every `setActiveForLockScreen` the player calls `syncCarRemoteCommands` (`src/car/remote.ts`), and the module installs next/previous-track handlers that drive the JS queue. As a result, music on the iPhone lock screen now has working previous/next buttons as well. Spoken audio uses expo-audio's −15/+30 s skip commands, with the intervals set in `src/car/policy.ts` (`lockScreenOptions`). Extra buttons under the controls come from `updateNowPlaying`: a `CPNowPlayingPlaybackRateButton` for spoken audio, and two `CPNowPlayingImageButton`s (SF Symbols `gobackward.15` / `goforward.30`, sending `seekBy`) when `longTrack` is set.
+* **Android Auto Now Playing** is the session of `MediaMaxCarService`. Its player is a `SimpleBasePlayer` that mirrors `updateNowPlaying` (position extrapolated natively) and forwards commands to JS. Media button preferences: spoken audio gets −15 s / +30 s in the previous/next slots plus a speed button (`CommandButton.ICON_PLAYBACK_SPEED_*` for 0.8/1/1.5/2×, the generic speed icon otherwise; tapping sends `rate`, and the icon follows the new speed); long music gets −15 s / +30 s in `SLOT_BACK_SECONDARY` / `SLOT_FORWARD_SECONDARY` with `SLOT_OVERFLOW` as fallback, so previous/next keep the main slots and Android Auto shows the skips as custom actions. `COMMAND_SET_SPEED_AND_PITCH` is reported for spoken audio only. expo-audio's own service still owns the phone notification and foreground state, so this service never posts a notification and only lives while Android Auto is bound to it.
 * **Artwork on Android Auto** is served through `content://<package>.mediamax.artwork/…` (`ArtworkProvider`), because the car host does not load http(s) artwork. Only URLs the app handed out are fetched, and they are cached in `cacheDir/car-artwork`.
 * **Cold starts.**
   * *CarPlay:* CarPlay may launch the app with only the CarPlay scene (iPhone locked). `MediaMaxCarSceneDelegate` then starts React Native into a placeholder window, so the whole app (session, player, bridge) runs. When the phone UI opens later, `MediaMaxPhoneSceneDelegate`, an `ExpoAppSceneDelegate` subclass that replaces the template's `SceneDelegate`, adopts that window instead of starting a second React root.
   * *Android Auto:* if Android Auto binds while the React Native runtime is not running (the process was started just for the car), the service reports "Open MediaMax on your phone to start listening" with an **Open MediaMax** action. As soon as the app is opened, the tree loads. See Limitations.
+  * *Siri:* if Siri launches the app in the background for "Play … in MediaMax", the module starts React Native the same way as a CarPlay-first launch and holds the request until the JS bridge is ready.
 
 ### Files
 
 | Path | What |
 |---|---|
 | `modules/mediamax-car/index.ts` | Typed JS API. The module is `null` in Expo Go, on web and on TV. |
-| `modules/mediamax-car/ios/` | `MediaMaxCarModule.swift` (bridge), `CarPlayController.swift` (templates, Now Playing, search), `CarPlaySceneDelegate.swift` (CarPlay + phone scene delegates), `CarShared.swift` (records, events, remote commands). The pod is iOS-only. |
+| `modules/mediamax-car/ios/` | `MediaMaxCarModule.swift` (bridge), `CarPlayController.swift` (templates, Now Playing, search), `CarPlaySceneDelegate.swift` (CarPlay + phone scene delegates), `CarShared.swift` (records, events, remote commands), `SiriIntents.swift` (`INPlayMediaIntent` handler). The pod is iOS-only. |
 | `modules/mediamax-car/android/` | `MediaMaxCarService.kt` (MediaLibraryService), `CarProxyPlayer.kt`, `ArtworkProvider.kt`, `CarBridge.kt`, `MediaMaxCarModule.kt`. Media3 1.9.1, the same version expo-audio uses. |
 | `plugins/withMediaMaxCar.js` | Config plugin (see below) |
 | `src/car/CarBridge.tsx`, `src/car/tree.ts`, `src/car/remote.ts` | JS side |
+| `src/car/policy.ts` | Pure decisions: `LONG_TRACK_MS`, lock-screen options per platform, speed cycling / snapping, voice-search best match. Unit-tested by `npm test` (`tests/car-policy.test.mjs`, Node's test runner). |
 
 ### What the config plugin changes
 
-`app.config.ts` adds `['./plugins/withMediaMaxCar', { isTV }]`.
+`app.config.ts` adds `['./plugins/withMediaMaxCar', { isTV, siri }]` (`siri` from `MEDIAMAX_SIRI=1` or `"siri": true` in the brand's `brand.json`).
 
 * **iOS:**
   * the `com.apple.developer.carplay-audio` entitlement
   * in `UIApplicationSceneManifest`, a `CPTemplateApplicationSceneSessionRoleApplication` scene (`MediaMaxCarSceneDelegate`), with the phone scene's delegate switched to `MediaMaxPhoneSceneDelegate`. The template's `SceneDelegate.swift` still compiles but is no longer used, so config plugins that edit it have no effect.
   * `UIBackgroundModes` includes `audio`
+  * `AppDelegate.swift` gets `application(_:handlerFor:)`, which hands `INPlayMediaIntent` to `MediaMaxSiri` (always added so CI compiles it; it does nothing until the Info.plist lists the intent)
+  * with `siri` only: `INIntentsSupported: [INPlayMediaIntent]`, `INSupportedMediaCategories` (music, audiobooks, podcasts), `NSSiriUsageDescription` and the `com.apple.developer.siri` entitlement
 * **Android:**
   * `tv.mediamax.car.MediaMaxCarService` (exported, with the `androidx.media3.session.MediaLibraryService` and `android.media.browse.MediaBrowserService` intent filters)
   * the artwork provider
@@ -259,6 +273,19 @@ The simulator works with the entitlement in a development build. Real cars need 
 
 Side-loaded builds only appear in Android Auto with **Unknown sources** on. Builds from the Play Store (including internal testing) show up normally.
 
+### Siri: "Play … in MediaMax"
+
+Off by default. When on, Siri hands requests such as "Play *Discovery* by Daft Punk in MediaMax", "Play the audiobook *Dune* in MediaMax" or "Play MediaMax" to the app (in-app intent handling, no Intents extension). `SiriIntents.swift` resolves the request to a placeholder item and passes the `INMediaSearch` (title, artist, album, media type) to JS as `onPlayFromSearch`, which searches the server and plays the best match exactly like Android Auto voice requests. "Play MediaMax" resumes the queue (or continues listening).
+
+To turn it on for a build:
+
+1. In Certificates, IDs & Profiles, enable the **SiriKit** capability on the App ID (needs a paid Apple developer account) and regenerate the provisioning profiles, for example with `eas credentials`. EAS-managed credentials usually sync the capability by themselves from the entitlement.
+2. Build with `MEDIAMAX_SIRI=1` (or `"siri": true` in `branding/<brand>/brand.json`), then `npx expo prebuild --clean`.
+3. Check: `MEDIAMAX_SIRI=1 npx expo config --type introspect | grep -n -E "INPlayMediaIntent|developer.siri"`.
+4. On the phone, ask Siri "Play *something* in MediaMax". The first time, iOS may ask whether MediaMax may use Siri.
+
+Unsigned simulator builds (CI) compile either way, because the entitlement is only applied when signing. Siri media requests only work on a real device. Without the capability on the App ID, signed builds with the flag fail to sign, so leave it off for brands that don't have it. tvOS builds never get it.
+
 ### Account steps before release
 
 * **Apple:** request the **CarPlay audio app** entitlement at <https://developer.apple.com/contact/carplay/> for the team that ships the app. After Apple grants it, enable the CarPlay capability on the App ID (Certificates, IDs & Profiles) and regenerate the provisioning profiles, for example with `eas credentials`. Without the grant, App Store and TestFlight builds that contain the entitlement fail to sign or are rejected, so for white-label builds request it per bundle id, or drop the plugin for brands that don't have it. Apple's CarPlay guidelines also apply: no lyrics on the car screen, and no prompts asking the driver to pick up the phone.
@@ -267,9 +294,12 @@ Side-loaded builds only appear in Android Auto with **Unknown sources** on. Buil
 ### Limitations
 
 * **Android Auto cold start:** the browse tree and the player live in the React Native app. If Android Auto starts the process without the app (for example after a reboot), the car shows "Open MediaMax on your phone to start listening" until the app has been opened once. After that it works in the background, also with the screen off. Removing this limit would mean starting a headless React Native surface from the service, or moving the queue into native code.
-* There is no queue editing from the car, and Android Auto does not show its queue. Live TV and radio are not included, and neither is CarPlay Siri search (see above).
+* There is no queue editing from the car, and Android Auto does not show its queue. Live TV and radio are not included.
+* Siri "Play … in MediaMax" is behind the `siri` flag (see [Siri](#siri-play--in-mediamax)) and has not been tried on a device. Siri may ask the user to authorize MediaMax the first time; the app does not call `INPreferences.requestSiriAuthorization` itself.
+* Long-music ±15/30 s on iOS: not on the lock screen or AirPods (by design, see above). Siri "skip ahead 30 seconds" during long music relies on iOS mapping it to `changePlaybackPositionCommand`.
+* Android Auto's placement of custom actions (how many show next to previous/next before going to the overflow) is decided by the car host and varies between versions.
 * Downloads are not used offline in the car browse tree. It needs the server, although a downloaded item that is already queued still plays offline.
-* Native code was written against the iOS 26/27 CarPlay SDK and Media3 1.9.1, but it has only been type-checked on the JS side here. Run the simulator/DHU checks above before shipping.
+* Native code was written against the iOS 26/27 CarPlay SDK and Media3 1.9.1 (checked against the Media3 1.9.1 sources), but it has only been type-checked on the JS side here; the Native apps CI workflow compiles it. Run the simulator/DHU checks above before shipping, including a long track (over 10 minutes), a podcast's speed button and Assistant voice commands on the DHU.
 
 ## File layout
 
@@ -302,11 +332,13 @@ apps/mobile
 │   ├── screens/detail/       detail page variants
 │   ├── player/               VideoPlayerScreen, Scrubber, WebVTT parser
 │   ├── cast/                 Chromecast: lazy module loader, CastProvider/useCast, CastButton, MediaInfo builder
-│   ├── car/                  CarPlay / Android Auto: CarBridge (events <-> player), browse tree, remote commands
+│   ├── car/                  CarPlay / Android Auto: CarBridge (events <-> player), browse tree, remote commands,
+│   │                         policy.ts (long-track skips, speeds, voice-search match)
 │   ├── tv/                   remote events, back/menu handling, focus guide
 │   └── utils/                formatting, navigation helpers, event bus
-├── modules/mediamax-car/     local Expo module: CarPlay scene + templates (Swift), Android Auto MediaLibraryService (Kotlin)
-├── plugins/withMediaMaxCar.js config plugin: CarPlay entitlement + scenes, Android Auto service/manifest, TV exclusion
+├── modules/mediamax-car/     local Expo module: CarPlay scene + templates, Siri intent (Swift), Android Auto MediaLibraryService (Kotlin)
+├── plugins/withMediaMaxCar.js config plugin: CarPlay entitlement + scenes, Siri (opt-in), Android Auto service/manifest, TV exclusion
+├── tests/                    `npm test`: Node unit tests for pure JS logic (src/car/policy.ts)
 ├── scripts/brand.mjs         produce a white-label brand folder from a server
 ├── scripts/tv-deps.mjs       react-native <-> react-native-tvos alias switch
 ├── app.config.ts             dynamic config (EXPO_TV, MEDIAMAX_BRAND)

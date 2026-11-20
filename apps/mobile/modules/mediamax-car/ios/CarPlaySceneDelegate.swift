@@ -21,7 +21,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     _ templateApplicationScene: CPTemplateApplicationScene,
     didConnect interfaceController: CPInterfaceController
   ) {
-    ensureReactNativeStarted()
+    startReactNativeIfNeeded()
     CarPlayController.shared.connect(interfaceController)
   }
 
@@ -31,23 +31,26 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
   ) {
     CarPlayController.shared.disconnect()
   }
+}
 
-  private func ensureReactNativeStarted() {
-    guard let provider = UIApplication.shared.delegate as? ExpoReactNativeFactoryProvider,
-          provider.window == nil,
-          let factory = provider.reactNativeFactory
-    else {
-      return
-    }
-    let placeholder = UIWindow(frame: UIScreen.main.bounds)
-    provider.window = placeholder
-    factory.startReactNative(
-      withModuleName: provider.reactNativeFactoryModuleName,
-      in: placeholder,
-      initialProperties: nil,
-      launchOptions: nil
-    )
+/// Starts React Native into a scene-less placeholder window when no scene has started it yet: a
+/// CarPlay-first launch, or a background launch by Siri. `PhoneSceneDelegate` adopts the window later.
+@MainActor
+func startReactNativeIfNeeded() {
+  guard let provider = UIApplication.shared.delegate as? ExpoReactNativeFactoryProvider,
+        provider.window == nil,
+        let factory = provider.reactNativeFactory
+  else {
+    return
   }
+  let placeholder = UIWindow(frame: UIScreen.main.bounds)
+  provider.window = placeholder
+  factory.startReactNative(
+    withModuleName: provider.reactNativeFactoryModuleName,
+    in: placeholder,
+    initialProperties: nil,
+    launchOptions: nil
+  )
 }
 
 /// Phone scene delegate (Info.plist: `UIWindowSceneSessionRoleApplication`, class name

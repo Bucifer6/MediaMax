@@ -20,6 +20,12 @@ import com.google.common.util.concurrent.ListenableFuture
  * `src/state/music.tsx`) for Android Auto, and forwards every transport command to JS, which applies
  * it to the real queue. The phone's notification, lock screen and progress reporting therefore stay in
  * sync with the car.
+ *
+ * Voice: Google Assistant (on the phone or in Android Auto) drives this player through the media
+ * session. "Skip forward 2 minutes" / "go back 30 seconds" arrive as an absolute seekTo computed from
+ * the position we report (or as seekForward/seekBack), "jump to 10 minutes" as an absolute seekTo,
+ * "play at 1.5x speed" as setPlaybackParameters (spoken audio only). The reported position is
+ * extrapolated from JS's last report while playing, so relative seeks start from a fresh value.
  */
 @OptIn(UnstableApi::class)
 internal class CarProxyPlayer(
@@ -47,7 +53,7 @@ internal class CarProxyPlayer(
     // Created once per update, so the position extrapolates from the moment JS reported it.
     position =
       if (state != null && state.playing && !state.buffering) {
-        SimpleBasePlayer.PositionSupplier.getExtrapolating(state.positionMs.toLong(), speedOf(state))
+        extrapolating(state.positionMs.toLong(), speedOf(state), state.durationMs.toLong())
       } else {
         SimpleBasePlayer.PositionSupplier.getConstant(state?.positionMs?.toLong() ?: 0L)
       }
@@ -56,7 +62,7 @@ internal class CarProxyPlayer(
 
   override fun getState(): SimpleBasePlayer.State {
     val builder = SimpleBasePlayer.State.Builder()
-      .setAvailableCommands(COMMANDS)
+      .setAvailableCommands(if (current?.spoken == true) SPOKEN_COMMANDS else COMMANDS)
       .setSeekBackIncrementMs(SEEK_BACK_MS)
       .setSeekForwardIncrementMs(SEEK_FORWARD_MS)
     val state = current
@@ -129,12 +135,35 @@ internal class CarProxyPlayer(
     return Futures.immediateVoidFuture()
   }
 
+  /**
+   * Speed from the system (Assistant "play at 1.5x speed", a Media3 / legacy controller's
+   * setPlaybackSpeed). Only offered for spoken audio (COMMAND_SET_SPEED_AND_PITCH); JS snaps the
+   * value to the app's speeds and reports the new rate back through [update].
+   */
+  override fun handleSetPlaybackParameters(playbackParameters: PlaybackParameters): ListenableFuture<*> {
+    val speed = playbackParameters.speed
+    if (current?.spoken == true && speed > 0f) onCommand("rate", speed.toDouble())
+    return Futures.immediateVoidFuture()
+  }
+
   private fun speedOf(state: NowPlayingRecord): Float =
     if (state.spoken && state.rate > 0) state.rate.toFloat() else 1f
 
   companion object {
     const val SEEK_BACK_MS = 15_000L
     const val SEEK_FORWARD_MS = 30_000L
+
+    /**
+     * Like [SimpleBasePlayer.PositionSupplier.getExtrapolating], but never past the end of the item:
+     * controllers (and Assistant's relative seeks) read the position between JS reports.
+     */
+    private fun extrapolating(positionMs: Long, speed: Float, durationMs: Long): SimpleBasePlayer.PositionSupplier {
+      val since = SystemClock.elapsedRealtime()
+      return SimpleBasePlayer.PositionSupplier {
+        val now = positionMs + ((SystemClock.elapsedRealtime() - since) * speed).toLong()
+        if (durationMs > 0) minOf(now, durationMs) else now
+      }
+    }
 
     private val COMMANDS: Player.Commands = Player.Commands.Builder()
       .addAll(
@@ -155,6 +184,11 @@ internal class CarProxyPlayer(
         Player.COMMAND_GET_METADATA,
         Player.COMMAND_RELEASE,
       )
+      .build()
+
+    /** Spoken audio also takes playback speed (Assistant, Android Auto speed requests). */
+    private val SPOKEN_COMMANDS: Player.Commands = COMMANDS.buildUpon()
+      .add(Player.COMMAND_SET_SPEED_AND_PITCH)
       .build()
   }
 }
