@@ -17,6 +17,8 @@ import { tick as dvrTick, applyRules } from './dvr.js';
 import { detectAll } from './introdetect.js';
 import { enrichLibrary } from './metadata/index.js';
 import { syncWatchers } from './watcher.js';
+import { generateMissing } from './trickplay.js';
+import { autoDownload } from './opensubtitles.js';
 
 const log = logger('tasks');
 
@@ -106,6 +108,22 @@ const DEFS: TaskDef[] = [
         }
         if (i % 10 === 0) progress(Math.round(((i + 1) / rows.length) * 100));
       }
+    },
+  },
+  {
+    id: 'trickplay', name: 'Generate scrub previews', description: 'Build seek-bar preview thumbnails (trickplay) for movies and episodes. Enable in Settings → Trickplay.',
+    interval: () => (getSettings().trickplay.enabled ? 6 * 60 : null),
+    run: async (progress) => {
+      const n = await generateMissing(progress);
+      log.info(`Trickplay generated for ${n} file(s)`);
+    },
+  },
+  {
+    id: 'subtitles', name: 'Download missing subtitles', description: 'Fetch subtitles from OpenSubtitles in your preferred languages for recent media.',
+    interval: () => (getSettings().openSubtitles.apiKey && getSettings().openSubtitles.autoLanguages.length ? 12 * 60 : null),
+    run: async (progress) => {
+      const n = await autoDownload(progress);
+      log.info(`Downloaded ${n} subtitle file(s)`);
     },
   },
   {

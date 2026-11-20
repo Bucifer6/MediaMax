@@ -272,6 +272,12 @@ export function ItemPage() {
   const res = useAsync(() => api.items.get(itemId), [itemId]);
   const [modal, setModal] = useState<null | 'edit' | 'art' | 'playlist' | 'collection' | 'trailer' | 'photo'>(null);
   const item = res.data;
+  const isSeries = item?.id === itemId && (item.type === 'show' || item.type === 'season');
+  // Next-up episode of a show/season (server: in progress → next unwatched → first).
+  const nextUp = useAsync(
+    async () => ({ forId: itemId, ep: isSeries ? await api.items.next(itemId).catch(() => null) : null }),
+    [itemId, isSeries, item?.userData.played, item?.userData.unplayedCount],
+  );
 
   useServerEvent((ev) => {
     if (ev.type === 'userdata.updated' && ev.itemId === itemId) res.setData((d) => d && { ...d, userData: ev.userData });
@@ -357,6 +363,18 @@ export function ItemPage() {
   const playable = isVideo(item) || ['show', 'season', 'album', 'artist', 'playlist', 'track', 'collection'].includes(item.type);
   const resumable = isVideo(item) && isResumable(item);
   const pct = progressPct(item);
+  const nextEp = nextUp.data?.forId === item.id && nextUp.data.ep?.type === 'episode' ? nextUp.data.ep : null;
+  const nextResumable = !!nextEp && isResumable(nextEp);
+  const playLabel = resumable
+    ? `Resume ${formatClock(item.userData.positionMs)}`
+    : nextEp
+      ? `${nextResumable ? 'Resume' : 'Play'} ${episodeCode(nextEp) || nextEp.title}`
+      : item.type === 'show' || item.type === 'season' ? 'Play next' : 'Play';
+  const downloadItems: MenuItem[] = (['original', '1080p', '720p', '480p'] as const).map((q) => ({
+    label: q === 'original' ? 'Original file' : `${q} (MP4)`,
+    icon: 'download',
+    onClick: () => startDownload(withToken(api.playback.downloadUrl(item.id, q))),
+  }));
   const square = ['album', 'artist', 'track', 'playlist', 'photo'].includes(item.type);
   const isAdmin = !!user?.isAdmin;
   const canDownload = features.downloads && user?.allowDownloads && (isVideo(item) || isAudio(item)) && !item.media?.[0]?.remote;
@@ -430,8 +448,8 @@ export function ItemPage() {
 
           <div className="detail-actions">
             {playable && (
-              <button className="btn btn-primary btn-lg" onClick={() => play(item)} data-nav autoFocus>
-                <Icon name="play" size={20} /> {resumable ? `Resume ${formatClock(item.userData.positionMs)}` : item.type === 'show' || item.type === 'season' ? 'Play next' : 'Play'}
+              <button className="btn btn-primary btn-lg" onClick={() => (nextEp ? navigate(playLink(nextEp)) : play(item))} data-nav autoFocus title={nextEp ? nextEp.title : undefined}>
+                <Icon name="play" size={20} /> {playLabel}
               </button>
             )}
             {resumable && (
@@ -462,11 +480,16 @@ export function ItemPage() {
                 <Icon name="plus" />
               </button>
             )}
-            {canDownload && (
+            {canDownload && (isVideo(item) ? (
+              <Dropdown
+                trigger={({ onClick }) => <button className="btn-round" onClick={onClick} title="Download" aria-label="Download" data-nav><Icon name="download" /></button>}
+                items={downloadItems}
+              />
+            ) : (
               <a className="btn-round" href={withToken(api.playback.downloadUrl(item.id))} download title="Download" data-nav>
                 <Icon name="download" />
               </a>
-            )}
+            ))}
             {(adminItems.length > 0 || containerOwned) && (
               <Dropdown
                 trigger={({ onClick }) => <button className="btn-round" onClick={onClick} title="More" data-nav><Icon name="more" /></button>}
@@ -531,6 +554,17 @@ export function ItemPage() {
       </Modal>
     </div>
   );
+}
+
+/** Trigger a browser download without leaving the page. */
+function startDownload(url: string) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 function youtubeEmbed(url: string) {

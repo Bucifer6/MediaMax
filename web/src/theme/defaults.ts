@@ -52,6 +52,8 @@ export const DEFAULT_BRANDING: Branding = {
   footerText: '',
   supportUrl: null,
   splash: { backgroundColor: '#0b0d12', logoUrl: null },
+  tvBannerUrl: null,
+  topShelfUrl: null,
   defaultThemeId: DEFAULT_THEME.id,
   themes: [DEFAULT_THEME],
   allowUserThemes: true,

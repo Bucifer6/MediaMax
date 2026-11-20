@@ -1,7 +1,7 @@
 import type {
   ActiveSession, ActivityEntry, AuthResponse, Branding, BrandingAssetKind, Channel, ChannelCategory,
   ChannelQuery, CreateCollectionRequest, CreateLibraryRequest, CreateLiveSourceRequest, CreatePlaylistRequest,
-  CreateRecordingRequest, CreateRecordingRuleRequest, CreateUserRequest, DashboardStats, Device, DirectoryEntry,
+  CreateRecordingRequest, CreateRecordingRuleRequest, CreateUserRequest, DashboardStats, Device, DirectoryEntry, DownloadQuality, DvrDefaults,
   GuideResponse, HomeResponse, Item, ItemQuery, ItemSort, Library, LivePlayRequest, LiveSource, LoginRequest,
   Paged, PinLoginRequest, PlaybackInfo, PlaybackRequest, Program, ProgressReport, PublicProfile, Recording,
   RecordingRule, RecordingStatus, ScheduledTask, SearchResponse, ServerSettings, SetupRequest, SystemInfo,
@@ -43,6 +43,8 @@ export const api = {
     logout: () => request<Ok>('POST', '/auth/logout', { body: {}, silent401: true }),
     me: () => request<User>('GET', '/auth/me', { silent401: true }),
     updateMe: (body: UpdateMeRequest) => http.patch<User>('/auth/me', body),
+    uploadAvatar: (file: File) => upload<User>('/auth/me/avatar', file),
+    deleteAvatar: () => http.del<User>('/auth/me/avatar'),
     devices: (all = false) => http.get<Device[]>('/auth/devices', all ? { all: true } : undefined),
     revokeDevice: (id: string) => http.del<Ok>(`/auth/devices/${enc(id)}`),
   },
@@ -52,6 +54,8 @@ export const api = {
     create: (body: CreateUserRequest) => http.post<User>('/users', body),
     update: (id: string, body: UpdateUserRequest) => http.patch<User>(`/users/${enc(id)}`, body),
     remove: (id: string) => http.del<Ok>(`/users/${enc(id)}`),
+    uploadAvatar: (id: string, file: File) => upload<User>(`/users/${enc(id)}/avatar`, file),
+    deleteAvatar: (id: string) => http.del<User>(`/users/${enc(id)}/avatar`),
   },
 
   libraries: {
@@ -110,7 +114,8 @@ export const api = {
       request<Ok>('DELETE', `/playback/sessions/${enc(sessionId)}`, { keepalive, silent401: true }),
     sessions: () => http.get<ActiveSession[]>('/sessions'),
     kill: (id: string, reason?: string) => http.del<Ok>(`/sessions/${enc(id)}`, { reason }),
-    downloadUrl: (itemId: string) => `/api/v1/stream/download/${enc(itemId)}`,
+    downloadUrl: (itemId: string, quality: DownloadQuality = 'original') =>
+      `/api/v1/stream/download/${enc(itemId)}${quality === 'original' ? '' : `?quality=${quality}`}`,
   },
 
   livetv: {
@@ -136,6 +141,7 @@ export const api = {
   },
 
   dvr: {
+    defaults: () => http.get<DvrDefaults>('/dvr/defaults'),
     recordings: (status?: RecordingStatus) => http.get<Recording[]>('/dvr/recordings', { status }),
     record: (body: CreateRecordingRequest) => http.post<Recording>('/dvr/recordings', body),
     removeRecording: (id: string) => http.del<Ok>(`/dvr/recordings/${enc(id)}`),

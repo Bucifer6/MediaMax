@@ -89,6 +89,51 @@ export function Avatar({ name, url, size = 36 }: { name: string; url?: string | 
   );
 }
 
+/** Avatar with upload / remove controls. `onUpload` / `onRemove` should persist and may throw. */
+export function AvatarEditor({
+  name, url, size = 80, onUpload, onRemove, disabled,
+}: { name: string; url?: string | null; size?: number; onUpload: (file: File) => Promise<void>; onRemove: () => Promise<void>; disabled?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await fn();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="avatar-editor">
+      <button type="button" className="avatar-editor-pic" onClick={() => input.current?.click()} disabled={disabled || busy} title="Change picture">
+        <Avatar name={name} url={url} size={size} />
+        <span className="avatar-editor-overlay">{busy ? <Spinner size={20} /> : <Icon name="upload" size={20} />}</span>
+      </button>
+      <div className="avatar-editor-actions">
+        <button type="button" className="btn btn-sm" onClick={() => input.current?.click()} disabled={disabled || busy}>
+          <Icon name="upload" size={14} /> {url ? 'Change picture' : 'Upload picture'}
+        </button>
+        {url && (
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => void run(onRemove).catch(() => undefined)} disabled={disabled || busy}>
+            <Icon name="trash" size={14} /> Remove
+          </button>
+        )}
+      </div>
+      <input
+        ref={input}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) void run(() => onUpload(f)).catch(() => undefined);
+        }}
+      />
+    </div>
+  );
+}
+
 export function Switch({ checked, onChange, label, disabled, hint }: { checked: boolean; onChange: (v: boolean) => void; label?: ReactNode; disabled?: boolean; hint?: ReactNode }) {
   return (
     <label className={`switch-row ${disabled ? 'disabled' : ''}`}>

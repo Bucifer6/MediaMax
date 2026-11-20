@@ -208,7 +208,11 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
   }
   if (q.played !== undefined) where.push(String(q.played) === 'true' ? 'COALESCE(ud.played,0) = 1' : 'COALESCE(ud.played,0) = 0');
   if (q.favorite !== undefined && String(q.favorite) === 'true') where.push('COALESCE(ud.favorite,0) = 1');
-  const sort = SORTS[q.sort as ItemSort] ?? (q.parentId || q.ancestorId ? SORTS.index : SORTS.title);
+  let sort = SORTS[q.sort as ItemSort] ?? (q.parentId || q.ancestorId ? SORTS.index : SORTS.title);
+  // Across several parents (an artist's albums, a show's seasons), keep each parent's children together.
+  if (q.ancestorId && sort === SORTS.index) {
+    sort = ['(SELECT COALESCE(x.year, 0) FROM items x WHERE x.id = i.parent_id)', '(SELECT x.sort_title FROM items x WHERE x.id = i.parent_id)', ...SORTS.index];
+  }
   const dir = q.order === 'desc' ? 'DESC' : q.order === 'asc' ? 'ASC' : q.sort === 'addedAt' || q.sort === 'rating' || q.sort === 'lastPlayed' ? 'DESC' : 'ASC';
   const sql = `${SELECT()} WHERE ${where.join(' AND ')}`;
   const total = db.get<{ n: number }>(`SELECT COUNT(*) n FROM items i LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ? WHERE ${where.join(' AND ')}`, user.id, ...params.slice(3))!.n;
@@ -336,6 +340,7 @@ export function setPlayed(user: User, itemId: string, played: boolean): UserItem
       else db.run('UPDATE user_data SET played = 0, position_ms = 0 WHERE user_id = ? AND item_id = ?', user.id, id);
     }
   });
+  if (played) bus.emit('items.played', { user, itemIds: ids });
   return emitUd(user, itemId);
 }
 

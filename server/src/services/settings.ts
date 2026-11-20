@@ -39,6 +39,9 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   webhooks: [],
   allowPasswordlessProfiles: true,
   blockUnratedForRestricted: false,
+  trickplay: { enabled: false, intervalSeconds: 10, width: 320 },
+  openSubtitles: { apiKey: process.env.OPENSUBTITLES_API_KEY ?? null, username: null, password: null, autoLanguages: [] },
+  trakt: { clientId: process.env.TRAKT_CLIENT_ID ?? null, clientSecret: process.env.TRAKT_CLIENT_SECRET ?? null },
   sessionTimeoutDays: 90,
 };
 
@@ -52,6 +55,9 @@ export function getSettings(): ServerSettings {
     ...stored,
     transcoding: { ...DEFAULT_SETTINGS.transcoding, ...(stored.transcoding ?? {}) },
     dvr: { ...DEFAULT_SETTINGS.dvr, ...(stored.dvr ?? {}) },
+    trickplay: { ...DEFAULT_SETTINGS.trickplay, ...(stored.trickplay ?? {}) },
+    openSubtitles: { ...DEFAULT_SETTINGS.openSubtitles, ...(stored.openSubtitles ?? {}) },
+    trakt: { ...DEFAULT_SETTINGS.trakt, ...(stored.trakt ?? {}) },
     webhooks: stored.webhooks ?? [],
   };
   return cache;
@@ -64,6 +70,9 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     ...patch,
     transcoding: { ...cur.transcoding, ...(patch.transcoding ?? {}) },
     dvr: { ...cur.dvr, ...(patch.dvr ?? {}) },
+    trickplay: { ...cur.trickplay, ...(patch.trickplay ?? {}) },
+    openSubtitles: { ...cur.openSubtitles, ...(patch.openSubtitles ?? {}) },
+    trakt: { ...cur.trakt, ...(patch.trakt ?? {}) },
     webhooks: (patch.webhooks ?? cur.webhooks).map((w) => ({ ...w, id: w.id || newId() })),
   };
   setKv('server', next);

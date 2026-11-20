@@ -90,6 +90,7 @@ export function ServerSettingsAdmin() {
               <Field label="Session timeout (days)"><input className="input" type="number" min={1} value={s.sessionTimeoutDays} onChange={(e) => set({ sessionTimeoutDays: Number(e.target.value) })} /></Field>
             </div>
             <Switch checked={s.allowPasswordlessProfiles} onChange={(v) => set({ allowPasswordlessProfiles: v })} label="Allow passwordless profiles" hint="Profiles without a password can be entered from the profile picker (optionally with a PIN)." />
+            <Switch checked={!!s.blockUnratedForRestricted} onChange={(v) => set({ blockUnratedForRestricted: v })} label="Hide unrated titles from users with a rating limit" hint="Parental controls: titles with no content rating are hidden from anyone who has a maximum content rating set." />
           </div>
         )}
         {tab === 'transcoding' && (

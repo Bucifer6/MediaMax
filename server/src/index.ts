@@ -4,6 +4,7 @@ import { logger } from './util/log.js';
 import { startScheduler, stopScheduler } from './services/tasks.js';
 import { cleanupTranscodeDir, ffmpegAvailable } from './services/transcoder.js';
 import { initWebhooks } from './services/webhooks.js';
+import { initTrakt } from './services/trakt.js';
 import { serverId } from './services/settings.js';
 
 const log = logger('main');
@@ -12,6 +13,7 @@ async function main() {
   if (!ffmpegAvailable()) log.warn('ffmpeg was not found — transcoding, live TV remuxing and DVR will not work. Set MEDIAMAX_FFMPEG.');
   cleanupTranscodeDir();
   initWebhooks();
+  initTrakt();
   const app = await buildApp();
   await app.listen({ port: config.port, host: config.host });
   log.info(`MediaMax ${config.version} (server ${serverId()}) listening on http://${config.host}:${config.port}`);
