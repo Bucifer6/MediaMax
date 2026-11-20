@@ -124,6 +124,13 @@
   .player-top { padding-top: max(12px, env(safe-area-inset-top)); }
   .pc-right .btn-icon { width: 34px; height: 34px; }
   .pc-left .volume { display: none; }
+  /* Phones: the right-hand buttons wrap onto a second line instead of running off the screen. */
+  .pc-left { flex: none; }
+  .pc-right { flex: 1 1 0; min-width: 0; flex-wrap: wrap; justify-content: flex-end; row-gap: 2px; }
+  /* …and their menus open against the right edge of the bar, so a wrapped button's menu stays on screen. */
+  .player-controls { position: relative; }
+  .player-controls .pc-menu { position: static; }
+  .player-controls .popover { right: 0; max-width: calc(100vw - 24px); }
   .player-time { min-width: 40px; font-size: 0.75rem; }
   .skip-btn, .upnext { bottom: 120px; }
   .upnext-art { width: 110px; }

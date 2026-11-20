@@ -191,7 +191,7 @@ function ColorField({ k, value, onChange }: { k: keyof ThemeColors; value: strin
       </span>
       <span className="color-meta">
         <span className="color-name">{COLOR_LABELS[k]}</span>
-        <input className="input input-sm mono" value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} />
+        <input className="input input-sm mono" value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} aria-label={`${COLOR_LABELS[k]} (CSS colour value)`} />
       </span>
     </label>
   );

@@ -70,7 +70,7 @@
 /* ------------------------------ mini player ------------------------------ */
 .miniplayer {
   position: fixed; left: var(--sidebar-w); right: 0; bottom: 0; z-index: 70; height: 76px;
-  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 16px; padding: 0 20px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(min-content, 1fr); align-items: center; gap: 16px; padding: 0 20px;
   background: color-mix(in srgb, var(--c-surface) 88%, transparent); backdrop-filter: blur(28px) saturate(1.5); -webkit-backdrop-filter: blur(28px) saturate(1.5);
   border-top: 1px solid var(--c-line); box-shadow: 0 -10px 30px rgb(0 0 0 / 0.2); animation: miniIn 0.35s var(--ease) both;
 }

@@ -123,12 +123,14 @@ function visible(el: Element): el is HTMLElement {
 
 /** The scope focus should stay in: the top-most open dialog, otherwise the whole document. */
 function scope(): ParentNode {
-  const dialogs = [...document.querySelectorAll('[role="dialog"], [aria-modal="true"], dialog[open]')].filter(visible);
+  // Non-modal panels (aria-modal="false", e.g. the "What's new" card) don't capture the D-pad.
+  const dialogs = [...document.querySelectorAll('[role="dialog"]:not([aria-modal="false"]), [aria-modal="true"], dialog[open]')].filter(visible);
   return dialogs[dialogs.length - 1] ?? document;
 }
 
 function candidates(): HTMLElement[] {
-  return [...scope().querySelectorAll(FOCUSABLE)].filter(visible).filter((el) => !el.closest('[aria-hidden="true"], [inert]'));
+  // tabindex="-1" marks controls that are deliberately out of the focus order (hover-only card buttons, row arrows).
+  return [...scope().querySelectorAll(FOCUSABLE)].filter(visible).filter((el) => el.getAttribute('tabindex') !== '-1' && !el.closest('[aria-hidden="true"], [inert]'));
 }
 
 function best(from: DOMRect, dir: Dir, els: HTMLElement[], current: Element | null): HTMLElement | null {
@@ -218,8 +220,13 @@ export function installTvMode() {
     // Back key.
     if (BACK.has(e.keyCode) && !(e.keyCode === 8 && isTextInput(target))) {
       e.preventDefault();
-      // An open dialog/picker closes on Escape; otherwise go back a page (players exit the same way).
-      if (scope() !== document) (target ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      // One press is one step back: the players also listen for Backspace, and both handling it went back twice
+      // (player → home instead of player → title page).
+      e.stopImmediatePropagation();
+      // An open dialog/picker, or a player (its menus first, then the player itself), handles it as Escape;
+      // otherwise go back a page.
+      if (inPlayer && document.fullscreenElement && scope() === document) void document.exitFullscreen().catch(() => undefined);
+      else if (scope() !== document || inPlayer) (target ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       else if (window.history.length > 1) window.history.back();
       return;
     }
@@ -237,7 +244,9 @@ export function installTvMode() {
     if (!dir || e.altKey || e.ctrlKey || e.metaKey) return;
     // Let text fields keep left/right for the caret, ranges/selects their own arrows, and the video players their seek/volume keys.
     if (isTextInput(target) && (dir === 'left' || dir === 'right')) return;
-    if (target instanceof HTMLSelectElement || (target instanceof HTMLInputElement && target.type === 'range')) return;
+    // Sliders keep left/right. Selects don't keep any arrow: on a remote that would trap focus in the first select
+    // (up/down only changed its value); OK opens the list instead (below).
+    if (target instanceof HTMLInputElement && target.type === 'range' && (dir === 'left' || dir === 'right')) return;
     // A focused seek bar (role=slider) steps the position itself, with a trickplay preview.
     if ((dir === 'left' || dir === 'right') && target?.getAttribute?.('role') === 'slider') return;
     // Elements that use the arrows themselves (e.g. the music visualiser stage: left/right switch styles).
@@ -250,6 +259,16 @@ export function installTvMode() {
   window.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.defaultPrevented) return;
     const el = document.activeElement as HTMLElement | null;
+    if (el instanceof HTMLSelectElement) {
+      // OK on a select opens its list (TV browsers also do this natively; showPicker covers desktop Chromium).
+      try {
+        el.showPicker();
+        e.preventDefault();
+      } catch {
+        /* not supported: leave it to the browser */
+      }
+      return;
+    }
     if (el && el !== document.body && el.getAttribute('role') !== 'textbox' && !isTextInput(el) && !(el instanceof HTMLButtonElement) && !(el instanceof HTMLAnchorElement)) {
       e.preventDefault();
       el.click();

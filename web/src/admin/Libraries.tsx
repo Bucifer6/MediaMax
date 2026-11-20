@@ -107,7 +107,7 @@ export function LibrariesAdmin() {
                 <div className="lib-info">
                   <div className="lib-name">{l.name} {isIptvLibrary(l.type) && <Badge tone="accent">IPTV</Badge>} {!l.fetchMetadata && <Badge tone="muted">Local metadata</Badge>}</div>
                   <div className="muted lib-sub">
-                    {l.itemCount.toLocaleString()} items · {l.type} · last scan {relativeTime(l.lastScanAt)}
+                    {l.itemCount.toLocaleString()} item{l.itemCount === 1 ? '' : 's'} · {l.type} · last scan {relativeTime(l.lastScanAt)}
                   </div>
                   {l.paths.length > 0 && <div className="lib-paths">{l.paths.map((p) => <code key={p}>{p}</code>)}</div>}
                   {scanning && (
