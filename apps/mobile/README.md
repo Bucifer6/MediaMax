@@ -117,8 +117,23 @@ Caveats on TV: there are no downloads, haptics or PiP. expo-secure-store is repl
   * On iOS, originals in containers AVPlayer can't open (anything but mp4/m4v/mov/m4a/mp3/aac, e.g. MKV, AVI, TS, FLAC) are downloaded as 1080p automatically so they play offline.
   * Artwork is cached too.
   * Offline playback; resume positions sync back to the server when you're online again.
+* **Discover & requests** (when the server turns on `features.requests`): a Discover tab on phones and in the TV top bar. It shows trending titles (`GET /discover`) with infinite scroll, or searches with a Movies / Shows / All toggle. Cards carry "In library", "Requested" and "Pending" badges; "In library" opens the item. The request sheet takes "All seasons" or chosen season numbers for shows, plus an optional note (`POST /requests`), and explains a weekly-limit (429), already-requested (409) or not-configured (400) answer. **My requests** (from Discover or Settings) shows status chips and lets you withdraw pending requests. Admins see everyone's requests with a status filter, Approve and Decline (with a note).
+* **Smart playlists:** Library › Playlists › "New smart playlist" opens a rule builder: match all/any, rules on genre, year, rating, added within N days, played, favourite, type, person and resolution, plus sort and limit. A live preview (`POST /smart/preview`) shows the match count and the first titles before saving (`POST /smart`, kind `playlist`). Smart playlists can be edited from their page. Smart collections and playlists show a "Smart" badge and have no manual add/remove (the smart *collection* builder is admin-only and lives in the web admin).
+* **Chromecast** (iPhone/iPad and Android phones only; see [Chromecast](#chromecast)).
 * **Settings:** edit your account name and profile picture (phones: pick a photo with expo-image-picker, uploaded to `POST /auth/me/avatar`), theme picker (when `allowUserThemes`; applies instantly), playback preferences, Link a TV, signed-in devices (with revoke), switch profile, switch server, sign out and about.
-* **Feature flags:** Live TV, DVR, music, photos, IPTV VOD, downloads, the profile picker and link codes are hidden when the server or the user's permissions turn them off.
+* **Feature flags:** Live TV, DVR, music, photos, IPTV VOD, downloads, requests (Discover), the profile picker and link codes are hidden when the server or the user's permissions turn them off.
+
+## Chromecast
+
+Phones and tablets can cast to a Chromecast or Google TV with [`react-native-google-cast`](https://react-native-google-cast.github.io/), using Google's Default Media Receiver (`CC1AD845`).
+
+> **Cast needs a development build or an EAS build.** It is a native module added by a config plugin, so it does not work in **Expo Go**. Run `npx expo prebuild --clean && npx expo run:ios` (or `run:android`), or `eas build --profile ios|android`. In Expo Go, and in any build made without the plugin, the cast button simply does not appear.
+
+* `app.config.ts` adds the `react-native-google-cast` plugin **only when `EXPO_TV` is unset**, and `react-native.config.js` unlinks the native module for TV builds (the Cast SDK has no tvOS build). The JS side (`src/cast`) loads the module lazily and only when its native part is registered, so TV builds and Expo Go never touch it.
+* The cast button is in the video player's top bar and on the now-playing screen. On iOS the plugin also adds the local-network / Bonjour entries the Cast SDK needs.
+* While connected, the app requests playback with a Chromecast profile (h264, aac/mp3, mp4 and HLS, max width 1920) and loads `<server> + PlaybackInfo.url` (it already carries the token) with `PlaybackInfo.mimeType`, title, subtitle, an absolute poster URL and the WebVTT subtitle tracks. Channels load as a LIVE stream (HLS forced).
+* Local playback pauses and the player shows "Casting to <device>". Play/pause, seeking, subtitle, audio and quality changes go to the receiver, and progress is still reported to the server every 10 s from the receiver's media status. Music and spoken-word queues cast the same way and advance when a track ends.
+* Disconnecting hands playback back to the phone at the same position, paused.
 
 ## File layout
 
@@ -130,7 +145,8 @@ apps/mobile
 │   ├── connect.tsx           add / pick servers
 │   ├── login.tsx             profiles + PIN, password, TV link code
 │   ├── link-tv.tsx           phone approves a TV code
-│   ├── (tabs)/               home, libraries, live, search, downloads, settings (+ custom tab bar)
+│   ├── (tabs)/               home, libraries, live, search, discover, downloads, settings (+ custom tab bar)
+│   ├── requests.tsx          my requests / admin request queue
 │   ├── library/[id].tsx      library grid
 │   ├── item/[id].tsx         detail dispatcher (movie/show/season/episode/album/artist/playlist/collection)
 │   ├── player/[id].tsx       VOD player
@@ -149,6 +165,7 @@ apps/mobile
 │   │                         ProgramSheet, PinPad, MiniPlayer, BrandSplash, …
 │   ├── screens/detail/       detail page variants
 │   ├── player/               VideoPlayerScreen, Scrubber, WebVTT parser
+│   ├── cast/                 Chromecast: lazy module loader, CastProvider/useCast, CastButton, MediaInfo builder
 │   ├── tv/                   remote events, back/menu handling, focus guide
 │   └── utils/                formatting, navigation helpers, event bus
 ├── scripts/brand.mjs         produce a white-label brand folder from a server

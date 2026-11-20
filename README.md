@@ -11,14 +11,33 @@ See the full [feature matrix](docs/FEATURES.md) and the [API reference](docs/API
 
 ```
 ┌──────────────────────────── MediaMax server (Node 22 · SQLite · FFmpeg) ────────────────────────────┐
-│ Library scanner ─ NFO/artwork/TMDB ─ Intro detection ─ Transcoder (HW accel, on-demand HLS) ─ DVR   │
-│ Live TV: Xtream Codes · M3U · HDHomeRun · XMLTV ─ Tuner sharing ─ Catch-up ─ VOD/series libraries   │
-│ Users · Profiles/PINs · Link codes ─ Branding & themes ─ Webhooks ─ SyncPlay ─ REST + WebSocket     │
+│ Libraries: movies · TV · music · audiobooks · podcasts · photos · home videos ─ NFO/TMDB metadata   │
+│ Playback: direct/remux/transcode · HW accel · on-demand HLS · trickplay · intro/credits detection   │
+│ Live TV: Xtream Codes · M3U · HDHomeRun · XMLTV ─ catch-up ─ tuner sharing ─ DVR & series rules     │
+│ Users: profiles/PINs · SSO (OIDC) · link codes · parental limits ─ Requests → Radarr/Sonarr         │
+│ Smart collections · Wrapped stats · lyrics · OpenSubtitles · Trakt · Last.fm · DLNA · webhooks      │
+│ Server-driven branding & themes ─ SyncPlay (watch together) ─ REST + WebSocket                      │
 └───────────────────────────────────────────────┬──────────────────────────────────────────────────────┘
                  ┌──────────────────────────────┼───────────────────────────────┐
            Web app + Admin              iOS / Android (Expo)            Apple TV / Android TV
          (React, served by server)       phones & tablets                 10-foot focus UI
 ```
+
+### Highlights
+- **Everything in one place** — local libraries, Xtream/M3U IPTV (live, catch-up, VOD and series as real
+  libraries), DVR, audiobooks with chapters, podcasts with auto-download, synced lyrics.
+- **Your brand everywhere** — logos, colours, fonts, home rows and feature toggles drawn from the server by
+  web, phone and TV apps, re-themed live. One command produces a white-label app build.
+- **Smart playback** — per-device direct play/remux/transcode, instant seeking, hardware acceleration with
+  software fallback, HDR tone mapping, scrub previews, skip intro/credits, Chromecast, watch-together.
+- **Family-ready** — profiles with PINs, rating limits that understand US/UK/DE/AU ratings, per-library
+  access, hidden channels, single sign-on with group-based admin rights.
+- **Requests built in** — users discover trending titles and request them; approvals go straight to
+  Radarr/Sonarr and the request flips to *available* when the title lands.
+- **Smart collections & playlists** — rule-based lists (genre, decade, unwatched, recently added, 4K…).
+- **Your year in review** — per-user "Wrapped" plus admin statistics.
+- **Plays well with others** — Trakt and Last.fm scrobbling, OpenSubtitles, DLNA for smart TVs and
+  consoles, webhooks for Home Assistant/Discord.
 
 ## Quick start
 

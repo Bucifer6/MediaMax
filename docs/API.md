@@ -202,3 +202,19 @@ SyncPlay (watch together): `syncplay.create` → server replies `syncplay.state`
   `authUrl`, then poll `GET /lastfm`) · `PATCH /lastfm` `{ scrobble }` · `DELETE /lastfm`.
 * Admin sets `ServerSettings.lastfm.apiKey/sharedSecret` (create an API account at last.fm/api/account/create).
   "Now playing" is sent on start; tracks are scrobbled after half their length or 4 minutes.
+
+## Requests (Discover)
+* `GET /discover?q=&type=movie|show|all&page=` → `DiscoverResponse` (trending when `q` is empty; shows availability and request state).
+* `GET /requests?status=&mine=true` → `MediaRequest[]` (non-admins see their own) · `POST /requests` `CreateMediaRequest` ·
+  `POST /requests/:id/approve` 🛡️ · `POST /requests/:id/decline` 🛡️ `{ note }` · `DELETE /requests/:id` (own pending, or admin).
+* `POST /requests/arr/test` 🛡️ `{ url, apiKey }` → `ArrOptions` (quality profiles + root folders for the settings UI).
+* Configure `ServerSettings.requests` (Radarr/Sonarr, auto-approve users, weekly limit). Admin requests auto-approve.
+  Approved requests are sent to Radarr/Sonarr and flip to `available` when the title appears in a library.
+  Webhooks: `request.created`, `request.available`.
+
+## Smart collections & playlists
+* `POST /smart/preview` `{ filter, limit }` → `Paged<Item>` · `POST /smart` `CreateSmartListRequest` → `Item` ·
+  `PUT /smart/:id` `{ title?, overview?, filter? }`. Smart collections are admin-only; smart playlists belong to their creator.
+* Children (`GET /items/:id/children`) are computed live for the viewer. `Item.smart` holds the `SmartFilter`.
+* Rule fields: genre, studio, person, year, rating, durationMin, addedDays (lte = within N days, gte = older),
+  contentRating, played, favorite, inProgress, library, type, title, resolution (4K/1080p/720p/480p/SD).

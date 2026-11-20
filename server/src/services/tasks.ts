@@ -20,6 +20,7 @@ import { syncWatchers } from './watcher.js';
 import { generateMissing } from './trickplay.js';
 import { autoDownload } from './opensubtitles.js';
 import { refreshAll as refreshPodcasts } from './podcasts.js';
+import { checkAvailability } from './requests.js';
 
 const log = logger('tasks');
 
@@ -133,6 +134,14 @@ const DEFS: TaskDef[] = [
     run: async (progress) => {
       const n = await refreshPodcasts(progress);
       if (n) log.info(`${n} new podcast episode(s)`);
+    },
+  },
+  {
+    id: 'requests', name: 'Check requested titles', description: 'Mark approved requests as available once they arrive in a library.',
+    interval: () => 30,
+    run: async () => {
+      const n = checkAvailability();
+      if (n) log.info(`${n} request(s) now available`);
     },
   },
   {

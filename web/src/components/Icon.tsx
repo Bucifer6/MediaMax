@@ -328,6 +328,14 @@ const ICONS = {
   ),
   chapters: <>{P('M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01')}</>,
   lyrics: <>{P('M4 6h10M4 10h10M4 14h6M18 4v11.5M18 15.5a2.5 2.5 0 1 1-2.5-2.5H18')}</>,
+  compass: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      {P('m15.5 8.5-2 5-5 2 2-5z')}
+    </>
+  ),
+  inbox: <>{P('M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z')}</>,
+  wand: <>{P('M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8 19 13M17.8 6.2 19 5M12.2 6.2 11 5M15 9l-12 12')}</>,
 } satisfies Record<string, ReactElement>;
 
 export type IconName = keyof typeof ICONS;

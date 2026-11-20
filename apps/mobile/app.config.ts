@@ -142,6 +142,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           android: { usesCleartextTraffic: true },
         },
       ],
+      // Chromecast (phones only). The Cast SDK has no tvOS build and casting from a TV makes no
+      // sense, so TV builds skip the plugin and react-native.config.js unlinks the native module.
+      // CC1AD845 = Google's Default Media Receiver.
+      ...(isTV ? [] : [['react-native-google-cast', { receiverAppId: 'CC1AD845', expandedController: false }] as [string, Record<string, unknown>]]),
       [
         '@react-native-tvos/config-tv',
         {

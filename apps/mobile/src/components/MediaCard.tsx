@@ -9,6 +9,7 @@ import { Focusable } from './Focusable';
 import { Icon } from './Icon';
 import { Img } from './Img';
 import { ProgressBar } from './ProgressBar';
+import { SmartBadge } from './SmartBadge';
 import { T } from './Text';
 
 export type CardVariant = 'poster' | 'landscape' | 'square' | 'auto';
@@ -82,6 +83,11 @@ export const MediaCard = memo(function MediaCard({ item, variant = 'auto', width
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '35%', justifyContent: 'flex-end', padding: t.isTV ? t.s(8) : 6 }}>
             <ProgressBar value={progress} />
           </LinearGradient>
+        ) : null}
+        {item.smart ? (
+          <View style={{ position: 'absolute', top: 6, left: 6 }}>
+            <SmartBadge overlay />
+          </View>
         ) : null}
         {item.userData?.played && !progress ? (
           <View style={{ position: 'absolute', top: 6, right: 6, backgroundColor: t.colors.primary, borderRadius: 999, padding: 2 }}>

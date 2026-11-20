@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
@@ -6,12 +7,15 @@ import { useAsync } from '../hooks';
 import { PosterCard, CardSkeleton } from '../components/Cards';
 import { EmptyState, ErrorState, Modal, Field } from '../components/ui';
 import { Icon } from '../components/Icon';
+import { SmartListModal } from '../components/SmartListModal';
 
 export default function ContainersPage({ kind }: { kind: 'playlists' | 'collections' }) {
   const { user } = useApp();
   const toast = useToast();
   const res = useAsync(() => (kind === 'playlists' ? api.playlists.list() : api.collections.list()), [kind]);
+  const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
+  const [smart, setSmart] = useState(false);
   const [title, setTitle] = useState('');
   const [overview, setOverview] = useState('');
   const canCreate = kind === 'playlists' || user?.isAdmin;
@@ -38,9 +42,14 @@ export default function ContainersPage({ kind }: { kind: 'playlists' | 'collecti
           <h1>{kind === 'playlists' ? 'Playlists' : 'Collections'}</h1>
         </div>
         {canCreate && (
-          <button className="btn btn-primary" onClick={() => setCreating(true)}>
-            <Icon name="plus" size={16} /> New {kind === 'playlists' ? 'playlist' : 'collection'}
-          </button>
+          <div className="page-actions">
+            <button className="btn" onClick={() => setSmart(true)}>
+              <Icon name="wand" size={16} /> New smart {kind === 'playlists' ? 'playlist' : 'collection'}
+            </button>
+            <button className="btn btn-primary" onClick={() => setCreating(true)}>
+              <Icon name="plus" size={16} /> New {kind === 'playlists' ? 'playlist' : 'collection'}
+            </button>
+          </div>
         )}
       </header>
       {res.loading && !res.data ? (
@@ -55,8 +64,21 @@ export default function ContainersPage({ kind }: { kind: 'playlists' | 'collecti
         />
       ) : (
         <div className={`grid grid-${kind === 'playlists' ? 'square' : 'poster'}`}>
-          {res.data.map((i) => <PosterCard key={i.id} item={i} width="100%" shape={kind === 'playlists' ? 'square' : 'poster'} />)}
+          {res.data.map((i) => (
+            <div key={i.id} className="grid-cell">
+              <PosterCard item={i} width="100%" shape={kind === 'playlists' ? 'square' : 'poster'} />
+              {i.smart && <span className="smart-chip" title="Smart list: updates automatically"><Icon name="wand" size={12} /> Smart</span>}
+            </div>
+          ))}
         </div>
+      )}
+      {canCreate && (
+        <SmartListModal
+          open={smart}
+          onClose={() => setSmart(false)}
+          kind={kind === 'playlists' ? 'playlist' : 'collection'}
+          onSaved={(it) => { res.reload(); navigate(`/item/${it.id}`); }}
+        />
       )}
       <Modal
         open={creating}

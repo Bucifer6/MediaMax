@@ -18,7 +18,7 @@ export function AddToContainerModal({ open, onClose, items, kind }: { open: bool
   useEffect(() => {
     if (!open) return;
     setLists(null);
-    svc.list().then(setLists).catch(() => setLists([]));
+    svc.list().then((l) => setLists(l.filter((x) => !x.smart))).catch(() => setLists([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, kind]);
 

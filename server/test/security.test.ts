@@ -41,3 +41,21 @@ test('images: no local paths from remote content, no non-image local files', () 
   assert.equal(registerImage('relative/poster.jpg'), null);
   assert.ok(registerImage('/media/movies/poster.jpg'));
 });
+
+test('smart list rules compile to bound parameters only', async () => {
+  const { buildSmartWhere, normaliseFilter } = await import('../src/services/smart.ts');
+  const f = normaliseFilter({ match: 'any', rules: [{ field: 'title', op: 'contains', value: "x') OR 1=1 --" }, { field: 'genre', op: 'is', value: 'Drama' }], sort: 'title', order: 'asc', limit: null });
+  const w = buildSmartWhere(f);
+  assert.ok(!w.sql.includes('OR 1=1'));
+  assert.ok(w.params.includes("%x') OR 1=1 --%"));
+  assert.match(w.sql, / OR /);
+  assert.throws(() => buildSmartWhere(normaliseFilter({ match: 'all', rules: [{ field: 'year', op: 'gte', value: '1; DROP' }], sort: 'title', order: 'asc', limit: null })));
+  assert.throws(() => normaliseFilter({ match: 'all', rules: [], sort: 'title', order: 'asc', limit: null } as any) && buildSmartWhere({ match: 'all', rules: [{ field: 'bogus' as any, op: 'is', value: 1 }], sort: 'title', order: 'asc', limit: null }));
+});
+
+test('smart lists never include collections or playlists', async () => {
+  const { buildSmartWhere, normaliseFilter } = await import('../src/services/smart.ts');
+  const w = buildSmartWhere(normaliseFilter({ match: 'any', rules: [{ field: 'type', op: 'is', value: 'track' }, { field: 'year', op: 'gte', value: 2000 }], sort: 'title', order: 'asc', limit: null }));
+  assert.ok(!w.params.includes('collection') && !w.params.includes('playlist'));
+  assert.ok(w.params.includes('track') && w.params.includes('movie'));
+});

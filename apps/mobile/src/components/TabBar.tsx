@@ -20,6 +20,7 @@ export const TAB_META: Record<string, { label: string; icon: IconName; iconActiv
   libraries: { label: 'Library', icon: 'albums-outline', iconActive: 'albums' },
   live: { label: 'Live TV', icon: 'tv-outline', iconActive: 'tv' },
   search: { label: 'Search', icon: 'search-outline', iconActive: 'search' },
+  discover: { label: 'Discover', icon: 'compass-outline', iconActive: 'compass' },
   downloads: { label: 'Downloads', icon: 'download-outline', iconActive: 'download' },
   settings: { label: 'Settings', icon: 'settings-outline', iconActive: 'settings' },
 };
@@ -30,6 +31,7 @@ export function useVisibleTabs() {
   return (name: string) => {
     if (caps.offline) return name === 'downloads' || name === 'settings';
     if (name === 'live') return caps.liveTv;
+    if (name === 'discover') return caps.requests;
     if (name === 'downloads') return downloads.supported && (caps.downloads || downloads.records.length > 0);
     return name in TAB_META;
   };

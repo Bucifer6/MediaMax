@@ -135,6 +135,8 @@ export interface FeatureFlags {
   profilePicker: boolean;
   /** TV/phone pairing via short link code. */
   linkCodes: boolean;
+  /** Media requests (Discover tab). */
+  requests: boolean;
 }
 
 export interface Branding {
@@ -507,6 +509,8 @@ export interface Item {
   lockedFields?: string[];
   /** Populated on GET /items/:id for media with embedded chapters (audiobooks, movies). */
   chapters?: Chapter[];
+  /** Smart collection/playlist rules (null for manual lists). */
+  smart?: SmartFilter | null;
 }
 
 export interface Chapter {
@@ -832,6 +836,24 @@ export interface LivePlayRequest {
 /* DVR                                                                 */
 /* ------------------------------------------------------------------ */
 
+export interface ArrService {
+  url: string;
+  apiKey: string;
+  /** Quality profile id (see GET /requests/arr/:kind/options). */
+  qualityProfileId: number | null;
+  /** Root folder path for new titles. */
+  rootFolder: string | null;
+  /** Ask the service to search for the title immediately after adding. */
+  searchOnAdd: boolean;
+}
+
+export interface ArrOptions {
+  ok: boolean;
+  message: string;
+  qualityProfiles: { id: number; name: string }[];
+  rootFolders: { path: string; freeSpace: number | null }[];
+}
+
 export interface DvrDefaults {
   paddingBeforeMin: number;
   paddingAfterMin: number;
@@ -941,6 +963,16 @@ export interface ServerSettings {
     apiKey: string | null;
     sharedSecret: string | null;
   };
+  /** Media requests and the download managers approved requests are sent to. */
+  requests: {
+    enabled: boolean;
+    /** Requests from admins (and users listed here) are approved automatically. */
+    autoApproveUserIds: string[];
+    /** Max open requests per user per 7 days (0 = unlimited). */
+    weeklyLimit: number;
+    radarr: ArrService | null;
+    sonarr: ArrService | null;
+  };
   /** Single sign-on via any OpenID Connect provider (Authentik, Keycloak, Authelia, Google, Entra…). */
   oidc: {
     enabled: boolean;
@@ -978,7 +1010,9 @@ export type WebhookEvent =
   | 'library.new'
   | 'user.login'
   | 'recording.completed'
-  | 'recording.failed';
+  | 'recording.failed'
+  | 'request.created'
+  | 'request.available';
 
 export interface Webhook {
   id: string;
@@ -1204,4 +1238,98 @@ export interface Lyrics {
   synced: boolean;
   source: 'lrc' | 'embedded' | 'txt';
   lines: LyricLine[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Media requests (Overseerr-style, with Radarr/Sonarr)                */
+/* ------------------------------------------------------------------ */
+
+export type RequestMediaType = 'movie' | 'show';
+export type RequestStatus = 'pending' | 'approved' | 'declined' | 'processing' | 'available' | 'failed';
+
+export interface DiscoverResult {
+  tmdbId: string;
+  mediaType: RequestMediaType;
+  title: string;
+  year: number | null;
+  overview: string | null;
+  posterUrl: string | null;
+  backdropUrl: string | null;
+  rating: number | null;
+  /** Already in a library (item id), if so. */
+  availableItemId: string | null;
+  /** An open request for this title, if any. */
+  requestId: string | null;
+  requestStatus: RequestStatus | null;
+}
+
+export interface MediaRequest {
+  id: string;
+  tmdbId: string;
+  mediaType: RequestMediaType;
+  title: string;
+  year: number | null;
+  posterUrl: string | null;
+  /** Requested seasons for shows (empty = all). */
+  seasons: number[];
+  status: RequestStatus;
+  requestedBy: { id: string; displayName: string };
+  requestedAt: string;
+  decidedBy: { id: string; displayName: string } | null;
+  decidedAt: string | null;
+  note: string | null;
+  /** Library item once it has arrived. */
+  itemId: string | null;
+  error: string | null;
+}
+
+export interface CreateMediaRequest {
+  tmdbId: string;
+  mediaType: RequestMediaType;
+  seasons?: number[];
+  note?: string;
+}
+
+export interface DiscoverResponse {
+  results: DiscoverResult[];
+  page: number;
+  totalPages: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Smart collections / playlists                                       */
+/* ------------------------------------------------------------------ */
+
+export type SmartRuleField =
+  | 'genre' | 'year' | 'rating' | 'contentRating' | 'addedDays' | 'played' | 'favorite' | 'person' | 'studio'
+  | 'library' | 'type' | 'durationMin' | 'title' | 'resolution' | 'inProgress';
+
+export type SmartRuleOp = 'is' | 'isNot' | 'contains' | 'gte' | 'lte' | 'between';
+
+export interface SmartRule {
+  field: SmartRuleField;
+  op: SmartRuleOp;
+  /** String, number, boolean, or [min,max] for `between`. */
+  value: string | number | boolean | [number, number];
+}
+
+export interface SmartFilter {
+  /** all = AND, any = OR. */
+  match: 'all' | 'any';
+  rules: SmartRule[];
+  sort: ItemSort;
+  order: 'asc' | 'desc';
+  limit: number | null;
+}
+
+/**
+ * Smart collections (admin, visible to everyone) and smart playlists (per user) are ordinary
+ * `collection`/`playlist` items whose `smart` field is set; their children are computed live
+ * for the viewing user (respecting their library access, rating limits and watch state).
+ */
+export interface CreateSmartListRequest {
+  kind: 'collection' | 'playlist';
+  title: string;
+  overview?: string;
+  filter: SmartFilter;
 }

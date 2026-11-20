@@ -95,7 +95,9 @@ export function MiniPlayer() {
           </Link>
           <div className="mini-text">
             <div className="mini-title">{t.title}</div>
-            <div className="mini-sub">{artist}</div>
+            <div className="mini-sub">
+              {m.casting ? <span className="mini-casting"><Icon name="cast" size={13} /> Casting to {m.cast.deviceName ?? 'device'}</span> : artist}
+            </div>
           </div>
         </div>
         <div className="mini-center">
@@ -135,6 +137,16 @@ export function MiniPlayer() {
           {t.type === 'track' && (
             <button className={`btn-icon ${panel === 'lyrics' ? 'active' : ''}`} onClick={() => setPanel((p) => (p === 'lyrics' ? null : 'lyrics'))} aria-label="Lyrics" title="Lyrics">
               <Icon name="lyrics" />
+            </button>
+          )}
+          {(m.cast.available || m.cast.connected) && (
+            <button
+              className={`btn-icon ${m.cast.connected ? 'active' : ''}`}
+              onClick={m.cast.toggle}
+              aria-label={m.cast.connected ? `Stop casting to ${m.cast.deviceName ?? 'device'}` : 'Cast to a device'}
+              title={m.cast.connected ? `Casting to ${m.cast.deviceName ?? 'device'}` : 'Cast'}
+            >
+              <Icon name="cast" />
             </button>
           )}
           <button className={`btn-icon ${queueOpen ? 'active' : ''}`} onClick={() => setQueueOpen((o) => !o)} aria-label="Queue">

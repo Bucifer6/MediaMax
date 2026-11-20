@@ -14,6 +14,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Online metadata (TMDB) with cast, logos, trailers, ratings | ✅ | ✅ | ✅ | ✅ |
 | Automatic box-set collections | ✅ | ✅ | ✅ | ✅ |
 | Manual collections & per-user playlists | ✅ | ✅ | ✅ | ✅ |
+| Smart (rule-based) collections & playlists | ✅ | ❌ | ✅ | ✅ |
 | Edit metadata, lock fields, upload artwork | ✅ | ✅ | ✅ | ✅ |
 | Embedded album art + tag-based music library | ✅ | ✅ | ✅ | ✅ |
 | `.mediamaxignore` / `.plexignore` folders | ✅ | ✅ | ❌ | ✅ |
@@ -39,6 +40,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Auto-play next episode | ✅ | ✅ | ✅ | ✅ |
 | Downloads for offline | Pass | ✅ | Premiere | ✅ (mobile apps) |
 | Watch together | ✅ | ✅ | ❌ | ✅ SyncPlay rooms with join codes |
+| Chromecast (web + phone apps) | ✅ | ✅ | ✅ | ✅ |
 | Seek-bar preview thumbnails (trickplay) | ✅ | ✅ | ✅ | ✅ |
 | Online subtitle search & auto-download (OpenSubtitles, hash matching) | ✅ | Plugin | ✅ | ✅ |
 | Converted downloads (device-friendly MP4 at 1080p/720p/480p) | Pass | ✅ | Premiere | ✅ |
@@ -68,6 +70,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Device list and remote sign-out | ✅ | ✅ | ✅ | ✅ |
 | No cloud account required, fully self-hosted | ❌ | ✅ | 🟡 | ✅ |
 | Single sign-on (OpenID Connect) with group → admin mapping | ❌ | Plugin | ❌ | ✅ |
+| Media requests with Radarr/Sonarr (Overseerr-style) | Add-on | Add-on | Add-on | ✅ built in |
 
 ## Customisation (MediaMax's headline feature)
 | Feature | Plex | Jellyfin | Emby | MediaMax |
@@ -99,4 +102,4 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | CI (typecheck, tests, web build, Docker smoke test) | — | ✅ | — | ✅ |
 
 ## Roadmap ideas
-Chromecast sender in apps · music videos · plugin API · LDAP login · remote access relay.
+Plugin API · music videos · LDAP login · remote access relay.

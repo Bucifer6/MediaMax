@@ -1,13 +1,14 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import type { Item, Library } from '@/api/types';
 import { useQuery } from '@/api/useQuery';
 import { Button } from '@/components/Button';
 import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
-import { ItemRow } from '@/components/Row';
+import { ItemRow, RowHeader } from '@/components/Row';
+import { SmartPlaylistSheet } from '@/components/SmartPlaylistSheet';
 import { Screen, ScreenHeader } from '@/components/Screen';
 import { EmptyState, ErrorState, Loading } from '@/components/States';
 import { useTabBarSpace } from '@/components/TabBar';
@@ -15,6 +16,7 @@ import { T } from '@/components/Text';
 import { useSession } from '@/state/session';
 import { mix, useTheme } from '@/theme';
 import { LIBRARY_ICON } from '@/utils/library';
+import { openItem } from '@/utils/nav';
 
 export default function LibrariesScreen() {
   const t = useTheme();
@@ -23,6 +25,7 @@ export default function LibrariesScreen() {
   const libs = useQuery('libraries', (api) => api.libraries());
   const collections = useQuery('collections', (api) => api.collections());
   const playlists = useQuery('playlists', (api) => api.playlists());
+  const [smartSheet, setSmartSheet] = useState(false);
 
   const visible = useMemo(
     () =>
@@ -58,8 +61,16 @@ export default function LibrariesScreen() {
           ))}
         </View>
         {collections.data?.length ? <ItemRow title="Collections" items={collections.data} variant="poster" /> : null}
-        {playlists.data?.length ? <ItemRow title="Playlists" items={playlists.data as Item[]} variant="square" /> : null}
+        {playlists.data?.length ? (
+          <ItemRow title="Playlists" items={playlists.data as Item[]} variant="square" />
+        ) : (
+          <RowHeader title="Playlists" />
+        )}
+        <View style={{ paddingHorizontal: t.space.gutter, marginTop: playlists.data?.length ? -t.space.sm : 0, marginBottom: t.space.lg }}>
+          <Button label="New smart playlist" icon="sparkles-outline" size="sm" variant="secondary" onPress={() => setSmartSheet(true)} />
+        </View>
       </ScrollView>
+      <SmartPlaylistSheet visible={smartSheet} onClose={() => setSmartSheet(false)} onSaved={(pl) => { void playlists.refresh(); openItem(pl); }} />
     </Screen>
   );
 }

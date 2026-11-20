@@ -146,6 +146,7 @@ export default function SettingsScreen() {
           <SettingSection title="For you">
             <SettingRow icon="sparkles-outline" label="Your Year" value="Your stats, Wrapped-style" onPress={() => router.push('/settings/wrapped' as never)} />
             <SettingRow icon="mic-outline" label="Podcasts" value="Search & subscriptions" onPress={() => router.push('/podcasts' as never)} />
+            {caps.requests ? <SettingRow icon="paper-plane-outline" label={user?.isAdmin ? 'Requests' : 'My requests'} value={user?.isAdmin ? 'Review and approve' : 'Movies & shows you asked for'} onPress={() => router.push('/requests' as never)} /> : null}
             {caps.syncPlay ? <SettingRow icon="people-outline" label="Join watch party" value="Enter a code" onPress={() => router.push('/watch-party' as never)} /> : null}
           </SettingSection>
 

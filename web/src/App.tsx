@@ -48,6 +48,8 @@ const SettingsPage = lazyPage(() => import('./pages/Settings'));
 const ContainersPage = lazyPage(() => import('./pages/Containers'));
 const WrappedPage = lazyPage(() => import('./pages/Wrapped'));
 const PodcastsPage = lazyPage(() => import('./pages/Podcasts'));
+const DiscoverPage = lazyPage(() => import('./pages/Discover'));
+const RequestsPage = lazyPage(() => import('./pages/Requests'));
 const AdminRoutes = lazyPage(() => import('./admin/AdminRoutes'));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -139,6 +141,8 @@ function Gate() {
           <Route path="link" element={<LinkDevicePage />} />
           <Route path="wrapped" element={<WrappedPage />} />
           <Route path="podcasts" element={<PodcastsPage />} />
+          <Route path="discover" element={<DiscoverPage />} />
+          <Route path="requests" element={<RequestsPage />} />
           <Route path="settings/*" element={<SettingsPage />} />
           <Route path="admin/*" element={<RequireAdmin><AdminRoutes /></RequireAdmin>} />
           <Route path="*" element={<NotFound />} />

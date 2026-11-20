@@ -12,6 +12,10 @@ import { toInt } from '../util/misc.js';
 import { getLyrics } from '../services/lyrics.js';
 import * as podcasts from '../services/podcasts.js';
 import * as lastfm from '../services/lastfm.js';
+import * as requests from '../services/requests.js';
+import * as smart from '../services/smart.js';
+import { createContainer } from '../services/items.js';
+import type { CreateMediaRequest, CreateSmartListRequest, SmartFilter } from '@mediamax/shared';
 import type { SubscribePodcastRequest } from '@mediamax/shared';
 
 export default async function extraRoutes(app: FastifyInstance) {
@@ -35,6 +39,58 @@ export default async function extraRoutes(app: FastifyInstance) {
     if (!p) throw notFound();
     reply.type('image/jpeg').header('Cache-Control', 'private, max-age=604800');
     return fs.createReadStream(p);
+  });
+
+  /* ------------------------------- requests ------------------------- */
+  app.get<{ Querystring: { q?: string; type?: 'movie' | 'show' | 'all'; page?: string } }>('/discover', async (req) =>
+    requests.discover(requireUser(req).user, req.query.q ?? '', req.query.type ?? 'all', toInt(req.query.page, 1, 1, 50)));
+  app.get<{ Querystring: { status?: string; mine?: string } }>('/requests', async (req) => requests.listRequests(requireUser(req).user, { status: req.query.status, mine: req.query.mine === 'true' }));
+  app.post<{ Body: CreateMediaRequest }>('/requests', async (req) => requests.createRequest(requireUser(req).user, req.body ?? ({} as CreateMediaRequest)));
+  app.post<{ Params: { id: string } }>('/requests/:id/approve', async (req) => requests.approveRequest(requireAdmin(req).user, req.params.id));
+  app.post<{ Params: { id: string }; Body: { note?: string } }>('/requests/:id/decline', async (req) => requests.declineRequest(requireAdmin(req).user, req.params.id, req.body?.note));
+  app.delete<{ Params: { id: string } }>('/requests/:id', async (req) => {
+    requests.deleteRequest(requireUser(req).user, req.params.id);
+    return { ok: true };
+  });
+  app.post<{ Body: { url: string; apiKey: string } }>('/requests/arr/test', async (req) => {
+    requireAdmin(req);
+    if (!req.body?.url || !req.body?.apiKey) throw badRequest('url and apiKey are required');
+    return requests.arrOptions(req.body);
+  });
+
+  /* ------------------------------ smart lists ----------------------- */
+  app.post<{ Body: { filter: SmartFilter; limit?: number } }>('/smart/preview', async (req) => {
+    const { user } = requireUser(req);
+    return smart.evaluateSmart(user, smart.normaliseFilter(req.body?.filter), toInt(req.body?.limit, 50, 1, 200), 0);
+  });
+  app.post<{ Body: CreateSmartListRequest }>('/smart', async (req) => {
+    const { user } = requireUser(req);
+    const b = req.body ?? ({} as CreateSmartListRequest);
+    if (b.kind === 'collection' && !user.isAdmin) throw forbidden('Only administrators can create smart collections');
+    if (b.kind !== 'collection' && b.kind !== 'playlist') throw badRequest('kind must be collection or playlist');
+    if (!b.title?.trim()) throw badRequest('Title required');
+    const filter = smart.normaliseFilter(b.filter);
+    smart.evaluateSmart(user, filter, 1, 0); // validate rules
+    const id = createContainer(b.kind, b.title.trim().slice(0, 200), b.kind === 'playlist' ? user.id : null, [], b.overview);
+    db.run('UPDATE items SET smart = ? WHERE id = ?', JSON.stringify(filter), id);
+    // Artwork: borrow the first match's poster/backdrop.
+    const first = smart.evaluateSmart(user, filter, 1, 0).items[0];
+    if (first) db.run('UPDATE items SET poster = (SELECT COALESCE(poster, (SELECT poster FROM items g WHERE g.id = x.grandparent_id)) FROM items x WHERE x.id = ?), backdrop = (SELECT backdrop FROM items WHERE id = ?) WHERE id = ?', first.id, first.id, id);
+    return getItem(user, id, false);
+  });
+  app.put<{ Params: { id: string }; Body: { title?: string; overview?: string; filter?: SmartFilter } }>('/smart/:id', async (req) => {
+    const { user } = requireUser(req);
+    const row = db.get('SELECT * FROM items WHERE id = ? AND smart IS NOT NULL', req.params.id);
+    if (!row) throw notFound('Smart list not found');
+    if (row.type === 'collection' ? !user.isAdmin : row.owner_id !== user.id && !user.isAdmin) throw forbidden();
+    if (req.body?.title?.trim()) db.run('UPDATE items SET title = ?, sort_title = ? WHERE id = ?', req.body.title.trim().slice(0, 200), req.body.title.trim().toLowerCase(), req.params.id);
+    if (req.body?.overview !== undefined) db.run('UPDATE items SET overview = ? WHERE id = ?', req.body.overview, req.params.id);
+    if (req.body?.filter) {
+      const filter = smart.normaliseFilter(req.body.filter);
+      smart.evaluateSmart(user, filter, 1, 0);
+      db.run('UPDATE items SET smart = ? WHERE id = ?', JSON.stringify(filter), req.params.id);
+    }
+    return getItem(user, req.params.id, false);
   });
 
   /* -------------------------------- last.fm ------------------------- */

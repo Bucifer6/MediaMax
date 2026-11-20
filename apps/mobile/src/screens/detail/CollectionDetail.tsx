@@ -11,7 +11,8 @@ import { playOrOpen } from '@/components/Hero';
 
 export function CollectionDetail({ item, onUserData }: { item: Item; onUserData: (ud: UserItemData) => void }) {
   const t = useTheme();
-  const children = useQuery(`children:${item.id}`, (api) => api.children(item.id, { sort: 'releaseDate', order: 'asc', limit: 500 }));
+  // Smart collections keep the order their rules define.
+  const children = useQuery(`children:${item.id}`, (api) => api.children(item.id, item.smart ? { limit: 500 } : { sort: 'releaseDate', order: 'asc', limit: 500 }));
   const { togglePlayed, toggleFavorite, setRating } = useUserDataActions(item, onUserData);
   const list = children.data?.items ?? [];
   const firstUnplayed = list.find((i) => !i.userData.played) ?? list[0];

@@ -8,6 +8,7 @@ import { useToast } from '../state/toast';
 import { useMusic } from './music';
 import { attachStream, type Attached } from './engine';
 import { SeekBar, VolumeControl } from './controls';
+import { absoluteUrl, castContentType, claimCast, useCast } from './cast';
 import { Icon } from '../components/Icon';
 import { Img, ProgressBar, Spinner } from '../components/ui';
 import { programProgress } from '../components/Cards';
@@ -24,7 +25,13 @@ export default function LivePlayer() {
   const navigate = useNavigate();
   const toast = useToast();
   const music = useMusic();
-  const { features, user } = useApp();
+  const { features, user, system } = useApp();
+  const cast = useCast(true);
+  const castRef = useRef(cast);
+  castRef.current = cast;
+  const castingRef = useRef(false);
+  const castSidRef = useRef<string | null>(null);
+  const [casting, setCasting] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const attached = useRef<Attached | null>(null);
@@ -63,9 +70,67 @@ export default function LivePlayer() {
     sessionRef.current = null;
   }, []);
 
+  const reportCast = useCallback((state: 'playing' | 'paused' | 'stopped', keepalive = false) => {
+    const sid = castSidRef.current;
+    if (!sid) return;
+    api.playback.progress(sid, { positionMs: Math.round(castRef.current.remote.currentTime * 1000), state, sessionId: sid }, keepalive).catch(() => {});
+  }, []);
+  const endCastSession = useCallback((keepalive = false) => {
+    const sid = castSidRef.current;
+    if (!sid) return;
+    reportCast('stopped', keepalive);
+    api.playback.stop(sid, keepalive).catch(() => {});
+    castSidRef.current = null;
+  }, [reportCast]);
+  const channelRef = useRef(channel);
+  channelRef.current = channel;
+  const scheduleRef = useRef<Program[]>([]);
+
+  /** Play the channel on the Cast device (HLS, LIVE stream type unless it's catch-up). */
+  const playCastRef = useRef<() => Promise<void>>(async () => {});
+  playCastRef.current = async () => {
+    setError(null);
+    endCastSession();
+    try {
+      const pi = await api.livetv.play(channelId, {
+        forceHls: true,
+        catchupStart: catchup ?? undefined,
+        catchupDurationMin: catchup ? catchupDur : undefined,
+      });
+      if (!castingRef.current) {
+        api.playback.stop(pi.sessionId).catch(() => {});
+        return;
+      }
+      castSidRef.current = pi.sessionId;
+      setInfo(pi);
+      setBuffering(false);
+      const ch = channelRef.current;
+      const t = Date.now();
+      const prog = scheduleRef.current.find((p) => new Date(p.start).getTime() <= t && new Date(p.end).getTime() > t);
+      const base = system?.publicUrl;
+      claimCast('live');
+      await castRef.current.load({
+        url: absoluteUrl(pi.url, base)!,
+        contentType: castContentType(pi.mimeType, pi.isHls),
+        live: !catchup,
+        kind: 'generic',
+        title: catchup ? catchupTitle ?? pi.title : prog?.title ?? pi.title ?? ch?.name ?? 'Live TV',
+        subtitle: ch?.name ?? pi.subtitle,
+        imageUrl: absoluteUrl(prog?.iconUrl ?? ch?.logoUrl ?? pi.posterUrl, base),
+      });
+      reportCast('playing');
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+
   const play = useCallback(async (forceHls = false) => {
     const v = videoRef.current;
     if (!v) return;
+    if (castingRef.current) {
+      await playCastRef.current();
+      return;
+    }
     setError(null);
     setBuffering(true);
     endSession();
@@ -77,6 +142,10 @@ export default function LivePlayer() {
         catchupStart: catchup ?? undefined,
         catchupDurationMin: catchup ? catchupDur : undefined,
       });
+      if (castingRef.current) {
+        api.playback.stop(pi.sessionId).catch(() => {});
+        return;
+      }
       sessionRef.current = pi.sessionId;
       setInfo(pi);
       attached.current = await attachStream(v, pi, {
@@ -148,11 +217,62 @@ export default function LivePlayer() {
 
   useEffect(() => {
     const v = videoRef.current;
-    if (v) {
+    if (castingRef.current) {
+      castRef.current.setVolume(volume);
+      castRef.current.setMuted(muted);
+    } else if (v) {
       v.volume = volume;
       v.muted = muted;
     }
   }, [volume, muted]);
+
+  /* ---------------- Google Cast ---------------- */
+  scheduleRef.current = schedule;
+  useEffect(() => {
+    if (cast.connected && !castingRef.current) {
+      castingRef.current = true;
+      setCasting(true);
+      videoRef.current?.pause();
+      endSession();
+      attached.current?.destroy();
+      attached.current = null;
+      void playCastRef.current();
+    } else if (!cast.connected && castingRef.current) {
+      castingRef.current = false;
+      setCasting(false);
+      endCastSession();
+      void play(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cast.connected]);
+  useEffect(() => {
+    if (!casting) return;
+    setPaused(cast.remote.isPaused);
+    if (catchup) setPositionMs(cast.remote.currentTime * 1000);
+    if (castSidRef.current) reportCast(cast.remote.isPaused ? 'paused' : 'playing');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [casting, cast.remote.isPaused, catchup && cast.remote.currentTime]);
+  useEffect(() => {
+    if (!casting) return;
+    const iv = window.setInterval(() => !castRef.current.remote.isPaused && reportCast('playing'), 10000);
+    const unload = () => endCastSession(true);
+    window.addEventListener('pagehide', unload);
+    return () => {
+      window.clearInterval(iv);
+      window.removeEventListener('pagehide', unload);
+    };
+  }, [casting, reportCast, endCastSession]);
+  useEffect(() => () => {
+    if (castingRef.current) {
+      castRef.current.stop();
+      castingRef.current = false;
+    }
+    const sid = castSidRef.current;
+    if (sid) {
+      api.playback.stop(sid).catch(() => {});
+      castSidRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     const h = () => setFullscreen(!!document.fullscreenElement);
@@ -199,6 +319,10 @@ export default function LivePlayer() {
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;
+    if (castingRef.current) {
+      castRef.current.playOrPause();
+      return;
+    }
     if (v.paused) void v.play();
     else v.pause();
   };
@@ -248,11 +372,13 @@ export default function LivePlayer() {
           setShowList((s) => !s);
           break;
         case 'ArrowLeft':
-          if (catchup && videoRef.current) videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 10);
+          if (catchup && castingRef.current) castRef.current.seek(castRef.current.remote.currentTime - 10);
+          else if (catchup && videoRef.current) videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 10);
           else handled = false;
           break;
         case 'ArrowRight':
-          if (catchup && videoRef.current) videoRef.current.currentTime += 10;
+          if (catchup && castingRef.current) castRef.current.seek(castRef.current.remote.currentTime + 10);
+          else if (catchup && videoRef.current) videoRef.current.currentTime += 10;
           else handled = false;
           break;
         case 'Escape':
@@ -294,7 +420,18 @@ export default function LivePlayer() {
   return (
     <div ref={shellRef} className={`player live-player ${controls ? 'show-controls' : 'hide-controls'}`} onMouseMove={poke} onTouchStart={poke}>
       <video ref={videoRef} className="player-video" playsInline onClick={togglePlay} onDoubleClick={toggleFs} />
-      {buffering && !error && <div className="player-center"><Spinner size={56} /></div>}
+      {buffering && !error && !casting && <div className="player-center"><Spinner size={56} /></div>}
+      {casting && (
+        <div className="cast-overlay">
+          <div className="cast-overlay-body" role="status">
+            <Icon name="cast" size={40} />
+            <small>Casting to</small>
+            <strong>{cast.deviceName ?? 'your Cast device'}</strong>
+            <span className="muted">{channel?.name ?? ''}</span>
+            <button className="btn btn-glass btn-sm" onClick={cast.disconnect}><Icon name="x" size={14} /> Stop casting</button>
+          </div>
+        </div>
+      )}
       {error && (
         <div className="player-error">
           <Icon name="alert" size={40} />
@@ -360,7 +497,7 @@ export default function LivePlayer() {
         {catchup ? (
           <div className="player-seek-row">
             <span className="player-time">{formatClock(positionMs)}</span>
-            <SeekBar positionMs={positionMs} durationMs={durMs || catchupDur * 60000} onSeek={(ms) => { if (videoRef.current) videoRef.current.currentTime = ms / 1000; }} />
+            <SeekBar positionMs={positionMs} durationMs={durMs || catchupDur * 60000} onSeek={(ms) => { if (castingRef.current) castRef.current.seek(ms / 1000); else if (videoRef.current) videoRef.current.currentTime = ms / 1000; }} />
             <span className="player-time">{formatClock(durMs || catchupDur * 60000)}</span>
           </div>
         ) : nowProg ? (
@@ -391,7 +528,17 @@ export default function LivePlayer() {
             )}
             <button className={`btn-icon ${showList ? 'active' : ''}`} onClick={() => setShowList((s) => !s)} aria-label="Channel list"><Icon name="list" size={22} /></button>
             <button className="btn-icon" onClick={() => navigate('/livetv/guide')} aria-label="Guide"><Icon name="guide" size={22} /></button>
-            {'pictureInPictureEnabled' in document && document.pictureInPictureEnabled && (
+            {(cast.available || cast.connected) && (
+              <button
+                className={`btn-icon ${cast.connected ? 'active' : ''}`}
+                onClick={cast.toggle}
+                aria-label={cast.connected ? `Stop casting to ${cast.deviceName ?? 'device'}` : 'Cast to a device'}
+                title={cast.connected ? `Casting to ${cast.deviceName ?? 'device'}` : 'Cast'}
+              >
+                <Icon name="cast" size={22} />
+              </button>
+            )}
+            {!casting && 'pictureInPictureEnabled' in document && document.pictureInPictureEnabled && (
               <button className="btn-icon" onClick={() => void videoRef.current?.requestPictureInPicture().catch(() => {})} aria-label="Picture in picture"><Icon name="pip" size={22} /></button>
             )}
             <button className="btn-icon" onClick={toggleFs} aria-label="Fullscreen"><Icon name={fullscreen ? 'fullscreenExit' : 'fullscreen'} size={22} /></button>

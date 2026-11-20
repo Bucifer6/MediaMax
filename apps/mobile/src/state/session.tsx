@@ -400,6 +400,7 @@ export function useCapabilities() {
       photos: features.photos,
       downloads: features.downloads && (user?.allowDownloads ?? false),
       linkCodes: features.linkCodes,
+      requests: !!features.requests && status === 'signed-in',
       syncPlay: features.syncPlay && status === 'signed-in',
       profilePicker: features.profilePicker,
       offline: status === 'offline',

@@ -45,3 +45,19 @@ export const QUALITY_OPTIONS: { label: string; kbps: number | null }[] = [
   { label: '480p · 1.5 Mbps', kbps: 1500 },
   { label: '360p · 720 kbps', kbps: 720 },
 ];
+
+/**
+ * What a Chromecast (default media receiver) plays natively. Sent instead of the
+ * phone's own profile while casting, so the server remuxes/transcodes for the TV.
+ */
+export function castDeviceProfile(kind: 'video' | 'audio', maxBitrate?: number | null): DeviceProfile {
+  if (kind === 'audio') return { audioCodecs: ['aac', 'mp3'], containers: ['mp4', 'm4a', 'mp3'], supportsHls: true, videoCodecs: [] };
+  return {
+    maxBitrate: maxBitrate ?? null,
+    maxWidth: 1920,
+    videoCodecs: ['h264'],
+    audioCodecs: ['aac', 'mp3'],
+    containers: ['mp4'],
+    supportsHls: true,
+  };
+}

@@ -266,3 +266,12 @@ a.stat:hover { transform: translateY(-2px); border-color: var(--c-primary); }
 .callout-warning { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: var(--radius); background: color-mix(in srgb, var(--c-warning) 10%, var(--c-surface)); border: 1px solid color-mix(in srgb, var(--c-warning) 35%, transparent); font-size: 0.9rem; }
 .callout-warning .icon { color: var(--c-warning); flex: none; margin-top: 2px; }
 .copy-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; } .copy-row code { flex: 1; min-width: 0; word-break: break-all; padding: 8px 10px; }
+
+/* Requests settings */
+.settings-fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.user-chips .check-chip { font-family: inherit; }
+.arr-card { display: flex; flex-direction: column; gap: 14px; padding: 18px; border-radius: var(--radius-lg); background: var(--c-surface-alt); border: 1px solid var(--c-line); }
+.arr-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.arr-head strong { display: inline-flex; align-items: center; gap: 8px; font-size: 1rem; }
+.arr-head .badge { margin-left: auto; }
+.settings-fieldset legend, .request-seasons legend { padding: 0; }

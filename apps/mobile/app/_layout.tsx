@@ -5,6 +5,7 @@ import * as SystemUI from 'expo-system-ui';
 import React, { useEffect, useMemo } from 'react';
 import { Platform, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CastProvider } from '@/cast';
 import { BrandSplash } from '@/components/BrandSplash';
 import { MiniPlayer } from '@/components/MiniPlayer';
 import { DownloadsProvider } from '@/state/downloads';
@@ -31,13 +32,15 @@ function ThemedApp() {
   const theme = useMemo(() => resolveTheme(branding, user?.preferences?.themeId), [branding, user?.preferences?.themeId]);
   return (
     <ThemeProvider theme={theme}>
-      <DownloadsProvider>
-        <MusicProvider>
-          <SyncPlayProvider>
-            <Navigation />
-          </SyncPlayProvider>
-        </MusicProvider>
-      </DownloadsProvider>
+      <CastProvider>
+        <DownloadsProvider>
+          <MusicProvider>
+            <SyncPlayProvider>
+              <Navigation />
+            </SyncPlayProvider>
+          </MusicProvider>
+        </DownloadsProvider>
+      </CastProvider>
     </ThemeProvider>
   );
 }

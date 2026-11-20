@@ -10,9 +10,12 @@ import type {
   ChannelCategory,
   ChannelQuery,
   CreateRecordingRequest,
+  CreateMediaRequest,
   CreateRecordingRuleRequest,
+  CreateSmartListRequest,
   Device,
   DeviceInfo,
+  DiscoverResponse,
   DownloadQuality,
   DvrDefaults,
   GuideResponse,
@@ -28,6 +31,7 @@ import type {
   LivePlayRequest,
   Lyrics,
   LoginRequest,
+  MediaRequest,
   Paged,
   PinLoginRequest,
   PlaybackInfo,
@@ -41,7 +45,10 @@ import type {
   RecordingRule,
   RecordingStatus,
   RemoteSubtitle,
+  RequestMediaType,
+  RequestStatus,
   SearchResponse,
+  SmartFilter,
   SystemInfo,
   TraktDeviceCode,
   TraktStatus,
@@ -357,6 +364,40 @@ export class MediaMaxClient {
   }
   deletePlaylist(id: string) {
     return this.del<{ ok: true }>(`/playlists/${encodeURIComponent(id)}`);
+  }
+
+  /* ---------------------------- Smart lists -------------------------- */
+  /** Live preview of a smart filter: `total` is the full match count, `items` the first `limit`. */
+  smartPreview(filter: SmartFilter, limit = 20) {
+    return this.post<Paged<Item>>('/smart/preview', { filter, limit });
+  }
+  createSmartList(body: CreateSmartListRequest) {
+    return this.post<Item>('/smart', body);
+  }
+  updateSmartList(id: string, body: { title?: string; overview?: string; filter?: SmartFilter }) {
+    return this.request<Item>('PUT', `/smart/${encodeURIComponent(id)}`, { body });
+  }
+
+  /* ------------------------- Requests (Discover) ---------------------- */
+  /** Trending when `q` is empty. */
+  discover(q: { q?: string; type?: RequestMediaType | 'all'; page?: number }, signal?: AbortSignal) {
+    return this.request<DiscoverResponse>('GET', '/discover', { query: q, signal, timeoutMs: 30000 });
+  }
+  /** Non-admins always get their own; admins get everyone's unless `mine`. */
+  mediaRequests(q: { status?: RequestStatus; mine?: boolean } = {}) {
+    return this.get<MediaRequest[]>('/requests', { status: q.status, mine: q.mine ? true : undefined });
+  }
+  createMediaRequest(body: CreateMediaRequest) {
+    return this.post<MediaRequest>('/requests', body);
+  }
+  approveMediaRequest(id: string) {
+    return this.post<MediaRequest>(`/requests/${encodeURIComponent(id)}/approve`);
+  }
+  declineMediaRequest(id: string, note?: string) {
+    return this.post<MediaRequest>(`/requests/${encodeURIComponent(id)}/decline`, { note: note || undefined });
+  }
+  deleteMediaRequest(id: string) {
+    return this.del<{ ok: true }>(`/requests/${encodeURIComponent(id)}`);
   }
 
   /* --------------------- Trickplay / subtitles ---------------------- */

@@ -41,7 +41,7 @@ export default function ItemScreen() {
       case 'album':
       case 'audiobook':
       case 'playlist':
-        return <TrackListDetail item={item} onUserData={setUserData} />;
+        return <TrackListDetail item={item} onUserData={setUserData} onItem={(it) => setData((prev) => (prev ? { ...prev, ...it, userData: it.userData ?? prev.userData } : it))} />;
       case 'artist':
         return <ArtistDetail item={item} onUserData={setUserData} />;
       case 'collection':

@@ -22,6 +22,7 @@ export default function TabsLayout() {
         <Tabs.Screen name="libraries" />
         <Tabs.Screen name="live" />
         <Tabs.Screen name="search" />
+        <Tabs.Screen name="discover" />
         <Tabs.Screen name="downloads" />
         <Tabs.Screen name="settings" />
       </Tabs>
