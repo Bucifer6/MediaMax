@@ -17,6 +17,7 @@ import playbackRoutes from './routes/playback.js';
 import liveRoutes from './routes/livetv.js';
 import wsRoutes from './routes/ws.js';
 import extraRoutes from './routes/extras.js';
+import dlnaRoutes from './routes/dlna.js';
 
 const log = logger('http');
 
@@ -48,6 +49,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register(extraRoutes);
   }, { prefix: '/api/v1' });
 
+  await app.register(dlnaRoutes);
   app.get('/health', async () => ({ ok: true }));
 
   // Web client (SPA) — served if built.

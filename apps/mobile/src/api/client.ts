@@ -13,6 +13,8 @@ import type {
   CreateRecordingRuleRequest,
   Device,
   DeviceInfo,
+  DownloadQuality,
+  DvrDefaults,
   GuideResponse,
   HomeResponse,
   Item,
@@ -259,6 +261,28 @@ export class MediaMaxClient {
   updateMe(body: UpdateMeRequest) {
     return this.patch<User>('/auth/me', body);
   }
+  /** Upload a new avatar (multipart field `file`). `uri` is a local file URI, e.g. from expo-image-picker. */
+  async uploadAvatar(file: { uri: string; name: string; type: string }): Promise<User> {
+    const form = new FormData();
+    // React Native's FormData accepts { uri, name, type } file parts.
+    form.append('file', file as unknown as Blob);
+    const headers = this.headers(false);
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(`${this.baseUrl}${API_PREFIX}/auth/me/avatar`, { method: 'POST', headers, body: form }, 60000);
+    } catch {
+      throw new ApiError(0, 'network', 'Network error — is the server reachable?');
+    }
+    const data = (await res.json().catch(() => null)) as (User & Partial<ApiErrorBody>) | null;
+    if (!res.ok) {
+      if (res.status === 401) this.onUnauthorized?.();
+      throw new ApiError(res.status, data?.error ?? 'http', data?.message ?? `Upload failed (${res.status})`);
+    }
+    return data as User;
+  }
+  removeAvatar() {
+    return this.del<User>('/auth/me/avatar');
+  }
   devices() {
     return this.get<Device[]>('/auth/devices');
   }
@@ -329,8 +353,10 @@ export class MediaMaxClient {
   stopSession(sessionId: string) {
     return this.del<{ ok: true }>(`/playback/sessions/${encodeURIComponent(sessionId)}`);
   }
-  downloadUrl(itemId: string) {
-    return this.withAuthQuery(`${API_PREFIX}/stream/download/${encodeURIComponent(itemId)}`);
+  /** Download URL. Non-original qualities are converted on the fly (fragmented MP4 / .m4a, no Content-Length). */
+  downloadUrl(itemId: string, quality: DownloadQuality = 'original') {
+    const q = quality === 'original' ? '' : `?quality=${encodeURIComponent(quality)}`;
+    return this.withAuthQuery(`${API_PREFIX}/stream/download/${encodeURIComponent(itemId)}${q}`);
   }
 
   /* ----------------------------- Live TV ---------------------------- */
@@ -366,6 +392,9 @@ export class MediaMaxClient {
   }
   deleteRecording(id: string) {
     return this.del<{ ok: true }>(`/dvr/recordings/${encodeURIComponent(id)}`);
+  }
+  dvrDefaults() {
+    return this.get<DvrDefaults>('/dvr/defaults');
   }
   rules() {
     return this.get<RecordingRule[]>('/dvr/rules');

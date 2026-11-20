@@ -2,15 +2,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';
 import { Alert, FlatList, Linking, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { Item, Person, UserItemData } from '@/api/types';
+import type { DownloadQuality, Item, Person, UserItemData } from '@/api/types';
 import { Button } from '@/components/Button';
 import { MetaLine } from '@/components/Hero';
+import { OptionSheet } from '@/components/OptionSheet';
 import { Img } from '@/components/Img';
 import { ProgressBar } from '@/components/ProgressBar';
 import { RowHeader } from '@/components/Row';
 import { BackButton } from '@/components/Screen';
 import { T } from '@/components/Text';
-import { useDownloads } from '@/state/downloads';
+import { DOWNLOAD_QUALITIES, effectiveQuality, useDownloads } from '@/state/downloads';
 import { useApi, useCapabilities } from '@/state/session';
 import { useTheme } from '@/theme';
 import { formatClock, progressFraction } from '@/utils/format';
@@ -157,7 +158,9 @@ export function ActionBar({
   const downloads = useDownloads();
   const rec = downloads.get(item.id);
   const [busy, setBusy] = useState(false);
+  const [pickQuality, setPickQuality] = useState(false);
   const canDownload = downloadable && caps.downloads && downloads.supported;
+  const isAudio = item.type === 'track' || item.type === 'album';
 
   const onDownload = async () => {
     if (rec?.state === 'done') {
@@ -168,16 +171,25 @@ export function ActionBar({
       return;
     }
     if (rec?.state === 'downloading' || rec?.state === 'queued') return downloads.cancel(item.id);
+    // Audio has no resolution to pick: original (or AAC .m4a where iOS needs it).
+    if (isAudio) return start('original');
+    setPickQuality(true);
+  };
+
+  const start = async (quality: DownloadQuality) => {
+    setPickQuality(false);
     setBusy(true);
     try {
-      await downloads.download(downloadItems ? await downloadItems() : item);
+      await downloads.download(downloadItems ? await downloadItems() : item, quality);
     } finally {
       setBusy(false);
     }
   };
+  // Only a single item tells us its container; for seasons the per-episode choice happens in the provider.
+  const iosConverts = !downloadItems && effectiveQuality(item, 'original') !== 'original';
 
   const dlIcon = rec?.state === 'done' ? 'checkmark-circle' : rec?.state === 'downloading' || rec?.state === 'queued' ? 'close-circle-outline' : 'arrow-down-circle-outline';
-  const dlLabel = rec?.state === 'downloading' ? `${Math.round(rec.progress * 100)}%` : rec?.state === 'queued' ? 'Queued' : rec?.state === 'done' ? 'Downloaded' : undefined;
+  const dlLabel = rec?.state === 'downloading' ? (rec.total ? `${Math.round(rec.progress * 100)}%` : 'Downloading') : rec?.state === 'queued' ? 'Queued' : rec?.state === 'done' ? 'Downloaded' : undefined;
 
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.space.sm, alignItems: 'center' }}>
@@ -188,6 +200,20 @@ export function ActionBar({
       {canDownload ? <Button icon={dlIcon} label={dlLabel} variant="secondary" size="lg" onPress={onDownload} loading={busy} accessibilityLabel="Download" /> : null}
       {item.trailerUrl ? <Button icon="film-outline" label={t.isTV ? 'Trailer' : undefined} variant="secondary" size="lg" onPress={() => Linking.openURL(item.trailerUrl!)} accessibilityLabel="Trailer" /> : null}
       {extra}
+      {canDownload ? (
+        <OptionSheet
+          visible={pickQuality}
+          title="Download quality"
+          options={DOWNLOAD_QUALITIES.map((q) => ({
+            key: q.key,
+            label: q.key === downloads.defaultQuality ? `${q.label} (default)` : q.label,
+            description: q.key === 'original' && iosConverts ? 'This format does not play offline on iOS — 1080p will be used' : q.description,
+            selected: q.key === downloads.defaultQuality,
+          }))}
+          onSelect={(k) => void start(k)}
+          onClose={() => setPickQuality(false)}
+        />
+      ) : null}
     </View>
   );
 }

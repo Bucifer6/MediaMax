@@ -1,19 +1,35 @@
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, Linking, Platform, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, ScrollView, View } from 'react-native';
 import { appVersion } from '@/api/device';
 import { Button } from '@/components/Button';
+import { Focusable } from '@/components/Focusable';
+import { Icon } from '@/components/Icon';
 import { Img } from '@/components/Img';
 import { Input } from '@/components/Input';
+import { OptionSheet } from '@/components/OptionSheet';
 import { Screen, ScreenHeader } from '@/components/Screen';
 import { SettingRow, SettingSection } from '@/components/SettingRow';
 import { useTabBarSpace } from '@/components/TabBar';
 import { T } from '@/components/Text';
-import { useDownloads } from '@/state/downloads';
+import { DOWNLOAD_QUALITIES, qualityLabel, useDownloads } from '@/state/downloads';
 import { useCapabilities, useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 import { formatBytes } from '@/utils/format';
+
+type ImagePickerModule = typeof import('expo-image-picker');
+
+/** expo-image-picker is phone-only (no tvOS pod), so load it lazily. */
+function imagePicker(): ImagePickerModule | null {
+  if (Platform.isTV || Platform.OS === 'web') return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('expo-image-picker') as ImagePickerModule;
+  } catch {
+    return null;
+  }
+}
 
 export default function SettingsScreen() {
   const t = useTheme();
@@ -22,6 +38,8 @@ export default function SettingsScreen() {
   const downloads = useDownloads();
   const bottom = useTabBarSpace();
   const [editing, setEditing] = useState(false);
+  const [qualitySheet, setQualitySheet] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
   const [name, setName] = useState(user?.displayName ?? '');
   const theme = branding?.themes.find((x) => x.id === (branding.allowUserThemes ? user?.preferences.themeId : null)) ?? branding?.themes.find((x) => x.id === branding.defaultThemeId);
   const prefs = user?.preferences;
@@ -36,6 +54,45 @@ export default function SettingsScreen() {
       Alert.alert('Could not save', e instanceof Error ? e.message : '');
     }
   };
+
+  const pickAvatar = async () => {
+    const picker = imagePicker();
+    if (!api || !picker) return;
+    const res = await picker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.85 });
+    const asset = res.canceled ? null : res.assets?.[0];
+    if (!asset) return;
+    setAvatarBusy(true);
+    try {
+      const type = asset.mimeType ?? 'image/jpeg';
+      await api.uploadAvatar({ uri: asset.uri, name: asset.fileName ?? `avatar.${type.split('/')[1] ?? 'jpg'}`, type });
+      await refreshUser();
+    } catch (e) {
+      Alert.alert('Could not update picture', e instanceof Error ? e.message : '');
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    if (!api) return;
+    setAvatarBusy(true);
+    try {
+      await api.removeAvatar();
+      await refreshUser();
+    } catch (e) {
+      Alert.alert('Could not remove picture', e instanceof Error ? e.message : '');
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const canEditAvatar = !t.isTV && !!imagePicker();
+  const editAvatar = () =>
+    Alert.alert('Profile picture', undefined, [
+      { text: 'Choose photo', onPress: () => void pickAvatar() },
+      ...(user?.avatarUrl ? [{ text: 'Remove photo', style: 'destructive' as const, onPress: () => void removeAvatar() }] : []),
+      { text: 'Cancel', style: 'cancel' as const },
+    ]);
 
   const confirmSignOut = () => {
     if (t.isTV) return void signOut();
@@ -53,9 +110,18 @@ export default function SettingsScreen() {
           <ScreenHeader title="Settings" back={false} />
           {/* Account */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.md, padding: t.space.md, borderRadius: t.radius, backgroundColor: t.colors.surface, marginBottom: t.space.lg }}>
-            <View style={{ width: t.s(60), height: t.s(60), borderRadius: t.s(30), backgroundColor: t.colors.primary, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
+            <Focusable onPress={canEditAvatar ? editAvatar : undefined} disabled={!canEditAvatar || avatarBusy} ring={false} accessibilityLabel="Change profile picture" style={{ width: t.s(60), height: t.s(60), borderRadius: t.s(30), backgroundColor: t.colors.primary, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
               {user?.avatarUrl ? <Img path={user.avatarUrl} width={60} style={{ width: '100%', height: '100%' }} /> : <T variant="title" color={t.colors.primaryText}>{user?.displayName?.slice(0, 1).toUpperCase()}</T>}
-            </View>
+              {avatarBusy ? (
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }}>
+                  <ActivityIndicator color="#fff" />
+                </View>
+              ) : canEditAvatar ? (
+                <View style={{ position: 'absolute', right: 0, bottom: 0, left: 0, alignItems: 'center', paddingVertical: 2, backgroundColor: 'rgba(0,0,0,0.45)' }}>
+                  <Icon name="camera-outline" size={12} color="#fff" />
+                </View>
+              ) : null}
+            </Focusable>
             <View style={{ flex: 1, gap: 2 }}>
               {editing ? (
                 <Input value={name} onChangeText={setName} autoFocus returnKeyType="done" onSubmitEditing={saveName} />
@@ -81,6 +147,7 @@ export default function SettingsScreen() {
             {caps.linkCodes && !t.isTV ? <SettingRow icon="tv-outline" label="Link a TV" value="Enter a code" onPress={() => router.push('/link-tv' as never)} /> : null}
             <SettingRow icon="phone-portrait-outline" label="Signed-in devices" onPress={() => router.push('/settings/devices' as never)} />
             {downloads.supported && (caps.downloads || downloads.records.length) ? <SettingRow icon="download-outline" label="Downloads" value={formatBytes(downloads.totalBytes) || 'None'} onPress={() => router.push('/(tabs)/downloads')} /> : null}
+            {downloads.supported && caps.downloads ? <SettingRow icon="film-outline" label="Download quality" value={qualityLabel(downloads.defaultQuality)} onPress={() => setQualitySheet(true)} /> : null}
           </SettingSection>
 
           <SettingSection title="Account">
@@ -106,6 +173,16 @@ export default function SettingsScreen() {
           </T>
         </View>
       </ScrollView>
+      <OptionSheet
+        visible={qualitySheet}
+        title="Default download quality"
+        options={DOWNLOAD_QUALITIES.map((q) => ({ key: q.key, label: q.label, description: q.description, selected: q.key === downloads.defaultQuality }))}
+        onSelect={(k) => {
+          downloads.setDefaultQuality(k);
+          setQualitySheet(false);
+        }}
+        onClose={() => setQualitySheet(false)}
+      />
     </Screen>
   );
 }

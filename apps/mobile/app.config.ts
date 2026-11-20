@@ -124,6 +124,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ['expo-audio', { microphonePermission: false, enableBackgroundPlayback: true }],
       'expo-secure-store',
       'expo-font',
+      // Profile picture upload (phones only; the pod is skipped on tvOS).
+      ['expo-image-picker', { photosPermission: `${appName} uses your photos to set your profile picture.`, cameraPermission: false, microphonePermission: false }],
       [
         'expo-splash-screen',
         {

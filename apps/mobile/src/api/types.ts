@@ -871,6 +871,31 @@ export interface ServerSettings {
   allowPasswordlessProfiles: boolean;
   /** Hide items with no content rating from users who have a rating limit. */
   blockUnratedForRestricted: boolean;
+  trickplay: {
+    /** Generate scrub-preview thumbnails in the background. */
+    enabled: boolean;
+    intervalSeconds: number;
+    width: number;
+  };
+  openSubtitles: {
+    apiKey: string | null;
+    username: string | null;
+    password: string | null;
+    /** Languages to fetch automatically for new media (ISO 639-1, e.g. ["en"]); empty = off. */
+    autoLanguages: string[];
+  };
+  trakt: {
+    clientId: string | null;
+    clientSecret: string | null;
+  };
+  /** DLNA / UPnP media server for smart TVs, consoles and players on the local network. */
+  dlna: {
+    enabled: boolean;
+    /** Name shown on TVs; defaults to the server name. */
+    friendlyName: string | null;
+    /** Browse as this user (library access & rating limits apply). Null = first admin. */
+    userId: string | null;
+  };
   sessionTimeoutDays: number;
 }
 
@@ -972,4 +997,111 @@ export interface SyncPlayRoom {
   state: 'playing' | 'paused';
   positionMs: number;
   updatedAt: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Trickplay (scrub preview thumbnails)                                */
+/* ------------------------------------------------------------------ */
+
+export interface TrickplayInfo {
+  mediaId: string;
+  /** Milliseconds between thumbnails. */
+  intervalMs: number;
+  /** Size of one thumbnail in px. */
+  width: number;
+  height: number;
+  /** Thumbnails per sheet row / column. */
+  columns: number;
+  rows: number;
+  /** Total thumbnails across all sheets. */
+  count: number;
+  /** Sprite sheet URLs (include `?token=`), in order. Thumbnail n is on sheet floor(n / (columns*rows)). */
+  sheets: string[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Statistics / "Wrapped"                                              */
+/* ------------------------------------------------------------------ */
+
+export interface StatsTopEntry {
+  itemId: string | null;
+  title: string;
+  subtitle: string | null;
+  posterUrl: string | null;
+  plays: number;
+  minutes: number;
+}
+
+export interface UserStats {
+  /** Year the stats cover, or null for all time. */
+  year: number | null;
+  totalMinutes: number;
+  totalPlays: number;
+  moviesWatched: number;
+  episodesWatched: number;
+  tracksPlayed: number;
+  liveTvMinutes: number;
+  /** Longest run of consecutive days with any playback. */
+  longestStreakDays: number;
+  /** Minutes per month (12 entries, Jan..Dec) — only when year is set. */
+  minutesByMonth: number[];
+  /** Minutes per weekday (7 entries, Sun..Sat). */
+  minutesByWeekday: number[];
+  /** Minutes per hour of day (24 entries). */
+  minutesByHour: number[];
+  topGenres: { genre: string; minutes: number }[];
+  topMovies: StatsTopEntry[];
+  topShows: StatsTopEntry[];
+  topArtists: StatsTopEntry[];
+  topChannels: StatsTopEntry[];
+  /** A few short fun facts for the "Wrapped" screen. */
+  highlights: string[];
+}
+
+export interface ServerStats {
+  days: number;
+  totalPlays: number;
+  totalMinutes: number;
+  byUser: { userId: string; userName: string; plays: number; minutes: number }[];
+  byPlatform: { platform: string; plays: number }[];
+  byMethod: { method: string; plays: number }[];
+  topItems: StatsTopEntry[];
+  /** Plays per day for the window (oldest first). */
+  playsByDay: { date: string; plays: number; minutes: number }[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Online subtitles (OpenSubtitles)                                    */
+/* ------------------------------------------------------------------ */
+
+export interface RemoteSubtitle {
+  /** Provider file id to pass to the download endpoint. */
+  fileId: string;
+  provider: 'opensubtitles';
+  language: string;
+  release: string | null;
+  downloads: number;
+  hearingImpaired: boolean;
+  forced: boolean;
+  aiTranslated: boolean;
+  rating: number | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Trakt                                                               */
+/* ------------------------------------------------------------------ */
+
+export interface TraktStatus {
+  /** Admin has configured a Trakt app (client id/secret). */
+  available: boolean;
+  connected: boolean;
+  username: string | null;
+  scrobble: boolean;
+}
+
+export interface TraktDeviceCode {
+  userCode: string;
+  verificationUrl: string;
+  expiresAt: string;
+  intervalSeconds: number;
 }

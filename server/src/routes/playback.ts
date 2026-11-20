@@ -19,7 +19,7 @@ const MIME: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic',
 };
 
-function sendFileRange(req: FastifyRequest, reply: FastifyReply, file: string, mime: string, download?: string) {
+export function sendFileRange(req: FastifyRequest, reply: FastifyReply, file: string, mime: string, download?: string) {
   const stat = fs.statSync(file);
   const size = stat.size;
   reply.header('Accept-Ranges', 'bytes').header('Content-Type', mime).header('Cache-Control', 'private, max-age=3600');

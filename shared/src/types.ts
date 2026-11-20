@@ -888,6 +888,14 @@ export interface ServerSettings {
     clientId: string | null;
     clientSecret: string | null;
   };
+  /** DLNA / UPnP media server for smart TVs, consoles and players on the local network. */
+  dlna: {
+    enabled: boolean;
+    /** Name shown on TVs; defaults to the server name. */
+    friendlyName: string | null;
+    /** Browse as this user (library access & rating limits apply). Null = first admin. */
+    userId: string | null;
+  };
   sessionTimeoutDays: number;
 }
 

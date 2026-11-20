@@ -65,7 +65,11 @@ export function ProgramSheet({
       onChanged?.({ ...program, recordingId: null });
     }, 'Recording cancelled');
   const series = () =>
-    run('series', () => api.createRule({ titleMatch: program.title, channelId: program.channelId, newOnly: true, keepLatest: null, paddingBeforeMin: 1, paddingAfterMin: 5 }), `Recording every "${program.title}"`);
+    run('series', async () => {
+      // Use the server's DVR padding defaults; fall back if the call fails.
+      const pad = await api.dvrDefaults().catch(() => ({ paddingBeforeMin: 1, paddingAfterMin: 5 }));
+      await api.createRule({ titleMatch: program.title, channelId: program.channelId, newOnly: true, keepLatest: null, paddingBeforeMin: pad.paddingBeforeMin, paddingAfterMin: pad.paddingAfterMin });
+    }, `Recording every "${program.title}"`);
 
   const go = (fn: () => void) => {
     onClose();

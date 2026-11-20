@@ -12,6 +12,7 @@ import { listSessions, transcodeCount } from '../services/playback.js';
 import { listTasks, runTask } from '../services/tasks.js';
 import { listActivity, logActivity } from '../services/activity.js';
 import { sendWebhook } from '../services/webhooks.js';
+import { syncDlna } from '../services/dlna.js';
 import { recentLogLines } from '../util/log.js';
 import { badRequest, forbidden } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
@@ -95,6 +96,7 @@ export default async function systemRoutes(app: FastifyInstance) {
   app.put<{ Body: Partial<ServerSettings> }>('/settings', async (req) => {
     const a = requireAdmin(req);
     const s = updateSettings(req.body ?? {});
+    syncDlna();
     if (req.body?.serverName) updateBranding({ serverName: req.body.serverName });
     logActivity('settings', 'Server settings updated', { userId: a.user.id, userName: a.user.displayName });
     return s;

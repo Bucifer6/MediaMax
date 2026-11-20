@@ -42,6 +42,7 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   trickplay: { enabled: false, intervalSeconds: 10, width: 320 },
   openSubtitles: { apiKey: process.env.OPENSUBTITLES_API_KEY ?? null, username: null, password: null, autoLanguages: [] },
   trakt: { clientId: process.env.TRAKT_CLIENT_ID ?? null, clientSecret: process.env.TRAKT_CLIENT_SECRET ?? null },
+  dlna: { enabled: false, friendlyName: null, userId: null },
   sessionTimeoutDays: 90,
 };
 
@@ -58,6 +59,7 @@ export function getSettings(): ServerSettings {
     trickplay: { ...DEFAULT_SETTINGS.trickplay, ...(stored.trickplay ?? {}) },
     openSubtitles: { ...DEFAULT_SETTINGS.openSubtitles, ...(stored.openSubtitles ?? {}) },
     trakt: { ...DEFAULT_SETTINGS.trakt, ...(stored.trakt ?? {}) },
+    dlna: { ...DEFAULT_SETTINGS.dlna, ...(stored.dlna ?? {}) },
     webhooks: stored.webhooks ?? [],
   };
   return cache;
@@ -73,6 +75,7 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     trickplay: { ...cur.trickplay, ...(patch.trickplay ?? {}) },
     openSubtitles: { ...cur.openSubtitles, ...(patch.openSubtitles ?? {}) },
     trakt: { ...cur.trakt, ...(patch.trakt ?? {}) },
+    dlna: { ...cur.dlna, ...(patch.dlna ?? {}) },
     webhooks: (patch.webhooks ?? cur.webhooks).map((w) => ({ ...w, id: w.id || newId() })),
   };
   setKv('server', next);
