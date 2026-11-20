@@ -35,6 +35,10 @@ See the full [feature matrix](docs/FEATURES.md) and the [API reference](docs/API
 - **Requests built in** — users discover trending titles and request them; approvals go straight to
   Radarr/Sonarr and the request flips to *available* when the title lands.
 - **Smart collections & playlists** — rule-based lists (genre, decade, unwatched, recently added, 4K…).
+- **In the car** — Apple CarPlay and Android Auto for music, audiobooks and podcasts, with continue
+  listening, search and voice on Android Auto.
+- **Serious live TV** — multiview (up to four channels at once), several merged EPG sources, DVR with
+  priorities, tuner-conflict detection, day/time rules and comskip ad-break markers.
 - **Your year in review** — per-user "Wrapped" plus admin statistics.
 - **Plays well with others** — Trakt and Last.fm scrobbling, OpenSubtitles, DLNA for smart TVs and
   consoles, webhooks for Home Assistant/Discord.
