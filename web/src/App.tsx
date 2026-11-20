@@ -5,6 +5,8 @@ import { AppProvider, useApp } from './state/app';
 import { ToastProvider } from './state/toast';
 import { ConfirmProvider, PageLoader } from './components/ui';
 import { MusicProvider } from './player/music';
+import { KaraokeProvider } from './player/karaoke';
+import { NowPlayingProvider } from './player/NowPlaying';
 import { Layout } from './components/Layout';
 import { Icon } from './components/Icon';
 import { BrandLogo } from './components/BrandLogo';
@@ -177,7 +179,11 @@ export function App() {
         <ConfirmProvider>
           <AppProvider>
             <MusicProvider>
-              <Gate />
+              <KaraokeProvider>
+                <NowPlayingProvider>
+                  <Gate />
+                </NowPlayingProvider>
+              </KaraokeProvider>
             </MusicProvider>
           </AppProvider>
         </ConfirmProvider>

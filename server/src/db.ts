@@ -454,6 +454,15 @@ const MIGRATIONS: string[] = [
   ALTER TABLE users ADD COLUMN hide_unrated INTEGER NOT NULL DEFAULT 0;
   CREATE INDEX users_parent ON users(parent_user_id);
   `,
+  /* Lyrics editor (admin edits win over every other source) and per-user per-track lyrics offsets */ `
+  CREATE TABLE IF NOT EXISTS lyrics_edits (
+    item_id TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE, lrc TEXT NOT NULL, edited_by TEXT, edited_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS lyrics_offsets (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    offset_ms INTEGER NOT NULL, PRIMARY KEY (user_id, item_id)
+  );
+  `,
 ];
 
 function migrate(db: Database) {

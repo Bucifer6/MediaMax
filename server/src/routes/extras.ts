@@ -233,9 +233,9 @@ export default async function extraRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>('/items/:id/lyrics', async (req) => {
     const { user } = requireUser(req);
     assertCanSee(user, req.params.id);
-    const l = await getLyrics(req.params.id);
+    const l = await getLyrics(req.params.id, user.id);
     if (!l) throw notFound('No lyrics for this track');
-    return l;
+    return { ...l, canEdit: user.isAdmin };
   });
 
   /* -------------------------------- stats --------------------------- */

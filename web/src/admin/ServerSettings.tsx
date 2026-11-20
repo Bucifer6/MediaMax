@@ -1,3 +1,4 @@
+import { KaraokeSettingsPanel } from './KaraokeSettings';
 import { AiDjSettingsPanel } from './AiDjSettings';
 import { HardwareDetect } from './HardwareDetect';
 import { MetadataSettingsPanel } from './MetadataSettings';
@@ -16,7 +17,7 @@ import { AdminHeader } from './AdminRoutes';
 import { NotificationAgentsPanel } from './NotificationAgents';
 import { QuotaEditor, DEFAULT_QUOTAS } from './RequestPermissionsEditor';
 
-type Tab = 'general' | 'transcoding' | 'cinema' | 'aidj' | 'dvr' | 'requests' | 'notifications' | 'arr' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks' | 'metadata';
+type Tab = 'general' | 'transcoding' | 'cinema' | 'aidj' | 'karaoke' | 'dvr' | 'requests' | 'notifications' | 'arr' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks' | 'metadata';
 const HW: { value: HwAccel; label: string }[] = [
   { value: 'none', label: 'None (CPU)' },
   { value: 'vaapi', label: 'VA-API (Intel/AMD, Linux)' },
@@ -156,6 +157,7 @@ export function ServerSettingsAdmin() {
         { value: 'transcoding', label: 'Transcoding' },
         { value: 'cinema', label: 'Cinema mode' },
         { value: 'aidj', label: 'AI DJ' },
+        { value: 'karaoke', label: 'Karaoke & lyrics' },
         { value: 'dvr', label: 'DVR' },
         { value: 'requests', label: 'Requests' },
         { value: 'notifications', label: 'Notifications' },
@@ -248,6 +250,7 @@ export function ServerSettingsAdmin() {
         )}
         {tab === 'metadata' && <MetadataSettingsPanel />}
         {tab === 'aidj' && <AiDjSettingsPanel value={s.aiDj} onChange={(aiDj) => set({ aiDj })} />}
+        {tab === 'karaoke' && <KaraokeSettingsPanel value={s.karaoke} onChange={(karaoke) => set({ karaoke })} dirty={dirty} />}
         {tab === 'cinema' && (
           <div className="form-grid">
             <p className="muted">

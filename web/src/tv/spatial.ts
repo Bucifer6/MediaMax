@@ -238,6 +238,8 @@ export function installTvMode() {
     // Let text fields keep left/right for the caret, ranges/selects their own arrows, and the video players their seek/volume keys.
     if (isTextInput(target) && (dir === 'left' || dir === 'right')) return;
     if (target instanceof HTMLSelectElement || (target instanceof HTMLInputElement && target.type === 'range')) return;
+    // Elements that use the arrows themselves (e.g. the music visualiser stage: left/right switch styles).
+    if (target instanceof HTMLElement && target.dataset.ownArrows !== undefined && (dir === 'left' || dir === 'right')) return;
     if (inPlayer && (!target || target === document.body || target.tagName === 'VIDEO')) return;
     if (move(dir)) e.preventDefault();
   }, true);

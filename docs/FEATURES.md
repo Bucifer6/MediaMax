@@ -26,7 +26,12 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | `.mediamaxignore` / `.plexignore` folders | ✅ | ✅ | ❌ | ✅ |
 | Safe removal (no wipe when a drive is unmounted) | ✅ | 🟡 | 🟡 | ✅ |
 | Real-time filesystem watching | ✅ | ✅ | ✅ | ✅ |
-| Synced lyrics (LRC sidecars, embedded tags, LRCLIB fallback) | ✅ | ✅ | ✅ | ✅ |
+| Synced lyrics (LRC sidecars, embedded tags incl. ID3 SYLT, LRCLIB fallback) | ✅ | ✅ | ✅ | ✅ |
+| Word-by-word karaoke lyrics (enhanced LRC / SYLT word timing, wipe on line-timed lyrics) | ❌ | 🟡 | ❌ | ✅ |
+| Lyrics editor (tap-to-sync, import/export .lrc) and per-user lyrics timing offsets | ❌ | 🟡 | ❌ | ✅ |
+| Karaoke mode: instant vocal reduction + AI vocal separation (HT-Demucs stems, playable on every device) | ❌ | ❌ | ❌ | ✅ |
+| Music visualisers (cover ring, bars, waveform, starfield, ambient) and TV music screensaver | ❌ | ❌ | ❌ | ✅ |
+| Full-screen now playing (cover / lyrics / visualiser / karaoke) | ✅ | ✅ | ✅ | ✅ |
 | Subsonic/OpenSubsonic API (Symfonium, Feishin, play:Sub…) | ❌ | Plugin | ❌ | ✅ |
 | ReplayGain / R128 loudness levelling (track & album) | ✅ (Plexamp) | 🟡 | 🟡 | ✅ |
 | DJ mode: BPM/key/energy analysis, automatic beat-matched crossfades, harmonic auto-playlists, non-stop mixes | 🟡 (Plexamp sweet fades) | ❌ | ❌ | ✅ |

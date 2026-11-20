@@ -1,11 +1,19 @@
-/** Lyrics for the now-playing track. Synced lyrics highlight and auto-scroll the current line. */
+/**
+ * Lyrics for the now-playing track. Synced lyrics highlight and auto-scroll the current line, with karaoke
+ * word-by-word highlighting (enhanced LRC / SYLT word timing, or a wipe across the line when only line times exist).
+ * The user can nudge the timing per track (saved on the server, added to their global offset), and switch to the
+ * server's karaoke mix when the track has AI stems (prepared in the web app).
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
-import type { Lyrics } from '@/api/types';
+import type { Lyrics, TrackStems } from '@/api/types';
+import { Chip } from '@/components/Chip';
 import { Focusable } from '@/components/Focusable';
 import { T } from '@/components/Text';
+import { useMusic } from '@/state/music';
 import { useSession } from '@/state/session';
 import { useTheme } from '@/theme';
+import { lyricStateAt, wordFills, type LrcLine } from './lrc';
 
 /** Fetch lyrics; `null` = none (404 or error), `undefined` = loading. */
 export function useLyrics(itemId: string | null): Lyrics | null | undefined {
@@ -24,22 +32,57 @@ export function useLyrics(itemId: string | null): Lyrics | null | undefined {
   return lyrics;
 }
 
+/**
+ * Smooth playback clock: the player reports its position a few times a second; between reports the time is
+ * extrapolated so the karaoke wipe moves continuously.
+ */
+function useSmoothTime(positionMs: number, playing: boolean, stepMs = 60): number {
+  const base = useRef({ pos: positionMs, at: Date.now() });
+  const [now, setNow] = useState(positionMs);
+  useEffect(() => {
+    base.current = { pos: positionMs, at: Date.now() };
+    setNow(positionMs);
+  }, [positionMs]);
+  useEffect(() => {
+    if (!playing) return;
+    const iv = setInterval(() => setNow(base.current.pos + Math.min(1500, Date.now() - base.current.at)), stepMs);
+    return () => clearInterval(iv);
+  }, [playing, stepMs]);
+  return now;
+}
+
+/** The current line, word by word: sung words in the theme colour, the word being sung fading in. */
+function KaraokeLine({ line, lines, timeMs, size, color }: { line: LrcLine; lines: LrcLine[]; timeMs: number; size: number; color: string }) {
+  const st = lyricStateAt(lines, timeMs);
+  const fills = st.line === line ? wordFills(line, st) : wordFills(line, { progress: 0, wordIndex: -1, wordProgress: 0 });
+  return (
+    <T style={{ fontSize: size, lineHeight: size * 1.35, fontWeight: '800', color: '#fff' }}>
+      {fills.map((w, i) => (
+        <T key={i} style={{ fontSize: size, lineHeight: size * 1.35, fontWeight: '800', color: w.fill >= 1 ? color : '#fff', opacity: w.fill > 0 && w.fill < 1 ? 0.55 + 0.45 * w.fill : 1 }}>
+          {w.text}
+        </T>
+      ))}
+    </T>
+  );
+}
+
 export function LyricsView({ lyrics, positionMs, onSeek }: { lyrics: Lyrics | null | undefined; positionMs: number; onSeek?: (ms: number) => void }) {
   const t = useTheme();
+  const m = useMusic();
+  const { api, user } = useSession();
   const scroller = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const lineY = useRef<number[]>([]);
   const [height, setHeight] = useState(0);
   const userScrolledAt = useRef(0);
+  const [trackOffset, setTrackOffset] = useState(0);
+  useEffect(() => setTrackOffset(lyrics?.userOffsetMs ?? 0), [lyrics]);
+  const offset = trackOffset + (user?.preferences.lyricsOffsetMs ?? 0);
+  const smooth = useSmoothTime(positionMs, m.playing);
+  const timeMs = Math.max(0, smooth + offset);
+  const lines = useMemo(() => (lyrics?.lines ?? []) as LrcLine[], [lyrics]);
 
   const synced = !!lyrics?.synced;
-  const active = useMemo(() => {
-    if (!lyrics || !synced) return -1;
-    let idx = -1;
-    lyrics.lines.forEach((l, i) => {
-      if (l.startMs != null && l.startMs <= positionMs + 250) idx = i;
-    });
-    return idx;
-  }, [lyrics, synced, positionMs]);
+  const active = useMemo(() => (synced ? lyricStateAt(lines, timeMs).index : -1), [lines, synced, timeMs]);
 
   // Keep the active line about a third of the way down, unless the user just scrolled.
   useEffect(() => {
@@ -49,41 +92,111 @@ export function LyricsView({ lyrics, positionMs, onSeek }: { lyrics: Lyrics | nu
     scroller.current?.scrollTo({ y: Math.max(0, y - height / 3), animated: true });
   }, [active, height]);
 
+  const nudge = (d: number) => {
+    if (!lyrics || !api) return;
+    const next = trackOffset + d;
+    setTrackOffset(next);
+    api.setLyricsOffset(lyrics.itemId, next).catch(() => undefined);
+  };
+
   if (lyrics === undefined) return <ActivityIndicator color="#fff" style={{ marginTop: t.space.xl }} />;
   if (!lyrics)
     return (
-      <T color="rgba(255,255,255,0.7)" center style={{ marginTop: t.space.xl }}>
-        No lyrics for this track.
-      </T>
+      <View style={{ flex: 1 }}>
+        <T color="rgba(255,255,255,0.7)" center style={{ marginTop: t.space.xl }}>
+          No lyrics for this track.
+        </T>
+        <KaraokeBar itemId={m.current?.type === 'track' ? m.current.id : null} />
+      </View>
     );
 
   const size = t.isTV ? t.s(30) : t.wide ? 26 : 22;
   return (
-    <ScrollView
-      ref={scroller}
-      style={{ flex: 1 }}
-      onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
-      onScrollBeginDrag={() => (userScrolledAt.current = Date.now())}
-      contentContainerStyle={{ paddingVertical: t.space.lg, paddingBottom: height / 2, gap: t.isTV ? t.s(12) : 10 }}
-      showsVerticalScrollIndicator={false}
-    >
-      {lyrics.lines.map((l, i) => {
-        const isActive = i === active;
-        const style = { fontSize: size, lineHeight: size * 1.35, fontWeight: '800' as const, color: !synced ? '#fff' : isActive ? '#fff' : i < active ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.6)' };
-        const text = l.text.trim() ? l.text : '♪';
-        return (
-          <View key={i} onLayout={(e) => (lineY.current[i] = e.nativeEvent.layout.y)}>
-            {synced && onSeek && l.startMs != null ? (
-              // Tap (or select on TV) a line to jump there.
-              <Focusable onPress={() => onSeek(l.startMs!)} focusScale={t.isTV ? 1.03 : 1} ring={false} style={{ paddingVertical: 2 }}>
-                {({ focused }) => <T style={[style, focused ? { color: t.colors.primary } : null]}>{text}</T>}
-              </Focusable>
-            ) : (
-              <T style={style}>{text}</T>
-            )}
-          </View>
-        );
-      })}
-    </ScrollView>
+    <View style={{ flex: 1 }}>
+      <ScrollView
+        ref={scroller}
+        style={{ flex: 1 }}
+        onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
+        onScrollBeginDrag={() => (userScrolledAt.current = Date.now())}
+        contentContainerStyle={{ paddingVertical: t.space.lg, paddingBottom: height / 2, gap: t.isTV ? t.s(12) : 10 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {lines.map((l, i) => {
+          const isActive = i === active;
+          const style = { fontSize: size, lineHeight: size * 1.35, fontWeight: '800' as const, color: !synced ? '#fff' : isActive ? '#fff' : i < active ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.6)' };
+          const text = l.text.trim() ? l.text : '♪';
+          return (
+            <View key={i} onLayout={(e) => (lineY.current[i] = e.nativeEvent.layout.y)}>
+              {synced && onSeek && l.startMs != null ? (
+                // Tap (or select on TV) a line to jump there.
+                <Focusable onPress={() => onSeek(Math.max(0, l.startMs! - offset))} focusScale={t.isTV ? 1.03 : 1} ring={false} style={{ paddingVertical: 2 }}>
+                  {({ focused }) =>
+                    isActive && l.text.trim() ? (
+                      <KaraokeLine line={l} lines={lines} timeMs={timeMs} size={size} color={t.colors.primary} />
+                    ) : (
+                      <T style={[style, focused ? { color: t.colors.primary } : null]}>{text}</T>
+                    )
+                  }
+                </Focusable>
+              ) : (
+                <T style={style}>{text}</T>
+              )}
+            </View>
+          );
+        })}
+      </ScrollView>
+      {synced ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: t.space.sm, paddingTop: t.space.sm }}>
+          <T variant="small" color="rgba(255,255,255,0.65)">Timing</T>
+          <Chip label="−0.1s" onPress={() => nudge(-100)} />
+          <T variant="small" weight="700" color="#fff">{offset > 0 ? '+' : ''}{(offset / 1000).toFixed(1)}s</T>
+          <Chip label="+0.1s" onPress={() => nudge(100)} />
+        </View>
+      ) : null}
+      <KaraokeBar itemId={lyrics.itemId} />
+    </View>
+  );
+}
+
+const VOCAL_LEVELS = [0, 15, 30];
+
+/**
+ * Karaoke on the phone / Android TV: plays the server's karaoke mix when the track has AI stems. Separation runs in
+ * the web app on a computer (an administrator presses "Prepare (AI)"), so this only offers the switch when stems exist.
+ */
+export function KaraokeBar({ itemId }: { itemId: string | null }) {
+  const t = useTheme();
+  const m = useMusic();
+  const { api, user } = useSession();
+  const [stems, setStems] = useState<TrackStems | null>(null);
+  useEffect(() => {
+    setStems(null);
+    if (!itemId || !api) return;
+    let off = false;
+    api.trackStems(itemId).then((s) => !off && setStems(s)).catch(() => undefined);
+    return () => {
+      off = true;
+    };
+  }, [itemId, api]);
+  if (!itemId || !api) return null;
+  if (!stems?.ready) {
+    return (
+      <T variant="small" center color="rgba(255,255,255,0.55)" style={{ paddingTop: t.space.sm }}>
+        Karaoke: prepare this track in the web app on a computer (Prepare (AI)), then sing along here.
+      </T>
+    );
+  }
+  const preferred = user?.preferences.karaokeVocalLevel ?? 15;
+  const on = !!m.altSource;
+  const level = on ? Number(/vocals=(\d+)/.exec(m.altSource!)?.[1] ?? preferred) : null;
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: t.space.sm, paddingTop: t.space.sm }}>
+      <Chip icon="mic-outline" label={on ? 'Karaoke on' : 'Karaoke'} selected={on} onPress={() => m.setAltSource(on ? null : api.karaokeMixPath(itemId, preferred))} />
+      {on
+        ? VOCAL_LEVELS.map((v) => (
+            <Chip key={v} label={v === 0 ? 'No vocals' : `Vocals ${v}%`} selected={level === v} onPress={() => m.setAltSource(api.karaokeMixPath(itemId, v))} />
+          ))
+        : null}
+    </View>
   );
 }

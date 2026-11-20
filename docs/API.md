@@ -300,8 +300,37 @@ owners carry `profileCount` (> 0 → show the picker after sign-in). A profile's
 * Admin sets `ServerSettings.trakt.clientId/clientSecret` (create an app at trakt.tv/oauth/applications). Playback start/pause/stop and "mark watched" are scrobbled automatically.
 
 ## Lyrics
-* `GET /items/:id/lyrics` → `Lyrics` (from `.lrc`/`.txt` sidecars or embedded tags; `synced` lines carry `startMs`). 404 when none.
-  When neither exists and LRCLIB is enabled (Server settings → Metadata), lyrics come from LRCLIB (`source: "lrclib"`) and are cached.
+* `GET /items/:id/lyrics` → `Lyrics`. 404 when none. Sources, first synced hit wins (a plain hit keeps looking for a synced one):
+  1. edits saved in MediaMax (`source: "user"`), 2. `Song.lrc` / `Song.LRC` / `Song.mp3.lrc`, then `Song.txt` (`"lrc"` / `"txt"`),
+  3. embedded tags (`"embedded"`): ID3 SYLT (synced, word timing), ID3 USLT / `lyrics-<lang>`, Vorbis `LYRICS` / `UNSYNCEDLYRICS`, MP4 `©lyr`;
+  plain text that is really LRC is parsed as synced, 4. LRCLIB when enabled (Server settings → Metadata; `"lrclib"`, cached).
+  Lines carry `startMs`, optional `endMs` and `words: [{ startMs, text }]` (enhanced LRC `<mm:ss.xx>` / SYLT syllables).
+  Also returned: `lrc` (the lyrics as LRC text), `meta`, `userOffsetMs` (the caller's saved offset for this track; add
+  `UserPreferences.lyricsOffsetMs`; + = show lyrics earlier), `canEdit`, `editedAt`.
+* `PUT /items/:id/lyrics` 🛡️ `SaveLyricsRequest { lrc? | lines?, writeSidecar? }` → `SaveLyricsResponse` (adds `wroteSidecar`, `sidecarError`).
+  `writeSidecar` writes `Song.lrc` next to the audio file only when `ServerSettings.karaoke.writeLrcSidecars` is on and the folder is writable.
+* `DELETE /items/:id/lyrics` 🛡️ forgets the edit (back to files / tags / LRCLIB).
+* `PUT /items/:id/lyrics/offset` `{ offsetMs }` → `{ offsetMs }` — the caller's own timing offset for a track (−30000…30000; 0 removes it).
+
+## Karaoke stems (AI vocal separation)
+See [KARAOKE.md](KARAOKE.md). Requires `ServerSettings.karaoke.stemsEnabled`; separation runs in an administrator's browser.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/stems/status` | `StemsStatus` (model state, onnxruntime-web availability, `canPrepare`) |
+| POST | `/stems/model/download` 🛡️ | start the one-time model download (SHA-256 verified) |
+| POST | `/stems/model/cancel` 🛡️ | cancel it |
+| DELETE | `/stems/model` 🛡️ | delete the cached model |
+| GET | `/stems/model` 🛡️ | the verified model bytes (fetched by the separation worker) |
+| GET | `/stems/ort/:file` | onnxruntime-web runtime files (`ort*.mjs` / `ort*.wasm`), same origin, no auth |
+| GET | `/items/:id/stems` | `TrackStems` (`ready`, `preparing`, model, backend, frames…) |
+| GET | `/items/:id/stems/source` 🛡️ | the track decoded to 44.1 kHz stereo FLAC (input for the worker) |
+| POST | `/items/:id/stems/begin` 🛡️ | `{ frames, sampleRate: 44100, model, backend }` → `{ token }` |
+| PUT | `/items/:id/stems/part?token&stem&frame` 🛡️ | body: interleaved stereo s16le (`application/octet-stream`, ≤ 64 MB) for `stem` ∈ vocals, drums, bass, other |
+| POST | `/items/:id/stems/finish?token` 🛡️ | encodes FLAC stems → `TrackStems` |
+| DELETE | `/items/:id/stems` 🛡️ | remove a track's stems |
+| GET | `/items/:id/stems/:stem` | one stem (FLAC, Range) |
+| GET | `/items/:id/karaoke.mp3?vocals=0..100&inst=0..100` | server-side mix (vocals default 15 %, instruments 100 %; 5 % steps), cached and seekable (Range). `vocals=0` = instrumental, `inst=0` = vocals only |
 
 ## Metadata providers (🛡️)
 Built-in providers, configured on Server settings → Metadata (see [METADATA.md](METADATA.md) for keys and costs).

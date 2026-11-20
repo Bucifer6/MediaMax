@@ -57,6 +57,8 @@ MediaMax brings together the features people love in **Plex, Jellyfin and Emby**
 
 **🎧 Music, DJ & AI DJ**
 - Gapless playback, crossfade, ReplayGain, synced lyrics, song and artist radio
+- **Karaoke**: word-by-word lyrics, a lyrics editor, instant vocal removal and AI vocal separation that every device can play ([docs/KARAOKE.md](docs/KARAOKE.md))
+- **Visualisers** in the full-screen player and a music screensaver on TVs
 - **DJ mode**: BPM, key and energy analysis, harmonic auto-mixes and beat-matched two-deck crossfades
 - **AI DJ**: ask in plain words ("chilled 90s house, 1 hour"); a voice host talks between songs. Free by default; can use local models (Ollama) or free and cheap hosted APIs
 - Subsonic/OpenSubsonic API for Symfonium, Feishin, Sonos and more
@@ -317,6 +319,6 @@ The project's owner steered the direction with feature requests; the code is Cla
 
 MediaMax is open source under the [MIT License](LICENSE). You're free to use, modify and redistribute it, including publishing your own branded builds of the apps, as long as the licence notice is kept.
 
-Third-party services you connect (TMDB, Trakt, Last.fm, OpenSubtitles, IPTV providers, Schedules Direct, AI providers) have their own terms; make sure your use of them complies. FFmpeg is used as a separate program and is licensed under the LGPL/GPL.
+Third-party services you connect (TMDB, Trakt, Last.fm, OpenSubtitles, IPTV providers, Schedules Direct, AI providers) have their own terms; make sure your use of them complies. FFmpeg is used as a separate program and is licensed under the LGPL/GPL. Bundled and downloadable third-party components (onnxruntime-web, the optional HT-Demucs model) and code adapted from OpenDJ are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 <div align="center"><sub>Made with <a href="https://claude.com/claude-code">Claude Code</a></sub></div>

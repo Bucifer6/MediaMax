@@ -1,5 +1,6 @@
 import type { Item, PlaybackInfo, UserPreferences } from '@mediamax/shared';
 import type { Attached } from './engine';
+import { buildVocalReducer, type VocalReducer } from './karaokeFx';
 
 /** One of the music player's two audio elements ("decks"): the live one, and the one preloading the next track. */
 export interface Deck {
@@ -66,6 +67,11 @@ export class MusicOutput {
   private fade: [number, number] = [1, 1];
   private masterLevel = 1;
   private fadeTimers: [number | null, number | null] = [null, null];
+  /** Quick karaoke (centre-channel vocal reduction) between the master gain and the speakers. */
+  private vocal: VocalReducer | null = null;
+  private vocalLevel = 1;
+  /** Visualiser tap: fanned out after the vocal stage, never in the audio path. */
+  private tap: AnalyserNode | null = null;
 
   constructor(setup: (el: HTMLAudioElement) => void) {
     const mk = (id: 0 | 1): Deck => {
@@ -102,7 +108,16 @@ export class MusicOutput {
         if (!Ctx) throw new Error('no Web Audio');
         const ctx = new Ctx({ latencyHint: 'playback' });
         const master = ctx.createGain();
-        master.connect(ctx.destination);
+        const vocal = buildVocalReducer(ctx);
+        master.connect(vocal.input);
+        vocal.output.connect(ctx.destination);
+        const tap = ctx.createAnalyser();
+        tap.fftSize = 2048;
+        tap.smoothingTimeConstant = 0.6;
+        vocal.output.connect(tap);
+        vocal.setLevel(this.vocalLevel, 0);
+        this.vocal = vocal;
+        this.tap = tap;
         const gains = this.decks.map((d) => {
           const src = ctx.createMediaElementSource(d.el);
           const g = ctx.createGain();
@@ -126,6 +141,24 @@ export class MusicOutput {
   /** Resume a suspended graph (never creates one: that needs a user gesture). */
   resume() {
     if (this.ctx && this.ctx.state !== 'running') void this.ctx.resume().catch(() => {});
+  }
+
+  /** Analyser on the output (after night mode / vocal reduction); null without Web Audio. */
+  get analyser(): AnalyserNode | null {
+    return this.tap;
+  }
+
+  /** Output latency in ms (what is scheduled but not yet heard). */
+  get latencyMs(): number {
+    const c = this.ctx as (AudioContext & { outputLatency?: number }) | null;
+    if (!c) return 0;
+    return Math.max(0, ((c.outputLatency || 0) + (c.baseLatency || 0)) * 1000);
+  }
+
+  /** Quick karaoke: vocal level 0..1 (1 = off). Needs the Web Audio graph (call prime(true) from a gesture first). */
+  setVocalLevel(level: number) {
+    this.vocalLevel = Math.max(0, Math.min(1, level));
+    this.vocal?.setLevel(this.vocalLevel);
   }
 
   /** volume × mute × sleep factor. */
