@@ -4,13 +4,17 @@
  * (two decks, crossfader, upcoming transitions). Playback lives in
  * src/state/dj.tsx so it keeps going when you leave this screen.
  *
+ * AI DJ (when the server has it on, DjStatus.ai.enabled): "Ask the DJ" builds a
+ * mix from a plain-language prompt, the "DJ voice" host talks between tracks
+ * (subtitle bubble in the booth) and ♥ Love / Skip next send feedback.
+ *
  * Route params (all optional): seed (item id), seedTitle, seedType.
  */
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, ScrollView, View } from 'react-native';
+import { Animated, Easing, Keyboard, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { DjEnergyCurve, DjMixRequest, DjMixTrack, DjTransition, Item } from '@/api/types';
+import type { DjEnergyCurve, DjMixRequest, DjMixTrack, DjStatus, DjTransition, Item } from '@/api/types';
 import { useQuery } from '@/api/useQuery';
 import { Button } from '@/components/Button';
 import { Chip } from '@/components/Chip';
@@ -109,6 +113,24 @@ function Setup() {
   );
   const status = useQuery('dj:status', (a) => a.djStatus(), { staleMs: 30000 });
   const hasGenres = !!genreList.data?.length;
+  // Older servers have no `ai` block: treat as off.
+  const ai = status.data?.ai?.enabled ? status.data.ai : null;
+  const playingArtist = music.playing && currentTrack ? currentTrack.grandparentTitle ?? currentTrack.parentTitle ?? null : null;
+
+  const ask = async (prompt: string) => {
+    const p = prompt.trim();
+    if (!p) return;
+    Keyboard.dismiss();
+    setErr(null);
+    setStarting(true);
+    try {
+      await dj.start({ prompt: p }, { ai });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not start the mix');
+    } finally {
+      setStarting(false);
+    }
+  };
 
   const go = async () => {
     setErr(null);
@@ -130,7 +152,7 @@ function Setup() {
       if (min) req.bpmMin = min;
       if (max) req.bpmMax = max;
       if (length !== 'continuous') req.durationMin = length;
-      await dj.start(req, { continuous: length === 'continuous' });
+      await dj.start(req, { continuous: length === 'continuous', ai });
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not start the mix');
     } finally {
@@ -150,13 +172,27 @@ function Setup() {
 
   return (
     <ScrollView contentContainerStyle={{ paddingHorizontal: t.space.gutter, paddingBottom: insets.bottom + t.space.xxl * 2, paddingTop: t.space.sm, maxWidth: t.isTV ? t.s(980) : undefined }}>
+      {ai ? <AskDj ai={ai} artist={playingArtist} busy={starting || dj.phase === 'loading'} onAsk={(p) => void ask(p)} /> : null}
+
+      {ai && (err || dj.error) ? (
+        <T tone="danger" weight="600" style={{ marginBottom: t.space.md }}>
+          {err ?? dj.error}
+        </T>
+      ) : null}
+
       <AnalysisNote status={status.data} />
+
+      {ai ? (
+        <T variant="heading" style={{ marginBottom: t.space.md }}>
+          Or build it yourself
+        </T>
+      ) : null}
 
       <View style={section}>
         <Label>Start from</Label>
         <View style={chips}>
           {seedOptions.map((o, i) => (
-            <Chip key={o.key} label={o.label} icon={o.icon} selected={seed === o.key} onPress={() => setSeed(o.key)} hasTVPreferredFocus={i === 0} />
+            <Chip key={o.key} label={o.label} icon={o.icon} selected={seed === o.key} onPress={() => setSeed(o.key)} hasTVPreferredFocus={!ai && i === 0} />
           ))}
         </View>
       </View>
@@ -223,9 +259,10 @@ function Setup() {
 
       <SettingSection>
         <SettingRow icon="git-merge-outline" label="Harmonic mixing" value={harmonic ? 'Key-compatible neighbours' : 'Any key'} toggle={harmonic} onToggle={setHarmonic} />
+        {ai ? <VoiceRow ai={ai} /> : null}
       </SettingSection>
 
-      {err || dj.error ? (
+      {!ai && (err || dj.error) ? (
         <T tone="danger" weight="600" style={{ marginBottom: t.space.md }}>
           {err ?? dj.error}
         </T>
@@ -233,6 +270,65 @@ function Setup() {
       <Button label={dj.phase === 'loading' || starting ? 'Building your mix…' : 'Start DJ mix'} icon="disc-outline" size="lg" block onPress={() => void go()} loading={starting} />
     </ScrollView>
   );
+}
+
+/** Example prompts for "Ask the DJ". */
+function examplePrompts(artist: string | null): string[] {
+  return ['Chilled Sunday morning', '90s party bangers, all night', 'Workout, fast, 45 minutes', ...(artist ? [`Something like ${artist}`] : []), 'Late-night jazz', 'Dinner party, mellow soul'].slice(0, 6);
+}
+
+function AskDj({ ai, artist, busy, onAsk }: { ai: DjStatus['ai']; artist: string | null; busy: boolean; onAsk: (prompt: string) => void }) {
+  const t = useTheme();
+  const [text, setText] = useState('');
+  const submit = (p: string) => {
+    if (busy || !p.trim()) return;
+    onAsk(p);
+  };
+  return (
+    <View style={{ gap: t.space.md, padding: t.space.lg, borderRadius: t.radius, backgroundColor: t.alpha(t.colors.primary, 0.1), borderWidth: 1, borderColor: t.alpha(t.colors.primary, 0.35), marginBottom: t.space.lg }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.sm }}>
+        <Icon name="sparkles-outline" color={t.colors.primary} size={t.isTV ? t.s(26) : 22} />
+        <View style={{ flex: 1 }}>
+          <T variant="heading">Ask the DJ</T>
+          <T variant="small" tone="muted">
+            {ai.llm ? 'Describe a mood, era, occasion or length. The AI DJ works out the rest.' : 'Describe a genre, decade, mood or length and the built-in DJ builds the mix.'}
+          </T>
+        </View>
+      </View>
+      <Input
+        icon="chatbubble-ellipses-outline"
+        placeholder="What do you feel like?"
+        value={text}
+        onChangeText={setText}
+        returnKeyType="go"
+        onSubmitEditing={() => submit(text)}
+        autoCapitalize="sentences"
+        maxLength={300}
+        editable={!busy}
+      />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.space.sm }}>
+        {examplePrompts(artist).map((p, i) => (
+          <Chip
+            key={p}
+            label={p}
+            icon={p.startsWith('Something like') ? 'musical-notes-outline' : undefined}
+            hasTVPreferredFocus={i === 0}
+            onPress={() => {
+              setText(p);
+              submit(p);
+            }}
+          />
+        ))}
+      </View>
+      <Button label={busy ? 'Building your mix…' : 'Ask the DJ'} icon="sparkles-outline" onPress={() => submit(text)} loading={busy} disabled={!text.trim()} block />
+    </View>
+  );
+}
+
+function VoiceRow({ ai }: { ai: DjStatus['ai'] }) {
+  const dj = useDj();
+  const how = { rare: 'every few tracks', normal: 'every other track', chatty: 'between every track' }[ai.chattiness] ?? 'between tracks';
+  return <SettingRow icon="mic-outline" label="DJ voice" value={dj.voice ? `${ai.hostName || 'The host'} talks ${how}` : 'Off'} toggle={dj.voice} onToggle={dj.setVoice} />;
 }
 
 function Label({ children }: { children: React.ReactNode }) {
@@ -268,6 +364,7 @@ function Booth() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<Item | null>(null);
   const [saveErr, setSaveErr] = useState<string | null>(null);
+  const ai = status.data?.ai?.enabled ? status.data.ai : null;
   const ended = dj.phase === 'ended';
   const upcoming = dj.tracks.slice(dj.currentIndex + 1).map((tr, i) => ({ tr, index: dj.currentIndex + 1 + i }));
   const played = Math.max(0, dj.currentIndex);
@@ -290,6 +387,7 @@ function Booth() {
 
   return (
     <ScrollView contentContainerStyle={{ paddingHorizontal: t.space.gutter, paddingBottom: insets.bottom + t.space.xxl * 2, gap: t.space.lg, paddingTop: t.space.sm }}>
+      {dj.summary || dj.prompt ? <AskedFor prompt={dj.prompt} summary={dj.summary} understoodBy={dj.understoodBy} /> : null}
       <AnalysisNote status={status.data} />
       {dj.error ? (
         <T tone="warning" variant="small" weight="600">
@@ -309,6 +407,8 @@ function Booth() {
         <DeckCard deck={dj.decks.B} />
       </View>
 
+      {dj.hostLine ? <HostBubble name={dj.hostName} text={dj.hostLine.text} /> : null}
+
       <Crossfader value={dj.crossfader} mixing={dj.mixing} />
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.space.sm }}>
@@ -316,6 +416,7 @@ function Booth() {
           <>
             <Button label={dj.phase === 'paused' ? 'Resume' : 'Pause'} icon={dj.phase === 'paused' ? 'play' : 'pause'} onPress={dj.toggle} hasTVPreferredFocus />
             <Button label="Mix now" icon="git-merge-outline" variant="secondary" onPress={dj.mixNow} disabled={!nextReady || dj.mixing} />
+            {ai ? <LoveButton /> : null}
             <Button label="Skip next" icon="play-skip-forward-outline" variant="secondary" onPress={dj.skipNext} disabled={!upcoming.length} />
             <Button label="Stop" icon="stop" variant="secondary" onPress={dj.stop} />
           </>
@@ -325,6 +426,11 @@ function Booth() {
         <Button label={saved ? 'Saved' : 'Save as playlist'} icon={saved ? 'checkmark' : 'list-outline'} variant="secondary" onPress={() => void save()} loading={saving} disabled={!dj.tracks.length || !!saved} />
         {saved ? <Button label="Open playlist" icon="open-outline" variant="ghost" onPress={() => openItem(saved)} /> : null}
       </View>
+      {ai && !ended ? (
+        <SettingSection>
+          <VoiceRow ai={ai} />
+        </SettingSection>
+      ) : null}
       {saveErr ? (
         <T tone="danger" variant="small">
           {saveErr}
@@ -351,6 +457,100 @@ function Booth() {
         )}
       </View>
     </ScrollView>
+  );
+}
+
+function AskedFor({ prompt, summary, understoodBy }: { prompt: string | null; summary: string | null; understoodBy: 'llm' | 'rules' | null }) {
+  const t = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', gap: t.space.sm, alignItems: 'flex-start', padding: t.space.md, borderRadius: t.radius, backgroundColor: t.alpha(t.colors.primary, 0.1) }}>
+      <Icon name="sparkles-outline" color={t.colors.primary} size={t.isTV ? t.s(22) : 18} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <T weight="700">You asked for: {summary ?? prompt}</T>
+        <T variant="small" tone="muted">
+          {[summary && prompt ? `“${prompt}”` : null, understoodBy === 'llm' ? 'understood by AI' : understoodBy === 'rules' ? 'understood by the built-in DJ' : null].filter(Boolean).join(' · ')}
+        </T>
+      </View>
+    </View>
+  );
+}
+
+/** Subtitle bubble for the host line being spoken. */
+function HostBubble({ name, text }: { name: string | null; text: string }) {
+  const t = useTheme();
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    anim.setValue(0);
+    Animated.timing(anim, { toValue: 1, duration: 250, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
+  }, [text, anim]);
+  return (
+    <Animated.View
+      accessibilityLiveRegion="polite"
+      style={{
+        opacity: anim,
+        transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
+        flexDirection: 'row',
+        gap: t.space.sm,
+        alignItems: 'flex-start',
+        padding: t.space.md,
+        borderRadius: t.radius * 1.5,
+        borderTopLeftRadius: 4,
+        backgroundColor: t.colors.surface,
+        borderWidth: 1,
+        borderColor: t.alpha(t.colors.accent, 0.5),
+      }}
+    >
+      <Icon name="mic" color={t.colors.accent} size={t.isTV ? t.s(22) : 18} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <T variant="caption" color={t.colors.accent} style={{ textTransform: 'uppercase' }}>
+          {name || 'Your DJ'}
+        </T>
+        <T style={{ fontStyle: 'italic' }}>{text}</T>
+      </View>
+    </Animated.View>
+  );
+}
+
+/** ♥ Love the audible track: AI DJ feedback (also favourites it on the server). */
+function LoveButton() {
+  const dj = useDj();
+  const [loved, setLoved] = useState<Set<string>>(() => new Set());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(false);
+  const pulse = useRef(new Animated.Value(1)).current;
+  const id = dj.audibleItemId;
+  const isLoved = !!id && loved.has(id);
+  useEffect(() => setErr(false), [id]);
+  const press = async () => {
+    if (!id || isLoved || busy) return;
+    setBusy(true);
+    setErr(false);
+    try {
+      const done = await dj.love();
+      if (done) {
+        setLoved((s) => new Set(s).add(done));
+        // No haptics module in this app: confirm with a quick pulse instead.
+        pulse.setValue(1.25);
+        Animated.spring(pulse, { toValue: 1, friction: 3, tension: 120, useNativeDriver: true }).start();
+      }
+    } catch {
+      setErr(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Animated.View style={{ transform: [{ scale: pulse }] }}>
+      <Button
+        label={isLoved ? 'Loved' : err ? 'Try again' : 'Love'}
+        icon={isLoved ? 'heart' : 'heart-outline'}
+        variant={isLoved ? 'danger' : 'secondary'}
+        onPress={() => void press()}
+        loading={busy}
+        disabled={!id}
+        accessibilityLabel={isLoved ? 'Loved this track' : 'Love this track'}
+      />
+    </Animated.View>
   );
 }
 

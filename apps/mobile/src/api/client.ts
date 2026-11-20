@@ -17,6 +17,9 @@ import type {
   Device,
   DeviceInfo,
   DiscoverResponse,
+  DjFeedback,
+  DjHostLine,
+  DjHostRequest,
   DjMix,
   DjMixRequest,
   DjStatus,
@@ -469,9 +472,21 @@ export class MediaMaxClient {
   }
 
   /* ------------------------------ DJ mode ----------------------------- */
-  /** Build a beat/key-aware mix (one-off), or the next `count` tracks after `history` (continuous). */
-  djMix(body: DjMixRequest) {
-    return this.post<DjMix>('/dj/mix', body, { timeoutMs: 60000 });
+  /**
+   * Build a beat/key-aware mix (one-off), or the next `count` tracks after `history` (continuous).
+   * With `prompt` (AI DJ) the reply carries `summary`, `understoodBy`, the resolved `request` (send that back for
+   * top-ups instead of the prompt) and `continuous`. 403 when a prompt is sent and the AI DJ is off on the server.
+   */
+  djMix(body: DjMixRequest, signal?: AbortSignal) {
+    return this.post<DjMix>('/dj/mix', body, { timeoutMs: 60000, signal });
+  }
+  /** AI DJ host: a short spoken link into `nextItemId` (text, plus server-rendered speech when configured). */
+  djHost(body: DjHostRequest, signal?: AbortSignal) {
+    return this.post<DjHostLine>('/dj/host', body, { timeoutMs: 20000, signal });
+  }
+  /** AI DJ feedback: 'skip' steers future picks away, 'love' steers towards (and favourites the track). */
+  djFeedback(body: DjFeedback) {
+    return this.post<void>('/dj/feedback', body);
   }
   /** How much of the music library has been analysed. */
   djStatus() {

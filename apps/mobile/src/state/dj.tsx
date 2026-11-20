@@ -19,15 +19,33 @@
  * tracks are left. While DJ mode plays, the normal music player is paused;
  * starting normal music stops DJ mode.
  *
+ * AI DJ:
+ *  - A mix can start from a plain-language prompt. The server answers with the
+ *    resolved request (`mix.request`), which is what continuous top-ups send
+ *    back, so the prompt is parsed only once.
+ *  - Host ("DJ voice"): when the next track is cued (step 1 above) the line
+ *    into it is fetched from POST /dj/host at the same time (always for the
+ *    first track, then every 1st / 2nd / 4th track by chattiness). When the
+ *    transition starts and the line has arrived, both decks duck to 30 % over
+ *    0.4 s, the line plays (server MP3 on a third player, else expo-speech on
+ *    the device, else just the subtitle) and the decks come back over 1 s. A
+ *    line that isn't ready is dropped: the host never holds a transition up.
+ *    The one exception is the opening line, which may hold the very first
+ *    track for up to 3 s (nothing is playing yet).
+ *  - Every deck's volume is crossfade × ReplayGain × duck: `DeckRt.level` is
+ *    crossfade × ReplayGain, `setVol` multiplies in the current duck.
+ *
  * Phone and TV only: CarPlay / Android Auto keep driving src/state/music.tsx.
  */
 import { useAudioPlayer, type AudioPlayer } from 'expo-audio';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { MediaMaxClient } from '@/api/client';
+import { ApiError, type MediaMaxClient } from '@/api/client';
 import { audioDeviceProfile } from '@/api/profiles';
-import type { DjMixRequest, DjMixTrack, DjTransition, Item, PlaybackInfo } from '@/api/types';
+import { getJSON, setJSON } from '@/api/storage';
+import type { DjHostLine, DjMixRequest, DjMixTrack, DjStatus, DjTransition, Item, PlaybackInfo } from '@/api/types';
 import { invalidate } from '@/api/useQuery';
 import { syncCarRemoteCommands } from '@/car/remote';
+import { deviceSpeech } from '@/utils/speech';
 import { useDownloads } from './downloads';
 import { useMusic } from './music';
 import { useSession } from './session';
@@ -49,6 +67,21 @@ const MIX_NOW_MS = 8000;
 const TOP_UP_BELOW = 3;
 const TOP_UP_COUNT = 5;
 const FALLBACK_FADE_MS = 8000;
+
+/** AI DJ host: deck volume while the host talks, and how fast to get there / back. */
+const DUCK_LEVEL = 0.3;
+const DUCK_IN_MS = 400;
+const DUCK_OUT_MS = 1000;
+/** The opening line may hold the first track this long (nothing is playing yet). */
+const OPENING_WAIT_MS = 3000;
+/** Safety cap on one host line; server audio that hasn't started after this long is given up. */
+const HOST_MAX_MS = 30000;
+const HOST_START_TIMEOUT_MS = 5000;
+/** Talk into every n-th track (the opening line is always spoken). */
+const HOST_EVERY: Record<DjStatus['ai']['chattiness'], number> = { rare: 4, normal: 2, chatty: 1 };
+const VOICE_KEY = 'dj:voice';
+
+export type DjAi = DjStatus['ai'];
 
 export interface DeckView {
   id: DeckId;
@@ -86,14 +119,36 @@ export interface DjValue {
   analyzedShare: number | null;
   /** Fetching more tracks (continuous mode). */
   toppingUp: boolean;
-  start: (req: DjMixRequest, opts?: { continuous?: boolean }) => Promise<void>;
+  /** AI DJ: the prompt this mix was asked for (null for mixes built from the explicit options). */
+  prompt: string | null;
+  /** AI DJ: what the prompt was understood as, e.g. "House · 1990s · chill". */
+  summary: string | null;
+  understoodBy: 'llm' | 'rules' | null;
+  /** The host talks in this mix (DJ voice on and the AI DJ enabled on the server). */
+  hostActive: boolean;
+  /** Host name from the server's AI DJ settings. */
+  hostName: string | null;
+  /** The host line being spoken right now (for the subtitle bubble). */
+  hostLine: { text: string; by: DjHostLine['by'] } | null;
+  /** Item id of the track you hear right now (the incoming one from halfway through a blend). */
+  audibleItemId: string | null;
+  /** "DJ voice" preference (persisted; on by default). */
+  voice: boolean;
+  setVoice: (on: boolean) => void;
+  /**
+   * Start a mix. `req.prompt` asks the AI DJ (the server resolves it). `ai` is `DjStatus.ai`: when it's enabled
+   * and DJ voice is on, the host talks between tracks.
+   */
+  start: (req: DjMixRequest, opts?: { continuous?: boolean; ai?: DjAi | null }) => Promise<void>;
   pause: () => void;
   resume: () => void;
   toggle: () => void;
   /** Start the transition into the next track now, with an 8 s fade. */
   mixNow: () => void;
-  /** Drop the upcoming track. */
+  /** Drop the upcoming track (and tell the AI DJ it was skipped). */
   skipNext: () => void;
+  /** Love the audible track (AI DJ feedback; also favourites it). Resolves to its item id. */
+  love: () => Promise<string | null>;
   stop: () => void;
   /** Save the mix (played + upcoming tracks) as a normal playlist. */
   saveAsPlaylist: (title: string) => Promise<Item>;
@@ -116,7 +171,10 @@ interface DeckRt {
   /** Bumped on every (un)load so stale async work is dropped. */
   token: number;
   gain: number;
+  /** Crossfade × ReplayGain, before the host duck. */
+  level: number;
   rate: number;
+  /** Actual player volume (level × duck). */
   volume: number;
   lastReport: number;
   /** Seen actually playing since the last play() (guards the lock-screen pause detection). */
@@ -140,6 +198,32 @@ interface Ease {
   pausedElapsed: number | null;
   lastSet: number;
 }
+
+interface HostPending {
+  /** The track this line leads into. */
+  itemId: string;
+  line: DjHostLine | null;
+  failed: boolean;
+  ctrl: AbortController;
+}
+
+interface HostSpeaking {
+  line: DjHostLine;
+  kind: 'server' | 'device' | 'text';
+  startedAt: number;
+  maxMs: number;
+  seenPlaying: boolean;
+}
+
+interface Duck {
+  value: number;
+  from: number;
+  target: number;
+  startedAt: number;
+  durMs: number;
+}
+
+type Snap = Omit<DjValue, 'start' | 'pause' | 'resume' | 'toggle' | 'mixNow' | 'skipNext' | 'stop' | 'saveAsPlaylist' | 'love' | 'voice' | 'setVoice'>;
 
 const Ctx = createContext<DjValue | null>(null);
 
@@ -197,6 +281,10 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
   const music = useMusic();
   const playerA = useAudioPlayer(null, { updateInterval: 250 });
   const playerB = useAudioPlayer(null, { updateInterval: 250 });
+  /** AI DJ host: server-rendered speech. */
+  const hostPlayer = useAudioPlayer(null, { updateInterval: 250 });
+  const hostPlayerRef = useRef(hostPlayer);
+  hostPlayerRef.current = hostPlayer;
 
   const apiRef = useRef<MediaMaxClient | null>(api);
   apiRef.current = api;
@@ -206,7 +294,7 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
   const rgModeRef = useRef(rgMode);
   rgModeRef.current = rgMode;
 
-  const mkDeck = (id: DeckId, player: AudioPlayer): DeckRt => ({ id, player, track: null, qIndex: -1, session: null, offsetMs: 0, seekMs: 0, awaitingLoad: false, ready: false, loading: false, token: 0, gain: 1, rate: 1, volume: 0, lastReport: 0, seenPlaying: false });
+  const mkDeck = (id: DeckId, player: AudioPlayer): DeckRt => ({ id, player, track: null, qIndex: -1, session: null, offsetMs: 0, seekMs: 0, awaitingLoad: false, ready: false, loading: false, token: 0, gain: 1, level: 0, rate: 1, volume: 0, lastReport: 0, seenPlaying: false });
   const decksRef = useRef<Record<DeckId, DeckRt> | null>(null);
   if (!decksRef.current) decksRef.current = { A: mkDeck('A', playerA), B: mkDeck('B', playerB) };
   decksRef.current.A.player = playerA;
@@ -233,10 +321,36 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
   const seenStopped = useRef(false);
   const lastPublish = useRef(0);
   const analyzedShareRef = useRef<number | null>(null);
+  // AI DJ
+  const promptRef = useRef<string | null>(null);
+  const summaryRef = useRef<string | null>(null);
+  const understoodByRef = useRef<'llm' | 'rules' | null>(null);
+  /** reqRef holds the server-resolved request (top-ups must not re-send the prompt). */
+  const resolvedRef = useRef(false);
+  const aiRef = useRef<DjAi | null>(null);
+  const hostPendingRef = useRef<HostPending | null>(null);
+  const speakingRef = useRef<HostSpeaking | null>(null);
+  const speechToken = useRef(0);
+  const hostLoadedUrl = useRef<string | null>(null);
+  const duckRef = useRef<Duck>({ value: 1, from: 1, target: 1, startedAt: 0, durMs: 0 });
+  const openingWaitSince = useRef<number | null>(null);
 
   const [running, setRunning] = useState(false);
-  const [snap, setSnap] = useState<Omit<DjValue, 'start' | 'pause' | 'resume' | 'toggle' | 'mixNow' | 'skipNext' | 'stop' | 'saveAsPlaylist'>>(() => emptySnap());
+  const [snap, setSnap] = useState<Snap>(() => emptySnap());
   const [error, setError] = useState<string | null>(null);
+  const [voice, setVoiceState] = useState(true);
+  const voiceRef = useRef(true);
+  voiceRef.current = voice;
+
+  useEffect(() => {
+    let alive = true;
+    void getJSON<boolean>(VOICE_KEY, true).then((v) => {
+      if (alive) setVoiceState(v !== false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // ----- helpers -----
   const deck = (id: DeckId) => decksRef.current![id];
@@ -249,13 +363,209 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  /** Set a deck's crossfade × ReplayGain level; the player gets that × the host duck. */
   const setVol = (d: DeckRt, v: number) => {
-    d.volume = v;
+    d.level = v;
+    d.volume = v * duckRef.current.value;
     try {
-      d.player.volume = clamp(v, 0, 1);
+      d.player.volume = clamp(d.volume, 0, 1);
     } catch {
       /* not ready */
     }
+  };
+
+  // ----- AI DJ host -----
+  const hostOn = () => voiceRef.current && !!aiRef.current?.enabled;
+
+  const applyDuck = () => {
+    for (const id of ['A', 'B'] as DeckId[]) {
+      const d = deck(id);
+      if (d.track) setVol(d, d.level);
+    }
+  };
+
+  const duckTo = (target: number, durMs: number) => {
+    const k = duckRef.current;
+    k.from = k.value;
+    k.target = target;
+    k.startedAt = Date.now();
+    k.durMs = durMs;
+    if (durMs <= 0) k.value = target;
+    applyDuck();
+  };
+
+  const stepDuck = (now: number) => {
+    const k = duckRef.current;
+    if (k.value === k.target) return;
+    const p = k.durMs > 0 ? clamp((now - k.startedAt) / k.durMs, 0, 1) : 1;
+    k.value = p >= 1 ? k.target : k.from + (k.target - k.from) * p;
+    applyDuck();
+  };
+
+  const loadHostAudio = (url: string) => {
+    const a = apiRef.current;
+    if (!a) return;
+    const uri = a.withAuthQuery(url);
+    if (hostLoadedUrl.current === uri) return;
+    try {
+      hostPlayerRef.current.pause();
+      hostPlayerRef.current.replace({ uri, headers: a.headers(false) });
+      hostLoadedUrl.current = uri;
+    } catch {
+      hostLoadedUrl.current = null;
+    }
+  };
+
+  /** Fetch the host line into track `idx` (called when that track is cued, so it's ready by the transition). */
+  const prepareHost = (idx: number) => {
+    const tr = tracksRef.current[idx];
+    const a = apiRef.current;
+    const ai = aiRef.current;
+    if (!tr || !a || !ai || !hostOn()) return;
+    if (idx > 0 && idx % (HOST_EVERY[ai.chattiness] ?? 2) !== 0) return;
+    const cur = hostPendingRef.current;
+    if (cur && cur.itemId === tr.item.id) return;
+    cur?.ctrl.abort();
+    const pending: HostPending = { itemId: tr.item.id, line: null, failed: false, ctrl: new AbortController() };
+    hostPendingRef.current = pending;
+    const prev = idx > 0 ? tracksRef.current[idx - 1] : undefined;
+    a.djHost(
+      { previousItemId: prev?.item.id, nextItemId: tr.item.id, position: idx, prompt: promptRef.current ?? undefined, hour: new Date().getHours() },
+      pending.ctrl.signal,
+    )
+      .then((line) => {
+        if (hostPendingRef.current !== pending) return;
+        if (!line?.text?.trim()) {
+          pending.failed = true;
+          return;
+        }
+        pending.line = line;
+        // Pre-load server speech unless a line is playing on the host player right now.
+        if (line.audioUrl && !speakingRef.current) loadHostAudio(line.audioUrl);
+      })
+      .catch(() => {
+        if (hostPendingRef.current === pending) pending.failed = true;
+      });
+  };
+
+  const dropHostPending = () => {
+    hostPendingRef.current?.ctrl.abort();
+    hostPendingRef.current = null;
+  };
+
+  /** Stop whatever the host is saying. `resetDuck` snaps the decks back to full level (pause / stop). */
+  const stopHost = (resetDuck: boolean) => {
+    speechToken.current++;
+    const s = speakingRef.current;
+    speakingRef.current = null;
+    if (s?.kind === 'server') {
+      try {
+        hostPlayerRef.current.pause();
+      } catch {
+        /* ignore */
+      }
+    } else if (s?.kind === 'device') {
+      deviceSpeech?.stop().catch(() => undefined);
+    }
+    if (resetDuck) duckTo(1, 0);
+  };
+
+  const endSpeech = () => {
+    if (!speakingRef.current) return;
+    stopHost(false);
+    duckTo(1, DUCK_OUT_MS);
+    publish();
+  };
+
+  const speak = (line: DjHostLine, instant: boolean) => {
+    stopHost(false);
+    const a = apiRef.current;
+    let kind: HostSpeaking['kind'] = 'text';
+    // Reading time for the subtitle-only / device voice case.
+    let maxMs = Math.min(HOST_MAX_MS, 2500 + line.text.length * 75);
+    if (line.audioUrl && a) {
+      try {
+        loadHostAudio(line.audioUrl);
+        const p = hostPlayerRef.current;
+        p.volume = 1;
+        if (p.currentTime > 0) void p.seekTo(0).catch(() => undefined);
+        p.play();
+        kind = 'server';
+        maxMs = line.durationMs ? Math.min(HOST_MAX_MS, line.durationMs + 4000) : HOST_MAX_MS;
+      } catch {
+        kind = 'text';
+      }
+    }
+    if (kind === 'text' && deviceSpeech) {
+      const token = speechToken.current;
+      const done = () => {
+        if (token === speechToken.current) endSpeech();
+      };
+      try {
+        deviceSpeech.speak(line.text, { onDone: done, onStopped: done, onError: done });
+        kind = 'device';
+        maxMs = Math.min(HOST_MAX_MS, 4000 + line.text.length * 110); // safety net in case onDone never fires
+      } catch {
+        kind = 'text';
+      }
+    }
+    // A subtitle on its own doesn't need the music out of the way.
+    if (kind !== 'text') duckTo(DUCK_LEVEL, instant ? 0 : DUCK_IN_MS);
+    speakingRef.current = { line, kind, startedAt: Date.now(), maxMs, seenPlaying: false };
+    publish();
+  };
+
+  /** The transition into `tr` is starting: speak its line if (and only if) it has arrived. */
+  const maybeSpeak = (tr: DjMixTrack | null, instant: boolean) => {
+    const p = hostPendingRef.current;
+    if (!tr || !p || p.itemId !== tr.item.id) return;
+    hostPendingRef.current = null;
+    if (!p.line || !hostOn()) {
+      p.ctrl.abort();
+      return;
+    }
+    speak(p.line, instant);
+  };
+
+  /** Hold the very first track briefly while its opening line is still on the way. */
+  const holdForOpening = (tr: DjMixTrack, now: number) => {
+    const p = hostPendingRef.current;
+    if (!hostOn() || !p || p.itemId !== tr.item.id || p.line || p.failed) return false;
+    openingWaitSince.current = openingWaitSince.current ?? now;
+    return now - openingWaitSince.current < OPENING_WAIT_MS;
+  };
+
+  const stepHost = (now: number) => {
+    const s = speakingRef.current;
+    if (!s) return;
+    const elapsed = now - s.startedAt;
+    if (s.kind === 'server') {
+      const p = hostPlayerRef.current;
+      let playing = false;
+      let finished = false;
+      let buffering = false;
+      try {
+        playing = p.playing;
+        finished = p.currentStatus?.didJustFinish ?? false;
+        buffering = p.isBuffering;
+      } catch {
+        /* ignore */
+      }
+      if (playing) s.seenPlaying = true;
+      if (finished || (s.seenPlaying && !playing && !buffering) || (!s.seenPlaying && elapsed > HOST_START_TIMEOUT_MS) || elapsed > s.maxMs) endSpeech();
+    } else if (elapsed > s.maxMs) endSpeech();
+  };
+
+  /** The deck you hear: the incoming one from halfway through a blend. */
+  const audibleDeck = (): DeckRt | null => {
+    const f = fadeRef.current;
+    if (f) {
+      const p = clamp((f.pausedElapsed ?? Date.now() - f.startedAt) / f.durMs, 0, 1);
+      const d = deck(p >= 0.5 ? f.to : f.from);
+      return d.track ? d : deck(f.to);
+    }
+    const d = deck(liveRef.current);
+    return d.track ? d : null;
   };
 
   const setRate = (d: DeckRt, r: number) => {
@@ -354,6 +664,7 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
     d.loading = true;
     d.ready = false;
     d.gain = trackGain(tr.item, rgModeRef.current);
+    prepareHost(idx);
     const prevTrack = tracksRef.current[idx - 1];
     const tr2 = tr.transition ?? (prevTrack && idx > 0 ? fallbackTransition(prevTrack, tr) : null);
     const cue = tr.analysis?.cueInMs ?? 0;
@@ -436,9 +747,12 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
     if (!a || fetchingRef.current || exhaustedRef.current) return;
     fetchingRef.current = true;
     const history = [...skippedRef.current, ...tracksRef.current.map((x) => x.item.id)];
-    const { seedItemId: _seed, durationMin: _dur, ...rest } = reqRef.current;
+    const { seedItemId: _seed, durationMin: _dur, prompt, ...rest } = reqRef.current;
+    // The server's resolved request replaces the prompt (no re-parsing on every top-up); an older server
+    // that didn't send one back still gets the prompt.
+    const body: DjMixRequest = resolvedRef.current || !prompt ? rest : { ...rest, prompt };
     void a
-      .djMix({ ...rest, history, count: TOP_UP_COUNT })
+      .djMix({ ...body, history, count: TOP_UP_COUNT })
       .then((mix) => {
         if (phaseRef.current === 'idle' || phaseRef.current === 'ended') return;
         const known = new Set(history);
@@ -466,6 +780,8 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
     const inc = deck(to);
     if (!inc.ready) return;
     forceRef.current = null;
+    // Host link (only if it's already here). The opening line ducks at once so the first track starts under it.
+    maybeSpeak(inc.track, !deck(from).track);
     setVol(inc, crossfadeMs <= TICK_MS ? inc.gain : 0);
     setRate(inc, clamp(tempoRatio || 1, 0.9, 1.1));
     try {
@@ -542,6 +858,9 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
     easeRef.current = null;
     forceRef.current = null;
     resumeSet.current = [];
+    stopHost(true);
+    dropHostPending();
+    openingWaitSince.current = null;
     phaseRef.current = phase;
     if (phase === 'idle') {
       tracksRef.current = [];
@@ -582,6 +901,9 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
       } else d.ready = true;
     }
 
+    stepDuck(now);
+    stepHost(now);
+
     if (phase === 'paused') {
       // Lock screen / headset "play" resumed the audible deck: resume the whole mix
       // (only after it has been seen stopped, so a pause still in flight isn't mistaken for it).
@@ -618,8 +940,9 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
       if (nextTrack && next.qIndex === nextIdx && next.ready) {
         const tr = nextTrack.transition ?? (live.track ? fallbackTransition(live.track, nextTrack) : null);
         const force = forceRef.current;
-        if (!live.track) beginFade(0, 1);
-        else if (force) beginFade(force.crossfadeMs, force.keepTempo ? tr?.tempoRatio ?? 1 : 1);
+        if (!live.track) {
+          if (!holdForOpening(nextTrack, now)) beginFade(0, 1);
+        } else if (force) beginFade(force.crossfadeMs, force.keepTempo ? tr?.tempoRatio ?? 1 : 1);
         else if (liveEnded) beginFade(0, 1);
         else if (mixOut != null) {
           const wantFade = tr?.crossfadeMs ?? FALLBACK_FADE_MS;
@@ -735,6 +1058,8 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
     resumeSet.current = playingDecks.filter((id) => id === liveRef.current || (fadeRef.current && fadeRef.current.to === id));
     if (fadeRef.current) fadeRef.current.pausedElapsed = now - fadeRef.current.startedAt;
     if (easeRef.current) easeRef.current.pausedElapsed = now - easeRef.current.startedAt;
+    // The host line is dropped (not resumed): the decks come back at full level.
+    stopHost(true);
     phaseRef.current = 'paused';
     seenStopped.current = false;
     publish();
@@ -813,6 +1138,13 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
       mixing: !!f,
       analyzedShare: analyzedShareRef.current,
       toppingUp: fetchingRef.current,
+      prompt: promptRef.current,
+      summary: summaryRef.current,
+      understoodBy: understoodByRef.current,
+      hostActive: hostOn(),
+      hostName: aiRef.current?.hostName || null,
+      hostLine: speakingRef.current ? { text: speakingRef.current.line.text, by: speakingRef.current.line.by } : null,
+      audibleItemId: audibleDeck()?.track?.item.id ?? null,
     });
   };
 
@@ -846,13 +1178,15 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
   useEffect(
     () => () => {
       if (startTimer.current) clearTimeout(startTimer.current);
+      hostPendingRef.current?.ctrl.abort();
+      if (speakingRef.current?.kind === 'device') deviceSpeech?.stop().catch(() => undefined);
     },
     [],
   );
 
   // ----- public API -----
   const start = useCallback(
-    async (req: DjMixRequest, opts: { continuous?: boolean } = {}) => {
+    async (req: DjMixRequest, opts: { continuous?: boolean; ai?: DjAi | null } = {}) => {
       const a = apiRef.current;
       if (!a) return;
       if (phaseRef.current !== 'idle') teardown('idle');
@@ -862,6 +1196,12 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
       exhaustedRef.current = false;
       skippedRef.current = [];
       reqRef.current = req;
+      resolvedRef.current = false;
+      promptRef.current = req.prompt?.trim() || null;
+      summaryRef.current = null;
+      understoodByRef.current = null;
+      aiRef.current = opts.ai ?? null;
+      openingWaitSince.current = null;
       phaseRef.current = 'loading';
       liveRef.current = 'B'; // empty "live" deck: the first track fades in on deck A
       curRef.current = -1;
@@ -881,9 +1221,19 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
         }
         tracksRef.current = mix.tracks.map((x, i) => (i === 0 ? { ...x, transition: null } : x));
         analyzedShareRef.current = mix.analyzedShare;
+        if (mix.request) {
+          reqRef.current = mix.request;
+          resolvedRef.current = true;
+        }
+        if (mix.continuous) continuousRef.current = true;
+        summaryRef.current = mix.summary ?? null;
+        understoodByRef.current = mix.understoodBy ?? null;
         publish();
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Could not build a mix');
+        if (e instanceof ApiError && e.status === 403 && req.prompt) {
+          setError('The AI DJ is turned off on this server. Build a mix with the options below instead.');
+          invalidate('dj:status');
+        } else setError(e instanceof Error ? e.message : 'Could not build a mix');
         teardown('idle');
       }
     },
@@ -912,7 +1262,30 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
         const idx = curRef.current + 1;
         const f = fadeRef.current;
         // Mid-blend the incoming track is already audible: skip the one after it instead.
-        dropTrack(f ? idx + 1 : idx);
+        const target = f ? idx + 1 : idx;
+        const skipped = tracksRef.current[target]?.item.id;
+        dropTrack(target);
+        if (skipped) apiRef.current?.djFeedback({ itemId: skipped, kind: 'skip' }).catch(() => undefined);
+      },
+      love: async () => {
+        const a = apiRef.current;
+        const id = audibleDeck()?.track?.item.id;
+        if (!a || !id) return null;
+        await a.djFeedback({ itemId: id, kind: 'love' });
+        invalidate(`item:${id}`);
+        return id;
+      },
+      voice,
+      setVoice: (on: boolean) => {
+        setVoiceState(on);
+        voiceRef.current = on;
+        setJSON(VOICE_KEY, on).catch(() => undefined);
+        if (!on) {
+          stopHost(false);
+          duckTo(1, DUCK_OUT_MS);
+          dropHostPending();
+        }
+        publish();
       },
       stop: () => stopRef.current(),
       saveAsPlaylist: async (title: string) => {
@@ -924,7 +1297,7 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [snap, error, start],
+    [snap, error, start, voice],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -934,7 +1307,7 @@ function emptyDeck(id: DeckId): DeckView {
   return { id, track: null, positionMs: 0, durationMs: 0, mixOutMs: null, playing: false, loading: false, role: 'idle', rate: 1, volume: 0 };
 }
 
-function emptySnap() {
+function emptySnap(): Snap {
   return {
     active: false,
     phase: 'idle' as DjPhase,
@@ -948,6 +1321,13 @@ function emptySnap() {
     mixing: false,
     analyzedShare: null,
     toppingUp: false,
+    prompt: null,
+    summary: null,
+    understoodBy: null,
+    hostActive: false,
+    hostName: null,
+    hostLine: null,
+    audibleItemId: null,
   };
 }
 
