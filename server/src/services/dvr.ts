@@ -380,7 +380,9 @@ export function applyRules() {
       }
       try {
         const owner = db.get('SELECT * FROM users WHERE id = ?', rule.created_by);
-        scheduleRecording({ id: rule.created_by, displayName: owner?.display_name ?? 'DVR', isAdmin: true } as User,
+        // A rule left behind by a deleted account must not keep recording with admin rights.
+        if (!owner) break;
+        scheduleRecording({ id: rule.created_by, displayName: owner.display_name ?? 'DVR', isAdmin: true } as User,
           { channelId: ch.id, programId: p.id, paddingBeforeMin: rule.padding_before, paddingAfterMin: rule.padding_after }, rule.id, rule.priority ?? 50);
       } catch (e) {
         log.debug(`Rule ${rule.title_match}: ${(e as Error).message}`);

@@ -370,6 +370,10 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     : db.get('SELECT * FROM media WHERE item_id = ? ORDER BY COALESCE(width,0) DESC LIMIT 1', itemId);
   if (!mediaRow) throw notFound('Media not found');
   if (item.type === 'photo') throw badRequest('Photos are not playable');
+  // Empty or unreadable local files (ffprobe failed at scan time): say so instead of handing the player a broken stream.
+  if (mediaRow.path && !mediaRow.remote_url && (mediaRow.size === 0 || (!mediaRow.probed_at && !mediaRow.video_codec && !parseJson<unknown[]>(mediaRow.audio, []).length))) {
+    throw new HttpError(422, 'This file could not be read. It may be damaged or still being copied; rescan the library once it is complete.', 'unreadable_media');
+  }
   // Files scanned before HDR detection: identify the HDR format now (one quick ffprobe, stored for next time).
   if (mediaRow.hdr && mediaRow.video_range == null && mediaRow.path) {
     try {

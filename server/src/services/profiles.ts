@@ -250,7 +250,11 @@ export function updateProfile(actor: User, profileId: string, req: UpdateProfile
 
 export function deleteProfile(actor: User, profileId: string) {
   const { row, owner } = managedRow(actor, profileId);
-  db.run('DELETE FROM users WHERE id = ?', profileId);
+  db.tx(() => {
+    db.run('DELETE FROM recording_rules WHERE created_by = ?', profileId);
+    db.run("UPDATE recordings SET status = 'cancelled' WHERE status = 'scheduled' AND created_by = ?", profileId);
+    db.run('DELETE FROM users WHERE id = ?', profileId);
+  });
   logActivity('profile.delete', `${owner.display_name} removed the profile ${row.display_name}`, { userId: actor.id, userName: qualifiedName(actor) });
 }
 

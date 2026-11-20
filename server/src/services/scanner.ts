@@ -714,8 +714,18 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     else await scanFlat(ctx, files, 'video');
 
     // Remove vanished media / items — but only if all library roots are reachable (avoid wiping on unmounted drives).
+    // An empty root counts as unreachable: an unmounted NAS share usually leaves its empty mount-point folder behind,
+    // and treating that as "everything was deleted" would drop every item along with everyone's watch history.
     const roots = parseJson<string[]>(lib.paths, []);
-    const allRootsOk = roots.length > 0 && roots.every((p) => fs.existsSync(p));
+    const rootOk = (p: string) => {
+      try {
+        return fs.readdirSync(p).length > 0;
+      } catch {
+        return false;
+      }
+    };
+    const allRootsOk = roots.length > 0 && roots.every(rootOk);
+    if (!allRootsOk && roots.some((p) => fs.existsSync(p))) log.warn(`Library "${lib.name}": a folder is missing or empty (unmounted?), so nothing was removed`);
     if (allRootsOk) {
       db.tx(() => {
         const media = db.all<{ id: string; item_id: string }>('SELECT m.id, m.item_id FROM media m JOIN items i ON i.id = m.item_id WHERE i.library_id = ?', libId);
