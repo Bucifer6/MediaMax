@@ -315,3 +315,42 @@ Music tracks carry `replayGain: { trackGainDb, trackPeak, albumGainDb, albumPeak
 ## Cinema mode (trailers and pre-rolls)
 
 `GET /items/:id/intros` returns the videos to play before a movie: up to `settings.cinema.trailers` local trailers for *other* movies (unwatched ones only, when `unwatchedOnly` is set), then one random clip from `cinema.prerollLibraryId`. It returns `[]` when cinema mode is off, when the item is not a movie, or when the user has turned off the `cinemaMode` preference. Results respect parental limits and library access. The web player chains intros as `/play/<intro>?then=<movie>&intros=<rest>`, and "Skip to movie" jumps straight to the feature.
+
+## DJ mode
+
+MediaMax analyses every music track and can build and play continuous, beat-matched mixes.
+
+**Analysis.** The scheduled task "Analyse music for DJ mode" runs every 6 hours. `POST /dj/analyze` (admin) runs it now, and `GET /dj/status` reports `{analyzed, total, running}`. `GET /items/:id/analysis` returns a `TrackAnalysis` and analyses the track on demand (about 0.5 s per track). Each track gets:
+
+- tempo (`bpm`, with `bpmConfidence`) and a beat grid (`beatOffsetMs`)
+- musical key and its Camelot code (`key`, `camelot`)
+- `energy` (0–1) and `loudnessDb`
+- cue-in/out (leading and trailing silence skipped)
+- intro end and outro start
+
+Analysis is pure TypeScript DSP on PCM decoded by ffmpeg. Tempo comes from spectral-flux onsets, autocorrelation and a beat-grid fit across the whole track. Key comes from chroma matched against Krumhansl–Kessler profiles. Tracks without a steady beat get `bpm: null`.
+
+**Mixes.** `POST /dj/mix` with a `DjMixRequest` returns a `DjMix`.
+
+- **Seed:** `seedItemId` is a track, album, artist or playlist. Without one, the mix starts from a favourite or a highly rated track.
+- **Filters:** `genres`, `libraryId`, `bpmMin`/`bpmMax`. Half and double time count, so 70 BPM matches 140.
+- **Shape:** `curve` is `steady`, `build`, `peak`, `wave` or `chill`; `durationMin` sets the length.
+- **Mixing rules:** `harmonic` (default true), `artistGap` (default 3), `preferFavorites` (default true).
+- **Continuous mode:** send `history` (ids already played or queued) plus `count` to get the next tracks. Tracks are never repeated, and the energy curve keeps moving.
+
+Tracks are ordered by scoring each candidate on:
+
+- key compatibility on the Camelot wheel (same key, ±1, relative major/minor, or a +2 "energy boost")
+- tempo distance
+- distance from the energy-curve target (by percentile within the library)
+- genre overlap
+- favourites and ratings
+
+Every track after the first carries a `transition` describing how to mix into it:
+
+- **When:** start the incoming track at `mixInMs` (on its beat grid) when the outgoing track reaches `mixOutMs`, which is snapped to a bar line of the outgoing track.
+- **How long:** crossfade over `crossfadeMs`.
+- **Tempo:** play the incoming track at `tempoRatio` during the blend, then ease it back to 1.0.
+- **Style:** `blend` (beat-matched, 16–32 beats), `fade`, or `cut` for a clashing key and tempo. `keyMatch` and `bpmDelta` are included for display.
+
+The web app's DJ page (`/dj`) runs two decks on Web Audio with equal-power crossfades, preloads the next track at its mix-in point, and tops up non-stop mixes automatically.
