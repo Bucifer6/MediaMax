@@ -257,3 +257,17 @@ ping, getLicense, getOpenSubsonicExtensions, getUser, getMusicFolders, getGenres
 getSong, getMusicDirectory, getAlbumList2, getRandomSongs, getSongsByGenre, search3, getStarred2, star, unstar, scrobble,
 getPlaylists, getPlaylist, createPlaylist, updatePlaylist, deletePlaylist, getLyrics, getLyricsBySongId, getNowPlaying,
 getScanStatus, stream (raw or `format=mp3|opus&maxBitRate=`), download, getCoverArt.
+
+## Remote control ("Play on…")
+* `GET /remote/targets` → `RemoteTarget[]` — your other online devices and what they're playing.
+* Players send `{ type: 'remote.state', state: RemotePlayerState | null }` over the WebSocket on change and every ~10 s.
+* Controllers send `{ type: 'remote.command', targetDeviceId, action, itemId?, channelId?, positionMs?, volume? }`; the target device
+  receives `remote.command` (with `fromDeviceName`) and applies it. Everyone gets `remote.targets` pushes when devices come and go.
+  Only the same user's devices can be controlled.
+
+## Editions & extras
+* `MediaSource.edition` — e.g. "Director's Cut" (from `{edition-…}` or `Movie (2010) - Director's Cut.mkv`); several editions are
+  several `media` entries on one movie.
+* `GET /items/:id/extras` → `Item[]` (type `video`, `extraType` trailer/featurette/behindthescenes/deleted/interview/scene/short/other),
+  from Plex/Jellyfin-style folders (`Trailers/`, `Featurettes/`, `Behind The Scenes/`, `Extras/`…) or `-trailer`-style suffixes.
+  Extras never appear in library lists or search.

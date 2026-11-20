@@ -471,6 +471,8 @@ export interface MediaSource {
   subtitleStreams: SubtitleStream[];
   /** true when the file lives on a remote IPTV provider. */
   remote: boolean;
+  /** Movie edition, e.g. "Director's Cut", "Extended" (from `{edition-…}` or the filename). */
+  edition: string | null;
 }
 
 export interface Marker {
@@ -522,9 +524,13 @@ export interface Item {
   chapters?: Chapter[];
   /** Smart collection/playlist rules (null for manual lists). */
   smart?: SmartFilter | null;
+  /** For local extras (trailers, featurettes…) attached to a movie or show — see GET /items/:id/extras. */
+  extraType?: ExtraType;
   /** Book series (audiobooks) or movie collection order. */
   series?: { name: string; index: number | null } | null;
 }
+
+export type ExtraType = 'trailer' | 'featurette' | 'behindthescenes' | 'deleted' | 'interview' | 'scene' | 'short' | 'other';
 
 export interface Chapter {
   title: string;
@@ -1113,14 +1119,45 @@ export type ServerEvent =
   | { type: 'session.terminated'; sessionId: string; reason: string }
   | { type: 'syncplay.state'; room: SyncPlayRoom }
   | { type: 'syncplay.command'; room: string; action: 'play' | 'pause' | 'seek' | 'load'; positionMs: number; itemId?: string; at: number; by: string }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  /** A command from another of your devices (apply it to the local player). */
+  | { type: 'remote.command'; fromDeviceName: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number }
+  /** Your controllable devices changed (online/offline/now playing). */
+  | { type: 'remote.targets'; targets: RemoteTarget[] };
 
 export type ClientEvent =
   | { type: 'ping' }
   | { type: 'syncplay.create'; itemId?: string }
   | { type: 'syncplay.join'; room: string }
   | { type: 'syncplay.leave'; room: string }
-  | { type: 'syncplay.command'; room: string; action: 'play' | 'pause' | 'seek' | 'load'; positionMs: number; itemId?: string };
+  | { type: 'syncplay.command'; room: string; action: 'play' | 'pause' | 'seek' | 'load'; positionMs: number; itemId?: string }
+  /** Control another of your own devices ("Play on…"). */
+  | { type: 'remote.command'; targetDeviceId: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number }
+  /** Players report what they're doing so other devices can show and control it. Send on change and every ~10 s while playing. */
+  | { type: 'remote.state'; state: RemotePlayerState | null };
+
+export type RemoteAction = 'play' | 'pause' | 'togglePause' | 'stop' | 'seek' | 'next' | 'previous' | 'setVolume' | 'playItem' | 'playChannel';
+
+export interface RemotePlayerState {
+  itemId: string | null;
+  channelId: string | null;
+  title: string | null;
+  subtitle: string | null;
+  posterUrl: string | null;
+  positionMs: number;
+  durationMs: number | null;
+  paused: boolean;
+  /** 0-100 */
+  volume: number | null;
+}
+
+/** One of the user's online devices that can be controlled. `id` is the device row id. */
+export interface RemoteTarget {
+  id: string;
+  deviceName: string;
+  platform: Platform;
+  state: RemotePlayerState | null;
+}
 
 export interface SyncPlayRoom {
   id: string;

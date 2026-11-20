@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import { db } from '../db.js';
 import { requireAdmin, requireUser } from '../http.js';
-import { assertCanSee, getItem } from '../services/items.js';
+import { assertCanSee, getItem, queryItems } from '../services/items.js';
 import { sheetPath, trickplayInfo } from '../services/trickplay.js';
 import { serverStats, userStats } from '../services/stats.js';
 import { deleteDownloadedSubtitle, downloadSubtitle, searchSubtitles } from '../services/opensubtitles.js';
@@ -10,6 +10,7 @@ import { disconnect, setScrobble, startDeviceAuth, traktStatus } from '../servic
 import { notFound, badRequest, forbidden } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
 import { newId } from '../util/ids.js';
+import { events } from '../services/events.js';
 import { getLyrics } from '../services/lyrics.js';
 import * as podcasts from '../services/podcasts.js';
 import * as lastfm from '../services/lastfm.js';
@@ -158,6 +159,21 @@ export default async function extraRoutes(app: FastifyInstance) {
     canManage(user.id, user.isAdmin, req.params.id);
     podcasts.unsubscribe(req.params.id);
     return { ok: true };
+  });
+
+  /* ----------------------------- remote control --------------------- */
+  app.get('/remote/targets', async (req) => {
+    const a = requireUser(req);
+    return events.remoteTargets(a.user.id).filter((t) => t.id !== a.deviceRowId);
+  });
+
+  /* -------------------------------- extras -------------------------- */
+  app.get<{ Params: { id: string } }>('/items/:id/extras', async (req) => {
+    const { user } = requireUser(req);
+    assertCanSee(user, req.params.id);
+    const order = ['trailer', 'featurette', 'behindthescenes', 'deleted', 'interview', 'scene', 'short', 'other'];
+    return queryItems(user, { parentId: req.params.id, type: 'video', sort: 'title', limit: 200 }).items
+      .sort((a, b) => order.indexOf(a.extraType ?? 'other') - order.indexOf(b.extraType ?? 'other'));
   });
 
   /* ------------------------------- bookmarks ------------------------ */

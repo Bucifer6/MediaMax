@@ -274,6 +274,9 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX bookmarks_user_item ON bookmarks(user_id, item_id);
   `,
+  /* 9: movie editions */ `
+  ALTER TABLE media ADD COLUMN edition TEXT;
+  `,
 ];
 
 function migrate(db: Database) {

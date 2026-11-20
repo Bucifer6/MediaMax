@@ -115,7 +115,8 @@ export function parseShowFolder(name: string): { title: string; year: number | n
 /** Extras / samples that should not become library items. */
 export function isExtra(relPath: string): boolean {
   return /(^|[\\/])(extras?|featurettes?|behind the scenes|deleted scenes|interviews?|scenes|shorts|trailers?|samples?|other|@eaDir|\.[^\\/]+)([\\/]|$)/i.test(relPath)
-    || /[-._ ](sample|trailer)$/i.test(stripExt(relPath.split(/[\\/]/).pop() ?? ''));
+    || /[-._ ](sample|trailer)$/i.test(stripExt(relPath.split(/[\\/]/).pop() ?? ''))
+    || /-(featurette|behindthescenes|deleted|interview|scene|short|other)$/i.test(stripExt(relPath.split(/[\\/]/).pop() ?? ''));
 }
 
 /** Sidecar subtitle language from "Movie.en.forced.srt" style names. */

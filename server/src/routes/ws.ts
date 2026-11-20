@@ -20,11 +20,16 @@ export default async function wsRoutes(app: FastifyInstance) {
       id: newId(),
       userId: ctx.user.id,
       isAdmin: ctx.user.isAdmin,
+      deviceRowId: ctx.deviceRowId,
+      deviceName: ctx.device.deviceName,
+      platform: ctx.device.platform,
+      remoteState: null,
       send: (ev) => {
         if (socket.readyState === 1) socket.send(JSON.stringify(ev));
       },
     };
     events.add(client);
+    events.announceTargets(ctx.user.id);
     client.send({ type: 'hello', serverId: serverId(), userId: ctx.user.id });
     if (ctx.user.isAdmin) client.send({ type: 'sessions.updated', sessions: listSessions() });
     const ping = setInterval(() => {
@@ -45,6 +50,26 @@ export default async function wsRoutes(app: FastifyInstance) {
       if (ev.type === 'ping') return;
       try {
         if (ev.type.startsWith('syncplay.')) handleSyncPlay(client, ev);
+        else if (ev.type === 'remote.state') {
+          const s = ev.state;
+          client.remoteState = s && typeof s === 'object' ? {
+            itemId: s.itemId ?? null, channelId: s.channelId ?? null, title: s.title ? String(s.title).slice(0, 200) : null, subtitle: s.subtitle ? String(s.subtitle).slice(0, 200) : null,
+            posterUrl: typeof s.posterUrl === 'string' && s.posterUrl.startsWith('/api/') ? s.posterUrl : null,
+            positionMs: Math.max(0, Number(s.positionMs) || 0), durationMs: s.durationMs ? Number(s.durationMs) : null, paused: !!s.paused,
+            volume: s.volume == null ? null : Math.max(0, Math.min(100, Number(s.volume))),
+          } : null;
+          events.announceTargets(client.userId);
+        } else if (ev.type === 'remote.command') {
+          // Only your own devices can be controlled.
+          const targets = events.clients().filter((c) => c.userId === client.userId && c.deviceRowId === ev.targetDeviceId && c !== client);
+          if (!targets.length) client.send({ type: 'error', message: 'That device is not online' });
+          const ACTIONS = ['play', 'pause', 'togglePause', 'stop', 'seek', 'next', 'previous', 'setVolume', 'playItem', 'playChannel'];
+          if (!ACTIONS.includes(ev.action)) return;
+          for (const t of targets) {
+            t.send({ type: 'remote.command', fromDeviceName: client.deviceName, action: ev.action, itemId: ev.itemId, channelId: ev.channelId,
+              positionMs: ev.positionMs == null ? undefined : Number(ev.positionMs), volume: ev.volume == null ? undefined : Number(ev.volume) });
+          }
+        }
       } catch {
         client.send({ type: 'error', message: 'Invalid message' });
       }
@@ -53,6 +78,7 @@ export default async function wsRoutes(app: FastifyInstance) {
       clearInterval(ping);
       events.remove(client);
       leaveAll(client);
+      events.announceTargets(client.userId);
     });
   });
 }

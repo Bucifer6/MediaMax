@@ -123,6 +123,7 @@ export function rowToItem(r: Row): Item {
     trailerUrl: r.trailer_url ?? null,
     ...(r.smart ? { smart: parseJson(r.smart, null) } : {}),
     ...((extra as any).series ? { series: (extra as any).series } : {}),
+    ...((extra as any).extraType ? { extraType: (extra as any).extraType } : {}),
   };
 }
 
@@ -141,6 +142,7 @@ export function mediaRowToSource(m: Row): MediaSource {
     audioStreams: parseJson(m.audio, []),
     subtitleStreams: parseJson<(SubtitleStream & { path?: string })[]>(m.subs, []).map(({ path: _p, ...s }) => s),
     remote: !m.path && !!m.remote_url,
+    edition: m.edition ?? null,
   };
 }
 
@@ -187,6 +189,8 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
       if (lib?.type === 'music') where.push("i.type = 'artist'");
     }
   }
+  // Extras (videos attached to a movie/show) only appear via their owner (GET /items/:id/extras).
+  if (!q.parentId) where.push("NOT (i.type = 'video' AND i.parent_id IS NOT NULL)");
   if (q.genre) {
     where.push('EXISTS (SELECT 1 FROM json_each(i.genres) WHERE json_each.value = ?)');
     params.push(q.genre);
@@ -627,7 +631,7 @@ export function searchItems(user: User, q: string, limit = 30): Item[] {
   if (!term) return [];
   const like = `%${term}%`;
   return selectItems(user,
-    `(i.title LIKE ? OR i.original_title LIKE ? OR EXISTS (SELECT 1 FROM json_each(i.people) WHERE json_extract(json_each.value,'$.name') LIKE ?)) AND i.type IN ('movie','show','episode','artist','album','track','collection','video','audiobook','podcast','podcastepisode')`,
+    `(i.title LIKE ? OR i.original_title LIKE ? OR EXISTS (SELECT 1 FROM json_each(i.people) WHERE json_extract(json_each.value,'$.name') LIKE ?)) AND i.type IN ('movie','show','episode','artist','album','track','collection','video','audiobook','podcast','podcastepisode') AND NOT (i.type = 'video' AND i.parent_id IS NOT NULL)`,
     [like, like, like, term, `${term}%`],
     `ORDER BY CASE WHEN i.title LIKE ? THEN 0 WHEN i.title LIKE ? THEN 1 ELSE 2 END, CASE i.type WHEN 'movie' THEN 0 WHEN 'show' THEN 0 WHEN 'artist' THEN 1 ELSE 2 END, i.sort_title LIMIT ${toInt(limit, 30, 1, 200)}`)
 
