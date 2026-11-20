@@ -123,8 +123,11 @@ function addSiriHandler(src) {
   if (!cls) return src;
   const at = cls.index + cls[0].length;
   let out = `${src.slice(0, at)}\n${SIRI_METHOD}\n${src.slice(at)}`;
-  for (const mod of ['MediaMaxCar', 'Intents']) {
-    if (!new RegExp(`^import ${mod}$`, 'm').test(out)) out = out.replace(/^(import [^\n]+\n)/m, `$1import ${mod}\n`);
+  // MediaMaxCar must be `internal import`: Expo's generated ExpoModulesProvider.swift imports every local module
+  // that way, and Swift rejects the same module imported with two different access levels in one target
+  // ("ambiguous implicit access level"). The handler's signature only uses Intents types, so internal is enough.
+  for (const [mod, line] of [['MediaMaxCar', 'internal import MediaMaxCar'], ['Intents', 'import Intents']]) {
+    if (!new RegExp(`^(?:\\w+ )?import ${mod}$`, 'm').test(out)) out = out.replace(/^(import [^\n]+\n)/m, `$1${line}\n`);
   }
   return out;
 }
