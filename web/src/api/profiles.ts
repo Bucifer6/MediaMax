@@ -15,6 +15,7 @@ export const profilesApi = {
   /** The owner's profiles (owner session), or another account's (admin, with ownerId). */
   list: (ownerId?: string) => http.get<Profile[]>(ownerId ? `/users/${enc(ownerId)}/profiles` : '/profiles'),
   create: (body: CreateProfileRequest, ownerId?: string) => http.post<Profile>(ownerId ? `/users/${enc(ownerId)}/profiles` : '/profiles', body),
+  get: (id: string) => http.get<Profile>(`/profiles/${enc(id)}`),
   update: (id: string, body: UpdateProfileRequest) => http.patch<Profile>(`/profiles/${enc(id)}`, body),
   remove: (id: string) => http.del<{ ok: true }>(`/profiles/${enc(id)}`),
   uploadAvatar: (id: string, file: File) => upload<Profile>(`/profiles/${enc(id)}/avatar`, file),

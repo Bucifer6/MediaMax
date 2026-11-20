@@ -1,0 +1,91 @@
+/* Account profiles: "Who's watching?" picker, profile editor, Settings → Profiles. */
+
+.profile-avatar { position: relative; display: inline-block; flex: none; line-height: 0; }
+.profile-avatar > .avatar { width: 100% !important; height: 100% !important; border-radius: 22%; overflow: hidden; background: var(--pf-color, var(--c-surface-alt)); }
+.profile-avatar > .avatar img { width: 100%; height: 100%; object-fit: cover; }
+.profile-kids-tag {
+  position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); padding: 2px 10px; border-radius: 999px; line-height: 1.4;
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: #1b1b2f;
+  background: linear-gradient(90deg, #ffd166, #06d6a0); box-shadow: 0 4px 12px rgb(0 0 0 / 0.3);
+}
+
+/* Picker */
+.profile-picker .pp h1 { margin: 0; }
+.pp-grid { gap: clamp(16px, 3vw, 36px); max-width: 1100px; }
+.pp-tile { gap: 14px; outline: none; }
+.pp-tile .avatar { border: 3px solid transparent; transition: transform 0.25s var(--ease), border-color 0.2s, box-shadow 0.25s; box-shadow: var(--shadow); font-size: 2.8rem !important; }
+.pp-tile:hover .avatar, .pp-tile:focus-visible .avatar, .pp-tile:focus .avatar { transform: scale(1.07); border-color: var(--c-text); box-shadow: 0 16px 40px -10px var(--c-primary-glow); }
+.pp-tile:focus .profile-name, .pp-tile:hover .profile-name { color: var(--c-text); }
+.pp-tile.current .profile-name::after { content: ' ·  current'; font-weight: 500; opacity: 0.7; font-size: 0.85em; }
+.pp-actions { justify-content: center; flex-wrap: wrap; }
+.login-card.pp-pin { align-items: center; text-align: center; }
+.pp-pin .profile-avatar { margin-bottom: 4px; align-self: center; }
+
+@media (max-width: 520px) {
+  .pp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); justify-items: center; gap: 22px 12px; }
+  .pp-tile .profile-avatar { width: 112px !important; height: 112px !important; }
+  .profile-picker .pp h1 { font-size: 1.7rem; }
+}
+
+/* 10-foot / TV mode */
+html.tv .pp-grid { gap: 48px; max-width: none; }
+html.tv .pp-tile .profile-avatar { width: 180px !important; height: 180px !important; }
+html.tv .pp-tile .profile-name { font-size: 1.5rem; }
+html.tv .pp-tile:focus .avatar { transform: scale(1.12); border-color: var(--c-primary); border-width: 5px; }
+html.tv .profile-picker .pp h1 { font-size: 3.2rem; }
+
+/* Editor */
+.profile-editor { display: flex; flex-direction: column; gap: 20px; }
+.pe-head { display: flex; gap: 20px; align-items: center; }
+.pe-head-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.pe-section { display: flex; flex-direction: column; gap: 10px; }
+.pe-section h4 { margin: 0; font-size: 0.95rem; }
+.pe-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pe-avatars { display: flex; flex-wrap: wrap; gap: 10px; }
+.pe-avatar {
+  width: 64px; height: 64px; padding: 3px; border-radius: 18px; border: 2px solid transparent; background: none; cursor: pointer;
+  display: grid; place-items: center; transition: transform 0.15s, border-color 0.15s;
+}
+.pe-avatar img { width: 100%; height: 100%; border-radius: 14px; display: block; }
+.pe-avatar:hover, .pe-avatar:focus-visible { transform: scale(1.06); }
+.pe-avatar.active { border-color: var(--c-primary); }
+.pe-upload { background: var(--c-surface-alt); border: 2px dashed var(--c-line); color: var(--c-text-muted); font-size: 0.72rem; gap: 2px; align-content: center; }
+.pe-upload.active { border-style: solid; border-color: var(--c-primary); }
+.pe-colors { display: flex; flex-wrap: wrap; gap: 8px; }
+.pe-color { width: 28px; height: 28px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2); }
+.pe-color.active { border-color: var(--c-text); }
+.pe-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
+.pe-switches { display: flex; flex-direction: column; gap: 10px; }
+.pe-quota { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.pe-grow { flex: 1; }
+.btn-danger-text { color: var(--c-danger); }
+.profile-editor-modal .modal-foot { display: flex; align-items: center; gap: 8px; }
+@media (max-width: 640px) {
+  .pe-grid { grid-template-columns: 1fr; }
+  .pe-head { flex-direction: column; align-items: stretch; text-align: center; }
+  .pe-head .profile-avatar { align-self: center; }
+}
+
+/* Settings → Profiles */
+.ps-intro { margin: 4px 0 0; }
+.ps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
+.ps-card-main {
+  width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 10px 14px; border-radius: var(--radius-lg);
+  background: var(--c-surface-alt); border: 1px solid var(--c-line); cursor: pointer; color: inherit; transition: border-color 0.15s, transform 0.15s;
+}
+.ps-card-main:hover, .ps-card-main:focus-visible { border-color: var(--c-primary); transform: translateY(-2px); }
+.ps-meta { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; min-height: 20px; }
+.ps-add { border-style: dashed; color: var(--c-text-muted); justify-content: center; min-height: 180px; }
+.ps-add-icon { width: 88px; height: 88px; border-radius: 22%; display: grid; place-items: center; background: var(--c-surface); }
+.ps-foot { margin: 0; }
+.ps-link { background: none; border: 0; padding: 0; color: var(--c-primary); cursor: pointer; font: inherit; text-decoration: underline; }
+
+/* Header: profile badge in the user menu */
+.user-btn .profile-avatar > .avatar { border-radius: 30%; }
+.um-profile { display: flex; flex-direction: column; line-height: 1.25; }
+.um-profile small { color: var(--c-text-muted); font-weight: 500; }
+
+/* Admin → Users: nested profiles */
+tr.user-profile-row td:first-child + td .user-cell { padding-left: 28px; position: relative; }
+tr.user-profile-row td:first-child + td .user-cell::before { content: ''; position: absolute; left: 8px; top: -10px; width: 12px; height: 28px; border-left: 2px solid var(--c-line); border-bottom: 2px solid var(--c-line); border-bottom-left-radius: 8px; }
+tr.user-profile-row { background: color-mix(in srgb, var(--c-surface-alt) 50%, transparent); }

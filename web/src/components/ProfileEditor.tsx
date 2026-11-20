@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import type { BuiltinAvatar, CreateProfileRequest, Library, Profile, RequestPermissions, RequestQuotas } from '@mediamax/shared';
 import { profilesApi, RATING_CHOICES } from '../api/profiles';
 import { useToast } from '../state/toast';
-import { Avatar, Field, Modal, Spinner, Switch, useConfirm } from './ui';
+import { Field, Modal, Spinner, Switch, useConfirm } from './ui';
 import { Icon } from './Icon';
 import { DEFAULT_QUOTAS, DEFAULT_REQUEST_PERMISSIONS, QuotaEditor, RequestPermissionsEditor } from '../admin/RequestPermissionsEditor';
+import { ProfileAvatar } from './ProfileAvatar';
 import '../styles/profiles.css';
+
+export { ProfileAvatar };
 
 export const PROFILE_COLORS = ['#e50914', '#f5b700', '#2a9d8f', '#4361ee', '#7b2cbf', '#ef476f', '#06d6a0', '#ff7a59', '#8d6e63', '#48cae4'];
 
@@ -23,16 +26,6 @@ export function useBuiltinAvatars(): BuiltinAvatar[] {
     profilesApi.avatars().then((a) => { avatarCache = a; setList(a); }).catch(() => undefined);
   }, []);
   return list;
-}
-
-/** Avatar tile for profiles: picture / built-in avatar / initials on the profile colour. */
-export function ProfileAvatar({ name, url, color, size = 96, kids }: { name: string; url: string | null; color?: string | null; size?: number; kids?: boolean }) {
-  return (
-    <span className="profile-avatar" style={{ width: size, height: size, ['--pf-color' as string]: color ?? undefined }}>
-      <Avatar name={name} url={url} size={size} />
-      {kids && <span className="profile-kids-tag">Kids</span>}
-    </span>
-  );
 }
 
 type Draft = Required<Pick<CreateProfileRequest, 'displayName' | 'isKids' | 'hideUnrated' | 'allowLiveTv' | 'allowDownloads'>> & {

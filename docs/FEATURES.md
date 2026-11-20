@@ -108,6 +108,9 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 |---|:-:|:-:|:-:|:-:|
 | Multiple users, admin roles | ✅ | ✅ | ✅ | ✅ |
 | Profile picker with PINs (Plex Home style) | Pass | 🟡 | ✅ | ✅ |
+| Account profiles under one login ("Who's watching?"): own history, My List, recommendations, settings; built-in avatars | ✅ (Home) | ❌ | 🟡 | ✅ |
+| Kids profiles: rating limit, hide unrated, kids theme, no requests, Live TV off by default, PIN to leave | ✅ | ❌ | 🟡 | ✅ |
+| Profiles share the account's stream limit and request quota; never more access than the owner | 🟡 | ❌ | ❌ | ✅ |
 | Per-user library access, rating limits, permissions | ✅ | ✅ | ✅ | ✅ |
 | TV sign-in with a short link code | ✅ | ✅ (Quick Connect) | ❌ | ✅ |
 | Device list and remote sign-out | ✅ | ✅ | ✅ | ✅ |

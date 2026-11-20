@@ -16,6 +16,7 @@ import { relativeTime } from '../utils/format';
 import { LinkDeviceForm } from './LinkDevice';
 import { ApiKeysCard, SubsonicCard, TwoFactorCard } from './SecuritySettings';
 import { BrowsingSettings } from './BrowsingSettings';
+import ProfilesSettings from './ProfilesSettings';
 
 const LANGS = [
   ['', 'Default'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'],
@@ -85,10 +86,10 @@ function Profile() {
         />
         <div>
           <h2>{user.displayName || user.username}</h2>
-          <p className="muted">@{user.username} {user.isAdmin && <Badge tone="primary">Admin</Badge>}</p>
+          <p className="muted">{user.parentUserId ? `Profile on ${user.ownerName ?? 'the'}'s account` : `@${user.username}`} {user.isAdmin && <Badge tone="primary">Admin</Badge>}</p>
         </div>
       </div>
-      <Field label="Display name"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Display name" hint={user.parentUserId ? 'The account owner can rename this profile in Settings → Profiles.' : undefined}><input className="input" value={name} onChange={(e) => setName(e.target.value)} disabled={!!user.parentUserId} /></Field>
       <div className="form-actions"><button className="btn btn-primary" disabled={busy || !name.trim()}>{busy ? <Spinner size={18} /> : 'Save'}</button></div>
     </form>
   );
@@ -601,17 +602,20 @@ function LinkTab() {
 }
 
 export default function SettingsPage() {
-  const { features } = useApp();
+  const { features, user } = useApp();
+  // Profile sessions have no password, 2FA or API keys of their own (account security is the owner's).
+  const profileSession = !!user?.parentUserId;
   const tabs: { to: string; label: string; icon: IconName }[] = [
     { to: 'profile', label: 'Profile', icon: 'user' },
-    { to: 'security', label: 'Security', icon: 'lock' },
+    { to: 'profiles', label: 'Profiles', icon: 'users' },
+    ...(profileSession ? [] : [{ to: 'security', label: 'Security', icon: 'lock' as IconName }]),
     { to: 'appearance', label: 'Appearance', icon: 'palette' },
     { to: 'playback', label: 'Playback', icon: 'play' },
     { to: 'browsing', label: 'Browsing', icon: 'compass' },
     { to: 'devices', label: 'Devices', icon: 'device' },
     { to: 'services', label: 'Connected services', icon: 'globe' },
     { to: '/wrapped', label: 'Your year', icon: 'sparkles' },
-    ...(features.linkCodes ? [{ to: 'link', label: 'Link device', icon: 'link' as IconName }] : []),
+    ...(features.linkCodes && !profileSession ? [{ to: 'link', label: 'Link device', icon: 'link' as IconName }] : []),
   ];
   return (
     <div className="page settings-page">
@@ -630,6 +634,7 @@ export default function SettingsPage() {
           <Routes>
             <Route index element={<Navigate to="profile" replace />} />
             <Route path="profile" element={<Profile />} />
+            <Route path="profiles" element={<ProfilesSettings />} />
             <Route path="security" element={<Security />} />
             <Route path="appearance" element={<Appearance />} />
             <Route path="browsing" element={<BrowsingSettings />} />

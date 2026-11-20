@@ -78,6 +78,9 @@ async function waitFor(fn, ms, what) {
     const ids = [movie, await pick('type=show'), await pick('type=album'), await pick('type=artist'), await pick('type=audiobook'), await pick('type=episode')].filter(Boolean);
     const libs = await api('/libraries');
     const users = await api('/users');
+    // Account profiles: a kids profile makes "Who's watching?" and Settings → Profiles show something.
+    const kid = await api('/profiles', { method: 'POST', body: JSON.stringify({ displayName: 'Smoke Kid', isKids: true, avatarId: 'panda' }) });
+    if (!kid.id) failures.push('profiles: could not create a profile: ' + JSON.stringify(kid).slice(0, 200));
     // Discovery: put the movie on My List and check the new endpoints answer.
     if (movie) await api(`/items/${movie}/watchlist`, { method: 'POST' });
     const list = await api('/watchlist');
@@ -90,7 +93,7 @@ async function waitFor(fn, ms, what) {
       ...libs.map((l) => `/library/${l.id}`), ...ids.map((i) => `/item/${i}`),
       '/admin', '/admin/libraries', '/admin/stats', '/admin/users', `/admin/users/${users[0].id}/wrapped`, '/admin/livetv', '/admin/channels', '/admin/guide', '/admin/guide?tab=matching',
       '/admin/branding', '/admin/settings', '/admin/settings?tab=arr', '/admin/downloads', '/admin/plugins', '/admin/plugins?tab=catalog', '/admin/plugins?tab=repositories', '/admin/tasks', '/admin/activity', '/admin/devices',
-      '/settings/security', '/issues', '/issues/not-a-real-issue', '/admin/settings?tab=requests', '/admin/settings?tab=notifications', '/admin/invites', '/admin/backups', '/admin/remote', '/invite/not-a-real-code',
+      '/settings/security', '/profiles', '/settings/profiles', '/issues', '/issues/not-a-real-issue', '/admin/settings?tab=requests', '/admin/settings?tab=notifications', '/admin/invites', '/admin/backups', '/admin/remote', '/invite/not-a-real-code',
       ...libs.filter((l) => l.type === 'audiobooks').map((l) => `/library/${l.id}?series=Smoke%20Series`)];
 
     browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});

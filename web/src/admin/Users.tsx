@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { CreateUserRequest, Library, RequestPermissions, RequestQuotas, User } from '@mediamax/shared';
 import { api } from '../api/endpoints';
@@ -12,6 +12,9 @@ import { relativeTime } from '../utils/format';
 import { AdminHeader } from './AdminRoutes';
 import { DEFAULT_QUOTAS, DEFAULT_REQUEST_PERMISSIONS, permissionSummary, QuotaEditor, RequestPermissionsEditor } from './RequestPermissionsEditor';
 import { seerrApi } from '../api/seerr';
+import type { Profile, ProfileSettings } from '@mediamax/shared';
+import { profilesApi, RATING_CHOICES } from '../api/profiles';
+import { ProfileAvatar, ProfileEditor } from '../components/ProfileEditor';
 
 type Form = CreateUserRequest & { disabled?: boolean; requestPermissions: RequestPermissions; requestQuotas: RequestQuotas | null };
 
@@ -206,7 +209,19 @@ export function UsersAdmin() {
     else n.add(id);
     return n;
   });
-  const selectable = (users.data ?? []).filter((u) => !u.isAdmin);
+  // Account profiles are listed under their owner (and are never bulk-edited on their own).
+  const owners = (users.data ?? []).filter((u) => !u.parentUserId);
+  const profilesOf = (id: string) => (users.data ?? []).filter((u) => u.parentUserId === id);
+  const [profileEdit, setProfileEdit] = useState<{ ownerId: string; profile?: Profile } | null>(null);
+  const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
+  const openProfile = async (ownerId: string, id?: string) => {
+    try {
+      setProfileEdit({ ownerId, profile: id ? await profilesApi.get(id) : undefined });
+    } catch (e) {
+      toast.error(e);
+    }
+  };
+  const selectable = owners.filter((u) => !u.isAdmin);
   const allSel = selectable.length > 0 && selectable.every((u) => selected.has(u.id));
 
   const resetTotp = async (u: User) => {
@@ -232,7 +247,7 @@ export function UsersAdmin() {
 
   return (
     <div>
-      <AdminHeader title="Users" subtitle="Accounts, Plex-Home-style profiles, parental controls and permissions." actions={<><button className="btn" onClick={() => setDefaultsOpen(true)}><Icon name="settings" size={16} /> Default permissions</button><Link className="btn" to="/admin/invites"><Icon name="link" size={16} /> Invites</Link><button className="btn btn-primary" onClick={() => setEdit('new')}><Icon name="plus" size={16} /> Add user</button></>} />
+      <AdminHeader title="Users" subtitle="Accounts, Plex-Home-style profiles, parental controls and permissions." actions={<><button className="btn" onClick={() => setProfileSettingsOpen(true)}><Icon name="users" size={16} /> Profile settings</button><button className="btn" onClick={() => setDefaultsOpen(true)}><Icon name="settings" size={16} /> Default permissions</button><Link className="btn" to="/admin/invites"><Icon name="link" size={16} /> Invites</Link><button className="btn btn-primary" onClick={() => setEdit('new')}><Icon name="plus" size={16} /> Add user</button></>} />
       {users.loading && !users.data ? <Skeleton h={200} /> : users.error ? <ErrorState message={users.error} onRetry={users.reload} /> : !users.data?.length ? <EmptyState icon="users" title="No users" /> : (
         <>
         {selected.size > 0 && (
@@ -247,8 +262,9 @@ export function UsersAdmin() {
           <table className="table">
             <thead><tr><th className="td-check"><input type="checkbox" aria-label="Select all non-admin users" checked={allSel} onChange={(e) => setSelected(e.target.checked ? new Set(selectable.map((u) => u.id)) : new Set())} /></th><th>User</th><th>Access</th><th>Rating limit</th><th>Last seen</th><th /></tr></thead>
             <tbody>
-              {users.data.map((u) => (
-                <tr key={u.id} className={u.disabled ? 'dim' : ''}>
+              {owners.map((u) => (
+                <Fragment key={u.id}>
+                <tr className={u.disabled ? 'dim' : ''}>
                   <td className="td-check">{!u.isAdmin && <input type="checkbox" aria-label={`Select ${u.displayName || u.username}`} checked={selected.has(u.id)} onChange={() => toggleSel(u.id)} />}</td>
                   <td>
                     <div className="user-cell">
@@ -283,6 +299,7 @@ export function UsersAdmin() {
                       trigger={({ onClick }) => <button className="btn-icon" onClick={onClick} aria-label="Actions"><Icon name="more" /></button>}
                       items={[
                         { label: 'Edit', icon: 'edit', onClick: () => setEdit(u) },
+                        { label: 'Add profile', icon: 'users', onClick: () => void openProfile(u.id) },
                         { label: 'Year in review', icon: 'sparkles', onClick: () => navigate(`/admin/users/${u.id}/wrapped`) },
                         ...(u.totpEnabled ? [{ label: 'Reset two-factor', icon: 'shield' as const, onClick: () => resetTotp(u) }] : []),
                         ...(u.id !== me?.id ? [{ label: 'Delete', icon: 'trash' as const, danger: true, onClick: () => remove(u) }] : []),
@@ -290,6 +307,36 @@ export function UsersAdmin() {
                     />
                   </td>
                 </tr>
+                {profilesOf(u.id).map((p) => (
+                  <tr key={p.id} className={`user-profile-row ${p.disabled ? 'dim' : ''}`}>
+                    <td className="td-check" />
+                    <td>
+                      <div className="user-cell">
+                        <ProfileAvatar name={p.displayName} url={p.avatarUrl} color={p.profileColor} size={32} />
+                        <div>
+                          <strong>{p.displayName}</strong>
+                          <div className="muted">Profile · {u.displayName || u.username} › {p.displayName}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="badge-row">
+                        <Badge tone={p.isKids ? 'accent' : 'muted'}>{p.isKids ? 'Kids profile' : 'Profile'}</Badge>
+                        {p.hasPin && <Badge tone="muted"><Icon name="lock" size={10} /> PIN</Badge>}
+                        <Badge tone="muted">{p.libraryIds === null ? 'All libraries' : `${p.libraryIds.length} libraries`}</Badge>
+                        {p.allowLiveTv && <Badge tone="muted">Live TV</Badge>}
+                        {p.requestQuotas && <Badge tone="muted">Own quota</Badge>}
+                      </div>
+                      {p.requestPermissions && <div className="muted user-perm-sum">{permissionSummary(p.requestPermissions)}</div>}
+                    </td>
+                    <td>{p.maxContentRating ?? <span className="muted">None</span>}</td>
+                    <td className="muted">{relativeTime(p.lastSeenAt)}</td>
+                    <td className="td-actions">
+                      <button className="btn-icon" onClick={() => void openProfile(u.id, p.id)} aria-label={`Edit profile ${p.displayName}`}><Icon name="edit" /></button>
+                    </td>
+                  </tr>
+                ))}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -325,6 +372,17 @@ export function UsersAdmin() {
           setSelected(new Set());
         }}
       />
+      <ProfileEditor
+        open={!!profileEdit}
+        admin
+        ownerId={profileEdit?.ownerId}
+        profile={profileEdit?.profile}
+        libraries={libs.data ?? []}
+        onClose={() => setProfileEdit(null)}
+        onSaved={() => { setProfileEdit(null); users.reload(); }}
+        onDeleted={() => { setProfileEdit(null); users.reload(); }}
+      />
+      <ProfileSettingsModal open={profileSettingsOpen} onClose={() => setProfileSettingsOpen(false)} />
       <DefaultsModal open={defaultsOpen} initial={defaults.data ?? null} onClose={() => setDefaultsOpen(false)} onSaved={() => { setDefaultsOpen(false); defaults.reload(); }} />
     </div>
   );
@@ -423,6 +481,55 @@ function DefaultsModal({ open, initial, onClose, onSaved }: { open: boolean; ini
           <QuotaEditor value={quotas} onChange={setQuotas} />
         </section>
       </div>
+    </Modal>
+  );
+}
+
+const DEFAULT_PROFILE_SETTINGS: ProfileSettings = { enabled: true, maxPerAccount: 6, kidsLiveTv: false, kidsDefaultRating: 'PG', kidsHideUnrated: true };
+
+/** Server-wide account profile settings (stored as ServerSettings.profiles). */
+function ProfileSettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const toast = useToast();
+  const [s, setS] = useState<ProfileSettings | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (open && !s) {
+    setS(DEFAULT_PROFILE_SETTINGS);
+    void api.admin.settings().then((cur) => setS({ ...DEFAULT_PROFILE_SETTINGS, ...(cur.profiles ?? {}) })).catch(() => undefined);
+  }
+  if (!open && s) setS(null);
+  const set = (p: Partial<ProfileSettings>) => setS((x) => ({ ...(x ?? DEFAULT_PROFILE_SETTINGS), ...p }));
+  const save = async () => {
+    if (!s) return;
+    setBusy(true);
+    try {
+      await api.admin.saveSettingsPatch({ profiles: s });
+      toast.success('Profile settings saved');
+      onClose();
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Account profiles" size="md"
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={() => void save()} disabled={busy || !s}>{busy ? <Spinner size={16} /> : 'Save'}</button></>}>
+      {s && (
+        <div className="form-grid">
+          <p className="muted" style={{ margin: 0 }}>Profiles let everyone in a household have their own history, My List and settings under one account, Plex Home style. They share the account's stream limit and never get more access than the account owner.</p>
+          <Switch checked={s.enabled} onChange={(v) => set({ enabled: v })} label="Allow profiles" hint="Account owners can add profiles in Settings → Profiles." />
+          <Field label="Profiles per account" hint="Including the owner's own profile.">
+            <input className="input" type="number" min={1} max={20} value={s.maxPerAccount} onChange={(e) => set({ maxPerAccount: Math.max(1, Math.min(20, Math.floor(Number(e.target.value)) || 1)) })} />
+          </Field>
+          <Field label="Default rating limit for kids profiles">
+            <select className="input" value={s.kidsDefaultRating} onChange={(e) => set({ kidsDefaultRating: e.target.value })}>
+              {RATING_CHOICES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </Field>
+          <Switch checked={s.kidsHideUnrated} onChange={(v) => set({ kidsHideUnrated: v })} label="New kids profiles hide unrated titles" />
+          <Switch checked={s.kidsLiveTv} onChange={(v) => set({ kidsLiveTv: v })} label="Kids profiles can watch Live TV" hint="Channels have no age ratings, so Live TV is off for kids profiles unless you allow it here." />
+        </div>
+      )}
     </Modal>
   );
 }

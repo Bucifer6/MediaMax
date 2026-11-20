@@ -45,8 +45,15 @@ interface SessionValue {
   removeServer: (id: string) => Promise<void>;
   completeLogin: (auth: AuthResponse) => Promise<void>;
   signOut: () => Promise<void>;
-  /** Drop the token but keep the server: returns to the profile picker. */
+  /**
+   * Accounts with profiles: open "Who's watching?" (keeps the session). Otherwise drop the token but keep the
+   * server, returning to the server-wide profile picker on the login screen.
+   */
   switchProfile: () => Promise<void>;
+  /** True while the "Who's watching?" picker should be shown (after signing in to an account with profiles). */
+  needsProfilePick: boolean;
+  /** Finish the picker: optionally with the session of the chosen profile. */
+  completeProfilePick: (auth?: AuthResponse) => Promise<void>;
   refreshBranding: () => Promise<void>;
   refreshUser: () => Promise<void>;
   updatePreferences: (p: Partial<UserPreferences>) => Promise<void>;
@@ -75,6 +82,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [socket, setSocket] = useState<RealtimeSocket | null>(null);
+  const [needsProfilePick, setNeedsProfilePick] = useState(false);
   const serversRef = useRef<SavedServer[]>([]);
   serversRef.current = servers;
   const handleUnauthorizedRef = useRef<() => void>(() => undefined);
@@ -199,6 +207,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (server) await secureRemove(tokenKey(server.id));
     setToken(null);
     setUser(null);
+    setNeedsProfilePick(false);
     setStatus((s) => (s === 'no-server' ? s : 'signed-out'));
   }, [server]);
 
@@ -304,6 +313,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       void setJSON(userKey(server.id), auth.user);
       setToken(auth.token);
       setUser(auth.user);
+      // Accounts with profiles continue to "Who's watching?" (the auth guard routes there).
+      setNeedsProfilePick(!!auth.user.profileCount);
       await persistServers(
         serversRef.current.map((s) => (s.id === server.id ? { ...s, userName: auth.user.displayName, lastUsedAt: new Date().toISOString() } : s)),
       );
@@ -321,7 +332,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     await clearToken();
   }, [api, clearToken]);
 
-  const switchProfile = signOut;
+  const switchProfile = useCallback(async () => {
+    if (user?.parentUserId || user?.profileCount) setNeedsProfilePick(true);
+    else await signOut();
+  }, [user, signOut]);
+
+  const completeProfilePick = useCallback(
+    async (auth?: AuthResponse) => {
+      if (auth && server) {
+        await secureSet(tokenKey(server.id), auth.token);
+        void setJSON(userKey(server.id), auth.user);
+        setToken(auth.token);
+        setUser(auth.user);
+        await persistServers(serversRef.current.map((s) => (s.id === server.id ? { ...s, userName: auth.user.displayName } : s)));
+      }
+      setNeedsProfilePick(false);
+    },
+    [server, persistServers],
+  );
 
   const updatePreferences = useCallback(
     async (p: Partial<UserPreferences>) => {
@@ -367,6 +395,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     completeLogin,
     signOut,
     switchProfile,
+    needsProfilePick,
+    completeProfilePick,
     refreshBranding,
     refreshUser,
     updatePreferences,

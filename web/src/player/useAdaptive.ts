@@ -185,7 +185,10 @@ export function useAdaptive(o: Opts) {
       }
 
       const d = c.c.update({ now, bandwidth: est, bufferS: c.mode === 'restart' && stalls.current.length ? Math.min(buf, 1) : buf, droppedRatio, playing });
+      debug.last = { now, est, buf, droppedRatio, playing, current: c.c.current, levels: c.levels.map((l) => l.label), decision: d };
       if (!d) return;
+      // Measure dropped frames afresh at the new level.
+      lastQuality.current = [];
       const target = c.levels[d.level];
       const label = target.label;
       if (c.mode === 'renditions' && target.kind === 'variant') {
@@ -210,6 +213,12 @@ export function useAdaptive(o: Opts) {
     }, 1000);
     return () => window.clearInterval(iv);
   }, [o.enabled, ensureController]);
+
+  // Diagnostics for the stats overlay / e2e tests: window.__mediamaxAbr.
+  const debug = useRef<{ last?: unknown }>({}).current;
+  useEffect(() => {
+    (window as unknown as { __mediamaxAbr?: unknown }).__mediamaxAbr = { controller: () => ctl.current, estimator: estimator.current, debug };
+  }, [debug]);
 
   return { state, seed, onFragment, onLevelSwitched, estimator, describe: () => describe(state) };
 }

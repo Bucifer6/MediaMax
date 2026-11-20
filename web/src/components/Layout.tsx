@@ -15,6 +15,7 @@ import { api } from '../api/endpoints';
 import { canManageRequests, ISSUES_CHANGED, REQUESTS_CHANGED } from '../utils/requests';
 import { seerrApi } from '../api/seerr';
 import { NotificationBell } from './NotificationBell';
+import { ProfileAvatar } from './ProfileAvatar';
 
 function NavItem({ to, icon, label, end, badge }: { to: string; icon: IconName; label: ReactNode; end?: boolean; badge?: ReactNode }) {
   return (
@@ -30,21 +31,26 @@ export function UserMenu() {
   const { user, logout, features } = useApp();
   const navigate = useNavigate();
   if (!user) return null;
+  // Account profiles: "Switch profile" opens "Who's watching?" without signing out.
+  const hasProfiles = !!user.parentUserId || !!user.profileCount;
   return (
     <Dropdown
       trigger={({ onClick }) => (
         <button className="user-btn" onClick={onClick} aria-label="Account menu">
-          <Avatar name={user.displayName || user.username} url={user.avatarUrl} size={34} />
+          {hasProfiles
+            ? <ProfileAvatar name={user.displayName || user.username} url={user.avatarUrl} color={user.profileColor} size={34} />
+            : <Avatar name={user.displayName || user.username} url={user.avatarUrl} size={34} />}
         </button>
       )}
       items={[
-        { label: <strong>{user.displayName || user.username}</strong>, disabled: true },
+        { label: <span className="um-profile"><strong>{user.displayName || user.username}</strong>{user.parentUserId && <small>{user.isKids ? 'Kids profile' : 'Profile'} · {user.ownerName}</small>}</span>, disabled: true },
+        ...(hasProfiles ? [{ label: 'Switch profile', icon: 'users' as const, onClick: () => navigate('/profiles') }] : []),
         { divider: true, label: '' },
         { label: 'Your year', icon: 'sparkles', onClick: () => navigate('/wrapped') },
         { label: 'Settings', icon: 'settings', onClick: () => navigate('/settings') },
-        ...(features.linkCodes ? [{ label: 'Link a device', icon: 'link' as const, onClick: () => navigate('/link') }] : []),
+        ...(features.linkCodes && !user.parentUserId ? [{ label: 'Link a device', icon: 'link' as const, onClick: () => navigate('/link') }] : []),
         ...(user.isAdmin ? [{ label: 'Admin dashboard', icon: 'shield' as const, onClick: () => navigate('/admin') }] : []),
-        ...(features.profilePicker ? [{ label: 'Switch profile', icon: 'users' as const, onClick: () => void logout().then(() => navigate('/login?profiles=1')) }] : []),
+        ...(features.profilePicker && !hasProfiles ? [{ label: 'Switch user', icon: 'users' as const, onClick: () => void logout().then(() => navigate('/login?profiles=1')) }] : []),
         { divider: true, label: '' },
         { label: 'Sign out', icon: 'logout', danger: true, onClick: () => void logout().then(() => navigate('/login')) },
       ]}
@@ -137,6 +143,8 @@ export function Layout() {
   const manager = canManageRequests(user);
   const pending = usePendingRequests(manager && features.requests);
   const openIssues = useOpenIssues(!!user);
+  // Kids profiles without any request permission don't see Discover / Requests.
+  const kidsNoRequests = !!user?.isKids && !!user.requestPermissions && (['movie', 'show', 'music', 'book'] as const).every((k) => user.requestPermissions![k] === 'none');
 
   return (
     <div className={`app-shell ${drawer ? 'drawer-open' : ''} ${music.current ? 'has-mini' : ''}`}>
@@ -147,8 +155,8 @@ export function Layout() {
         <nav className="sidebar-nav">
           <NavItem to="/" end icon="home" label="Home" />
           <NavItem to="/search" icon="search" label="Search" />
-          {features.requests && <NavItem to="/discover" icon="compass" label="Discover" />}
-          {(features.requests || pending > 0) && (
+          {features.requests && !kidsNoRequests && <NavItem to="/discover" icon="compass" label="Discover" />}
+          {((features.requests && !kidsNoRequests) || pending > 0) && (
             <NavItem
               to="/requests"
               icon="inbox"

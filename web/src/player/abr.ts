@@ -47,6 +47,8 @@ export class BandwidthEstimator {
   /** Samples smaller than this are dominated by latency, not throughput. */
   minBytes = 16 * 1024;
   samples = 0;
+  /** Last long transfer (≥ 1 s): a slow one is trusted at once (the link just got worse). */
+  private last: number | null = null;
 
   /** A transfer of `bytes` that took `ms` (time from first to last byte). */
   add(bytes: number, ms: number) {
@@ -58,6 +60,8 @@ export class BandwidthEstimator {
     this.fast.sample(w, bps);
     this.slow.sample(w, bps);
     this.samples++;
+    if (seconds >= 1) this.last = bps;
+    else if (this.last != null && bps > this.last) this.last = null;
   }
 
   /** Seed with an earlier measurement (bandwidth probe / remembered value) worth `weight` seconds. */
@@ -70,7 +74,8 @@ export class BandwidthEstimator {
   /** bits/s, or null before any data. */
   get estimate(): number | null {
     if (this.fast.totalWeight <= 0) return null;
-    return Math.min(this.fast.estimate, this.slow.estimate);
+    const avg = Math.min(this.fast.estimate, this.slow.estimate);
+    return this.last != null && this.last < avg ? this.last : avg;
   }
 }
 

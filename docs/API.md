@@ -217,6 +217,39 @@ SyncPlay (watch together): `syncplay.create` → server replies `syncplay.state`
 * `POST /auth/me/avatar` (multipart `file`) → `User` · `DELETE /auth/me/avatar` · admin: `POST|DELETE /users/:id/avatar`.
 * `ServerSettings.blockUnratedForRestricted` hides unrated titles from users with a `maxContentRating`.
 
+## Account profiles ("Who's watching?")
+A profile is a managed user owned by an account (`User.parentUserId` = the owner's id). It has no password or username sign-in:
+a device signs in as the owner and switches. Profile users carry `ownerName`, `isKids`, `profileColor`, `avatarId`, `hideUnrated`;
+owners carry `profileCount` (> 0 → show the picker after sign-in). A profile's effective limits never exceed the owner's
+(library intersection, stricter rating, owner's stream limit shared by the account, never admin).
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| GET 🔓 | `/avatars` | | `BuiltinAvatar[]` |
+| GET 🔓 | `/avatars/:id.svg` | | SVG image |
+| GET 🔑 | `/auth/account/profiles` | | `AccountProfile[]` — owner first, `current` marks this session |
+| POST 🔑 | `/auth/profiles/:id/switch` | `SwitchProfileRequest` `{ pin? }` | `AuthResponse` for the target, on this device; the previous session on the device ends. 401 `pin_required` / `pin_invalid`, 429 `pin_locked` after 5 wrong PINs (15 min). Works from the owner's or any profile's session of the account; switching back to the owner needs the owner's PIN if set |
+| GET 🔑 | `/profiles/settings` | | `ProfileSettings` |
+| GET 👤 | `/profiles` | | `Profile[]` (the owner's) |
+| POST 👤 | `/profiles` | `CreateProfileRequest` | `Profile` — 409 `profile_limit` over `maxPerAccount` |
+| GET / PATCH / DELETE 👤 | `/profiles/:id` | `UpdateProfileRequest` | `Profile` (owner or admin) |
+| POST / DELETE 👤 | `/profiles/:id/avatar` | multipart `file` | `Profile` |
+| GET / POST 🛡️ | `/users/:id/profiles` | `CreateProfileRequest` | profiles of any account |
+
+👤 = the account owner's own session (or an admin). Profile sessions get 403 `profile_session` on these, on `/auth/me/2fa/*`,
+`/auth/api-keys*`, `/auth/link/approve`, and on `PATCH /auth/me` with `password`, `pin` or `displayName` (preferences,
+`avatarId` and `profileColor` are allowed). `POST /auth/logout` from a profile signs the whole account out of that device.
+`PATCH /auth/me` also takes `avatarId` / `profileColor` for anyone (the owner's picker tile).
+* Request permissions: `requestPermissions: null` inherits the owner's (never `manageRequests`); owners can only lower
+  levels, admins can set anything. Kids profiles start with none. `requestQuotas` (admin only): null = counts toward the
+  owner's quota together with the owner and every other sharing profile.
+* Kids: `maxContentRating` defaults to `ProfileSettings.kidsDefaultRating`, `hideUnrated` to `kidsHideUnrated`; Live TV
+  only when `kidsLiveTv` is on (channels have no ratings). `kidsTheme` sets the profile's theme to the built-in `kids` theme.
+* `ServerSettings.profiles: ProfileSettings` (`PUT /settings`) — `enabled`, `maxPerAccount` (incl. the owner, default 6),
+  `kidsLiveTv`, `kidsDefaultRating`, `kidsHideUnrated`.
+* Deleting an account deletes its profiles; disabling it or changing its password signs its profiles out too.
+* Sessions, stats, activity and request lists name profiles "Owner › Profile".
+
 ## Extra item endpoints
 * `GET /items?ancestorId=` — children *and* grandchildren (all tracks of an artist, all episodes of a show), grouped by parent when `sort=index`.
 * `Item.lockedFields` on `GET /items/:id`.

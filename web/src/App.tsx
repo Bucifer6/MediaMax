@@ -58,6 +58,7 @@ const AdminRoutes = lazyPage(() => import('./admin/AdminRoutes'));
 const InvitePage = lazyPage(() => import('./pages/Invite'));
 const MyListPage = lazyPage(() => import('./pages/MyList'));
 const CalendarPage = lazyPage(() => import('./pages/Calendar'));
+const ProfilePickerPage = lazyPage(() => import('./pages/ProfilePicker'));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -135,6 +136,7 @@ function Gate() {
         <Route path="/login" element={<Login />} />
         {/* Public: invite links are opened by people who don't have an account yet. */}
         <Route path="/invite/:code" element={<InvitePage />} />
+        <Route path="/profiles" element={<RequireAuth><ProfilePickerPage /></RequireAuth>} />
         <Route path="/play/:itemId" element={<RequireAuth><VideoPlayer /></RequireAuth>} />
         <Route path="/watch/multiview" element={<RequireAuth><Multiview /></RequireAuth>} />
         <Route path="/watch/live/:channelId" element={<RequireAuth><LivePlayer /></RequireAuth>} />

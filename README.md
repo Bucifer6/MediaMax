@@ -219,6 +219,19 @@ M3U playlists (`url-tvg`, `tvg-*`, `catchup-source`) and HDHomeRun tuners work t
 </details>
 
 <details>
+<summary><b>Profiles ("Who's watching?")</b></summary>
+
+Give everyone in the household their own profile under one account, Netflix / Plex Home style. Each profile has its own watch progress, history, Continue Watching, Next Up, My List, ratings, recommendations, subtitle/audio and theme settings.
+
+1. Sign in as the account owner and open **Settings → Profiles → Add profile**. Pick a built-in avatar (or upload a picture), a colour and a name. Optionally set a 4–8 digit **PIN**, a **maturity rating limit**, which **libraries** it sees, an audio/subtitle language, and whether it may use Live TV and downloads.
+2. Turn on **Kids profile** for children: it starts with a rating limit (PG by default), hides unrated titles, uses the playful kids theme, has no Discover/requests and no Live TV (unless the admin allows it). Leaving a kids profile for the owner's asks for the owner's PIN when one is set.
+3. From now on every device shows **Who's watching?** after signing in (big tiles; arrow keys / D-pad work in TV mode). Switch any time from the avatar menu → **Switch profile** (Settings → Switch profile in the phone/TV apps).
+
+Profiles never have more access than their owner: library access is the owner's subset, the stricter rating limit wins, and the owner's stream limit is shared by the whole account. Profile sessions can't open the admin dashboard, change the account password/2FA/API keys, link devices or manage profiles, even if the owner is an admin. Requests inherit the owner's permissions and count toward the owner's quota unless an admin gives the profile its own (Admin → Users shows profiles nested under their owner; **Profile settings** there sets the per-account limit, default 6, and the kids defaults).
+
+</details>
+
+<details>
 <summary><b>Branding your server</b></summary>
 
 **Admin → Branding studio** controls everything the apps show:

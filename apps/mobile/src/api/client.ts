@@ -48,6 +48,7 @@ import type {
   Program,
   ProgressReport,
   PublicProfile,
+  AccountProfile,
   Recording,
   RecordingRule,
   RecordingStatus,
@@ -271,6 +272,14 @@ export class MediaMaxClient {
   profileLogin(userId: string, pin?: string, totpCode?: string) {
     const body: PinLoginRequest = { ...this.device, userId, pin, totpCode: totpCode || undefined };
     return this.post<AuthResponse>('/auth/profile-login', body, { allow401: true });
+  }
+  /** "Who's watching?": the signed-in account's profiles (owner first). */
+  accountProfiles() {
+    return this.get<AccountProfile[]>('/auth/account/profiles');
+  }
+  /** Switch this device to another profile of the account (401 `pin_required` / `pin_invalid` for PIN profiles). */
+  switchProfile(id: string, pin?: string) {
+    return this.post<AuthResponse>(`/auth/profiles/${encodeURIComponent(id)}/switch`, { pin }, { allow401: true });
   }
   linkRequest() {
     return this.post<LinkCodeResponse>('/auth/link/request', { ...this.device });

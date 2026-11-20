@@ -808,8 +808,8 @@ export default function VideoPlayer() {
         audioCodec: es.audioCodec || (audio ? `${audio.codec}${audio.channels ? ` · ${audio.channels}ch` : ''}` : '—'),
         // MediaSource.bitrate is in kbps.
         bitrate: kbps(es.bitrate ?? (direct && media?.bitrate ? media.bitrate * 1000 : null)),
-        bandwidth: es.bandwidth ? kbps(es.bandwidth) : adaptive.state.estimate ? `${kbps(adaptive.state.estimate)} (estimated)` : attached.current?.engine === 'native' ? 'n/a (progressive download)' : '—',
-        abr: optsRef.current.auto ? adaptive.describe() : `Fixed · ${QUALITY_OPTIONS.find((q) => q.kbps === optsRef.current.maxBitrate)?.label ?? 'Original'}`,
+        bandwidth: es.bandwidth ? kbps(es.bandwidth) : adaptiveRef.current.state.estimate ? `${kbps(adaptiveRef.current.state.estimate)} (estimated)` : attached.current?.engine === 'native' ? 'n/a (progressive download)' : '—',
+        abr: optsRef.current.auto ? adaptiveRef.current.describe() : `Fixed · ${QUALITY_OPTIONS.find((q) => q.kbps === optsRef.current.maxBitrate)?.label ?? 'Original'}`,
         subs: subStatusRef.current?.renderer ? `${subStatusRef.current.renderer}${subStatusRef.current.loading ? ` (loading${subStatusRef.current.progress != null ? ` ${Math.round(subStatusRef.current.progress * 100)}%` : ''})` : ''}` : undefined,
         buffer: `${ahead.toFixed(1)} s`,
         dropped,
