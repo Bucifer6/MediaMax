@@ -27,12 +27,15 @@ export const TAB_META: Record<string, { label: string; icon: IconName; iconActiv
 
 export function useVisibleTabs() {
   const caps = useCapabilities();
-  const downloads = useDownloads();
   return (name: string) => {
     if (caps.offline) return name === 'downloads' || name === 'settings';
     if (name === 'live') return caps.liveTv;
     if (name === 'discover') return caps.requests;
-    if (name === 'downloads') return downloads.supported && (caps.downloads || downloads.records.length > 0);
+    // Keep the phone bar to five tabs: while online, Downloads lives under Settings → Downloads
+    // (it becomes a tab again in offline mode, when it's the main thing you can use).
+    if (name === 'downloads') return false;
+    // Search is reachable from Home's header; when Discover is on, drop the tab on phones to stay at five.
+    if (name === 'search' && caps.requests && !Platform.isTV) return false;
     return name in TAB_META;
   };
 }
