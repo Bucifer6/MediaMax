@@ -28,7 +28,8 @@ bantime  = 1h
 bantime.increment = true
 bantime.factor    = 1
 bantime.maxtime   = 1w
-# Never ban these (add your LAN, e.g. 192.168.1.0/24, if family members mistype passwords a lot).
+# Never ban these. install.sh adds the MediaMax Docker network in jail.d/mediamax.network.local (read
+# after this file); put your LAN (e.g. 192.168.1.0/24) in a jail.d/zz-custom.local if needed.
 ignoreip = 127.0.0.1/8 ::1
 # All ports: someone guessing passwords shouldn't get to try SSH next. Use iptables-multiport[...,
 # port="80,443,8484"] instead to block only the web ports.

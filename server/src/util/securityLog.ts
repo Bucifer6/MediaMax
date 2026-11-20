@@ -16,7 +16,9 @@ let file: string | null = null;
 const clean = (v: string) => v.replace(/["\r\n\\]/g, '_').slice(0, 64);
 
 export function securityEvent(event: 'AUTH_FAIL' | 'AUTH_LOCKED' | 'AUTH_OK', ip: string | null | undefined, fields: Record<string, string | number | undefined> = {}) {
-  const parts = [`${new Date().toISOString()} mediamax[security] ${event} ip=${clean(ip || 'unknown')}`];
+  // Dual-stack sockets report IPv4 clients as ::ffff:a.b.c.d; log the plain address so ban tools see one identity.
+  const addr = (ip || 'unknown').replace(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i, '$1');
+  const parts = [`${new Date().toISOString()} mediamax[security] ${event} ip=${clean(addr)}`];
   for (const [k, v] of Object.entries(fields)) if (v !== undefined) parts.push(typeof v === 'number' ? `${k}=${v}` : /^[\w.@:-]+$/.test(v) && k !== 'user' ? `${k}=${v}` : `${k}="${clean(v)}"`);
   const line = parts.join(' ');
   // eslint-disable-next-line no-console

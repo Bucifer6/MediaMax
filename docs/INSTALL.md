@@ -7,6 +7,7 @@ setup wizard creates the first administrator.
 | You have | Use | Section |
 |---|---|---|
 | Synology, QNAP, Unraid, TrueNAS SCALE, OpenMediaVault | the Docker image | [NAS units](#nas-units) |
+| A Linux server with Docker, reachable from the internet (HTTPS, CrowdSec/fail2ban) | the installer | [DEPLOY.md](DEPLOY.md) |
 | Any Linux server with Docker | the Docker image | [Docker](#docker) |
 | A Windows PC or server | the Windows zip | [Windows](#windows) |
 | Linux without Docker (x64, or arm64 such as a Raspberry Pi 4/5 with a 64-bit OS) | the Linux archive | [Linux](#linux) |
@@ -24,6 +25,10 @@ Contents: [Docker](#docker) · [Windows](#windows) · [Linux](#linux) · [Synolo
 ---
 
 ## Docker
+
+> **Exposing MediaMax to the internet?** `deploy/install.sh` sets up all of this plus HTTPS (Caddy or Nginx),
+> CrowdSec or fail2ban and hardened defaults in one command; see **[DEPLOY.md](DEPLOY.md)**:
+> `curl -fsSL https://raw.githubusercontent.com/Bucifer6/MediaMax/main/deploy/install.sh | sudo bash`
 
 ```yaml
 # docker-compose.yml

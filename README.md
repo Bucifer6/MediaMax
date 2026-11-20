@@ -52,6 +52,7 @@ FFmpeg is included in every option.
 
 | Platform | Install |
 |---|---|
+| **Linux server, secure & public** | `curl -fsSL https://raw.githubusercontent.com/Bucifer6/MediaMax/main/deploy/install.sh \| sudo bash`: Docker + HTTPS + CrowdSec/fail2ban, see [docs/DEPLOY.md](docs/DEPLOY.md) |
 | **Docker** (amd64, arm64) | `docker run -d -p 8484:8484 -v "$PWD/config:/config" -v /path/to/media:/media:ro ghcr.io/bucifer6/mediamax` |
 | **Synology, QNAP, Unraid, TrueNAS SCALE, OpenMediaVault** | ready-made templates in [`nas/`](nas) |
 | **Windows** x64 | `mediamax-<version>-windows-x64.zip`: run `MediaMax.cmd`, or `install-service.ps1` to start at boot |
