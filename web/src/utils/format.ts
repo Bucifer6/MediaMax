@@ -1,5 +1,6 @@
 export function formatDuration(ms: number | null | undefined): string {
   if (!ms || ms <= 0) return '';
+  if (ms < 60000) return '<1m';
   const totalMin = Math.round(ms / 60000);
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;

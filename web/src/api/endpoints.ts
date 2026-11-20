@@ -148,7 +148,7 @@ export const api = {
   admin: {
     settings: () => http.get<ServerSettings>('/settings'),
     saveSettings: (s: ServerSettings) => http.put<ServerSettings>('/settings', s),
-    testWebhook: (url: string) => http.post<{ ok: boolean; message?: string; status?: number }>('/settings/webhooks/test', { url }),
+    testWebhook: (url: string) => http.post<{ ok: boolean; status?: number | null; error?: string; message?: string }>('/settings/webhooks/test', { url }),
     tasks: () => http.get<ScheduledTask[]>('/tasks'),
     runTask: (id: string) => http.post<Ok>(`/tasks/${enc(id)}/run`),
     activity: (limit = 50, offset = 0) => http.get<Paged<ActivityEntry>>('/activity', { limit, offset }),

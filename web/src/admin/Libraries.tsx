@@ -96,7 +96,7 @@ export function LibrariesAdmin() {
           {list.map((l, i) => {
             const sc = scan[l.id];
             const scanning = !!sc || l.scanning;
-            const pct = sc?.progress != null ? (sc.progress <= 1 ? sc.progress * 100 : sc.progress) : null;
+            const pct = sc?.progress != null ? sc.progress : null;
             return (
               <div key={l.id} className="lib-admin-card">
                 <div className="lib-order">

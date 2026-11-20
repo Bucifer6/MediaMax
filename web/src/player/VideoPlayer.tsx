@@ -327,6 +327,7 @@ export default function VideoPlayer() {
   const sync = useSyncPlay({
     itemId,
     userId: user?.id ?? '',
+    userName: user?.displayName || user?.username,
     getPositionMs: currentMs,
     isPaused: () => videoRef.current?.paused ?? true,
     apply: (action, pos) => {

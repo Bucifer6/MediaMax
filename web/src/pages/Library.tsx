@@ -142,7 +142,7 @@ export function LibraryPage() {
         </div>
         {user?.isAdmin && (
           <button className="btn btn-ghost" onClick={scan} disabled={scanProgress != null}>
-            <Icon name="refresh" size={16} className={scanProgress != null ? 'spin' : ''} /> {scanProgress != null ? `Scanning ${Math.round(scanProgress * (scanProgress <= 1 ? 100 : 1))}%` : 'Scan'}
+            <Icon name="refresh" size={16} className={scanProgress != null ? 'spin' : ''} /> {scanProgress != null ? `Scanning ${Math.round(scanProgress)}%` : 'Scan'}
           </button>
         )}
       </header>

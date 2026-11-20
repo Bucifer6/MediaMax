@@ -73,7 +73,7 @@
   border-top: 1px solid var(--c-line); box-shadow: 0 -10px 30px rgb(0 0 0 / 0.2); animation: miniIn 0.35s var(--ease) both;
 }
 @keyframes miniIn { from { transform: translateY(100%); } to { transform: none; } }
-.mini-seek { position: absolute; left: 0; right: 0; top: -6px; }
+.miniplayer .mini-seek { position: absolute; left: 0; right: 0; top: -6px; }
 .mini-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .mini-art { width: 52px; height: 52px; border-radius: var(--radius-sm); overflow: hidden; flex: none; background: var(--c-surface-alt); box-shadow: var(--shadow-sm); }
 .mini-text { min-width: 0; }

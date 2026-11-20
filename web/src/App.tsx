@@ -1,4 +1,5 @@
 import { Component, lazy, Suspense, type ReactNode } from 'react';
+import type React from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from './state/app';
 import { ToastProvider } from './state/toast';
@@ -16,14 +17,36 @@ import { SearchPage } from './pages/Search';
 import { LinkDevicePage } from './pages/LinkDevice';
 import { NotFound } from './pages/NotFound';
 
-const VideoPlayer = lazy(() => import('./player/VideoPlayer'));
-const LivePlayer = lazy(() => import('./player/LivePlayer'));
-const LiveTvPage = lazy(() => import('./pages/LiveTv'));
-const GuidePage = lazy(() => import('./pages/Guide'));
-const DvrPage = lazy(() => import('./pages/Dvr'));
-const SettingsPage = lazy(() => import('./pages/Settings'));
-const ContainersPage = lazy(() => import('./pages/Containers'));
-const AdminRoutes = lazy(() => import('./admin/AdminRoutes'));
+/** Lazy-load a route chunk; after a server upgrade old chunk names 404, so reload once. */
+function lazyPage<T extends { default: React.ComponentType<any> }>(load: () => Promise<T>) {
+  const key = 'mm.chunkReload';
+  return lazy(() =>
+    load().then(
+      (m) => {
+        try { sessionStorage.removeItem(key); } catch { /* ignore */ }
+        return m;
+      },
+      (e) => {
+        try {
+          if (!sessionStorage.getItem(key)) {
+            sessionStorage.setItem(key, '1');
+            location.reload();
+          }
+        } catch { /* ignore */ }
+        throw e;
+      },
+    ),
+  );
+}
+
+const VideoPlayer = lazyPage(() => import('./player/VideoPlayer'));
+const LivePlayer = lazyPage(() => import('./player/LivePlayer'));
+const LiveTvPage = lazyPage(() => import('./pages/LiveTv'));
+const GuidePage = lazyPage(() => import('./pages/Guide'));
+const DvrPage = lazyPage(() => import('./pages/Dvr'));
+const SettingsPage = lazyPage(() => import('./pages/Settings'));
+const ContainersPage = lazyPage(() => import('./pages/Containers'));
+const AdminRoutes = lazyPage(() => import('./admin/AdminRoutes'));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };

@@ -45,7 +45,7 @@ export function TasksAdmin() {
                   {t.lastResult && <Badge tone={t.lastResult === 'ok' ? 'success' : 'danger'}>{t.lastResult}</Badge>}
                 </div>
                 {t.lastError && <p className="form-error">{t.lastError}</p>}
-                {t.running && <ProgressBar value={t.progress != null ? (t.progress <= 1 ? t.progress * 100 : t.progress) : 0} className={t.progress == null ? 'indeterminate' : ''} />}
+                {t.running && <ProgressBar value={t.progress ?? 0} className={t.progress == null ? 'indeterminate' : ''} />}
               </div>
               <button className="btn btn-sm" onClick={() => run(t)} disabled={t.running}>
                 <Icon name={t.running ? 'refresh' : 'play'} size={14} className={t.running ? 'spin' : ''} /> {t.running ? 'Running' : 'Run now'}

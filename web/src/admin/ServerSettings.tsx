@@ -61,7 +61,7 @@ export function ServerSettingsAdmin() {
     try {
       const r = await api.admin.testWebhook(w.url);
       if (r.ok) toast.success(`Webhook responded${r.status ? ` (${r.status})` : ''}`);
-      else toast.show(r.message ?? 'Webhook test failed', 'error');
+      else toast.show(`Webhook test failed: ${r.error ?? r.message ?? (r.status ? `HTTP ${r.status}` : 'no response')}`, 'error');
     } catch (e) {
       toast.error(e);
     } finally {

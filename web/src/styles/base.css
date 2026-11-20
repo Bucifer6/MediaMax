@@ -217,3 +217,4 @@ kbd { font-family: inherit; font-size: 0.75em; padding: 1px 6px; border-radius: 
   .form-row, .form-row-3 { grid-template-columns: 1fr; }
   .hide-sm { display: none !important; }
 }
+.icon { flex: none; }

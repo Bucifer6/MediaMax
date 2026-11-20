@@ -50,13 +50,30 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // Web client (SPA) — served if built.
   if (fs.existsSync(path.join(config.webDir, 'index.html'))) {
-    await app.register(fastifyStatic, { root: config.webDir, wildcard: false, maxAge: '1h' });
-    const indexHtml = fs.readFileSync(path.join(config.webDir, 'index.html'), 'utf8');
+    // Files are resolved per request (no startup index), so rebuilding the web app needs no restart.
+    // Hashed assets are immutable; index.html is never cached.
+    await app.register(fastifyStatic, {
+      root: config.webDir, wildcard: false, serve: false,
+    });
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith('/api/')) return reply.status(404).send({ error: 'not_found', message: 'Not found', statusCode: 404 });
-      const file = path.join(config.webDir, decodeURIComponent(req.url.split('?')[0]));
-      if (file.startsWith(config.webDir) && fs.existsSync(file) && fs.statSync(file).isFile()) return reply.sendFile(path.relative(config.webDir, file));
-      return reply.type('text/html').header('Cache-Control', 'no-cache').send(indexHtml);
+      if (req.method !== 'GET' && req.method !== 'HEAD') return reply.status(404).send({ error: 'not_found', message: 'Not found', statusCode: 404 });
+      let rel = '';
+      try {
+        rel = decodeURIComponent(req.url.split('?')[0]);
+      } catch {
+        /* malformed */
+      }
+      const file = path.resolve(config.webDir, '.' + rel);
+      if (rel !== '/' && file.startsWith(config.webDir + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) {
+        reply.header('Cache-Control', rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600');
+        return reply.sendFile(path.relative(config.webDir, file));
+      }
+      // Unknown asset paths must 404 (not return HTML), so the client can detect stale chunks.
+      if (rel.startsWith('/assets/')) return reply.status(404).send('Not found');
+      const index = path.join(config.webDir, 'index.html');
+      if (!fs.existsSync(index)) return reply.status(503).send('Web client is being rebuilt, try again in a moment');
+      return reply.type('text/html').header('Cache-Control', 'no-cache').send(fs.readFileSync(index, 'utf8'));
     });
   } else {
     app.get('/', async (_req, reply) => reply.type('text/html').send('<h1>MediaMax server is running</h1><p>The web client has not been built. Run <code>npm run build</code>.</p>'));

@@ -125,7 +125,7 @@
 .detail-sections { position: relative; z-index: 2; padding: 12px 0 40px; display: flex; flex-direction: column; gap: 32px; }
 .detail-sections > section:not(.row), .detail-sections > .seasons, .detail-sections > .tracklist, .detail-sections > .episode-list, .detail-sections > .empty-state { padding: 0 var(--gutter); }
 .media-info { padding: 0 var(--gutter); }
-.media-card { padding: 18px 20px; border-radius: var(--radius); background: var(--c-surface); border: 1px solid var(--c-line); margin-bottom: 12px; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 4px 28px; }
+.media-card { padding: 18px 20px; border-radius: var(--radius); background: var(--c-surface); border: 1px solid var(--c-line); margin-bottom: 12px; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto 1fr; align-items: start; gap: 4px 28px; }
 .media-card h3 { grid-column: 1 / -1; margin-bottom: 8px; }
 .media-card h4 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--c-text-muted); margin: 0 0 8px; grid-row: 1; }
 .media-card h4 + .stream-list { grid-row: 2; }

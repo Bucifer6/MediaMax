@@ -16,6 +16,8 @@ function setRoom(r: SyncPlayRoom | null) {
 export interface SyncTarget {
   itemId: string;
   userId: string;
+  /** Server reports `by` as a display name; compare against both. */
+  userName?: string;
   getPositionMs: () => number;
   isPaused: () => boolean;
   /** Apply a remote command without re-broadcasting it. */
@@ -76,7 +78,7 @@ export function useSyncPlay(target: SyncTarget) {
       } else if (ev.type === 'syncplay.command') {
         if (!currentRoom || ev.room !== currentRoom.id) return;
         const ls = lastSent.current;
-        if (ev.by === t.current.userId && ls && ls.action === ev.action && Date.now() - ls.at < 2000) return;
+        if ((ev.by === t.current.userId || (!!t.current.userName && ev.by === t.current.userName)) && ls && ls.action === ev.action && Date.now() - ls.at < 2000) return;
         if (ev.action === 'load') {
           if (ev.itemId && ev.itemId !== t.current.itemId) t.current.load(ev.itemId);
           return;
