@@ -94,7 +94,7 @@ function shuffled<T>(arr: T[]): T[] {
 }
 
 export function MusicProvider({ children }: { children: React.ReactNode }) {
-  const { api } = useSession();
+  const { api, user } = useSession();
   const downloads = useDownloads();
   const player = useAudioPlayer(null, { updateInterval: 500 });
   const status = useAudioPlayerStatus(player);
@@ -128,6 +128,30 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   rateRef.current = rate;
   const currentRef = useRef<Item | null>(current);
   currentRef.current = current;
+
+  // ReplayGain: lower loud tracks to a common loudness (local playback only; we never amplify past 1×).
+  const rgMode = user?.preferences.replayGain ?? 'auto';
+  const gain = useMemo(() => {
+    const rg = current?.type === 'track' ? current.replayGain : null;
+    if (!rg || rgMode === 'off') return 1;
+    const albumInOrder = queue.length > 1 && !shuffle && queue.every((q) => q.parentId === current?.parentId);
+    const db = rgMode === 'album' || (rgMode === 'auto' && albumInOrder) ? rg.albumGainDb ?? rg.trackGainDb : rg.trackGainDb ?? rg.albumGainDb;
+    if (db == null) return 1;
+    const peak = (rgMode === 'album' || albumInOrder ? rg.albumPeak : rg.trackPeak) ?? null;
+    let f = Math.pow(10, db / 20);
+    if (peak && peak > 0) f = Math.min(f, 1 / peak); // avoid clipping
+    return Math.max(0.05, Math.min(1, f));
+  }, [current, queue, shuffle, rgMode]);
+  const gainRef = useRef(gain);
+  gainRef.current = gain;
+  useEffect(() => {
+    if (castModeRef.current || sleepRef.current) return; // the sleep fade owns the volume while it runs
+    try {
+      player.volume = volumeRef.current * gain;
+    } catch {
+      /* player not ready */
+    }
+  }, [gain]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ----- Chromecast -----
   const cast = useCast();
@@ -264,7 +288,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       if (!alive) return;
       player.replace({ uri, headers: api.headers(false) });
       try {
-        player.volume = volumeRef.current;
+        player.volume = volumeRef.current * gainRef.current;
       } catch {
         /* ignore */
       }
@@ -405,7 +429,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   const setSleep = useCallback(
     (opt: SleepOption | null) => {
       try {
-        if (!castModeRef.current) player.volume = volumeRef.current;
+        if (!castModeRef.current) player.volume = volumeRef.current * gainRef.current;
       } catch {
         /* ignore */
       }
@@ -435,7 +459,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       pauseAny();
       setTimeout(() => {
         try {
-          player.volume = volumeRef.current;
+          player.volume = volumeRef.current * gainRef.current;
         } catch {
           /* ignore */
         }
@@ -465,7 +489,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       // Fade out over the last few seconds (local playback; "end of part" is handled when the track finishes).
       if (!remote && isPlaying && sleep.mode !== 'part' && Number.isFinite(remaining)) {
         try {
-          player.volume = volumeRef.current * Math.max(0, Math.min(1, remaining / SLEEP_FADE_MS));
+          player.volume = volumeRef.current * gainRef.current * Math.max(0, Math.min(1, remaining / SLEEP_FADE_MS));
         } catch {
           /* ignore */
         }
@@ -598,7 +622,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
         volumeRef.current = vol;
         try {
           if (castModeRef.current) void castClientRef.current?.setStreamVolume(vol).catch(() => undefined);
-          else player.volume = vol;
+          else player.volume = vol * gainRef.current;
         } catch {
           /* ignore */
         }
