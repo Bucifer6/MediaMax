@@ -297,3 +297,12 @@ test('disabling or deleting the owner takes its profiles with it', async () => {
   assert.equal(db.get('SELECT COUNT(*) n FROM watchlist WHERE user_id = ?', kid)!.n, 0);
   assert.equal(db.get('SELECT COUNT(*) n FROM users WHERE id IN (?, ?)', dad, kid)!.n, 0);
 });
+
+test('a short duration from a still-running transcode does not mark a film watched', () => {
+  const viewer = auth.getUser(admin.id);
+  db.run('UPDATE items SET duration_ms = ? WHERE id = ?', 90000, 'm-pg');
+  // 56 s into a 90 s film; the player only knows the first 60 s that have been transcoded so far.
+  const ud = items.reportProgress(viewer, 'm-pg', 56000, 60000, 'stopped');
+  assert.equal(ud.played, false);
+  assert.equal(ud.positionMs, 56000);
+});

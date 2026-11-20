@@ -139,7 +139,7 @@ function Security() {
         <h2>Password <HelpLink slug="account-security" label="Account security" /></h2>
         {user.hasPassword && <Field label="Current password"><input className="input" type="password" value={cur} onChange={(e) => setCur(e.target.value)} autoComplete="current-password" /></Field>}
         <div className="form-row">
-          <Field label="New password"><input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" /></Field>
+          <Field label="New password"><input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" minLength={8} /></Field>
           <Field label="Confirm"><input className="input" type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" /></Field>
         </div>
         <div className="form-actions"><button className="btn btn-primary" disabled={busy || !pw}>Change password</button></div>

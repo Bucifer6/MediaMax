@@ -214,7 +214,7 @@ export function createUser(req: CreateUserRequest): User {
   const username = (req.username ?? '').trim();
   if (!/^[\w.@ -]{1,64}$/.test(username)) throw badRequest('Invalid username');
   if (db.get('SELECT 1 FROM users WHERE username = ?', username)) throw conflict('Username already exists');
-  if (req.password && req.password.length < 4) throw badRequest('Password must be at least 4 characters');
+  if (req.password && req.password.length < 8) throw badRequest('Password must be at least 8 characters');
   if (req.pin) validatePin(req.pin);
   const id = newId();
   // New users start from the server's default request permissions; the legacy `allowRequest4k` flag still grants 4K.
@@ -333,7 +333,7 @@ export function updateMe(userId: string, req: UpdateMeRequest, keepDeviceRowId?:
   if (req.displayName !== undefined) patch.display_name = req.displayName.trim() || cur.username;
   if (req.password !== undefined) {
     if (cur.password_hash && !verifySecret(req.currentPassword ?? '', cur.password_hash)) throw forbidden('Current password is incorrect');
-    if (req.password && req.password.length < 4) throw badRequest('Password must be at least 4 characters');
+    if (req.password && req.password.length < 8) throw badRequest('Password must be at least 8 characters');
     if (!req.password && cur.is_admin && !cur.oidc_sub) throw badRequest('Administrators must keep a password');
     patch.password_hash = req.password ? hashSecret(req.password) : null;
   }

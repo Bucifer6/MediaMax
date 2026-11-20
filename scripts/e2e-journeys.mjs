@@ -356,7 +356,7 @@ async function firstRun() {
     await page.getByLabel('Password', { exact: true }).fill('short');
     await page.getByLabel('Confirm password').fill('short');
     await page.getByRole('button', { name: 'Create account' }).click();
-    await page.getByText('Use at least 6 characters').waitFor();
+    await page.getByText('Use at least 8 characters').waitFor();
     await page.getByLabel('Password', { exact: true }).fill(PASS.admin);
     await page.getByLabel('Confirm password').fill(PASS.admin + 'x');
     await page.getByRole('button', { name: 'Create account' }).click();

@@ -508,7 +508,9 @@ export function listWatchlist(user: User, limit = 100, offset = 0): Paged<Item> 
 
 export function reportProgress(user: User, itemId: string, positionMs: number, durationMs?: number | null, state?: string): UserItemData {
   const row = assertCanSee(user, itemId);
-  const dur = durationMs || row.duration_ms || 0;
+  // Trust the library's duration first: while a transcode is still running the player only knows the length
+  // transcoded so far, which would make a mid-film position look finished (and wipe the resume point).
+  const dur = row.duration_ms || durationMs || 0;
   const pos = Math.max(0, Math.round(positionMs));
   ensureUd(user.id, itemId);
   const now = nowIso();
