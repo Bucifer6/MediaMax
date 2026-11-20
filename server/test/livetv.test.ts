@@ -1,0 +1,60 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
+import { parseM3u, m3uCatchupUrl } from '../src/services/livetv/m3u.ts';
+import { parseXmltvReadable, parseXmltvTime } from '../src/services/livetv/xmltv.ts';
+import { normalizeBase, timeshiftStamp, liveUrl } from '../src/services/livetv/xtream.ts';
+import { findSharedRegion } from '../src/services/introdetect.ts';
+
+test('m3u parsing', () => {
+  const pl = parseM3u(`#EXTM3U url-tvg="http://epg/guide.xml.gz"
+#EXTINF:-1 tvg-id="bbc1.uk" tvg-name="BBC One" tvg-logo="http://l/bbc.png" group-title="UK" tvg-chno="101" catchup="default" catchup-source="http://cu/{utc}/{duration}" catchup-days="7",BBC One HD
+#EXTVLCOPT:http-user-agent=CustomUA
+http://stream/bbc1.ts
+#EXTINF:-1,No Attrs
+http://stream/2.m3u8`);
+  assert.equal(pl.epgUrl, 'http://epg/guide.xml.gz');
+  assert.equal(pl.entries.length, 2);
+  assert.equal(pl.entries[0].name, 'BBC One HD');
+  assert.equal(pl.entries[0].tvgId, 'bbc1.uk');
+  assert.equal(pl.entries[0].chno, 101);
+  assert.equal(pl.entries[0].userAgent, 'CustomUA');
+  assert.equal(pl.entries[0].catchupDays, 7);
+  const url = m3uCatchupUrl(pl.entries[0], new Date('2024-01-01T10:00:00Z'), 30);
+  assert.equal(url, `http://cu/${Date.parse('2024-01-01T10:00:00Z') / 1000}/1800`);
+});
+
+test('xmltv parsing', async () => {
+  assert.equal(parseXmltvTime('20240101120000 +0100'), '2024-01-01T11:00:00.000Z');
+  const xml = `<?xml version="1.0"?><tv><channel id="a"><display-name>A</display-name><icon src="http://i"/></channel>
+  <programme start="20240101120000 +0000" stop="20240101130000 +0000" channel="a"><title>News &amp; Weather</title><desc>Desc</desc><category>News</category><episode-num system="xmltv_ns">1.4.</episode-num><new/></programme></tv>`;
+  const chans: any[] = [];
+  const progs: any[] = [];
+  const r = await parseXmltvReadable(Readable.from([xml]), { onChannel: (c) => chans.push(c), onProgramme: (p) => progs.push(p) });
+  assert.deepEqual(r, { channels: 1, programmes: 1 });
+  assert.equal(chans[0].icon, 'http://i');
+  assert.equal(progs[0].title, 'News & Weather');
+  assert.equal(progs[0].episodeNum, 'S02E05');
+  assert.equal(progs[0].isNew, true);
+});
+
+test('xtream helpers', () => {
+  assert.equal(normalizeBase('provider.tv:8080/player_api.php?username=x'), 'http://provider.tv:8080');
+  assert.equal(liveUrl({ url: 'http://p:80/', username: 'u', password: 'p w' }, 5), 'http://p:80/live/u/p%20w/5.ts');
+  assert.equal(timeshiftStamp(new Date('2024-06-01T12:30:00Z'), 'Europe/London'), '2024-06-01:13-30');
+});
+
+test('fingerprint shared region', () => {
+  const rnd = (seed: number, n: number) => {
+    let s = seed;
+    return Uint32Array.from({ length: n }, () => (s = (s * 1664525 + 1013904223) >>> 0));
+  };
+  const intro = rnd(42, 200); // ~25s
+  const a = new Uint32Array([...rnd(1, 100), ...intro, ...rnd(2, 300)]);
+  const b = new Uint32Array([...rnd(3, 40), ...intro, ...rnd(4, 300)]);
+  const r = findSharedRegion(a, b)!;
+  assert.ok(r);
+  assert.ok(Math.abs(r.aStart - 100) <= 2 && Math.abs(r.aEnd - 300) <= 2, JSON.stringify(r));
+  assert.ok(Math.abs(r.bStart - 40) <= 2);
+  assert.equal(findSharedRegion(rnd(7, 500), rnd(8, 500)), null);
+});

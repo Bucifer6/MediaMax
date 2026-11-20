@@ -1,0 +1,213 @@
+import type { Person } from '@mediamax/shared';
+import { getSettings } from '../settings.js';
+import { logger } from '../../util/log.js';
+import { sleep } from '../../util/misc.js';
+
+const log = logger('tmdb');
+const API = 'https://api.themoviedb.org/3';
+const IMG = 'https://image.tmdb.org/t/p/';
+
+export interface RemoteMeta {
+  tmdbId: string;
+  imdbId?: string | null;
+  tvdbId?: string | null;
+  title: string;
+  originalTitle?: string | null;
+  overview?: string | null;
+  tagline?: string | null;
+  year?: number | null;
+  releaseDate?: string | null;
+  rating?: number | null;
+  contentRating?: string | null;
+  genres?: string[];
+  studios?: string[];
+  people?: Person[];
+  runtimeMin?: number | null;
+  poster?: string | null;
+  backdrop?: string | null;
+  logo?: string | null;
+  trailerUrl?: string | null;
+  collection?: { id: string; name: string; poster: string | null; backdrop: string | null } | null;
+}
+
+export interface RemoteEpisode {
+  season: number;
+  episode: number;
+  title: string;
+  overview: string | null;
+  airDate: string | null;
+  rating: number | null;
+  still: string | null;
+  runtimeMin: number | null;
+  people: Person[];
+}
+
+export const tmdbEnabled = () => !!getSettings().tmdbApiKey;
+
+let lastCall = 0;
+async function call<T>(path: string, params: Record<string, string | number | undefined> = {}): Promise<T | null> {
+  const key = getSettings().tmdbApiKey;
+  if (!key) return null;
+  const url = new URL(API + path);
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (key.length > 40) headers.Authorization = `Bearer ${key}`;
+  else url.searchParams.set('api_key', key);
+  url.searchParams.set('language', getSettings().metadataLanguage || 'en-US');
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') url.searchParams.set(k, String(v));
+  // Gentle client-side rate limit (~35 req/s max).
+  const wait = lastCall + 30 - Date.now();
+  if (wait > 0) await sleep(wait);
+  lastCall = Date.now();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+      if (res.status === 429) {
+        await sleep(1000 * (attempt + 1) * 2);
+        continue;
+      }
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`TMDB ${res.status}`);
+      return (await res.json()) as T;
+    } catch (e) {
+      if (attempt === 2) {
+        log.warn(`TMDB request failed ${path}`, (e as Error).message);
+        return null;
+      }
+      await sleep(500 * (attempt + 1));
+    }
+  }
+  return null;
+}
+
+const img = (p: string | null | undefined, size: string) => (p ? `${IMG}${size}${p}` : null);
+
+function pickLogo(images: any): string | null {
+  const logos: any[] = images?.logos ?? [];
+  const lang = (getSettings().metadataLanguage || 'en').slice(0, 2);
+  const best = logos.find((l) => l.iso_639_1 === lang && !l.file_path.endsWith('.svg')) ?? logos.find((l) => l.iso_639_1 === 'en') ?? logos[0];
+  return best ? img(best.file_path, 'w500') : null;
+}
+
+function credits(c: any, limit = 20): Person[] {
+  const people: Person[] = [];
+  for (const a of (c?.cast ?? []).slice(0, limit)) people.push({ name: a.name, role: a.character ?? null, kind: 'actor', imageUrl: img(a.profile_path, 'w185') });
+  for (const crew of c?.crew ?? []) {
+    if (crew.job === 'Director') people.push({ name: crew.name, role: null, kind: 'director', imageUrl: img(crew.profile_path, 'w185') });
+    else if (crew.job === 'Screenplay' || crew.job === 'Writer' || crew.job === 'Creator') people.push({ name: crew.name, role: crew.job, kind: 'writer', imageUrl: img(crew.profile_path, 'w185') });
+  }
+  return people;
+}
+
+function trailer(videos: any): string | null {
+  const v = (videos?.results ?? []).find((x: any) => x.site === 'YouTube' && x.type === 'Trailer') ?? (videos?.results ?? []).find((x: any) => x.site === 'YouTube');
+  return v ? `https://www.youtube.com/watch?v=${v.key}` : null;
+}
+
+export async function findByImdb(imdbId: string): Promise<{ movie?: string; tv?: string }> {
+  const r = await call<any>(`/find/${imdbId}`, { external_source: 'imdb_id' });
+  return { movie: r?.movie_results?.[0]?.id?.toString(), tv: r?.tv_results?.[0]?.id?.toString() };
+}
+
+export async function searchMovie(title: string, year?: number | null): Promise<string | null> {
+  let r = await call<any>('/search/movie', { query: title, year: year ?? undefined, include_adult: 'false' });
+  if (!r?.results?.length && year) r = await call<any>('/search/movie', { query: title, primary_release_year: year - 1 });
+  if (!r?.results?.length && year) r = await call<any>('/search/movie', { query: title });
+  const results: any[] = r?.results ?? [];
+  if (!results.length) return null;
+  // Prefer exact title + year matches.
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  const exact = results.find((m) => norm(m.title) === norm(title) && (!year || m.release_date?.startsWith(String(year))));
+  return String((exact ?? results[0]).id);
+}
+
+export async function movieDetails(id: string): Promise<RemoteMeta | null> {
+  const m = await call<any>(`/movie/${id}`, { append_to_response: 'credits,images,release_dates,videos', include_image_language: 'en,null' });
+  if (!m) return null;
+  const country = (getSettings().metadataLanguage || 'en-US').split('-')[1] ?? 'US';
+  const rel = (m.release_dates?.results ?? []).find((r: any) => r.iso_3166_1 === country) ?? (m.release_dates?.results ?? []).find((r: any) => r.iso_3166_1 === 'US');
+  const cert = rel?.release_dates?.find((d: any) => d.certification)?.certification ?? null;
+  return {
+    tmdbId: String(m.id),
+    imdbId: m.imdb_id ?? null,
+    title: m.title,
+    originalTitle: m.original_title !== m.title ? m.original_title : null,
+    overview: m.overview || null,
+    tagline: m.tagline || null,
+    year: m.release_date ? +m.release_date.slice(0, 4) : null,
+    releaseDate: m.release_date || null,
+    rating: m.vote_average ? Math.round(m.vote_average * 10) / 10 : null,
+    contentRating: cert,
+    genres: (m.genres ?? []).map((g: any) => g.name),
+    studios: (m.production_companies ?? []).slice(0, 3).map((c: any) => c.name),
+    people: credits(m.credits),
+    runtimeMin: m.runtime ?? null,
+    poster: img(m.poster_path, 'w780'),
+    backdrop: img(m.backdrop_path, 'w1280'),
+    logo: pickLogo(m.images),
+    trailerUrl: trailer(m.videos),
+    collection: m.belongs_to_collection
+      ? { id: String(m.belongs_to_collection.id), name: m.belongs_to_collection.name, poster: img(m.belongs_to_collection.poster_path, 'w780'), backdrop: img(m.belongs_to_collection.backdrop_path, 'w1280') }
+      : null,
+  };
+}
+
+export async function searchTv(title: string, year?: number | null): Promise<string | null> {
+  let r = await call<any>('/search/tv', { query: title, first_air_date_year: year ?? undefined });
+  if (!r?.results?.length && year) r = await call<any>('/search/tv', { query: title });
+  const results: any[] = r?.results ?? [];
+  if (!results.length) return null;
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  const exact = results.find((m) => norm(m.name) === norm(title));
+  return String((exact ?? results[0]).id);
+}
+
+export async function tvDetails(id: string): Promise<RemoteMeta | null> {
+  const t = await call<any>(`/tv/${id}`, { append_to_response: 'credits,images,content_ratings,external_ids,videos', include_image_language: 'en,null' });
+  if (!t) return null;
+  const country = (getSettings().metadataLanguage || 'en-US').split('-')[1] ?? 'US';
+  const cr = (t.content_ratings?.results ?? []).find((r: any) => r.iso_3166_1 === country) ?? (t.content_ratings?.results ?? []).find((r: any) => r.iso_3166_1 === 'US');
+  const people = credits(t.credits);
+  for (const c of t.created_by ?? []) people.push({ name: c.name, role: 'Creator', kind: 'writer', imageUrl: img(c.profile_path, 'w185') });
+  return {
+    tmdbId: String(t.id),
+    imdbId: t.external_ids?.imdb_id ?? null,
+    tvdbId: t.external_ids?.tvdb_id ? String(t.external_ids.tvdb_id) : null,
+    title: t.name,
+    originalTitle: t.original_name !== t.name ? t.original_name : null,
+    overview: t.overview || null,
+    tagline: t.tagline || null,
+    year: t.first_air_date ? +t.first_air_date.slice(0, 4) : null,
+    releaseDate: t.first_air_date || null,
+    rating: t.vote_average ? Math.round(t.vote_average * 10) / 10 : null,
+    contentRating: cr?.rating ?? null,
+    genres: (t.genres ?? []).map((g: any) => g.name),
+    studios: (t.networks ?? []).slice(0, 3).map((c: any) => c.name),
+    people,
+    runtimeMin: t.episode_run_time?.[0] ?? null,
+    poster: img(t.poster_path, 'w780'),
+    backdrop: img(t.backdrop_path, 'w1280'),
+    logo: pickLogo(t.images),
+    trailerUrl: trailer(t.videos),
+  };
+}
+
+export async function seasonDetails(tvId: string, season: number): Promise<{ poster: string | null; overview: string | null; name: string | null; episodes: RemoteEpisode[] } | null> {
+  const s = await call<any>(`/tv/${tvId}/season/${season}`);
+  if (!s) return null;
+  return {
+    poster: img(s.poster_path, 'w780'),
+    overview: s.overview || null,
+    name: s.name ?? null,
+    episodes: (s.episodes ?? []).map((e: any) => ({
+      season: e.season_number,
+      episode: e.episode_number,
+      title: e.name,
+      overview: e.overview || null,
+      airDate: e.air_date || null,
+      rating: e.vote_average || null,
+      still: img(e.still_path, 'w780'),
+      runtimeMin: e.runtime ?? null,
+      people: (e.guest_stars ?? []).slice(0, 8).map((g: any) => ({ name: g.name, role: g.character ?? null, kind: 'actor' as const, imageUrl: img(g.profile_path, 'w185') })),
+    })),
+  };
+}
