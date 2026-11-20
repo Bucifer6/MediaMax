@@ -11,6 +11,7 @@ export const karaokeApi = {
   setOffset: (id: string, offsetMs: number) => http.put<{ offsetMs: number }>(`/items/${enc(id)}/lyrics/offset`, { offsetMs }),
 
   stemsStatus: () => http.get<StemsStatus>('/stems/status'),
+  downloadOrt: () => http.post<NonNullable<StemsStatus['ortDownload']>>('/stems/ort/download'),
   downloadModel: () => http.post<{ ready: boolean; started?: boolean; downloading?: { received: number; total: number } }>('/stems/model/download'),
   cancelModel: () => http.post<{ ok: true }>('/stems/model/cancel'),
   trackStems: (id: string) => http.get<TrackStems>(`/items/${enc(id)}/stems`),

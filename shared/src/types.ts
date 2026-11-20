@@ -4216,9 +4216,11 @@ export interface StemsModelStatus {
 export interface StemsStatus {
   enabled: boolean;
   model: StemsModelStatus | null;
-  /** onnxruntime-web is installed on the server (served same-origin to the browser worker). */
+  /** onnxruntime-web's browser files are on the server (served same-origin to the browser worker). */
   ort: boolean;
   ortVersion: string | null;
+  /** onnxruntime-web is downloaded on first use (not installed with MediaMax); progress of that download. */
+  ortDownload?: { state: 'idle' | 'downloading' | 'ready' | 'error'; received: number; total: number; error: string | null; version: string };
   format: 'flac' | 'wav';
   sampleRate: number;
   stemNames: StemName[];

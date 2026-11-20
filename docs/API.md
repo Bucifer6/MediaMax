@@ -323,6 +323,7 @@ See [KARAOKE.md](KARAOKE.md). Requires `ServerSettings.karaoke.stemsEnabled`; se
 | DELETE | `/stems/model` 🛡️ | delete the cached model |
 | GET | `/stems/model` 🛡️ | the verified model bytes (fetched by the separation worker) |
 | GET | `/stems/ort/:file` | onnxruntime-web runtime files (`ort*.mjs` / `ort*.wasm`), same origin, no auth |
+| POST | `/stems/ort/download` | Admin: download the AI runtime now (otherwise it is fetched with the model on first use); progress in `StemsStatus.ortDownload` |
 | GET | `/items/:id/stems` | `TrackStems` (`ready`, `preparing`, model, backend, frames…) |
 | GET | `/items/:id/stems/source` 🛡️ | the track decoded to 44.1 kHz stereo FLAC (input for the worker) |
 | POST | `/items/:id/stems/begin` 🛡️ | `{ frames, sampleRate: 44100, model, backend }` → `{ token }` |

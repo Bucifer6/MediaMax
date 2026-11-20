@@ -52,7 +52,10 @@ export function KaraokeSettingsPanel({ value, onChange, dirty }: { value: Karaok
               <strong>{model.name}</strong>
               <div className="muted">
                 {model.ready ? `Downloaded (${mb(model.bytes)}), ${model.verified ? 'SHA-256 verified' : 'not pinned by SHA-256'}` : model.downloading ? `Downloading… ${mb(model.downloading.received)} of ${mb(model.downloading.total)}` : 'Not downloaded yet'}
-                {!st?.ort && ' · onnxruntime-web is not installed on the server (optional npm dependency)'}
+                {!st?.ort && (st?.ortDownload?.state === 'downloading'
+                  ? ` · Downloading the AI runtime… ${mb(st.ortDownload.received)}${st.ortDownload.total ? ` of ${mb(st.ortDownload.total)}` : ''}`
+                  : ' · The AI runtime (onnxruntime-web, about 20 MB) is downloaded with the model')}
+                {st?.ortDownload?.state === 'error' && <span className="karaoke-error"> · AI runtime download failed: {st.ortDownload.error}</span>}
               </div>
               {model.error && <div className="karaoke-error">{model.error}</div>}
               <small className="muted">{model.licence} {model.homepage && <a href={model.homepage} target="_blank" rel="noreferrer">Project page</a>}</small>

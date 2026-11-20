@@ -25,6 +25,7 @@ import { requireAdmin, requireUser } from '../http.js';
 import { assertCanSee } from '../services/items.js';
 import { badRequest, notFound } from '../util/errors.js';
 import { deleteEdit, getLyrics, saveEdit, setUserOffset } from '../services/lyrics.js';
+import { ortRuntime } from '../services/ortRuntime.js';
 import { createStemStore, findOrtDir, mixLevel, ortVersion, STEM_NAMES, STEM_RATE, type StemStore } from '../services/stems.js';
 import { getSettings } from '../services/settings.js';
 import { sendFileRange } from './playback.js';
@@ -82,13 +83,25 @@ export default async function karaokeRoutes(app: FastifyInstance) {
       enabled: !!k.stemsEnabled,
       model: k.stemsEnabled ? stemStore().modelStatus(k) : null,
       ort: !!ort, ortVersion: ortVersion(ort),
+      ortDownload: user.isAdmin ? ortRuntime().status() : undefined,
       format: 'flac', sampleRate: STEM_RATE, stemNames: STEM_NAMES,
       canPrepare: user.isAdmin && !!k.stemsEnabled,
     };
   });
+  // The browser runtime is fetched on first use (ortRuntime.ts); downloading the model starts it too.
+  const startOrt = () => {
+    if (!findOrtDir()) ortRuntime().ensure().catch(() => {});
+  };
+  app.post('/stems/ort/download', async (req) => {
+    requireAdmin(req);
+    needEnabled();
+    startOrt();
+    return ortRuntime().status();
+  });
   app.post('/stems/model/download', async (req) => {
     requireAdmin(req);
     needEnabled();
+    startOrt();
     return stemStore().startDownload(karaoke());
   });
   app.post('/stems/model/cancel', async (req) => {
@@ -111,7 +124,7 @@ export default async function karaokeRoutes(app: FastifyInstance) {
   app.get<{ Params: { file: string } }>('/stems/ort/:file', async (req, reply) => {
     const dir = findOrtDir();
     const name = req.params.file;
-    if (!dir) throw notFound('onnxruntime-web is not installed on the server');
+    if (!dir) throw notFound('The AI runtime (onnxruntime-web) has not been downloaded yet');
     if (!/^ort[\w.-]*\.(mjs|wasm)$/.test(name) || name.includes('..') || !fs.existsSync(path.join(dir, name))) throw notFound();
     reply.header('Cross-Origin-Resource-Policy', 'same-origin');
     return sendFileRange(req, reply, path.join(dir, name), name.endsWith('.wasm') ? 'application/wasm' : 'text/javascript; charset=utf-8');

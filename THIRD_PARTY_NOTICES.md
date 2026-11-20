@@ -55,13 +55,11 @@ their own licences; FFmpeg is run as a separate program (LGPL/GPL).
 
 ### ONNX Runtime Web (`onnxruntime-web` 1.23.2)
 
-- Used to run the AI stem-separation model in the browser (WebGPU / WebAssembly). Installed as an **optional** server
-  dependency; the server serves its `dist/ort*.mjs` / `ort*.wasm` files same-origin (`/api/v1/stems/ort/…`). Not
-  bundled into the web app.
+- Used to run the AI stem-separation model in the browser (WebGPU / WebAssembly). Not shipped with MediaMax: the
+  server downloads the pinned npm tarball the first time AI separation is used, verifies its SHA-512 integrity, keeps
+  only `dist/ort*.mjs` / `ort*.wasm` and serves them same-origin (`/api/v1/stems/ort/…`). Not bundled into the web app.
 - MIT License, © Microsoft Corporation — <https://github.com/microsoft/onnxruntime>.
-- Its npm dependencies (installed, not served to browsers): `onnxruntime-common` (MIT), `flatbuffers` (Apache-2.0),
-  `guid-typescript` (ISC), `long` (Apache-2.0), `platform` (MIT), `protobufjs` (BSD-3-Clause, with `@protobufjs/*`
-  BSD-3-Clause).
+- Its own npm dependencies are not downloaded (the browser build bundles what it needs).
 
 ### HT-Demucs model (downloaded on demand, not bundled)
 

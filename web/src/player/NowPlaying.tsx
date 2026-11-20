@@ -123,7 +123,7 @@ export function KaraokeControls({ compact = false }: { compact?: boolean }) {
   const k = useKaraoke();
   const m = useMusic();
   const pct = k.preparing && k.preparing.total ? Math.round((k.preparing.done / k.preparing.total) * 100) : null;
-  const phase: Record<string, string> = { 'model-download': 'Downloading the AI model', decoding: 'Decoding the track', 'loading-model': 'Loading the AI model', separating: 'Separating vocals', saving: 'Saving stems' };
+  const phase: Record<string, string> = { 'runtime-download': 'Downloading the AI runtime', 'model-download': 'Downloading the AI model', decoding: 'Decoding the track', 'loading-model': 'Loading the AI model', separating: 'Separating vocals', saving: 'Saving stems' };
   const canPrepare = !!k.status?.canPrepare && m.current?.type === 'track';
   return (
     <div className={`karaoke-controls ${compact ? 'compact' : ''}`}>

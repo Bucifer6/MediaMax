@@ -8,7 +8,7 @@ import { karaokeApi } from '../api/karaoke';
 import { API_BASE, withToken } from '../api/client';
 import { MODEL_RATE, STEMS } from './dsp';
 
-export type PreparePhase = 'model-download' | 'decoding' | 'loading-model' | 'separating' | 'saving';
+export type PreparePhase = 'runtime-download' | 'model-download' | 'decoding' | 'loading-model' | 'separating' | 'saving';
 export interface PrepareProgress {
   phase: PreparePhase;
   done: number;
@@ -23,7 +23,19 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function ensureModel(onProgress: (p: PrepareProgress) => void, signal?: AbortSignal): Promise<StemsStatus> {
   let st = await karaokeApi.stemsStatus();
   if (!st.enabled) throw new Error('AI stem separation is turned off on this server');
-  if (!st.ort) throw new Error('The server is missing onnxruntime-web (an optional npm package)');
+  if (!st.ort) {
+    // First use: the server downloads the AI runtime (onnxruntime-web) once.
+    await karaokeApi.downloadOrt();
+    for (;;) {
+      if (signal?.aborted) throw abortError();
+      await sleep(700);
+      st = await karaokeApi.stemsStatus();
+      if (st.ort) break;
+      const d = st.ortDownload;
+      if (!d || d.state === 'error' || d.state === 'idle') throw new Error(d?.error || 'Could not download the AI runtime (onnxruntime-web)');
+      onProgress({ phase: 'runtime-download', done: d.received, total: d.total });
+    }
+  }
   if (st.model?.ready) return st;
   if (!st.model?.downloading) await karaokeApi.downloadModel();
   for (;;) {

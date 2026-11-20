@@ -12,6 +12,7 @@
  *
  * Adapted from OpenDJ (MIT, github.com/Bucifer6/OpenDJ) — server/stems.js.
  */
+import { ORT_VERSION, ortRuntimeDir } from './ortRuntime.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -97,15 +98,28 @@ export const modelKey = (spec: ModelSpec) => spec.sha256 || `url-${crypto.create
 
 /** Streams a .tar (already gunzipped) and writes only `entry` to `out`. Handles the ustar prefix and pax paths. */
 export async function extractTarEntry(readable: AsyncIterable<Buffer>, entry: string, out: Writable): Promise<boolean> {
+  const want = entry.replace(/^\.\//, '');
+  let found = false;
+  await extractTar(readable, (name) => {
+    if (name !== want) return null;
+    found = true;
+    return out;
+  });
+  return found;
+}
+
+/**
+ * Streams a .tar (already gunzipped); for each regular file `pick(name)` returns a stream to write it to (not ended
+ * here), or null to skip it. Handles the ustar prefix and pax paths.
+ */
+export async function extractTar(readable: AsyncIterable<Buffer>, pick: (name: string) => Writable | null): Promise<void> {
   let buf: Buffer = Buffer.alloc(0);
   let state: 'header' | 'body' | 'pad' | 'end' = 'header';
   let remain = 0;
   let pad = 0;
-  let current: 'want' | 'pax' | 'skip' | null = null;
+  let current: 'pax' | 'skip' | Writable | null = null;
   let paxPath: string | null = null;
-  let found = false;
   let paxBody: Buffer[] = [];
-  const want = entry.replace(/^\.\//, '');
   const str = (b: Buffer, a: number, n: number) => b.subarray(a, a + n).toString('utf8').replace(/\0.*$/s, '');
   for await (const chunk of readable) {
     if (state === 'end') continue; // drain
@@ -129,7 +143,7 @@ export async function extractTarEntry(readable: AsyncIterable<Buffer>, entry: st
         }
         remain = size;
         pad = (512 - (size % 512)) % 512;
-        current = type === 'x' ? 'pax' : (type === '0' || type === '\0' || type === '7') && name.replace(/^\.\//, '') === want ? 'want' : 'skip';
+        current = type === 'x' ? 'pax' : type === '0' || type === '\0' || type === '7' ? pick(name.replace(/^\.\//, '')) ?? 'skip' : 'skip';
         paxBody = [];
         state = 'body';
       }
@@ -140,10 +154,11 @@ export async function extractTarEntry(readable: AsyncIterable<Buffer>, entry: st
           const part = buf.subarray(0, n);
           buf = buf.subarray(n);
           remain -= n;
-          if (current === 'want') {
-            found = true;
+          if (current === 'pax') paxBody.push(Buffer.from(part));
+          else if (current && current !== 'skip') {
+            const out = current;
             if (!out.write(part)) await new Promise((r) => out.once('drain', r));
-          } else if (current === 'pax') paxBody.push(Buffer.from(part));
+          }
           if (remain > 0) break;
         }
         if (current === 'pax') {
@@ -164,7 +179,6 @@ export async function extractTarEntry(readable: AsyncIterable<Buffer>, entry: st
       }
     }
   }
-  return found;
 }
 
 /** Minimal 16-bit PCM WAV header. */
@@ -186,10 +200,15 @@ export function wavHeader(dataBytes: number, sampleRate = STEM_RATE, channels = 
   return h;
 }
 
-/** onnxruntime-web's dist folder (MEDIAMAX_ORT_DIR overrides; null when the optional package is not installed). */
+/**
+ * onnxruntime-web's browser files: MEDIAMAX_ORT_DIR, else the copy downloaded on first use into the data dir
+ * (ortRuntime.ts), else an onnxruntime-web package installed by hand (development). Null when none is there yet.
+ */
 export function findOrtDir(explicit = process.env.MEDIAMAX_ORT_DIR): string | null {
   const ok = (d: string | null | undefined) => !!d && fs.existsSync(path.join(d, 'ort.webgpu.min.mjs'));
   if (explicit) return ok(explicit) ? path.resolve(explicit) : null;
+  const downloaded = ortRuntimeDir();
+  if (ok(downloaded)) return downloaded;
   try {
     // The package's exports hide package.json; its main entry lives in dist/ next to the browser files.
     const main = createRequire(import.meta.url).resolve('onnxruntime-web');
@@ -201,6 +220,7 @@ export function findOrtDir(explicit = process.env.MEDIAMAX_ORT_DIR): string | nu
 }
 export const ortVersion = (dir: string | null) => {
   if (!dir) return null;
+  if (dir === ortRuntimeDir()) return ORT_VERSION;
   try {
     return JSON.parse(fs.readFileSync(path.join(dir, '..', 'package.json'), 'utf8')).version as string;
   } catch {
