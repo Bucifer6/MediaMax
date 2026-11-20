@@ -106,6 +106,11 @@ export function findAvailable(id: string, type: RequestMediaType, names: { title
   if (type === 'movie' || type === 'show') {
     return db.get<{ id: string }>(`SELECT id FROM items WHERE type = ? AND json_extract(external_ids, '$.tmdb') = ? LIMIT 1`, type === 'movie' ? 'movie' : 'show', String(id))?.id ?? null;
   }
+  // Lidarr's foreign ids are MusicBrainz ids (artist / release group): an exact match when the library has them.
+  if (type === 'artist' || type === 'album') {
+    const hit = db.get<{ id: string }>(`SELECT id FROM items WHERE type = ? AND json_extract(external_ids, ?) = ? LIMIT 1`, type, type === 'artist' ? '$.musicbrainzArtist' : '$.musicbrainzReleaseGroup', String(id));
+    if (hit) return hit.id;
+  }
   if (!names.title) return null;
   if (type === 'artist') return db.get<{ id: string }>(`SELECT id FROM items WHERE type = 'artist' AND title = ? COLLATE NOCASE LIMIT 1`, names.title)?.id ?? null;
   if (type === 'album') {

@@ -148,6 +148,13 @@ function applyResult(row: Row, p: BuiltinProvider, res: ProviderResult, st: Appl
     meta.isbn = res.meta.isbn;
     metaChanged = true;
   }
+  if (res.meta?.mb && Object.keys(res.meta.mb).length) {
+    const merged = { ...(meta.mb ?? {}), ...res.meta.mb };
+    if (JSON.stringify(merged) !== JSON.stringify(meta.mb ?? {})) {
+      meta.mb = merged;
+      metaChanged = true;
+    }
+  }
   if (res.meta?.artistInfo) {
     const cur = meta.artistInfo ?? {};
     for (const [k, v] of Object.entries(res.meta.artistInfo)) {

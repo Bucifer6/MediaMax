@@ -561,7 +561,12 @@ export interface Item {
   childCount: number;
   addedAt: string;
   releaseDate: string | null;
-  externalIds: { tmdb?: string; imdb?: string; tvdb?: string; xtream?: string };
+  externalIds: {
+    tmdb?: string; imdb?: string; tvdb?: string; xtream?: string;
+    /** MusicBrainz ids (from Picard tags or MusicBrainz lookups) and AcoustID. */
+    musicbrainzArtist?: string; musicbrainzReleaseGroup?: string; musicbrainzRelease?: string; musicbrainzRecording?: string;
+    musicbrainzReleaseTrack?: string; musicbrainzWork?: string; acoustid?: string;
+  };
   userData: UserItemData;
   /** Populated on GET /items/:id only. */
   media?: MediaSource[];
@@ -587,6 +592,8 @@ export interface Item {
   extraArt?: { clearArtUrl?: string | null; discArtUrl?: string | null; bannerUrl?: string | null };
   /** Artists, GET /items/:id only: facts from TheAudioDB. */
   artistInfo?: { formedYear?: number | null; country?: string | null; mood?: string | null; style?: string | null };
+  /** Albums and tracks: release facts from tags / MusicBrainz (see MusicInfo). */
+  music?: MusicInfo;
 }
 
 export type ExtraType = 'trailer' | 'featurette' | 'behindthescenes' | 'deleted' | 'interview' | 'scene' | 'short' | 'other';
@@ -3828,4 +3835,174 @@ export interface AudioDecisionInfo {
 export interface PlaybackInfo {
   /** Audio delivery decision for the selected track (absent from older servers). */
   audio?: AudioDecisionInfo | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* MusicBrainz / ListenBrainz / AcoustID                               */
+/* ------------------------------------------------------------------ */
+
+/** One credited artist of a track, in order, with the join phrase that follows it ("A" + " feat. " + "B"). */
+export interface ArtistCredit {
+  name: string;
+  /** Library artist item, when the credited artist is in the library. */
+  artistId: string | null;
+  mbid: string | null;
+  joinPhrase: string;
+}
+
+export interface MusicInfo {
+  /** Album: primary type first, then secondary types (lower-case MusicBrainz names: album, ep, single, live, compilation…). */
+  releaseTypes?: string[];
+  releaseStatus?: string | null;
+  originalYear?: number | null;
+  originalDate?: string | null;
+  label?: string | null;
+  catalogNumber?: string | null;
+  barcode?: string | null;
+  compilation?: boolean;
+  /** Album: disc subtitles (disc number → title) from tags. */
+  discTitles?: Record<string, string>;
+  /** Track: the artist string as tagged ("A feat. B & C"). */
+  displayArtist?: string | null;
+  /** Track: parsed credits (GET /items/:id, album children, search). */
+  credits?: ArtistCredit[];
+  /** Track identified by sound (AcoustID). */
+  identified?: boolean;
+}
+
+export interface MissingRelease {
+  releaseGroupMbid: string;
+  title: string;
+  year: number | null;
+  primaryType: string | null;
+  secondaryTypes: string[];
+  coverUrl: string;
+  /** Status of an open request for it, if any. */
+  requestStatus: string | null;
+}
+
+export interface DiscographySection {
+  /** Release type key (album, ep, single, live, compilation, soundtrack, remix, demo, other). */
+  type: string;
+  label: string;
+  items: Item[];
+}
+
+export interface DiscographyResponse {
+  artistMbid: string | null;
+  sections: DiscographySection[];
+  /** Release groups on MusicBrainz that aren't in the library (needs an artist MBID). */
+  missing: MissingRelease[];
+  missingError: string | null;
+  /** Types hidden from "missing" by the admin. */
+  hiddenTypes: string[];
+  /** Tracks by other album artists that credit this artist (features, collaborations). */
+  appearsOn: Item[];
+  /** The viewer may request music (Lidarr). */
+  canRequest: boolean;
+}
+
+export interface RelatedArtist {
+  name: string;
+  mbid: string | null;
+  /** Library artist, when present. */
+  itemId: string | null;
+  posterUrl: string | null;
+  /** e.g. "member of band, 1991–2003". */
+  detail: string | null;
+}
+
+export interface RelatedArtistsResponse {
+  members: RelatedArtist[];
+  memberOf: RelatedArtist[];
+  collaborations: RelatedArtist[];
+  related: RelatedArtist[];
+  /** ListenBrainz similar artists (no token needed). */
+  similar: RelatedArtist[];
+  error: string | null;
+}
+
+export interface ListenBrainzStatus {
+  connected: boolean;
+  username: string | null;
+  /** "••••" when a token is stored (write-only). */
+  token: string | null;
+  /** Self-hosted ListenBrainz API URL (null = api.listenbrainz.org). */
+  serverUrl: string | null;
+  scrobble: boolean;
+  /** Send favourites / 4★+ ratings as "love" feedback. */
+  feedback: boolean;
+  /** Listens waiting to be sent (offline queue). */
+  pending: number;
+  lastError: string | null;
+}
+
+export interface ListenBrainzUpdate {
+  token?: string | null;
+  serverUrl?: string | null;
+  scrobble?: boolean;
+  feedback?: boolean;
+}
+
+export interface LbRecommendedTrack {
+  recordingMbid: string | null;
+  title: string;
+  artist: string;
+  artistMbids: string[];
+  album: string | null;
+  /** Library track when matched. */
+  item: Item | null;
+  match: 'mbid' | 'fuzzy' | null;
+}
+
+export interface LbRecommendationList {
+  id: string;
+  title: string;
+  kind: 'weekly-exploration' | 'weekly-jams' | 'daily-jams' | 'cf' | 'other';
+  tracks: LbRecommendedTrack[];
+}
+
+export interface LbRecommendations {
+  connected: boolean;
+  lists: LbRecommendationList[];
+  error: string | null;
+  /** The viewer may request music (Lidarr). */
+  canRequest: boolean;
+}
+
+export interface AcoustIdCandidate {
+  score: number;
+  acoustid: string;
+  recordingMbid: string | null;
+  title: string | null;
+  artists: { name: string; mbid: string | null; joinPhrase: string }[];
+  releaseGroup: { mbid: string; title: string; type: string | null } | null;
+  durationSec: number | null;
+}
+
+export interface IdentifyResponse {
+  available: boolean;
+  /** Why identifying isn't possible (no key, no fpcalc / chromaprint). */
+  reason: string | null;
+  candidates: AcoustIdCandidate[];
+}
+
+export interface MusicSettings {
+  acoustid: {
+    /** Application client key (write-only, "••••"). */
+    apiKey: string | null;
+    /** Automatically identify tracks with no MBID and missing artist/title tags after scans. */
+    autoIdentify: boolean;
+    /** Apply the best match without asking when its score is at least this (0 = never). */
+    autoApplyScore: number;
+  };
+  /** Release types left out of "Missing from your library". */
+  missingHide: { singles: boolean; eps: boolean; compilations: boolean; live: boolean; other: boolean };
+}
+
+export interface MusicSettingsResponse {
+  settings: MusicSettings;
+  fingerprinter: { available: boolean; tool: 'fpcalc' | 'ffmpeg' | null; detail: string };
+  /** Tracks without an MBID and without artist/title tags. */
+  untagged: number;
 }

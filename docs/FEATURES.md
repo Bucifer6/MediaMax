@@ -31,6 +31,10 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | ReplayGain / R128 loudness levelling (track & album) | ✅ (Plexamp) | 🟡 | 🟡 | ✅ |
 | DJ mode: BPM/key/energy analysis, automatic beat-matched crossfades, harmonic auto-playlists, non-stop mixes | 🟡 (Plexamp sweet fades) | ❌ | ❌ | ✅ |
 | Anime (AniList) and MusicBrainz/Cover Art Archive metadata | 🟡 | Plugin | Plugin | ✅ (MusicBrainz built in; AniList plugin) |
+| MusicBrainz Picard tags (recording/release/release-group/artist MBIDs): MBID-based album/artist grouping, recording ids filled from the release, release types | 🟡 | ✅ | ✅ | ✅ |
+| Multi-artist credits ("A feat. B & C" with each artist linked, "Appears on", search by featured artist) | 🟡 | ✅ | 🟡 | ✅ |
+| Artist discography by release type, missing albums from MusicBrainz with one-click Lidarr request, members / related / similar artists | 🟡 (no missing) | Plugin | 🟡 | ✅ |
+| AcoustID "Identify by sound" for untagged tracks (DB only, files untouched; optional auto-apply) | ❌ | ❌ | Plugin | ✅ |
 | Audiobooks (multi-file & .m4b, chapters, author/narrator, resume) | 🟡 | ✅ | ✅ | ✅ |
 | Podcasts (RSS, iTunes directory search, OPML import, auto-download) | ✅ | Plugin? | Plugin? | ✅ |
 
@@ -215,6 +219,7 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | DLNA / UPnP media server (smart TVs, consoles, VLC) | ✅ | ✅ | ✅ | ✅ (LAN-only, per-user access) |
 | Trakt scrobbling & watched sync | Plugin | Plugin | Plugin | ✅ built in |
 | Last.fm scrobbling | ✅ | Plugin | Plugin | ✅ built in |
+| ListenBrainz scrobbling (MBIDs, offline queue, love/hate feedback) + weekly playlists & recommendations matched to the library | ❌ | Plugin | Plugin | ✅ built in |
 | Viewing statistics & yearly "Wrapped" | Pass | Plugin | Plugin | ✅ |
 | User avatars | ✅ | ✅ | ✅ | ✅ |
 | Hide unrated content from restricted users | ✅ | ✅ | ✅ | ✅ |

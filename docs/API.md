@@ -374,6 +374,34 @@ Settings are stored separately from `ServerSettings` (settings key `metadata`).
 * Admin sets `ServerSettings.lastfm.apiKey/sharedSecret` (create an API account at last.fm/api/account/create).
   "Now playing" is sent on start; tracks are scrobbled after half their length or 4 minutes.
 
+## ListenBrainz
+* `GET /listenbrainz` → `ListenBrainzStatus` (token always `"••••"`, `pending` = queued listens) · `PUT /listenbrainz`
+  `ListenBrainzUpdate` `{ token?, serverUrl?, scrobble?, feedback? }` (validates the token with `/1/validate-token`; a
+  non-admin's `serverUrl` must be a public address) · `DELETE /listenbrainz` (also drops queued listens) ·
+  `POST /listenbrainz/flush` (send queued listens now).
+* `GET /listenbrainz/recommendations?refresh=1` → `LbRecommendations` (generated playlists + CF recommendations, each track
+  with `item` when in the library, `match: 'mbid' | 'fuzzy' | null`; cached 1 h) ·
+  `POST /listenbrainz/recommendations/:listId/playlist` → `{ id, count }` (saves the in-library tracks as a playlist).
+
+## Music: discography, related artists, identify by sound
+* `GET /music/artists/:id/discography` → `DiscographyResponse`: library albums in release-type `sections`, `appearsOn`
+  (tracks of other album artists crediting this artist), `missing` (MusicBrainz release groups not in the library, filtered
+  by the admin's `missingHide`; each with `releaseGroupMbid` — request with `POST /requests { mediaType: 'album',
+  externalId: <releaseGroupMbid> }`), `canRequest`.
+* `GET /music/artists/:id/related` → `RelatedArtistsResponse` (`members`, `memberOf`, `collaborations`, `related` from
+  MusicBrainz artist-rels; `similar` from ListenBrainz labs; `itemId` when the artist is in the library).
+* 🛡️ `GET /items/:id/identify` → `IdentifyResponse` (stored AcoustID candidates; `available`/`reason`) ·
+  `POST /items/:id/identify` (fingerprint + AcoustID lookup now) · `POST /items/:id/identify/apply` `{ candidate }` → `Item`.
+* 🛡️ `GET /admin/music` → `MusicSettingsResponse` (`settings`, `fingerprinter`, `untagged` count) · `PUT /admin/music`
+  `Partial<MusicSettings>` (`acoustid.apiKey` is write-only; `"••••"` keeps it) · `POST /admin/music/identify-untagged`
+  (runs the `identify-untagged` task).
+* Items: albums and tracks carry `music` (`MusicInfo`: `releaseTypes`, `releaseStatus`, `originalYear`, `label`,
+  `catalogNumber`, `barcode`, `compilation`, `discTitles`; tracks: `displayArtist`, `credits` [`ArtistCredit`: name,
+  artistId, mbid, joinPhrase] on `GET /items/:id`, album children and search) and MusicBrainz ids in `externalIds`
+  (`musicbrainzArtist`, `musicbrainzRelease`, `musicbrainzReleaseGroup`, `musicbrainzRecording`, `musicbrainzReleaseTrack`,
+  `musicbrainzWork`, `acoustid`). Search also matches tracks by featured artists.
+
+
 ## Requests (Discover)
 * `GET /discover?q=&type=movie|show|all&page=` → `DiscoverResponse` (TMDB; trending when `q` is empty; shows availability and request state).
 * `GET /discover/arr?kind=music|books&q=` → `DiscoverResponse` — searches Lidarr (`/api/v1/artist/lookup` + `/api/v1/album/lookup`)
@@ -533,6 +561,9 @@ ping, getLicense, getOpenSubsonicExtensions, getUser, getMusicFolders, getGenres
 getSong, getMusicDirectory, getAlbumList2, getRandomSongs, getSongsByGenre, search3, getStarred2, star, unstar, scrobble,
 getPlaylists, getPlaylist, createPlaylist, updatePlaylist, deletePlaylist, getLyrics, getLyricsBySongId, getNowPlaying,
 getScanStatus, stream (raw or `format=mp3|opus&maxBitRate=`), download, getCoverArt.
+OpenSubsonic fields: songs carry `musicBrainzId` (recording), `artists` / `albumArtists` (credited artists, `id` when in the
+library), `displayArtist` (as tagged); albums `musicBrainzId` (release), `releaseTypes`, `originalReleaseDate`, `recordLabels`,
+`isCompilation`, `discTitles`, `artists`; artists `musicBrainzId`. `scrobble` (with `time`) feeds Last.fm and ListenBrainz.
 
 ## Remote control ("Play on…")
 * `GET /remote/targets` → `RemoteTarget[]` — your other online devices and what they're playing.

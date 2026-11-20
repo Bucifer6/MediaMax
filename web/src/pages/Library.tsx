@@ -9,6 +9,7 @@ import { CardSkeleton, PosterCard } from '../components/Cards';
 import { EmptyState, ErrorState, Badge } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { isIptvLibrary, libraryIcon, libraryItemTypes } from '../utils/items';
+import { ListenBrainzRow } from '../components/ListenBrainz';
 
 const PAGE = 60;
 const LETTERS = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
@@ -204,6 +205,8 @@ export function LibraryPage() {
           </button>
         )}
       </div>
+
+      {library?.type === 'music' && !(genre || year || played || fav || letter || series) && <ListenBrainzRow />}
 
       <div className="library-body">
         <div className="library-grid-wrap">

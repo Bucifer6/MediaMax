@@ -7,6 +7,7 @@ import { cleanupTranscodeDir, ffmpegAvailable } from './services/transcoder.js';
 import { initWebhooks } from './services/webhooks.js';
 import { initTrakt } from './services/trakt.js';
 import { initLastfm } from './services/lastfm.js';
+import { initListenBrainz } from './services/listenbrainz.js';
 import { serverId } from './services/settings.js';
 import { syncDlna, stopDlna } from './services/dlna.js';
 import { startRemoteAccess, stopRemoteAccess } from './services/remote.js';
@@ -23,6 +24,7 @@ async function main() {
   initWebhooks();
   initTrakt();
   initLastfm();
+  initListenBrainz();
   initStorage();
   const app = await buildApp();
   await app.listen({ port: config.port, host: config.host });

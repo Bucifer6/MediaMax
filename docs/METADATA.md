@@ -117,6 +117,90 @@ once per cache period. Turn the LRCLIB toggle off to stop all lookups.
 OMDb adds `Item.ratings` = `{ imdb, rottenTomatoes, metacritic }`, and TMDB adds `tmdb`. The web item page shows them as
 badges next to the star rating.
 
+## MusicBrainz, AcoustID and ListenBrainz
+
+### Tags MediaMax reads (MusicBrainz Picard)
+
+The best way to get exact music metadata is to tag your files with [MusicBrainz Picard](https://picard.musicbrainz.org)
+(or beets / foobar2000 with the MusicBrainz plugin). MediaMax reads the ids and never writes to your files:
+
+| Vorbis (FLAC, Ogg, Opus) | ID3 (MP3) | MP4 (M4A/ALAC) | Stored as |
+|---|---|---|---|
+| `MUSICBRAINZ_TRACKID` | UFID `http://musicbrainz.org` | `MusicBrainz Track Id` | track recording MBID |
+| `MUSICBRAINZ_RELEASETRACKID` | TXXX `MusicBrainz Release Track Id` | `MusicBrainz Release Track Id` | track |
+| `MUSICBRAINZ_WORKID` | TXXX `MusicBrainz Work Id` | `MusicBrainz Work Id` | track |
+| `ACOUSTID_ID` | TXXX `Acoustid Id` | `Acoustid Id` | track |
+| `MUSICBRAINZ_ALBUMID` | TXXX `MusicBrainz Album Id` | `MusicBrainz Album Id` | album release MBID |
+| `MUSICBRAINZ_RELEASEGROUPID` | TXXX `MusicBrainz Release Group Id` | `MusicBrainz Release Group Id` | album release group |
+| `MUSICBRAINZ_ALBUMARTISTID` / `MUSICBRAINZ_ARTISTID` | TXXX `MusicBrainz Album Artist Id` / `… Artist Id` | same | artist MBID / track credits |
+| `ARTISTS`, `ALBUMARTISTS` | TXXX `ARTISTS` | `ARTISTS` | track credits (multi-value) |
+| `RELEASETYPE`, `RELEASESTATUS` | TXXX `MusicBrainz Album Type` / `… Album Status` | same | album release type / status |
+| `ORIGINALDATE` / `ORIGINALYEAR`, `LABEL`, `CATALOGNUMBER`, `BARCODE`, `DISCSUBTITLE` | TDOR, TPUB, TXXX | same | album facts, disc titles |
+
+Keys are compared case-insensitively; values that aren't valid UUIDs are ignored; multi-valued ids may be joined with
+`;`, `/` or repeated. ffprobe shows only the first value of a multi-valued ID3 TXXX frame and doesn't show UFID, so MP3s
+are also read directly for those.
+
+**What the ids change:**
+
+* **Grouping.** With MBIDs, albums are told apart by release MBID (the deluxe and standard editions of an album stay
+  separate even with the same name), artists by artist MBID (two different bands called "Nirvana" stay apart; "Beyonce"
+  and "Beyoncé" with the same id are one artist). Files without ids are grouped by name exactly as before, so existing
+  libraries keep their item ids. The first rescan after upgrading re-reads the tags of every music file once.
+* **No searching.** The MusicBrainz provider uses tagged ids directly. A tagged release is fetched once
+  (`/release/<id>?inc=recordings+artist-credits+release-groups+labels`) to fill the release group, release type, label and
+  catalogue number, and the **recording MBIDs and artist credits of tracks that don't have them** (matched by disc + track
+  number when the length is within ±3 s or the title agrees, else by title + length). Albums whose tracks all have ids are
+  not looked up again.
+* **Multi-artist credits.** "A feat. B & C" is stored as three credited artists with their join phrases: each name links
+  to its artist page, featured artists' pages list the track under **Appears on**, and search finds it by any of them.
+  Without tags, an artist string is split on `feat.`, `&`, `x`, `,` … only when every part is already an artist in the
+  library and the whole string isn't (so "Simon & Garfunkel" stays one artist).
+* **Artist pages** group the library's albums by release type (Album, EP, Single, Live, Compilation, Soundtrack, Remix,
+  Demo) with a type filter, show **Missing from your library** (the artist's official release groups on MusicBrainz, cached
+  for 7 days, compared by release-group MBID, then by title + year) with a one-click **Request** / **Monitor in Lidarr**
+  (the normal request flow, permissions and quotas; Lidarr gets the release-group MBID as `foreignAlbumId`), and
+  **Members / Member of / Collaborations / Related** from MusicBrainz relationships plus **Similar artists** from the
+  ListenBrainz labs API. Server settings → Metadata → Music identification chooses which types "missing" leaves out
+  (singles, compilations, live albums and other releases are hidden by default).
+
+### AcoustID: identify by sound
+
+For files with no tags (or wrong ones) MediaMax can fingerprint the first two minutes with Chromaprint and look the sound up
+on [AcoustID](https://acoustid.org):
+
+1. **Fingerprinter.** `fpcalc` (Debian/Ubuntu package `libchromaprint-tools`, included in the Docker image) on the
+   `PATH` or at `MEDIAMAX_FPCALC`; otherwise an ffmpeg built with `--enable-chromaprint` (`ffmpeg -muxers | grep chromaprint`).
+2. **Key.** AcoustID needs a free *application* key: sign in at acoustid.org, open
+   [acoustid.org/new-application](https://acoustid.org/new-application), register "MediaMax" (any version / website) and
+   paste the API key under Server settings → Metadata → Music identification (write-only, shown as ••••).
+3. **Use.** Edit a track → **Identify by sound…** shows the matches with their score; picking one stores the title,
+   credits, recording MBID and AcoustID id **in the database only** (your files are never modified, and a rescan keeps it).
+   The **Identify untagged tracks** task (Server settings → Tasks, or the button in the settings) checks tracks with no
+   recording MBID and no artist or title tag; turn on *Identify untagged tracks automatically* to run it after scans and
+   daily, and set *Apply matches automatically from score* (e.g. 0.9) to apply confident matches without asking.
+
+Lookups are limited to 3 per second and cached for 30 days; only fingerprints and durations are sent.
+
+### ListenBrainz
+
+Each user can connect [ListenBrainz](https://listenbrainz.org) under Settings → Connected services with their **user token**
+(listenbrainz.org → Settings → User token; stored write-only). A self-hosted ListenBrainz API URL can be set too (only
+admins may use a local-network address).
+
+* **Listens.** "Playing now" when a track starts and a listen once half of it or 4 minutes were played (whichever is less),
+  with `recording_mbid`, `release_mbid`, `release_group_mbid`, `artist_mbids`, `track_mbid`, `work_mbids`, `tracknumber`,
+  `duration_ms`, `media_player`/`submission_client` "MediaMax" and versions. The same events reach Last.fm: players, the DJ mix
+  player and Subsonic apps' `scrobble` calls all go through one dispatcher.
+* **Offline queue.** Listens that can't be sent (network down, 5xx, rate limit) are kept in the database and sent later as
+  `import` batches (oldest first, every 5 minutes, after the next successful listen, or with **Send now**). MediaMax follows
+  `X-RateLimit-Remaining` / `X-RateLimit-Reset-In`; rejected (400) listens are dropped one by one so they don't block the rest.
+* **Loves and hates** (optional): favourites and ratings of 4★ or more send `love`, 1★ sends `hate` for tracks with a
+  recording MBID.
+* **From ListenBrainz** on the music library page: your Weekly Jams, Daily Jams, Weekly Exploration and collaborative-filtering
+  recommendations, matched to library tracks by recording MBID (else artist + title). Play them, **Save as playlist**, or
+  request the artists of missing tracks in Lidarr.
+
 ## Plugins
 
 The example plugins **omdb-ratings** and **musicbrainz** keep working: plugin providers run after the built-in ones and also
@@ -131,12 +215,16 @@ fill only empty fields, so running both is harmless. You can uninstall them once
 * Images from providers are downloaded and cached by the server (through the SSRF guard for third-party URLs), so clients
   never contact the providers.
 * A first scan of a large music library takes a while because of MusicBrainz's 1 request/second (about 2 requests per album
-  or artist). Later scans only look up new items.
+  or artist). Later scans only look up new items. Albums tagged with a release MBID need no search request.
+* AcoustID gets fingerprints and durations (3 requests/second); the ListenBrainz labs API gets artist MBIDs. ListenBrainz
+  gets a user's own listens and feedback only after that user connects their token.
 
 ## Self-hosted mirrors and testing
 
 Each service's base URL can be overridden with an env var (used by the test suite's mock servers):
 `MEDIAMAX_TVDB_API_BASE`, `MEDIAMAX_FANART_API_BASE`, `MEDIAMAX_AUDIODB_API_BASE`, `MEDIAMAX_AUDNEXUS_API_BASE`,
 `MEDIAMAX_OPENLIBRARY_API_BASE`, `MEDIAMAX_OPENLIBRARY_COVERS_BASE`, `MEDIAMAX_GOOGLEBOOKS_API_BASE`,
-`MEDIAMAX_LRCLIB_API_BASE`, `MEDIAMAX_OMDB_API_BASE`, `MEDIAMAX_MUSICBRAINZ_API_BASE`, `MEDIAMAX_COVERART_API_BASE`
+`MEDIAMAX_LRCLIB_API_BASE`, `MEDIAMAX_OMDB_API_BASE`, `MEDIAMAX_MUSICBRAINZ_API_BASE`, `MEDIAMAX_COVERART_API_BASE`,
+`MEDIAMAX_LISTENBRAINZ_API_BASE` (default for users without their own server URL), `MEDIAMAX_LISTENBRAINZ_LABS_BASE`,
+`MEDIAMAX_ACOUSTID_API_BASE`
 (and `MEDIAMAX_TMDB_API_BASE` for TMDB).
