@@ -112,6 +112,17 @@ M3U playlists (with `url-tvg`, `tvg-*`, `catchup-source`) and HDHomeRun tuners a
 
 Every connected app receives a `branding.updated` event and re-themes instantly.
 
+## Use your favourite music apps (Subsonic)
+MediaMax speaks the **Subsonic / OpenSubsonic API** at `http://<server>:8484/rest`, so music players such as
+Symfonium, Feishin, play:Sub, Amperfy, Substreamer and Sonos bridges can browse, search, stream (with on-the-fly
+transcoding), star, scrobble, edit playlists and show synced lyrics. Many of these apps also offer CarPlay, Android
+Auto, gapless playback and offline sync. Sign in with your MediaMax username and password. If you use two-factor
+sign-in, create an API key (*Settings → API keys*) and pick "API key" in apps that support OpenSubsonic API-key auth.
+
+## Plugins
+Extend MediaMax with plugins (*Admin → Plugins*): install from repositories or upload a package. See
+[docs/PLUGINS.md](docs/PLUGINS.md) to write your own; examples live in [`plugins/examples`](plugins/examples).
+
 ## Security notes
 - Put MediaMax behind HTTPS (Caddy, Traefik, nginx) when exposing it to the internet and set **Public URL** in settings.
 - Passwordless profiles are only allowed for non-admin, non-SSO accounts; administrators must keep a password.

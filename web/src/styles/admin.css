@@ -294,6 +294,7 @@ a.stat:hover { transform: translateY(-2px); border-color: var(--c-primary); }
 .plugin-title p { margin: 2px 0 0; font-size: 0.82rem; overflow-wrap: anywhere; }
 .plugin-version { font-size: 0.8rem; font-weight: 600; }
 .plugin-status { text-transform: capitalize; flex: none; }
+.plugin-state { text-transform: none; }
 .plugin-desc { margin: 0; font-size: 0.9rem; line-height: 1.5; }
 .plugin-error { display: flex; align-items: flex-start; gap: 6px; margin: 0; overflow-wrap: anywhere; }
 .plugin-error .icon { flex: none; margin-top: 3px; }

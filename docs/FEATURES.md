@@ -21,6 +21,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Safe removal (no wipe when a drive is unmounted) | ✅ | 🟡 | 🟡 | ✅ |
 | Real-time filesystem watching | ✅ | ✅ | ✅ | ✅ |
 | Synced lyrics (LRC sidecars, embedded tags) | ✅ | ✅ | ✅ | ✅ |
+| Subsonic/OpenSubsonic API (Symfonium, Feishin, play:Sub…) | ❌ | Plugin | ❌ | ✅ |
 | Audiobooks (multi-file & .m4b, chapters, author/narrator, resume) | 🟡 | ✅ | ✅ | ✅ |
 | Podcasts (RSS, iTunes directory search, OPML import, auto-download) | ✅ | Plugin? | Plugin? | ✅ |
 
@@ -70,6 +71,10 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Device list and remote sign-out | ✅ | ✅ | ✅ | ✅ |
 | No cloud account required, fully self-hosted | ❌ | ✅ | 🟡 | ✅ |
 | Single sign-on (OpenID Connect) with group → admin mapping | ❌ | Plugin | ❌ | ✅ |
+| Two-factor sign-in (TOTP) with recovery codes | ✅ | ❌ | ❌ | ✅ |
+| Invite links with permission templates | ✅ | Add-on | ❌ | ✅ |
+| Per-user stream limits & home-network-only accounts | ✅ | ✅ | ✅ | ✅ |
+| API keys for integrations | ✅ | ✅ | ✅ | ✅ |
 | Media requests with Radarr/Sonarr (Overseerr-style) | Add-on | Add-on | Add-on | ✅ built in |
 
 ## Clients & devices
@@ -100,6 +105,9 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Scheduled tasks with progress | ✅ | ✅ | ✅ | ✅ |
 | Activity log | ✅ | ✅ | ✅ | ✅ |
 | Webhooks (playback, library, login, DVR events) | Pass | Plugin | ✅ | ✅ |
+| Backup & restore | ❌ | ✅ | Premiere | ✅ |
+| Automatic port forwarding (UPnP) + remote access status | ✅ | ❌ | ✅ | ✅ |
+| Prometheus metrics | ❌ | Plugin | ❌ | ✅ |
 | Real-time WebSocket events | ✅ | ✅ | ✅ | ✅ |
 | Docker image with GPU passthrough | ✅ | ✅ | ✅ | ✅ |
 | Plugin system (catalog/repositories, settings UI, events, routes, tasks, metadata providers) | ❌ | ✅ | ✅ | ✅ |

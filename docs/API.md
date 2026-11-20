@@ -249,3 +249,11 @@ Repositories: `ServerSettings.plugins.repositories`. Plugin routes: `/api/v1/plu
 ## Audiobooks extras
 * Bookmarks: `GET/POST /items/:id/bookmarks` (`{ positionMs, note? }` → `Bookmark`) · `DELETE /items/:id/bookmarks/:bookmarkId`.
 * Series: `Item.series = { name, index }` (from `series`/`mvnm` tags or `Author/Series/01 - Book` folders); `GET /items?series=<name>`.
+
+## Subsonic / OpenSubsonic
+`/rest/<method>.view` (GET or form POST, `f=json` or XML). Auth: `u` + `p` (plain or `enc:<hex>`) or OpenSubsonic `apiKey`
+(a MediaMax API key). Salted-token auth (`t`/`s`) returns error 41 (passwords are never stored in plaintext). Implemented:
+ping, getLicense, getOpenSubsonicExtensions, getUser, getMusicFolders, getGenres, getIndexes, getArtists, getArtist, getAlbum,
+getSong, getMusicDirectory, getAlbumList2, getRandomSongs, getSongsByGenre, search3, getStarred2, star, unstar, scrobble,
+getPlaylists, getPlaylist, createPlaylist, updatePlaylist, deletePlaylist, getLyrics, getLyricsBySongId, getNowPlaying,
+getScanStatus, stream (raw or `format=mp3|opus&maxBitRate=`), download, getCoverArt.

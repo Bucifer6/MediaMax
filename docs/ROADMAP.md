@@ -7,17 +7,17 @@ Channels DVR, TiviMate, Audiobookshelf, Navidrome, Infuse and Kodi. It was resea
 ## Must-have before launch
 1. ⏳ **Better native playback.** Use an mpv/VLCKit-class engine in the apps, *or* add a Jellyfin-compatible API so Infuse, Swiftfin
    and Kodi can connect. Add frame-rate/range matching and Dolby Vision profile awareness on TV apps. (L)
-2. **Easy remote access**: UPnP/NAT-PMP port mapping, a reachability status and HTTPS guidance. A relay can follow. (S→L)
+2. ✅ (UPnP + status; relay later) **Easy remote access**: UPnP/NAT-PMP port mapping, a reachability status and HTTPS guidance. A relay can follow. (S→L)
 3. **Smart-TV reach**: a Fire TV store build, then Samsung Tizen and LG webOS apps built from the web app. Roku comes later. (M–L)
-4. **Subsonic/OpenSubsonic API** so Symfonium, Feishin, Sonos and similar apps work. Plus gapless playback and loudness levelling. (M)
+4. ✅ (API) **Subsonic/OpenSubsonic API** so Symfonium, Feishin, Sonos and similar apps work. Plus gapless playback and loudness levelling. (M)
 5. ⏳ **CarPlay & Android Auto**, with offline downloads playable in the car, audiobook/podcast controls, voice search and an in-app car mode. (M)
-6. **Backup & restore** of the database, settings, branding and plugins. (S)
+6. ✅ **Backup & restore** of the database, settings, branding and plugins. (S)
 7. **DVR robustness**: priorities and conflict resolution, rules on EPG series id and time slot, cross-channel de-duplication,
    commercial detection. Plus **IPTV multiview**. (M)
 8. **Metadata breadth**: TVDB episode orderings, anime (AniList/AniDB), music (MusicBrainz, TheAudioDB, fanart.tv), RT/IMDb
    ratings. Ship these as metadata-provider plugins. (M)
-9. **Audiobook basics**: sleep timer, bookmarks, series, Audnexus metadata, per-book speed. (S/M)
-10. **Security & sharing**: TOTP two-factor, invite links, per-user stream/remote/transcode limits, API keys for integrations. (S)
+9. ⏳ **Audiobook basics**: sleep timer, ✅ bookmarks, ✅ series, Audnexus metadata, per-book speed. (S/M)
+10. ✅ **Security & sharing**: TOTP two-factor, invite links, per-user stream/remote/transcode limits, API keys for integrations. (S)
 
 ## By area
 **Playback & video:** HEVC/AV1 transcode output and multichannel passthrough · per-user and remote bandwidth caps ·

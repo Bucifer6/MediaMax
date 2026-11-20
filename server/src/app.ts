@@ -19,6 +19,7 @@ import wsRoutes from './routes/ws.js';
 import extraRoutes from './routes/extras.js';
 import dlnaRoutes from './routes/dlna.js';
 import pluginRoutes from './routes/plugins.js';
+import subsonicRoutes from './routes/subsonic.js';
 
 const log = logger('http');
 
@@ -71,6 +72,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   }, { prefix: '/api/v1' });
 
   await app.register(dlnaRoutes);
+  await app.register(subsonicRoutes);
   app.get('/health', async () => ({ ok: true }));
 
   // Web client (SPA) — served if built.

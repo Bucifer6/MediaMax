@@ -36,7 +36,9 @@ function compareVersions(a: string, b: string): number {
 
 function isHttpsUrl(v: string): boolean {
   try {
-    return new URL(v).protocol === 'https:';
+    const u = new URL(v);
+    // https everywhere; plain http only for local development repositories (matches the server rule).
+    return u.protocol === 'https:' || (u.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(u.hostname));
   } catch {
     return false;
   }
@@ -464,8 +466,8 @@ function CatalogTab({ installed, onInstalled, onRepos }: { installed: PluginInfo
                     <h3>{e.name} {latest && <span className="muted plugin-version">v{latest.version}</span>}</h3>
                     <p className="muted">{e.author ? `by ${e.author}` : e.id}</p>
                   </div>
-                  {state === 'current' && <Badge tone="success" className="plugin-status"><Icon name="check" size={12} /> Up to date</Badge>}
-                  {state === 'update' && <Badge tone="primary" className="plugin-status">Update available</Badge>}
+                  {state === 'current' && <Badge tone="success" className="plugin-status plugin-state"><Icon name="check" size={12} /> Up to date</Badge>}
+                  {state === 'update' && <Badge tone="primary" className="plugin-status plugin-state">Update available</Badge>}
                 </div>
                 {e.description && <p className="plugin-desc">{e.description}</p>}
                 {inst?.manifest.capabilities?.length ? <Capabilities caps={inst.manifest.capabilities} /> : null}
@@ -532,7 +534,7 @@ function RepositoriesTab() {
   const add = async (e: FormEvent) => {
     e.preventDefault();
     const v = url.trim();
-    if (!isHttpsUrl(v)) return setError('Enter a full https:// URL');
+    if (!isHttpsUrl(v)) return setError('Enter a full https:// URL (http:// is allowed for localhost only)');
     if (repos?.includes(v)) return setError('This repository is already in the list');
     setError(null);
     if (await save([...(repos ?? []), v], 'Repository added')) setUrl('');
