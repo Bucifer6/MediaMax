@@ -43,10 +43,12 @@ def allowed(cmd):
         return True
     if len(cmd) == 4 and cmd[0] == "set" and JAIL.match(cmd[1]) and cmd[2] in ("banip", "unbanip"):
         try:
-            ipaddress.ip_network(cmd[3], strict=False)
-            return True
+            net = ipaddress.ip_network(cmd[3], strict=False)
         except ValueError:
             return False
+        # Same floor as MediaMax's own check: never a range wider than /8 (IPv4) or /16 (IPv6), so a compromised
+        # MediaMax can't ban the whole internet (0.0.0.0/0) and lock everyone out, the operator included.
+        return net.prefixlen >= (8 if net.version == 4 else 16)
     return False
 
 

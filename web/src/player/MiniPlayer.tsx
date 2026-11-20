@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import type { Chapter, Item, Lyrics, Renderer } from '@mediamax/shared';
-import { api } from '../api/endpoints';
+import type { Chapter, Item, Renderer } from '@mediamax/shared';
 import { useMusic, type SleepTimer } from './music';
 import { PlayerBookmarks } from '../components/Bookmarks';
 import { useNow } from '../hooks';
@@ -12,6 +11,10 @@ import { useToast } from '../state/toast';
 import { Icon } from '../components/Icon';
 import { Dropdown, Img, Spinner, type MenuItem } from '../components/ui';
 import { formatClock, formatDuration } from '../utils/format';
+import { KaraokeLyrics } from '../lyrics/KaraokeLyrics';
+import { totalOffset, useLyrics, usePrefs } from '../lyrics/useLyrics';
+import { useKaraoke } from './karaoke';
+import { KaraokeControls, useNowPlaying } from './NowPlaying';
 
 /** Index of the chapter containing `ms`. */
 export function chapterAt(chapters: Chapter[], ms: number): number {
@@ -39,40 +42,33 @@ export function ChapterList({ chapters, positionMs, onSeek }: { chapters: Chapte
   );
 }
 
-function LyricsView({ itemId, positionMs, onSeek }: { itemId: string; positionMs: number; onSeek: (ms: number) => void }) {
-  const [lyrics, setLyrics] = useState<Lyrics | null | undefined>(undefined);
-  const box = useRef<HTMLDivElement>(null);
+function LyricsView({ itemId, onSeek }: { itemId: string; onSeek: (ms: number) => void }) {
+  const { lyrics } = useLyrics(itemId);
+  const [prefs] = usePrefs();
+  return <KaraokeLyrics lyrics={lyrics} offsetMs={totalOffset(lyrics, prefs)} onSeek={onSeek} />;
+}
+
+/** Karaoke popover: on/off, vocal level, AI preparation. */
+function KaraokeButton() {
+  const k = useKaraoke();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const ctrl = new AbortController();
-    setLyrics(undefined);
-    api.items.lyrics(itemId, ctrl.signal).then(setLyrics).catch((e) => {
-      if ((e as Error).name !== 'AbortError') setLyrics(null);
-    });
-    return () => ctrl.abort();
-  }, [itemId]);
-  let cur = -1;
-  if (lyrics?.synced) {
-    lyrics.lines.forEach((l, i) => {
-      if (l.startMs != null && positionMs >= l.startMs) cur = i;
-    });
-  }
-  useEffect(() => {
-    const el = box.current?.querySelector<HTMLElement>('.lyric-line.current');
-    const c = box.current;
-    if (!el || !c) return;
-    c.scrollTo({ top: el.offsetTop - c.clientHeight / 2 + el.clientHeight / 2, behavior: 'smooth' });
-  }, [cur]);
-  if (lyrics === undefined) return <div className="lyrics-empty"><Spinner size={24} /></div>;
-  if (!lyrics || !lyrics.lines.length) return <div className="lyrics-empty muted"><Icon name="lyrics" size={28} /><p>No lyrics for this track.</p></div>;
+    if (!open) return;
+    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
   return (
-    <div className={`lyrics ${lyrics.synced ? 'synced' : ''}`} ref={box}>
-      {lyrics.lines.map((l, i) => (
-        lyrics.synced && l.startMs != null ? (
-          <button key={i} className={`lyric-line ${i === cur ? 'current' : i < cur ? 'past' : ''}`} onClick={() => onSeek(l.startMs!)}>{l.text || '♪'}</button>
-        ) : (
-          <p key={i} className="lyric-line">{l.text || '\u00a0'}</p>
-        )
-      ))}
+    <div className="karaoke-pop-wrap hide-sm" ref={ref}>
+      <button className={`btn-icon ${k.enabled ? 'active' : ''}`} onClick={() => setOpen((o) => !o)} aria-label="Karaoke and vocals" title="Karaoke / vocals" aria-expanded={open}>
+        <Icon name="sparkles" />
+      </button>
+      {open && (
+        <div className="karaoke-pop" role="dialog" aria-label="Karaoke">
+          <KaraokeControls compact />
+        </div>
+      )}
     </div>
   );
 }
@@ -154,6 +150,7 @@ export function MiniPlayer() {
   const loc = useLocation();
   const remote = useRendererRemote();
   const toast = useToast();
+  const np = useNowPlaying();
   if (!m.current) return null;
   if (loc.pathname.startsWith('/play/') || loc.pathname.startsWith('/watch/')) return null;
   const t = m.current;
@@ -171,11 +168,12 @@ export function MiniPlayer() {
       <div className="miniplayer" role="region" aria-label="Music player">
         <SeekBar className="mini-seek" positionMs={m.positionMs} durationMs={m.durationMs} onSeek={m.seek} />
         <div className="mini-left">
-          <Link to={t.parentId ? `/item/${t.parentId}` : `/item/${t.id}`} className="mini-art">
+          <button className="mini-art" onClick={() => np.show()} aria-label="Open the full-screen player" title="Full-screen player">
             <Img src={art} width={96} fallback={<Icon name={t.type === 'bookpart' ? 'book' : t.type === 'podcastepisode' ? 'podcast' : 'music'} />} />
-          </Link>
+            <span className="mini-art-expand"><Icon name="fullscreen" size={18} /></span>
+          </button>
           <div className="mini-text">
-            <div className="mini-title">{t.title}</div>
+            <div className="mini-title"><Link to={t.parentId ? `/item/${t.parentId}` : `/item/${t.id}`}>{t.title}</Link></div>
             <div className="mini-sub">
               {m.casting ? <span className="mini-casting"><Icon name="cast" size={13} /> Casting to {m.cast.deviceName ?? 'device'}</span> : artist}
               {m.radio && !m.casting && <span className="mini-radio" title={m.radio.label}><Icon name="antenna" size={12} /> {m.radio.label}</span>}
@@ -227,6 +225,7 @@ export function MiniPlayer() {
               <Icon name="lyrics" />
             </button>
           )}
+          {t.type === 'track' && <KaraokeButton />}
           <CastMenu cast={m.cast} media="audio" size={20} onPlayTo={playToRenderer} />
           <TrackMenu t={t} />
           <button className={`btn-icon ${queueOpen ? 'active' : ''}`} onClick={() => setQueueOpen((o) => !o)} aria-label="Queue">
@@ -261,7 +260,7 @@ export function MiniPlayer() {
             <h3>Lyrics</h3>
             <button className="btn-icon" onClick={() => setPanel(null)} aria-label="Close lyrics"><Icon name="x" size={18} /></button>
           </div>
-          <LyricsView itemId={t.id} positionMs={m.positionMs} onSeek={m.seek} />
+          <LyricsView itemId={t.id} onSeek={m.seek} />
         </aside>
       )}
       {queueOpen && (

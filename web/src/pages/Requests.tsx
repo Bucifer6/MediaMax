@@ -341,6 +341,8 @@ export default function RequestsPage() {
   const { user, features } = useApp();
   const toast = useToast();
   const manager = canManageRequests(user);
+  // Kids profiles and accounts without any request permission: say so instead of pointing them at Discover.
+  const canRequest = !!user && (user.isAdmin || !user.requestPermissions || (['movie', 'show', 'music', 'book'] as const).some((k) => user.requestPermissions![k] !== 'none'));
   const [params, setParams] = useSearchParams();
   const [view, setView] = useState<'requests' | 'blacklist'>('requests');
   const [status, setStatus] = useState<RequestStatus | ''>(manager ? 'pending' : '');
@@ -459,8 +461,8 @@ export default function RequestsPage() {
           <h1>{manager ? 'Requests' : 'My requests'} <HelpLink slug="requesting" label="Requests" /></h1>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Link to="/issues" className="btn"><Icon name="flag" size={16} /> Issues</Link>
-          {features.requests && <Link to="/discover" className="btn btn-primary"><Icon name="compass" size={16} /> Discover</Link>}
+          {(manager || user?.requestPermissions?.reportIssues !== false) && <Link to="/issues" className="btn"><Icon name="flag" size={16} /> Issues</Link>}
+          {features.requests && canRequest && <Link to="/discover" className="btn btn-primary"><Icon name="compass" size={16} /> Discover</Link>}
         </div>
       </header>
 
@@ -526,7 +528,7 @@ export default function RequestsPage() {
             <EmptyState
               icon="inbox"
               title={status ? `No ${status} requests` : 'No requests yet'}
-              message={features.requests ? <>Find something to watch on <Link className="link-strong" to="/discover">Discover</Link> and request it.</> : 'Requests are turned off on this server.'}
+              message={!features.requests ? 'Requests are turned off on this server.' : !canRequest ? "You can't request titles. Ask your server admin for request permissions." : <>Find something to watch on <Link className="link-strong" to="/discover">Discover</Link> and request it.</>}
             />
           ) : (
             <ul className="req-list">

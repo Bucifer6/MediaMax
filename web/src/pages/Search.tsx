@@ -55,6 +55,7 @@ export function SearchPage() {
 
   return (
     <div className="page search-page">
+      <h1 className="sr-only">Search</h1>
       <div className="search-box">
         <Icon name="search" size={24} />
         <input

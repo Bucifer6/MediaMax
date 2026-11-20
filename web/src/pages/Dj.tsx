@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { DjEnergyCurve, DjMixRequest, DjMixTrack, DjStatus, Item } from '@mediamax/shared';
+import type { DjEnergyCurve, DjMixRequest, DjMixTrack, DjPhrase, DjPhraseType, DjStatus, DjTransitionPreference, Item } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync } from '../hooks';
 import { useMusic } from '../player/music';
-import { djEngine, type DeckState, type DjState } from '../player/djEngine';
+import { djEngine, type DeckState, type DjOptions, type DjState } from '../player/djEngine';
+import { transitionLabel, type KeyLockMode } from '../player/djMixer';
 import { Icon } from '../components/Icon';
 import { Badge, Field, Img, Spinner, Switch } from '../components/ui';
 import { formatClock, formatDuration } from '../utils/format';
@@ -33,7 +34,32 @@ function useDj(): DjState {
 }
 
 const KEY_LABEL: Record<string, string> = { perfect: 'Same key', compatible: 'Harmonic', energy: 'Energy boost', clash: 'Key change', unknown: 'Key ?' };
-const STYLE_LABEL: Record<string, string> = { blend: 'Beat-matched blend', fade: 'Crossfade', cut: 'Quick cut' };
+const PHRASE_LABEL: Record<DjPhraseType, string> = { intro: 'Intro', verse: 'Verse', buildup: 'Build', drop: 'Drop', breakdown: 'Breakdown', outro: 'Outro' };
+const TRANSITIONS: { value: DjTransitionPreference; label: string; hint: string }[] = [
+  { value: 'auto', label: 'Auto', hint: 'Picks per pair of songs' },
+  { value: 'smooth', label: 'Smooth', hint: 'Long blends and filter fades' },
+  { value: 'energetic', label: 'Energetic', hint: 'Bass swaps and echo-outs' },
+  { value: 'minimal', label: 'Minimal', hint: 'Short, plain crossfades' },
+];
+
+/** Song structure under a deck's progress bar: one coloured block per phrase, mix-out marker on top. */
+function PhraseStrip({ phrases, durationMs }: { phrases: DjPhrase[]; durationMs: number }) {
+  if (!phrases.length || durationMs <= 0) return null;
+  return (
+    <div className="dj-phrases" aria-label="Song structure">
+      {phrases.map((p, i) => (
+        <i
+          key={i}
+          className={`dj-phrase dj-phrase-${p.type}`}
+          style={{ left: `${(p.startMs / durationMs) * 100}%`, width: `${(Math.max(0, Math.min(durationMs, p.endMs) - p.startMs) / durationMs) * 100}%`, opacity: 0.45 + 0.55 * p.energy }}
+          title={`${PHRASE_LABEL[p.type]} · ${p.bars} bars`}
+        >
+          {i === 0 || phrases[i - 1].type !== p.type ? <span>{PHRASE_LABEL[p.type]}</span> : null}
+        </i>
+      ))}
+    </div>
+  );
+}
 
 function Meta({ t }: { t: DjMixTrack }) {
   const a = t.analysis;
@@ -67,6 +93,7 @@ function Deck({ d, side, live, mixOutMs }: { d: DeckState; side: 'A' | 'B'; live
             <i style={{ width: `${dur ? Math.min(100, (d.positionMs / dur) * 100) : 0}%` }} />
             {live && mixOutMs != null && dur > 0 && <b className="dj-mixmark" style={{ left: `${Math.min(100, (mixOutMs / dur) * 100)}%` }} title="Mix point" />}
           </div>
+          {t.analysis?.phrases?.length ? <PhraseStrip phrases={t.analysis.phrases} durationMs={dur} /> : null}
           <div className="dj-times muted"><span>{formatClock(d.positionMs)}</span>{d.loading ? <Spinner size={14} /> : null}<span>{formatClock(dur)}</span></div>
         </>
       ) : (
@@ -215,10 +242,61 @@ function Setup({ onStart, seed }: { onStart: (req: DjMixRequest, continuous: boo
         </div>
         <Switch checked={harmonic} onChange={setHarmonic} label="Harmonic mixing" hint="Prefer songs in compatible keys (Camelot wheel) so blends sound musical." />
       </section>
+      <MixerSettings />
       <button className="btn btn-primary btn-lg dj-start" onClick={() => void start()} disabled={busy}>
         {busy ? <Spinner size={18} /> : <Icon name="play" size={18} />} Start the mix
       </button>
     </div>
+  );
+}
+
+/** DJ settings: transition feel, tempo matching with key lock, what happens to the tempo after a transition. */
+function MixerSettings() {
+  const engine = djEngine();
+  const [o, setO] = useState<DjOptions>(() => engine.getOptions());
+  const support = engine.keyLockSupport();
+  const set = (patch: Partial<DjOptions>) => {
+    engine.setOptions(patch);
+    setO(engine.getOptions());
+  };
+  const keyLockHint = !support.native && !support.worklet
+    ? 'This browser can\'t change tempo without changing pitch, so tracks play at their own tempo (plain crossfades).'
+    : o.keyLock === 'worklet' || (!support.native && support.worklet)
+      ? 'MediaMax\'s own WSOLA time-stretch (AudioWorklet).'
+      : 'The browser\'s built-in pitch-preserving playback.';
+  return (
+    <section className="dj-options dj-mixer-settings">
+      <div className="field">
+        <span className="field-label" id="dj-transitions">Transitions</span>
+        <div className="chip-row" role="radiogroup" aria-labelledby="dj-transitions">
+          {TRANSITIONS.map((x) => (
+            <button key={x.value} role="radio" aria-checked={o.transitions === x.value} className={`chip ${o.transitions === x.value ? 'active' : ''}`} title={x.hint} onClick={() => set({ transitions: x.value })}>{x.label}</button>
+          ))}
+        </div>
+        <small className="muted">{TRANSITIONS.find((x) => x.value === o.transitions)?.hint}. Mixes start on phrase boundaries (outro → intro) when the songs have been analysed.</small>
+      </div>
+      <div className="form-row">
+        <Field label="Tempo matching (key lock)" hint={keyLockHint}>
+          <select className="input" value={o.keyLock} onChange={(e) => set({ keyLock: e.target.value as KeyLockMode })}>
+            <option value="auto">Automatic</option>
+            <option value="native" disabled={!support.native}>Browser time-stretch</option>
+            <option value="worklet" disabled={!support.worklet}>WSOLA (AudioWorklet)</option>
+            <option value="off">Off — never change tempo</option>
+          </select>
+        </Field>
+        <Field label="Largest tempo change" hint="Songs further apart (after half/double time) are not beat-matched.">
+          <select className="input" value={o.maxStretchPct} onChange={(e) => set({ maxStretchPct: Number(e.target.value) })}>
+            {[4, 6, 8, 10, 12, 16].map((n) => <option key={n} value={n}>±{n}%{n === 8 ? ' (default)' : ''}</option>)}
+          </select>
+        </Field>
+        <Field label="After a transition">
+          <select className="input" value={o.afterTransition === 'stay' ? 'stay' : String(o.glideBars)} onChange={(e) => (e.target.value === 'stay' ? set({ afterTransition: 'stay' }) : set({ afterTransition: 'glide', glideBars: Number(e.target.value) }))}>
+            {[4, 8, 16, 32].map((n) => <option key={n} value={n}>Glide back to its own tempo over {n} bars</option>)}
+            <option value="stay">Stay at the matched tempo</option>
+          </select>
+        </Field>
+      </div>
+    </section>
   );
 }
 
@@ -262,6 +340,8 @@ export default function DjPage() {
   const start = async (req: DjMixRequest, continuous: boolean) => {
     try {
       music.pause();
+      const o = engine.getOptions();
+      req = { transitions: o.transitions, maxStretchPct: o.maxStretchPct, ...req };
       const mix = await api.dj.mix(req);
       if (!mix.tracks.length) throw new Error('No tracks matched — try fewer filters');
       // Prompt mixes come back with the resolved settings; top-ups reuse those instead of re-reading the prompt.
@@ -343,7 +423,8 @@ export default function DjPage() {
                 <button className="btn btn-ghost" onClick={love} title="Love this track (adds it to favourites and steers future mixes)"><Icon name="heart" size={16} /> Love</button>
                 {ai?.enabled && <button className={`btn btn-ghost ${voice ? 'active' : ''}`} aria-pressed={voice} onClick={() => setVoice(!voice)} title="DJ voice"><Icon name={voice ? 'volume' : 'mute'} size={16} /> Voice</button>}
               </div>
-              {s.transitioning && next?.transition && <Badge tone="accent">{STYLE_LABEL[next.transition.style]}…</Badge>}
+              {s.transition && <Badge tone="accent">{s.transition.label}… {Math.round(s.transition.progress * 100)}%</Badge>}
+              <small className="muted dj-keylock" title="Tempo matching with key lock">{s.keyLock === 'native' ? 'Key lock: browser' : s.keyLock === 'worklet' ? 'Key lock: WSOLA' : 'No tempo matching'}</small>
             </div>
             <Deck d={s.decks[1]} side="B" live={s.live === 1} mixOutMs={s.live === 1 ? next?.transition?.mixOutMs ?? null : null} />
           </div>
@@ -359,7 +440,9 @@ export default function DjPage() {
                   <li key={`${t.item.id}-${i}`} className={i === 0 ? 'next' : ''}>
                     {t.transition && (
                       <div className="dj-transition">
-                        <span className={`dj-style dj-style-${t.transition.style}`}>{STYLE_LABEL[t.transition.style]}</span>
+                        <span className={`dj-style dj-style-${t.transition.style} dj-fx-${t.transition.fx ?? 'none'}`} title={t.transition.reason}>{transitionLabel(t.transition)}</span>
+                        {t.transition.outPhrase && t.transition.inPhrase && <span title={t.transition.phraseAligned ? 'On phrase boundaries' : 'On the bar'}>{PHRASE_LABEL[t.transition.outPhrase]} → {PHRASE_LABEL[t.transition.inPhrase]}</span>}
+                        {t.transition.style === 'blend' && Math.abs(t.transition.tempoRatio - 1) > 0.001 && <span>{t.transition.tempoRatio > 1 ? '+' : ''}{((t.transition.tempoRatio - 1) * 100).toFixed(1)}% tempo, key locked</span>}
                         <span>{KEY_LABEL[t.transition.keyMatch]}</span>
                         {t.transition.bpmDelta != null && <span>{t.transition.bpmDelta < 0.05 ? 'Same tempo' : `Δ ${t.transition.bpmDelta}% tempo`}</span>}
                         <span>{(t.transition.crossfadeMs / 1000).toFixed(0)} s</span>

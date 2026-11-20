@@ -13,7 +13,7 @@ import { Directory, File, Paths, type DownloadTask } from 'expo-file-system';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { getJSON, setJSON } from '@/api/storage';
-import type { DownloadQuality, Item } from '@/api/types';
+import type { DownloadQuality, Item, TrickplayInfo } from '@/api/types';
 import { isAudioItem } from '@/utils/library';
 import { useSession } from './session';
 
@@ -47,6 +47,8 @@ export interface DownloadRecord {
   /** Offline resume position; synced to the server when back online. */
   positionMs: number;
   pendingSync?: boolean;
+  /** Scrub-preview sprite sheets saved with the video (sheets are local file URIs). */
+  trickplay?: TrickplayInfo | null;
 }
 
 interface DownloadsValue {
@@ -196,6 +198,24 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
         if (dest.exists) dest.delete();
       } else if (file) {
         update(id, { state: 'done', progress: 1, fileUri: file.uri, bytes: file.size, total: file.size });
+        // Trickplay sheets (a few MB) so seek previews work offline too. Optional: failures are ignored.
+        if (nextRec.item.type === 'movie' || nextRec.item.type === 'episode' || nextRec.item.type === 'video') {
+          try {
+            const tp = await api.trickplay(id);
+            if (tp?.sheets?.length && tp.count > 0) {
+              const sheets: string[] = [];
+              for (let i = 0; i < tp.sheets.length; i++) {
+                const f = new File(dir, `${id}.tp${i}.jpg`);
+                if (f.exists) f.delete();
+                sheets.push((await File.downloadFileAsync(api.absolute(tp.sheets[i]), f)).uri);
+              }
+              if (recordsRef.current.find((r) => r.id === id)) update(id, { trickplay: { ...tp, sheets } });
+              else for (const u of sheets) new File(u).delete();
+            }
+          } catch {
+            /* no previews offline */
+          }
+        }
       } else {
         update(id, { state: 'error', error: 'Cancelled' });
       }
@@ -266,7 +286,7 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
   );
 
   const deleteFiles = (r: DownloadRecord) => {
-    for (const uri of [r.fileUri, r.posterUri, r.backdropUri]) {
+    for (const uri of [r.fileUri, r.posterUri, r.backdropUri, ...(r.trickplay?.sheets ?? [])]) {
       if (!uri) continue;
       try {
         const f = new File(uri);

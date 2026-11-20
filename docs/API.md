@@ -28,6 +28,8 @@ All types referenced below live in [`shared/src/types.ts`](../shared/src/types.t
 | PUT 🛡️ | `/branding/themes/:id` | `Theme` | `Branding` |
 | DELETE 🛡️ | `/branding/themes/:id` | | `Branding` |
 | GET 🔓 | `/branding/custom.css` | | `text/css` (customCss + theme CSS variables) |
+| GET 🛡️ | `/branding/looks` | | Starter looks (theme + accent presets) |
+| POST 🛡️ | `/branding/looks/:id/apply` | | `Branding` (applies the starter look) |
 
 Clients must: fetch `/branding` before showing the login screen; apply the user's
 `preferences.themeId` if `allowUserThemes` else `defaultThemeId`; re-fetch when
@@ -279,6 +281,14 @@ owners carry `profileCount` (> 0 → show the picker after sign-in). A profile's
 * `Item.lockedFields` on `GET /items/:id`.
 * `GET /stream/download/:itemId?quality=original|1080p|720p|480p` — non-original returns a fragmented H.264/AAC MP4 (no Content-Length; `X-MediaMax-Duration-Ms` header).
 * `GET /dvr/defaults` → `DvrDefaults` (any signed-in user).
+* `POST /items/:id/detect-intros` 🛡️ — re-run intro/credits detection now for an episode's season, a season or every season of a show → `{ ok, updated, item }`.
+
+## Help Centre
+* `GET /help` → `HelpIndex` (articles for the caller; admin articles only for admins) · `GET /help/search?q=` → `HelpSearchResponse` · `GET /help/:slug` → article · `GET /help/whats-new` → release notes (404 when none).
+* `GET /admin/diagnostics.zip` 🛡️ — redacted diagnostics bundle (settings, logs, hardware report, counts). See [HELP.md](HELP.md).
+
+## DLNA media server
+When Settings → DLNA is on, the server announces itself over SSDP and serves UPnP descriptions and SOAP control on its HTTP port (no MediaMax token; LAN clients only): `GET /dlna/description.xml`, `GET /dlna/ContentDirectory.xml`, `GET /dlna/ConnectionManager.xml`, `POST /dlna/control/ContentDirectory`, `POST /dlna/control/ConnectionManager`, `GET /dlna/stream/:file`, `GET /dlna/subtitle/:mediaId/:file`.
 
 ## Trickplay (seek-bar previews)
 * `GET /items/:id/trickplay[?mediaId=]` → `TrickplayInfo` (404 until generated). Thumbnail *n* (time = n × intervalMs) is on sheet `floor(n / (columns×rows))` at column `n % columns`, row `floor(n / columns) % rows`.
@@ -300,8 +310,38 @@ owners carry `profileCount` (> 0 → show the picker after sign-in). A profile's
 * Admin sets `ServerSettings.trakt.clientId/clientSecret` (create an app at trakt.tv/oauth/applications). Playback start/pause/stop and "mark watched" are scrobbled automatically.
 
 ## Lyrics
-* `GET /items/:id/lyrics` → `Lyrics` (from `.lrc`/`.txt` sidecars or embedded tags; `synced` lines carry `startMs`). 404 when none.
-  When neither exists and LRCLIB is enabled (Server settings → Metadata), lyrics come from LRCLIB (`source: "lrclib"`) and are cached.
+* `GET /items/:id/lyrics` → `Lyrics`. 404 when none. Sources, first synced hit wins (a plain hit keeps looking for a synced one):
+  1. edits saved in MediaMax (`source: "user"`), 2. `Song.lrc` / `Song.LRC` / `Song.mp3.lrc`, then `Song.txt` (`"lrc"` / `"txt"`),
+  3. embedded tags (`"embedded"`): ID3 SYLT (synced, word timing), ID3 USLT / `lyrics-<lang>`, Vorbis `LYRICS` / `UNSYNCEDLYRICS`, MP4 `©lyr`;
+  plain text that is really LRC is parsed as synced, 4. LRCLIB when enabled (Server settings → Metadata; `"lrclib"`, cached).
+  Lines carry `startMs`, optional `endMs` and `words: [{ startMs, text }]` (enhanced LRC `<mm:ss.xx>` / SYLT syllables).
+  Also returned: `lrc` (the lyrics as LRC text), `meta`, `userOffsetMs` (the caller's saved offset for this track; add
+  `UserPreferences.lyricsOffsetMs`; + = show lyrics earlier), `canEdit`, `editedAt`.
+* `PUT /items/:id/lyrics` 🛡️ `SaveLyricsRequest { lrc? | lines?, writeSidecar? }` → `SaveLyricsResponse` (adds `wroteSidecar`, `sidecarError`).
+  `writeSidecar` writes `Song.lrc` next to the audio file only when `ServerSettings.karaoke.writeLrcSidecars` is on and the folder is writable.
+* `DELETE /items/:id/lyrics` 🛡️ forgets the edit (back to files / tags / LRCLIB).
+* `PUT /items/:id/lyrics/offset` `{ offsetMs }` → `{ offsetMs }` — the caller's own timing offset for a track (−30000…30000; 0 removes it).
+
+## Karaoke stems (AI vocal separation)
+See [KARAOKE.md](KARAOKE.md). Requires `ServerSettings.karaoke.stemsEnabled`; separation runs in an administrator's browser.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/stems/status` | `StemsStatus` (model state, onnxruntime-web availability, `canPrepare`) |
+| POST | `/stems/model/download` 🛡️ | start the one-time model download (SHA-256 verified) |
+| POST | `/stems/model/cancel` 🛡️ | cancel it |
+| DELETE | `/stems/model` 🛡️ | delete the cached model |
+| GET | `/stems/model` 🛡️ | the verified model bytes (fetched by the separation worker) |
+| GET | `/stems/ort/:file` | onnxruntime-web runtime files (`ort*.mjs` / `ort*.wasm`), same origin, no auth |
+| POST | `/stems/ort/download` | Admin: download the AI runtime now (otherwise it is fetched with the model on first use); progress in `StemsStatus.ortDownload` |
+| GET | `/items/:id/stems` | `TrackStems` (`ready`, `preparing`, model, backend, frames…) |
+| GET | `/items/:id/stems/source` 🛡️ | the track decoded to 44.1 kHz stereo FLAC (input for the worker) |
+| POST | `/items/:id/stems/begin` 🛡️ | `{ frames, sampleRate: 44100, model, backend }` → `{ token }` |
+| PUT | `/items/:id/stems/part?token&stem&frame` 🛡️ | body: interleaved stereo s16le (`application/octet-stream`, ≤ 64 MB) for `stem` ∈ vocals, drums, bass, other |
+| POST | `/items/:id/stems/finish?token` 🛡️ | encodes FLAC stems → `TrackStems` |
+| DELETE | `/items/:id/stems` 🛡️ | remove a track's stems |
+| GET | `/items/:id/stems/:stem` | one stem (FLAC, Range) |
+| GET | `/items/:id/karaoke.mp3?vocals=0..100&inst=0..100` | server-side mix (vocals default 15 %, instruments 100 %; 5 % steps), cached and seekable (Range). `vocals=0` = instrumental, `inst=0` = vocals only |
 
 ## Metadata providers (🛡️)
 Built-in providers, configured on Server settings → Metadata (see [METADATA.md](METADATA.md) for keys and costs).
@@ -684,8 +724,22 @@ MediaMax analyses every music track and can build and play continuous, beat-matc
 - `energy` (0–1) and `loudnessDb`
 - cue-in/out (leading and trailing silence skipped)
 - intro end and outro start
+- `downbeatMs` (bar 1, beat 1) and `phrases`: the song's structure as `{startMs, endMs, type, bars, energy}` with
+  `type` = `intro`, `verse`, `buildup`, `drop`, `breakdown` or `outro`, on 8/16/32-bar boundaries
 
 Analysis is pure TypeScript DSP on PCM decoded by ffmpeg. Tempo comes from spectral-flux onsets, autocorrelation and a beat-grid fit across the whole track. Key comes from chroma matched against Krumhansl–Kessler profiles. Tracks without a steady beat get `bpm: null`.
+
+Phrases (adapted from OpenDJ, MIT): per-beat low/mid/high energy from a 3-band waveform, the downbeat phase where
+big energy changes line up, a multi-scale novelty curve between bars (a checkerboard kernel on the bar self-similarity)
+with a prior for 16/8/4-bar lines, then sections labelled by relative energy, bass and slope (a full-energy section is
+a drop, the quieter one after a drop a breakdown, a rising one before a drop a build). Sections longer than 32 bars are
+split into 16-bar phrases.
+
+**Re-analysis is lazy.** When the algorithm changes (analysis version 3 added phrases), existing analyses stay in use.
+They are upgraded on demand (the track a mix continues from, the tracks a new mix picks — a few per request, one at a
+time in the background — and `GET /items/:id/analysis`), and the scheduled task upgrades at most 150 per run (new or
+changed files are never capped), so a library is never re-analysed all at once. `GET /dj/status` counts outdated
+analyses as analysed.
 
 **Mixes.** `POST /dj/mix` with a `DjMixRequest` returns a `DjMix`.
 
@@ -693,6 +747,7 @@ Analysis is pure TypeScript DSP on PCM decoded by ffmpeg. Tempo comes from spect
 - **Filters:** `genres`, `libraryId`, `bpmMin`/`bpmMax`. Half and double time count, so 70 BPM matches 140.
 - **Shape:** `curve` is `steady`, `build`, `peak`, `wave` or `chill`; `durationMin` sets the length.
 - **Mixing rules:** `harmonic` (default true), `artistGap` (default 3), `preferFavorites` (default true).
+- **Transitions:** `transitions` is `auto` (default), `smooth`, `energetic` or `minimal`; `maxStretchPct` (default 8, 1–16) is the largest tempo change used to beat-match.
 - **Continuous mode:** send `history` (ids already played or queued) plus `count` to get the next tracks. Tracks are never repeated, and the energy curve keeps moving.
 
 Tracks are ordered by scoring each candidate on:
@@ -705,12 +760,30 @@ Tracks are ordered by scoring each candidate on:
 
 Every track after the first carries a `transition` describing how to mix into it:
 
-- **When:** start the incoming track at `mixInMs` (on its beat grid) when the outgoing track reaches `mixOutMs`, which is snapped to a bar line of the outgoing track.
-- **How long:** crossfade over `crossfadeMs`.
-- **Tempo:** play the incoming track at `tempoRatio` during the blend, then ease it back to 1.0.
-- **Style:** `blend` (beat-matched, 16–32 beats), `fade`, or `cut` for a clashing key and tempo. `keyMatch` and `bpmDelta` are included for display.
+- **When:** start the incoming track at `mixInMs` (its first downbeat — bar 1 of its intro phrase) when the outgoing track reaches `mixOutMs`: the start of its outro phrase when it has one (8–64 bars), else its last 32 (short tracks 16) bars on an 8-bar line, else a bar line. `phraseAligned`, `outPhrase` and `inPhrase` say which (e.g. outro → intro).
+- **How long:** `crossfadeMs`, whole phrases of 4/8/16/32 bars for beat-matched blends, shaped by the outro/intro length and the preference.
+- **Tempo:** play the incoming track at `tempoRatio` during the blend (within `maxStretchPct`, half/double time aware), key locked, then glide back to its own tempo (or stay, per player setting).
+- **Style:** `blend` (beat-matched), `fade`, or `cut` for a clashing key and tempo. `keyMatch` and `bpmDelta` are included for display.
+- **Effect:** `fx` is `bassSwap` (the lows change over at `swapAtMs`, a phrase line of the incoming track near the middle, while mids/highs crossfade), `filter` (high-pass sweeps the outgoing track out, low-pass opens the incoming one), `echo` (a 3/4-beat feedback echo of the outgoing track, its dry signal cut on a beat, the new track drops in; `beatMs` times it) or `none`. `reason` explains the pick. The chooser: beat-matched dance/hip-hop → bass swap; energy falling or a breakdown → filter fade; tempos too far apart or keys clashing → echo-out; acoustic or no steady beat → plain crossfade; `energetic` prefers swaps and echo-outs, `smooth` filter fades and longer blends, `minimal` plain short fades.
 
-The web app's DJ page (`/dj`) runs two decks on Web Audio with equal-power crossfades, preloads the next track at its mix-in point, and tops up non-stop mixes automatically.
+`GET /dj/transition-preview?from=<id>&to=<id>&transitions=auto&maxStretchPct=8` renders that transition with ffmpeg
+(8 s of A, the transition, 10 s of B) as MP3, so it can be heard on any client. The graph uses complementary 2×
+Butterworth low/high-pass splits with per-band volume automation for the bass swap, a stepped `highpass` sweep via
+`asendcmd` for the filter fade and `aecho` taps for the echo-out. Tempo matching uses `rubberband` (pitch-preserving)
+when the ffmpeg build has it, otherwise `atempo`, which also keeps the pitch (it is a WSOLA-style time-stretch, not a
+resampler) and glides back to 1.0 with `asendcmd`. The `X-DJ-Transition` header reports style, effect and stretch filter.
+The server does not render whole mixes otherwise: the web and mobile apps mix on the device.
+
+The web app's DJ page (`/dj`) runs two decks on Web Audio. Each deck has a small mixer strip — a Linkwitz-Riley
+200 Hz band split (bass swap), high/low-pass filters (filter fade) and a send into a shared beat-synced echo — and every
+control is automated on the audio clock. Tempo matching keeps the key: the browser's pitch-preserving playback where
+available (Chromium, Firefox, Safari), else MediaMax's WSOLA AudioWorklet (adapted from OpenDJ): the deck plays at the
+matched rate without pitch preservation and the worklet shifts the pitch back by 1/rate with a fixed 1024-frame latency
+on both decks. Without either (very old TV browsers), tracks play at their own tempo. DJ settings: transition feel,
+key-lock engine, largest tempo change (±8 % default) and "glide back over N bars" or "stay at the matched tempo". It
+preloads the next track at its mix-in point and tops up non-stop mixes automatically. Phrase markers are drawn under
+each deck. The phone and TV apps play the same plan on two expo-audio players; they have no EQ or delay, so each
+effect is approximated with the two volumes on the same timing (bass swap = volume swap on the phrase line).
 
 ## AI DJ
 
@@ -737,6 +810,7 @@ The AI DJ is free by default and works offline. Admins can connect free or cheap
   - `openai`: any OpenAI-compatible `/audio/speech` API, such as self-hosted Kokoro-FastAPI (free) or a hosted API (cheap)
 
   Clips are cached as MP3 and served from `GET /dj/voice/:file`. Clients duck the music to about 30% while the host speaks.
+- **Test the setup (admin):** `POST /dj/ai/test {kind: "llm"|"tts"}` → `{ok, reply, ms, usage}` for the language model, `{ok, audioUrl}` for the server voice.
 - **Taste:** `POST /dj/feedback {itemId, kind: 'skip'|'love'}`. Skipped tracks and artists are played less for 60 days, and "love" also favourites the track.
 - **Sounds-like:** analysis v2 adds a 26-number timbre fingerprint (MFCC 1–12 mean and deviation, spectral centroid and flatness). Mixes prefer tracks that sound like the previous one and the seed. `GET /dj/status` reports `ai: {enabled, llm, serverVoice, hostName, chattiness}`.
 

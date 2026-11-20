@@ -123,7 +123,8 @@ export async function finishLogin(state: string, code: string, cookieState: stri
     const claims = tok.id_token ? decodeJwtPayload(tok.id_token) : {};
     if (tok.id_token) {
       const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-      if (claims.iss && claims.iss.replace(/\/+$/, '') !== d.issuer.replace(/\/+$/, '')) throw new Error('ID token issuer mismatch');
+      // iss is required (OIDC Core 3.1.3.7): a token without one must not pass as this issuer's.
+      if (typeof claims.iss !== 'string' || claims.iss.replace(/\/+$/, '') !== d.issuer.replace(/\/+$/, '')) throw new Error('ID token issuer mismatch');
       if (!aud.includes(o.clientId)) throw new Error('ID token audience mismatch');
       if (claims.nonce !== p.nonce) throw new Error('ID token nonce mismatch');
       if (claims.exp && claims.exp * 1000 < Date.now() - 60000) throw new Error('ID token expired');

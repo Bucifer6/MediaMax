@@ -16,6 +16,8 @@ import { initHomeAssistant, stopHomeAssistant } from './services/smarthome/homea
 import { initStorage } from './services/storage/storage.js';
 import { startRenderers, stopRenderers } from './services/renderers/index.js';
 import { helpArticleCount } from './services/help.js';
+import { stopAllSessions } from './services/playback.js';
+import { stopActiveRecordings } from './services/dvr.js';
 
 const log = logger('main');
 
@@ -38,9 +40,17 @@ async function main() {
   initHomeAssistant();
   startRenderers();
   await loadPlugins().catch((e) => log.error('Plugin loading failed', e));
+  let shuttingDown = false;
   const shutdown = async (sig: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     log.info(`${sig} received, shutting down`);
+    // Don't hang on a stuck integration or a long-lived connection.
+    setTimeout(() => process.exit(0), 10000).unref();
     stopScheduler();
+    // Child processes (transcodes, recordings) are not killed with the server on every platform.
+    stopAllSessions();
+    stopActiveRecordings();
     stopDlna();
     await stopHomeAssistant().catch(() => {});
     await stopRenderers();

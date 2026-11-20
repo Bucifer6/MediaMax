@@ -674,6 +674,7 @@ function Crossfader({ value, mixing }: { value: number; mixing: boolean }) {
 }
 
 const STYLE_ICON: Record<DjTransition['style'], IconName> = { blend: 'git-merge-outline', fade: 'swap-horizontal-outline', cut: 'cut-outline' };
+const FX_LABEL: Record<NonNullable<DjTransition['fx']>, string | null> = { bassSwap: 'bass swap', filter: 'filter fade', echo: 'echo out', none: null };
 const KEY_LABEL: Record<DjTransition['keyMatch'], string | null> = { perfect: 'Same key', compatible: 'Key match', energy: 'Energy boost', clash: 'Key clash', unknown: null };
 
 function QueueRow({ tr, first }: { tr: DjMixTrack; first: boolean }) {
@@ -699,7 +700,8 @@ function QueueRow({ tr, first }: { tr: DjMixTrack; first: boolean }) {
         </T>
         {x ? (
           <View style={{ flexDirection: 'row', gap: t.space.xs, flexWrap: 'wrap' }}>
-            <Badge icon={STYLE_ICON[x.style]} label={x.style} tone={x.style === 'blend' ? 'primary' : 'muted'} />
+            <Badge icon={STYLE_ICON[x.style]} label={FX_LABEL[x.fx ?? 'none'] ?? x.style} tone={x.style === 'blend' ? 'primary' : 'muted'} />
+            {x.phraseAligned && x.outPhrase && x.inPhrase ? <Badge label={`${x.outPhrase} → ${x.inPhrase}`} /> : null}
             {KEY_LABEL[x.keyMatch] ? <Badge label={KEY_LABEL[x.keyMatch]!} tone={x.keyMatch === 'clash' ? 'danger' : x.keyMatch === 'perfect' || x.keyMatch === 'compatible' ? 'success' : 'muted'} /> : null}
             {x.bpmDelta != null ? <Badge label={`${x.bpmDelta > 0 ? '+' : ''}${x.bpmDelta.toFixed(1)} BPM`} /> : null}
             {x.crossfadeMs > 0 && x.style !== 'cut' ? <Badge label={`${Math.round(x.crossfadeMs / 1000)}s mix`} /> : null}

@@ -11,6 +11,13 @@ import { useTheme } from '@/theme';
 import { languageName } from '@/utils/format';
 import { LIP_SYNC_OPTIONS, formatDelay } from '@/api/audio';
 import { deviceInfoSync } from '@/api/device';
+import { setTrickplayMode, useTrickplayMode, type TrickplayMode } from '@/player/Trickplay';
+
+const TRICKPLAY_MODES: { key: TrickplayMode; label: string; description: string }[] = [
+  { key: 'always', label: 'Always', description: 'Load preview images when a video starts (data saver kicks in on slow connections)' },
+  { key: 'saver', label: 'Data saver', description: 'Only load previews once you start scrubbing' },
+  { key: 'off', label: 'Off', description: 'No preview images on the seek bar' },
+];
 
 const LANGS = ['en', 'fr', 'de', 'es', 'it', 'pt', 'nl', 'sv', 'da', 'no', 'fi', 'pl', 'ru', 'ja', 'ko', 'zh', 'ar', 'hi', 'tr'];
 const SUB_MODES: { key: UserPreferences['subtitleMode']; label: string; description: string }[] = [
@@ -27,13 +34,14 @@ const RG_MODES: { key: NonNullable<UserPreferences['replayGain']>; label: string
   { key: 'off', label: 'Off', description: 'Play files at their own level' },
 ];
 
-type Sheet = 'quality' | 'subMode' | 'audioLang' | 'subLang' | 'rg' | 'lipSync' | null;
+type Sheet = 'quality' | 'subMode' | 'audioLang' | 'subLang' | 'rg' | 'lipSync' | 'trickplay' | null;
 
 export default function PlaybackSettings() {
   const t = useTheme();
   const { user, updatePreferences } = useSession();
   const [sheet, setSheet] = useState<Sheet>(null);
   const [error, setError] = useState<string | null>(null);
+  const trickMode = useTrickplayMode();
   const p = user?.preferences;
   if (!p) return null;
 
@@ -64,6 +72,7 @@ export default function PlaybackSettings() {
             <SettingRow icon="play-skip-forward-outline" label="Autoplay next episode" toggle={p.autoplayNext} onToggle={(v) => set({ autoplayNext: v })} />
             <SettingRow icon="flash-outline" label="Skip intros automatically" toggle={p.skipIntros} onToggle={(v) => set({ skipIntros: v })} />
             <SettingRow icon="film-outline" label="Cinema mode (trailers before movies)" toggle={p.cinemaMode !== false} onToggle={(v) => set({ cinemaMode: v })} />
+            <SettingRow icon="images-outline" label="Scrub previews" value={TRICKPLAY_MODES.find((m) => m.key === trickMode)?.label} onPress={() => setSheet('trickplay')} />
           </SettingSection>
           <SettingSection title="Audio">
             <SettingRow icon="moon-outline" label="Night mode (softer loud scenes)" toggle={!!audio.nightMode} onToggle={(v) => set({ audio: { ...audio, nightMode: v } })} />
@@ -87,6 +96,7 @@ export default function PlaybackSettings() {
       </ScrollView>
       <OptionSheet visible={sheet === 'quality'} title="Maximum quality" options={QUALITY_OPTIONS.map((q) => ({ key: String(q.kbps ?? 'orig'), label: q.label, selected: q.kbps === p.maxBitrate }))} onSelect={(k) => set({ maxBitrate: k === 'orig' ? null : Number(k) })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'lipSync'} title="Lip-sync on this device" options={LIP_SYNC_OPTIONS.map((ms) => ({ key: String(ms), label: formatDelay(ms), selected: ms === lipSync }))} onSelect={(k) => deviceId && set({ audioDevices: { [deviceId]: Number(k) ? { delayMs: Number(k) } : {} } })} onClose={() => setSheet(null)} />
+      <OptionSheet visible={sheet === 'trickplay'} title="Scrub previews" options={TRICKPLAY_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === trickMode }))} onSelect={(k) => { setSheet(null); void setTrickplayMode(k as TrickplayMode); }} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'rg'} title="Volume levelling" options={RG_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === (p.replayGain ?? 'auto') }))} onSelect={(k) => set({ replayGain: k })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'subMode'} title="Subtitles" options={SUB_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === p.subtitleMode }))} onSelect={(k) => set({ subtitleMode: k })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'audioLang'} title="Audio language" options={langOptions(p.audioLanguage)} onSelect={(k) => set({ audioLanguage: k === '__none' ? null : k })} onClose={() => setSheet(null)} />

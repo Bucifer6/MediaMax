@@ -77,6 +77,16 @@ function mergePrefs(stored: Partial<UserPreferences>, patch: Partial<UserPrefere
   if (!['off', 'track', 'album', 'auto'].includes(prefs.replayGain as string)) prefs.replayGain = 'auto';
   // Help Centre: the server version whose "What's new" card was dismissed.
   if (prefs.whatsNewSeen !== undefined) prefs.whatsNewSeen = typeof prefs.whatsNewSeen === 'string' && /^[\w.+-]{1,32}$/.test(prefs.whatsNewSeen) ? prefs.whatsNewSeen : null;
+  // Now playing / lyrics / karaoke / visualiser preferences (web, TV and mobile music players).
+  const num = (v: unknown, lo: number, hi: number) => (v === undefined || v === null || !Number.isFinite(Number(v)) ? undefined : Math.max(lo, Math.min(hi, Math.round(Number(v)))));
+  if (prefs.nowPlayingView !== undefined && !['cover', 'lyrics', 'visualizer', 'karaoke'].includes(prefs.nowPlayingView)) delete prefs.nowPlayingView;
+  if (prefs.visualizerStyle !== undefined && !['ring', 'bars', 'wave', 'particles', 'ambient'].includes(prefs.visualizerStyle)) delete prefs.visualizerStyle;
+  for (const [k, lo, hi] of [['lyricsOffsetMs', -5000, 5000], ['karaokeVocalLevel', 0, 100], ['musicScreensaverMinutes', 0, 120]] as const) {
+    if (prefs[k] === undefined) continue;
+    const v = num(prefs[k], lo, hi);
+    if (v === undefined) delete prefs[k];
+    else prefs[k] = v;
+  }
   // Listening comforts (audio.ts): validated; per-device entries merge field by field, an empty one removes the device.
   if (prefs.audio !== undefined) prefs.audio = normalizeComforts(prefs.audio);
   if (prefs.audioDevices !== undefined) {
@@ -204,7 +214,7 @@ export function createUser(req: CreateUserRequest): User {
   const username = (req.username ?? '').trim();
   if (!/^[\w.@ -]{1,64}$/.test(username)) throw badRequest('Invalid username');
   if (db.get('SELECT 1 FROM users WHERE username = ?', username)) throw conflict('Username already exists');
-  if (req.password && req.password.length < 4) throw badRequest('Password must be at least 4 characters');
+  if (req.password && req.password.length < 8) throw badRequest('Password must be at least 8 characters');
   if (req.pin) validatePin(req.pin);
   const id = newId();
   // New users start from the server's default request permissions; the legacy `allowRequest4k` flag still grants 4K.
@@ -303,12 +313,17 @@ export function deleteUser(id: string, actorId: string) {
   if (cur.is_admin && adminCount() <= 1) throw badRequest('Cannot delete the last administrator');
   // Deleting an account deletes its profiles (also enforced by the foreign key).
   db.tx(() => {
+    // Series rules and still-scheduled recordings of the account and its profiles (finished recordings stay).
+    const members = 'SELECT id FROM users WHERE id = ? OR parent_user_id = ?';
+    db.run(`DELETE FROM recording_rules WHERE created_by IN (${members})`, id, id);
+    db.run(`UPDATE recordings SET status = 'cancelled' WHERE status = 'scheduled' AND created_by IN (${members})`, id, id);
     db.run('DELETE FROM users WHERE parent_user_id = ?', id);
     db.run('DELETE FROM users WHERE id = ?', id);
   });
 }
 
-export function updateMe(userId: string, req: UpdateMeRequest): User {
+/** `keepDeviceRowId`: the session making the change, which stays signed in when the password changes. */
+export function updateMe(userId: string, req: UpdateMeRequest, keepDeviceRowId?: string): User {
   const cur = getUserRow(userId);
   // Profiles have no password; their name and PIN are managed by the account owner (Settings → Profiles).
   if (cur.parent_user_id && (req.password !== undefined || req.pin !== undefined || req.displayName !== undefined)) {
@@ -318,7 +333,7 @@ export function updateMe(userId: string, req: UpdateMeRequest): User {
   if (req.displayName !== undefined) patch.display_name = req.displayName.trim() || cur.username;
   if (req.password !== undefined) {
     if (cur.password_hash && !verifySecret(req.currentPassword ?? '', cur.password_hash)) throw forbidden('Current password is incorrect');
-    if (req.password && req.password.length < 4) throw badRequest('Password must be at least 4 characters');
+    if (req.password && req.password.length < 8) throw badRequest('Password must be at least 8 characters');
     if (!req.password && cur.is_admin && !cur.oidc_sub) throw badRequest('Administrators must keep a password');
     patch.password_hash = req.password ? hashSecret(req.password) : null;
   }
@@ -342,6 +357,12 @@ export function updateMe(userId: string, req: UpdateMeRequest): User {
     patch.preferences = JSON.stringify(prefs);
   }
   db.update('users', userId, patch);
+  if (patch.password_hash !== undefined) {
+    // A new password signs every other device out (the account's profiles included), like an admin reset does,
+    // so a stolen session doesn't outlive the password change.
+    db.run('DELETE FROM devices WHERE id != ? AND user_id IN (SELECT id FROM users WHERE id = ? OR parent_user_id = ?)', keepDeviceRowId ?? '', userId, userId);
+    logActivity('user.password', `${cur.display_name} changed their password; other devices were signed out`, { userId });
+  }
   return getUser(userId);
 }
 
@@ -436,14 +457,17 @@ const clearFailures = (key: string) => failures.delete(key);
  * Accounts that may sign in without any secret: Plex-Home style kids/family profiles only.
  * Never administrators, never SSO-created accounts.
  */
+let dummy: string | null = null;
+const dummyHash = () => (dummy ??= hashSecret(crypto.randomBytes(16).toString('hex')));
+
 export const passwordlessAllowed = (r: Row) => !r.parent_user_id && !r.password_hash && !r.pin_hash && !r.is_admin && !r.oidc_sub && getSettings().allowPasswordlessProfiles;
 
 export function login(username: string, password: string, device: Partial<DeviceInfo>, remoteAddr?: string, totpCode?: string): AuthResponse {
   const key = `u:${String(username ?? '').trim().toLowerCase()}`;
   assertNotLocked(key, remoteAddr);
   const row = db.get('SELECT * FROM users WHERE username = ?', (username ?? '').trim());
-  // Constant-ish time: always run a hash compare.
-  const ok = row ? (row.password_hash ? verifySecret(password ?? '', row.password_hash) : !password && passwordlessAllowed(row)) : verifySecret('x', hashSecret('y'));
+  // Constant-ish time: always run exactly one hash compare (an unknown user must not take twice as long).
+  const ok = row ? (row.password_hash ? verifySecret(password ?? '', row.password_hash) : !password && passwordlessAllowed(row)) : verifySecret(password ?? '', dummyHash());
   if (!row || !ok) {
     recordFailure(key);
     logActivity('user.login.failed', `Failed sign-in for "${username}" from ${remoteAddr ?? 'unknown'}`, { severity: 'warning' });
@@ -613,21 +637,37 @@ interface PendingLink {
   pollToken: string;
   device: DeviceInfo;
   expiresAt: number;
+  ip?: string | null;
   result?: AuthResponse;
 }
 const links = new Map<string, PendingLink>();
+/** Tests only. */
+export const _resetLinks = () => links.clear();
 
 function sweepLinks() {
   const now = Date.now();
   for (const [k, v] of links) if (v.expiresAt < now - 60000) links.delete(k);
 }
 
-export function requestLinkCode(device: Partial<DeviceInfo>): LinkCodeResponse {
+/**
+ * Anyone can ask for a link code, so pending codes are capped per client address and overall: bounds memory, and
+ * keeps the 4-character code space sparse (a full one would also make the uniqueness loop below spin forever).
+ */
+export const LINK_LIMITS = { perIp: 5, total: 1000 };
+
+export function requestLinkCode(device: Partial<DeviceInfo>, ip?: string | null): LinkCodeResponse {
   if (!getBranding().features.linkCodes) throw forbidden('Device linking is disabled');
   sweepLinks();
+  const d = normDevice(device);
+  // A device asking again (new code on screen) replaces its earlier, unused code.
+  if (device.deviceId) for (const [k, l] of links) if (!l.result && l.device.deviceId === d.deviceId && l.ip === (ip ?? null)) links.delete(k);
+  const busy = () => new HttpError(429, 'Too many devices are waiting to be linked. Try again in a few minutes.', 'rate_limited');
+  if (links.size >= LINK_LIMITS.total) throw busy();
+  if (ip && [...links.values()].filter((l) => l.ip === ip && !l.result).length >= LINK_LIMITS.perIp) throw busy();
+  const used = new Set([...links.values()].map((l) => l.code));
   let code = shortCode(4);
-  while ([...links.values()].some((l) => l.code === code)) code = shortCode(4);
-  const pending: PendingLink = { code, pollToken: newToken(), device: normDevice(device), expiresAt: Date.now() + 10 * 60000 };
+  while (used.has(code)) code = shortCode(4);
+  const pending: PendingLink = { code, pollToken: newToken(), device: d, expiresAt: Date.now() + 10 * 60000, ip: ip ?? null };
   links.set(pending.pollToken, pending);
   return { code, pollToken: pending.pollToken, expiresAt: new Date(pending.expiresAt).toISOString() };
 }

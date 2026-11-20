@@ -37,7 +37,7 @@ MediaMax brings together the features people love in **Plex, Jellyfin and Emby**
 - Direct play, remux or transcode per device, with on-demand HLS and instant seeking
 - Hardware transcoding (VA-API, QSV, NVENC, VideoToolbox, V4L2) and HDR → SDR tone mapping
 - HDR10, HDR10+, HLG and Dolby Vision detection with per-device direct play ([docs/HDR.md](docs/HDR.md))
-- Skip intro, credits, recaps and ad breaks; scrub previews; editions and extras
+- Skip intro, credits, recaps and ad breaks; scrub previews (trickplay) on web, TVs, phones, Android TV and Apple TV, offline too; editions and extras
 - Cinema mode (trailers and pre-rolls), watch-together, Chromecast, "Play on…" another device
 - Our own subtitle renderer everywhere (SRT/WebVTT, ASS with libass and embedded fonts, PGS) with styling and sync ([docs/PLAYBACK.md](docs/PLAYBACK.md))
 - Automatic quality: bandwidth probe, adaptive multi-rendition transcodes and seamless direct-play ↔ transcode switching
@@ -57,7 +57,9 @@ MediaMax brings together the features people love in **Plex, Jellyfin and Emby**
 
 **🎧 Music, DJ & AI DJ**
 - Gapless playback, crossfade, ReplayGain, synced lyrics, song and artist radio
-- **DJ mode**: BPM, key and energy analysis, harmonic auto-mixes and beat-matched two-deck crossfades
+- **DJ mode**: BPM, key, energy and phrase analysis, harmonic auto-mixes and beat-matched two-deck transitions on phrase boundaries: EQ bass swaps, filter fades and echo-outs, tempo-matched with key lock
+- **Karaoke**: word-by-word lyrics, a lyrics editor, instant vocal removal and AI vocal separation that every device can play ([docs/KARAOKE.md](docs/KARAOKE.md))
+- **Visualisers** in the full-screen player and a music screensaver on TVs
 - **AI DJ**: ask in plain words ("chilled 90s house, 1 hour"); a voice host talks between songs. Free by default; can use local models (Ollama) or free and cheap hosted APIs
 - MusicBrainz Picard tags, multi-artist credits, discography with missing albums, AcoustID "identify by sound"
 - Last.fm and ListenBrainz scrobbling, ListenBrainz weekly playlists
@@ -174,6 +176,7 @@ The server listens on port **8484** and serves the web app and API. For developm
 | Variable | Default | Purpose |
 |---|---|---|
 | `MEDIAMAX_PORT` | `8484` | HTTP port |
+| `MEDIAMAX_HOST` | `0.0.0.0` | Address to listen on (`127.0.0.1` behind a local reverse proxy) |
 | `MEDIAMAX_DATA` | `./data` ([binaries and Docker](docs/INSTALL.md#where-your-data-lives-and-backups) differ) | Database, caches, branding assets, logs |
 | `MEDIAMAX_TRANSCODE_DIR` | `$DATA/transcodes` | HLS segment scratch space (a RAM disk is ideal) |
 | `MEDIAMAX_RECORDINGS` | `$DATA/recordings` | DVR output folder |
@@ -181,6 +184,9 @@ The server listens on port **8484** and serves the web app and API. For developm
 | `MEDIAMAX_HWACCEL` | `none` | Initial hardware accelerator |
 | `MEDIAMAX_TRUSTED_PROXIES` | loopback + private ranges | Proxies whose `X-Forwarded-*` headers are trusted |
 | `TMDB_API_KEY` | | Online metadata (also settable in the admin UI) |
+| `OPENSUBTITLES_API_KEY`, `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET`, `LASTFM_API_KEY` / `LASTFM_SECRET`, `ACOUSTID_API_KEY` | | Initial integration keys (the admin UI can set them too) |
+| `MEDIAMAX_WEB_DIR` / `MEDIAMAX_HELP_DIR` | bundled | Serve the web app / Help Centre articles from another folder |
+| `MEDIAMAX_ALLOW_PRIVATE_URLS` | unset | `1` lets podcast feeds and other user-supplied URLs point at LAN addresses |
 | `MEDIAMAX_LOG_LEVEL` | `info` | `debug` for verbose logs |
 
 More, including the security dashboard and integration variables, is in [docs/INSTALL.md](docs/INSTALL.md) and [docs/DEPLOY.md](docs/DEPLOY.md).
@@ -320,6 +326,6 @@ The project's owner steered the direction with feature requests; the code is Cla
 
 MediaMax is open source under the [MIT License](LICENSE). You're free to use, modify and redistribute it, including publishing your own branded builds of the apps, as long as the licence notice is kept.
 
-Third-party services you connect (TMDB, Trakt, Last.fm, OpenSubtitles, IPTV providers, Schedules Direct, AI providers) have their own terms; make sure your use of them complies. FFmpeg is used as a separate program and is licensed under the LGPL/GPL.
+Third-party services you connect (TMDB, Trakt, Last.fm, OpenSubtitles, IPTV providers, Schedules Direct, AI providers) have their own terms; make sure your use of them complies. FFmpeg is used as a separate program and is licensed under the LGPL/GPL. Bundled and downloadable third-party components (onnxruntime-web, the optional HT-Demucs model) and code adapted from OpenDJ are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 <div align="center"><sub>Made with <a href="https://claude.com/claude-code">Claude Code</a></sub></div>

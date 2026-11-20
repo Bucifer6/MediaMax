@@ -109,7 +109,9 @@ export function initScrobbling() {
   });
   bus.on('playback.stop', (s: PlaySession) => {
     if (!s.itemId || s.preview) return;
-    const listened = Math.max(s.positionMs, Date.now() - s.startedAt);
+    // Until the player's last sign of life, not "now": a session reaped minutes after the app was closed (or a
+    // stop sent long after) must not turn a few seconds of listening into a scrobble.
+    const listened = Math.max(s.positionMs, Math.min(Date.now(), s.lastActivity) - s.startedAt);
     void dispatchListen(s.ctx.user.id, s.itemId, s.startedAt, listened);
   });
 }

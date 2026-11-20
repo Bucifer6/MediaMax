@@ -64,6 +64,7 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   notificationAgents: [],
   oidc: { enabled: false, issuer: null, clientId: null, clientSecret: null, buttonLabel: 'Sign in with SSO', autoCreateUsers: true, groupsClaim: 'groups', adminGroup: null, allowedGroup: null },
   sessionTimeoutDays: 90,
+  karaoke: { stemsEnabled: false, stemsModelUrl: null, stemsModelSha256: null, writeLrcSidecars: false },
 };
 
 let cache: ServerSettings | null = null;
@@ -147,6 +148,7 @@ export function getSettings(): ServerSettings {
     remoteAccess: { ...DEFAULT_SETTINGS.remoteAccess, ...(stored.remoteAccess ?? {}) },
     backups: { ...DEFAULT_SETTINGS.backups, ...(stored.backups ?? {}) },
     oidc: { ...DEFAULT_SETTINGS.oidc, ...(stored.oidc ?? {}) },
+    karaoke: { ...DEFAULT_SETTINGS.karaoke!, ...(stored.karaoke ?? {}) },
     webhooks: stored.webhooks ?? [],
     arr: Array.isArray(stored.arr) ? stored.arr : legacyArrInstances(stored.requests),
     notificationAgents: Array.isArray(stored.notificationAgents) ? stored.notificationAgents : [],
@@ -156,11 +158,21 @@ export function getSettings(): ServerSettings {
 
 export const SECRET_MASK = '••••';
 
-/** Settings as sent to the admin UI: AI service keys are write-only. */
+/** Other write-only secrets: [section, key] (section null = top level). Sent masked, a masked value back keeps them. */
+const SECRET_FIELDS: [keyof ServerSettings | null, string][] = [
+  [null, 'tmdbApiKey'], ['openSubtitles', 'apiKey'], ['openSubtitles', 'password'], ['trakt', 'clientSecret'], ['lastfm', 'sharedSecret'], ['oidc', 'clientSecret'],
+];
+
+/** Settings as sent to the admin UI: service keys, passwords and client secrets are write-only. */
 export function publicSettings(s: ServerSettings = getSettings()): ServerSettings {
   const maskSvc = (v: ArrService | null) => (v ? { ...v, apiKey: v.apiKey ? SECRET_MASK : '' } : v);
+  const masked: Record<string, any> = { ...s };
+  for (const [sec, key] of SECRET_FIELDS) {
+    if (sec === null) masked[key] = masked[key] ? SECRET_MASK : masked[key];
+    else if (masked[sec]?.[key]) masked[sec] = { ...masked[sec], [key]: SECRET_MASK };
+  }
   return {
-    ...s,
+    ...(masked as ServerSettings),
     requests: { ...s.requests, radarr: maskSvc(s.requests.radarr), sonarr: maskSvc(s.requests.sonarr) },
     arr: s.arr.map((a) => ({ ...a, apiKey: a.apiKey ? SECRET_MASK : '' })),
     notificationAgents: maskAgents(s.notificationAgents),
@@ -173,6 +185,14 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
   // The masked placeholder means "keep the stored key".
   if (patch.aiDj?.llm?.apiKey === SECRET_MASK) patch = { ...patch, aiDj: { ...patch.aiDj, llm: { ...patch.aiDj.llm, apiKey: cur.aiDj.llm.apiKey } } };
   if (patch.aiDj?.tts?.apiKey === SECRET_MASK) patch = { ...patch, aiDj: { ...patch.aiDj!, tts: { ...patch.aiDj!.tts!, apiKey: cur.aiDj.tts.apiKey } } };
+  for (const [sec, key] of SECRET_FIELDS) {
+    const p = patch as Record<string, any>;
+    if (sec === null) {
+      if (p[key] === SECRET_MASK) patch = { ...patch, [key]: (cur as Record<string, any>)[key] };
+    } else if (p[sec]?.[key] === SECRET_MASK) {
+      patch = { ...patch, [sec]: { ...p[sec], [key]: (cur as Record<string, any>)[sec]?.[key] ?? null } };
+    }
+  }
   for (const k of ['radarr', 'sonarr'] as const) {
     const svc = patch.requests?.[k];
     if (svc && svc.apiKey === SECRET_MASK) patch = { ...patch, requests: { ...patch.requests!, [k]: { ...svc, apiKey: cur.requests[k]?.apiKey ?? '' } } };
@@ -194,13 +214,46 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     backups: { ...cur.backups, ...(patch.backups ?? {}) },
     plugins: { repositories: (patch.plugins?.repositories ?? cur.plugins.repositories).map((u) => String(u).trim()).filter(Boolean).slice(0, 20) },
     oidc: { ...cur.oidc, ...(patch.oidc ?? {}) },
+    karaoke: { ...DEFAULT_SETTINGS.karaoke!, ...(cur.karaoke ?? {}), ...(patch.karaoke ?? {}) },
     webhooks: (patch.webhooks ?? cur.webhooks).map((w) => ({ ...w, id: w.id || newId() })),
     arr: patch.arr !== undefined ? normaliseArr(patch.arr, cur.arr) : cur.arr,
     notificationAgents: patch.notificationAgents !== undefined ? mergeAgents(patch.notificationAgents, cur.notificationAgents, newId) : cur.notificationAgents ?? [],
   };
+  normaliseNumbers(next);
   setKv('server', next);
   cache = next;
   return next;
+}
+
+/** Whole number in [min, max]; anything else (NaN, '', a cleared form field) keeps the current value or the default. */
+function clampInt(v: unknown, min: number, max: number, fallback: number): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return Math.max(min, Math.min(max, fallback));
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+/**
+ * Numeric settings from the admin UI (a cleared number field arrives as 0 or ''): a 0 s HLS segment or trickplay
+ * interval would break playback, so keep every number in a sane range.
+ */
+function normaliseNumbers(s: ServerSettings) {
+  const d = DEFAULT_SETTINGS;
+  s.scanIntervalMinutes = clampInt(s.scanIntervalMinutes, 0, 7 * 24 * 60, d.scanIntervalMinutes);
+  s.epgRefreshHours = clampInt(s.epgRefreshHours, 1, 24 * 7, d.epgRefreshHours);
+  s.sessionTimeoutDays = clampInt(s.sessionTimeoutDays, 0, 3650, d.sessionTimeoutDays ?? 90); // 0 = never expire
+  const t = s.transcoding;
+  t.maxConcurrent = clampInt(t.maxConcurrent, 1, 64, d.transcoding.maxConcurrent);
+  t.defaultBitrate = clampInt(t.defaultBitrate, 300, 200000, d.transcoding.defaultBitrate);
+  t.segmentSeconds = clampInt(t.segmentSeconds, 1, 10, d.transcoding.segmentSeconds);
+  t.threads = clampInt(t.threads, 0, 128, d.transcoding.threads);
+  if (!['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium'].includes(t.preset)) t.preset = d.transcoding.preset;
+  s.trickplay.intervalSeconds = clampInt(s.trickplay.intervalSeconds, 2, 60, d.trickplay.intervalSeconds);
+  s.trickplay.width = clampInt(s.trickplay.width, 80, 640, d.trickplay.width);
+  s.cinema.trailers = clampInt(s.cinema.trailers, 0, 5, d.cinema.trailers);
+  s.dvr.paddingBeforeMin = clampInt(s.dvr.paddingBeforeMin, 0, 120, d.dvr.paddingBeforeMin);
+  s.dvr.paddingAfterMin = clampInt(s.dvr.paddingAfterMin, 0, 240, d.dvr.paddingAfterMin);
+  s.backups.intervalDays = clampInt(s.backups.intervalDays, 0, 365, d.backups.intervalDays);
+  s.backups.keep = clampInt(s.backups.keep, 1, 100, d.backups.keep);
 }
 
 const HW_ACCELS = ['none', 'vaapi', 'nvenc', 'qsv', 'videotoolbox', 'v4l2m2m', 'amf', 'rkmpp'];

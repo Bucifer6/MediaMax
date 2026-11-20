@@ -441,7 +441,7 @@ Environment variables (Docker `environment:`, `systemctl edit mediamax`, or Wind
 | `MEDIAMAX_HWACCEL` | `none` | Initial hardware accelerator |
 | `PUID` / `PGID` / `MEDIAMAX_EXTRA_GIDS` | unset (root) | Docker only: user, group and extra groups to run as |
 
-The full list is in the [README](../README.md#configuration-environment-variables).
+The full list is under "Configuration (environment variables)" in the [README](../README.md#install).
 
 ## Play to devices
 

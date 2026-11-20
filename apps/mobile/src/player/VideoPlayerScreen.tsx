@@ -23,7 +23,7 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { QUALITY_OPTIONS, castDeviceProfile, videoDeviceProfile } from '@/api/profiles';
 import { comfortRequest, deviceComforts } from '@/api/audio';
-import type { Channel, Item, Marker, PlaybackInfo, ProgressReport, RemoteSubtitle, SubtitleTrack } from '@/api/types';
+import type { Channel, Chapter, Item, Marker, PlaybackInfo, ProgressReport, RemoteSubtitle, SubtitleTrack } from '@/api/types';
 import { CastButton, castMediaInfo, isOurMedia, useCast } from '@/cast';
 import { Button } from '@/components/Button';
 import { Focusable } from '@/components/Focusable';
@@ -120,7 +120,22 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
   const [channelList, setChannelList] = useState<Channel[]>([]);
   const [offlineItem] = useState<Item | null>(offlineRec?.item ?? null);
   const vodItemId = target.kind === 'vod' ? target.itemId : null;
-  const trickplay = useTrickplay(vodItemId && !offlineUri ? vodItemId : null);
+  const trickplay = useTrickplay(vodItemId, {
+    // Downloads carry their own sprite sheets (local files), so previews work offline.
+    offline: offlineUri ? offlineRec?.trickplay ?? null : null,
+    active: scrubbing || pendingSeek != null,
+    atMs: pendingSeek ?? pos,
+  });
+  /** Chapter names for the scrub preview (PlaybackInfo doesn't carry them; the item does). */
+  const [chapters, setChapters] = useState<Chapter[] | null>(offlineRec?.item?.chapters ?? null);
+  useEffect(() => {
+    if (!vodItemId || offlineUri || !api) return;
+    let cancelled = false;
+    api.item(vodItemId).then((it) => !cancelled && setChapters(it.chapters?.length ? it.chapters : null)).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [vodItemId, offlineUri, api]);
   /** Online playback of a library item: can search subtitles online / watch together. */
   const onlineVod = !!vodItemId && !offlineUri && status === 'signed-in';
   const syncOn = sync.enabled && onlineVod;
@@ -708,6 +723,21 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
     return () => clearTimeout(timer);
   }, [upNext, playing, nextId, goNext]);
 
+  /** TV: move the pending seek target (preview + time shown on the bar) and commit it after a short pause. */
+  const dialSeek = (delta: number) => {
+    setPendingSeek((p) => {
+      const base = p ?? posRef.current;
+      return Math.max(0, Math.min(durRef.current || base, base + delta));
+    });
+    if (seekDialTimer.current) clearTimeout(seekDialTimer.current);
+    seekDialTimer.current = setTimeout(() => {
+      setPendingSeek((p) => {
+        if (p != null) userSeek(p);
+        return null;
+      });
+    }, 900);
+  };
+
   // ----- remote control (TV) -----
   useTVRemote((evt) => {
     const type = evt.eventType;
@@ -725,12 +755,25 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
         togglePlay();
         return poke();
       }
-      if (type === 'left' || type === 'right') {
-        if (canSeek) seekBy(type === 'right' ? 10000 : -10000);
+      if (type === 'left' || type === 'right' || type === 'swipeLeft' || type === 'swipeRight') {
+        if (!canSeek) return;
+        const fwd = type === 'right' || type === 'swipeRight';
+        // With previews: bring up the bar and dial the seek in (thumbnail shows where you'll land), commit on pause.
+        if (trickplay) {
+          dialSeek(fwd ? 10000 : -10000);
+          return poke();
+        }
+        if (type === 'left' || type === 'right') seekBy(fwd ? 10000 : -10000);
         return;
       }
       if (type === 'longLeft' || type === 'longRight' || type === 'rewind' || type === 'fastForward') {
-        if (canSeek) seekBy(type === 'longRight' || type === 'fastForward' ? 30000 : -30000);
+        if (!canSeek) return;
+        const delta = type === 'longRight' || type === 'fastForward' ? 30000 : -30000;
+        if (trickplay) {
+          dialSeek(delta);
+          return poke();
+        }
+        seekBy(delta);
         return;
       }
       if (isLive && (type === 'up' || type === 'down')) return zap(type === 'up' ? 1 : -1);
@@ -738,20 +781,9 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
       return;
     }
     // Controls visible: scrub with left/right while the seek bar is focused.
-    if (scrubFocused && canSeek && (type === 'left' || type === 'right' || type === 'longLeft' || type === 'longRight')) {
+    if (scrubFocused && canSeek && (type === 'left' || type === 'right' || type === 'longLeft' || type === 'longRight' || type === 'swipeLeft' || type === 'swipeRight')) {
       const step = type.startsWith('long') ? 60000 : 10000;
-      setPendingSeek((p) => {
-        const base = p ?? posRef.current;
-        const next = Math.max(0, Math.min(durRef.current || base, base + (type.endsWith('ight') ? step : -step)));
-        return next;
-      });
-      if (seekDialTimer.current) clearTimeout(seekDialTimer.current);
-      seekDialTimer.current = setTimeout(() => {
-        setPendingSeek((p) => {
-          if (p != null) userSeek(p);
-          return null;
-        });
-      }, 900);
+      dialSeek(type.endsWith('ight') ? step : -step);
     }
     poke();
   });
@@ -1177,7 +1209,7 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
                 </View>
               ) : null
             ) : dur > 0 ? (
-              <Scrubber positionMs={pos} durationMs={dur} bufferedMs={buffered} markers={markers} onSeek={userSeek} onScrubbing={setScrubbing} onFocusChange={setScrubFocused} pendingMs={pendingSeek} trickplay={trickplay} />
+              <Scrubber positionMs={pos} durationMs={dur} bufferedMs={buffered} markers={markers} onSeek={userSeek} onScrubbing={setScrubbing} onFocusChange={setScrubFocused} pendingMs={pendingSeek} trickplay={trickplay} chapters={chapters} />
             ) : null}
 
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.sm, flexWrap: 'wrap' }}>

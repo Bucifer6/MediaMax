@@ -3,6 +3,13 @@ import type { TrickplayInfo } from '@mediamax/shared';
 import { formatClock } from '../utils/format';
 import { Icon } from '../components/Icon';
 
+/** The chapter at `ms` (chapters sorted by start). */
+export function chapterAt(chapters: { title: string; startMs: number; endMs: number }[] | null | undefined, ms: number) {
+  let hit: { title: string; startMs: number; endMs: number } | null = null;
+  for (const c of chapters ?? []) if (ms >= c.startMs && (!c.endMs || ms < c.endMs)) hit = c;
+  return hit;
+}
+
 /** One trickplay thumbnail cut out of its sprite sheet, scaled to `displayWidth`. */
 export function TrickplayThumb({ info, ms, displayWidth }: { info: TrickplayInfo; ms: number; displayWidth: number }) {
   const perSheet = Math.max(1, info.columns * info.rows);
@@ -39,7 +46,7 @@ function preloadSheets(info: TrickplayInfo) {
 
 /** Scrubbable seek bar with buffered range, markers, hover time and optional trickplay previews. */
 export function SeekBar({
-  positionMs, durationMs, bufferedMs = 0, onSeek, markers, className, disabled, trickplay,
+  positionMs, durationMs, bufferedMs = 0, onSeek, markers, className, disabled, trickplay, previewMs = null, chapters,
 }: {
   positionMs: number;
   durationMs: number;
@@ -49,13 +56,29 @@ export function SeekBar({
   className?: string;
   disabled?: boolean;
   trickplay?: TrickplayInfo | null;
+  /** Seek target being stepped with the keyboard / TV remote (D-pad): shows the preview there. */
+  previewMs?: number | null;
+  /** Chapter names shown under the preview. */
+  chapters?: { title: string; startMs: number; endMs: number }[] | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<number | null>(null);
   const [hover, setHover] = useState<{ x: number; ms: number } | null>(null);
+  // Arrow keys on the focused bar: preview the new position for a moment.
+  const [keyMs, setKeyMs] = useState<number | null>(null);
+  const keyTimer = useRef<number | null>(null);
   const preloaded = useRef<TrickplayInfo | null>(null);
   const dur = durationMs > 0 ? durationMs : 1;
-  const active = hover !== null || drag !== null;
+  const keyPreview = keyMs ?? previewMs;
+  const active = hover !== null || drag !== null || keyPreview != null;
+  useEffect(() => () => {
+    if (keyTimer.current) window.clearTimeout(keyTimer.current);
+  }, []);
+  const flashKey = (ms: number) => {
+    setKeyMs(ms);
+    if (keyTimer.current) window.clearTimeout(keyTimer.current);
+    keyTimer.current = window.setTimeout(() => setKeyMs(null), 1500);
+  };
   useEffect(() => {
     if (active && trickplay && preloaded.current !== trickplay) {
       preloaded.current = trickplay;
@@ -104,14 +127,14 @@ export function SeekBar({
       onPointerMove={(e) => durationMs > 0 && setHover(msAt(e.clientX))}
       onPointerLeave={() => setHover(null)}
       onKeyDown={(e) => {
-        if (e.key === 'ArrowLeft') {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
           e.preventDefault();
           e.stopPropagation();
-          onSeek(Math.max(0, positionMs - 10000));
-        } else if (e.key === 'ArrowRight') {
-          e.preventDefault();
-          e.stopPropagation();
-          onSeek(Math.min(dur, positionMs + 10000));
+          // Step from the last previewed target so repeated presses keep moving (TV remotes repeat fast).
+          const from = keyMs ?? positionMs;
+          const to = e.key === 'ArrowLeft' ? Math.max(0, from - 10000) : Math.min(dur, from + 10000);
+          flashKey(to);
+          onSeek(to);
         }
       }}
     >
@@ -124,11 +147,12 @@ export function SeekBar({
         <div className="seek-thumb" style={{ left: `${Math.min(100, (shown / dur) * 100)}%` }} />
       </div>
       {active && durationMs > 0 && (() => {
-        const ms = drag ?? hover!.ms;
+        const ms = drag ?? hover?.ms ?? keyPreview!;
         const width = ref.current?.getBoundingClientRect().width ?? 0;
         const x = (ms / dur) * width;
+        const chapter = chapterAt(chapters, ms)?.title;
         if (!trickplay) {
-          return <div className="seek-tooltip" style={{ left: x }}>{formatClock(ms)}</div>;
+          return <div className="seek-tooltip" style={{ left: x }}>{formatClock(ms)}{chapter && <small className="seek-chapter">{chapter}</small>}</div>;
         }
         // Keep the preview inside the bar so it never runs off-screen.
         const thumbW = Math.min(trickplay.width, width < 500 ? 150 : 240);
@@ -137,6 +161,7 @@ export function SeekBar({
           <div className="seek-tooltip seek-preview" style={{ left }}>
             <TrickplayThumb info={trickplay} ms={ms} displayWidth={thumbW} />
             <span>{formatClock(ms)}</span>
+            {chapter && <small className="seek-chapter">{chapter}</small>}
           </div>
         );
       })()}
