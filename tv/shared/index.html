@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1920, height=1080" />
+<title>MediaMax</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0d12; color: #f5f6f8; font: 28px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { height: 100%; display: grid; place-items: center; align-content: center; gap: 28px; text-align: center; padding: 0 10vw; }
+  h1 { margin: 0; font-size: 64px; letter-spacing: -0.02em; }
+  p { margin: 0; color: #a3a8b5; max-width: 34em; }
+  input { width: 900px; max-width: 80vw; font: inherit; padding: 18px 24px; border-radius: 14px; border: 3px solid #2a2f3a; background: #151922; color: inherit; }
+  input:focus { outline: none; border-color: #f5b301; }
+  button { font: inherit; font-weight: 700; padding: 16px 48px; border-radius: 14px; border: 0; background: #f5b301; color: #111; }
+  button:focus { outline: 5px solid #fff; outline-offset: 5px; }
+  .err { color: #ff8a8a; min-height: 1.4em; }
+  .hint { font-size: 22px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>MediaMax</h1>
+  <p>Enter the address of your MediaMax server. You'll find it under Settings → Devices in the web app, for example <b>http://192.168.1.20:8484</b>.</p>
+  <input id="url" type="url" inputmode="url" placeholder="http://192.168.1.20:8484" autocomplete="off" spellcheck="false" />
+  <button id="go">Connect</button>
+  <div class="err" id="err"></div>
+  <p class="hint">Press Back to change the server later from this screen.</p>
+</main>
+<script>
+(function () {
+  var KEY = 'mediamax.server';
+  var input = document.getElementById('url');
+  var err = document.getElementById('err');
+  var go = document.getElementById('go');
+  // Remote keys: Tizen needs explicit registration for colour/media keys; Back is 10009 (Tizen) / 461 (webOS).
+  try { tizen.tvinputdevice.registerKeyBatch(['MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop', 'MediaFastForward', 'MediaRewind']); } catch (e) {}
+
+  function normalise(v) {
+    v = (v || '').trim().replace(/\/+$/, '');
+    if (!v) return null;
+    if (!/^https?:\/\//i.test(v)) v = 'http://' + v;
+    try {
+      var u = new URL(v);
+      // Plain http with no port: assume MediaMax's default port.
+      if (u.protocol === 'http:' && !u.port) u.port = '8484';
+      return u.origin + (u.pathname === '/' ? '' : u.pathname.replace(/\/+$/, ''));
+    } catch (e) { return null; }
+  }
+  function connect(url, quiet) {
+    err.textContent = quiet ? '' : 'Connecting…';
+    var x = new XMLHttpRequest();
+    x.open('GET', url + '/api/v1/system/info');
+    x.timeout = 8000;
+    x.onload = function () {
+      if (x.status === 200) {
+        try { localStorage.setItem(KEY, url); } catch (e) {}
+        window.location.replace(url + '/?tv=1');
+      } else err.textContent = 'That address answered, but it is not a MediaMax server (HTTP ' + x.status + ').';
+    };
+    x.onerror = x.ontimeout = function () { err.textContent = 'Could not reach ' + url + '. Check the address and that the TV is on the same network.'; };
+    x.send();
+  }
+  go.onclick = function () {
+    var url = normalise(input.value);
+    if (!url) { err.textContent = 'Type your server address first.'; input.focus(); return; }
+    connect(url);
+  };
+  input.addEventListener('keydown', function (e) {
+    if (e.keyCode === 13 || e.keyCode === 65376) { e.preventDefault(); go.focus(); go.click(); }
+    if (e.keyCode === 40) { e.preventDefault(); go.focus(); }
+  });
+  go.addEventListener('keydown', function (e) { if (e.keyCode === 38) { e.preventDefault(); input.focus(); } });
+  document.addEventListener('keydown', function (e) {
+    if (e.keyCode === 10009 || e.keyCode === 461) {
+      e.preventDefault();
+      try { tizen.application.getCurrentApplication().exit(); } catch (x) { try { webOS.platformBack(); } catch (y) { window.close(); } }
+    }
+  });
+  var saved = null;
+  try { saved = localStorage.getItem(KEY); } catch (e) {}
+  // ?change=1 (or a failed saved address) shows the form instead of reconnecting.
+  if (saved && !/[?&]change=1/.test(location.search)) { input.value = saved; connect(saved, true); }
+  else if (saved) input.value = saved;
+  input.focus();
+})();
+</script>
+</body>
+</html>
