@@ -315,3 +315,70 @@ Music tracks carry `replayGain: { trackGainDb, trackPeak, albumGainDb, albumPeak
 ## Cinema mode (trailers and pre-rolls)
 
 `GET /items/:id/intros` returns the videos to play before a movie: up to `settings.cinema.trailers` local trailers for *other* movies (unwatched ones only, when `unwatchedOnly` is set), then one random clip from `cinema.prerollLibraryId`. It returns `[]` when cinema mode is off, when the item is not a movie, or when the user has turned off the `cinemaMode` preference. Results respect parental limits and library access. The web player chains intros as `/play/<intro>?then=<movie>&intros=<rest>`, and "Skip to movie" jumps straight to the feature.
+
+## DJ mode
+
+MediaMax analyses every music track and can build and play continuous, beat-matched mixes.
+
+**Analysis.** The scheduled task "Analyse music for DJ mode" runs every 6 hours. `POST /dj/analyze` (admin) runs it now, and `GET /dj/status` reports `{analyzed, total, running}`. `GET /items/:id/analysis` returns a `TrackAnalysis` and analyses the track on demand (about 0.5 s per track). Each track gets:
+
+- tempo (`bpm`, with `bpmConfidence`) and a beat grid (`beatOffsetMs`)
+- musical key and its Camelot code (`key`, `camelot`)
+- `energy` (0–1) and `loudnessDb`
+- cue-in/out (leading and trailing silence skipped)
+- intro end and outro start
+
+Analysis is pure TypeScript DSP on PCM decoded by ffmpeg. Tempo comes from spectral-flux onsets, autocorrelation and a beat-grid fit across the whole track. Key comes from chroma matched against Krumhansl–Kessler profiles. Tracks without a steady beat get `bpm: null`.
+
+**Mixes.** `POST /dj/mix` with a `DjMixRequest` returns a `DjMix`.
+
+- **Seed:** `seedItemId` is a track, album, artist or playlist. Without one, the mix starts from a favourite or a highly rated track.
+- **Filters:** `genres`, `libraryId`, `bpmMin`/`bpmMax`. Half and double time count, so 70 BPM matches 140.
+- **Shape:** `curve` is `steady`, `build`, `peak`, `wave` or `chill`; `durationMin` sets the length.
+- **Mixing rules:** `harmonic` (default true), `artistGap` (default 3), `preferFavorites` (default true).
+- **Continuous mode:** send `history` (ids already played or queued) plus `count` to get the next tracks. Tracks are never repeated, and the energy curve keeps moving.
+
+Tracks are ordered by scoring each candidate on:
+
+- key compatibility on the Camelot wheel (same key, ±1, relative major/minor, or a +2 "energy boost")
+- tempo distance
+- distance from the energy-curve target (by percentile within the library)
+- genre overlap
+- favourites and ratings
+
+Every track after the first carries a `transition` describing how to mix into it:
+
+- **When:** start the incoming track at `mixInMs` (on its beat grid) when the outgoing track reaches `mixOutMs`, which is snapped to a bar line of the outgoing track.
+- **How long:** crossfade over `crossfadeMs`.
+- **Tempo:** play the incoming track at `tempoRatio` during the blend, then ease it back to 1.0.
+- **Style:** `blend` (beat-matched, 16–32 beats), `fade`, or `cut` for a clashing key and tempo. `keyMatch` and `bpmDelta` are included for display.
+
+The web app's DJ page (`/dj`) runs two decks on Web Audio with equal-power crossfades, preloads the next track at its mix-in point, and tops up non-stop mixes automatically.
+
+## AI DJ
+
+The AI DJ is free by default and works offline. Admins can connect free or cheap AI services under **Server settings → AI DJ**.
+
+- **Ask in plain words:** `POST /dj/mix {"prompt": "chilled 90s house for a Sunday morning"}`. The built-in parser understands:
+  - genres, including synonyms (EDM, hip hop/rap, R&B, DnB…), matched against your library's genres
+  - decades and years ("90s", "the eighties", "since 2015")
+  - moods, mapped to energy curves (chill, party, workout, build-up, waves)
+  - tempo ("fast", "124 bpm"), mix length, and "nothing over 5 minutes"
+  - "like/start with \<artist, album or song\>"
+
+  The response adds `summary`, `understoodBy` (`llm`/`rules`), `continuous` and the resolved `request`; reuse that request for continuous top-ups. If the filters match nothing, they are relaxed instead of failing.
+- **Language model (optional):** `aiDj.llm.provider` is `ollama`, or `openai` for any OpenAI-compatible API:
+  - **Self-hosted, free:** LM Studio, llama.cpp, LocalAI, vLLM.
+  - **Hosted free tiers:** Groq, Google Gemini (`…/v1beta/openai`), OpenRouter `:free` models, Mistral, Cerebras.
+  - **Very cheap hosted:** DeepSeek, OpenAI mini models.
+
+  Model replies are validated (genres must exist in your library) and merged with the parser's results. `maxRequestsPerDay` (default 300) caps calls so free tiers stay free. Over the cap, the built-in DJ takes over silently. API keys are write-only: settings reads return `••••`.
+- **The host:** `POST /dj/host {previousItemId?, nextItemId, position, prompt?, hour}` returns `{text, audioUrl, by}`. Text comes from varied templates or the model. The model is told to use only the facts it is given: title, artist, year, BPM, key, energy, your play count and favourite status.
+- **Voice:** `aiDj.tts.provider` is one of:
+  - `device`: the browser, phone or TV speaks it, free
+  - `piper`: open-source neural TTS on the server, free
+  - `openai`: any OpenAI-compatible `/audio/speech` API, such as self-hosted Kokoro-FastAPI (free) or a hosted API (cheap)
+
+  Clips are cached as MP3 and served from `GET /dj/voice/:file`. Clients duck the music to about 30% while the host speaks.
+- **Taste:** `POST /dj/feedback {itemId, kind: 'skip'|'love'}`. Skipped tracks and artists are played less for 60 days, and "love" also favourites the track.
+- **Sounds-like:** analysis v2 adds a 26-number timbre fingerprint (MFCC 1–12 mean and deviation, spectral centroid and flatness). Mixes prefer tracks that sound like the previous one and the seed. `GET /dj/status` reports `ai: {enabled, llm, serverVoice, hostName, chattiness}`.

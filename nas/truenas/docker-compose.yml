@@ -1,0 +1,38 @@
+# MediaMax on TrueNAS SCALE 24.10 (Electric Eel) or newer: Apps -> Discover Apps -> ⋮ -> Install via YAML,
+# name it "mediamax" and paste this file. Guide: docs/INSTALL.md#truenas-scale
+#
+# Before you start:
+#   1. Datasets -> create tank/apps/mediamax (Apps preset) with children config, transcode and recordings.
+#   2. PUID/PGID 568 is TrueNAS's built-in "apps" user. Give it read access to your media datasets
+#      (dataset -> Permissions -> add an ACL entry for "apps"), or use your own user's uid/gid instead.
+#   3. Change "tank" and the media paths to your pool and datasets.
+services:
+  mediamax:
+    image: ghcr.io/bucifer6/mediamax:latest
+    container_name: mediamax
+    restart: unless-stopped
+    ports:
+      - "8484:8484"
+    environment:
+      - PUID=568
+      - PGID=568
+      - TZ=Europe/London
+    volumes:
+      - /mnt/tank/apps/mediamax/config:/config
+      - /mnt/tank/apps/mediamax/recordings:/recordings
+      - /mnt/tank/media/movies:/media/movies:ro
+      - /mnt/tank/media/tv:/media/tv:ro
+      - /mnt/tank/media/music:/media/music:ro
+    tmpfs:
+      - /transcode:size=4G   # RAM disk for streaming segments; use a dataset instead if RAM is tight
+    # Intel/AMD GPU for hardware transcoding (check `ls /dev/dri` in System -> Shell):
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # NVIDIA: enable "Install NVIDIA Drivers" under Apps -> Configuration -> Settings, then:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu, video]

@@ -38,6 +38,11 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   dvr: { recordingsPath: config.recordingsDir, paddingBeforeMin: 1, paddingAfterMin: 5, commercialDetection: false, comskipPath: null, comskipIni: null },
   webhooks: [],
   cinema: { enabled: false, trailers: 2, unwatchedOnly: true, prerollLibraryId: null },
+  aiDj: {
+    enabled: true, chattiness: 'normal', hostName: 'Max',
+    llm: { provider: 'none', url: null, model: null, apiKey: null, maxRequestsPerDay: 300 },
+    tts: { provider: 'device', piperPath: null, voiceModel: null, speaker: null, url: null, model: null, voice: null, apiKey: null },
+  },
   allowPasswordlessProfiles: true,
   blockUnratedForRestricted: false,
   trickplay: { enabled: false, intervalSeconds: 10, width: 320 },
@@ -64,6 +69,7 @@ export function getSettings(): ServerSettings {
     transcoding: { ...DEFAULT_SETTINGS.transcoding, ...(stored.transcoding ?? {}) },
     dvr: { ...DEFAULT_SETTINGS.dvr, ...(stored.dvr ?? {}) },
     cinema: { ...DEFAULT_SETTINGS.cinema, ...(stored.cinema ?? {}) },
+    aiDj: { ...DEFAULT_SETTINGS.aiDj, ...(stored.aiDj ?? {}), llm: { ...DEFAULT_SETTINGS.aiDj.llm, ...(stored.aiDj?.llm ?? {}) }, tts: { ...DEFAULT_SETTINGS.aiDj.tts, ...(stored.aiDj?.tts ?? {}) } },
     trickplay: { ...DEFAULT_SETTINGS.trickplay, ...(stored.trickplay ?? {}) },
     openSubtitles: { ...DEFAULT_SETTINGS.openSubtitles, ...(stored.openSubtitles ?? {}) },
     trakt: { ...DEFAULT_SETTINGS.trakt, ...(stored.trakt ?? {}) },
@@ -79,14 +85,28 @@ export function getSettings(): ServerSettings {
   return cache;
 }
 
+export const SECRET_MASK = '••••';
+
+/** Settings as sent to the admin UI: AI service keys are write-only. */
+export function publicSettings(s: ServerSettings = getSettings()): ServerSettings {
+  return {
+    ...s,
+    aiDj: { ...s.aiDj, llm: { ...s.aiDj.llm, apiKey: s.aiDj.llm.apiKey ? SECRET_MASK : null }, tts: { ...s.aiDj.tts, apiKey: s.aiDj.tts.apiKey ? SECRET_MASK : null } },
+  };
+}
+
 export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
   const cur = getSettings();
+  // The masked placeholder means "keep the stored key".
+  if (patch.aiDj?.llm?.apiKey === SECRET_MASK) patch = { ...patch, aiDj: { ...patch.aiDj, llm: { ...patch.aiDj.llm, apiKey: cur.aiDj.llm.apiKey } } };
+  if (patch.aiDj?.tts?.apiKey === SECRET_MASK) patch = { ...patch, aiDj: { ...patch.aiDj!, tts: { ...patch.aiDj!.tts!, apiKey: cur.aiDj.tts.apiKey } } };
   const next: ServerSettings = {
     ...cur,
     ...patch,
     transcoding: { ...cur.transcoding, ...(patch.transcoding ?? {}) },
     dvr: { ...cur.dvr, ...(patch.dvr ?? {}) },
     cinema: { ...cur.cinema, ...(patch.cinema ?? {}) },
+    aiDj: { ...cur.aiDj, ...(patch.aiDj ?? {}), llm: { ...cur.aiDj.llm, ...(patch.aiDj?.llm ?? {}) }, tts: { ...cur.aiDj.tts, ...(patch.aiDj?.tts ?? {}) } },
     trickplay: { ...cur.trickplay, ...(patch.trickplay ?? {}) },
     openSubtitles: { ...cur.openSubtitles, ...(patch.openSubtitles ?? {}) },
     trakt: { ...cur.trakt, ...(patch.trakt ?? {}) },

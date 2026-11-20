@@ -25,7 +25,7 @@ import { useApi, useCapabilities } from '@/state/session';
 import { useTheme } from '@/theme';
 import { formatClock, formatDuration, progressFraction } from '@/utils/format';
 import { isAudioItem, isSpokenAudio } from '@/utils/library';
-import { openItem, playItem } from '@/utils/nav';
+import { openDj, openItem, playItem } from '@/utils/nav';
 import { RatingStars, useUserDataActions } from './common';
 
 export function Header({ item, subtitle, children }: { item: Item; subtitle: string; children?: React.ReactNode }) {
@@ -189,6 +189,7 @@ export function TrackListDetail({ item, onUserData, onItem }: { item: Item; onUs
               <Button label="Play" icon="play" onPress={() => playAt(0)} disabled={!tracks.length} hasTVPreferredFocus />
             )}
             {audio.length > 1 && !isBook ? <Button label="Shuffle" icon="shuffle" variant="secondary" onPress={() => playAt(Math.floor(Math.random() * tracks.length), true)} /> : null}
+            {caps.music && (item.type === 'album' || isPlaylist) && audio.some((x) => x.type === 'track') ? <Button label="Start DJ mix" icon="disc-outline" variant="secondary" onPress={() => openDj(item)} /> : null}
             <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" onPress={toggleFavorite} accessibilityLabel="Favourite" />
             {caps.downloads && downloads.supported && audio.length ? <Button icon="arrow-down-circle-outline" variant="secondary" onPress={() => downloads.download(audio, 'original')} accessibilityLabel="Download all" /> : null}
             {remote.enabled && audio.length ? <Button icon="phone-portrait-outline" label={t.isTV ? 'Play on…' : undefined} variant="secondary" onPress={() => setPlayOnSheet(true)} accessibilityLabel="Play on another device" /> : null}
@@ -266,9 +267,10 @@ export function ArtistDetail({ item, onUserData }: { item: Item; onUserData: (ud
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: t.space.xxl * 3 }}>
       <Header item={item} subtitle={`${list.length} albums`}>
-        <View style={{ flexDirection: 'row', gap: t.space.sm, marginTop: t.space.sm }}>
+        <View style={{ flexDirection: 'row', gap: t.space.sm, marginTop: t.space.sm, flexWrap: 'wrap', justifyContent: t.isTV ? 'flex-start' : 'center' }}>
           <Button label="Play" icon="play" onPress={() => playAll(false)} disabled={!list.length} hasTVPreferredFocus />
           <Button label="Shuffle" icon="shuffle" variant="secondary" onPress={() => playAll(true)} disabled={!list.length} />
+          <Button label="Start DJ mix" icon="disc-outline" variant="secondary" onPress={() => openDj(item)} disabled={!list.length} />
           <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" onPress={toggleFavorite} accessibilityLabel="Favourite" />
         </View>
         <RatingStars rating={item.userData.rating} onRate={setRating} />

@@ -20,6 +20,8 @@ import { syncWatchers } from './watcher.js';
 import { generateMissing } from './trickplay.js';
 import { pluginTasks } from './plugins.js';
 import { createBackup } from './backup.js';
+import { analyseAll } from './dj/analysis.js';
+import { pruneVoices } from './dj/ai.js';
 import { autoDownload } from './opensubtitles.js';
 import { refreshAll as refreshPodcasts } from './podcasts.js';
 import { checkAvailability } from './requests.js';
@@ -152,6 +154,13 @@ const DEFS: TaskDef[] = [
     run: async () => applyRules(),
   },
   {
+    id: 'dj-analysis', name: 'Analyse music for DJ mode', description: 'Detect tempo (BPM), musical key, energy and mix points of new or changed tracks.',
+    interval: () => 6 * 60,
+    run: async (progress) => {
+      await analyseAll(progress);
+    },
+  },
+  {
     id: 'backup', name: 'Back up server', description: 'Snapshot the database, branding, artwork, avatars, plugins and subtitles (Admin → Backups).',
     interval: () => (getSettings().backups.intervalDays > 0 ? getSettings().backups.intervalDays * 24 * 60 : null),
     run: async () => {
@@ -165,6 +174,7 @@ const DEFS: TaskDef[] = [
       pruneActivity();
       pruneOldPrograms();
       pruneImageCache();
+      pruneVoices();
       const active = new Set(listSessions().map((s) => s.id));
       for (const d of fs.readdirSync(config.transcodeDir)) {
         const p = path.join(config.transcodeDir, d);

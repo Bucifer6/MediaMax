@@ -16,7 +16,7 @@ import { T } from '@/components/Text';
 import { useSession } from '@/state/session';
 import { mix, useTheme } from '@/theme';
 import { LIBRARY_ICON } from '@/utils/library';
-import { openItem } from '@/utils/nav';
+import { openDj, openItem } from '@/utils/nav';
 
 export default function LibrariesScreen() {
   const t = useTheme();
@@ -53,7 +53,16 @@ export default function LibrariesScreen() {
         contentContainerStyle={{ paddingBottom: bottom }}
         refreshControl={t.isTV ? undefined : <RefreshControl refreshing={libs.refreshing} onRefresh={() => { void libs.refresh(); void collections.refresh(); void playlists.refresh(); }} tintColor={t.colors.primary} />}
       >
-        <ScreenHeader title="Library" back={false} right={<Button label="Podcasts" icon="mic-outline" size="sm" variant="secondary" onPress={() => router.push('/podcasts' as never)} />} />
+        <ScreenHeader
+          title="Library"
+          back={false}
+          right={
+            <View style={{ flexDirection: 'row', gap: t.space.sm }}>
+              {features.music ? <Button label="DJ" icon="disc-outline" size="sm" variant="secondary" onPress={() => openDj()} accessibilityLabel="DJ mode" /> : null}
+              <Button label="Podcasts" icon="mic-outline" size="sm" variant="secondary" onPress={() => router.push('/podcasts' as never)} />
+            </View>
+          }
+        />
         {!visible.length ? <EmptyState title="No libraries" message="Your administrator hasn't shared any libraries with you yet." /> : null}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap, paddingHorizontal: t.space.gutter, marginBottom: t.space.xl }}>
           {visible.map((lib, i) => (

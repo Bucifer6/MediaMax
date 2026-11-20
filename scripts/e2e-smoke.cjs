@@ -78,7 +78,7 @@ async function waitFor(fn, ms, what) {
     const ids = [movie, await pick('type=show'), await pick('type=album'), await pick('type=artist'), await pick('type=audiobook'), await pick('type=episode')].filter(Boolean);
     const libs = await api('/libraries');
     const users = await api('/users');
-    const pages = ['/', '/search?q=smoke', '/livetv', '/livetv/guide', '/dvr', '/playlists', '/collections', '/link', '/wrapped', '/podcasts', '/settings', '/discover', '/requests',
+    const pages = ['/', '/search?q=smoke', '/livetv', '/livetv/guide', '/dvr', '/playlists', '/collections', '/link', '/wrapped', '/podcasts', '/dj', '/watch/multiview', '/settings', '/discover', '/requests',
       ...libs.map((l) => `/library/${l.id}`), ...ids.map((i) => `/item/${i}`),
       '/admin', '/admin/libraries', '/admin/stats', '/admin/users', `/admin/users/${users[0].id}/wrapped`, '/admin/livetv', '/admin/channels',
       '/admin/branding', '/admin/settings', '/admin/plugins', '/admin/plugins?tab=catalog', '/admin/plugins?tab=repositories', '/admin/tasks', '/admin/activity', '/admin/devices',

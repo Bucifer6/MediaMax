@@ -581,6 +581,11 @@ export function ItemPage() {
                 <Icon name="shuffle" size={18} /> Shuffle
               </button>
             )}
+            {features.music && ['album', 'artist', 'playlist', 'track'].includes(item.type) && (
+              <button className="btn btn-glass btn-lg" onClick={() => navigate(`/dj?seed=${encodeURIComponent(item.id)}`)} data-nav title="An automatic, beat-matched mix starting from this">
+                <Icon name="music" size={18} /> DJ mix
+              </button>
+            )}
             {item.smart && containerOwned && (
               <button className="btn btn-glass btn-lg" onClick={() => setModal('smart')} data-nav>
                 <Icon name="wand" size={18} /> Edit rules

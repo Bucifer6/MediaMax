@@ -1,3 +1,4 @@
+import { AiDjSettingsPanel } from './AiDjSettings';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { ArrOptions, ArrService, HwAccel, ServerSettings, User, Webhook, WebhookEvent } from '@mediamax/shared';
 import { api } from '../api/endpoints';
@@ -9,7 +10,7 @@ import { Icon } from '../components/Icon';
 import { AdminHeader } from './AdminRoutes';
 import { formatBytes } from '../utils/format';
 
-type Tab = 'general' | 'transcoding' | 'cinema' | 'dvr' | 'requests' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks';
+type Tab = 'general' | 'transcoding' | 'cinema' | 'aidj' | 'dvr' | 'requests' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks';
 const HW: { value: HwAccel; label: string }[] = [
   { value: 'none', label: 'None (CPU)' },
   { value: 'vaapi', label: 'VA-API (Intel/AMD, Linux)' },
@@ -135,6 +136,7 @@ export function ServerSettingsAdmin() {
         { value: 'general', label: 'General' },
         { value: 'transcoding', label: 'Transcoding' },
         { value: 'cinema', label: 'Cinema mode' },
+        { value: 'aidj', label: 'AI DJ' },
         { value: 'dvr', label: 'DVR' },
         { value: 'requests', label: 'Requests' },
         { value: 'sso', label: 'SSO' },
@@ -194,6 +196,7 @@ export function ServerSettingsAdmin() {
             <Switch checked={s.transcoding.toneMapHdr} onChange={(v) => setT({ toneMapHdr: v })} label="Tone-map HDR to SDR" hint="Keeps colours correct on non-HDR screens when transcoding." />
           </div>
         )}
+        {tab === 'aidj' && <AiDjSettingsPanel value={s.aiDj} onChange={(aiDj) => set({ aiDj })} />}
         {tab === 'cinema' && (
           <div className="form-grid">
             <p className="muted">

@@ -1002,6 +1002,7 @@ export interface ServerSettings {
     comskipIni: string | null;
   };
   webhooks: Webhook[];
+  aiDj: AiDjSettings;
   /** Cinema mode: trailers and a pre-roll before movies (players ask GET /items/:id/intros). */
   cinema: {
     enabled: boolean;
@@ -1646,4 +1647,174 @@ export interface Bookmark {
   positionMs: number;
   note: string | null;
   createdAt: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* DJ mode: track analysis, automatic mixes, continuous playback       */
+/* ------------------------------------------------------------------ */
+
+/** Per-track audio analysis used for beat/key-aware mixing. Times are in ms from the start of the file. */
+export interface TrackAnalysis {
+  itemId: string;
+  /** Tempo in beats per minute (null when the track has no steady beat, e.g. ambient or speech). */
+  bpm: number | null;
+  /** 0–1: how sure the tempo estimate is. */
+  bpmConfidence: number;
+  /** Time of one beat of the beat grid (beats fall at beatOffsetMs + n × 60000/bpm). */
+  beatOffsetMs: number | null;
+  /** Timbre fingerprint (normalised MFCC means/deviations + spectral shape) for "sounds like" matching. */
+  timbre: number[] | null;
+  /** Musical key, e.g. "A minor". */
+  key: string | null;
+  /** Camelot wheel code, e.g. "8A" (minor = A, major = B). Neighbours on the wheel mix harmonically. */
+  camelot: string | null;
+  /** 0–1 overall intensity (loudness and density), comparable across the library. */
+  energy: number;
+  /** Integrated loudness estimate in dBFS. */
+  loudnessDb: number | null;
+  /** First audible moment (skips leading silence). */
+  cueInMs: number;
+  /** Last audible moment (drops trailing silence). */
+  cueOutMs: number;
+  /** End of a quieter intro, if there is one: a good point for the previous track to finish fading out. */
+  introEndMs: number | null;
+  /** Start of the outro (energy falls away): the natural place to start mixing into the next track. */
+  outroStartMs: number | null;
+  durationMs: number;
+  analyzedAt: string;
+}
+
+/** Shape of the mix over time. */
+export type DjEnergyCurve = 'steady' | 'build' | 'peak' | 'wave' | 'chill';
+
+export interface DjMixRequest {
+  /** AI DJ: describe the mix in plain language ("chilled 90s house for a Sunday morning"). Parsed into the fields below. */
+  prompt?: string;
+  /** Only tracks released in this range (inclusive). */
+  yearFrom?: number;
+  yearTo?: number;
+  /** Skip tracks longer than this. */
+  maxTrackMinutes?: number;
+  /** Start from this track (or album/artist/playlist/genre item) and build around it. */
+  seedItemId?: string;
+  /** Only use tracks from these genres (case-insensitive). */
+  genres?: string[];
+  libraryId?: string;
+  /** Target length; default 60. Ignored when `count` is given. */
+  durationMin?: number;
+  /** Exact number of tracks (used by continuous mode to top up the queue). */
+  count?: number;
+  curve?: DjEnergyCurve;
+  bpmMin?: number;
+  bpmMax?: number;
+  /** Prefer key-compatible neighbours (Camelot wheel). Default true. */
+  harmonic?: boolean;
+  /** Tracks already played or queued (never repeated; the last one is the track to mix out of). */
+  history?: string[];
+  /** Minimum number of tracks between two songs by the same artist. Default 3. */
+  artistGap?: number;
+  /** Favourites and highly rated tracks get a boost. Default true. */
+  preferFavorites?: boolean;
+}
+
+export interface DjTransition {
+  /** Position in the outgoing track where the incoming one starts. */
+  mixOutMs: number;
+  /** Position in the incoming track to start playing from. */
+  mixInMs: number;
+  /** Length of the crossfade. */
+  crossfadeMs: number;
+  /** Playback rate for the incoming track to match tempo during the blend (1 = untouched; within ±8%). */
+  tempoRatio: number;
+  /** blend = long beat-matched mix; fade = plain crossfade; cut = quick swap (clashing keys or tempos). */
+  style: 'blend' | 'fade' | 'cut';
+  keyMatch: 'perfect' | 'compatible' | 'energy' | 'clash' | 'unknown';
+  bpmDelta: number | null;
+}
+
+export interface DjMixTrack {
+  item: Item;
+  analysis: TrackAnalysis | null;
+  /** How to get into this track from the previous one (null for the first track). */
+  transition: DjTransition | null;
+}
+
+export interface DjMix {
+  tracks: DjMixTrack[];
+  durationMs: number;
+  curve: DjEnergyCurve;
+  /** Share of candidate tracks that have been analysed (0–1); mixes improve as analysis completes. */
+  analyzedShare: number;
+  /** AI DJ: what the request was understood as, e.g. "House · 1990s · chill · 60 min". */
+  summary?: string;
+  /** AI DJ: whether the prompt was understood by the language model or the built-in parser. */
+  understoodBy?: 'llm' | 'rules';
+  /** The resolved request (send it back for continuous top-ups). */
+  request?: DjMixRequest;
+  /** AI DJ: the prompt asked for a non-stop mix ("all night", "radio"). */
+  continuous?: boolean;
+}
+
+/** AI DJ host: a short spoken link between two tracks. */
+export interface DjHostRequest {
+  /** Track that just finished (or is fading out); omit for the opening line. */
+  previousItemId?: string;
+  nextItemId: string;
+  /** How many tracks have played in this mix so far. */
+  position: number;
+  /** The listener's mix prompt, for context. */
+  prompt?: string;
+  /** The listener's local hour (0–23), for greetings. */
+  hour?: number;
+}
+
+export interface DjHostLine {
+  text: string;
+  /** Server-rendered speech (Piper); when absent, clients speak `text` with their own TTS. */
+  audioUrl: string | null;
+  /** Length of `audioUrl` when known. */
+  durationMs: number | null;
+  by: 'llm' | 'template';
+}
+
+export interface DjFeedback {
+  itemId: string;
+  kind: 'skip' | 'love';
+}
+
+/** AI DJ settings (Server settings → AI DJ). Everything is optional: with nothing configured the AI DJ uses
+ *  its built-in prompt parser, templates and the device's own voice. */
+export interface AiDjSettings {
+  enabled: boolean;
+  /**
+   * Language model. 'ollama' = Ollama's API (local, free). 'openai' = any OpenAI-compatible API: self-hosted (LM Studio,
+   * llama.cpp, LocalAI, vLLM) or hosted with free tiers / very low prices (Groq, Google Gemini, OpenRouter, Mistral,
+   * Cerebras, DeepSeek, OpenAI). `apiKey` is write-only: reads return "••••" when one is set.
+   */
+  llm: {
+    provider: 'none' | 'ollama' | 'openai'; url: string | null; model: string | null; apiKey: string | null;
+    /** Cap on model calls per day (keeps hosted free tiers free); over the cap the DJ falls back to its built-in rules. 0 = no cap. */
+    maxRequestsPerDay: number;
+  };
+  /**
+   * Speech. 'device' = each app's built-in voice (free, no setup). 'piper' = Piper on this server (free, open-source).
+   * 'openai' = any OpenAI-compatible /audio/speech API: self-hosted Kokoro-FastAPI / openedai-speech (free) or a hosted one.
+   */
+  tts: {
+    provider: 'device' | 'piper' | 'openai';
+    piperPath: string | null; voiceModel: string | null; speaker: number | null;
+    url: string | null; model: string | null; voice: string | null; apiKey: string | null;
+  };
+  /** How often the host talks: 'rare' ≈ every 4–5 tracks, 'normal' ≈ every 2–3, 'chatty' = every track. */
+  chattiness: 'rare' | 'normal' | 'chatty';
+  /** Name the host introduces itself with. */
+  hostName: string;
+}
+
+export interface DjStatus {
+  analyzed: number;
+  total: number;
+  running: boolean;
+  /** AI DJ availability for clients. */
+  ai: { enabled: boolean; llm: boolean; serverVoice: boolean; hostName: string; chattiness: AiDjSettings['chattiness'] };
 }
