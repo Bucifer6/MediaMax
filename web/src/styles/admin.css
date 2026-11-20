@@ -328,3 +328,28 @@ a.stat:hover { transform: translateY(-2px); border-color: var(--c-primary); }
   .repo-add { flex-direction: column; }
   .plugin-frame { min-height: 420px; height: 70vh; }
 }
+
+/* ---------------- Invites, backups, remote access ---------------- */
+.admin-content .table-wrap + .settings-card, .admin-content .settings-card + .settings-card, .admin-content .empty-state + .settings-card { margin-top: 16px; }
+.form-section-title { font-size: 0.95rem; margin: 6px 0 -4px; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.invite-list { display: flex; flex-direction: column; gap: 12px; }
+.invite-card { display: flex; gap: 16px; align-items: flex-start; padding: 16px 18px; border-radius: var(--radius-lg); background: var(--c-surface); border: 1px solid var(--c-line); transition: border-color 0.3s; }
+.invite-card.fresh { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-primary-soft); }
+.invite-card.dim { opacity: 0.7; }
+.invite-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.invite-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.invite-url { font-size: 0.82rem; max-width: 100%; }
+.invite-actions { display: flex; flex-direction: column; gap: 8px; flex: none; }
+.restart-banner { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 18px; margin-bottom: 16px; border-radius: var(--radius-lg); border: 1px solid color-mix(in srgb, var(--c-warning) 55%, transparent); background: color-mix(in srgb, var(--c-warning) 12%, var(--c-surface)); }
+.restart-banner > .icon { color: var(--c-warning); flex: none; }
+.restart-text { flex: 1; min-width: 200px; }
+.row-end { justify-content: flex-end; flex-wrap: nowrap; }
+.remote-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.guidance h2 { display: flex; align-items: center; gap: 8px; font-size: 1.05rem; }
+.guidance h2:not(:first-child) { margin-top: 8px; }
+@media (max-width: 800px) {
+  .remote-grid { grid-template-columns: 1fr; }
+  .invite-card { flex-direction: column; align-items: stretch; }
+  .invite-actions { flex-direction: row; }
+  .row-end { flex-wrap: wrap; }
+}

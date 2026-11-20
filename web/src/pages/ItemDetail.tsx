@@ -12,6 +12,7 @@ import { Badge, Dropdown, EmptyState, ErrorState, Img, Modal, ProgressBar, Skele
 import { Row } from '../components/Row';
 import { PosterCard } from '../components/Cards';
 import { SmartListModal } from '../components/SmartListModal';
+import { BookmarksSection } from '../components/Bookmarks';
 import { AddToContainerModal, EditMetadataModal, UploadArtworkModal } from '../components/ItemModals';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
@@ -106,6 +107,31 @@ function SimilarRow({ item }: { item: Item }) {
   return (
     <Row title="More like this">
       {sim.data.map((s) => <PosterCard key={s.id} item={s} />)}
+    </Row>
+  );
+}
+
+/** Link to the library filtered to a book series (sorted by series order). */
+export function seriesLink(item: Item): string {
+  const name = item.series?.name ?? '';
+  return item.libraryId ? `/library/${item.libraryId}?series=${encodeURIComponent(name)}` : `/search?q=${encodeURIComponent(name)}`;
+}
+
+function SeriesRow({ item }: { item: Item }) {
+  const name = item.series?.name;
+  const books = useAsync(
+    async () => (name ? (await api.items.query({ series: name, type: 'audiobook', limit: 60 })).items : []),
+    [name],
+  );
+  if (!name || !books.data || books.data.length < 2) return null;
+  return (
+    <Row title={<>More in {name}</>} link={seriesLink(item)} className="series-row">
+      {books.data.map((b) => (
+        <div key={b.id} className={`series-cell ${b.id === item.id ? 'current' : ''}`}>
+          <PosterCard item={b} shape="square" />
+          {b.series?.index != null && <span className="series-index">Book {b.series.index}</span>}
+        </div>
+      ))}
     </Row>
   );
 }
@@ -518,6 +544,11 @@ export function ItemPage() {
             {item.type === 'show' && item.childCount > 0 && <span>{item.childCount} season{item.childCount > 1 ? 's' : ''}</span>}
             {(item.type === 'album' || item.type === 'playlist' || item.type === 'collection') && item.childCount > 0 && <span>{item.childCount} items</span>}
             {item.type === 'audiobook' && item.childCount > 1 && <span>{item.childCount} parts</span>}
+            {item.type === 'audiobook' && item.series?.name && (
+              <Link className="detail-series" to={seriesLink(item)}>
+                <Icon name="book" size={14} /> {item.series.index != null ? `Book ${item.series.index} of ` : ''}{item.series.name}
+              </Link>
+            )}
             {item.type === 'podcast' && item.childCount > 0 && <span>{item.childCount} episodes</span>}
             {item.type === 'podcastepisode' && item.releaseDate && <span>{formatDate(item.releaseDate)}</span>}
             {item.smart && <Badge tone="accent"><Icon name="wand" size={12} /> Smart</Badge>}
@@ -630,6 +661,8 @@ export function ItemPage() {
         {item.type === 'podcast' && <PodcastEpisodes podcast={item} />}
         {item.type === 'audiobook' && item.childCount !== 1 && <TrackList parent={item} />}
         {(item.chapters?.length ?? 0) > 0 && <ChaptersSection item={item} />}
+        {(item.type === 'audiobook' || item.type === 'bookpart') && <BookmarksSection item={item} />}
+        {item.type === 'audiobook' && item.series?.name && <SeriesRow item={item} />}
         {(item.type === 'album' || item.type === 'playlist') && <TrackList key={item.smart ? JSON.stringify(item.smart) : 'manual'} parent={item} removable={item.type === 'playlist' && !item.smart} onRemove={removeFromContainer} />}
         {item.type === 'artist' && <ChildrenGrid parent={item} title="Albums" />}
         {item.type === 'collection' && <ChildrenGrid key={item.smart ? JSON.stringify(item.smart) : 'manual'} parent={item} removable={isAdmin && !item.smart} onRemove={removeFromContainer} />}

@@ -52,6 +52,7 @@ const PodcastsPage = lazyPage(() => import('./pages/Podcasts'));
 const DiscoverPage = lazyPage(() => import('./pages/Discover'));
 const RequestsPage = lazyPage(() => import('./pages/Requests'));
 const AdminRoutes = lazyPage(() => import('./admin/AdminRoutes'));
+const InvitePage = lazyPage(() => import('./pages/Invite'));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -127,6 +128,8 @@ function Gate() {
     <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/login" element={<Login />} />
+        {/* Public: invite links are opened by people who don't have an account yet. */}
+        <Route path="/invite/:code" element={<InvitePage />} />
         <Route path="/play/:itemId" element={<RequireAuth><VideoPlayer /></RequireAuth>} />
         <Route path="/watch/multiview" element={<RequireAuth><Multiview /></RequireAuth>} />
         <Route path="/watch/live/:channelId" element={<RequireAuth><LivePlayer /></RequireAuth>} />

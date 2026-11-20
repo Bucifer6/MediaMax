@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { CreateUserRequest, Library, User } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
@@ -29,6 +29,8 @@ function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged }: { 
     allowDownloads: initial?.allowDownloads ?? true,
     allowTranscode: initial?.allowTranscode ?? true,
     allowDvr: initial?.allowDvr ?? false,
+    allowRemote: initial?.allowRemote ?? true,
+    maxStreams: initial?.maxStreams ?? null,
     disabled: initial?.disabled ?? false,
   });
   const [busy, setBusy] = useState(false);
@@ -104,12 +106,17 @@ function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged }: { 
             <input className="input" inputMode="numeric" value={f.pin} onChange={(e) => set('pin', e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="••••" maxLength={8} />
           </Field>
         </div>
-        <Field label="Maximum content rating">
-          <select className="select" value={f.maxContentRating ?? ''} onChange={(e) => set('maxContentRating', e.target.value || null)}>
-            <option value="">Unrestricted</option>
-            {CONTENT_RATINGS.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </Field>
+        <div className="form-row">
+          <Field label="Maximum content rating">
+            <select className="select" value={f.maxContentRating ?? ''} onChange={(e) => set('maxContentRating', e.target.value || null)}>
+              <option value="">Unrestricted</option>
+              {CONTENT_RATINGS.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </Field>
+          <Field label="Max simultaneous streams" hint="Leave empty for unlimited.">
+            <input className="input" type="number" min={1} max={100} inputMode="numeric" value={f.maxStreams ?? ''} placeholder="Unlimited" onChange={(e) => set('maxStreams', e.target.value === '' ? null : Math.max(1, Math.floor(Number(e.target.value)) || 1))} />
+          </Field>
+        </div>
         <div className="field">
           <span className="field-label">Library access</span>
           <div className="lib-access">
@@ -130,6 +137,7 @@ function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged }: { 
           <Switch checked={!!f.allowDvr} onChange={(v) => set('allowDvr', v)} label="DVR recording" />
           <Switch checked={!!f.allowTranscode} onChange={(v) => set('allowTranscode', v)} label="Allow transcoding" hint="When off, only direct play is allowed." />
           <Switch checked={!!f.allowDownloads} onChange={(v) => set('allowDownloads', v)} label="Downloads" />
+          <Switch checked={!!f.allowRemote} onChange={(v) => set('allowRemote', v)} label="Allow streaming outside the home network" hint="When off, playback only works from the local network." />
           {initial && <Switch checked={!!f.disabled} onChange={(v) => set('disabled', v)} label="Disabled" hint="Blocks sign-in and revokes access." disabled={isSelf} />}
         </div>
       </div>
@@ -150,6 +158,17 @@ export function UsersAdmin() {
   const libs = useAsync(() => api.libraries.list().catch(() => [] as Library[]), []);
   const [edit, setEdit] = useState<User | 'new' | null>(null);
 
+  const resetTotp = async (u: User) => {
+    if (!(await confirm({ title: `Reset two-factor for ${u.displayName || u.username}?`, message: 'Two-factor authentication is turned off for this account. They can sign in with just their password and set it up again.', confirmLabel: 'Reset two-factor', danger: true }))) return;
+    try {
+      const updated = await api.users.resetTotp(u.id);
+      users.setData((d) => (d ?? []).map((x) => (x.id === u.id ? updated : x)));
+      toast.success('Two-factor authentication reset');
+    } catch (e) {
+      toast.error(e);
+    }
+  };
+
   const remove = async (u: User) => {
     if (!(await confirm({ title: `Delete ${u.displayName || u.username}?`, message: 'Their watch history and playlists will be removed.', confirmLabel: 'Delete user', danger: true }))) return;
     try {
@@ -162,7 +181,7 @@ export function UsersAdmin() {
 
   return (
     <div>
-      <AdminHeader title="Users" subtitle="Accounts, Plex-Home-style profiles, parental controls and permissions." actions={<button className="btn btn-primary" onClick={() => setEdit('new')}><Icon name="plus" size={16} /> Add user</button>} />
+      <AdminHeader title="Users" subtitle="Accounts, Plex-Home-style profiles, parental controls and permissions." actions={<><Link className="btn" to="/admin/invites"><Icon name="link" size={16} /> Invites</Link><button className="btn btn-primary" onClick={() => setEdit('new')}><Icon name="plus" size={16} /> Add user</button></>} />
       {users.loading && !users.data ? <Skeleton h={200} /> : users.error ? <ErrorState message={users.error} onRetry={users.reload} /> : !users.data?.length ? <EmptyState icon="users" title="No users" /> : (
         <div className="table-wrap">
           <table className="table">
@@ -184,6 +203,9 @@ export function UsersAdmin() {
                       {u.isAdmin && <Badge tone="primary">Admin</Badge>}
                       {u.disabled && <Badge tone="danger">Disabled</Badge>}
                       {u.hasPin && <Badge tone="muted"><Icon name="lock" size={10} /> PIN</Badge>}
+                      {u.totpEnabled && <Badge tone="success"><Icon name="shield" size={10} /> 2FA</Badge>}
+                      {u.maxStreams != null && <Badge tone="muted">{u.maxStreams} stream{u.maxStreams === 1 ? '' : 's'}</Badge>}
+                      {u.allowRemote === false && <Badge tone="warning">Home only</Badge>}
                       {!u.hasPassword && <Badge tone="muted">Profile</Badge>}
                       <Badge tone="muted">{u.libraryIds === null ? 'All libraries' : `${u.libraryIds.length} libraries`}</Badge>
                       {u.allowLiveTv && <Badge tone="muted">Live TV</Badge>}
@@ -198,6 +220,7 @@ export function UsersAdmin() {
                       items={[
                         { label: 'Edit', icon: 'edit', onClick: () => setEdit(u) },
                         { label: 'Year in review', icon: 'sparkles', onClick: () => navigate(`/admin/users/${u.id}/wrapped`) },
+                        ...(u.totpEnabled ? [{ label: 'Reset two-factor', icon: 'shield' as const, onClick: () => resetTotp(u) }] : []),
                         ...(u.id !== me?.id ? [{ label: 'Delete', icon: 'trash' as const, danger: true, onClick: () => remove(u) }] : []),
                       ]}
                     />

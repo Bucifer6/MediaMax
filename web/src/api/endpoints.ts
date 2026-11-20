@@ -7,7 +7,8 @@ import type {
   RecordingRule, RecordingStatus, RemoteSubtitle, ScheduledTask, SearchResponse, ServerSettings, ServerStats, SetupRequest, SystemInfo,
   TestSourceResponse, Theme, TraktDeviceCode, TraktStatus, TrickplayInfo, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
   UpdateUserRequest, User, UserItemData, UserStats,
-  ArrOptions, CreateMediaRequest, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
+  ArrOptions, CreateMediaRequest, ApiKey, CreatedApiKey, TotpSetup, TotpEnabled, Invite, CreateInviteRequest, InvitePreview, AcceptInviteRequest,
+  BackupInfo, RemoteAccessStatus, Bookmark, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
 import { http, request, upload } from './client';
 import { deviceInfo } from './device';
@@ -35,11 +36,11 @@ export const api = {
   },
 
   auth: {
-    login: (username: string, password: string) =>
-      request<AuthResponse>('POST', '/auth/login', { body: { ...deviceInfo(), username, password } satisfies LoginRequest, silent401: true }),
+    login: (username: string, password: string, totpCode?: string) =>
+      request<AuthResponse>('POST', '/auth/login', { body: { ...deviceInfo(), username, password, totpCode } satisfies LoginRequest, silent401: true }),
     profiles: () => http.get<PublicProfile[]>('/auth/profiles'),
-    profileLogin: (userId: string, pin?: string) =>
-      request<AuthResponse>('POST', '/auth/profile-login', { body: { ...deviceInfo(), userId, pin } satisfies PinLoginRequest, silent401: true }),
+    profileLogin: (userId: string, pin?: string, totpCode?: string) =>
+      request<AuthResponse>('POST', '/auth/profile-login', { body: { ...deviceInfo(), userId, pin, totpCode } satisfies PinLoginRequest, silent401: true }),
     approveLink: (code: string) => http.post<{ ok: true; deviceName: string }>('/auth/link/approve', { code }),
     logout: () => request<Ok>('POST', '/auth/logout', { body: {}, silent401: true }),
     me: () => request<User>('GET', '/auth/me', { silent401: true }),
@@ -48,6 +49,21 @@ export const api = {
     deleteAvatar: () => http.del<User>('/auth/me/avatar'),
     devices: (all = false) => http.get<Device[]>('/auth/devices', all ? { all: true } : undefined),
     revokeDevice: (id: string) => http.del<Ok>(`/auth/devices/${enc(id)}`),
+    totpSetup: () => http.post<TotpSetup>('/auth/me/2fa/setup'),
+    totpEnable: (code: string) => http.post<TotpEnabled>('/auth/me/2fa/enable', { code }),
+    totpDisable: (code: string) => http.post<User>('/auth/me/2fa/disable', { code }),
+    apiKeys: () => http.get<ApiKey[]>('/auth/api-keys'),
+    createApiKey: (name: string) => http.post<CreatedApiKey>('/auth/api-keys', { name }),
+    deleteApiKey: (id: string) => http.del<Ok>(`/auth/api-keys/${enc(id)}`),
+  },
+
+  invites: {
+    list: () => http.get<Invite[]>('/invites'),
+    create: (body: CreateInviteRequest) => http.post<Invite>('/invites', body),
+    remove: (code: string) => http.del<Ok>(`/invites/${enc(code)}`),
+    preview: (code: string) => request<InvitePreview>('GET', `/invites/${enc(code)}/preview`, { silent401: true }),
+    accept: (code: string, body: Pick<AcceptInviteRequest, 'username' | 'password' | 'displayName'>) =>
+      request<AuthResponse>('POST', `/invites/${enc(code)}/accept`, { body: { ...deviceInfo(), ...body } satisfies AcceptInviteRequest, silent401: true }),
   },
 
   users: {
@@ -57,6 +73,7 @@ export const api = {
     remove: (id: string) => http.del<Ok>(`/users/${enc(id)}`),
     uploadAvatar: (id: string, file: File) => upload<User>(`/users/${enc(id)}/avatar`, file),
     deleteAvatar: (id: string) => http.del<User>(`/users/${enc(id)}/avatar`),
+    resetTotp: (id: string) => http.del<User>(`/users/${enc(id)}/2fa`),
   },
 
   libraries: {
@@ -93,6 +110,9 @@ export const api = {
     trickplay: (id: string, mediaId?: string, signal?: AbortSignal) => http.get<TrickplayInfo>(`/items/${enc(id)}/trickplay`, { mediaId }, signal),
     intros: (id: string) => http.get<Item[]>(`/items/${enc(id)}/intros`),
     extras: (id: string) => http.get<Item[]>(`/items/${enc(id)}/extras`),
+    bookmarks: (id: string, signal?: AbortSignal) => http.get<Bookmark[]>(`/items/${enc(id)}/bookmarks`, undefined, signal),
+    addBookmark: (id: string, body: { positionMs: number; note?: string }) => http.post<Bookmark>(`/items/${enc(id)}/bookmarks`, body),
+    removeBookmark: (id: string, bookmarkId: string) => http.del<Ok>(`/items/${enc(id)}/bookmarks/${enc(bookmarkId)}`),
   },
 
   subtitles: {
@@ -224,6 +244,16 @@ export const api = {
     runTask: (id: string) => http.post<Ok>(`/tasks/${enc(id)}/run`),
     activity: (limit = 50, offset = 0) => http.get<Paged<ActivityEntry>>('/activity', { limit, offset }),
     saveRepositories: (repositories: string[]) => http.put<ServerSettings>('/settings', { plugins: { repositories } }),
+    saveSettingsPatch: (patch: Partial<ServerSettings>) => http.put<ServerSettings>('/settings', patch),
+    restart: () => http.post<Ok>('/admin/restart'),
+    backups: () => http.get<BackupInfo[]>('/admin/backups'),
+    createBackup: () => http.post<BackupInfo>('/admin/backups'),
+    removeBackup: (id: string) => http.del<Ok>(`/admin/backups/${enc(id)}`),
+    restoreBackup: (id: string) => http.post<{ restartRequired: boolean }>(`/admin/backups/${enc(id)}/restore`),
+    restoreUpload: (file: File) => upload<{ restartRequired: boolean }>('/admin/backups/restore-upload', file),
+    backupDownloadUrl: (id: string) => `/api/v1/admin/backups/${enc(id)}/download`,
+    remoteAccess: () => http.get<RemoteAccessStatus>('/admin/remote-access'),
+    refreshRemoteAccess: () => http.post<RemoteAccessStatus>('/admin/remote-access/refresh'),
   },
 
   plugins: {

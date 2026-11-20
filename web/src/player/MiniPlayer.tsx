@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import type { Chapter, Lyrics } from '@mediamax/shared';
 import { api } from '../api/endpoints';
-import { useMusic } from './music';
+import { useMusic, type SleepTimer } from './music';
+import { PlayerBookmarks } from '../components/Bookmarks';
+import { useNow } from '../hooks';
 import { SeekBar, VolumeControl } from './controls';
 import { Icon } from '../components/Icon';
-import { Img, Spinner } from '../components/ui';
+import { Dropdown, Img, Spinner, type MenuItem } from '../components/ui';
 import { formatClock, formatDuration } from '../utils/format';
 
 /** Index of the chapter containing `ms`. */
@@ -72,7 +74,40 @@ function LyricsView({ itemId, positionMs, onSeek }: { itemId: string; positionMs
   );
 }
 
-type Panel = null | 'queue' | 'chapters' | 'lyrics';
+type Panel = null | 'queue' | 'chapters' | 'lyrics' | 'bookmarks';
+
+function sleepLabel(s: SleepTimer, now: number): string {
+  if (s.mode === 'time') return `${Math.max(1, Math.ceil((s.endsAt - now) / 60000))}m`;
+  return s.mode === 'chapter' ? 'Ch.' : 'End';
+}
+
+/** Sleep timer button + menu. */
+export function SleepTimerButton() {
+  const m = useMusic();
+  useNow(10000); // keep the countdown fresh while paused
+  const now = Date.now();
+  const t = m.current;
+  const partWord = t?.type === 'bookpart' ? 'part' : t?.type === 'podcastepisode' ? 'episode' : 'track';
+  const items: MenuItem[] = [
+    { label: 'Off', checked: !m.sleep, onClick: () => m.setSleep(null) },
+    ...[15, 30, 45, 60].map((n) => ({ label: `${n} minutes`, checked: m.sleep?.mode === 'time' && m.sleep.minutes === n, onClick: () => m.setSleep({ minutes: n }) })),
+    { label: 'End of chapter', checked: m.sleep?.mode === 'chapter', disabled: !m.chapters.length, onClick: () => m.setSleep('chapter') },
+    { label: `End of ${partWord}`, checked: m.sleep?.mode === 'part', onClick: () => m.setSleep('part') },
+  ];
+  const desc = !m.sleep ? 'Sleep timer' : m.sleep.mode === 'time' ? `Sleep timer: ${sleepLabel(m.sleep, now)} left` : m.sleep.mode === 'chapter' ? 'Sleep timer: end of chapter' : `Sleep timer: end of ${partWord}`;
+  return (
+    <Dropdown
+      className="sleep-dropdown"
+      trigger={({ onClick, open }) => (
+        <button className={`btn-icon sleep-btn ${m.sleep ? 'active' : ''}`} onClick={onClick} aria-label={desc} title={desc} aria-expanded={open} aria-haspopup="menu">
+          <Icon name="clock" />
+          {m.sleep && <span className="sleep-badge">{sleepLabel(m.sleep, now)}</span>}
+        </button>
+      )}
+      items={items}
+    />
+  );
+}
 
 export function MiniPlayer() {
   const m = useMusic();
@@ -134,6 +169,12 @@ export function MiniPlayer() {
               <Icon name="chapters" />
             </button>
           )}
+          {(t.type === 'bookpart' || t.type === 'podcastepisode') && (
+            <button className={`btn-icon ${panel === 'bookmarks' ? 'active' : ''}`} onClick={() => setPanel((p) => (p === 'bookmarks' ? null : 'bookmarks'))} aria-label="Bookmarks" title="Bookmarks">
+              <Icon name="flag" />
+            </button>
+          )}
+          <SleepTimerButton />
           {t.type === 'track' && (
             <button className={`btn-icon ${panel === 'lyrics' ? 'active' : ''}`} onClick={() => setPanel((p) => (p === 'lyrics' ? null : 'lyrics'))} aria-label="Lyrics" title="Lyrics">
               <Icon name="lyrics" />
@@ -164,6 +205,15 @@ export function MiniPlayer() {
             <button className="btn-icon" onClick={() => setPanel(null)} aria-label="Close chapters"><Icon name="x" size={18} /></button>
           </div>
           <ChapterList chapters={m.chapters} positionMs={m.positionMs} onSeek={m.seek} />
+        </aside>
+      )}
+      {panel === 'bookmarks' && (t.type === 'bookpart' || t.type === 'podcastepisode') && (
+        <aside className="queue-panel" aria-label="Bookmarks">
+          <div className="queue-head">
+            <h3>Bookmarks</h3>
+            <button className="btn-icon" onClick={() => setPanel(null)} aria-label="Close bookmarks"><Icon name="x" size={18} /></button>
+          </div>
+          <PlayerBookmarks />
         </aside>
       )}
       {panel === 'lyrics' && t.type === 'track' && (

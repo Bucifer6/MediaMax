@@ -13,6 +13,15 @@ import { hasAudioResume, isAudio, isResumable, isVideo, playLink } from '../util
 
 type Repeat = 'off' | 'all' | 'one';
 
+/** Sleep timer: pause after a number of minutes, at the end of the current chapter, or at the end of the current part. */
+export type SleepTimer =
+  | { mode: 'time'; minutes: number; endsAt: number }
+  | { mode: 'chapter'; itemId: string; endMs: number }
+  | { mode: 'part' };
+export type SleepOption = { minutes: number } | 'chapter' | 'part';
+/** How long the volume fades out before the sleep timer pauses. */
+const SLEEP_FADE_MS = 12000;
+
 interface MusicApi {
   queue: Item[];
   index: number;
@@ -28,14 +37,15 @@ interface MusicApi {
   repeat: Repeat;
   /** Chapters of the current item (audiobooks, podcasts with chapter marks). */
   chapters: Chapter[];
-  playQueue: (items: Item[], start?: number) => void;
+  /** `startMs` starts the first item at that position instead of its saved resume point. */
+  playQueue: (items: Item[], start?: number, startMs?: number) => void;
   enqueue: (items: Item[], next?: boolean) => void;
   toggle: () => void;
   pause: () => void;
   next: () => void;
   prev: () => void;
   seek: (ms: number) => void;
-  jump: (i: number) => void;
+  jump: (i: number, startMs?: number) => void;
   removeAt: (i: number) => void;
   clear: () => void;
   setVolume: (v: number) => void;
@@ -46,6 +56,8 @@ interface MusicApi {
   cast: CastHandle;
   /** The current track is playing on a Cast device. */
   casting: boolean;
+  sleep: SleepTimer | null;
+  setSleep: (opt: SleepOption | null) => void;
 }
 
 const Ctx = createContext<MusicApi | null>(null);
@@ -84,14 +96,21 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const [shuffle, setShuffleState] = useState(false);
   const [repeat, setRepeat] = useState<Repeat>('off');
   const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [sleep, setSleepState] = useState<SleepTimer | null>(null);
+  /** Requested start position for the next track load (bookmarks). */
+  const startAtRef = useRef<{ id: string; ms: number } | null>(null);
+  /** Load the next track paused (sleep timer "end of part"). */
+  const holdRef = useRef(false);
   const attached = useRef<Attached | null>(null);
   const sessionRef = useRef<string | null>(null);
   /** Media position at stream time 0 (non-zero when the server starts a transcode mid-file). */
   const offsetRef = useRef(0);
   const pendingSeek = useRef<number | null>(null);
-  const stateRef = useRef({ queue, index, repeat, durationMs });
-  stateRef.current = { queue, index, repeat, durationMs };
+  const stateRef = useRef({ queue, index, repeat, durationMs, positionMs, chapters, volume, sleep });
+  stateRef.current = { queue, index, repeat, durationMs, positionMs, chapters, volume, sleep };
   const current = index >= 0 ? queue[index] ?? null : null;
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
   const { system } = useApp();
 
   /* ---------------- Google Cast ---------------- */
@@ -184,7 +203,9 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setPosition(0);
     setDuration(current.durationMs ?? 0);
     setChapters(current.chapters ?? []);
-    const resumeMs = hasAudioResume(current) && isResumable(current) ? current.userData.positionMs : 0;
+    const startAt = startAtRef.current?.id === current.id ? startAtRef.current.ms : null;
+    startAtRef.current = null;
+    const resumeMs = startAt ?? (hasAudioResume(current) && isResumable(current) ? current.userData.positionMs : 0);
     (async () => {
       stopSession();
       attached.current?.destroy();
@@ -196,7 +217,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         if (hasAudioResume(current)) {
           const fresh = await api.items.get(current.id).catch(() => null);
           if (fresh) {
-            startMs = isResumable(fresh) ? fresh.userData.positionMs : 0;
+            if (startAt == null) startMs = isResumable(fresh) ? fresh.userData.positionMs : 0;
             if (!cancelled && fresh.chapters) setChapters(fresh.chapters);
           }
         }
@@ -221,7 +242,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
           },
         });
         if (cancelled) return;
-        await a.play().catch(() => setPlaying(false));
+        if (holdRef.current) {
+          holdRef.current = false;
+          setPlaying(false);
+        } else await a.play().catch(() => setPlaying(false));
         if ('mediaSession' in navigator) {
           navigator.mediaSession.metadata = new MediaMetadata({
             title: pi.title || current.title,
@@ -339,7 +363,15 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       if (!a.ended) report('paused');
     };
     const onEnded = () => {
-      const { repeat: r } = stateRef.current;
+      const { repeat: r, sleep: sl } = stateRef.current;
+      if (sl?.mode === 'part') {
+        // Sleep timer "end of part": move on, but load the next part paused.
+        setSleepState(null);
+        a.volume = stateRef.current.volume;
+        holdRef.current = stateRef.current.index + 1 < stateRef.current.queue.length || r === 'all';
+        next();
+        return;
+      }
       if (r === 'one') {
         a.currentTime = 0;
         void a.play();
@@ -533,11 +565,70 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     }
   }, [next, prev, togglePlayback, pausePlayback]);
 
+  /* ---------------- Sleep timer ---------------- */
+  const setSleep = useCallback((opt: SleepOption | null) => {
+    const a = audioRef.current;
+    if (a && !castingRef.current) a.volume = stateRef.current.volume;
+    if (!opt) {
+      setSleepState(null);
+      return;
+    }
+    if (opt === 'part') {
+      setSleepState({ mode: 'part' });
+      return;
+    }
+    if (opt === 'chapter') {
+      const { chapters: ch, positionMs: pos, durationMs: dur, queue: q, index: i } = stateRef.current;
+      const cur = q[i];
+      if (!cur || !ch.length) return;
+      const nextStart = ch.find((c) => c.startMs > pos + 500)?.startMs;
+      setSleepState({ mode: 'chapter', itemId: cur.id, endMs: nextStart ?? dur });
+      return;
+    }
+    setSleepState({ mode: 'time', minutes: opt.minutes, endsAt: Date.now() + opt.minutes * 60_000 });
+  }, []);
+
+  useEffect(() => {
+    if (!sleep) return;
+    const a = audioRef.current;
+    const fire = () => {
+      setSleepState(null);
+      pausePlayback();
+      if (a) window.setTimeout(() => (a.volume = stateRef.current.volume), 300);
+      toast.show('Sleep timer: playback paused');
+    };
+    const iv = window.setInterval(() => {
+      const st = stateRef.current;
+      const cur = st.queue[st.index];
+      let remaining: number;
+      if (sleep.mode === 'time') remaining = sleep.endsAt - Date.now();
+      else if (sleep.mode === 'chapter') {
+        if (!cur || cur.id !== sleep.itemId) {
+          setSleepState(null);
+          return;
+        }
+        remaining = sleep.endMs - st.positionMs;
+      } else remaining = st.durationMs > 0 ? st.durationMs - st.positionMs : Infinity;
+      if (sleep.mode !== 'time' && !playingRef.current) return;
+      if (remaining <= 0 && sleep.mode !== 'part') {
+        fire();
+        return;
+      }
+      // Fade out over the last few seconds (local playback only).
+      if (a && !castingRef.current && playingRef.current) {
+        const f = Math.max(0, Math.min(1, remaining / SLEEP_FADE_MS));
+        a.volume = st.volume * (sleep.mode === 'part' ? Math.max(f, 0.05) : f);
+      }
+    }, 250);
+    return () => window.clearInterval(iv);
+  }, [sleep, pausePlayback, toast]);
+
   const value = useMemo<MusicApi>(
     () => ({
       queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters,
-      playQueue: (items, start = 0) => {
+      playQueue: (items, start = 0, startMs) => {
         if (!items.length) return;
+        startAtRef.current = startMs != null && items[start] ? { id: items[start]!.id, ms: startMs } : null;
         const list = shuffle && !hasAudioResume(items[start]!) ? [items[start]!, ...shuffled(items.filter((_, i) => i !== start))] : items;
         setQueue(list);
         setIndex(-1);
@@ -561,7 +652,16 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       next,
       prev,
       seek: (ms) => seekRef.current(ms),
-      jump: goto,
+      jump: (i, startMs) => {
+        const item = stateRef.current.queue[i];
+        if (!item) return;
+        if (i === stateRef.current.index) {
+          if (startMs != null) seekRef.current(startMs);
+          return;
+        }
+        startAtRef.current = startMs != null ? { id: item.id, ms: startMs } : null;
+        goto(i);
+      },
       removeAt: (i) => {
         setQueue((q) => q.filter((_, j) => j !== i));
         setIndex((cur) => (i < cur ? cur - 1 : i === cur ? Math.min(cur, queue.length - 2) : cur));
@@ -586,8 +686,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       setRepeat,
       cast,
       casting,
+      sleep,
+      setSleep,
     }),
-    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto, togglePlayback, pausePlayback, cast, casting],
+    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto, togglePlayback, pausePlayback, cast, casting, sleep, setSleep],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
