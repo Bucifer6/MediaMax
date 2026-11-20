@@ -161,6 +161,12 @@ export const SHOTS = {
   async 'item-movie'(s) {
     const { ctx, page } = await s.context();
     await s.goto(page, `/item/${s.state.M['neon-meridian']}`, 1200);
+    // Scroll just enough to bring the cast row into view under the logo and actions.
+    await page.evaluate(() => {
+      const cast = [...document.querySelectorAll('.section-title')].find((h) => /cast/i.test(h.textContent));
+      if (cast) window.scrollTo(0, Math.max(0, cast.getBoundingClientRect().top + scrollY - 560));
+    });
+    await s.settle(page, 800);
     await s.capture(page, 'item-movie.jpg');
     await ctx.close();
   },
@@ -276,7 +282,10 @@ export const SHOTS = {
     }
     for (const x of await s.state.admin.get('/sessions').catch(() => [])) if (x.userId === s.state.adminId) await s.state.admin.del(`/playback/sessions/${x.id}`).catch(() => undefined);
     await s.goto(page, '/admin', 2000);
-    await page.evaluate(() => window.scrollTo(0, 230));
+    await page.evaluate(() => {
+      const h = [...document.querySelectorAll('h2, h3')].find((x) => /now playing/i.test(x.textContent));
+      if (h) window.scrollTo(0, Math.max(0, h.getBoundingClientRect().top + scrollY - 470));
+    });
     await s.settle(page, 600);
     await s.capture(page, 'admin-dashboard.jpg');
     for (const [c, id] of sessions) await c.del(`/playback/sessions/${id}`).catch(() => undefined);

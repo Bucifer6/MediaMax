@@ -75,6 +75,18 @@ export async function seedServer({ base, media, data, mockBase, avatars, log }) 
     const libs = await admin.get('/libraries');
     return libs.length >= 5 && libs.every((l) => !l.scanning && l.itemCount > 0);
   }, 180000, 'library scans');
+  // Some probes fail at random under load (ffprobe output is read before the pipe drains, see the report), which
+  // leaves items without a duration. Re-scanning probes only those files again.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const missing = (await admin.get('/items?type=movie,episode,track&limit=500')).items.filter((i) => !i.durationMs);
+    if (!missing.length) break;
+    log(`  re-probing ${missing.length} files…`);
+    for (const lib of await admin.get('/libraries')) {
+      await admin.post(`/libraries/${lib.id}/scan`, {});
+      await sleep(800);
+      await waitFor(async () => !(await admin.get('/libraries')).find((l) => l.id === lib.id)?.scanning, 120000, 'rescan');
+    }
+  }
 
   // Users
   const alexUser = await admin.post('/users', { username: USERS.alex.username, displayName: USERS.alex.displayName, password: USERS.alex.password });
