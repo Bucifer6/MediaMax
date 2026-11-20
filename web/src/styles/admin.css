@@ -265,3 +265,4 @@ a.stat:hover { transform: translateY(-2px); border-color: var(--c-primary); }
 .howto em { font-style: normal; font-weight: 600; color: var(--c-text); }
 .callout-warning { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: var(--radius); background: color-mix(in srgb, var(--c-warning) 10%, var(--c-surface)); border: 1px solid color-mix(in srgb, var(--c-warning) 35%, transparent); font-size: 0.9rem; }
 .callout-warning .icon { color: var(--c-warning); flex: none; margin-top: 2px; }
+.copy-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; } .copy-row code { flex: 1; min-width: 0; word-break: break-all; padding: 8px 10px; }

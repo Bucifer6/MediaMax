@@ -16,7 +16,7 @@ export type CardVariant = 'poster' | 'landscape' | 'square' | 'auto';
 export function cardVariantFor(item: Item, preferred: CardVariant = 'auto'): Exclude<CardVariant, 'auto'> {
   if (preferred !== 'auto') return preferred;
   if (item.type === 'episode' || item.type === 'video' || item.type === 'photo') return 'landscape';
-  if (item.type === 'album' || item.type === 'artist' || item.type === 'track' || item.type === 'playlist') return 'square';
+  if (item.type === 'album' || item.type === 'artist' || item.type === 'track' || item.type === 'playlist' || item.type === 'podcast' || item.type === 'podcastepisode') return 'square';
   return 'poster';
 }
 
@@ -72,7 +72,7 @@ export const MediaCard = memo(function MediaCard({ item, variant = 'auto', width
           <Img path={image} width={size.width} style={{ width: '100%', height: '100%' }} />
         ) : (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: t.space.sm }}>
-            <Icon name={item.type === 'album' || item.type === 'track' ? 'musical-notes' : 'film-outline'} color={t.colors.textMuted} />
+            <Icon name={item.type === 'album' || item.type === 'track' ? 'musical-notes' : item.type === 'audiobook' || item.type === 'bookpart' ? 'book-outline' : item.type === 'podcast' || item.type === 'podcastepisode' ? 'mic-outline' : 'film-outline'} color={t.colors.textMuted} />
             <T variant="small" tone="muted" center numberOfLines={3} style={{ marginTop: t.space.xs }}>
               {item.title}
             </T>

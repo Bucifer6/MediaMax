@@ -377,10 +377,129 @@ function TraktCard() {
   );
 }
 
+function LastfmCard() {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const status = useAsync(() => api.lastfm.status(), []);
+  const [waiting, setWaiting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const st = status.data;
+
+  // After opening Last.fm's approval page, poll until the connection completes (gives up after 10 minutes).
+  useEffect(() => {
+    if (!waiting) return;
+    const started = Date.now();
+    let stopped = false;
+    const t = window.setInterval(async () => {
+      if (Date.now() - started > 10 * 60_000) {
+        window.clearInterval(t);
+        setWaiting(false);
+        return;
+      }
+      try {
+        const s = await api.lastfm.status();
+        if (stopped) return;
+        if (s.connected) {
+          window.clearInterval(t);
+          setWaiting(false);
+          status.setData(s);
+          toast.success(`Connected to Last.fm${s.username ? ` as ${s.username}` : ''}`);
+        }
+      } catch {
+        /* keep polling */
+      }
+    }, 3000);
+    return () => {
+      stopped = true;
+      window.clearInterval(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waiting]);
+
+  const connect = async () => {
+    // Open the tab synchronously so pop-up blockers allow it, then point it at Last.fm.
+    const tab = window.open('about:blank', '_blank');
+    setBusy(true);
+    try {
+      const { authUrl } = await api.lastfm.connect();
+      if (tab) tab.location.href = authUrl;
+      else window.open(authUrl, '_blank', 'noopener');
+      setWaiting(true);
+    } catch (e) {
+      tab?.close();
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const setScrobble = async (scrobble: boolean) => {
+    if (!st) return;
+    status.setData({ ...st, scrobble });
+    try {
+      status.setData(await api.lastfm.update({ scrobble }));
+    } catch (e) {
+      status.setData(st);
+      toast.error(e);
+    }
+  };
+  const disconnect = async () => {
+    if (!(await confirm({ title: 'Disconnect Last.fm?', message: 'MediaMax will stop scrobbling your music to Last.fm.', confirmLabel: 'Disconnect', danger: true }))) return;
+    setBusy(true);
+    try {
+      status.setData(await api.lastfm.disconnect());
+      toast.success('Last.fm disconnected');
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="settings-card service-card">
+      <div className="service-head">
+        <span className="service-logo lastfm-logo" aria-hidden="true">fm</span>
+        <div className="service-title">
+          <h2>Last.fm</h2>
+          <p className="muted">Scrobble the music you play and build your listening profile.</p>
+        </div>
+        {st?.connected && <Badge tone="success"><Icon name="check" size={12} /> Connected</Badge>}
+      </div>
+      {status.loading && !st ? <Skeleton h={60} /> : status.error ? (
+        <p className="form-error">{status.error} <button className="btn btn-ghost btn-sm" onClick={status.reload}>Retry</button></p>
+      ) : !st ? null : !st.available ? (
+        <div className="service-note"><Icon name="info" size={18} /> <span>Ask your server admin to set up Last.fm.</span></div>
+      ) : st.connected ? (
+        <>
+          <p>Signed in as <strong>{st.username ?? 'your Last.fm account'}</strong>.</p>
+          <Switch checked={st.scrobble} onChange={setScrobble} label="Scrobble music I play" hint="Tracks show as “now playing” and are scrobbled once you’ve listened to most of them." />
+          <div className="form-actions">
+            <button className="btn btn-ghost" onClick={disconnect} disabled={busy}>{busy ? <Spinner size={16} /> : <Icon name="logout" size={16} />} Disconnect</button>
+          </div>
+        </>
+      ) : waiting ? (
+        <div className="device-code">
+          <p>Approve MediaMax in the Last.fm tab that just opened. This page updates by itself once you’re done.</p>
+          <p className="muted device-code-wait" aria-live="polite"><Spinner size={14} /> Waiting for Last.fm…</p>
+          <div className="form-actions">
+            <button className="btn btn-ghost" onClick={() => setWaiting(false)}>Cancel</button>
+            <button className="btn" onClick={connect} disabled={busy}><Icon name="external" size={16} /> Open Last.fm again</button>
+          </div>
+        </div>
+      ) : (
+        <div className="form-actions">
+          <button className="btn btn-primary" onClick={connect} disabled={busy}>{busy ? <Spinner size={16} /> : <Icon name="link" size={16} />} Connect Last.fm</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Services() {
   return (
     <>
       <TraktCard />
+      <LastfmCard />
       <Link to="/wrapped" className="settings-card wrapped-promo">
         <span className="wrapped-promo-icon"><Icon name="sparkles" size={22} /></span>
         <div>

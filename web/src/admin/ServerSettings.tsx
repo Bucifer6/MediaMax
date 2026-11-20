@@ -8,7 +8,7 @@ import { ErrorState, Field, Skeleton, Spinner, Switch, Tabs } from '../component
 import { Icon } from '../components/Icon';
 import { AdminHeader } from './AdminRoutes';
 
-type Tab = 'general' | 'transcoding' | 'dvr' | 'trickplay' | 'subtitles' | 'trakt' | 'dlna' | 'webhooks';
+type Tab = 'general' | 'transcoding' | 'dvr' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks';
 const HW: { value: HwAccel; label: string }[] = [
   { value: 'none', label: 'None (CPU)' },
   { value: 'vaapi', label: 'VA-API (Intel/AMD, Linux)' },
@@ -21,6 +21,11 @@ const EVENTS: WebhookEvent[] = ['playback.start', 'playback.pause', 'playback.re
 const TRICKPLAY_DEFAULTS: ServerSettings['trickplay'] = { enabled: false, intervalSeconds: 10, width: 320 };
 const OPENSUBS_DEFAULTS: ServerSettings['openSubtitles'] = { apiKey: null, username: null, password: null, autoLanguages: [] };
 const TRAKT_DEFAULTS: ServerSettings['trakt'] = { clientId: null, clientSecret: null };
+const LASTFM_DEFAULTS: ServerSettings['lastfm'] = { apiKey: null, sharedSecret: null };
+const OIDC_DEFAULTS: ServerSettings['oidc'] = {
+  enabled: false, issuer: null, clientId: null, clientSecret: null, buttonLabel: 'Sign in with SSO',
+  autoCreateUsers: true, groupsClaim: 'groups', adminGroup: null, allowedGroup: null,
+};
 const DLNA_DEFAULTS: ServerSettings['dlna'] = { enabled: false, friendlyName: null, userId: null };
 
 /** "en, fr ,de" → ["en","fr","de"] */
@@ -64,6 +69,11 @@ export function ServerSettingsAdmin() {
   const os = { ...OPENSUBS_DEFAULTS, ...(s.openSubtitles ?? {}) };
   const tk = { ...TRAKT_DEFAULTS, ...(s.trakt ?? {}) };
   const dl = { ...DLNA_DEFAULTS, ...(s.dlna ?? {}) };
+  const lf = { ...LASTFM_DEFAULTS, ...(s.lastfm ?? {}) };
+  const oi = { ...OIDC_DEFAULTS, ...(s.oidc ?? {}) };
+  const setLf = (p: Partial<ServerSettings['lastfm']>) => set({ lastfm: { ...lf, ...p } });
+  const setOi = (p: Partial<ServerSettings['oidc']>) => set({ oidc: { ...oi, ...p } });
+  const callbackUrl = `${(s.publicUrl || window.location.origin).replace(/\/+$/, '')}/api/v1/auth/oidc/callback`;
   const setTp = (p: Partial<ServerSettings['trickplay']>) => set({ trickplay: { ...tp, ...p } });
   const setOs = (p: Partial<ServerSettings['openSubtitles']>) => set({ openSubtitles: { ...os, ...p } });
   const setTk = (p: Partial<ServerSettings['trakt']>) => set({ trakt: { ...tk, ...p } });
@@ -118,9 +128,11 @@ export function ServerSettingsAdmin() {
         { value: 'general', label: 'General' },
         { value: 'transcoding', label: 'Transcoding' },
         { value: 'dvr', label: 'DVR' },
+        { value: 'sso', label: 'SSO' },
         { value: 'trickplay', label: 'Trickplay' },
         { value: 'subtitles', label: 'OpenSubtitles' },
         { value: 'trakt', label: 'Trakt' },
+        { value: 'lastfm', label: 'Last.fm' },
         { value: 'dlna', label: 'DLNA' },
         { value: 'webhooks', label: 'Webhooks' },
       ]} />
@@ -248,6 +260,50 @@ export function ServerSettingsAdmin() {
             <div className="form-row">
               <Field label="Client ID"><input className="input mono" value={tk.clientId ?? ''} onChange={(e) => setTk({ clientId: e.target.value.trim() || null })} autoComplete="off" spellCheck={false} /></Field>
               <Field label="Client secret"><input className="input mono" type="password" value={tk.clientSecret ?? ''} onChange={(e) => setTk({ clientSecret: e.target.value.trim() || null })} autoComplete="new-password" spellCheck={false} /></Field>
+            </div>
+          </div>
+        )}
+        {tab === 'lastfm' && (
+          <div className="form-grid">
+            <div className="howto">
+              <strong><Icon name="info" size={16} /> How to set up Last.fm</strong>
+              <ol>
+                <li>Create an API account at <Ext href="https://www.last.fm/api/account/create">last.fm/api/account/create</Ext> (the callback URL can be left empty).</li>
+                <li>Copy the <em>API key</em> and <em>Shared secret</em> here and save.</li>
+                <li>Each user connects their own Last.fm account in <em>Settings → Connected services</em>; music they play is scrobbled.</li>
+              </ol>
+            </div>
+            <div className="form-row">
+              <Field label="API key"><input className="input mono" value={lf.apiKey ?? ''} onChange={(e) => setLf({ apiKey: e.target.value.trim() || null })} autoComplete="off" spellCheck={false} /></Field>
+              <Field label="Shared secret"><input className="input mono" type="password" value={lf.sharedSecret ?? ''} onChange={(e) => setLf({ sharedSecret: e.target.value.trim() || null })} autoComplete="new-password" spellCheck={false} /></Field>
+            </div>
+          </div>
+        )}
+        {tab === 'sso' && (
+          <div className="form-grid">
+            <p className="muted">Let people sign in with an OpenID Connect provider such as Authentik, Keycloak, Authelia, Google or Microsoft Entra. Password and PIN sign-in keep working.</p>
+            <Switch checked={oi.enabled} onChange={(v) => setOi({ enabled: v })} label="Enable single sign-on" hint="Shows a sign-in button on the login screen." />
+            <div className="howto">
+              <strong><Icon name="info" size={16} /> Redirect URI to register with your provider</strong>
+              <div className="copy-row">
+                <code className="mono">{callbackUrl}</code>
+                <button type="button" className="btn btn-sm" onClick={() => { void navigator.clipboard?.writeText(callbackUrl); toast.success('Copied'); }}><Icon name="copy" size={14} /> Copy</button>
+              </div>
+              {!s.publicUrl && <p className="muted" style={{ marginTop: 8 }}>Set a Public URL on the General tab if people reach the server at a different address.</p>}
+            </div>
+            <Field label="Issuer URL" hint="The provider’s issuer; MediaMax reads /.well-known/openid-configuration from it.">
+              <input className="input mono" value={oi.issuer ?? ''} onChange={(e) => setOi({ issuer: e.target.value.trim() || null })} placeholder="https://auth.example.com/application/o/mediamax/" spellCheck={false} />
+            </Field>
+            <div className="form-row">
+              <Field label="Client ID"><input className="input mono" value={oi.clientId ?? ''} onChange={(e) => setOi({ clientId: e.target.value.trim() || null })} autoComplete="off" spellCheck={false} /></Field>
+              <Field label="Client secret"><input className="input mono" type="password" value={oi.clientSecret ?? ''} onChange={(e) => setOi({ clientSecret: e.target.value.trim() || null })} autoComplete="new-password" spellCheck={false} /></Field>
+            </div>
+            <Field label="Button label"><input className="input" value={oi.buttonLabel} onChange={(e) => setOi({ buttonLabel: e.target.value })} placeholder="Sign in with SSO" /></Field>
+            <Switch checked={oi.autoCreateUsers} onChange={(v) => setOi({ autoCreateUsers: v })} label="Create accounts on first sign-in" hint="When off, only people who already have a MediaMax account can use SSO." />
+            <div className="form-row form-row-3">
+              <Field label="Groups claim" hint="Usually “groups”."><input className="input mono" value={oi.groupsClaim} onChange={(e) => setOi({ groupsClaim: e.target.value })} placeholder="groups" spellCheck={false} /></Field>
+              <Field label="Admin group" hint="Members become administrators."><input className="input" value={oi.adminGroup ?? ''} onChange={(e) => setOi({ adminGroup: e.target.value.trim() || null })} placeholder="mediamax-admins" /></Field>
+              <Field label="Allowed group" hint="If set, only members may sign in."><input className="input" value={oi.allowedGroup ?? ''} onChange={(e) => setOi({ allowedGroup: e.target.value.trim() || null })} placeholder="mediamax-users" /></Field>
             </div>
           </div>
         )}

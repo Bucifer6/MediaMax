@@ -214,7 +214,7 @@ export function ActionBar({
   const [pickQuality, setPickQuality] = useState(false);
   const [playlistSheet, setPlaylistSheet] = useState(false);
   const canDownload = downloadable && caps.downloads && downloads.supported;
-  const isAudio = item.type === 'track' || item.type === 'album';
+  const isAudio = item.type === 'track' || item.type === 'album' || item.type === 'audiobook' || item.type === 'bookpart' || item.type === 'podcast' || item.type === 'podcastepisode';
 
   const onDownload = async () => {
     if (rec?.state === 'done') {

@@ -306,6 +306,35 @@ function ChildrenGrid({ parent, title, removable, onRemove }: { parent: Item; ti
   );
 }
 
+function ChaptersSection({ item }: { item: Item }) {
+  const music = useMusic();
+  const navigate = useNavigate();
+  const play = usePlayItem();
+  const chapters = item.chapters ?? [];
+  const playing = music.current?.id === item.id;
+  const go = (ms: number) => {
+    if (isVideo(item)) navigate(`/play/${item.id}?start=${Math.round(ms)}`);
+    else if (playing) music.seek(ms);
+    else void play(item);
+  };
+  return (
+    <section className="chapters-section">
+      <h2 className="section-title">Chapters <span className="tab-count">{chapters.length}</span></h2>
+      <ol className="chapter-grid">
+        {chapters.map((c, i) => (
+          <li key={`${c.startMs}-${i}`}>
+            <button className="chapter-item" onClick={() => go(c.startMs)} data-nav>
+              <span className="chapter-num">{i + 1}</span>
+              <span className="chapter-title">{c.title || `Chapter ${i + 1}`}</span>
+              <small>{formatClock(c.startMs)}</small>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 /* ---------------- Page ---------------- */
 export function ItemPage() {
   const { itemId = '' } = useParams();
@@ -423,7 +452,7 @@ export function ItemPage() {
     icon: 'download',
     onClick: () => startDownload(withToken(api.playback.downloadUrl(item.id, q))),
   }));
-  const square = ['album', 'artist', 'track', 'playlist', 'photo'].includes(item.type);
+  const square = ['album', 'artist', 'track', 'playlist', 'photo', 'audiobook', 'bookpart', 'podcast', 'podcastepisode'].includes(item.type);
   const isAdmin = !!user?.isAdmin;
   const canDownload = features.downloads && user?.allowDownloads && (isVideo(item) || isAudio(item)) && !item.media?.[0]?.remote;
 
@@ -446,9 +475,14 @@ export function ItemPage() {
     if (item.parentId) crumbs.push({ label: item.parentTitle ?? `Season ${item.parentIndex}`, to: `/item/${item.parentId}` });
   } else if (item.type === 'season' && item.parentId) crumbs.push({ label: item.parentTitle ?? 'Show', to: `/item/${item.parentId}` });
   else if ((item.type === 'album' || item.type === 'track') && item.parentId) crumbs.push({ label: item.parentTitle ?? 'Artist', to: `/item/${item.parentId}` });
+  else if ((item.type === 'bookpart' || item.type === 'podcastepisode') && item.parentId) crumbs.push({ label: item.parentTitle ?? (item.type === 'bookpart' ? 'Audiobook' : 'Podcast'), to: `/item/${item.parentId}` });
 
   const directors = item.people.filter((p) => p.kind === 'director').map((p) => p.name);
-  const writers = item.people.filter((p) => p.kind === 'writer').map((p) => p.name);
+  const writers = item.people.filter((p) => p.kind === 'writer' && !/^(author|narrator)$/i.test(p.role ?? '')).map((p) => p.name);
+  const authors = item.type === 'audiobook' || item.type === 'bookpart'
+    ? Array.from(new Set([...item.people.filter((p) => /^author$/i.test(p.role ?? '')).map((p) => p.name), ...(item.people.some((p) => /^author$/i.test(p.role ?? '')) || !item.parentTitle || item.type === 'bookpart' ? [] : [item.parentTitle])]))
+    : [];
+  const narrators = item.people.filter((p) => /^narrator$/i.test(p.role ?? '')).map((p) => p.name);
 
   return (
     <div className={`detail detail-${item.type}`}>
@@ -458,7 +492,7 @@ export function ItemPage() {
       </div>
       <div className="detail-main">
         <div className={`detail-poster ${square ? 'square' : item.type === 'episode' || item.type === 'video' ? 'landscape' : ''}`}>
-          <Img src={item.type === 'episode' || item.type === 'video' ? item.thumbUrl ?? item.posterUrl : item.posterUrl ?? item.thumbUrl} width={400} alt={item.title} fallback={<Icon name={square ? 'music' : item.type === 'show' || item.type === 'season' || item.type === 'episode' ? 'shows' : 'film'} size={40} />} />
+          <Img src={item.type === 'episode' || item.type === 'video' ? item.thumbUrl ?? item.posterUrl : item.posterUrl ?? item.thumbUrl} width={400} alt={item.title} fallback={<Icon name={item.type === 'audiobook' || item.type === 'bookpart' ? 'book' : item.type === 'podcast' || item.type === 'podcastepisode' ? 'podcast' : square ? 'music' : item.type === 'show' || item.type === 'season' || item.type === 'episode' ? 'shows' : 'film'} size={40} />} />
           {item.type === 'photo' && <button className="detail-poster-zoom" onClick={() => setModal('photo')} aria-label="View full size"><Icon name="fullscreen" /></button>}
         </div>
         <div className="detail-info">
@@ -482,6 +516,9 @@ export function ItemPage() {
             {item.durationMs && item.type !== 'show' ? <span>{formatDuration(item.durationMs)}</span> : null}
             {item.type === 'show' && item.childCount > 0 && <span>{item.childCount} season{item.childCount > 1 ? 's' : ''}</span>}
             {(item.type === 'album' || item.type === 'playlist' || item.type === 'collection') && item.childCount > 0 && <span>{item.childCount} items</span>}
+            {item.type === 'audiobook' && item.childCount > 1 && <span>{item.childCount} parts</span>}
+            {item.type === 'podcast' && item.childCount > 0 && <span>{item.childCount} episodes</span>}
+            {item.type === 'podcastepisode' && item.releaseDate && <span>{formatDate(item.releaseDate)}</span>}
             {item.communityRating != null && (
               <span className="detail-rating"><Icon name="starFill" size={14} /> {item.communityRating.toFixed(1)}</span>
             )}
@@ -569,6 +606,8 @@ export function ItemPage() {
           {item.overview && <p className="detail-overview">{item.overview}</p>}
 
           <dl className="detail-credits">
+            {authors.length > 0 && (<><dt>Author</dt><dd>{authors.join(', ')}</dd></>)}
+            {narrators.length > 0 && (<><dt>Narrated by</dt><dd>{narrators.join(', ')}</dd></>)}
             {directors.length > 0 && (<><dt>Director</dt><dd>{directors.join(', ')}</dd></>)}
             {writers.length > 0 && (<><dt>Writers</dt><dd>{writers.slice(0, 4).join(', ')}</dd></>)}
             {item.studios.length > 0 && (<><dt>Studio</dt><dd>{item.studios.slice(0, 3).join(', ')}</dd></>)}
@@ -581,12 +620,15 @@ export function ItemPage() {
       <div className="detail-sections">
         {item.type === 'show' && <SeasonsBody show={item} />}
         {item.type === 'season' && <EpisodeList seasonId={item.id} />}
+        {item.type === 'podcast' && <PodcastEpisodes podcast={item} />}
+        {item.type === 'audiobook' && item.childCount !== 1 && <TrackList parent={item} />}
+        {(item.chapters?.length ?? 0) > 0 && <ChaptersSection item={item} />}
         {(item.type === 'album' || item.type === 'playlist') && <TrackList parent={item} removable={item.type === 'playlist'} onRemove={removeFromContainer} />}
         {item.type === 'artist' && <ChildrenGrid parent={item} title="Albums" />}
         {item.type === 'collection' && <ChildrenGrid parent={item} removable={isAdmin} onRemove={removeFromContainer} />}
         <CastRow item={item} />
         {item.media && item.media.length > 0 && <MediaInfo media={item.media} />}
-        {!['playlist', 'collection', 'track', 'photo', 'season'].includes(item.type) && <SimilarRow item={item} />}
+        {!['playlist', 'collection', 'track', 'photo', 'season', 'bookpart', 'podcastepisode'].includes(item.type) && <SimilarRow item={item} />}
       </div>
 
       <AddToContainerModal open={modal === 'playlist'} onClose={() => setModal(null)} items={[item]} kind="playlist" />

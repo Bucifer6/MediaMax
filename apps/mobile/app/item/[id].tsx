@@ -6,6 +6,7 @@ import { Screen } from '@/components/Screen';
 import { ErrorState, Loading } from '@/components/States';
 import { CollectionDetail } from '@/screens/detail/CollectionDetail';
 import { ArtistDetail, TrackListDetail } from '@/screens/detail/MusicDetail';
+import { PodcastDetail } from '@/screens/detail/PodcastDetail';
 import { ShowDetail } from '@/screens/detail/ShowDetail';
 import { VideoDetail } from '@/screens/detail/VideoDetail';
 import { on } from '@/utils/events';
@@ -21,9 +22,9 @@ export default function ItemScreen() {
   const setUserData = useCallback((ud: UserItemData) => setData((prev) => (prev ? { ...prev, userData: ud } : prev)), [setData]);
   useEffect(() => on('userdata', (e) => e.itemId === id && setUserData(e.userData)), [id, setUserData]);
 
-  // A track opens its album.
+  // A track / audiobook part / podcast episode opens its album, book or show.
   useEffect(() => {
-    if (item?.type === 'track' && item.parentId) router.replace(`/item/${item.parentId}` as never);
+    if ((item?.type === 'track' || item?.type === 'bookpart' || item?.type === 'podcastepisode') && item.parentId) router.replace(`/item/${item.parentId}` as never);
   }, [item]);
 
   return <Screen padTop={false}>{render()}</Screen>;
@@ -38,13 +39,18 @@ export default function ItemScreen() {
       case 'season':
         return parentShow.data ? <ShowDetail show={parentShow.data as Item} initialSeasonId={item.id} onUserData={(ud) => parentShow.setData((prev) => (prev ? { ...prev, userData: ud } : prev))} /> : <Loading />;
       case 'album':
+      case 'audiobook':
       case 'playlist':
         return <TrackListDetail item={item} onUserData={setUserData} />;
       case 'artist':
         return <ArtistDetail item={item} onUserData={setUserData} />;
       case 'collection':
         return <CollectionDetail item={item} onUserData={setUserData} />;
+      case 'podcast':
+        return <PodcastDetail item={item} onUserData={setUserData} />;
       case 'track':
+      case 'bookpart':
+      case 'podcastepisode':
         return <Loading />;
       default:
         return <VideoDetail item={item} onUserData={setUserData} />;

@@ -121,17 +121,14 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setPosition(0);
     setDuration(current.durationMs ?? 0);
     setChapters(current.chapters ?? []);
-    // Chapters are only included on GET /items/:id.
-    if (!current.chapters && current.type !== 'track') {
-      api.items.get(current.id).then((full) => { if (!cancelled) setChapters(full.chapters ?? []); }).catch(() => {});
-    }
     const resumeMs = hasAudioResume(current) && isResumable(current) ? current.userData.positionMs : 0;
     (async () => {
       stopSession();
       attached.current?.destroy();
       attached.current = null;
       try {
-        // Pick up the latest saved position (the queued copy may be stale).
+        // Pick up the latest saved position (the queued copy may be stale) and the chapters,
+        // which are only included on GET /items/:id.
         let startMs = resumeMs;
         if (hasAudioResume(current)) {
           const fresh = await api.items.get(current.id).catch(() => null);

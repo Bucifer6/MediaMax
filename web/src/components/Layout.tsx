@@ -76,7 +76,7 @@ export function Layout() {
     return () => window.removeEventListener('keydown', h);
   }, [navigate]);
 
-  const local = libraries.filter((l) => !isIptvLibrary(l.type) && (features.music || l.type !== 'music') && (features.photos || l.type !== 'photos'));
+  const local = libraries.filter((l) => !isIptvLibrary(l.type) && l.type !== 'podcasts' && (features.music || l.type !== 'music') && (features.photos || l.type !== 'photos'));
   const iptv = features.iptvVod ? libraries.filter((l) => isIptvLibrary(l.type)) : [];
   const liveTv = features.liveTv && (user?.allowLiveTv ?? true);
   const dvr = features.dvr && (user?.allowDvr ?? true);
@@ -108,6 +108,7 @@ export function Layout() {
             <NavItem key={l.id} to={`/library/${l.id}`} icon={libraryIcon(l.type)} label={l.name} badge={<span className="nav-tag">IPTV</span>} />
           ))}
           <div className="nav-section">You</div>
+          <NavItem to="/podcasts" icon="podcast" label="Podcasts" />
           <NavItem to="/playlists" icon="playlist" label="Playlists" />
           <NavItem to="/collections" icon="collection" label="Collections" />
           {user?.isAdmin && <NavItem to="/admin" icon="shield" label="Admin" />}

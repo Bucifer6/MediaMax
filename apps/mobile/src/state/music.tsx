@@ -1,15 +1,19 @@
 /**
- * Music queue + background audio via expo-audio, with lock-screen / control
- * centre metadata and server progress reporting.
+ * Audio queue + background audio via expo-audio, with lock-screen / control
+ * centre metadata and server progress reporting. Plays music tracks plus
+ * spoken-word audio (audiobook parts, podcast episodes), which additionally
+ * resume where you left off, offer playback speed and expose chapters.
  */
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { audioDeviceProfile } from '@/api/profiles';
-import type { Item, PlaybackInfo } from '@/api/types';
+import type { Chapter, Item, PlaybackInfo } from '@/api/types';
+import { isAudioItem, isSpokenAudio } from '@/utils/library';
 import { useDownloads } from './downloads';
 import { useSession } from './session';
 
 export type RepeatMode = 'off' | 'all' | 'one';
+export const SPEEDS = [0.8, 1, 1.1, 1.25, 1.5, 1.75, 2];
 
 interface MusicValue {
   queue: Item[];
@@ -22,7 +26,17 @@ interface MusicValue {
   shuffle: boolean;
   repeat: RepeatMode;
   error: string | null;
-  playQueue: (items: Item[], startIndex?: number, opts?: { shuffle?: boolean }) => void;
+  /** Current item is an audiobook part / podcast episode. */
+  spoken: boolean;
+  /** Spoken-word playback speed (music always plays at 1x). */
+  rate: number;
+  setRate: (rate: number) => void;
+  /** Chapters of the current item (from GET /items/:id), if any. */
+  chapters: Chapter[];
+  /** Relative seek, e.g. -15 s / +30 s for spoken audio. */
+  skip: (deltaMs: number) => void;
+  /** `startMs` overrides the resume position of the first item. */
+  playQueue: (items: Item[], startIndex?: number, opts?: { shuffle?: boolean; startMs?: number }) => void;
   enqueue: (items: Item[]) => void;
   playNextInQueue: (item: Item) => void;
   toggle: () => void;
@@ -57,9 +71,22 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   const [shuffle, setShuffleState] = useState(false);
   const [repeat, setRepeat] = useState<RepeatMode>('off');
   const [error, setError] = useState<string | null>(null);
+  const [rate, setRateState] = useState(1);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
   const session = useRef<PlaybackInfo | null>(null);
   const loadedId = useRef<string | null>(null);
+  /** Resume position to apply once the source has loaded (spoken audio). */
+  const pendingSeek = useRef<number | null>(null);
+  /** One-shot start override from playQueue(…, { startMs }). */
+  const startOverride = useRef<{ id: string; ms: number } | null>(null);
   const current = queue[index] ?? null;
+  const spoken = !!current && isSpokenAudio(current.type);
+  const spokenRef = useRef(spoken);
+  spokenRef.current = spoken;
+  const rateRef = useRef(rate);
+  rateRef.current = rate;
+  const currentRef = useRef<Item | null>(current);
+  currentRef.current = current;
 
   useEffect(() => {
     setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: 'doNotMix' }).catch(() => undefined);
@@ -68,12 +95,16 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   const report = useCallback(
     (state: 'playing' | 'paused' | 'stopped') => {
       const s = session.current;
+      const positionMs = Math.round(player.currentTime * 1000);
+      // Offline spoken audio: keep the resume position locally, like offline video.
+      const cur = currentRef.current;
+      if (!s && cur && spokenRef.current && positionMs > 0) downloads.updateLocalPosition(cur.id, positionMs);
       if (!api || !s) return;
-      const body = { positionMs: Math.round(player.currentTime * 1000), durationMs: Math.round(player.duration * 1000) || undefined, state, sessionId: s.sessionId };
+      const body = { positionMs, durationMs: Math.round(player.duration * 1000) || undefined, state, sessionId: s.sessionId };
       api.sessionProgress(s.sessionId, body).catch(() => undefined);
       if (state === 'stopped') api.stopSession(s.sessionId).catch(() => undefined);
     },
-    [api, player],
+    [api, player, downloads],
   );
 
   // Load the current track.
@@ -87,14 +118,29 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       if (session.current) report('stopped');
       session.current = null;
       const local = downloads.get(current.id);
+      const isSpoken = isSpokenAudio(current.type);
+      // Spoken audio resumes; music always starts at the top.
+      const override = startOverride.current?.id === current.id ? startOverride.current.ms : null;
+      startOverride.current = null;
+      const dur = current.durationMs ?? 0;
+      const saved = local?.state === 'done' && local.positionMs ? local.positionMs : current.userData.positionMs;
+      let startMs = isSpoken ? override ?? (dur && saved > dur * 0.95 ? 0 : saved) : 0;
+      setChapters([]);
+      if (isSpoken) {
+        api
+          .item(current.id)
+          .then((full) => alive && setChapters(full.chapters ?? []))
+          .catch(() => undefined);
+      }
       let uri: string;
       if (local?.state === 'done' && local.fileUri) {
         uri = local.fileUri;
       } else {
         try {
-          const info = await api.playback(current.id, { deviceProfile: audioDeviceProfile() });
+          const info = await api.playback(current.id, { deviceProfile: audioDeviceProfile(), startMs: isSpoken && startMs > 0 ? Math.round(startMs) : undefined });
           if (!alive) return;
           session.current = info;
+          if (isSpoken && info.startMs) startMs = info.startMs;
           uri = api.absolute(info.url);
         } catch (e) {
           setError(e instanceof Error ? e.message : 'Playback failed');
@@ -102,11 +148,17 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
         }
       }
       player.replace({ uri, headers: api.headers(false) });
+      pendingSeek.current = startMs > 1000 ? startMs : null;
+      try {
+        player.setPlaybackRate(isSpoken ? rateRef.current : 1);
+      } catch {
+        /* ignore */
+      }
       player.play();
       const artwork = api.image(current.posterUrl ?? current.thumbUrl, 600) ?? undefined;
       const meta = { title: current.title, artist: current.grandparentTitle ?? current.parentTitle ?? undefined, albumTitle: current.parentTitle ?? undefined, artworkUrl: artwork };
       try {
-        player.setActiveForLockScreen(true, meta, { showNextTrack: true, showPreviousTrack: true, showSeekForward: false, showSeekBackward: false });
+        player.setActiveForLockScreen(true, meta, { showNextTrack: !isSpoken || queue.length > 1, showPreviousTrack: !isSpoken || queue.length > 1, showSeekForward: isSpoken, showSeekBackward: isSpoken });
       } catch {
         /* not supported on this platform */
       }
@@ -114,7 +166,16 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, api, player, downloads, report]);
+
+  // Apply the resume position once the new source is ready.
+  useEffect(() => {
+    if (!status.isLoaded || pendingSeek.current == null) return;
+    const ms = pendingSeek.current;
+    pendingSeek.current = null;
+    void player.seekTo(ms / 1000);
+  }, [status.isLoaded, player]);
 
   // Progress every 10s.
   useEffect(() => {
@@ -158,11 +219,13 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     } else if (!status.didJustFinish) finishedRef.current = false;
   }, [status.didJustFinish, advance, report]);
 
-  const playQueue = useCallback((items: Item[], startIndex = 0, opts: { shuffle?: boolean } = {}) => {
-    const tracks = items.filter((i) => i.type === 'track');
+  const playQueue = useCallback((items: Item[], startIndex = 0, opts: { shuffle?: boolean; startMs?: number } = {}) => {
+    const wanted = items[startIndex];
+    const tracks = items.filter((i) => isAudioItem(i.type));
     if (!tracks.length) return;
     let list = tracks;
-    let start = Math.max(0, Math.min(startIndex, tracks.length - 1));
+    let start = Math.max(0, wanted ? tracks.indexOf(wanted) : Math.min(startIndex, tracks.length - 1));
+    if (opts.startMs != null && tracks[start]) startOverride.current = { id: tracks[start].id, ms: opts.startMs };
     if (opts.shuffle) {
       const first = tracks[start];
       list = [first, ...shuffled(tracks.filter((t) => t.id !== first.id))];
@@ -186,8 +249,23 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       shuffle,
       repeat,
       error,
+      spoken,
+      rate,
+      setRate: (r) => {
+        setRateState(r);
+        try {
+          if (spokenRef.current) player.setPlaybackRate(r);
+        } catch {
+          /* ignore */
+        }
+      },
+      chapters,
+      skip: (deltaMs) => {
+        const d = player.duration > 0 ? player.duration : Infinity;
+        void player.seekTo(Math.max(0, Math.min(d - 1, player.currentTime + deltaMs / 1000)));
+      },
       playQueue,
-      enqueue: (items) => setQueue((q) => [...q, ...items.filter((i) => i.type === 'track')]),
+      enqueue: (items) => setQueue((q) => [...q, ...items.filter((i) => isAudioItem(i.type))]),
       playNextInQueue: (item) => setQueue((q) => [...q.slice(0, index + 1), item, ...q.slice(index + 1)]),
       toggle: () => {
         if (player.playing) {
@@ -235,7 +313,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       },
       cycleRepeat: () => setRepeat((r) => (r === 'off' ? 'all' : r === 'all' ? 'one' : 'off')),
     }),
-    [queue, index, current, status, shuffle, repeat, error, playQueue, player, report, advance],
+    [queue, index, current, status, shuffle, repeat, error, spoken, rate, chapters, playQueue, player, report, advance],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

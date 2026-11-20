@@ -16,6 +16,25 @@ import { T } from '@/components/Text';
 import { useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 import { useBackHandler } from '@/tv';
+import { webBrowser } from '@/utils/browser';
+
+const OIDC_REDIRECT = 'mediamax://oidc';
+
+/** Read `token` / `error` from the redirect's `#fragment` (no URLSearchParams: RN's is incomplete). */
+function parseFragment(url: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const frag = url.split('#')[1] ?? '';
+  for (const part of frag.split('&')) {
+    if (!part) continue;
+    const [k, ...v] = part.split('=');
+    try {
+      out[decodeURIComponent(k)] = decodeURIComponent(v.join('=').replace(/\+/g, ' '));
+    } catch {
+      out[k] = v.join('=');
+    }
+  }
+  return out;
+}
 
 type Mode = 'profiles' | 'pin' | 'password' | 'link';
 
@@ -99,6 +118,29 @@ export default function LoginScreen() {
     }
   };
 
+  // Single sign-on (phones only: TV has no browser, it keeps link codes).
+  const oidc = !t.isTV && info?.oidc?.enabled && webBrowser() ? info.oidc : null;
+  const signInSso = async () => {
+    const wb = webBrowser();
+    if (!api || !wb) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await wb.openAuthSessionAsync(api.oidcStartUrl(OIDC_REDIRECT), OIDC_REDIRECT);
+      if (res.type !== 'success') return; // cancelled / dismissed
+      const frag = parseFragment(res.url);
+      if (frag.error) throw new Error(frag.error);
+      if (!frag.token) throw new Error('Sign-in did not return a session. Try again.');
+      const user = await api.withToken(frag.token).me();
+      await completeLogin({ token: frag.token, user });
+      router.replace('/(tabs)');
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : 'Single sign-on failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Back on the remote steps back through the modes.
   useBackHandler(() => {
     if (mode === 'pin' || (mode === 'password' && selected)) {
@@ -169,6 +211,17 @@ export default function LoginScreen() {
                   <Input label="Username" value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} textContentType="username" returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} icon="person-outline" />
                   <Input ref={passwordRef} label="Password" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" returnKeyType="go" onSubmitEditing={signIn} icon="lock-closed-outline" />
                   <Button label="Sign in" onPress={signIn} loading={busy} block size="lg" disabled={!username || !password} />
+                </View>
+              ) : null}
+
+              {oidc && mode !== 'link' ? (
+                <View style={{ width: '100%', gap: t.space.sm }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.sm }}>
+                    <View style={{ flex: 1, height: 1, backgroundColor: t.colors.border }} />
+                    <T variant="small" tone="muted">or</T>
+                    <View style={{ flex: 1, height: 1, backgroundColor: t.colors.border }} />
+                  </View>
+                  <Button label={oidc.buttonLabel || 'Sign in with SSO'} icon="shield-checkmark-outline" variant="secondary" size="lg" block onPress={() => void signInSso()} disabled={busy} />
                 </View>
               ) : null}
 

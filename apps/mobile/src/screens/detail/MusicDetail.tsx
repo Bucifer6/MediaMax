@@ -19,11 +19,12 @@ import { useDownloads } from '@/state/downloads';
 import { useMusic } from '@/state/music';
 import { useApi, useCapabilities } from '@/state/session';
 import { useTheme } from '@/theme';
-import { formatClock, formatDuration } from '@/utils/format';
+import { formatClock, formatDuration, progressFraction } from '@/utils/format';
+import { isAudioItem, isSpokenAudio } from '@/utils/library';
 import { openItem, playItem } from '@/utils/nav';
 import { RatingStars, useUserDataActions } from './common';
 
-function Header({ item, subtitle, children }: { item: Item; subtitle: string; children?: React.ReactNode }) {
+export function Header({ item, subtitle, children }: { item: Item; subtitle: string; children?: React.ReactNode }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const art = t.isTV ? t.s(260) : Math.min(t.width * 0.6, 260);
@@ -60,7 +61,7 @@ function TrackRow({ track, index, onPress, showArt, playingId }: { track: Item; 
   const t = useTheme();
   const downloads = useDownloads();
   const active = playingId === track.id;
-  const isVideo = track.type !== 'track';
+  const isVideo = !isAudioItem(track.type);
   return (
     <Focusable onPress={onPress} focusScale={t.isTV ? 1.02 : 1} containerStyle={{ flex: 1 }} style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.md, paddingVertical: t.space.sm, paddingHorizontal: t.space.sm, borderRadius: t.radius, backgroundColor: active ? t.alpha(t.colors.primary, 0.12) : 'transparent' }}>
       {showArt ? (
@@ -73,9 +74,15 @@ function TrackRow({ track, index, onPress, showArt, playingId }: { track: Item; 
           {track.title}
         </T>
         <T variant="caption" tone="muted" weight="500" numberOfLines={1} style={{ letterSpacing: 0 }}>
-          {isVideo ? track.type : track.grandparentTitle ?? track.parentTitle ?? ''}
+          {track.type === 'bookpart' ? (track.index != null ? `Part ${track.index}` : 'Part') : track.type === 'podcastepisode' ? track.parentTitle ?? 'Episode' : isVideo ? track.type : track.grandparentTitle ?? track.parentTitle ?? ''}
         </T>
       </View>
+      {isSpokenAudio(track.type) && track.userData.played ? <Icon name="checkmark-circle" size={16} color={t.colors.primary} /> : null}
+      {isSpokenAudio(track.type) && !track.userData.played && progressFraction(track) > 0.01 ? (
+        <View style={{ width: t.s(36), height: 3, borderRadius: 2, backgroundColor: t.alpha(t.colors.text, 0.2), overflow: 'hidden' }}>
+          <View style={{ width: `${progressFraction(track) * 100}%`, height: '100%', backgroundColor: t.colors.primary }} />
+        </View>
+      ) : null}
       {downloads.get(track.id)?.state === 'done' ? <Icon name="arrow-down-circle" size={16} color={t.colors.success} /> : null}
       <T variant="small" tone="muted">
         {track.durationMs ? formatClock(track.durationMs) : ''}
@@ -92,16 +99,35 @@ export function TrackListDetail({ item, onUserData }: { item: Item; onUserData: 
   const downloads = useDownloads();
   const api = useApi();
   const isPlaylist = item.type === 'playlist';
-  const children = useQuery(`children:${item.id}`, (a) => a.children(item.id, { sort: item.type === 'album' ? 'index' : undefined, order: 'asc', limit: 1000 }));
+  const isBook = item.type === 'audiobook';
+  const children = useQuery(`children:${item.id}`, (a) => a.children(item.id, { sort: item.type === 'album' || isBook ? 'index' : undefined, order: 'asc', limit: 1000 }));
   const [playlistSheet, setPlaylistSheet] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const similar = useQuery(item.type === 'album' ? `similar:${item.id}` : null, (api) => api.similar(item.id, 12), { staleMs: 300000 });
   const { toggleFavorite, setRating } = useUserDataActions(item, onUserData);
   const tracks = children.data?.items ?? [];
-  const audio = tracks.filter((x) => x.type === 'track');
+  const audio = tracks.filter((x) => isAudioItem(x.type));
   const total = tracks.reduce((n, x) => n + (x.durationMs ?? 0), 0);
-  const subtitle = [item.type === 'album' ? item.parentTitle : null, item.year, `${tracks.length} ${audio.length === tracks.length ? 'songs' : 'items'}`, formatDuration(total)].filter(Boolean).join(' · ');
+  const narrators = isBook ? item.people.filter((p) => p.role?.toLowerCase() === 'narrator').map((p) => p.name) : [];
+  const author = isBook ? item.parentTitle ?? item.people.find((p) => p.role?.toLowerCase() === 'author')?.name ?? null : null;
+  const countLabel = isBook ? `${tracks.length} part${tracks.length === 1 ? '' : 's'}` : `${tracks.length} ${audio.length === tracks.length ? 'songs' : 'items'}`;
+  const subtitle = [item.type === 'album' ? item.parentTitle : author, narrators.length ? `Narrated by ${narrators.join(', ')}` : null, item.year, countLabel, formatDuration(total)].filter(Boolean).join(' · ');
+  const started = isBook && tracks.some((x) => x.userData.positionMs > 0 || x.userData.played);
+  const [resuming, setResuming] = useState(false);
+  /** Audiobooks: GET /items/:id/next picks the part to resume (music state resumes the position). */
+  const playBook = async () => {
+    setResuming(true);
+    try {
+      const next = await api.next(item.id).catch(() => null);
+      const i = next ? tracks.findIndex((x) => x.id === next.id) : -1;
+      if (i >= 0) music.playQueue(audio, audio.indexOf(tracks[i]));
+      else if (next) music.playQueue([next], 0);
+      else music.playQueue(audio, 0);
+    } finally {
+      setResuming(false);
+    }
+  };
 
   const removeTrack = async (tr: Item) => {
     setEditError(null);
@@ -133,7 +159,7 @@ export function TrackListDetail({ item, onUserData }: { item: Item; onUserData: 
   const playAt = (i: number, shuffle = false) => {
     const tr = tracks[i];
     if (!tr) return;
-    if (tr.type === 'track') music.playQueue(audio, Math.max(0, audio.indexOf(tr)), { shuffle });
+    if (isAudioItem(tr.type)) music.playQueue(audio, Math.max(0, audio.indexOf(tr)), { shuffle });
     else playItem(tr.id);
   };
 
@@ -145,8 +171,12 @@ export function TrackListDetail({ item, onUserData }: { item: Item; onUserData: 
       ListHeaderComponent={
         <Header item={item} subtitle={subtitle}>
           <View style={{ flexDirection: 'row', gap: t.space.sm, marginTop: t.space.sm, flexWrap: 'wrap', justifyContent: t.isTV ? 'flex-start' : 'center' }}>
-            <Button label="Play" icon="play" onPress={() => playAt(0)} disabled={!tracks.length} hasTVPreferredFocus />
-            {audio.length > 1 ? <Button label="Shuffle" icon="shuffle" variant="secondary" onPress={() => playAt(Math.floor(Math.random() * tracks.length), true)} /> : null}
+            {isBook ? (
+              <Button label={started ? 'Resume' : 'Play'} icon="play" onPress={() => void playBook()} loading={resuming} disabled={!tracks.length} hasTVPreferredFocus />
+            ) : (
+              <Button label="Play" icon="play" onPress={() => playAt(0)} disabled={!tracks.length} hasTVPreferredFocus />
+            )}
+            {audio.length > 1 && !isBook ? <Button label="Shuffle" icon="shuffle" variant="secondary" onPress={() => playAt(Math.floor(Math.random() * tracks.length), true)} /> : null}
             <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" onPress={toggleFavorite} accessibilityLabel="Favourite" />
             {caps.downloads && downloads.supported && audio.length ? <Button icon="arrow-down-circle-outline" variant="secondary" onPress={() => downloads.download(audio, 'original')} accessibilityLabel="Download all" /> : null}
             {!isPlaylist && tracks.length ? <Button icon="list-outline" label={t.isTV ? 'Playlist' : undefined} variant="secondary" onPress={() => setPlaylistSheet(true)} accessibilityLabel="Add to playlist" /> : null}

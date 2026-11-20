@@ -15,6 +15,7 @@ import { useMusic } from '@/state/music';
 import { useCapabilities, useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 import { formatBytes, itemSubtitle } from '@/utils/format';
+import { isAudioItem } from '@/utils/library';
 import { playItem } from '@/utils/nav';
 
 export default function DownloadsScreen() {
@@ -28,8 +29,9 @@ export default function DownloadsScreen() {
 
   const open = (r: DownloadRecord) => {
     if (r.state !== 'done') return;
-    if (r.item.type === 'track') {
-      const tracks = list.filter((x) => x.state === 'done' && x.item.type === 'track').map((x) => x.item);
+    if (isAudioItem(r.item.type)) {
+      // Music plays as a queue of downloaded songs; spoken audio plays on its own (and resumes).
+      const tracks = r.item.type === 'track' ? list.filter((x) => x.state === 'done' && x.item.type === 'track').map((x) => x.item) : [r.item];
       music.playQueue(tracks, tracks.findIndex((x) => x.id === r.id));
       return;
     }
@@ -62,7 +64,7 @@ export default function DownloadsScreen() {
           keyExtractor={(r) => r.id}
           contentContainerStyle={{ paddingHorizontal: t.space.gutter, paddingBottom: bottom, gap: t.space.sm }}
           renderItem={({ item: r }) => {
-            const square = r.item.type === 'track' || r.item.type === 'album';
+            const square = isAudioItem(r.item.type) || r.item.type === 'album';
             const w = square ? 64 : 112;
             const h = square ? 64 : 63;
             return (

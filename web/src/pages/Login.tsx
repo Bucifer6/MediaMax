@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import type { PublicProfile } from '@mediamax/shared';
 import { useApp } from '../state/app';
 import { api } from '../api/endpoints';
-import { errorMessage } from '../api/client';
+import { API_BASE, errorMessage, setToken } from '../api/client';
+import { getDeviceId, getDeviceName, PLATFORM } from '../api/device';
 import { Avatar, Spinner } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { BrandLogo } from '../components/BrandLogo';
@@ -53,8 +54,29 @@ export function PinPad({ length = 4, onComplete, error, busy }: { length?: numbe
 
 type Mode = 'profiles' | 'pin' | 'password';
 
+/** Where the browser goes to start single sign-on. */
+function oidcStartUrl(): string {
+  const q = new URLSearchParams({
+    redirect: `${location.origin}/login`,
+    deviceId: getDeviceId(),
+    deviceName: getDeviceName(),
+    platform: PLATFORM,
+  });
+  return `${API_BASE}/auth/oidc/start?${q.toString()}`;
+}
+
+function SsoButton({ label }: { label: string }) {
+  return (
+    <a className="btn btn-glass btn-lg btn-block sso-btn" href={oidcStartUrl()}>
+      <Icon name="key" size={18} /> {label || 'Sign in with SSO'}
+    </a>
+  );
+}
+
 export function Login() {
-  const { user, branding, features, login } = useApp();
+  const { user, branding, features, login, system } = useApp();
+  const navigate = useNavigate();
+  const oidc = system?.oidc?.enabled ? system.oidc : null;
   const [params] = useSearchParams();
   const next = params.get('next') || '/';
   const [profiles, setProfiles] = useState<PublicProfile[] | null>(null);
@@ -64,6 +86,38 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ssoPending, setSsoPending] = useState(() => /[#&]token=/.test(location.hash));
+
+  // Single sign-on returns here with #token=… or #error=… in the fragment.
+  useEffect(() => {
+    if (!location.hash) return;
+    const h = new URLSearchParams(location.hash.slice(1));
+    const token = h.get('token');
+    const err = h.get('error');
+    if (!token && !err) return;
+    history.replaceState(history.state, '', location.pathname + location.search);
+    if (err) {
+      setError(err);
+      setMode('password');
+      return;
+    }
+    if (token) {
+      setToken(token);
+      api.auth
+        .me()
+        .then((me) => {
+          login({ token, user: me });
+          navigate('/', { replace: true });
+        })
+        .catch((e) => {
+          setToken(null);
+          setError(`Single sign-on failed: ${errorMessage(e)}`);
+          setMode('password');
+        })
+        .finally(() => setSsoPending(false));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!features.profilePicker) {
@@ -74,7 +128,7 @@ export function Login() {
       .profiles()
       .then((p) => {
         setProfiles(p);
-        if (p.length) setMode('profiles');
+        if (p.length && !/[#&](token|error)=/.test(location.hash)) setMode((m) => (m === 'password' && error ? m : 'profiles'));
       })
       .catch(() => setProfiles([]));
   }, [features.profilePicker]);
@@ -143,7 +197,7 @@ export function Login() {
           {branding.tagline && <p className="login-tagline">{branding.tagline}</p>}
         </div>
 
-        {profiles === null ? (
+        {profiles === null || ssoPending ? (
           <Spinner size={36} />
         ) : mode === 'profiles' ? (
           <div className="profiles fade-in">
@@ -162,9 +216,12 @@ export function Login() {
               ))}
             </div>
             {error && <p className="form-error">{error}</p>}
-            <button className="btn btn-ghost" onClick={() => { setSelected(null); setUsername(''); setMode('password'); }}>
-              <Icon name="user" size={16} /> Sign in with a username
-            </button>
+            <div className="row-gap profile-alt">
+              <button className="btn btn-ghost" onClick={() => { setSelected(null); setUsername(''); setMode('password'); }}>
+                <Icon name="user" size={16} /> Sign in with a username
+              </button>
+              {oidc && <a className="btn btn-ghost" href={oidcStartUrl()}><Icon name="key" size={16} /> {oidc.buttonLabel || 'Sign in with SSO'}</a>}
+            </div>
           </div>
         ) : mode === 'pin' && selected ? (
           <div className="login-card glass fade-in">
@@ -198,6 +255,12 @@ export function Login() {
             <button className="btn btn-primary btn-lg btn-block" disabled={busy || !username}>
               {busy ? <Spinner size={18} /> : 'Sign in'}
             </button>
+            {oidc && !selected && (
+              <>
+                <div className="login-or"><span>or</span></div>
+                <SsoButton label={oidc.buttonLabel} />
+              </>
+            )}
           </form>
         )}
         {mode !== 'profiles' && !selected && branding.loginMessage && mode !== 'password' && <p className="login-message">{branding.loginMessage}</p>}

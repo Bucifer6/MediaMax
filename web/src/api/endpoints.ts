@@ -2,7 +2,7 @@ import type {
   ActiveSession, ActivityEntry, AuthResponse, Branding, BrandingAssetKind, Channel, ChannelCategory,
   ChannelQuery, CreateCollectionRequest, CreateLibraryRequest, CreateLiveSourceRequest, CreatePlaylistRequest,
   CreateRecordingRequest, CreateRecordingRuleRequest, CreateUserRequest, DashboardStats, Device, DirectoryEntry, DownloadQuality, DvrDefaults,
-  GuideResponse, HomeResponse, Item, Lyrics, PodcastSearchResult, PodcastSubscription, SubscribePodcastRequest, ItemQuery, ItemSort, Library, LivePlayRequest, LiveSource, LoginRequest,
+  GuideResponse, HomeResponse, Item, LastfmAuthStart, LastfmStatus, Lyrics, PodcastSearchResult, PodcastSubscription, SubscribePodcastRequest, ItemQuery, ItemSort, Library, LivePlayRequest, LiveSource, LoginRequest,
   Paged, PinLoginRequest, PlaybackInfo, PlaybackRequest, Program, ProgressReport, PublicProfile, Recording,
   RecordingRule, RecordingStatus, RemoteSubtitle, ScheduledTask, SearchResponse, ServerSettings, ServerStats, SetupRequest, SystemInfo,
   TestSourceResponse, Theme, TraktDeviceCode, TraktStatus, TrickplayInfo, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
@@ -115,6 +115,13 @@ export const api = {
     user: (userId: string, year?: number | null, signal?: AbortSignal) =>
       http.get<UserStats>(`/stats/users/${enc(userId)}`, { year: year ?? undefined }, signal),
     server: (days: number, signal?: AbortSignal) => http.get<ServerStats>('/stats/server', { days }, signal),
+  },
+
+  lastfm: {
+    status: () => http.get<LastfmStatus>('/lastfm'),
+    connect: () => http.post<LastfmAuthStart>('/lastfm/connect'),
+    update: (body: { scrobble: boolean }) => http.patch<LastfmStatus>('/lastfm', body),
+    disconnect: () => http.del<LastfmStatus>('/lastfm'),
   },
 
   trakt: {

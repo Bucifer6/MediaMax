@@ -35,6 +35,15 @@ export function formatDay(iso: string | Date): string {
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
+/** "12 Mar 2026" (year omitted for this year); for release dates of podcast episodes etc. */
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: sameYear ? undefined : 'numeric' });
+}
+
 export function formatBytes(n: number | null | undefined): string {
   if (!n) return '';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -83,6 +92,14 @@ export function itemSubtitle(item: Item): string {
       return [item.parentTitle, item.year].filter(Boolean).join(' · ');
     case 'track':
       return [item.grandparentTitle ?? item.parentTitle].filter(Boolean).join(' · ');
+    case 'audiobook':
+      return [item.parentTitle, item.year].filter(Boolean).join(' · ');
+    case 'bookpart':
+      return [item.parentTitle, item.index != null ? `Part ${item.index}` : null].filter(Boolean).join(' · ');
+    case 'podcast':
+      return item.childCount ? `${item.childCount} episode${item.childCount === 1 ? '' : 's'}` : '';
+    case 'podcastepisode':
+      return [item.parentTitle, formatDate(item.releaseDate)].filter(Boolean).join(' · ');
     case 'show':
       return [item.year, item.childCount ? `${item.childCount} season${item.childCount === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ');
     default:

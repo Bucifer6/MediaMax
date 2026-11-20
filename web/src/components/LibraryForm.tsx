@@ -7,17 +7,19 @@ import { Icon } from './Icon';
 import { Field, Spinner, Switch } from './ui';
 import { libraryIcon } from '../utils/items';
 
-const TYPES: { value: CreateLibraryRequest['type']; label: string }[] = [
+const TYPES: { value: CreateLibraryRequest['type']; label: string; hint?: string }[] = [
   { value: 'movies', label: 'Movies' },
   { value: 'shows', label: 'TV Shows' },
   { value: 'music', label: 'Music' },
+  { value: 'audiobooks', label: 'Audiobooks', hint: 'Author/Book folders or .m4b files' },
   { value: 'photos', label: 'Photos' },
   { value: 'videos', label: 'Home videos' },
 ];
 
 export function LibraryForm({ initial, onSaved, onCancel, submitLabel }: { initial?: Library; onSaved: (l: Library) => void; onCancel?: () => void; submitLabel?: string }) {
   const toast = useToast();
-  const iptv = initial?.type === 'iptv-movies' || initial?.type === 'iptv-shows';
+  // IPTV and podcast libraries are managed automatically and have no folders.
+  const iptv = initial?.type === 'iptv-movies' || initial?.type === 'iptv-shows' || initial?.type === 'podcasts';
   const [name, setName] = useState(initial?.name ?? '');
   const [type, setType] = useState<CreateLibraryRequest['type']>(iptv || !initial ? 'movies' : (initial.type as CreateLibraryRequest['type']));
   const [paths, setPaths] = useState<string[]>(initial?.paths ?? []);
@@ -58,6 +60,9 @@ export function LibraryForm({ initial, onSaved, onCancel, submitLabel }: { initi
             </button>
           ))}
         </div>
+      )}
+      {!initial && TYPES.find((t) => t.value === type)?.hint && (
+        <p className="muted type-hint"><Icon name="info" size={14} /> {TYPES.find((t) => t.value === type)!.hint}</p>
       )}
       <Field label="Name">
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={TYPES.find((t) => t.value === type)?.label} />

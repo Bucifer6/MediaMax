@@ -14,6 +14,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Platform } from 'react-native';
 import { getJSON, setJSON } from '@/api/storage';
 import type { DownloadQuality, Item } from '@/api/types';
+import { isAudioItem } from '@/utils/library';
 import { useSession } from './session';
 
 export type DownloadState = 'queued' | 'downloading' | 'done' | 'error';
@@ -88,10 +89,10 @@ const isConverted = (r: Pick<DownloadRecord, 'quality'>) => !!r.quality && r.qua
 const Ctx = createContext<DownloadsValue | null>(null);
 
 function extFor(item: Item, quality: DownloadQuality = 'original'): string {
-  if (quality !== 'original') return item.type === 'track' ? 'm4a' : 'mp4';
+  if (quality !== 'original') return isAudioItem(item.type) ? 'm4a' : 'mp4';
   const c = containersOf(item)[0];
   if (c && /^[a-z0-9]{2,5}$/.test(c)) return c === 'matroska' ? 'mkv' : c;
-  if (item.type === 'track') return 'mp3';
+  if (isAudioItem(item.type)) return 'mp3';
   return 'mp4';
 }
 

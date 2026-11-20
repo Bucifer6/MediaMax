@@ -312,3 +312,4 @@
   .subsearch-row { flex-wrap: wrap; }
   .subsearch-row .btn { margin-left: 52px; }
 }
+.type-hint { display: flex; align-items: center; gap: 6px; font-size: 0.86rem; margin-top: -6px; }
