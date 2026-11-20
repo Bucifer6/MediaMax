@@ -54,6 +54,8 @@ import type {
   RemoteSubtitle,
   RemoteTarget,
   RequestMediaType,
+  RequestOptions as MediaRequestOptions,
+  RequestTvInfo,
   RequestStatus,
   SearchResponse,
   SmartFilter,
@@ -400,6 +402,14 @@ export class MediaMaxClient {
   /** Trending when `q` is empty. */
   discover(q: { q?: string; type?: RequestMediaType | 'all'; page?: number }, signal?: AbortSignal) {
     return this.request<DiscoverResponse>('GET', '/discover', { query: q, signal, timeoutMs: 30000 });
+  }
+  /** What this user may request (permissions, 4K, remaining quota). */
+  requestOptions() {
+    return this.get<MediaRequestOptions>('/requests/options');
+  }
+  /** Seasons of a show with library/request status (request sheet). */
+  requestTvInfo(tmdbId: string) {
+    return this.get<RequestTvInfo>(`/requests/tv/${encodeURIComponent(tmdbId)}`);
   }
   /** Non-admins always get their own; admins get everyone's unless `mine`. */
   mediaRequests(q: { status?: RequestStatus; mine?: boolean } = {}) {

@@ -15,7 +15,10 @@ import { programProgress } from '../components/Cards';
 import { catchupLink } from '../components/ProgramModal';
 import { isTypingTarget, useNow } from '../hooks';
 import { formatClock, formatTime } from '../utils/format';
-import { positionCueList, SUBTITLE_CLASS, subtitleStyleOf, useSubtitleStyleSheet } from './subtitleStyle';
+import { subtitleStyleOf } from './subtitleStyle';
+import { SubtitleOverlay } from './subtitles/SubtitleOverlay';
+import { activeLiveCues } from './subtitles/live';
+import type { TextCue } from './subtitles/types';
 
 export default function LivePlayer() {
   const { channelId = '' } = useParams();
@@ -55,8 +58,9 @@ export default function LivePlayer() {
   const now = useNow(15000);
   // Closed captions carried in the stream (hls.js exposes CEA-608/708 and WebVTT renditions as text tracks).
   const subStyle = subtitleStyleOf(user?.preferences.subtitleStyle);
-  useSubtitleStyleSheet(subStyle);
   const [ccCount, setCcCount] = useState(0);
+  /** Active caption cues, drawn by our overlay (the tracks stay "hidden": the platform never renders them). */
+  const [liveCues, setLiveCues] = useState<TextCue[]>([]);
   const [ccOn, setCcOn] = useState(() => user?.preferences.subtitleMode === 'always');
   useEffect(() => {
     const v = videoRef.current;
@@ -67,9 +71,10 @@ export default function LivePlayer() {
       const tracks = captionTracks();
       setCcCount(tracks.length);
       tracks.forEach((t, i) => {
-        const want: TextTrackMode = ccOn && i === 0 ? 'showing' : 'hidden';
-        if (t.mode !== want) t.mode = want;
-        t.oncuechange = want === 'showing' ? () => positionCueList(t.activeCues, subStyle.position) : null;
+        const on = ccOn && i === 0;
+        if (t.mode !== 'hidden') t.mode = 'hidden';
+        t.oncuechange = on ? () => setLiveCues(activeLiveCues(t.activeCues)) : null;
+        if (on) setLiveCues(activeLiveCues(t.activeCues));
       });
     };
     apply();
@@ -451,7 +456,10 @@ export default function LivePlayer() {
 
   return (
     <div ref={shellRef} className={`player live-player ${controls ? 'show-controls' : 'hide-controls'}`} onMouseMove={poke} onTouchStart={poke}>
-      <video ref={videoRef} className={`player-video ${SUBTITLE_CLASS}`} playsInline onClick={togglePlay} onDoubleClick={toggleFs} />
+      <video ref={videoRef} className="player-video" playsInline onClick={togglePlay} onDoubleClick={toggleFs} />
+      {ccOn && !casting && (
+        <SubtitleOverlay track={null} video={videoRef.current} streamStartMs={0} delayMs={0} style={subStyle} tv={document.documentElement.classList.contains('tv')} controlsVisible={controls} liveCues={liveCues} />
+      )}
       {buffering && !error && !casting && <div className="player-center"><Spinner size={56} /></div>}
       {casting && (
         <div className="cast-overlay">

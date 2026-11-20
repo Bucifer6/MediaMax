@@ -119,6 +119,32 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | API keys for integrations | ✅ | ✅ | ✅ | ✅ |
 | Media requests (Overseerr-style): movies, shows (all/first/latest/specific seasons), music (Lidarr), books (Readarr), "also in 4K", live download progress | Add-on | Add-on | Add-on | ✅ built in |
 
+### Requests vs. Overseerr / Jellyseerr
+MediaMax has the request app built in — no separate Overseerr/Jellyseerr container, no second user database.
+
+| Feature | Overseerr | Jellyseerr | MediaMax |
+|---|:-:|:-:|:-:|
+| Per-user request permissions per kind (movies, shows, 4K movies, 4K shows) | ✅ | ✅ | ✅ (+ music & books) |
+| Auto-approve per user and kind | ✅ | ✅ | ✅ (`none` / `request` / `auto`) |
+| Request managers (approve without being admin) | ✅ | ✅ | ✅ |
+| Default permissions for new users, bulk edit | ✅ | ✅ | ✅ (also via invites / SSO) |
+| Quotas: N movies / N seasons per X days, per user and default | ✅ | ✅ | ✅ (+ music, books; exemptions) |
+| Remaining quota shown when requesting | ✅ | ✅ | ✅ |
+| Approve / decline with reason, bulk actions, filters & sort | ✅ | ✅ | ✅ |
+| Edit before approve (server, quality profile, root folder, tags, language profile, seasons) | ✅ | ✅ | ✅ |
+| Retry failed requests, delete with "also remove from Radarr/Sonarr" | ✅ | ✅ | ✅ |
+| Per-season availability, request missing seasons of partially available shows | ✅ | ✅ | ✅ |
+| Request timeline and comments between requester and admins | 🟡 | 🟡 | ✅ |
+| Notifications: in-app, Discord, Slack, Telegram, ntfy, Gotify, Pushover, email, webhook — per-event toggles and Test | ✅ | ✅ | ✅ |
+| Issues: report video/audio/subtitle problems per item/season/episode, comments, resolve/reopen | ✅ | ✅ | ✅ (+ Radarr/Sonarr/Bazarr actions) |
+| Discover sliders: trending, popular, upcoming, top rated, genres, studios/networks | ✅ | ✅ | ✅ |
+| Person pages with filmography and request buttons | ✅ | ✅ | ✅ |
+| Recently requested / recently added rows, hide available | ✅ | ✅ | ✅ |
+| Blacklist titles | ❌ | ✅ | ✅ |
+| Watchlist auto-request | ✅ (Plex watchlist) | 🟡 | ✅ (Discover watchlist) |
+| Auto-approve titles rated ≥ X | ❌ | ❌ | ✅ |
+| Music and book requests (Lidarr/Readarr) | ❌ | 🟡 | ✅ |
+
 ## Clients & devices
 | Feature | Plex | Jellyfin | Emby | MediaMax |
 |---|:-:|:-:|:-:|:-:|
@@ -188,8 +214,39 @@ MediaMax can be the hub of a Radarr/Sonarr/Lidarr/Readarr/Bazarr setup (**Admin 
 * **Requests** go to the first enabled non-4K instance of the right kind: movies → Radarr, shows → Sonarr (all, first,
   latest or specific seasons), artists/albums → Lidarr (artist: all or only future albums), books → Readarr. Discover has
   Movies / Shows / Music / Books tabs; Music and Books search Lidarr's and Readarr's own lookup (no TMDB key needed) and only
-  appear when such an instance exists. Approval, auto-approve users and weekly limits work as before. While a request is in
-  an *arr queue its status reads "Downloading 42%".
+  appear when such an instance exists. While a request is in an *arr queue its status reads "Downloading 42%".
+
+### Requests: permissions, quotas, approval, issues
+* **Permissions** (**Admin → Users → Edit**, *Default permissions*, or select several users → *Edit permissions*): for movies,
+  shows, 4K movies, 4K shows, music and books each user gets **No** (Discover hides the request button, the API answers 403),
+  **Request** (needs approval) or **Auto** (approved and sent to the *arr right away). Plus *Manage requests* (a non-admin
+  request manager who can approve, decline, edit and delete requests, handle issues and the blacklist), *Report issues* and
+  *Auto-request from watchlist*. New users (admin-created, invites, SSO) get the default permissions; invites can carry their
+  own. Users from before this existed keep what they had: the old *Request in 4K* switch and the auto-approve user list
+  are read as a fallback until the user is edited.
+* **Quotas**: per user or the server default, "N per X days" for movies, TV (counts **seasons**, like Overseerr), music and
+  books, over a rolling window; declined requests don't count. Admins are never limited; request managers and users with
+  *Auto* for a kind can be exempt. The remaining quota shows on Discover, in the request dialog and on *My requests*. The old
+  weekly limit seeds the default quota.
+* **Approval** (**Requests**): filter by status, type and user, sort, select and bulk approve/decline/delete, decline with a
+  reason, **Edit** to change seasons, 4K and the Radarr/Sonarr instance, quality profile, root folder, language profile and
+  tags before approving, **Retry** failed requests, and delete with *Also remove from Radarr/Sonarr*. Each request has a
+  timeline (requested, approved, sent, failed, available, edited) and comments between requester and managers. Global rule:
+  auto-approve movie/show requests rated at least X on TMDB (Admin → Server settings → Requests).
+* **Shows**: the request dialog lists every season with its library and request status; for partially available shows only
+  the missing seasons are offered and requested, and the request turns *available* once every requested season has arrived.
+* **Blacklist**: managers blacklist a title from its Discover card; nobody can request it and it's hidden from Discover.
+* **Notifications**: in-app (bell) for new requests (to managers), approved / declined with reason / available (to the
+  requester), failed (to managers), comments, and issues. **Admin → Server settings → Notifications** adds Discord, Slack,
+  Telegram, ntfy, Gotify, Pushover, email (SMTP) and JSON-webhook agents with per-event toggles and a Test button; the JSON
+  webhooks gain `request.approved/declined/failed` and `issue.created/resolved`.
+* **Issues**: *Report issue* (flag button on an item page) for video, audio, subtitle or other problems, for a whole title or
+  a season/episode, with a message. Managers see all issues under **Issues**, reply, resolve and reopen; reporters see their
+  own. The issue page links to the *arr actions (search for upgrade, Bazarr subtitles) when the title matches an instance.
+* **Discover**: sliders for your watchlist, recently added, recently requested, trending, popular / upcoming / top-rated
+  movies and shows, genre lists (also by studio `studio-<id>` and network `network-<id>`), people search and person pages
+  with request buttons, and a *Hide what's in the library* toggle. The heart menu on a card adds it to your Discover
+  watchlist; with *Auto-request from watchlist* that also requests it.
 * **Webhooks**: add one *Webhook* connection per app (Settings → Connect → Webhook, triggers On Import / Upgrade / Rename /
   Delete) pointing at the URL shown in the settings tab. MediaMax works out the folder the event touched, maps it through
   the instance's path mappings (`/movies` → `/media/Movies`), rescans only the library that contains it, debounces bursts

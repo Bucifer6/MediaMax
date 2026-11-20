@@ -87,11 +87,25 @@ export class Shooter {
         if (hero && this.state.heroId) {
           const i = hero.items.findIndex((x) => x.id === this.state.heroId);
           if (i > 0) hero.items.unshift(...hero.items.splice(i, 1));
+          else if (i < 0) hero.items.unshift(await this.state.admin.get(`/items/${this.state.heroId}`));
         }
         body = JSON.stringify(j);
       } catch {}
       await route.fulfill({ response: res, body });
     });
+    // Work around a server bug: resized variants (?w=) of PNG artwork are re-encoded as JPEG, so transparent logos
+    // get a black box. Logos are requested at full size instead (see the report / README notes).
+    const logos = new Set(this.state.logoUrls ?? []);
+    if (logos.size) {
+      await ctx.route('**/api/v1/images/**', (route) => {
+        const u = new URL(route.request().url());
+        if (u.searchParams.has('w') && logos.has(u.pathname)) {
+          u.searchParams.delete('w');
+          return route.continue({ url: u.toString() });
+        }
+        return route.continue();
+      });
+    }
     const page = await ctx.newPage();
     page.on('pageerror', (e) => this.problems.push(`${page.url().replace(this.base, '')}: ${e.message}`));
     page.on('console', (m) => {
@@ -139,7 +153,7 @@ export class Shooter {
 export const SHOTS = {
   async home(s) {
     const { ctx, page } = await s.context();
-    await s.goto(page, '/', 1500);
+    await s.goto(page, '/', 2500);
     await s.capture(page, 'home.jpg');
     await ctx.close();
   },
@@ -185,10 +199,8 @@ export const SHOTS = {
     const ids = ['Meridian News 24', 'Pulse Sports', 'Wildscape', 'Popcorn Kids'].map((n) => s.state.channels.find((c) => c.name === n)?.id).filter(Boolean);
     await page.goto(`${s.base}/watch/multiview?ch=${ids.join(',')}`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction((n) => [...document.querySelectorAll('video')].filter((v) => v.readyState >= 2).length >= n, ids.length, { timeout: 40000 }).catch(() => s.problems.push('multiview: not all tiles played'));
-    await sleep(2500);
-    await page.mouse.move(400, 300);
-    await sleep(400);
-    await s.capture(page, 'multiview.jpg', 1440, { mouseX: 400, mouseY: 300, keepPointer: true });
+    await sleep(3500);
+    await s.capture(page, 'multiview.jpg', 1440, { mouseX: 1100, mouseY: 25 });
     await ctx.close();
   },
 
@@ -197,8 +209,8 @@ export const SHOTS = {
     const album = s.state.albums.find((a) => a.title === 'Afterglow Avenue');
     await s.goto(page, `/item/${album.id}`, 800);
     await page.getByRole('button', { name: /^Play/ }).first().click();
-    await page.waitForFunction(() => [...document.querySelectorAll('audio')].some((a) => !a.paused && a.currentTime > 0.5), null, { timeout: 20000 }).catch(() => s.problems.push('music: audio never started'));
-    await sleep(2500);
+    await page.waitForSelector('.eq', { timeout: 20000 }).catch(() => s.problems.push('music: playback never started'));
+    await sleep(3500);
     await s.capture(page, 'music.jpg');
     await ctx.close();
   },
@@ -215,7 +227,7 @@ export const SHOTS = {
   async dj(s) {
     const { ctx, page } = await s.context();
     await s.goto(page, '/dj', 800);
-    await page.getByLabel('Describe your mix').fill('warm house and synthwave for a summer evening');
+    await page.getByLabel('Describe your mix').fill('deep house for a summer evening');
     await page.getByRole('button', { name: 'Play it' }).click();
     await page.waitForFunction(() => window.mediamaxDj?.snapshot().status === 'playing', null, { timeout: 30000 });
     await sleep(1500);
@@ -224,7 +236,9 @@ export const SHOTS = {
     if (mixOut) {
       await page.evaluate((ms) => { window.mediamaxDj.decks[window.mediamaxDj.snapshot().live].audio.currentTime = Math.max(0, ms / 1000 - 2.5); }, mixOut);
       await page.waitForFunction(() => window.mediamaxDj.snapshot().transitioning, null, { timeout: 15000 }).catch(() => s.problems.push('dj: transition never started'));
-      await page.waitForFunction(() => Math.abs(window.mediamaxDj.snapshot().crossfader) < 0.35, null, { timeout: 15000 }).catch(() => undefined);
+      // Half-way through the blend: both decks playing, crossfader near the middle.
+      const xf = await page.evaluate(() => window.mediamaxDj.snapshot().queue[1]?.transition?.crossfadeMs ?? 4000);
+      await sleep(Math.min(6000, xf / 2));
     } else s.problems.push('dj: no mix point in queue');
     await sleep(300);
     await s.capture(page, 'dj.jpg', 1440, { animations: 'allow' });
@@ -232,7 +246,8 @@ export const SHOTS = {
   },
 
   async calendar(s) {
-    const { ctx, page } = await s.context();
+    // The demo has no TMDB key; hide the "add a TMDB key" setup notice (upcoming episodes are seeded instead).
+    const { ctx, page } = await s.context({ extraCss: '.cal-notice{display:none!important}' });
     await s.goto(page, '/calendar', 1000);
     await s.capture(page, 'calendar.jpg');
     await ctx.close();
@@ -259,7 +274,10 @@ export const SHOTS = {
         s.problems.push('admin-dashboard: could not start a session: ' + e.message);
       }
     }
+    for (const x of await s.state.admin.get('/sessions').catch(() => [])) if (x.userId === s.state.adminId) await s.state.admin.del(`/playback/sessions/${x.id}`).catch(() => undefined);
     await s.goto(page, '/admin', 2000);
+    await page.evaluate(() => window.scrollTo(0, 230));
+    await s.settle(page, 600);
     await s.capture(page, 'admin-dashboard.jpg');
     for (const [c, id] of sessions) await c.del(`/playback/sessions/${id}`).catch(() => undefined);
     await ctx.close();
@@ -272,18 +290,24 @@ export const SHOTS = {
     await ctx.close();
   },
 
+  // The studio puts the editor and the live preview side by side from 1641 px, so these two are captured at
+  // 1680×1050 and scaled to 1440 px wide.
   async 'branding-studio'(s) {
-    const { ctx, page } = await s.context();
-    await s.goto(page, '/admin/branding', 1500);
+    const { ctx, page } = await s.context({ width: 1680, height: 1050 });
+    await s.goto(page, '/admin/branding', 1000);
+    await page.locator('.studio-tabs').getByText('Theme', { exact: true }).first().click();
+    await s.settle(page, 1200);
     await s.capture(page, 'branding-studio.jpg');
     await ctx.close();
   },
 
   async 'starter-looks'(s) {
-    const { ctx, page } = await s.context();
+    const { ctx, page } = await s.context({ width: 1680, height: 1050 });
     await s.goto(page, '/admin/branding', 1000);
-    await page.getByText('Starter looks').first().click();
+    await page.locator('.studio-tabs').getByText('Starter looks').first().click();
     await s.settle(page, 1000);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await sleep(300);
     await s.capture(page, 'starter-looks.jpg');
     await ctx.close();
   },
@@ -298,10 +322,15 @@ export const SHOTS = {
   async 'tv-mode'(s) {
     const { ctx, page } = await s.context({ width: 1920, height: 1080, dsf: 1 });
     await s.goto(page, '/?tv=1', 2000);
-    for (const k of ['ArrowDown', 'ArrowRight', 'ArrowRight']) {
-      await page.keyboard.press(k);
+    // D-pad down until a poster card in a row has focus, then one step right.
+    for (let i = 0; i < 8; i++) {
+      const onCard = await page.evaluate(() => document.activeElement?.matches?.('a.card'));
+      if (onCard) break;
+      await page.keyboard.press('ArrowDown');
       await sleep(350);
     }
+    await page.keyboard.press('ArrowRight');
+    await sleep(500);
     await s.settle(page, 900);
     await s.capture(page, 'tv-mode.jpg', 1920, { mouseX: 1919, mouseY: 1079 });
     await ctx.close();

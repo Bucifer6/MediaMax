@@ -281,3 +281,21 @@ body:has(.miniplayer) .renderer-bar { bottom: 92px; }
   .renderer-bar { right: 16px; left: 16px; width: auto; bottom: calc(72px + env(safe-area-inset-bottom)); }
   body:has(.miniplayer) .renderer-bar { bottom: calc(144px + env(safe-area-inset-bottom)); }
 }
+
+/* ---- Video element pair (seamless quality switches, videoPair.ts) ---- */
+.player-video-host { position: absolute; inset: 0; }
+.player-video.standby { opacity: 0; pointer-events: none; }
+.player-video-host .JASSUB { pointer-events: none; }
+
+/* ---- Our own subtitle renderer (subtitles/SubtitleOverlay.tsx) ---- */
+.mm-subs-layer { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
+.mm-sub-stage { position: absolute; }
+.mm-sub-region { position: absolute; left: 4%; right: 4%; display: flex; flex-direction: column; align-items: center; gap: 0.12em; transition: transform 0.35s var(--ease, ease); }
+.mm-sub-cue { max-width: 100%; text-align: center; }
+.mm-sub-text { white-space: pre-wrap; line-height: 1.3; overflow-wrap: anywhere; }
+.mm-sub-abs .mm-sub-text { display: block; }
+.mm-sub-ass { line-height: 1.15; overflow-wrap: anywhere; }
+.mm-sub-pgs { position: absolute; }
+/* Bottom subtitles move up while the control bar is showing. */
+.mm-subs-layer.controls-up .mm-sub-bottom { transform: translateY(calc(-1 * min(120px, 14vh))); }
+.mm-subs-layer.tv .mm-sub-region { left: 6%; right: 6%; }

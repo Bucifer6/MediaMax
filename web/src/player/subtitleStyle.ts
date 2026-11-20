@@ -7,7 +7,7 @@ export function subtitleStyleOf(s: Partial<SubtitleStyle> | null | undefined): S
   return { ...DEFAULT_SUBTITLE_STYLE, ...(s ?? {}) };
 }
 
-export const SUBTITLE_OPTIONS: { [K in keyof SubtitleStyle]: { value: SubtitleStyle[K]; label: string }[] } = {
+export const SUBTITLE_OPTIONS: { [K in keyof SubtitleStyle]-?: { value: SubtitleStyle[K]; label: string }[] } = {
   size: [
     { value: 'small', label: 'Small' },
     { value: 'medium', label: 'Medium' },
@@ -36,10 +36,28 @@ export const SUBTITLE_OPTIONS: { [K in keyof SubtitleStyle]: { value: SubtitleSt
     { value: 'bottom', label: 'Bottom' },
     { value: 'raised', label: 'Raised' },
   ],
+  verticalOffset: [
+    { value: undefined, label: 'Auto' },
+    { value: 5, label: '5%' },
+    { value: 10, label: '10%' },
+    { value: 15, label: '15%' },
+    { value: 20, label: '20%' },
+  ],
+  edge: [
+    { value: 'outline', label: 'Outline' },
+    { value: 'shadow', label: 'Drop shadow' },
+    { value: 'none', label: 'None' },
+  ],
+  assStyles: [
+    { value: 'auto', label: 'Auto' },
+    { value: 'file', label: "Always the file's styles" },
+    { value: 'user', label: 'My style' },
+  ],
 };
 
 export const SUBTITLE_FIELD_LABELS: Record<keyof SubtitleStyle, string> = {
   size: 'Size', color: 'Colour', background: 'Background', font: 'Font', position: 'Position',
+  verticalOffset: 'Lift from bottom', edge: 'Text edge', assStyles: 'ASS/SSA styling',
 };
 
 const SCALE: Record<SubtitleStyle['size'], number> = { small: 0.75, medium: 1, large: 1.3, xlarge: 1.65 };
@@ -58,7 +76,10 @@ const OUTLINE = '0 0 2px #000, 0 0 2px #000, 1px 1px 2px #000, -1px -1px 2px #00
  */
 export function subtitleDeclarations(s: SubtitleStyle, base = 'clamp(16px, 2.6vw, 34px)'): Record<string, string> {
   const bg = s.background === 'box' ? 'rgb(0 0 0 / 0.62)' : s.background === 'boxSolid' ? 'rgb(0 0 0 / 1)' : 'transparent';
-  const shadow = s.background === 'shadow' ? OUTLINE : s.background === 'none' ? 'none' : '0 1px 2px rgb(0 0 0 / 0.6)';
+  const edge = s.edge ?? 'outline';
+  const shadow = s.background === 'shadow'
+    ? edge === 'outline' ? OUTLINE : edge === 'shadow' ? '2px 2px 3px rgb(0 0 0 / 0.9)' : 'none'
+    : s.background === 'none' ? 'none' : '0 1px 2px rgb(0 0 0 / 0.6)';
   return {
     'font-size': `calc(${base} * ${SCALE[s.size]})`,
     color: COLORS[s.color],

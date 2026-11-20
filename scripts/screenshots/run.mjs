@@ -39,7 +39,13 @@ const { chromium } = require('playwright');
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
-const arg = (k) => process.argv.find((a) => a === `--${k}` || a.startsWith(`--${k}=`))?.split('=').slice(1).join('=') ?? (process.argv.includes(`--${k}`) ? true : null);
+const arg = (k) => {
+  const a = process.argv.find((x) => x === `--${k}` || x.startsWith(`--${k}=`));
+  return a == null ? null : a.includes('=') ? a.slice(a.indexOf('=') + 1) : true;
+};
+// node:sqlite (used to backdate demo history) prints an ExperimentalWarning; keep the output clean.
+process.removeAllListeners('warning');
+process.on('warning', (w) => w.name !== 'ExperimentalWarning' && console.warn(w));
 const t0 = Date.now();
 const log = (m) => console.log(`[${((Date.now() - t0) / 1000).toFixed(0).padStart(4)}s] ${m}`);
 
@@ -109,6 +115,8 @@ async function main() {
     state.admin = client(state.base, state.token);
     state.alex = client(state.base, state.alexToken);
     state.kids = client(state.base, state.kidsToken);
+    state.adminId = (await state.admin.get('/auth/me')).id;
+    state.logoUrls = (await state.admin.get('/items?type=movie,show&limit=200')).items.map((i) => i.logoUrl).filter(Boolean);
     fs.mkdirSync(out, { recursive: true });
     const shooter = new Shooter({ browser, base: state.base, out, state, log });
     await shooter.init();

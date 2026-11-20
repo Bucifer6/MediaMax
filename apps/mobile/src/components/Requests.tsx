@@ -2,7 +2,7 @@
 import React, { memo, useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { ApiError } from '@/api/client';
-import type { DiscoverResult, MediaRequest, RequestStatus } from '@/api/types';
+import type { DiscoverResult, MediaRequest, RequestOptions, RequestStatus, RequestTvInfo } from '@/api/types';
 import { invalidate } from '@/api/useQuery';
 import { useApi } from '@/state/session';
 import { useTheme } from '@/theme';
@@ -62,16 +62,23 @@ export function discoverBadge(r: DiscoverResult): { label: string; tone: Tone; i
 }
 
 /** A title can be requested unless it is in a library or has an open request. */
-export const isRequestable = (r: DiscoverResult) => !r.availableItemId && (!r.requestStatus || r.requestStatus === 'declined' || r.requestStatus === 'failed');
+export const isRequestable = (r: DiscoverResult) => !r.blacklisted && !r.availableItemId && (!r.requestStatus || r.requestStatus === 'declined' || r.requestStatus === 'failed');
+
+/** The user's permission for a result's kind (servers without permissions allow everything). */
+export function requestPermission(opts: RequestOptions | null, r: DiscoverResult): 'none' | 'request' | 'auto' {
+  const p = opts?.permissions;
+  if (!p) return 'request';
+  return p[r.mediaType === 'movie' ? 'movie' : r.mediaType === 'show' ? 'show' : r.mediaType === 'book' ? 'book' : 'music'];
+}
 
 /** Friendly title + message for the server's request / discover errors. */
 export function describeRequestError(e: unknown): { title: string; message: string; icon: IconName } {
   const message = e instanceof Error ? e.message : String(e);
   if (e instanceof ApiError) {
-    if (e.status === 429) return { title: 'Request limit reached', message, icon: 'hourglass-outline' };
+    if (e.status === 429) return { title: 'Request quota reached', message, icon: 'hourglass-outline' };
     if (e.status === 409) return { title: /library/i.test(message) ? 'Already in the library' : 'Already requested', message, icon: 'copy-outline' };
     if (e.status === 400) return { title: "Requests aren't set up", message, icon: 'construct-outline' };
-    if (e.status === 403) return { title: 'Requests are turned off', message, icon: 'lock-closed-outline' };
+    if (e.status === 403) return { title: /permission|allowed|blacklist/i.test(message) ? 'Not allowed' : 'Requests are turned off', message, icon: 'lock-closed-outline' };
     if (e.status === 0) return { title: 'Server unreachable', message, icon: 'cloud-offline-outline' };
   }
   return { title: 'Something went wrong', message, icon: 'alert-circle-outline' };
@@ -151,6 +158,8 @@ export function RequestSheet({ result, onClose, onRequested, onOpenRequests }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [done, setDone] = useState<MediaRequest | null>(null);
+  const [opts, setOpts] = useState<RequestOptions | null>(null);
+  const [tv, setTv] = useState<RequestTvInfo | null>(null);
 
   useEffect(() => {
     if (!result) return;
@@ -160,14 +169,39 @@ export function RequestSheet({ result, onClose, onRequested, onOpenRequests }: {
     setNote('');
     setError(null);
     setDone(null);
+    setTv(null);
+    let alive = true;
+    api.requestOptions().then((o) => alive && setOpts(o)).catch(() => undefined);
+    // Partially available shows: offer only the seasons that are still missing.
+    if (result.mediaType === 'show') {
+      api.requestTvInfo(result.tmdbId).then((info) => {
+        if (!alive) return;
+        setTv(info);
+        const free = info.seasons.filter((x) => x.status === 'missing' || x.status === 'partial').map((x) => x.seasonNumber);
+        if (free.length && free.length < info.seasons.length) {
+          setAllSeasons(false);
+          setSeasons(free);
+        }
+        if (info.seasons.length) setMaxSeason(Math.max(...info.seasons.map((x) => x.seasonNumber)));
+      }).catch(() => undefined);
+    }
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result]);
 
   if (!result) return null;
   const isShow = result.mediaType === 'show';
-  const requestable = isRequestable(result);
+  const level = requestPermission(opts, result);
+  const quota = opts?.quotas?.[result.mediaType === 'movie' ? 'movie' : result.mediaType === 'show' ? 'show' : result.mediaType === 'book' ? 'book' : 'music'] ?? null;
+  const takenSeasons = new Set((tv?.seasons ?? []).filter((x) => x.status !== 'missing' && x.status !== 'partial').map((x) => x.seasonNumber));
+  const requestable = level !== 'none' && (isRequestable(result) || (isShow && !!result.availableItemId && !!tv && takenSeasons.size < tv.seasons.length));
+  const units = isShow ? (allSeasons ? Math.max(1, (tv?.seasons.length ?? 1) - takenSeasons.size) : seasons.length) : 1;
+  const overQuota = !!quota && quota.remaining !== null && quota.remaining < units;
   const badge = discoverBadge(result);
   const toggleSeason = (n: number) => setSeasons((s) => (s.includes(n) ? s.filter((x) => x !== n) : [...s, n].sort((a, b) => a - b)));
-  const canSend = requestable && !busy && !done && (!isShow || allSeasons || seasons.length > 0);
+  const canSend = requestable && !overQuota && !busy && !done && (!isShow || allSeasons || seasons.length > 0);
 
   const send = async () => {
     if (!canSend) return;
@@ -230,10 +264,10 @@ export function RequestSheet({ result, onClose, onRequested, onOpenRequests }: {
               </View>
               {!allSeasons ? (
                 <View style={{ flexDirection: 'row', gap: t.space.xs, flexWrap: 'wrap' }}>
-                  {Array.from({ length: maxSeason }, (_, i) => i + 1).map((n) => (
+                  {Array.from({ length: maxSeason }, (_, i) => i + 1).filter((n) => !takenSeasons.has(n)).map((n) => (
                     <Chip key={n} label={`S${n}`} selected={seasons.includes(n)} onPress={() => toggleSeason(n)} />
                   ))}
-                  {maxSeason < 60 ? <Chip label="More" icon="add" onPress={() => setMaxSeason((m) => Math.min(60, m + 10))} /> : null}
+                  {!tv && maxSeason < 60 ? <Chip label="More" icon="add" onPress={() => setMaxSeason((m) => Math.min(60, m + 10))} /> : null}
                 </View>
               ) : null}
               {!allSeasons && !seasons.length ? (
@@ -243,6 +277,14 @@ export function RequestSheet({ result, onClose, onRequested, onOpenRequests }: {
               ) : null}
             </View>
           ) : null}
+          {quota && !quota.exempt && quota.limit > 0 ? (
+            <T variant="small" tone={overQuota ? 'danger' : 'muted'}>
+              {overQuota
+                ? `Quota reached: ${quota.remaining ?? 0} of ${quota.limit} ${isShow ? 'seasons' : 'requests'} left in ${quota.days} days.`
+                : `${quota.remaining} of ${quota.limit} ${isShow ? 'seasons' : 'requests'} left in the last ${quota.days} days.`}
+            </T>
+          ) : null}
+          {level === 'auto' ? <T variant="small" tone="muted">Approved automatically.</T> : null}
           <Input label="Note (optional)" value={note} onChangeText={setNote} placeholder="Anything the admin should know" maxLength={500} returnKeyType="done" onSubmitEditing={() => void send()} />
           {error ? <ErrorBanner error={error} /> : null}
           <View style={{ flexDirection: 'row', gap: t.space.sm, flexWrap: 'wrap' }}>
@@ -252,7 +294,7 @@ export function RequestSheet({ result, onClose, onRequested, onOpenRequests }: {
         </>
       ) : (
         <View style={{ gap: t.space.md }}>
-          <T tone="muted">This title has already been requested.</T>
+          <T tone="muted">{level === 'none' ? "You don't have permission to request this kind of title." : result.blacklisted ? "This title can't be requested on this server." : 'This title has already been requested.'}</T>
           <View style={{ flexDirection: 'row', gap: t.space.sm, flexWrap: 'wrap' }}>
             <Button label="My requests" icon="list" onPress={onOpenRequests} hasTVPreferredFocus />
             <Button label="Close" variant="secondary" onPress={onClose} />

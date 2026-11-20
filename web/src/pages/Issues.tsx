@@ -102,7 +102,11 @@ function IssueDetail({ id }: { id: string }) {
   return (
     <div className="page issues-page">
       <p><Link to="/issues" className="btn btn-sm btn-ghost"><Icon name="arrowLeft" size={14} /> Issues</Link></p>
-      {issue.error ? <ErrorState message={issue.error} onRetry={issue.reload} /> : !i ? <Skeleton h={240} /> : (
+      {issue.error ? (
+        /not found/i.test(issue.error)
+          ? <EmptyState icon="flag" title="Issue not found" message="It may have been deleted, or it belongs to someone else." action={<Link className="btn" to="/issues">All issues</Link>} />
+          : <ErrorState message={issue.error} onRetry={issue.reload} />
+      ) : !i ? <Skeleton h={240} /> : (
         <div className="issue-detail">
           <div style={{ minWidth: 0 }}>
             <header className="page-head" style={{ marginBottom: 12 }}>
@@ -155,7 +159,6 @@ function IssueDetail({ id }: { id: string }) {
             </div>
             {i.rootItemId && manager && (
               <div>
-                <small className="muted">Fix it in your *arr apps</small>
                 <ArrItemActions item={{ id: i.itemId ?? i.rootItemId, type: (i.itemId && i.season != null && i.episode != null ? 'episode' : i.mediaType) as never }} />
               </div>
             )}

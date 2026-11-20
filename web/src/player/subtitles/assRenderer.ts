@@ -88,7 +88,7 @@ export class LibassRenderer {
     void this.ready.then(() => {
       const j = this.jassub;
       if (!j) return;
-      j.timeOffset = seconds;
+      (j as unknown as { timeOffset: number }).timeOffset = seconds;
       const v = this.o.video;
       // Re-render the current frame now (matters while paused).
       j.setCurrentTime(v.paused, v.currentTime + seconds, v.playbackRate);

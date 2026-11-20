@@ -46,7 +46,7 @@ export function DiscoverCard({ r, opts, actions }: { r: DiscoverResult; opts: Re
   const status = r.requestStatus && r.requestStatus !== 'declined' ? r.requestStatus : null;
   const square = r.mediaType === 'artist' || r.mediaType === 'album';
   const allowed = canRequestType(opts, r.mediaType) && !r.blacklisted;
-  const moreSeasons = r.mediaType === 'show' && !!r.availableItemId && allowed;
+  const moreSeasons = r.mediaType === 'show' && !!r.availableItemId && allowed && /^\d+$/.test(r.tmdbId);
   const art = (
     <div className="card-art" style={square ? { aspectRatio: '1 / 1' } : undefined}>
       <Img src={r.posterUrl} width={260} alt={r.title} fallback={<div className="card-fallback"><Icon name={TYPE_ICON[r.mediaType]} size={28} /><span>{r.title}</span></div>} />
@@ -63,7 +63,7 @@ export function DiscoverCard({ r, opts, actions }: { r: DiscoverResult; opts: Re
   const sub = [r.subtitle, r.year, r.rating ? `★ ${r.rating.toFixed(1)}` : null].filter(Boolean).join(' · ');
   const video = r.mediaType === 'movie' || r.mediaType === 'show';
   const menu = [
-    ...(video && actions.onWatchlist ? [{ label: r.onWatchlist ? 'Remove from watchlist' : 'Add to watchlist', icon: (r.onWatchlist ? 'heartFill' : 'heart') as IconName, onClick: () => actions.onWatchlist!(r) }] : []),
+    ...(video && actions.onWatchlist && /^\d+$/.test(r.tmdbId) ? [{ label: r.onWatchlist ? 'Remove from watchlist' : 'Add to watchlist', icon: (r.onWatchlist ? 'heartFill' : 'heart') as IconName, onClick: () => actions.onWatchlist!(r) }] : []),
     ...(actions.onBlacklist && opts?.canManage ? [{ label: r.blacklisted ? 'Remove from blacklist' : 'Blacklist', icon: 'ban' as IconName, onClick: () => actions.onBlacklist!(r) }] : []),
   ];
   return (

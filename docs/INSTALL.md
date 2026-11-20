@@ -478,6 +478,23 @@ Live TV needs a programme guide (EPG). Open **Admin → TV guide**:
 
 Channels without guide data get a **Missing guide** badge under Admin → Channels. Details: [EPG.md](EPG.md).
 
+## Requests (replacing Overseerr / Jellyseerr)
+MediaMax has request management built in — you don't need a separate Overseerr or Jellyseerr.
+
+1. **Admin → Server settings → General**: add a TMDB API key (movies/shows). **Media automation (*arr)**: add Radarr/Sonarr
+   (and Lidarr/Readarr for music/books), press **Test**, pick quality profile and root folder. Mark a second Radarr/Sonarr as
+   **4K** to offer 4K requests.
+2. **Admin → Users → Default permissions**: choose what new users may request — per kind *No*, *Request* (needs approval) or
+   *Auto* — and the default quota (e.g. 5 movies / 7 days, 6 seasons / 14 days). Change existing users individually or select
+   several and use **Edit permissions**. Give trusted people **Manage requests** so they can approve without being admins.
+3. **Admin → Server settings → Notifications**: add Discord, Telegram, ntfy, Gotify, Pushover, Slack, email or a JSON webhook,
+   tick the events, press **Test**, then **Save changes**. Set the *Public URL* (General tab) so messages link back to MediaMax.
+4. People use **Discover** to request; managers approve on **Requests** (with **Edit** to change the server, profile, folder,
+   tags or seasons first). Problems with a title are reported with the flag button on its page and handled under **Issues**.
+
+Coming from Overseerr: the old per-server "auto-approve users" list and the 4K switch keep working for existing users until
+you edit them; the old weekly limit becomes the default quota.
+
 ## Building the release archives yourself
 
 ```bash

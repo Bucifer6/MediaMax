@@ -328,10 +328,56 @@ Settings are stored separately from `ServerSettings` (settings key `metadata`).
 * `POST /requests` `CreateMediaRequest`:
   `{ mediaType: 'movie'|'show'|'artist'|'album'|'book', tmdbId | externalId, title?, seasonMode?: 'all'|'first'|'latest'|'specific', seasons?, monitor?: 'all'|'future', also4k?, note? }`.
   `also4k` needs a 4K Radarr/Sonarr and an admin or a user with `allowRequest4k`. Weekly limits and auto-approve apply to every kind.
-* `POST /requests/:id/approve` 🛡️ · `POST /requests/:id/decline` 🛡️ `{ note }` · `DELETE /requests/:id` (own pending, or admin).
+* `POST /requests/:id/approve` 🧑‍⚖️ (optional `EditMediaRequest` body, applied first) · `POST /requests/:id/decline` 🧑‍⚖️ `{ reason }` (`note` still accepted) ·
+  `POST /requests/:id/retry` 🧑‍⚖️ · `DELETE /requests/:id?removeFromArr=true` (own pending, or manager; `removeFromArr` deletes the movie/series from
+  every Radarr/Sonarr, files kept) → `{ ok, removedFrom }`. 🧑‍⚖️ = admin or a user with `requestPermissions.manageRequests`.
   Approval sends the title to the first enabled non-4K instance of its kind (and the 4K instance when `also4k`); the request
   becomes `processing`, or `failed` with `error` when every instance refused.
 * `POST /requests/arr/test` 🛡️ `{ url, apiKey, kind? }` → `ArrOptions` (legacy; use `POST /arr/test`).
+
+### Permissions, quotas, approval workflow (Overseerr parity)
+* `User.requestPermissions: RequestPermissions` — `movie|show|movie4k|show4k|music|book: 'none'|'request'|'auto'`, `manageRequests`,
+  `reportIssues`, `watchlistAutoRequest`. `User.requestQuotas: RequestQuotas | null` (null = server default). Both are accepted by
+  `POST /users`, `PATCH /users/:id` and `PATCH /users/bulk` 🛡️ `BulkUpdateUsersRequest` (`{ userIds, requestPermissions?, requestQuotas?, allow*? }`).
+  `allowRequest4k` is kept (derived) and old clients toggling it update the 4K permissions. Requests a user may not make → **403**
+  (`code: request_permission`, or `blacklisted`); over quota → **429** (`code: request_limit`).
+* `ServerSettings.requests` adds `defaultPermissions`, `defaultQuotas`, `quotaExemptManagers` (default true), `quotaExemptAutoApprove`,
+  `autoApproveMinRating` (0 = off) and `hideAvailable`. `autoApproveUserIds`/`weeklyLimit` are deprecated fallbacks.
+* `GET /requests/options` adds `permissions`, `quotas` (`Record<kind, RequestQuotaStatus>`: `limit, days, used, remaining, resetsAt, exempt`),
+  `canManage`, `hideAvailable`. `GET /requests/quota` → the quotas alone.
+* `GET /requests?status=&mediaType=&userId=&sort=requested|updated|title|status&order=asc|desc&mine=true` — managers see everyone's.
+  `MediaRequest` adds `arr` (overrides, managers only), `quotaUnits`, `commentCount`, `declineReason`.
+* `GET /requests/:id` · `PATCH /requests/:id` 🧑‍⚖️ `EditMediaRequest` `{ seasonMode?, seasons?, also4k?, arr?: { instanceId, instance4kId, qualityProfileId, rootFolderPath, languageProfileId, tags } }`
+  (pending/failed/declined only) · `GET /requests/:id/arr-options` 🧑‍⚖️ → `RequestArrChoices` (instances with defaults and their profiles/folders/tags).
+* `POST /requests/bulk` 🧑‍⚖️ `{ ids, action: 'approve'|'decline'|'retry'|'delete', note?, removeFromArr? }` → `{ ok: string[], failed: { id, error }[] }`.
+* `GET /requests/:id/activity` → `RequestActivity[]` (timeline: created, approved, processing, failed, available, declined, edited, retried, comment) ·
+  `POST /requests/:id/comments` `{ body }` (requester or manager).
+* `GET /requests/tv/:tmdbId` → `RequestTvInfo` — seasons with `episodeCount`, `libraryEpisodes`, `status: available|partial|requested|pending|missing`.
+  `POST /requests` for a show only requests seasons that are neither in the library nor already requested (409 when none are left).
+* Blacklist 🧑‍⚖️: `GET /requests/blacklist` · `POST /requests/blacklist` `{ mediaType, externalId, title?, reason? }` · `DELETE /requests/blacklist/:type/:id`.
+
+### Discover extras
+* `GET /discover?…&hideAvailable=true` · `GET /discover/sliders?hideAvailable=` → `DiscoverSlider[]` (watchlist, recently-added, recently-requested, trending,
+  popular/upcoming/top movies & shows) · `GET /discover/list/:key?page=` (`trending`, `popular-movies`, `popular-shows`, `upcoming-movies`, `upcoming-shows`,
+  `top-movies`, `top-shows`, `movie-genre-<id>`, `show-genre-<id>`, `studio-<id>`, `network-<id>`) → `DiscoverResponse & { title }` ·
+  `GET /discover/genres` · `GET /discover/people?q=` · `GET /discover/person/:id` → `DiscoverPerson` (cast/crew as Discover cards).
+  `DiscoverResult` adds `blacklisted` (managers only see these), `onWatchlist`, `partiallyAvailable`.
+* Watchlist: `GET /discover/watchlist` → `DiscoverWatchlistEntry[]` · `POST /discover/watchlist` `{ mediaType, tmdbId }` (auto-requests with the
+  `watchlistAutoRequest` permission; the failure reason is kept in `autoRequestError`) · `DELETE /discover/watchlist/:type/:tmdbId`.
+
+### Issues
+* `GET /issues?status=open|resolved&kind=&mine=true` (managers: all; others: own) · `GET /issues/count` → `{ open }` · `GET /issues/:id` (with `comments`).
+* `POST /issues` `{ itemId, kind: 'video'|'audio'|'subtitle'|'other', message, season?, episode? }` (needs `reportIssues`; episodes are filed against
+  their show with season/episode set) · `POST /issues/:id/comments` `{ body }` · `POST /issues/:id/resolve` · `POST /issues/:id/reopen` ·
+  `DELETE /issues/:id` (manager, or the reporter while there are no comments).
+
+### Notifications for requests & issues
+* In-app notifications (`AppNotification.kind` `request` | `issue`, with `link`) go to managers (new request, failed, new issue) and to the
+  requester/reporter (approved, declined with reason, available, replies, resolved).
+* `ServerSettings.notificationAgents: NotificationAgent[]` — `{ id, kind: discord|slack|telegram|ntfy|gotify|pushover|email|webhook, name, enabled,
+  events: NotifyEvent[], config }`; secret config fields read back as `••••` (saving the mask keeps them). `GET /notify/agents/kinds` 🛡️ lists the fields;
+  `POST /notify/agents/test` 🛡️ (a saved agent by id, or a draft) → `{ ok, message }`.
+* Webhook events `request.approved`, `request.declined`, `request.failed`, `issue.created`, `issue.resolved` join `request.created` / `request.available`.
 * `ServerSettings.requests`: `enabled`, `autoApproveUserIds`, `weeklyLimit`. Download managers live in `ServerSettings.arr`
   (below); the old `requests.radarr` / `requests.sonarr` are migrated once and still read as a fallback.
   Webhooks: `request.created`, `request.available`.

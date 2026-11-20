@@ -29,7 +29,7 @@ export class PgsRenderer {
         const c = document.createElement('canvas');
         c.width = d.width;
         c.height = d.height;
-        c.getContext('2d')?.putImageData(new ImageData(d.rgba, d.width, d.height), 0, 0);
+        c.getContext('2d')?.putImageData(new ImageData(d.rgba as Uint8ClampedArray<ArrayBuffer>, d.width, d.height), 0, 0);
         return { canvas: c, x: d.x, y: d.y };
       });
       this.cache.set(e, b);

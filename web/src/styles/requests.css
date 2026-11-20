@@ -9,7 +9,8 @@
 .quota-grid { display: flex; flex-direction: column; gap: 6px; }
 .quota-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .quota-row .perm-label { min-width: 70px; }
-.quota-num { width: 76px; }
+.quota-row .input.quota-num { width: 80px; max-width: 80px; flex: 0 0 80px; }
+.quota-row > span { flex: none; }
 .quota-unl { font-size: 0.75rem; color: var(--c-success); font-weight: 700; }
 .perm-section { border: 1px solid var(--c-line); border-radius: var(--radius-lg); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .perm-section > header { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
@@ -110,3 +111,7 @@
 }
 .callout-info { padding: 14px 16px; border-radius: var(--radius); background: color-mix(in srgb, var(--c-accent) 10%, var(--c-surface)); border: 1px solid color-mix(in srgb, var(--c-accent) 35%, transparent); font-size: 0.9rem; }
 .callout-info > .icon { color: var(--c-accent); flex: none; margin-top: 2px; }
+@media (max-width: 700px) {
+  .req-row { position: relative; }
+  .req-check { position: absolute; top: 14px; left: 14px; z-index: 2; margin: 0; }
+}

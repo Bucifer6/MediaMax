@@ -90,7 +90,7 @@ async function waitFor(fn, ms, what) {
       ...libs.map((l) => `/library/${l.id}`), ...ids.map((i) => `/item/${i}`),
       '/admin', '/admin/libraries', '/admin/stats', '/admin/users', `/admin/users/${users[0].id}/wrapped`, '/admin/livetv', '/admin/channels', '/admin/guide', '/admin/guide?tab=matching',
       '/admin/branding', '/admin/settings', '/admin/settings?tab=arr', '/admin/downloads', '/admin/plugins', '/admin/plugins?tab=catalog', '/admin/plugins?tab=repositories', '/admin/tasks', '/admin/activity', '/admin/devices',
-      '/settings/security', '/admin/invites', '/admin/backups', '/admin/remote', '/invite/not-a-real-code',
+      '/settings/security', '/issues', '/issues/not-a-real-issue', '/admin/settings?tab=requests', '/admin/settings?tab=notifications', '/admin/invites', '/admin/backups', '/admin/remote', '/invite/not-a-real-code',
       ...libs.filter((l) => l.type === 'audiobooks').map((l) => `/library/${l.id}?series=Smoke%20Series`)];
 
     browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});

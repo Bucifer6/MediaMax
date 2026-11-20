@@ -246,8 +246,12 @@ function SubtitleSettings() {
       <div className="subtitle-fields">
         {(Object.keys(SUBTITLE_OPTIONS) as (keyof SubtitleStyle)[]).map((field) => (
           <Field key={field} label={SUBTITLE_FIELD_LABELS[field]}>
-            <select className="select" value={style[field]} onChange={(e) => set({ [field]: e.target.value } as Partial<SubtitleStyle>)}>
-              {SUBTITLE_OPTIONS[field].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            <select
+              className="select"
+              value={String(style[field] ?? '')}
+              onChange={(e) => set({ [field]: (SUBTITLE_OPTIONS[field] as { value: unknown }[]).find((o) => String(o.value ?? '') === e.target.value)?.value } as Partial<SubtitleStyle>)}
+            >
+              {(SUBTITLE_OPTIONS[field] as { value: unknown; label: string }[]).map((o) => <option key={String(o.value ?? '')} value={String(o.value ?? '')}>{o.label}</option>)}
             </select>
           </Field>
         ))}

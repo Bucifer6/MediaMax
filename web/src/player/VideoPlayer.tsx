@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { Item, Marker, PlaybackInfo, Renderer, SubtitleStyle, TrickplayInfo } from '@mediamax/shared';
+import type { Item, Marker, PlaybackInfo, PlaybackRequest, Renderer, SubtitleFormat, SubtitleStyle, TrickplayInfo } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import { useApp } from '../state/app';
@@ -23,7 +23,18 @@ import { DEFAULT_PREFERENCES } from '../theme/defaults';
 import { isTypingTarget } from '../hooks';
 import { formatClock, languageName } from '../utils/format';
 import { isResumable } from '../utils/items';
-import { positionCues, SUBTITLE_CLASS, SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitleStyleOf, useSubtitleStyleSheet } from './subtitleStyle';
+import { SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitleStyleOf } from './subtitleStyle';
+import { SubtitleOverlay, type SubtitleStatus } from './subtitles/SubtitleOverlay';
+import { useAdaptive } from './useAdaptive';
+import { initialBandwidth } from './bandwidth';
+import { formatBps } from './abr';
+import { VideoPair, whenPlayable } from './videoPair';
+
+/** Subtitle formats our own renderer draws (SubtitleOverlay). VobSub/DVB still need server burn-in. */
+const SUBTITLE_FORMATS: SubtitleFormat[] = ['srt', 'vtt', 'ass', 'pgs'];
+/** Seamless switches start the new stream this far ahead of the playhead, so it is ready when the old one gets there. */
+const SWITCH_LEAD_MS = 4000;
+const isTvMode = () => typeof document !== 'undefined' && document.documentElement.classList.contains('tv');
 
 type Menu = null | 'audio' | 'subs' | 'subStyle' | 'sync' | 'quality' | 'speed' | 'together' | 'chapters';
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -75,6 +86,10 @@ interface Stats {
   range?: string;
   /** Why the server remuxes / transcodes. */
   why?: string;
+  /** Adaptive quality: mode, level, estimated bandwidth. */
+  abr?: string;
+  /** Subtitle renderer in use. */
+  subs?: string;
 }
 
 interface StartOpts {
@@ -83,6 +98,10 @@ interface StartOpts {
   subtitleIndex: number | null;
   burn: boolean;
   maxBitrate: number | null;
+  /** Automatic quality: adaptive stream + measured bandwidth (abr.ts / useAdaptive.ts). */
+  auto?: boolean;
+  /** Bandwidth (kbps) to report for this start (an ABR restart); otherwise the current estimate / probe is used. */
+  measuredKbps?: number | null;
 }
 
 export default function VideoPlayer() {
@@ -102,18 +121,21 @@ export default function VideoPlayer() {
   const [casting, setCasting] = useState(false);
   const prefs = { ...DEFAULT_PREFERENCES, ...(user?.preferences ?? {}) };
   const subStyle = subtitleStyleOf(prefs.subtitleStyle);
-  useSubtitleStyleSheet(subStyle);
   const subStyleRef = useRef(subStyle);
   subStyleRef.current = subStyle;
 
-  const videoRef = useRef<HTMLVideoElement>(null);
+  /** The <video> currently playing: one of two elements, swapped for seamless quality switches (videoPair.ts). */
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const pairRef = useRef<VideoPair | null>(null);
+  const [activeVideo, setActiveVideo] = useState<HTMLVideoElement | null>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const attached = useRef<Attached | null>(null);
   const sessionRef = useRef<string | null>(null);
   const offsetRef = useRef(0);
   const pendingSeek = useRef<number | null>(null);
-  const optsRef = useRef<StartOpts>({ startMs: 0, subtitleIndex: null, burn: false, maxBitrate: prefs.maxBitrate });
-  const trackEls = useRef(new Map<number, HTMLTrackElement>());
+  const [autoQuality, setAutoQuality] = useState(prefs.maxBitrate == null && prefs.autoQuality !== false);
+  const optsRef = useRef<StartOpts>({ startMs: 0, subtitleIndex: null, burn: false, maxBitrate: prefs.maxBitrate, auto: autoQuality });
   const skippedMarkers = useRef(new Set<string>());
 
   const [item, setItem] = useState<Item | null>(null);
@@ -162,6 +184,67 @@ export default function VideoPlayer() {
 
   const durationMs = info?.durationMs ?? item?.durationMs ?? 0;
   const markers: Marker[] = info?.markers?.length ? info.markers : item?.markers ?? [];
+
+  /* ---------------- adaptive quality (Auto) ---------------- */
+  const restartRef = useRef<(kbps: number) => void>(() => {});
+  const adaptive = useAdaptive({
+    enabled: autoQuality && !casting,
+    info,
+    attached,
+    video: () => videoRef.current,
+    onRestart: (kbps) => restartRef.current(kbps),
+    notify: (text, kind) => (kind === 'down' ? toast.show(text) : flash(text)),
+  });
+  const adaptiveRef = useRef(adaptive);
+  adaptiveRef.current = adaptive;
+  /** Stream that is being replaced by a seamless switch: its errors (its session has ended) are expected. */
+  const retiringRef = useRef<Attached | null>(null);
+  /** Bumped by every (re)start, so an in-flight seamless switch knows it was overtaken. */
+  const genRef = useRef(0);
+
+  /** Playback request: the subtitle formats we render, and in Auto mode the adaptive flag + measured bandwidth. */
+  const playbackRequest = async (opts: StartOpts): Promise<PlaybackRequest> => {
+    let kbps: number | null = null;
+    if (opts.auto) {
+      const est = adaptiveRef.current.estimator.current.estimate;
+      if (opts.measuredKbps != null) kbps = opts.measuredKbps;
+      else if (est) kbps = Math.round(est / 1000);
+      else {
+        const bw = await initialBandwidth();
+        adaptiveRef.current.seed(bw.bps);
+        kbps = bw.bps ? Math.round(bw.bps / 1000) : null;
+      }
+    }
+    return {
+      startMs: Math.round(opts.startMs),
+      audioStreamIndex: opts.audioIndex,
+      subtitleStreamIndex: opts.burn ? opts.subtitleIndex : undefined,
+      burnSubtitles: opts.burn || undefined,
+      deviceProfile: profileWithBitrate(opts.auto ? null : opts.maxBitrate),
+      subtitleFormats: SUBTITLE_FORMATS,
+      ...(opts.auto ? { adaptive: true, measuredBandwidth: kbps } : {}),
+    };
+  };
+  const abrAttachOptions = (opts: StartOpts) => ({
+    manualLevels: !!opts.auto,
+    onFragment: adaptiveRef.current.onFragment,
+    onLevelSwitched: adaptiveRef.current.onLevelSwitched,
+  });
+
+  // The two <video> elements (videoPair.ts) live in a host div the player owns.
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const pair = new VideoPair(host, 'player-video');
+    pairRef.current = pair;
+    videoRef.current = pair.active;
+    setActiveVideo(pair.active);
+    return () => {
+      pair.destroy();
+      pairRef.current = null;
+      videoRef.current = null;
+    };
+  }, []);
 
   /* ---------------- helpers ---------------- */
   const flash = useCallback((text: string) => {
@@ -269,7 +352,9 @@ export default function VideoPlayer() {
       await startCastRef.current(opts);
       return;
     }
-    optsRef.current = opts;
+    optsRef.current = { ...opts, measuredKbps: undefined };
+    genRef.current++;
+    retiringRef.current = null;
     setError(null);
     setBuffering(true);
     endSession();
@@ -277,13 +362,7 @@ export default function VideoPlayer() {
     attached.current = null;
     try {
       await capabilitiesReady(); // HDR / 10-bit detection (bounded wait), so the profile carries videoRange
-      const pi = await api.playback.start(itemId, {
-        startMs: Math.round(opts.startMs),
-        audioStreamIndex: opts.audioIndex,
-        subtitleStreamIndex: opts.burn ? opts.subtitleIndex : undefined,
-        burnSubtitles: opts.burn || undefined,
-        deviceProfile: profileWithBitrate(opts.maxBitrate),
-      });
+      const pi = await api.playback.start(itemId, await playbackRequest(opts));
       if (castingRef.current) {
         // Casting started while this request was in flight.
         api.playback.stop(pi.sessionId).catch(() => {});
@@ -294,12 +373,16 @@ export default function VideoPlayer() {
       pendingSeek.current = opts.startMs > 0 ? opts.startMs : pi.startMs > 0 ? pi.startMs : null;
       setInfo(pi);
       setBurned(opts.burn);
-      attached.current = await attachStream(v, pi, {
+      let me: Attached | null = null;
+      me = attached.current = await attachStream(v, pi, {
+        ...abrAttachOptions(opts),
         onFatal: (kind, msg) => {
+          // A stream that was already replaced (seamless switch) may fail as its session ends: not an error.
+          if (me && (attached.current !== me || retiringRef.current === me)) return;
           if (kind === 'native' && pi.method === 'direct' && !opts.burn) {
             // Browser couldn't decode the original — ask the server to transcode.
             toast.show('Switching to a compatible stream…');
-            void start({ ...opts, startMs: currentMs() || opts.startMs, burn: false, maxBitrate: opts.maxBitrate ?? 20000 });
+            void start({ ...opts, startMs: currentMs() || opts.startMs, burn: false, maxBitrate: opts.maxBitrate ?? 20000, auto: false });
             return;
           }
           setError(msg);
@@ -313,6 +396,88 @@ export default function VideoPlayer() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId, endSession, rate]);
+
+  /**
+   * Switch to another stream without a visible restart (Auto quality: direct play ↔ transcode, another bitrate).
+   * The new stream starts a few seconds ahead in the standby <video> while the current one keeps playing from its
+   * buffer; when the playhead reaches the switch point the elements swap. Falls back to a plain restart when that
+   * isn't possible (paused, Picture-in-Picture, Web Audio delay routing, casting).
+   */
+  const seamlessRestart = async (kbps: number) => {
+    const old = videoRef.current;
+    const pair = pairRef.current;
+    const opts: StartOpts = { ...optsRef.current, auto: true };
+    if (!old || !pair || castingRef.current || old.paused || audioGraph.current || document.pictureInPictureElement === old) {
+      void start({ ...opts, startMs: currentMs() || opts.startMs, measuredKbps: kbps });
+      return;
+    }
+    const gen = ++genRef.current;
+    const nv = pair.standby;
+    const startAt = currentMs() + SWITCH_LEAD_MS;
+    let pi: PlaybackInfo;
+    try {
+      pi = await api.playback.start(itemId, await playbackRequest({ ...opts, startMs: startAt, measuredKbps: kbps }));
+    } catch {
+      return; // keep playing what we have
+    }
+    if (gen !== genRef.current || castingRef.current) {
+      api.playback.stop(pi.sessionId).catch(() => {});
+      return;
+    }
+    // The server replaced the previous session: the old element plays on from its buffer (direct play keeps streaming).
+    retiringRef.current = attached.current;
+    sessionRef.current = pi.sessionId;
+    optsRef.current = { ...opts, measuredKbps: undefined };
+    nv.muted = true;
+    nv.volume = volume;
+    nv.playbackRate = rate;
+    let me: Attached | null = null;
+    me = await attachStream(nv, pi, {
+      ...abrAttachOptions(opts),
+      onFatal: (_kind, msg) => {
+        if (attached.current === me) setError(msg);
+      },
+    });
+    const base = pi.streamStartMs ?? 0;
+    await new Promise<void>((res) => {
+      if (nv.readyState >= 1) return res();
+      nv.addEventListener('loadedmetadata', () => res(), { once: true });
+      window.setTimeout(res, 15000);
+    });
+    const seekLocal = Math.max(0, (startAt - base) / 1000);
+    if (seekLocal > 0.5) nv.currentTime = seekLocal;
+    const ok = await whenPlayable(nv, 20000);
+    if (!ok || gen !== genRef.current) {
+      me.destroy();
+      if (gen === genRef.current) void start({ ...opts, startMs: currentMs(), measuredKbps: kbps });
+      return;
+    }
+    // Let the old element play up to the switch point (it may run dry first).
+    const deadline = performance.now() + SWITCH_LEAD_MS + 3000;
+    while (currentMs() < startAt - 60 && performance.now() < deadline && !old.paused && !old.ended && gen === genRef.current) await new Promise((r) => window.setTimeout(r, 40));
+    if (gen !== genRef.current) {
+      me.destroy();
+      return;
+    }
+    const userPaused = old.paused && !old.ended;
+    const target = Math.max(0, (currentMs() - base) / 1000);
+    if (Math.abs(nv.currentTime - target) > 0.3) nv.currentTime = target;
+    nv.muted = muted;
+    const prev = attached.current;
+    attached.current = me;
+    retiringRef.current = null;
+    pair.swap();
+    videoRef.current = nv;
+    offsetRef.current = base;
+    pendingSeek.current = null;
+    setActiveVideo(nv);
+    setInfo(pi);
+    setBuffering(false);
+    if (!userPaused) void nv.play().catch(() => setPaused(true));
+    old.pause();
+    prev?.destroy();
+  };
+  restartRef.current = (kbps) => void seamlessRestart(kbps);
 
   // Initial load whenever the item changes.
   useEffect(() => {
@@ -458,40 +623,6 @@ export default function VideoPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [info?.sessionId]);
 
-  /* ---------------- subtitle timing & position ---------------- */
-  /** Original cue times (file timeline), so offsets can be re-applied any number of times. */
-  const cueTimes = useRef(new WeakMap<TextTrackCue, [number, number]>());
-  /** Media position at stream time 0 for the current session's tracks. */
-  const cueBaseRef = useRef(0);
-  cueBaseRef.current = info?.streamStartMs ?? 0;
-  const applyCues = useCallback((track: TextTrack) => {
-    const cues = track.cues;
-    if (!cues) return;
-    const shift = (subDelayRef.current - cueBaseRef.current) / 1000;
-    for (const c of Array.from(cues)) {
-      let orig = cueTimes.current.get(c);
-      if (!orig) {
-        orig = [c.startTime, c.endTime];
-        cueTimes.current.set(c, orig);
-      }
-      const start = Math.max(0, orig[0] + shift);
-      const end = Math.max(0, orig[1] + shift);
-      if (c.startTime === start && c.endTime === end) continue;
-      // Keep start <= end at every step.
-      if (start > c.endTime) {
-        c.endTime = end;
-        c.startTime = start;
-      } else {
-        c.startTime = start;
-        c.endTime = end;
-      }
-    }
-    positionCues(track, subStyleRef.current.position);
-  }, []);
-  useEffect(() => {
-    trackEls.current.forEach((el) => applyCues(el.track));
-  }, [subDelayMs, subStyle.position, applyCues]);
-
   const setSync = useCallback((sub: number, audio: number) => {
     setSubDelayMs(sub);
     setAudioDelayMs(audio);
@@ -556,9 +687,6 @@ export default function VideoPlayer() {
       const i = info.subtitles.findIndex((x) => x.index === subtitleIndex);
       castRef.current.setSubtitle(burned || i < 0 ? null : i);
     }
-    trackEls.current.forEach((el, idx) => {
-      el.track.mode = !burned && idx === subtitleIndex ? 'showing' : 'disabled';
-    });
   }, [subtitleIndex, info, burned]);
 
   /* ---------------- media element events ---------------- */
@@ -680,7 +808,9 @@ export default function VideoPlayer() {
         audioCodec: es.audioCodec || (audio ? `${audio.codec}${audio.channels ? ` · ${audio.channels}ch` : ''}` : '—'),
         // MediaSource.bitrate is in kbps.
         bitrate: kbps(es.bitrate ?? (direct && media?.bitrate ? media.bitrate * 1000 : null)),
-        bandwidth: es.bandwidth ? kbps(es.bandwidth) : attached.current?.engine === 'native' ? 'n/a (progressive download)' : '—',
+        bandwidth: es.bandwidth ? kbps(es.bandwidth) : adaptive.state.estimate ? `${kbps(adaptive.state.estimate)} (estimated)` : attached.current?.engine === 'native' ? 'n/a (progressive download)' : '—',
+        abr: optsRef.current.auto ? adaptive.describe() : `Fixed · ${QUALITY_OPTIONS.find((q) => q.kbps === optsRef.current.maxBitrate)?.label ?? 'Original'}`,
+        subs: subStatusRef.current?.renderer ? `${subStatusRef.current.renderer}${subStatusRef.current.loading ? ` (loading${subStatusRef.current.progress != null ? ` ${Math.round(subStatusRef.current.progress * 100)}%` : ''})` : ''}` : undefined,
         buffer: `${ahead.toFixed(1)} s`,
         dropped,
         extra: `${rate}× · subs ${formatDelay(subDelayRef.current)} · audio ${formatDelay(audioDelayMs)}`,
@@ -824,12 +954,31 @@ export default function VideoPlayer() {
   };
 
   const textSubs = info?.subtitles ?? [];
-  const burnOnly = (item?.media?.[0]?.subtitleStreams ?? []).filter((s) => !textSubs.some((t) => t.index === s.index));
+  // Bitmap formats our renderer can't draw (VobSub, DVB): the server burns them in — an explicit, last-resort choice.
+  const burnOnly = info?.burnInSubtitles
+    ?? (item?.media?.[0]?.subtitleStreams ?? []).filter((s) => !textSubs.some((t) => t.index === s.index)).map((s) => ({ ...s, url: '' }));
   const selectSubtitle = (idx: number | null, burn = false) => {
     setMenu(null);
     setSubtitleIndex(idx);
+    if (burn) toast.show('These subtitles are drawn into the video by the server (a bitmap format this player can\u2019t render).');
     if (burn || burned) void start({ ...optsRef.current, startMs: currentMs(), subtitleIndex: idx, burn });
   };
+  /** The track our overlay renders (null when off or burned in). */
+  const activeSubTrack = !burned && subtitleIndex != null ? textSubs.find((s) => s.index === subtitleIndex) ?? null : null;
+  const activeSubRef = useRef(activeSubTrack);
+  activeSubRef.current = activeSubTrack;
+  const burnRef = useRef<(idx: number) => void>(() => {});
+  burnRef.current = (idx) => selectSubtitle(idx, true);
+  const subStatusRef = useRef<SubtitleStatus | null>(null);
+  const onSubStatus = useCallback((st: SubtitleStatus) => {
+    const prev = subStatusRef.current;
+    subStatusRef.current = st;
+    if (!st.error || st.error === prev?.error) return;
+    const tr = activeSubRef.current;
+    // Last resort for bitmap subtitles we couldn't decode: let the server burn them in.
+    if (tr?.isImage) burnRef.current(tr.index);
+    else toast.show(`Subtitles: ${st.error}`);
+  }, [toast]);
   const cycleSubtitles = () => {
     const list = [null, ...textSubs.map((s) => s.index)];
     const i = list.indexOf(subtitleIndex);
@@ -855,10 +1004,17 @@ export default function VideoPlayer() {
     });
   };
 
-  const selectQuality = (kbps: number | null) => {
+  const selectQuality = (q: number | null | 'auto') => {
     setMenu(null);
-    setMaxBitrate(kbps);
-    void start({ ...optsRef.current, startMs: currentMs(), maxBitrate: kbps });
+    if (q === 'auto') {
+      setAutoQuality(true);
+      setMaxBitrate(null);
+      void start({ ...optsRef.current, startMs: currentMs(), maxBitrate: null, auto: true });
+      return;
+    }
+    setAutoQuality(false);
+    setMaxBitrate(q);
+    void start({ ...optsRef.current, startMs: currentMs(), maxBitrate: q, auto: false });
   };
 
   /* ---------------- auto-hide controls ---------------- */
@@ -883,7 +1039,7 @@ export default function VideoPlayer() {
   const tapTimer = useRef<number | null>(null);
   /** Whether the controls were up when the finger came down (the shell's touchstart shows them). */
   const controlsAtTouch = useRef(true);
-  const onVideoTouchEnd = (e: ReactTouchEvent<HTMLVideoElement>) => {
+  const onVideoTouchEnd = (e: ReactTouchEvent<HTMLDivElement>) => {
     const touch = e.changedTouches[0];
     if (!touch || e.touches.length) return;
     // Handle taps ourselves: no synthesized click (which would toggle play) or dblclick (fullscreen).
@@ -1053,7 +1209,7 @@ export default function VideoPlayer() {
   /* ---------------- render ---------------- */
   const title = info?.title ?? item?.title ?? '';
   const subtitle = info?.subtitle ?? (item?.type === 'episode' ? `${item.grandparentTitle ?? ''} · S${item.parentIndex ?? '?'} E${item.index ?? '?'}` : item?.year ? String(item.year) : '');
-  const qualityLabel = QUALITY_OPTIONS.find((q) => q.kbps === maxBitrate)?.label ?? 'Original';
+  const qualityLabel = autoQuality ? `Auto${adaptive.state.level ? ` · ${adaptive.state.level}` : ''}` : QUALITY_OPTIONS.find((q) => q.kbps === maxBitrate)?.label ?? 'Original';
   const audioStreams = info?.audioStreams ?? item?.media?.[0]?.audioStreams ?? [];
   const currentAudio = audioIndex ?? audioStreams.find((a) => a.default)?.index ?? audioStreams[0]?.index;
 
@@ -1067,35 +1223,26 @@ export default function VideoPlayer() {
       onTouchStart={poke}
     >
       {backdrop && buffering && positionMs < 1000 && <div className="player-backdrop"><Img src={backdrop} width={1920} /></div>}
-      <video
-        ref={videoRef}
-        className={`player-video ${SUBTITLE_CLASS}`}
-        x-webkit-airplay="allow"
-        playsInline
-        crossOrigin="anonymous"
+      <div
+        ref={hostRef}
+        className="player-video-host"
         onClick={() => { togglePlay(); poke(); }}
         onDoubleClick={toggleFullscreen}
         onTouchStart={() => { controlsAtTouch.current = controls; }}
         onTouchEnd={onVideoTouchEnd}
-        poster={undefined}
-      >
-        {!burned && textSubs.map((s) => (
-          <track
-            key={`${info?.sessionId}-${s.index}`}
-            kind="subtitles"
-            src={s.url}
-            srcLang={s.language ?? undefined}
-            label={s.title ?? languageName(s.language)}
-            ref={(el) => {
-              if (el) {
-                trackEls.current.set(s.index, el);
-                el.track.mode = s.index === subtitleIndex ? 'showing' : 'disabled';
-                el.onload = () => applyCues(el.track);
-              } else trackEls.current.delete(s.index);
-            }}
-          />
-        ))}
-      </video>
+      />
+      {!casting && (
+        <SubtitleOverlay
+          track={activeSubTrack}
+          video={activeVideo}
+          streamStartMs={info?.streamStartMs ?? 0}
+          delayMs={subDelayMs}
+          style={subStyle}
+          tv={isTvMode()}
+          controlsVisible={controls}
+          onStatus={onSubStatus}
+        />
+      )}
 
       {(buffering && !error && !casting) && <div className="player-center"><Spinner size={56} /></div>}
       {casting && (
@@ -1133,6 +1280,8 @@ export default function VideoPlayer() {
             <dt>Audio codec</dt><dd>{stats.audioCodec}</dd>
             <dt>Bitrate</dt><dd>{stats.bitrate}</dd>
             <dt>Network</dt><dd>{stats.bandwidth}</dd>
+            {stats.abr && <><dt>Quality</dt><dd>{stats.abr}</dd></>}
+            {stats.subs && <><dt>Subtitles</dt><dd>{stats.subs}</dd></>}
             <dt>Buffer</dt><dd>{stats.buffer}</dd>
             <dt>Dropped frames</dt><dd>{stats.dropped}</dd>
             <dt>Speed / sync</dt><dd>{stats.extra}</dd>
@@ -1149,7 +1298,7 @@ export default function VideoPlayer() {
             <button className="btn btn-primary" onClick={() => start({ ...optsRef.current, startMs: currentMs() || optsRef.current.startMs })}>
               <Icon name="refresh" size={16} /> Retry
             </button>
-            <button className="btn" onClick={() => start({ ...optsRef.current, startMs: currentMs() || optsRef.current.startMs, maxBitrate: 8000 })}>Try lower quality</button>
+            <button className="btn" onClick={() => start({ ...optsRef.current, startMs: currentMs() || optsRef.current.startMs, maxBitrate: 8000, auto: false })}>Try lower quality</button>
             <button className="btn btn-ghost" onClick={exit}>Exit</button>
           </div>
         </div>
@@ -1240,8 +1389,8 @@ export default function VideoPlayer() {
                   onSelect={(v) => (v === 'off' ? selectSubtitle(null) : selectSubtitle(Number(v.slice(1)), v[0] === 'b'))}
                   options={[
                     { label: 'Off', value: 'off' },
-                    ...textSubs.map((s) => ({ label: s.title || languageName(s.language), value: `t${s.index}`, sub: [s.forced && 'Forced', s.default && 'Default'].filter(Boolean).join(' · ') || undefined })),
-                    ...burnOnly.map((s) => ({ label: s.title || languageName(s.language), value: `b${s.index}`, sub: `${s.codec.toUpperCase()} · burn-in (transcodes)` })),
+                    ...textSubs.map((s) => ({ label: s.title || languageName(s.language), value: `t${s.index}`, sub: [s.forced && 'Forced', s.default && 'Default', s.format && s.format !== 'srt' && s.format !== 'vtt' && s.format.toUpperCase()].filter(Boolean).join(' · ') || undefined })),
+                    ...burnOnly.map((s) => ({ label: s.title || languageName(s.language), value: `b${s.index}`, sub: `${(s.codec ?? 'bitmap').toUpperCase()} · burn-in (transcodes)` })),
                   ]}
                 />
                 <button className="option option-action" onClick={() => setMenu('subStyle')}>
@@ -1347,7 +1496,15 @@ export default function VideoPlayer() {
             <div className="pc-menu">
               <button className="btn-icon" onClick={() => setMenu(menu === 'quality' ? null : 'quality')} aria-label="Quality"><Icon name="gauge" size={22} /></button>
               <Popover open={menu === 'quality'} onClose={() => setMenu(null)}>
-                <OptionList<number | null> title={`Quality · ${qualityLabel}`} value={maxBitrate} onSelect={selectQuality} options={QUALITY_OPTIONS.map((q) => ({ label: q.label, value: q.kbps }))} />
+                <OptionList<number | null | 'auto'>
+                  title={`Quality · ${qualityLabel}`}
+                  value={autoQuality ? 'auto' : maxBitrate}
+                  onSelect={selectQuality}
+                  options={[
+                    { label: 'Auto', value: 'auto' as const, sub: adaptive.state.estimate ? `Adapts to your connection · ${formatBps(adaptive.state.estimate)}` : 'Adapts to your connection' },
+                    ...QUALITY_OPTIONS.map((q) => ({ label: q.label, value: q.kbps })),
+                  ]}
+                />
               </Popover>
             </div>
             <div className="pc-menu">
