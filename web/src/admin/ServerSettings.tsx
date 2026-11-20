@@ -1,8 +1,9 @@
 import { AiDjSettingsPanel } from './AiDjSettings';
+import { HardwareDetect } from './HardwareDetect';
 import { MetadataSettingsPanel } from './MetadataSettings';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { HwAccel, ServerSettings, User, Webhook, WebhookEvent } from '@mediamax/shared';
+import type { HwAccel, ServerSettings, TranscodeVideoCodec, User, Webhook, WebhookEvent } from '@mediamax/shared';
 import { ArrSettingsPanel } from './ArrSettings';
 import { ARR_ICON, ARR_NAME } from './Downloads';
 import { api } from '../api/endpoints';
@@ -17,10 +18,20 @@ type Tab = 'general' | 'transcoding' | 'cinema' | 'aidj' | 'dvr' | 'requests' | 
 const HW: { value: HwAccel; label: string }[] = [
   { value: 'none', label: 'None (CPU)' },
   { value: 'vaapi', label: 'VA-API (Intel/AMD, Linux)' },
-  { value: 'qsv', label: 'Intel Quick Sync' },
-  { value: 'nvenc', label: 'NVIDIA NVENC' },
+  { value: 'qsv', label: 'Intel Quick Sync (Linux/Windows)' },
+  { value: 'nvenc', label: 'NVIDIA NVENC (Linux/Windows)' },
+  { value: 'amf', label: 'AMD AMF (Windows)' },
   { value: 'videotoolbox', label: 'Apple VideoToolbox' },
   { value: 'v4l2m2m', label: 'V4L2 M2M (Raspberry Pi / ARM)' },
+  { value: 'rkmpp', label: 'Rockchip MPP (RK3588, ffmpeg-rockchip)' },
+];
+/** Select value for the preferred codec order (H.264 always last). */
+const codecOrderValue = (c: TranscodeVideoCodec[] | undefined) => [...(c ?? ['hevc', 'h264']).filter((x) => x !== 'h264'), 'h264'].join(',');
+const CODEC_ORDERS: { value: string; label: string }[] = [
+  { value: 'hevc,h264', label: 'HEVC, then H.264' },
+  { value: 'av1,hevc,h264', label: 'AV1, then HEVC, then H.264' },
+  { value: 'hevc,av1,h264', label: 'HEVC, then AV1, then H.264' },
+  { value: 'h264', label: 'H.264 only' },
 ];
 const EVENTS: WebhookEvent[] = ['playback.start', 'playback.pause', 'playback.resume', 'playback.stop', 'playback.scrobble', 'library.new', 'user.login', 'recording.completed', 'recording.failed', 'request.created', 'request.available'];
 const TRICKPLAY_DEFAULTS: ServerSettings['trickplay'] = { enabled: false, intervalSeconds: 10, width: 320 };
@@ -182,9 +193,22 @@ export function ServerSettingsAdmin() {
                 </select>
               </Field>
               {(s.transcoding.hwAccel === 'vaapi' || s.transcoding.hwAccel === 'qsv') && (
-                <Field label="VA-API device"><input className="input mono" value={s.transcoding.vaapiDevice} onChange={(e) => setT({ vaapiDevice: e.target.value })} placeholder="/dev/dri/renderD128" /></Field>
+                <Field label="Render device (Linux)"><input className="input mono" value={s.transcoding.vaapiDevice} onChange={(e) => setT({ vaapiDevice: e.target.value })} placeholder="/dev/dri/renderD128" /></Field>
+              )}
+              {(s.transcoding.hwAccel === 'nvenc' || s.transcoding.hwAccel === 'amf' || s.transcoding.hwAccel === 'qsv') && (
+                <Field label="GPU index" hint="NVIDIA, and QSV/AMF on Windows. 0 = first GPU."><input className="input" type="number" min={0} max={15} value={s.transcoding.gpuIndex ?? 0} onChange={(e) => setT({ gpuIndex: Number(e.target.value) })} /></Field>
               )}
             </div>
+            <HardwareDetect value={s.transcoding} onUse={setT} />
+            <div className="form-row">
+              <Field label="Preferred output codecs" hint="HEVC/AV1 are only encoded with a hardware encoder, for clients that can play them (at ~65% of the H.264 bitrate). H.264 is always the fallback.">
+                <select className="select" value={codecOrderValue(s.transcoding.preferredCodecs)} onChange={(e) => setT({ preferredCodecs: e.target.value.split(',') as TranscodeVideoCodec[] })}>
+                  {CODEC_ORDERS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </Field>
+            </div>
+            <Switch checked={s.transcoding.allowHevcEncoding ?? true} onChange={(v) => setT({ allowHevcEncoding: v })} label="Allow HEVC encoding" hint="Uses fMP4 HLS segments; supported by Safari, Chrome/Edge with HEVC decoding, and the mobile apps." />
+            <Switch checked={s.transcoding.allowAv1Encoding ?? false} onChange={(v) => setT({ allowAv1Encoding: v })} label="Allow AV1 encoding" hint="Needs an AV1 hardware encoder (Intel Arc, NVIDIA RTX 40, AMD RX 7000) and an AV1-capable client." />
             <div className="form-row form-row-3">
               <Field label="Max concurrent transcodes"><input className="input" type="number" min={1} value={s.transcoding.maxConcurrent} onChange={(e) => setT({ maxConcurrent: Number(e.target.value) })} /></Field>
               <Field label="Default bitrate (kbps)"><input className="input" type="number" min={500} step={500} value={s.transcoding.defaultBitrate} onChange={(e) => setT({ defaultBitrate: Number(e.target.value) })} /></Field>
@@ -199,6 +223,7 @@ export function ServerSettingsAdmin() {
               <Field label="HLS segment length (s)"><input className="input" type="number" min={1} max={10} value={s.transcoding.segmentSeconds} onChange={(e) => setT({ segmentSeconds: Number(e.target.value) })} /></Field>
             </div>
             <Switch checked={s.transcoding.toneMapHdr} onChange={(v) => setT({ toneMapHdr: v })} label="Tone-map HDR to SDR" hint="Keeps colours correct on non-HDR screens when transcoding." />
+            <Switch checked={s.transcoding.hardwareToneMapping ?? true} onChange={(v) => setT({ hardwareToneMapping: v })} disabled={!s.transcoding.toneMapHdr} label="Tone-map on the GPU when possible" hint="VA-API, Quick Sync, CUDA or OpenCL tone-mapping; falls back to the CPU automatically." />
           </div>
         )}
         {tab === 'metadata' && <MetadataSettingsPanel />}

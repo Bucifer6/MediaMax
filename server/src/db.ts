@@ -409,6 +409,40 @@ const MIGRATIONS: string[] = [
   CREATE INDEX channels_guide_key ON channels(guide_key);
   CREATE INDEX programs_source ON programs(source_id);
   `,
+  /* HDR: HDR format / Dolby Vision profile / mastering metadata per media file (JSON VideoRangeInfo) */ `
+  ALTER TABLE media ADD COLUMN video_range TEXT;
+  `,
+  /* Requests (Overseerr parity): per-user request permissions/quotas, request timeline & comments, blacklist, issues, Discover watchlist */ `
+  ALTER TABLE users ADD COLUMN request_perms TEXT;
+  ALTER TABLE users ADD COLUMN request_quotas TEXT;
+  ALTER TABLE media_requests ADD COLUMN updated_at TEXT;
+  ALTER TABLE notifications ADD COLUMN link TEXT;
+  CREATE INDEX IF NOT EXISTS media_requests_user ON media_requests(requested_by, requested_at);
+  CREATE TABLE request_activity (
+    id TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES media_requests(id) ON DELETE CASCADE,
+    user_id TEXT, kind TEXT NOT NULL, body TEXT, created_at TEXT NOT NULL
+  );
+  CREATE INDEX request_activity_req ON request_activity(request_id, created_at);
+  CREATE TABLE request_blacklist (
+    media_type TEXT NOT NULL, external_id TEXT NOT NULL, title TEXT NOT NULL, reason TEXT, created_by TEXT, created_at TEXT NOT NULL,
+    PRIMARY KEY (media_type, external_id)
+  );
+  CREATE TABLE issues (
+    id TEXT PRIMARY KEY, item_id TEXT REFERENCES items(id) ON DELETE SET NULL, root_item_id TEXT, media_type TEXT NOT NULL, title TEXT NOT NULL, poster TEXT,
+    kind TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', season INTEGER, episode INTEGER, message TEXT NOT NULL,
+    created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, resolved_by TEXT, resolved_at TEXT
+  );
+  CREATE INDEX issues_status ON issues(status, created_at);
+  CREATE TABLE issue_comments (
+    id TEXT PRIMARY KEY, issue_id TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE, user_id TEXT, body TEXT NOT NULL, created_at TEXT NOT NULL
+  );
+  CREATE INDEX issue_comments_issue ON issue_comments(issue_id, created_at);
+  CREATE TABLE discover_watchlist (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, media_type TEXT NOT NULL, external_id TEXT NOT NULL,
+    title TEXT NOT NULL, year INTEGER, poster TEXT, added_at TEXT NOT NULL, request_id TEXT, auto_error TEXT,
+    PRIMARY KEY (user_id, media_type, external_id)
+  );
+  `,
 ];
 
 function migrate(db: Database) {

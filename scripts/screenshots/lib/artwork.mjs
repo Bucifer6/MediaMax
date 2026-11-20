@@ -162,7 +162,8 @@ function scene(style, pal, w, h, seed, opts = {}) {
           body += `<ellipse cx="${f(fx)}" cy="${f(h * 0.4)}" rx="${f(w * 0.4)}" ry="${f(h * 0.12)}" fill="none" stroke="${lt}" stroke-width="${f(3 * u)}" stroke-dasharray="${f(10 * u)} ${f(10 * u)}" opacity="0.7" transform="rotate(-12 ${f(fx)} ${f(h * 0.4)})"/>`;
           body += `<ellipse cx="${f(fx)}" cy="${f(h * 0.4)}" rx="${f(w * 0.4)}" ry="${f(h * 0.12)}" fill="none" stroke="${ac}" stroke-width="${f(3 * u)}" stroke-dasharray="${f(10 * u)} ${f(10 * u)}" opacity="0.7" transform="rotate(12 ${f(fx)} ${f(h * 0.4)})"/>`;
           const st = (x, y) => `<g transform="translate(${f(x)} ${f(y)}) scale(${f(u)})"><rect x="-60" y="-6" width="120" height="12" fill="${lt}"/><rect x="-100" y="-26" width="40" height="52" fill="${c1}" stroke="${lt}" stroke-width="3"/><rect x="60" y="-26" width="40" height="52" fill="${c1}" stroke="${lt}" stroke-width="3"/><circle r="22" fill="${lt}"/><circle r="10" fill="${ac}"/></g>`;
-          body += st(fx - w * 0.36, h * 0.36) + st(fx + w * 0.36, h * 0.36);
+          const sd = P ? w * 0.36 : w * 0.24;
+          body += st(fx - sd, h * 0.36) + st(fx + sd, h * 0.36);
           body += `<circle cx="${f(fx)}" cy="${f(h * 0.4)}" r="${f(60 * u)}" fill="${ac}" opacity="0.6" filter="url(#${id}bl2)"/>`;
         } else {
           // colony ship crossing the sky
@@ -525,13 +526,13 @@ export function posterHtml(it, opts = {}) {
   const dark = !['adventure', 'comedy'].includes(style);
   const ink = dark ? '#fff' : c0;
   const credits = [it.studio?.toUpperCase(), 'PRESENTS', it.director ? `A ${it.director.toUpperCase()} FILM` : null, ...(it.cast ?? []).slice(0, 4).map((c) => c.name.toUpperCase())].filter(Boolean).join('   ');
-  const top = (it.cast ?? []).slice(0, 3).map((c) => c.name.toUpperCase()).join('  ·  ');
+  const top = (it.cast ?? []).slice(0, 2).map((c) => c.name.toUpperCase()).join('   ·   ');
   const label = opts.label ?? it.tagline;
   const titleTop = ['scifi', 'family', 'comedy'].includes(style);
   return `<div class="art poster" style="background:${c0}">
-    ${scene(style, pal, 800, 1200, it.slug + (opts.seed ?? ''), { poster: true, focusX: 0.5 })}
+    ${scene(style, pal, 800, 1200, it.slug + (opts.seed ?? ''), { poster: true, focusX: 0.5, motif: it.motif })}
     <div style="position:absolute;inset:0;background:linear-gradient(180deg,${dark ? '#0008' : '#0000'} 0%,#0000 22%,#0000 58%,${dark ? c0 + 'ee' : '#0000'} 100%)"></div>
-    <div style="position:absolute;top:44px;left:0;right:0;text-align:center;font:500 22px/1 ${FONT.condensed};letter-spacing:.32em;color:${ink};opacity:.85">${esc(top)}</div>
+    <div style="position:absolute;top:44px;left:0;right:0;text-align:center;font:500 22px/1 ${FONT.condensed};letter-spacing:.28em;color:${ink};opacity:.85;white-space:nowrap">${esc(top)}</div>
     <div class="title-box" style="position:absolute;left:56px;right:56px;${titleTop ? 'top:120px' : 'bottom:220px'};height:${titleTop ? 300 : 330}px;display:flex;align-items:${titleTop ? 'flex-start' : 'flex-end'};justify-content:center;text-align:center">
       <div class="fit" data-max="150" data-min="40" style="${titleCss(style, pal)};line-height:.98;width:100%">${esc(it.title)}</div>
     </div>
@@ -545,7 +546,7 @@ export function posterHtml(it, opts = {}) {
 
 export function backdropHtml(it, opts = {}) {
   const [c0] = it.pal;
-  return `<div class="art" style="background:${c0}">${scene(it.style, it.pal, opts.w ?? 1920, opts.h ?? 1080, it.slug + (opts.seed ?? '-bd'), { focusX: opts.focusX ?? 0.68 })}${grain(0.12)}</div>`;
+  return `<div class="art" style="background:${c0}">${scene(it.style, it.pal, opts.w ?? 1920, opts.h ?? 1080, it.slug + (opts.seed ?? '-bd'), { focusX: opts.focusX ?? 0.68, motif: it.motif })}${grain(0.12)}</div>`;
 }
 
 export function logoHtml(it) {
@@ -556,20 +557,39 @@ export function logoHtml(it) {
 export function headshotHtml(name) {
   const r = rng(name);
   const hue = Math.floor(r() * 360);
-  const skin = r.pick(['#3b2a22', '#5a3d2e', '#7a5440', '#9a6b50', '#b98668', '#d3a487']);
-  const hair = r.pick(['#141010', '#2b1d14', '#4a3020', '#6b4a2e', '#1a1a22', '#8a6a4a']);
-  const long = r() < 0.5;
-  return `<div class="art" style="background:radial-gradient(circle at 50% 35%,hsl(${hue} 45% 52%),hsl(${(hue + 30) % 360} 50% 18%))">
+  const skin = r.pick(['#5a3d2e', '#7a5440', '#9a6b50', '#b98668', '#d3a487', '#e2b99a']);
+  const hair = r.pick(['#141010', '#2b1d14', '#4a3020', '#6b4a2e', '#1a1a22', '#8a6a4a', '#b07a3c']);
+  const style = r.int(0, 3);
+  const top = mix(hue2hex(hue, 0.45, 0.55), '#ffffff', 0.1);
+  const shirt = hue2hex((hue + 180) % 360, 0.3, 0.3);
+  const hairBack = style === 1 ? `<path d="M116 240 Q104 120 200 108 Q296 120 284 240 L304 430 Q200 462 96 430 Z" fill="${hair}"/>` : style === 3 ? `<circle cx="200" cy="128" r="42" fill="${hair}"/>` : '';
+  const hairTop = style === 2
+    ? `<path d="M120 236 Q116 162 200 158 Q284 162 280 236 Q270 196 200 194 Q130 196 120 236 Z" fill="${hair}" opacity=".85"/>`
+    : `<path d="M116 250 Q108 146 200 142 Q292 146 284 250 Q276 196 236 186 Q200 214 150 196 Q124 210 116 250 Z" fill="${hair}"/>`;
+  return `<div class="art" style="background:radial-gradient(circle at 50% 30%,${top},${hue2hex((hue + 25) % 360, 0.5, 0.16)})">
     <svg viewBox="0 0 400 600" width="100%" height="100%" class="scene">
-      <defs><linearGradient id="sh" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="hsl(${(hue + 180) % 360} 25% 28%)"/><stop offset="1" stop-color="hsl(${(hue + 180) % 360} 25% 12%)"/></linearGradient>
-      <radialGradient id="face" cx=".4" cy=".35" r=".8"><stop offset="0" stop-color="${mix(skin, '#ffffff', 0.18)}"/><stop offset="1" stop-color="${mix(skin, '#000000', 0.25)}"/></radialGradient></defs>
-      ${long ? `<path d="M118 230 Q110 120 200 110 Q290 120 282 230 L300 420 Q200 450 100 420 Z" fill="${hair}"/>` : ''}
-      <path d="M40 600 Q50 450 200 430 Q350 450 360 600 Z" fill="url(#sh)"/>
-      <rect x="172" y="340" width="56" height="100" rx="24" fill="${mix(skin, '#000000', 0.2)}"/>
-      <ellipse cx="200" cy="262" rx="82" ry="102" fill="url(#face)"/>
-      <path d="M118 250 Q112 150 200 148 Q288 150 282 250 Q270 190 200 188 Q130 190 118 250 Z" fill="${hair}"/>
-      <ellipse cx="200" cy="262" rx="82" ry="102" fill="none" stroke="#fff" stroke-opacity=".15" stroke-width="3"/>
-    </svg>${grain(0.1)}</div>`;
+      <defs><radialGradient id="face" cx=".42" cy=".38" r=".75"><stop offset="0" stop-color="${mix(skin, '#ffffff', 0.15)}"/><stop offset="1" stop-color="${mix(skin, '#000000', 0.22)}"/></radialGradient>
+      <linearGradient id="sh" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${mix(shirt, '#ffffff', 0.12)}"/><stop offset="1" stop-color="${mix(shirt, '#000000', 0.4)}"/></linearGradient></defs>
+      ${hairBack}
+      <path d="M30 600 Q40 452 200 432 Q360 452 370 600 Z" fill="url(#sh)"/>
+      <path d="M160 440 L200 492 L240 440 Z" fill="${mix(shirt, '#ffffff', 0.5)}" opacity=".5"/>
+      <rect x="170" y="330" width="60" height="112" rx="26" fill="${mix(skin, '#000000', 0.18)}"/>
+      <ellipse cx="117" cy="270" rx="13" ry="22" fill="${mix(skin, '#000000', 0.1)}"/><ellipse cx="283" cy="270" rx="13" ry="22" fill="${mix(skin, '#000000', 0.1)}"/>
+      <ellipse cx="200" cy="262" rx="84" ry="104" fill="url(#face)"/>
+      <path d="M150 238 q16 -9 32 0 M218 238 q16 -9 32 0" stroke="${mix(hair, '#000000', 0.3)}" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <ellipse cx="166" cy="262" rx="7" ry="8" fill="#1b1410"/><ellipse cx="234" cy="262" rx="7" ry="8" fill="#1b1410"/>
+      <circle cx="168.5" cy="259" r="2" fill="#fff" opacity=".8"/><circle cx="236.5" cy="259" r="2" fill="#fff" opacity=".8"/>
+      <path d="M200 270 q-8 24 2 30" stroke="${mix(skin, '#000000', 0.3)}" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M176 318 q24 ${r() < 0.6 ? 16 : 8} 48 0" stroke="${mix(skin, '#5a1a1a', 0.55)}" stroke-width="5" fill="none" stroke-linecap="round"/>
+      ${hairTop}
+    </svg>${grain(0.08)}</div>`;
+}
+
+function hue2hex(h, s, l) {
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const fn = (n) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))))).toString(16).padStart(2, '0');
+  return `#${fn(0)}${fn(8)}${fn(4)}`;
 }
 
 export function seasonLabel(n) {
@@ -595,7 +615,7 @@ export function albumCoverHtml(a) {
       }
       art = `<svg class="scene" viewBox="0 0 1000 1000"><defs><linearGradient id="win" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7d93b2"/><stop offset="1" stop-color="#c8b6c9"/></linearGradient></defs>
         <rect width="1000" height="1000" fill="${lt}"/><rect x="200" y="140" width="600" height="530" rx="18" fill="#6c584c"/><rect x="225" y="165" width="550" height="480" rx="8" fill="url(#win)"/>
-        ${skyline(r, 1000, 1000, 645, '#5b6d8a', 170, '#ffd6a5').replace(/<rect x="-?\d+(\.\d)?"/g, (m) => m)}
+        <clipPath id="wclip"><rect x="225" y="165" width="550" height="480"/></clipPath><g clip-path="url(#wclip)">${skyline(r, 1000, 1000, 645, '#5b6d8a', 170, '#ffd6a5')}</g>
         <rect x="225" y="165" width="550" height="480" fill="none"/>${drops}
         <rect x="492" y="165" width="16" height="480" fill="#6c584c"/><rect x="225" y="398" width="550" height="14" fill="#6c584c"/>
         <rect x="150" y="670" width="700" height="40" rx="10" fill="#8b6f5c"/>
@@ -636,19 +656,27 @@ export function artistHtml(a, wide = false) {
   const w = wide ? 1920 : 1000;
   const h = wide ? 1080 : 1000;
   const r = rng(a.artist + wide);
-  const n = a.style === 'house' || a.style === 'techno' ? 1 : 2;
+  const n = a.style === 'lofi' || a.style === 'synthwave' ? 2 : 1;
+  const person = (cx, base, s, flip) => `<g transform="translate(${f(cx)} ${f(base)}) scale(${f(flip ? -s : s)} ${f(s)})">
+      <path d="M-260 0 Q-250 -330 -40 -370 L40 -370 Q250 -330 260 0 Z" fill="#07070a"/>
+      <rect x="-42" y="-430" width="84" height="90" rx="30" fill="#07070a"/>
+      <ellipse cx="0" cy="-520" rx="92" ry="112" fill="#07070a"/>
+      <path d="M-96 -540 Q-90 -650 0 -652 Q96 -650 100 -540 Q80 -600 0 -600 Q-70 -600 -96 -540 Z" fill="#07070a"/>
+      <path d="M92 -540 Q100 -460 60 -420" stroke="${lt}" stroke-width="6" fill="none" opacity=".55"/>
+      <path d="M40 -370 Q250 -330 258 -40" stroke="${lt}" stroke-width="6" fill="none" opacity=".4"/>
+    </g>`;
   let figs = '';
   for (let i = 0; i < n; i++) {
-    const cx = w * (wide ? 0.62 + i * 0.12 : 0.38 + i * 0.26) + r.range(-20, 20);
-    figs += `<g transform="translate(${f(cx)} ${f(h)}) scale(${f(h / 1000)})" fill="#050505"><ellipse cx="0" cy="-640" rx="78" ry="96"/><path d="M-230 0 Q-220 -420 0 -470 Q220 -420 230 0 Z"/></g>`;
+    const cx = wide ? w * (0.6 + i * 0.16) : w * (n === 1 ? 0.5 : 0.34 + i * 0.32);
+    figs += person(cx, h, (wide ? 1.15 : 1.05) * (h / 1000) * (i ? 0.92 : 1), i === 1);
   }
   let beams = '';
-  for (let i = 0; i < 5; i++) {
-    const x = w * (0.2 + i * 0.16);
-    beams += `<path d="M${f(x)} 0 L${f(x - w * 0.12)} ${h} L${f(x + w * 0.12)} ${h} Z" fill="${i % 2 ? c1 : c2}" opacity="0.18"/>`;
+  for (let i = 0; i < 6; i++) {
+    const x = w * (0.1 + i * 0.17);
+    beams += `<path d="M${f(x)} 0 L${f(x - w * 0.1)} ${h} L${f(x + w * 0.1)} ${h} Z" fill="${i % 2 ? c1 : c2}" opacity="0.22"/>`;
   }
-  return `<div class="art" style="background:${c0}"><svg class="scene" viewBox="0 0 ${w} ${h}"><defs><radialGradient id="ag" cx="${wide ? 0.66 : 0.5}" cy="0.35" r="0.7"><stop offset="0" stop-color="${mix(c1, lt, 0.3)}"/><stop offset="0.6" stop-color="${mix(c1, c0, 0.6)}"/><stop offset="1" stop-color="${c0}"/></radialGradient><filter id="ab"><feGaussianBlur stdDeviation="30"/></filter></defs>
-    <rect width="${w}" height="${h}" fill="url(#ag)"/><g filter="url(#ab)">${beams}</g>${stars(r, w, h, 60, 1, 0.5)}${figs}</svg>${grain(0.18)}</div>`;
+  return `<div class="art" style="background:${c0}"><svg class="scene" viewBox="0 0 ${w} ${h}"><defs><radialGradient id="ag" cx="${wide ? 0.66 : 0.5}" cy="0.32" r="0.7"><stop offset="0" stop-color="${mix(c1, lt, 0.35)}"/><stop offset="0.6" stop-color="${mix(c1, c0, 0.55)}"/><stop offset="1" stop-color="${c0}"/></radialGradient><filter id="ab"><feGaussianBlur stdDeviation="${wide ? 40 : 26}"/></filter></defs>
+    <rect width="${w}" height="${h}" fill="url(#ag)"/><g filter="url(#ab)">${beams}</g>${stars(r, w, h, 80, 1, 0.6)}${figs}</svg>${grain(0.18)}</div>`;
 }
 
 export function audiobookHtml(b) {
@@ -782,6 +810,7 @@ export class Renderer {
         root.style.width = w + 'px';
         root.style.height = h + 'px';
         root.innerHTML = html;
+        for (const svg of root.querySelectorAll('svg.scene')) if (!svg.getAttribute('preserveAspectRatio')) svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
         await document.fonts.ready;
         // Shrink-to-fit titles: largest size that keeps every word on one line and the block inside its box.
         for (const el of root.querySelectorAll('.fit')) {

@@ -373,3 +373,58 @@ test('runFfmpeg: software encode works here; hardware on a missing device fails 
   assert.equal(missing.ok, false);
   assert.match(missing.error!, /ENOENT/);
 });
+
+/* ---------------------- real jobs (ffmpeg, no GPU) ---------------------- */
+
+const { TranscodeJob, hasEncoder: has } = await import('../src/services/transcoder.ts');
+const { execFileSync } = await import('node:child_process');
+const fs = await import('node:fs');
+const os = await import('node:os');
+const pathMod = await import('node:path');
+const tmp = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'mm-hw-'));
+const src = pathMod.join(tmp, 'src.mkv');
+execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=24', '-f', 'lavfi', '-i', 'sine', '-t', '10',
+  '-c:v', has('libx265') ? 'libx265' : 'libx264', '-preset', 'ultrafast', ...(has('libx265') ? ['-x265-params', 'log-level=error'] : []), '-c:a', 'aac', src]);
+const jobOpts = (o: any = {}) => ({ ...opts({ input: src, sourceHeight: 360, sourceCodec: has('libx265') ? 'hevc' : 'h264', durationSec: 10, bitrate: 2000 }), ...o });
+
+test('job: VA-API without a device falls back to software and reports why', async () => {
+  updateSettings({ transcoding: { hwAccel: 'vaapi', vaapiDevice: '/dev/dri/renderD999', segmentSeconds: 4, allowHevcEncoding: true, preferredCodecs: ['hevc', 'h264'] } as any });
+  const job = new TranscodeJob('hwfb-' + process.pid, jobOpts({ videoCodec: 'hevc' }) as any);
+  let changed = 0;
+  job.onInfoChange = () => changed++;
+  job.start(0);
+  try {
+    await job.waitForSegment(0, 30000);
+    assert.equal(job.info!.hwAccel, 'none');
+    assert.equal(job.info!.videoCodec, 'libx264');
+    assert.match(job.info!.hwFallback ?? '', /vaapi failed, used software/);
+    assert.ok(changed >= 1);
+    if (hasEncoder('hevc_vaapi')) {
+      // HEVC was requested, so segments are fMP4 — the software H.264 fallback keeps that container.
+      assert.equal(job.segmentType, 'fmp4');
+      const init = await job.initSegment(10000);
+      assert.ok(fs.statSync(init).size > 100);
+      assert.match(job.vodPlaylist('?t=1'), /#EXT-X-MAP:URI="init\.mp4\?t=1"[\s\S]*seg0\.m4s\?t=1/);
+    }
+  } finally {
+    job.stop();
+    updateSettings({ transcoding: { hwAccel: 'none', vaapiDevice: DEV } as any });
+  }
+});
+
+test('job: HEVC remux produces fMP4 HLS with an init segment', { skip: !has('libx265') && 'no libx265' }, async () => {
+  const job = new TranscodeJob('remux-' + process.pid, jobOpts({ mode: 'remux', videoCopy: true, audioCopy: true }) as any);
+  job.start(0);
+  try {
+    await job.waitForPlaylist(30000);
+    assert.equal(job.segmentType, 'fmp4');
+    const init = await job.initSegment(10000);
+    const pl = job.rewrittenPlaylist('?k=1');
+    assert.match(pl, /#EXT-X-MAP:URI="init\.mp4\?k=1"/);
+    assert.match(pl, /seg0\.m4s\?k=1/);
+    const probe = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name,codec_tag_string', '-of', 'csv=p=0', init]).toString();
+    assert.match(probe, /hevc,hvc1/);
+  } finally {
+    job.stop();
+  }
+});

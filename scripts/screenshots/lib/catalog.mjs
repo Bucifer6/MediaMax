@@ -32,7 +32,7 @@ const cast = (...pairs) => pairs.map(([i, role]) => ({ name: P(i), role }));
  */
 export const MOVIES = [
   {
-    slug: 'neon-meridian', title: 'Neon Meridian', year: 2025, style: 'scifi', pal: ['#07081f', '#2b0b5a', '#ff2bd6', '#2de2ff'],
+    slug: 'neon-meridian', motif: 'spire', title: 'Neon Meridian', year: 2025, style: 'scifi', pal: ['#07081f', '#2b0b5a', '#ff2bd6', '#2de2ff'],
     genres: ['Science Fiction', 'Thriller'], rating: 8.4, mpaa: 'PG-13', runtime: 128, studio: STUDIOS.lantern,
     tagline: 'The city never sleeps. Neither does she.',
     plot: 'In a rain-soaked megacity where memories are traded like currency, courier Vela Strand discovers that the package she has carried for ten years is a stolen piece of her own past. With a rogue archivist and a malfunctioning traffic drone at her side, she has one night to reach the Meridian Spire before the city erases her for good.',
@@ -40,7 +40,7 @@ export const MOVIES = [
     logo: true, trailer: true, featurette: true, deleted: true,
   },
   {
-    slug: 'last-lighthouse-kepler', title: 'The Last Lighthouse on Kepler', year: 2023, style: 'scifi', pal: ['#020c1b', '#0b3a5b', '#7cf7ff', '#ffd27a'],
+    slug: 'last-lighthouse-kepler', motif: 'lighthouse', title: 'The Last Lighthouse on Kepler', year: 2023, style: 'scifi', pal: ['#020c1b', '#0b3a5b', '#7cf7ff', '#ffd27a'],
     genres: ['Science Fiction', 'Drama'], rating: 8.1, mpaa: 'PG', runtime: 117, studio: STUDIOS.north,
     tagline: 'Someone has to keep the light on.',
     plot: 'The last keeper of a navigation beacon on a frozen moon receives a distress call from a ship that vanished forty years ago. As the signal grows stronger, she must decide whether to guide it home or keep the light dark.',
@@ -48,7 +48,7 @@ export const MOVIES = [
     logo: true, trailer: true,
   },
   {
-    slug: 'signal-drift', title: 'Signal Drift', year: 2021, style: 'scifi', pal: ['#050b14', '#103a3a', '#3dffb5', '#e6fff6'],
+    slug: 'signal-drift', motif: 'dish', title: 'Signal Drift', year: 2021, style: 'scifi', pal: ['#050b14', '#103a3a', '#3dffb5', '#e6fff6'],
     genres: ['Science Fiction', 'Mystery'], rating: 7.6, mpaa: 'PG-13', runtime: 109, studio: STUDIOS.halcyon,
     tagline: 'The message was sent tomorrow.',
     plot: 'A radio astronomer on a remote island picks up a broadcast in her own voice, dated three days from now. Each new transmission rewrites the warning, and the island begins to change around her.',
@@ -56,14 +56,14 @@ export const MOVIES = [
     trailer: true,
   },
   {
-    slug: 'orbital-hearts', title: 'Orbital Hearts', year: 2024, style: 'scifi', pal: ['#10061f', '#4a1366', '#ff8fb8', '#ffe1a8'],
+    slug: 'orbital-hearts', motif: 'orbit', title: 'Orbital Hearts', year: 2024, style: 'scifi', pal: ['#10061f', '#4a1366', '#ff8fb8', '#ffe1a8'],
     genres: ['Science Fiction', 'Romance'], rating: 7.2, mpaa: 'PG-13', runtime: 104, studio: STUDIOS.copper,
     tagline: 'Two stations. One orbit. Ninety minutes a day.',
     plot: 'Two engineers on rival space stations can only talk during the ninety minutes a day their orbits line up. What starts as a feud over a shared antenna becomes the most important conversation of their lives.',
     director: P(31), writers: [P(31)], cast: cast([3, 'Noa Lind'], [12, 'Teo Marr'], [19, 'Station Chief Brann'], [33, 'Ada (voice)']),
   },
   {
-    slug: 'rainwater-alley', title: 'Rainwater Alley', year: 2019, style: 'noir', pal: ['#07070a', '#22252b', '#d7263d', '#e8e2d6'],
+    slug: 'rainwater-alley', motif: 'alley', title: 'Rainwater Alley', year: 2019, style: 'noir', pal: ['#07070a', '#22252b', '#d7263d', '#e8e2d6'],
     genres: ['Crime', 'Thriller'], rating: 8.0, mpaa: 'R', runtime: 121, studio: STUDIOS.blackwater,
     tagline: 'Every gutter in this city leads somewhere.',
     plot: 'A disgraced detective working nights as a hotel bellhop recognises a dead man in the lobby — because she watched him die six years ago. Her search leads through jazz cellars, flooded subway tunnels and a family business nobody leaves.',
@@ -71,21 +71,21 @@ export const MOVIES = [
     logo: true, trailer: true,
   },
   {
-    slug: 'velvet-ledger', title: 'The Velvet Ledger', year: 2022, style: 'noir', pal: ['#0b0606', '#3a1414', '#e0b04a', '#f2e6cf'],
+    slug: 'velvet-ledger', motif: 'curtain', title: 'The Velvet Ledger', year: 2022, style: 'noir', pal: ['#0b0606', '#3a1414', '#e0b04a', '#f2e6cf'],
     genres: ['Crime', 'Drama'], rating: 7.8, mpaa: 'R', runtime: 133, studio: STUDIOS.blackwater,
     tagline: 'Some debts are written in ink. Others in blood.',
     plot: 'An accountant for a glamorous supper club finds a second set of books that tracks favours instead of money. When the owner turns up dead, every name in the ledger has a reason to want it burned.',
     director: P(15), writers: [P(27)], cast: cast([7, 'Leopold Crane'], [11, 'Vivienne Dusk'], [4, 'Inspector Gale'], [28, 'Teddy Bloom']),
   },
   {
-    slug: 'hotel-ostrava', title: 'Midnight at the Hotel Ostrava', year: 2016, style: 'noir', pal: ['#090a10', '#1f2a44', '#4fb0ff', '#e9edf5'],
+    slug: 'hotel-ostrava', motif: 'hotel', title: 'Midnight at the Hotel Ostrava', year: 2016, style: 'noir', pal: ['#090a10', '#1f2a44', '#4fb0ff', '#e9edf5'],
     genres: ['Mystery', 'Thriller'], rating: 7.4, mpaa: 'PG-13', runtime: 112, studio: STUDIOS.halcyon,
     tagline: 'Check in. Find out.',
     plot: 'Snowed in at a grand old hotel, a night porter has until dawn to work out which of the eleven guests is not who they claim to be — and why the clocks on the fourth floor keep stopping at midnight.',
     director: P(30), writers: [P(30)], cast: cast([10, 'Tomas Prell'], [3, 'Countess Arlen'], [8, 'Mr. Gideon'], [21, 'Clara Wend']),
   },
   {
-    slug: 'paper-kites', title: 'Summer of the Paper Kites', year: 2020, style: 'drama', pal: ['#3b1d2a', '#c8553d', '#f6ae2d', '#fff4e0'],
+    slug: 'paper-kites', motif: 'kites', title: 'Summer of the Paper Kites', year: 2020, style: 'drama', pal: ['#3b1d2a', '#c8553d', '#f6ae2d', '#fff4e0'],
     genres: ['Drama', 'Family'], rating: 7.9, mpaa: 'PG', runtime: 106, studio: STUDIOS.copper,
     tagline: 'Some summers carry you for the rest of your life.',
     plot: 'Three estranged siblings return to their grandmother\'s seaside town to sell the family kite shop, only to find she has left them one last unfinished kite — and a list of instructions that will take all summer.',
@@ -93,21 +93,21 @@ export const MOVIES = [
     logo: true, trailer: true,
   },
   {
-    slug: 'lemon-trees', title: 'Where the Lemon Trees Lean', year: 2023, style: 'drama', pal: ['#2d2a1a', '#7a8b3a', '#f2d24b', '#fffbe8'],
+    slug: 'lemon-trees', motif: 'grove', title: 'Where the Lemon Trees Lean', year: 2023, style: 'drama', pal: ['#2d2a1a', '#7a8b3a', '#f2d24b', '#fffbe8'],
     genres: ['Drama', 'Romance'], rating: 7.7, mpaa: 'PG-13', runtime: 118, studio: STUDIOS.north,
     tagline: 'Love grows where you least expect it.',
     plot: 'A burnt-out architect inherits a crumbling hillside grove and a stubborn caretaker who refuses to leave. Through one harvest season, the two rebuild the terraces — and, slowly, each other.',
     director: P(31), writers: [P(31)], cast: cast([20, 'Livia Moreau'], [16, 'Matteo Sarn'], [26, 'Old Benedetto'], [11, 'Clara Moreau']),
   },
   {
-    slug: 'alder-street', title: 'Letters to Alder Street', year: 2018, style: 'drama', pal: ['#1d2b3a', '#5c7c8a', '#e8a87c', '#f7efe5'],
+    slug: 'alder-street', motif: 'street', title: 'Letters to Alder Street', year: 2018, style: 'drama', pal: ['#1d2b3a', '#5c7c8a', '#e8a87c', '#f7efe5'],
     genres: ['Drama'], rating: 7.5, mpaa: 'PG', runtime: 101, studio: STUDIOS.halcyon,
     tagline: 'Every letter finds its way home.',
     plot: 'A retired postwoman starts answering the undeliverable letters piling up in a closed sorting office, and a neighbourhood of strangers slowly becomes a family.',
     director: P(9), writers: [P(29)], cast: cast([33, 'Martha Penhale'], [13, 'Desmond Ike'], [23, 'Lucy Fairburn']),
   },
   {
-    slug: 'pip-moon-machine', title: 'Pip and the Moon Machine', year: 2022, style: 'family', pal: ['#1b2a6b', '#4f7cff', '#ffcf3f', '#ffffff'],
+    slug: 'pip-moon-machine', motif: 'moon', title: 'Pip and the Moon Machine', year: 2022, style: 'family', pal: ['#1b2a6b', '#4f7cff', '#ffcf3f', '#ffffff'],
     genres: ['Animation', 'Family', 'Adventure'], rating: 7.8, mpaa: 'G', runtime: 94, studio: STUDIOS.comet,
     tagline: 'Small inventor. Big night.',
     plot: 'When the moon gets stuck behind the town clock tower, a pint-sized inventor and her grumpy robot vacuum build a machine to push it back into the sky before morning.',
@@ -115,14 +115,14 @@ export const MOVIES = [
     logo: true, trailer: true,
   },
   {
-    slug: 'sock-rebellion', title: 'The Great Sock Rebellion', year: 2024, style: 'family', pal: ['#ff5e5b', '#ffb84c', '#2ec4b6', '#fffaf0'],
+    slug: 'sock-rebellion', motif: 'socks', title: 'The Great Sock Rebellion', year: 2024, style: 'family', pal: ['#ff5e5b', '#ffb84c', '#2ec4b6', '#fffaf0'],
     genres: ['Animation', 'Comedy', 'Family'], rating: 7.3, mpaa: 'G', runtime: 89, studio: STUDIOS.comet,
     tagline: 'They are done being left behind.',
     plot: 'Every lost sock ends up in the same place: a secret kingdom under the washing machine. When their king declares war on the dryer, one mismatched pair must stop the uprising.',
     director: P(29), writers: [P(13)], cast: cast([13, 'Lefty (voice)'], [14, 'Rightie (voice)'], [6, 'King Argyle (voice)'], [19, 'The Dryer (voice)']),
   },
   {
-    slug: 'hollow-choir', title: 'The Hollow Choir', year: 2022, style: 'horror', pal: ['#050304', '#2a0a0e', '#b3001b', '#d9d0c7'],
+    slug: 'hollow-choir', motif: 'chapel', title: 'The Hollow Choir', year: 2022, style: 'horror', pal: ['#050304', '#2a0a0e', '#b3001b', '#d9d0c7'],
     genres: ['Horror', 'Mystery'], rating: 7.1, mpaa: 'R', runtime: 99, studio: STUDIOS.blackwater,
     tagline: 'Once you hear it, it learns your voice.',
     plot: 'A sound recordist hired to capture the acoustics of an abandoned chapel discovers the choir loft is not empty. Every night the recordings get longer — and one voice sounds exactly like her.',
@@ -130,21 +130,21 @@ export const MOVIES = [
     logo: true, trailer: true,
   },
   {
-    slug: 'birch-house', title: 'Below the Birch House', year: 2020, style: 'horror', pal: ['#030507', '#14242a', '#9bd1c9', '#e3e9e8'],
+    slug: 'birch-house', motif: 'birch', title: 'Below the Birch House', year: 2020, style: 'horror', pal: ['#030507', '#14242a', '#9bd1c9', '#e3e9e8'],
     genres: ['Horror'], rating: 6.8, mpaa: 'R', runtime: 96, studio: STUDIOS.halcyon,
     tagline: 'The house is fine. It\'s what\'s under it.',
     plot: 'A family moves into a lakeside home surrounded by white birches and finds a door in the cellar that was bricked up from the inside.',
     director: P(32), writers: [P(32), P(28)], cast: cast([4, 'Nora Quill'], [10, 'Henrik Quill'], [22, 'Mabel Quill']),
   },
   {
-    slug: 'static-bloom', title: 'Static Bloom', year: 2025, style: 'horror', pal: ['#040607', '#0f2b1f', '#9cff57', '#e7ffe0'],
+    slug: 'static-bloom', motif: 'bloom', title: 'Static Bloom', year: 2025, style: 'horror', pal: ['#040607', '#0f2b1f', '#9cff57', '#e7ffe0'],
     genres: ['Horror', 'Science Fiction'], rating: 7.0, mpaa: 'R', runtime: 102, studio: STUDIOS.lantern,
     tagline: 'It grows in the noise.',
     plot: 'Researchers at an Arctic listening station find a fungus that thrives on radio static. When the station\'s transmitter is switched on, it begins to spread.',
     director: P(0), writers: [P(25)], cast: cast([5, 'Dr. Lena Voss'], [8, 'Ari Thal'], [1, 'Sergeant Kemp'], [19, 'Radio Operator Bix']),
   },
   {
-    slug: 'crimson-freight', title: 'Crimson Freight', year: 2021, style: 'action', pal: ['#0a0f14', '#0e4a5a', '#ff7a1a', '#fff1e0'],
+    slug: 'crimson-freight', motif: 'train', title: 'Crimson Freight', year: 2021, style: 'action', pal: ['#0a0f14', '#0e4a5a', '#ff7a1a', '#fff1e0'],
     genres: ['Action', 'Thriller'], rating: 7.3, mpaa: 'PG-13', runtime: 115, studio: STUDIOS.north,
     tagline: 'Twelve carriages. One way out.',
     plot: 'A retired rail marshal is pulled back for one last run when a cross-continental freight train carrying a secret cargo is hijacked in the middle of a desert storm.',
@@ -152,14 +152,14 @@ export const MOVIES = [
     logo: true, trailer: true,
   },
   {
-    slug: 'cartographers-gambit', title: 'The Cartographer\'s Gambit', year: 2017, style: 'adventure', pal: ['#1a140c', '#5a4022', '#e2b04a', '#f6ecd6'],
+    slug: 'cartographers-gambit', motif: 'map', title: 'The Cartographer\'s Gambit', year: 2017, style: 'adventure', pal: ['#1a140c', '#5a4022', '#e2b04a', '#f6ecd6'],
     genres: ['Adventure', 'Mystery'], rating: 7.6, mpaa: 'PG', runtime: 124, studio: STUDIOS.copper,
     tagline: 'X never marks the spot.',
     plot: 'A mapmaker\'s apprentice inherits an atlas with an island that appears on no other chart, and a rival guild willing to sink every ship in the harbour to find it first.',
     director: P(6), writers: [P(25)], cast: cast([12, 'Ezra Fenn'], [3, 'Captain Isolde Marr'], [26, 'Master Corwin'], [0, 'Guildmistress Thale']),
   },
   {
-    slug: 'second-best-man', title: 'Second Best Man', year: 2023, style: 'comedy', pal: ['#ffde59', '#ff66a1', '#3a86ff', '#1b1b1b'],
+    slug: 'second-best-man', motif: 'rings', title: 'Second Best Man', year: 2023, style: 'comedy', pal: ['#ffde59', '#ff66a1', '#3a86ff', '#1b1b1b'],
     genres: ['Comedy', 'Romance'], rating: 6.9, mpaa: 'PG-13', runtime: 98, studio: STUDIOS.copper,
     tagline: 'He\'s got the ring. He just lost the groom.',
     plot: 'The groom\'s chronically unlucky cousin is promoted to best man on the morning of the wedding — and has eight hours to find the actual groom, the rings and his dignity.',
@@ -169,7 +169,7 @@ export const MOVIES = [
 
 export const SHOWS = [
   {
-    slug: 'quiet-frontier', title: 'The Quiet Frontier', year: 2023, style: 'scifi', pal: ['#030914', '#123a63', '#69d2ff', '#f0f7ff'],
+    slug: 'quiet-frontier', motif: 'ship', title: 'The Quiet Frontier', year: 2023, style: 'scifi', pal: ['#030914', '#123a63', '#69d2ff', '#f0f7ff'],
     genres: ['Science Fiction', 'Drama'], rating: 8.6, mpaa: 'TV-14', studio: STUDIOS.tinroof, runtimeEp: 48,
     tagline: 'Four hundred years from home. One ship. No way back.',
     plot: 'Generations after leaving Earth, the colony ship Halcyon is nearing its destination — and the crew discovers that the planet they were promised has already been claimed.',
@@ -185,7 +185,7 @@ export const SHOWS = [
     ],
   },
   {
-    slug: 'harbor-lights', title: 'Harbor Lights', year: 2021, style: 'noir', pal: ['#05080c', '#16314a', '#ffb347', '#f5efe6'],
+    slug: 'harbor-lights', motif: 'harbor', title: 'Harbor Lights', year: 2021, style: 'noir', pal: ['#05080c', '#16314a', '#ffb347', '#f5efe6'],
     genres: ['Crime', 'Drama', 'Mystery'], rating: 8.2, mpaa: 'TV-MA', studio: STUDIOS.blackwater, runtimeEp: 52,
     tagline: 'In a town this small, everyone is hiding something.',
     plot: 'When a fishing trawler drifts into port with no crew aboard, a detective who swore never to come home must work the case in the town that raised her — and the family that still runs it.',
@@ -201,7 +201,7 @@ export const SHOWS = [
     ],
   },
   {
-    slug: 'night-shift-bakery', title: 'The Night Shift Bakery', year: 2022, style: 'comedy', pal: ['#2b1638', '#ff8a5b', '#ffd166', '#fff8ec'],
+    slug: 'night-shift-bakery', motif: 'bakery', title: 'The Night Shift Bakery', year: 2022, style: 'comedy', pal: ['#2b1638', '#ff8a5b', '#ffd166', '#fff8ec'],
     genres: ['Comedy'], rating: 7.9, mpaa: 'TV-PG', studio: STUDIOS.tinroof, runtimeEp: 24,
     tagline: 'Fresh bread. Questionable decisions.',
     plot: 'A chaotic crew of night-owl bakers keeps a beloved neighbourhood bakery running between 10pm and 6am, while the day shift has no idea what really goes on.',

@@ -1,0 +1,55 @@
+{
+  "_comment": "ffprobe -show_streams video entries as ffprobe 6/7 prints them for Dolby Vision / HDR10+ files (trimmed).",
+  "dv_p81_mkv": {
+    "index": 0, "codec_name": "hevc", "profile": "Main 10", "codec_type": "video", "codec_tag_string": "[0][0][0][0]",
+    "width": 3840, "height": 2160, "pix_fmt": "yuv420p10le", "color_range": "tv", "color_space": "bt2020nc",
+    "color_transfer": "smpte2084", "color_primaries": "bt2020", "r_frame_rate": "24000/1001", "avg_frame_rate": "24000/1001",
+    "side_data_list": [
+      { "side_data_type": "DOVI configuration record", "dv_version_major": 1, "dv_version_minor": 0, "dv_profile": 8, "dv_level": 6,
+        "rpu_present_flag": 1, "el_present_flag": 0, "bl_present_flag": 1, "dv_bl_signal_compatibility_id": 1 }
+    ]
+  },
+  "dv_p84_mp4": {
+    "index": 0, "codec_name": "hevc", "profile": "Main 10", "codec_type": "video", "codec_tag_string": "dvh1",
+    "width": 3840, "height": 2160, "pix_fmt": "yuv420p10le", "color_space": "bt2020nc",
+    "color_transfer": "arib-std-b67", "color_primaries": "bt2020", "r_frame_rate": "60/1", "avg_frame_rate": "60/1",
+    "side_data_list": [
+      { "side_data_type": "DOVI configuration record", "dv_version_major": 1, "dv_version_minor": 0, "dv_profile": 8, "dv_level": 9,
+        "rpu_present_flag": 1, "el_present_flag": 0, "bl_present_flag": 1, "dv_bl_signal_compatibility_id": 4 }
+    ]
+  },
+  "dv_p5_mp4": {
+    "index": 0, "codec_name": "hevc", "profile": "Main 10", "codec_type": "video", "codec_tag_string": "dvh1",
+    "width": 3840, "height": 2160, "pix_fmt": "yuv420p10le", "r_frame_rate": "24/1", "avg_frame_rate": "24/1",
+    "side_data_list": [
+      { "side_data_type": "DOVI configuration record", "dv_version_major": 1, "dv_version_minor": 0, "dv_profile": 5, "dv_level": 6,
+        "rpu_present_flag": 1, "el_present_flag": 0, "bl_present_flag": 1, "dv_bl_signal_compatibility_id": 0 }
+    ]
+  },
+  "dv_p7_mkv": {
+    "index": 0, "codec_name": "hevc", "profile": "Main 10", "codec_type": "video", "codec_tag_string": "[0][0][0][0]",
+    "width": 3840, "height": 2160, "pix_fmt": "yuv420p10le", "color_space": "bt2020nc",
+    "color_transfer": "smpte2084", "color_primaries": "bt2020", "r_frame_rate": "24000/1001", "avg_frame_rate": "24000/1001",
+    "side_data_list": [
+      { "side_data_type": "DOVI configuration record", "dv_version_major": 1, "dv_version_minor": 0, "dv_profile": 7, "dv_level": 6,
+        "rpu_present_flag": 1, "el_present_flag": 1, "bl_present_flag": 1, "dv_bl_signal_compatibility_id": 6 },
+      { "side_data_type": "Mastering display metadata", "min_luminance": "50/10000", "max_luminance": "10000000/10000" },
+      { "side_data_type": "Content light level metadata", "max_content": 1104, "max_average": 336 }
+    ]
+  },
+  "hdr10plus_stream": {
+    "index": 0, "codec_name": "hevc", "profile": "Main 10", "codec_type": "video", "codec_tag_string": "[0][0][0][0]",
+    "width": 3840, "height": 2160, "pix_fmt": "yuv420p10le", "color_space": "bt2020nc",
+    "color_transfer": "smpte2084", "color_primaries": "bt2020", "r_frame_rate": "24000/1001", "avg_frame_rate": "24000/1001"
+  },
+  "hdr10plus_first_frame": [
+    { "side_data_type": "Mastering display metadata", "min_luminance": "1/10000", "max_luminance": "40000000/10000" },
+    { "side_data_type": "Content light level metadata", "max_content": 4000, "max_average": 1000 },
+    { "side_data_type": "HDR Dynamic Metadata SMPTE2094-40 (HDR10+)", "application_version": 1, "num_windows": 1 }
+  ],
+  "sdr_h264": {
+    "index": 0, "codec_name": "h264", "profile": "High", "codec_type": "video", "codec_tag_string": "avc1",
+    "width": 1920, "height": 1080, "pix_fmt": "yuv420p", "color_space": "bt709", "color_transfer": "bt709", "color_primaries": "bt709",
+    "r_frame_rate": "25/1", "avg_frame_rate": "25/1"
+  }
+}

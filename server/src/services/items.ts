@@ -1,5 +1,5 @@
 import type {
-  HomeRow, HomeRowConfig, Item, SubtitleStream, Chapter, ItemQuery, ItemSort, MediaSource, Marker, Paged, Person, User, UserItemData, UpdateItemRequest,
+  HomeRow, HomeRowConfig, Item, SubtitleStream, Chapter, ItemQuery, ItemSort, MediaSource, Marker, Paged, Person, User, UserItemData, UpdateItemRequest, VideoRangeInfo,
 } from '@mediamax/shared';
 import { db, type Param, type Row } from '../db.js';
 import { imageUrl } from './images.js';
@@ -150,6 +150,7 @@ export function mediaRowToSource(m: Row): MediaSource {
     videoCodec: m.video_codec,
     resolutionLabel: resolutionLabel(m.width, m.height),
     hdr: !!m.hdr,
+    videoRange: parseJson<VideoRangeInfo | null>(m.video_range, null),
     audioStreams: parseJson(m.audio, []),
     subtitleStreams: parseJson<(SubtitleStream & { path?: string })[]>(m.subs, []).map(({ path: _p, ...s }) => s),
     remote: !m.path && !!m.remote_url,

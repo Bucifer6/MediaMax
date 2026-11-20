@@ -18,6 +18,8 @@ import type { AuthContext } from './auth.js';
 import { events, bus } from './events.js';
 import { TEXT_SUB_CODECS } from './probe.js';
 import { isLocalAddress } from './dlna.js';
+import { rangeDecision, type RangeDecision } from './hdr.js';
+import { refreshVideoRange } from './hdrBackfill.js';
 
 const log = logger('playback');
 
@@ -172,7 +174,7 @@ export function reapSessions() {
 
 /* ------------------------------ decisions --------------------------- */
 
-const DEFAULT_PROFILE: Required<DeviceProfile> = {
+const DEFAULT_PROFILE: DeviceProfile & Required<Pick<DeviceProfile, 'maxBitrate' | 'maxWidth' | 'videoCodecs' | 'audioCodecs' | 'containers' | 'supportsHls'>> = {
   maxBitrate: null,
   maxWidth: null,
   videoCodecs: ['h264'],
@@ -186,6 +188,12 @@ export interface Decision {
   videoCopy: boolean;
   audioCopy: boolean;
   reasons: string[];
+  /** HDR → SDR tone-mapping when transcoding (undefined = legacy client: admin setting decides). See hdr.ts. */
+  toneMap?: boolean;
+  /** Bitstream filter for copied video (Dolby Vision profile 7 → HDR10 base layer). */
+  videoBsf?: string | null;
+  /** How the source's dynamic range reaches the client. */
+  range?: RangeDecision;
 }
 
 export function decide(media: MediaSource, profile: DeviceProfile | undefined, opts: { audio: AudioStream | null; burnSubs: boolean; forceTranscode: boolean; allowTranscode: boolean; userMaxBitrate: number | null; isAudioOnly: boolean }): Decision {
@@ -199,6 +207,17 @@ export function decide(media: MediaSource, profile: DeviceProfile | undefined, o
 
   const videoOk = opts.isAudioOnly || !media.videoCodec || vcodecs.includes(norm(media.videoCodec));
   if (!videoOk) reasons.push(`video codec ${media.videoCodec} not supported`);
+  // HDR / Dolby Vision vs. the client's video-range capabilities, 10-bit decode and max height (hdr.ts).
+  const range = rangeDecision(media.videoRange, media.hdr, p.videoRange);
+  const rangeOk = opts.isAudioOnly || range.ok;
+  if (!rangeOk) reasons.push(...range.reasons);
+  const tenBitOk = opts.isAudioOnly || !p.tenBitCodecs || !media.videoRange?.bitDepth || media.videoRange.bitDepth <= 8 || p.tenBitCodecs.map(norm).includes(norm(media.videoCodec));
+  if (!tenBitOk) reasons.push(`10-bit ${media.videoCodec} not supported`);
+  const heightOk = !p.maxHeight || !media.height || media.height <= p.maxHeight;
+  if (!heightOk) reasons.push(`resolution exceeds ${p.maxHeight}p`);
+  const videoPlayable = videoOk && rangeOk && tenBitOk && heightOk;
+  // Formats the client bitstreams to an AV receiver count as supported audio.
+  for (const a of p.audioPassthrough ?? []) if (!acodecs.includes(norm(a))) acodecs.push(norm(a));
   const audioOk = !opts.audio || acodecs.includes(norm(opts.audio.codec));
   if (!audioOk) reasons.push(`audio codec ${opts.audio?.codec} not supported`);
   const containerOk = !!media.container && containers.includes(media.container.toLowerCase());
@@ -208,22 +227,29 @@ export function decide(media: MediaSource, profile: DeviceProfile | undefined, o
   const widthOk = !p.maxWidth || !media.width || media.width <= p.maxWidth;
   if (!widthOk) reasons.push(`resolution exceeds ${p.maxWidth}`);
   // Non-default audio track: most players can't switch tracks in a progressive file.
-  const audioTrackOk = !opts.audio || opts.audio.default || opts.isAudioOnly;
+  const audioTrackOk = !opts.audio || opts.audio.default || opts.isAudioOnly || !!p.canSelectAudioTrack;
   if (!audioTrackOk) reasons.push('non-default audio track selected');
 
   const canTranscode = opts.allowTranscode && getSettings().transcoding.enabled;
-  if (!opts.forceTranscode && !opts.burnSubs && videoOk && audioOk && containerOk && bitrateOk && widthOk && audioTrackOk) {
-    return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [] };
+  // Dual-layer Dolby Vision for an HDR10 client: the video can be copied, but only with its DV layers stripped.
+  const needsRemux = !opts.isAudioOnly && range.needsRemux;
+  if (needsRemux) reasons.push(...range.reasons.filter((r) => !reasons.includes(r)));
+  // Transcoding an HDR source: the transcoder outputs 8-bit SDR, so tone-map (legacy clients: admin setting decides).
+  const toneMap = range.legacy ? undefined : !opts.isAudioOnly && range.delivery !== 'sdr';
+  if (!opts.forceTranscode && !opts.burnSubs && videoPlayable && !needsRemux && audioOk && containerOk && bitrateOk && widthOk && audioTrackOk) {
+    return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [], range };
   }
   if (!canTranscode) {
     // Best effort: direct play even if probably unsupported.
-    return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [...reasons, 'transcoding not permitted'] };
+    return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [...reasons, 'transcoding not permitted'], range };
   }
   // Remux when only the container (or audio) is the problem and HLS is available.
-  if (!opts.forceTranscode && !opts.burnSubs && videoOk && bitrateOk && widthOk && p.supportsHls !== false && !opts.isAudioOnly) {
-    return { method: 'remux', videoCopy: true, audioCopy: audioOk, reasons };
+  if (!opts.forceTranscode && !opts.burnSubs && videoPlayable && bitrateOk && widthOk && p.supportsHls !== false && !opts.isAudioOnly) {
+    return { method: 'remux', videoCopy: true, audioCopy: audioOk, reasons, range, videoBsf: range.videoBsf };
   }
-  return { method: 'transcode', videoCopy: false, audioCopy: audioOk && !opts.forceTranscode && !opts.isAudioOnly ? true : false, reasons };
+  const willToneMap = toneMap ?? (range.delivery !== 'sdr' && !opts.isAudioOnly && getSettings().transcoding.toneMapHdr);
+  const tmRange: RangeDecision = willToneMap ? { ...range, delivery: 'tonemap', toneMap: true } : range;
+  return { method: 'transcode', videoCopy: false, audioCopy: audioOk && !opts.forceTranscode && !opts.isAudioOnly ? true : false, reasons, toneMap, range: tmRange };
 }
 
 /** Output codec for a transcode: HEVC/AV1 with the hardware encoder when the client plays it (see chooseVideoCodec). */
@@ -270,6 +296,15 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     : db.get('SELECT * FROM media WHERE item_id = ? ORDER BY COALESCE(width,0) DESC LIMIT 1', itemId);
   if (!mediaRow) throw notFound('Media not found');
   if (item.type === 'photo') throw badRequest('Photos are not playable');
+  // Files scanned before HDR detection: identify the HDR format now (one quick ffprobe, stored for next time).
+  if (mediaRow.hdr && mediaRow.video_range == null && mediaRow.path) {
+    try {
+      const vr = await refreshVideoRange(mediaRow.id);
+      if (vr) mediaRow.video_range = JSON.stringify(vr);
+    } catch {
+      /* keep the plain HDR flag */
+    }
+  }
   const media = mediaRowToSource(mediaRow);
   const rawSubs = parseJson<(SubtitleStream & { path?: string })[]>(mediaRow.subs, []);
   const prefs = ctx.user.preferences;
@@ -337,6 +372,8 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
         : null,
     };
     if (!decision.videoCopy && !isAudioOnly) opts.videoCodec = transcodeCodecFor(req.deviceProfile);
+    if (decision.toneMap !== undefined) opts.toneMap = decision.toneMap;
+    if (decision.videoCopy && decision.videoBsf) opts.videoBsf = decision.videoBsf;
     const job = new TranscodeJob(newId(), opts);
     session = registerSession({ ...base, method: decision.method, job });
     job.onInfoChange = broadcastSessions;
@@ -373,6 +410,10 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     subtitle: subtitleText,
     posterUrl: item.posterUrl,
     backdropUrl: item.backdropUrl,
+    reasons: decision.reasons,
+    videoRange: !isAudioOnly && media.hdr && decision.range
+      ? { source: media.videoRange?.hdrFormat ?? 'hdr10', label: media.videoRange?.label ?? 'HDR', delivery: decision.range.delivery }
+      : null,
   };
 }
 

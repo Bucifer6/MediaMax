@@ -1550,15 +1550,15 @@ export interface ServerSettings {
   /** Media requests and the download managers approved requests are sent to. */
   requests: {
     enabled: boolean;
-    /** Requests from admins (and users listed here) are approved automatically. */
+    /** @deprecated Per-user `requestPermissions` replace this (still read for users without stored permissions). */
     autoApproveUserIds: string[];
-    /** Max open requests per user per 7 days (0 = unlimited). */
+    /** @deprecated Seeds `defaultQuotas` when those were never saved. Max requests per user per 7 days (0 = unlimited). */
     weeklyLimit: number;
     /** @deprecated Moved to `ServerSettings.arr` (migrated once; still read as a fallback). */
     radarr: ArrService | null;
     /** @deprecated Moved to `ServerSettings.arr` (migrated once; still read as a fallback). */
     sonarr: ArrService | null;
-  };
+  } & Partial<RequestSettingsExtra>;
   /** Radarr/Sonarr/Lidarr/Readarr/Bazarr instances (requests, downloads dashboard, webhooks). */
   arr: ArrInstance[];
   /** Single sign-on via any OpenID Connect provider (Authentik, Keycloak, Authelia, Google, Entra…). */
@@ -1616,7 +1616,12 @@ export type WebhookEvent =
   | 'recording.completed'
   | 'recording.failed'
   | 'request.created'
-  | 'request.available';
+  | 'request.available'
+  | 'request.approved'
+  | 'request.declined'
+  | 'request.failed'
+  | 'issue.created'
+  | 'issue.resolved';
 
 export interface Webhook {
   id: string;
@@ -2508,7 +2513,7 @@ export interface CalendarResponse {
   entries: CalendarEntry[];
 }
 
-export type NotificationKind = 'new-episode';
+export type NotificationKind = 'new-episode' | 'request' | 'issue';
 
 export interface AppNotification {
   id: string;
@@ -2723,4 +2728,624 @@ export interface PlaybackInfo {
   reasons?: string[];
   /** Source range and how it reaches the client (`base-layer`: DV/HDR10+ played as HDR10; `tonemap`: HDR → SDR). */
   videoRange?: { source: HdrFormat; label: string; delivery: VideoRangeDelivery } | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Requests: Overseerr/Jellyseerr parity (permissions, quotas, issues)  */
+/* ------------------------------------------------------------------ */
+
+/** none = can't request; request = needs approval; auto = approved automatically. */
+export type RequestPermissionLevel = 'none' | 'request' | 'auto';
+/** The request kinds a permission can be set for. */
+export type RequestPermissionKind = 'movie' | 'show' | 'movie4k' | 'show4k' | 'music' | 'book';
+
+export interface RequestPermissions {
+  movie: RequestPermissionLevel;
+  show: RequestPermissionLevel;
+  movie4k: RequestPermissionLevel;
+  show4k: RequestPermissionLevel;
+  /** Artists and albums (Lidarr). */
+  music: RequestPermissionLevel;
+  /** Books (Readarr). */
+  book: RequestPermissionLevel;
+  /** Request manager: may see, edit, approve, decline and delete everyone's requests, manage issues and the blacklist. */
+  manageRequests: boolean;
+  /** May report problems ("issues") with library items. */
+  reportIssues: boolean;
+  /** Titles this user adds to their Discover watchlist are requested automatically (permissions and quotas still apply). */
+  watchlistAutoRequest: boolean;
+}
+
+/** `limit` requests (seasons for shows) per rolling `days`; limit 0 = unlimited. */
+export interface RequestQuota {
+  limit: number;
+  days: number;
+}
+export interface RequestQuotas {
+  movie: RequestQuota;
+  /** Counts seasons, like Overseerr. */
+  show: RequestQuota;
+  /** Artists and albums. */
+  music: RequestQuota;
+  book: RequestQuota;
+}
+export type RequestQuotaKind = keyof RequestQuotas;
+
+/** Remaining quota for one kind (GET /requests/options, GET /requests/quota). */
+export interface RequestQuotaStatus {
+  limit: number;
+  days: number;
+  used: number;
+  /** null = unlimited. */
+  remaining: number | null;
+  /** When the oldest counted request leaves the window (null when nothing is counted). */
+  resetsAt: string | null;
+  /** Exempt (admin, or exempt by the server's quota settings). */
+  exempt: boolean;
+}
+
+export interface User {
+  /** Stored request permissions (admins act as if everything were "auto"). Older servers derive them from allowRequest4k + autoApproveUserIds. */
+  requestPermissions?: RequestPermissions;
+  /** Per-user quota override; null = the server defaults. */
+  requestQuotas?: RequestQuotas | null;
+}
+export interface CreateUserRequest {
+  requestPermissions?: Partial<RequestPermissions>;
+  requestQuotas?: RequestQuotas | null;
+}
+export interface InviteTemplate {
+  /** Request permissions for users joining with this invite (default: the server's default permissions). */
+  requestPermissions?: RequestPermissions | null;
+}
+
+/** PATCH /users/bulk (admin): apply the same permissions/quotas to several users. */
+export interface BulkUpdateUsersRequest {
+  userIds: string[];
+  requestPermissions?: Partial<RequestPermissions>;
+  /** null resets to the server defaults; omit to leave unchanged. */
+  requestQuotas?: RequestQuotas | null;
+  allowLiveTv?: boolean;
+  allowDownloads?: boolean;
+  allowTranscode?: boolean;
+  allowDvr?: boolean;
+  allowRemote?: boolean;
+}
+
+export interface ServerSettings {
+  notificationAgents: NotificationAgent[];
+}
+export interface RequestSettingsExtra {
+  /** Permissions given to new users (created by an admin, invite or SSO). */
+  defaultPermissions: RequestPermissions;
+  /** Quotas for users without their own. Migrated from `weeklyLimit` when absent. */
+  defaultQuotas: RequestQuotas;
+  /** Users with "auto" for a kind aren't counted against that kind's quota. */
+  quotaExemptAutoApprove: boolean;
+  /** Request managers have no quota. */
+  quotaExemptManagers: boolean;
+  /** Global auto-approve rule: approve movie/show requests rated at least this on TMDB (0 = off). */
+  autoApproveMinRating: number;
+  /** Discover hides titles that are already in a library (per-user toggle overrides). */
+  hideAvailable: boolean;
+}
+
+/** Overrides a manager can set before approving ("edit before approve"). Missing = the instance defaults. */
+export interface RequestArrOverrides {
+  instanceId?: string | null;
+  /** 4K copy target (also4k requests). */
+  instance4kId?: string | null;
+  qualityProfileId?: number | null;
+  rootFolderPath?: string | null;
+  languageProfileId?: number | null;
+  tags?: number[] | null;
+}
+
+export interface MediaRequest {
+  /** Overrides set by a manager (managers only). */
+  arr?: RequestArrOverrides | null;
+  /** Units counted against the quota (seasons for shows). */
+  quotaUnits?: number;
+  /** Number of comments on the request. */
+  commentCount?: number;
+  /** The requester's own reason/notes vs. the manager's decline reason. */
+  declineReason?: string | null;
+}
+
+/** PATCH /requests/:id (managers): change a request before approving it. */
+export interface EditMediaRequest {
+  seasons?: number[];
+  seasonMode?: SeasonMode;
+  also4k?: boolean;
+  arr?: RequestArrOverrides;
+}
+
+/** POST /requests/:id/approve body (optional): edits applied first. */
+export type ApproveMediaRequest = EditMediaRequest;
+
+/** POST /requests/bulk (managers). */
+export interface BulkRequestAction {
+  ids: string[];
+  action: 'approve' | 'decline' | 'delete' | 'retry';
+  /** Decline reason. */
+  note?: string;
+  /** delete: also remove the titles from Radarr/Sonarr. */
+  removeFromArr?: boolean;
+}
+export interface BulkRequestResult {
+  ok: string[];
+  failed: { id: string; error: string }[];
+}
+
+export interface RequestListQuery {
+  status?: RequestStatus;
+  mine?: boolean;
+  mediaType?: RequestMediaType;
+  userId?: string;
+  sort?: 'requested' | 'updated' | 'title' | 'status';
+  order?: 'asc' | 'desc';
+}
+
+/** One entry of a request's timeline (status changes and comments). */
+export interface RequestActivity {
+  id: string;
+  kind: 'created' | 'approved' | 'declined' | 'processing' | 'failed' | 'available' | 'edited' | 'comment' | 'retried';
+  user: { id: string; displayName: string } | null;
+  body: string | null;
+  createdAt: string;
+}
+
+/** GET /requests/tv/:tmdbId: seasons of a show with availability. */
+export type SeasonAvailability = 'available' | 'partial' | 'requested' | 'pending' | 'missing';
+export interface RequestSeasonInfo {
+  seasonNumber: number;
+  name: string;
+  episodeCount: number;
+  airDate: string | null;
+  /** Episodes of this season in the library. */
+  libraryEpisodes: number;
+  status: SeasonAvailability;
+}
+export interface RequestTvInfo {
+  tmdbId: string;
+  title: string;
+  seasons: RequestSeasonInfo[];
+  /** Library show, if any. */
+  itemId: string | null;
+}
+
+/** GET /requests/:id/arr-options (managers): pickers for "edit before approve". */
+export interface RequestArrChoices {
+  kind: ArrKind;
+  instances: { id: string; name: string; is4k: boolean; defaults: RequestArrOverrides; options: ArrOptions }[];
+}
+
+export interface RequestOptions {
+  /** The viewer's effective permissions. */
+  permissions?: RequestPermissions;
+  /** Remaining quota per kind. */
+  quotas?: Record<RequestQuotaKind, RequestQuotaStatus>;
+  /** May manage requests (admin or request manager). */
+  canManage?: boolean;
+  /** Server default for hiding titles already in the library. */
+  hideAvailable?: boolean;
+}
+
+export interface DiscoverResult {
+  /** On the admin blacklist (only managers see these; others never get them). */
+  blacklisted?: boolean;
+  /** On the viewer's Discover watchlist. */
+  onWatchlist?: boolean;
+  /** Shows: some seasons are in the library, others can still be requested. */
+  partiallyAvailable?: boolean;
+}
+
+/** Admin blacklist: titles nobody can request. */
+export interface BlacklistEntry {
+  mediaType: RequestMediaType;
+  externalId: string;
+  title: string;
+  reason: string | null;
+  createdBy: { id: string; displayName: string } | null;
+  createdAt: string;
+}
+
+/** Discover sliders (TMDB lists). */
+export type DiscoverListKey =
+  | 'trending' | 'popular-movies' | 'popular-shows' | 'upcoming-movies' | 'upcoming-shows' | 'top-movies' | 'top-shows'
+  | `movie-genre-${number}` | `show-genre-${number}` | `studio-${number}` | `network-${number}`;
+export interface DiscoverSlider {
+  key: DiscoverListKey | 'recently-requested' | 'recently-added' | 'watchlist';
+  title: string;
+  results: DiscoverResult[];
+}
+export interface DiscoverGenre {
+  id: number;
+  name: string;
+}
+export interface DiscoverGenres {
+  movie: DiscoverGenre[];
+  show: DiscoverGenre[];
+}
+export interface DiscoverPerson {
+  id: string;
+  name: string;
+  biography: string | null;
+  birthday: string | null;
+  deathday: string | null;
+  placeOfBirth: string | null;
+  knownFor: string | null;
+  profileUrl: string | null;
+  cast: (DiscoverResult & { character: string | null })[];
+  crew: (DiscoverResult & { job: string | null })[];
+}
+
+/** Discover watchlist: titles (not necessarily in a library) a user wants. */
+export interface DiscoverWatchlistEntry {
+  mediaType: 'movie' | 'show';
+  externalId: string;
+  title: string;
+  year: number | null;
+  posterUrl: string | null;
+  addedAt: string;
+  requestId: string | null;
+  /** Why auto-request didn't happen (no permission, quota, blacklist…). */
+  autoRequestError: string | null;
+  availableItemId: string | null;
+}
+
+/* Issues ("Report an issue") */
+export type IssueKind = 'video' | 'audio' | 'subtitle' | 'other';
+export type IssueStatus = 'open' | 'resolved';
+export interface IssueComment {
+  id: string;
+  user: { id: string; displayName: string } | null;
+  body: string;
+  createdAt: string;
+}
+export interface Issue {
+  id: string;
+  kind: IssueKind;
+  status: IssueStatus;
+  /** The reported library item (movie, show, episode, album…). */
+  itemId: string | null;
+  /** Movie/show the item belongs to, for *arr actions. */
+  rootItemId: string | null;
+  mediaType: string;
+  title: string;
+  posterUrl: string | null;
+  season: number | null;
+  episode: number | null;
+  message: string;
+  createdBy: { id: string; displayName: string } | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedBy: { id: string; displayName: string } | null;
+  resolvedAt: string | null;
+  commentCount: number;
+  comments?: IssueComment[];
+}
+export interface CreateIssueRequest {
+  itemId: string;
+  kind: IssueKind;
+  message: string;
+  season?: number | null;
+  episode?: number | null;
+}
+
+/* Notification agents (Discord, Slack, Telegram, ntfy, Gotify, Pushover, email, JSON webhook) */
+export type NotifyEvent =
+  | 'request.pending' | 'request.auto_approved' | 'request.approved' | 'request.declined' | 'request.available' | 'request.failed' | 'request.comment'
+  | 'issue.created' | 'issue.comment' | 'issue.resolved' | 'issue.reopened' | 'test';
+export type NotificationAgentKind = 'discord' | 'slack' | 'telegram' | 'ntfy' | 'gotify' | 'pushover' | 'email' | 'webhook';
+export interface NotificationAgent {
+  id: string;
+  kind: NotificationAgentKind;
+  name: string;
+  enabled: boolean;
+  events: NotifyEvent[];
+  /** Kind-specific settings (webhookUrl, botToken, chatId, server, topic, token, userKey, smtp…). Secret fields read back as "••••". */
+  config: Record<string, string>;
+}
+/** The fields each agent kind takes (GET /notify/agents/kinds). */
+export interface NotificationAgentKindInfo {
+  kind: NotificationAgentKind;
+  label: string;
+  fields: { key: string; label: string; secret?: boolean; required?: boolean; placeholder?: string; hint?: string }[];
+}
+export interface NotificationTestResult {
+  ok: boolean;
+  message: string;
+}
+export interface AppNotification {
+  /** In-app path to open (e.g. "/requests?id=…", "/issues/…") for request and issue notifications. */
+  link?: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Home Assistant / smart home                                         */
+/* ------------------------------------------------------------------ */
+
+/** Payload shape a webhook sends: MediaMax's own (default) or a flat one made for Home Assistant's webhook trigger. */
+export type WebhookFormat = 'mediamax' | 'home-assistant';
+
+export interface Webhook {
+  /** Omitted = 'mediamax'. */
+  format?: WebhookFormat;
+  /** Optional label shown in the admin list (e.g. "Home Assistant"). */
+  name?: string;
+}
+
+export interface HomeAssistantMqttSettings {
+  enabled: boolean;
+  /** mqtt://host:1883 or mqtts://host:8883. */
+  brokerUrl: string;
+  username: string | null;
+  /** Write-only: returned as "••••" when set. Send "••••" back to keep it. */
+  password: string | null;
+  /** Use TLS even with an mqtt:// URL (mqtts:// always does). */
+  tls: boolean;
+  /** Accept self-signed broker certificates. */
+  tlsInsecure: boolean;
+  /** Root of MediaMax's own topics (default "mediamax"). */
+  baseTopic: string;
+  /** Home Assistant discovery prefix (default "homeassistant"). */
+  discoveryPrefix: string;
+  /** Publish one now-playing sensor per playing device (default true). */
+  perDeviceSensors: boolean;
+}
+
+export interface HomeAssistantSettings {
+  mqtt: HomeAssistantMqttSettings;
+}
+
+export type MqttConnectionState = 'disabled' | 'connecting' | 'connected' | 'disconnected' | 'error';
+
+export interface HomeAssistantStatus {
+  mqtt: {
+    state: MqttConnectionState;
+    error: string | null;
+    connectedAt: string | null;
+    lastPublishAt: string | null;
+    lastDiscoveryAt: string | null;
+    /** Discovery configs published (entities Home Assistant should show). */
+    entities: number;
+    /** Topic that reports online/offline (retained, offline is the last will). */
+    availabilityTopic: string | null;
+  };
+  /** Where to find the REST endpoint for HA's REST sensor / dashboards. */
+  restPath: string;
+}
+
+export interface HomeAssistantTestResult {
+  ok: boolean;
+  message: string;
+  latencyMs: number | null;
+}
+
+/** One playing (or paused) stream as reported to smart-home integrations. */
+export interface NowPlayingEntry {
+  sessionId: string;
+  state: 'playing' | 'paused' | 'buffering';
+  userId: string;
+  user: string;
+  deviceId: string;
+  device: string;
+  platform: string;
+  itemId: string | null;
+  mediaType: string | null;
+  title: string;
+  /** Show title for episodes, artist for tracks. */
+  series: string | null;
+  season: number | null;
+  episode: number | null;
+  year: number | null;
+  /** Absolute when the server has a public URL, else server-relative. */
+  posterUrl: string | null;
+  positionSeconds: number;
+  durationSeconds: number | null;
+  progressPercent: number | null;
+  transcode: boolean;
+  method: string;
+  hdr: boolean;
+  bitrateKbps: number | null;
+  startedAt: string;
+}
+
+export interface NowPlayingStatus {
+  server: { id: string; name: string; version: string };
+  /** True while at least one stream is playing (paused streams don't count). */
+  watching: boolean;
+  activeStreams: number;
+  transcodes: number;
+  directStreams: number;
+  bandwidthKbps: number;
+  sessions: NowPlayingEntry[];
+  recentlyAdded: { id: string; type: string; title: string; series: string | null; year: number | null; addedAt: string; posterUrl: string | null }[];
+  generatedAt: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Storage / NAS disk spin-down                                        */
+/* ------------------------------------------------------------------ */
+
+export type DiskPowerState = 'active' | 'idle' | 'standby' | 'unknown';
+
+export interface StorageSettings {
+  /** Only run background media-disk work inside the maintenance window (or piggybacked on playback). */
+  diskFriendly: boolean;
+  /** Local server time, "HH:MM". */
+  windowStart: string;
+  windowEnd: string;
+  /** When a stream starts from a disk, run that disk's postponed jobs while it is spinning anyway. */
+  piggyback: boolean;
+  /** Linux: ask hdparm/smartctl (when available and permitted) whether disks are asleep; never wakes them. */
+  checkDiskState: boolean;
+  /** native = inotify/FSEvents (no polling); poll = check folder timestamps every pollIntervalMinutes; off = scheduled scans only. */
+  watchMode: 'native' | 'poll' | 'off';
+  /** Poll mode interval (minimum 60). */
+  pollIntervalMinutes: number;
+}
+
+export interface StorageDiskInfo {
+  /** Block device name, e.g. "sda" (null when unknown). */
+  name: string;
+  state: DiskPowerState;
+  /** How the state was found: "hdparm", "smartctl", "sysfs" (I/O counters) or null. */
+  method: string | null;
+  rotational: boolean | null;
+  checkedAt: string | null;
+}
+
+export interface StorageLibraryPath {
+  path: string;
+  mountPoint: string | null;
+  fsType: string | null;
+  source: string | null;
+  /** Network share (NFS/SMB): disk state can't be seen from here. */
+  network: boolean;
+  /** Key used to group work per disk (mount device id). */
+  diskKey: string;
+  disks: StorageDiskInfo[];
+  /** Overall state for the path (standby only if every disk under it sleeps). */
+  state: DiskPowerState;
+}
+
+export interface StorageLibraryInfo {
+  id: string;
+  name: string;
+  type: string;
+  paths: StorageLibraryPath[];
+  watch: { mode: 'native' | 'poll' | 'off'; directories: number; error: string | null };
+}
+
+export interface StorageDeferredTask {
+  taskId: string;
+  name: string;
+  since: string;
+  /** Disks that already caught up through piggybacking. */
+  doneDisks: string[];
+}
+
+export interface StorageStatus {
+  settings: StorageSettings;
+  inWindow: boolean;
+  nextWindowAt: string | null;
+  /** Server-local time zone, so the window can be read correctly. */
+  timeZone: string;
+  serverTime: string;
+  deferred: StorageDeferredTask[];
+  piggybackRunning: string | null;
+  tools: { hdparm: boolean; smartctl: boolean; mountinfo: boolean };
+  libraries: StorageLibraryInfo[];
+  /** Where artwork, thumbnails, trickplay, subtitles and the database live (should be an SSD). */
+  dataDir: string;
+  transcodeDir: string;
+  /** Task ids that count as background media-disk work. */
+  diskTasks: string[];
+}
+
+/* ------------------------------------------------------------------ */
+/* "Play to" network renderers (DLNA/UPnP, Sonos, Kodi)                */
+/* ------------------------------------------------------------------ */
+
+export type RendererKind = 'dlna' | 'sonos' | 'kodi';
+
+/** A device on the local network MediaMax can send media to. */
+export interface Renderer {
+  /** Stable id (derived from the device UDN or the manual entry). */
+  id: string;
+  kind: RendererKind;
+  name: string;
+  manufacturer: string | null;
+  model: string | null;
+  /** LAN host (IP) of the device. */
+  host: string;
+  iconUrl: string | null;
+  /** Plays video (Sonos and audio-only DLNA renderers don't). */
+  supportsVideo: boolean;
+  /** Added by an administrator rather than discovered. */
+  manual: boolean;
+  online: boolean;
+  lastSeenAt: string | null;
+  /** What it's playing for MediaMax right now, if anything. */
+  nowPlaying: { title: string; userName: string; state: RendererPlayState } | null;
+}
+
+export type RendererPlayState = 'idle' | 'buffering' | 'playing' | 'paused' | 'stopped';
+
+export interface RendererState {
+  rendererId: string;
+  rendererName: string;
+  state: RendererPlayState;
+  /** Play session id (shows in the admin dashboard like any other stream). */
+  sessionId: string | null;
+  /** The user this playback belongs to (only they and admins may control it). */
+  userId: string | null;
+  itemId: string | null;
+  title: string | null;
+  subtitle: string | null;
+  posterUrl: string | null;
+  positionMs: number;
+  durationMs: number | null;
+  /** 0–100, null when the device doesn't report it. */
+  volume: number | null;
+  muted: boolean;
+  /** direct = original file; transcode = MediaMax converts it for the device. */
+  method: 'direct' | 'transcode' | null;
+  /** Queue position for albums / playlists (1-based), null for a single item. */
+  queue: { index: number; total: number } | null;
+  error: string | null;
+}
+
+export interface RendererPlayRequest {
+  itemId: string;
+  startMs?: number;
+  mediaId?: string;
+  audioStreamIndex?: number;
+  /** Text subtitle to show (DLNA: Samsung/LG CaptionInfo; Kodi: added as external subtitle). null = off. */
+  subtitleStreamIndex?: number | null;
+  /** Play these items in order (album / playlist). `itemId` must be one of them; playback starts there. */
+  queueItemIds?: string[];
+}
+
+export type RendererAction = 'pause' | 'resume' | 'stop' | 'seek' | 'volume' | 'next' | 'previous';
+
+export interface RendererCommandRequest {
+  positionMs?: number;
+  /** 0–100 */
+  volume?: number;
+  muted?: boolean;
+}
+
+/** Admin → Play to devices. */
+export interface RendererSettings {
+  /** Discover and control renderers at all (off = feature hidden). */
+  enabled: boolean;
+  /** Look for Kodi with mDNS (_xbmc-jsonrpc-h._tcp) as well as SSDP. */
+  mdns: boolean;
+  /** Allow manual devices on non-private addresses (off: LAN / private addresses only). */
+  allowPublicHosts: boolean;
+  /** Base URL devices use to fetch streams, e.g. http://192.168.1.10:8096 (default: this server's LAN address). */
+  streamBaseUrl: string | null;
+}
+
+export interface ManualRendererRequest {
+  kind: 'kodi' | 'dlna';
+  name?: string;
+  /** Kodi: host or IP. */
+  host?: string;
+  /** Kodi JSON-RPC port (default 8080). */
+  port?: number;
+  username?: string;
+  password?: string;
+  /** DLNA / Sonos: the device description URL, e.g. http://192.168.1.20:1400/xml/device_description.xml */
+  descriptionUrl?: string;
+}
+
+export interface RendererAdminView {
+  settings: RendererSettings;
+  manual: { id: string; kind: 'kodi' | 'dlna'; name: string; host: string; port: number | null; username: string | null; hasPassword: boolean; descriptionUrl: string | null }[];
+  renderers: Renderer[];
+  lastDiscoveryAt: string | null;
 }

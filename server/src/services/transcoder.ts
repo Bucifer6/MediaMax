@@ -71,6 +71,8 @@ export interface TranscodeOptions {
    * can't display it). When omitted, falls back to `hdr && settings.toneMapHdr`. See shouldToneMap().
    */
   toneMap?: boolean;
+  /** Bitstream filter for copied video, e.g. stripping Dolby Vision RPU/EL NAL units (see hdr.ts STRIP_DOVI_BSF). */
+  videoBsf?: string | null;
 }
 
 export interface TranscodeInfo {
@@ -201,6 +203,7 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
   if (o.hasVideo) {
     if (o.videoCopy || !pipeline) {
       args.push('-c:v', 'copy');
+      if (o.videoBsf) args.push('-bsf:v', o.videoBsf);
       if (normCodec(o.sourceCodec) === 'hevc') args.push('-tag:v', 'hvc1');
     } else {
       if (!overlay && pipeline.filters.length) args.push('-vf', pipeline.filters.join(','));

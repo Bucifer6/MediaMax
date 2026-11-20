@@ -26,6 +26,7 @@ import { autoDownload } from './opensubtitles.js';
 import { refreshAll as refreshPodcasts } from './podcasts.js';
 import { checkAvailability } from './requests.js';
 import { refreshSchedules } from './calendar.js';
+import { backfillVideoRanges } from './hdrBackfill.js';
 
 const log = logger('tasks');
 
@@ -175,6 +176,13 @@ const DEFS: TaskDef[] = [
     interval: () => (getSettings().backups.intervalDays > 0 ? getSettings().backups.intervalDays * 24 * 60 : null),
     run: async () => {
       createBackup('scheduled');
+    },
+  },
+  {
+    id: 'hdr-formats', name: 'Detect HDR formats', description: 'Identify HDR10, HDR10+, HLG and Dolby Vision (profile, fallback layer) for HDR files scanned before HDR detection.',
+    interval: () => 24 * 60,
+    run: async (progress) => {
+      await backfillVideoRanges(progress);
     },
   },
   {

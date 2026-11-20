@@ -40,7 +40,11 @@ function SessionCard({ s, onKill }: { s: ActiveSession; onKill: (s: ActiveSessio
           {s.transcodeInfo && (
             <Badge tone="muted">
               {s.transcodeInfo.videoCodec}/{s.transcodeInfo.audioCodec} · {formatBitrate(s.transcodeInfo.bitrate)} · {s.transcodeInfo.hwAccel === 'none' ? 'CPU' : s.transcodeInfo.hwAccel.toUpperCase()}
+              {s.transcodeInfo.toneMap ? ` · HDR→SDR (${s.transcodeInfo.toneMap})` : ''}
             </Badge>
+          )}
+          {s.transcodeInfo?.hwFallback && (
+            <span title={s.transcodeInfo.hwFallback}><Badge tone="warning">Hardware transcoding failed, used {s.transcodeInfo.hwAccel === 'none' ? 'software' : 'CPU tone-mapping'}</Badge></span>
           )}
         </div>
         {s.durationMs ? (
