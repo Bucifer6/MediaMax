@@ -195,9 +195,10 @@ More, including the security dashboard and integration variables, is in [docs/IN
 
 | | |
 |---|---|
-| [docs/INSTALL.md](docs/INSTALL.md) | Install on Docker, NAS, Windows and Linux; upgrades, backups, hardware transcoding |
+| [docs/INSTALL.md](docs/INSTALL.md) | Install on Docker, NAS, Windows and Linux; NAS disk spin-down; upgrades, backups, hardware transcoding |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | One-command secure deployment: Caddy/Nginx, CrowdSec, fail2ban, Cloudflare Tunnel, Tailscale |
 | [docs/FEATURES.md](docs/FEATURES.md) | Feature-by-feature comparison with Plex, Jellyfin and Emby |
+| [docs/HOME_ASSISTANT.md](docs/HOME_ASSISTANT.md) | Home Assistant: MQTT discovery sensors, webhook preset, REST now-playing, automation YAML |
 | [docs/API.md](docs/API.md) | REST and WebSocket API reference |
 | [docs/PLUGINS.md](docs/PLUGINS.md) | Writing plugins; examples in [`plugins/examples`](plugins/examples) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | What's next |

@@ -113,7 +113,7 @@ export function RenderersAdmin() {
                     <Icon name={r.kind === 'sonos' ? 'volume' : r.kind === 'kodi' ? 'monitor' : 'tv'} size={20} />
                     <div className="renderer-admin-text">
                       <strong>{r.name}</strong>
-                      <small className="muted">{[RENDERER_KIND_LABEL[r.kind], r.manufacturer, r.model, r.host].filter(Boolean).join(' · ')}</small>
+                      <small className="muted">{[RENDERER_KIND_LABEL[r.kind], r.manufacturer === RENDERER_KIND_LABEL[r.kind] ? null : r.manufacturer, r.model, r.host].filter(Boolean).join(' · ')}</small>
                     </div>
                     {r.nowPlaying && <Badge tone="primary">{r.nowPlaying.state} · {r.nowPlaying.userName}</Badge>}
                     {!r.supportsVideo && <Badge tone="muted">Audio only</Badge>}

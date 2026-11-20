@@ -144,6 +144,7 @@ export class AbrController {
   private lastUpAt = -Infinity;
   private capUntil = 0;
   private cap = Infinity;
+  private lastFlapAt = -Infinity;
   flaps = 0;
 
   /** `levels` in any order; they are sorted by bitrate (index 0 = lowest). `start` is an index into the sorted list. */
@@ -160,6 +161,12 @@ export class AbrController {
     return best;
   }
 
+  /** Penalty factor after flapping: ×2 per flap, at most ×8; forgotten after 10 quiet minutes. */
+  private flapFactor(now: number) {
+    if (this.flaps && now - this.lastFlapAt > 600000) this.flaps = 0;
+    return Math.pow(2, Math.min(this.flaps, 3));
+  }
+
   get dwellMs() {
     return this.cfg.minDwellMs * Math.pow(2, Math.min(this.flaps, 3));
   }
@@ -174,7 +181,10 @@ export class AbrController {
 
   private commit(level: number, now: number, reason: AbrDecision['reason']): AbrDecision {
     const direction = level > this.current ? 'up' : 'down';
-    if (direction === 'down' && now - this.lastUpAt < this.cfg.flapWindowMs) this.flaps++;
+    if (direction === 'down' && now - this.lastUpAt < this.cfg.flapWindowMs) {
+      this.flaps++;
+      this.lastFlapAt = now;
+    }
     if (direction === 'up') this.lastUpAt = now;
     this.current = level;
     this.lastSwitch = now;
@@ -215,7 +225,9 @@ export class AbrController {
       return null;
     }
     this.upSince ??= now;
-    if (now - this.upSince >= this.cfg.upHoldMs && now - this.lastSwitch >= this.dwellMs) return this.commit(next, now, 'bandwidth');
+    // Both the hold and the dwell grow after flaps, so oscillating links settle on the lower level.
+    const f = this.flapFactor(now);
+    if (now - this.upSince >= this.cfg.upHoldMs * f && now - this.lastSwitch >= this.cfg.minDwellMs * f) return this.commit(next, now, 'bandwidth');
     return null;
   }
 }

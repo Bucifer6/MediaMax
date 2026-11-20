@@ -7,6 +7,7 @@ import type { Renderer } from '@mediamax/shared';
 import { Icon, type IconName } from '../components/Icon';
 import { Spinner } from '../components/ui';
 import type { CastHandle } from './cast';
+import { useApp } from '../state/app';
 import { Popover } from './controls';
 import { RENDERER_KIND_LABEL, useRendererRemote, useRenderers } from './renderers';
 
@@ -29,6 +30,7 @@ export function CastMenu({
   const [error, setError] = useState<string | null>(null);
   const { renderers, loading, searched, search } = useRenderers(true);
   const remote = useRendererRemote();
+  const { user } = useApp();
   const castShown = cast.available || cast.connected;
   const shown = castShown || renderers.length > 0 || !!airplay?.available;
   if (!shown) return null;
@@ -84,7 +86,7 @@ export function CastMenu({
           {renderers.map((r) => {
             const unsupported = media === 'video' && !r.supportsVideo;
             const mine = r.id === activeId;
-            const busyOther = !!r.nowPlaying && !mine;
+            const busyOther = !!r.nowPlaying && !mine && r.nowPlaying.userName !== user?.displayName;
             return (
               <button
                 key={r.id}
@@ -100,7 +102,7 @@ export function CastMenu({
                   <small>
                     {RENDERER_KIND_LABEL[r.kind]}
                     {r.model ? ` · ${r.model}` : ''}
-                    {unsupported ? ' · audio only' : busyOther ? ` · playing for ${r.nowPlaying!.userName}` : mine ? ' · playing' : !r.online ? ' · offline?' : ''}
+                    {unsupported ? ' · audio only' : busyOther ? ` · playing for ${r.nowPlaying!.userName}` : mine || r.nowPlaying ? ' · playing' : !r.online ? ' · offline?' : ''}
                   </small>
                 </span>
               </button>

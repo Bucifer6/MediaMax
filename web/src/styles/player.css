@@ -263,7 +263,7 @@
 
 /* ---------- Remote bar while a TV / speaker plays ---------- */
 .renderer-bar {
-  position: fixed; right: 16px; bottom: 16px; z-index: 75; width: min(460px, calc(100vw - 32px));
+  position: fixed; right: 16px; bottom: 16px; z-index: 75; width: min(540px, calc(100vw - 32px));
   display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px 14px 10px;
   border-radius: var(--radius); background: color-mix(in srgb, var(--c-surface) 92%, transparent); color: var(--c-text);
   backdrop-filter: blur(24px) saturate(1.4); -webkit-backdrop-filter: blur(24px) saturate(1.4);

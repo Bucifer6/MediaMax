@@ -172,7 +172,7 @@ export function SmartHomeAdmin() {
               <ul className="muted">
                 <li><strong>Sensors:</strong> Active streams, Transcodes, Streaming bandwidth (kbit/s), Now playing (state playing / paused / idle with title, series, season, episode, poster, progress…), Recently added.</li>
                 <li><strong>Binary sensor:</strong> Someone is watching (on while anything plays; off when paused or idle).</li>
-                <li><strong>Per device:</strong> a Now playing sensor for each client, e.g. <code>sensor.mediamax_living_room_tv_alice</code>.</li>
+                <li><strong>Per device:</strong> a Now playing sensor for each client, e.g. <code>sensor.living_room_tv_alice_now_playing</code>.</li>
                 <li><strong>Button:</strong> Scan libraries. <strong>Event:</strong> Playback (started, paused, resumed, stopped, ended).</li>
                 <li>Everything goes unavailable when MediaMax stops (MQTT last will).</li>
               </ul>
