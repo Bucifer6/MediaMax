@@ -4,6 +4,7 @@ import { stableId } from '../../util/ids.js';
 import { registerImage } from '../images.js';
 import { logger } from '../../util/log.js';
 import * as tmdb from './tmdb.js';
+import { applyPluginMetadata } from '../plugins.js';
 
 const log = logger('metadata');
 
@@ -123,6 +124,7 @@ export async function refreshItem(itemId: string) {
   } catch (e) {
     log.warn(`Metadata refresh failed for ${item.title}`, (e as Error).message);
   }
+  await applyPluginMetadata(itemId);
 }
 
 export async function enrichLibrary(libId: string, opts: { refresh?: boolean; onProgress?: (done: number, total: number) => void } = {}) {
@@ -144,6 +146,7 @@ export async function enrichLibrary(libId: string, opts: { refresh?: boolean; on
     } catch (e) {
       log.warn(`Enrich failed for ${r.title}`, (e as Error).message);
     }
+    await applyPluginMetadata(r.id);
     opts.onProgress?.(++done, rows.length);
   }
 }

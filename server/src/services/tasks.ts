@@ -18,6 +18,7 @@ import { detectAll } from './introdetect.js';
 import { enrichLibrary } from './metadata/index.js';
 import { syncWatchers } from './watcher.js';
 import { generateMissing } from './trickplay.js';
+import { pluginTasks } from './plugins.js';
 import { autoDownload } from './opensubtitles.js';
 import { refreshAll as refreshPodcasts } from './podcasts.js';
 import { checkAvailability } from './requests.js';
@@ -181,10 +182,16 @@ function toTask(d: TaskDef): ScheduledTask {
   return { id: d.id, name: d.name, description: d.description, intervalMinutes: d.interval(), ...s, running: running.has(d.id), progress: running.get(d.id) ?? null };
 }
 
-export const listTasks = () => DEFS.map(toTask);
+/** Built-in tasks plus tasks registered by active plugins. */
+const allDefs = (): TaskDef[] => [
+  ...DEFS,
+  ...pluginTasks().map((t) => ({ id: t.id, name: t.name, description: t.description ?? 'Plugin task', interval: () => t.intervalMinutes ?? null, run: t.run })),
+];
+
+export const listTasks = () => allDefs().map(toTask);
 
 export async function runTask(id: string): Promise<void> {
-  const d = DEFS.find((x) => x.id === id);
+  const d = allDefs().find((x) => x.id === id);
   if (!d) throw notFound('Task not found');
   if (running.has(id)) return;
   running.set(id, 0);
@@ -221,7 +228,7 @@ export function startScheduler() {
   }
   // Interval tasks: check every minute which are due.
   const check = () => {
-    for (const d of DEFS) {
+    for (const d of allDefs()) {
       const iv = d.interval();
       if (!iv || running.has(d.id)) continue;
       const last = state(d.id).lastRunAt;

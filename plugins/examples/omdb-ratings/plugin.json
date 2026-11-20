@@ -1,0 +1,15 @@
+{
+  "id": "io.mediamax.omdb-ratings",
+  "name": "OMDb Metadata",
+  "version": "1.0.0",
+  "description": "Fills missing plots, ratings, genres and posters for movies and shows from OMDb (IMDb data). Needs a free OMDb API key.",
+  "author": "MediaMax",
+  "homepage": "https://www.omdbapi.com/",
+  "main": "index.js",
+  "minServerVersion": "0.1.0",
+  "capabilities": ["metadata", "tasks", "network"],
+  "settings": [
+    { "key": "apiKey", "label": "OMDb API key", "type": "secret", "required": true, "help": "Get one at omdbapi.com/apikey.aspx" },
+    { "key": "plot", "label": "Plot length", "type": "select", "default": "short", "options": [{ "value": "short", "label": "Short" }, { "value": "full", "label": "Full" }] }
+  ]
+}

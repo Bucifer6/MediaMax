@@ -1,0 +1,19 @@
+{
+  "id": "io.mediamax.discord-notify",
+  "name": "Discord Notifications",
+  "version": "1.0.0",
+  "description": "Posts new media, playback and request activity to a Discord channel via a webhook.",
+  "author": "MediaMax",
+  "homepage": "https://github.com/Bucifer6/MediaMax/tree/main/plugins/examples/discord-notify",
+  "main": "index.js",
+  "minServerVersion": "0.1.0",
+  "adminPage": "ui/index.html",
+  "capabilities": ["events", "routes", "adminPage", "network"],
+  "settings": [
+    { "key": "webhookUrl", "label": "Discord webhook URL", "type": "secret", "required": true, "help": "Channel settings → Integrations → Webhooks → Copy URL" },
+    { "key": "newMedia", "label": "Announce new media", "type": "boolean", "default": true },
+    { "key": "playback", "label": "Announce when someone starts watching", "type": "boolean", "default": false },
+    { "key": "requests", "label": "Announce new requests", "type": "boolean", "default": true },
+    { "key": "username", "label": "Bot name", "type": "string", "default": "MediaMax" }
+  ]
+}

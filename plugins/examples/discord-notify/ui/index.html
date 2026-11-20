@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body { font: 15px system-ui, sans-serif; margin: 0; padding: 20px; color: #e8e8ea; background: transparent; }
+  .card { background: #1c1d22; border: 1px solid #2c2e36; border-radius: 12px; padding: 18px; max-width: 520px; }
+  button { background: #5865f2; color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 600; cursor: pointer; }
+  .muted { color: #9a9ca6; }
+</style></head>
+<body><div class="card">
+  <h3 style="margin-top:0">Discord Notifications</h3>
+  <p id="status" class="muted">Loading…</p>
+  <button id="test">Send test message</button> <span id="result" class="muted"></span>
+</div>
+<script>
+  // Admin pages are served under /api/v1/plugins/<id>/ui/ with ?token=, so API calls are relative.
+  const token = new URLSearchParams(location.search).get('token');
+  const api = (p, init) => fetch(`../${p}?token=${encodeURIComponent(token)}`, init).then((r) => r.json());
+  const load = () => api('status').then((s) => (document.getElementById('status').textContent = s.configured ? `Configured · ${s.sent} message(s) sent` : 'Add a webhook URL in the plugin settings first.'));
+  document.getElementById('test').onclick = () => api('test', { method: 'POST' }).then((r) => { document.getElementById('result').textContent = r.ok ? 'Sent!' : (r.message || 'Failed'); load(); });
+  load();
+</script></body></html>

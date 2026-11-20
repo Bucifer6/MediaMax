@@ -218,3 +218,10 @@ SyncPlay (watch together): `syncplay.create` → server replies `syncplay.state`
 * Children (`GET /items/:id/children`) are computed live for the viewer. `Item.smart` holds the `SmartFilter`.
 * Rule fields: genre, studio, person, year, rating, durationMin, addedDays (lte = within N days, gte = older),
   contentRating, played, favorite, inProgress, library, type, title, resolution (4K/1080p/720p/480p/SD).
+
+## Plugins
+See [PLUGINS.md](PLUGINS.md). Management (🛡️): `GET /admin/plugins` → `PluginInfo[]` · `GET /admin/plugins/catalog?refresh=true` →
+`PluginCatalogEntry[]` · `POST /admin/plugins/install` `{ id, version? }` · `POST /admin/plugins/upload` (multipart `file`, .tar.gz) ·
+`POST /admin/plugins/:id/enable|disable` · `PUT /admin/plugins/:id/settings` `{ key: value }` · `DELETE /admin/plugins/:id`.
+Repositories: `ServerSettings.plugins.repositories`. Plugin routes: `/api/v1/plugins/<id>/<path>`; admin pages:
+`PluginInfo.adminPageUrl` (render in a sandboxed iframe).

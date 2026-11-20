@@ -990,6 +990,10 @@ export interface ServerSettings {
     /** If set, only members of this group may sign in. */
     allowedGroup: string | null;
   };
+  plugins: {
+    /** Plugin repository index URLs (https). */
+    repositories: string[];
+  };
   /** DLNA / UPnP media server for smart TVs, consoles and players on the local network. */
   dlna: {
     enabled: boolean;
@@ -1332,4 +1336,84 @@ export interface CreateSmartListRequest {
   title: string;
   overview?: string;
   filter: SmartFilter;
+}
+
+/* ------------------------------------------------------------------ */
+/* Plugins                                                             */
+/* ------------------------------------------------------------------ */
+
+export type PluginSettingType = 'string' | 'secret' | 'number' | 'boolean' | 'select' | 'text';
+
+export interface PluginSetting {
+  key: string;
+  label: string;
+  type: PluginSettingType;
+  default?: string | number | boolean | null;
+  help?: string;
+  /** For `select`. */
+  options?: { value: string; label: string }[];
+  required?: boolean;
+}
+
+export interface PluginManifest {
+  /** Reverse-DNS style unique id, e.g. "com.example.discord-notify". */
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  homepage?: string;
+  /** Entry module (ES module) relative to the plugin folder; exports `activate(ctx)`. */
+  main: string;
+  /** Minimum MediaMax server version (semver). */
+  minServerVersion?: string;
+  settings?: PluginSetting[];
+  /** HTML page (relative path) shown inside the admin dashboard. */
+  adminPage?: string;
+  /** Capabilities the plugin declares, shown to the admin before install. */
+  capabilities?: ('routes' | 'events' | 'tasks' | 'metadata' | 'adminPage' | 'network')[];
+}
+
+export type PluginStatus = 'active' | 'disabled' | 'error' | 'incompatible';
+
+export interface PluginInfo {
+  manifest: PluginManifest;
+  status: PluginStatus;
+  error: string | null;
+  /** Current setting values (secrets masked as "••••••••"). */
+  settings: Record<string, string | number | boolean | null>;
+  source: 'repository' | 'upload' | 'local';
+  /** Repository URL it was installed from, for updates. */
+  repository: string | null;
+  installedAt: string;
+  /** Newer version available in a configured repository. */
+  updateAvailable: string | null;
+  /** `/api/v1/plugins/<id>/ui/<adminPage>?token=` when the plugin has an admin page. */
+  adminPageUrl: string | null;
+}
+
+export interface PluginCatalogVersion {
+  version: string;
+  /** .tar.gz archive containing plugin.json at its root. */
+  url: string;
+  sha256: string;
+  minServerVersion?: string;
+  changelog?: string;
+}
+
+export interface PluginCatalogEntry {
+  id: string;
+  name: string;
+  description: string;
+  author: string;
+  homepage?: string;
+  repository: string;
+  versions: PluginCatalogVersion[];
+  installedVersion: string | null;
+}
+
+/** Shape of a plugin repository (a JSON file served over https). */
+export interface PluginRepositoryIndex {
+  name: string;
+  plugins: Omit<PluginCatalogEntry, 'repository' | 'installedVersion'>[];
 }

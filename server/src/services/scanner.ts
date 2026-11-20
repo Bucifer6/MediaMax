@@ -18,6 +18,7 @@ import { events, bus } from './events.js';
 import { enrichLibrary } from './metadata/index.js';
 import { logActivity } from './activity.js';
 import { downloadedSubs } from './opensubtitles.js';
+import { applyPluginMetadata } from './plugins.js';
 
 const log = logger('scanner');
 
@@ -570,6 +571,8 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     db.run('UPDATE libraries SET last_scan_at = ? WHERE id = ?', nowIso(), libId);
     const secs = ((Date.now() - started) / 1000).toFixed(1);
     log.info(`Scan of "${lib.name}" finished in ${secs}s: ${files.length} files, ${ctx.newItems.length} new items`);
+    // Metadata-provider plugins fill gaps for new music/audiobooks/videos (movies/shows were handled by enrichLibrary).
+    if (type !== 'movies' && type !== 'shows') for (const id of ctx.newItems.slice(0, 500)) await applyPluginMetadata(id);
     if (ctx.newItems.length) {
       logActivity('library.scan', `${ctx.newItems.length} new item(s) added to ${lib.name}`);
       bus.emit('library.new', { libraryId: libId, itemIds: ctx.newItems });

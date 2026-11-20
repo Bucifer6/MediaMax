@@ -8,6 +8,7 @@ import { initTrakt } from './services/trakt.js';
 import { initLastfm } from './services/lastfm.js';
 import { serverId } from './services/settings.js';
 import { syncDlna, stopDlna } from './services/dlna.js';
+import { loadAll as loadPlugins } from './services/plugins.js';
 
 const log = logger('main');
 
@@ -23,6 +24,7 @@ async function main() {
   log.info(`Data directory: ${config.dataDir}`);
   if (process.env.MEDIAMAX_NO_SCHEDULER !== '1') startScheduler();
   syncDlna();
+  await loadPlugins().catch((e) => log.error('Plugin loading failed', e));
   const shutdown = async (sig: string) => {
     log.info(`${sig} received, shutting down`);
     stopScheduler();
