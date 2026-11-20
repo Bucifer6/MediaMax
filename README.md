@@ -138,4 +138,8 @@ Runs the server unit tests: filename parsing, playback decisions, M3U/XMLTV/Xtre
 audio-fingerprint matching.
 
 ## License
-No license has been chosen yet. Add one before publishing or distributing builds.
+MediaMax is open source under the [MIT License](LICENSE). You're free to use, modify and redistribute it,
+including publishing your own branded builds of the apps, as long as the licence notice is kept.
+
+Third-party services you connect (TMDB, Trakt, Last.fm, OpenSubtitles, IPTV providers) have their own terms;
+make sure your use of them complies. FFmpeg is used as a separate program and is licensed under the LGPL/GPL.
