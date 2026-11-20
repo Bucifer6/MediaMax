@@ -20,6 +20,7 @@ import { useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 import { useTVRemote } from '@/tv';
 import { formatClock } from '@/utils/format';
+import { openDj } from '@/utils/nav';
 
 type Panel = 'queue' | 'lyrics' | 'chapters' | 'bookmarks';
 const speedLabel = (r: number) => `${r}x`;
@@ -106,6 +107,7 @@ export default function NowPlaying() {
         {m.spoken ? <PanelChip icon="bookmark-outline" label="Bookmarks" active={panel === 'bookmarks'} onPress={() => setPanel(panel === 'bookmarks' ? 'queue' : 'bookmarks')} /> : null}
         {m.spoken ? <PanelChip icon="speedometer-outline" label={speedLabel(m.rate)} active={m.rate !== 1} onPress={() => setSpeedSheet(true)} /> : null}
         <PanelChip icon={m.sleep ? 'moon' : 'moon-outline'} label={sleepLabel} active={!!m.sleep} onPress={() => setSleepSheet(true)} />
+        {isTrack && !m.castingTo ? <PanelChip icon="disc-outline" label="DJ mix" active={false} onPress={() => openDj(cur)} /> : null}
         {canPlayOn && t.isTV ? <PanelChip icon="phone-portrait-outline" label="Play on…" active={false} onPress={() => setPlayOn(true)} /> : null}
       </View>
       {m.error ? <T tone="danger">{m.error}</T> : null}

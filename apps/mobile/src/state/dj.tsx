@@ -119,6 +119,8 @@ interface DeckRt {
   rate: number;
   volume: number;
   lastReport: number;
+  /** Seen actually playing since the last play() (guards the lock-screen pause detection). */
+  seenPlaying: boolean;
 }
 
 interface Fade {
@@ -204,7 +206,7 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
   const rgModeRef = useRef(rgMode);
   rgModeRef.current = rgMode;
 
-  const mkDeck = (id: DeckId, player: AudioPlayer): DeckRt => ({ id, player, track: null, qIndex: -1, session: null, offsetMs: 0, seekMs: 0, awaitingLoad: false, ready: false, loading: false, token: 0, gain: 1, rate: 1, volume: 0, lastReport: 0 });
+  const mkDeck = (id: DeckId, player: AudioPlayer): DeckRt => ({ id, player, track: null, qIndex: -1, session: null, offsetMs: 0, seekMs: 0, awaitingLoad: false, ready: false, loading: false, token: 0, gain: 1, rate: 1, volume: 0, lastReport: 0, seenPlaying: false });
   const decksRef = useRef<Record<DeckId, DeckRt> | null>(null);
   if (!decksRef.current) decksRef.current = { A: mkDeck('A', playerA), B: mkDeck('B', playerB) };
   decksRef.current.A.player = playerA;
@@ -472,6 +474,7 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
       /* ignore */
     }
     inc.lastReport = Date.now();
+    inc.seenPlaying = false;
     report(inc, 'playing');
     fadeRef.current = { from, to, startedAt: Date.now(), durMs: Math.max(crossfadeMs, TICK_MS), pausedElapsed: null, lockSwitched: false };
     if (!deck(from).track) setLockScreen(inc);
@@ -613,7 +616,7 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
 
       // 2. Start the transition.
       if (nextTrack && next.qIndex === nextIdx && next.ready) {
-        const tr = nextTrack.transition;
+        const tr = nextTrack.transition ?? (live.track ? fallbackTransition(live.track, nextTrack) : null);
         const force = forceRef.current;
         if (!live.track) beginFade(0, 1);
         else if (force) beginFade(force.crossfadeMs, force.keepTempo ? tr?.tempoRatio ?? 1 : 1);
@@ -643,7 +646,6 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
         // Waiting for the next track to load: close this play now.
         report(live, 'stopped');
       }
-
     }
 
     // Lock screen / headset pause hits only the deck that owns the lock screen: pause the whole mix
@@ -659,9 +661,11 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
         /* ignore */
       }
       const ended = didFinish(lock, mediaPos(lock), trackDuration(lock.track));
-      if (!safePlaying(lock) && !buffering && loaded && !ended) {
+      const isPlaying = safePlaying(lock);
+      if (isPlaying) lock.seenPlaying = true;
+      if (lock.seenPlaying && !isPlaying && !buffering && loaded && !ended) {
         extPauseSince.current = extPauseSince.current ?? now;
-        if (now - extPauseSince.current > 1200) {
+        if (now - extPauseSince.current > 1500) {
           extPauseSince.current = null;
           pauseAll();
           return;
@@ -702,7 +706,8 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
       /* ignore */
     }
     const end = streamDur > 1000 ? streamDur : dur;
-    return end > 0 && pos >= end - 250 && !safePlaying(d);
+    // Tolerant end check: the analysed duration can be a little longer than the decoded stream.
+    return end > 0 && pos >= end - 1500 && !safePlaying(d);
   };
 
   const pauseAll = () => {
@@ -756,6 +761,7 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
         /* ignore */
       }
       deck(id).lastReport = 0; // report "playing" on the next tick
+      deck(id).seenPlaying = false;
     }
     resumeSet.current = [];
     publish();
