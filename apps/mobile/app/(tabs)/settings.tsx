@@ -145,11 +145,13 @@ export default function SettingsScreen() {
 
           <SettingSection title="For you">
             <SettingRow icon="sparkles-outline" label="Your Year" value="Your stats, Wrapped-style" onPress={() => router.push('/settings/wrapped' as never)} />
+            <SettingRow icon="mic-outline" label="Podcasts" value="Search & subscriptions" onPress={() => router.push('/podcasts' as never)} />
             {caps.syncPlay ? <SettingRow icon="people-outline" label="Join watch party" value="Enter a code" onPress={() => router.push('/watch-party' as never)} /> : null}
           </SettingSection>
 
           <SettingSection title="Connected services">
             <SettingRow icon="sync-circle-outline" label="Trakt" value="Scrobble your watch history" onPress={() => router.push('/settings/trakt' as never)} />
+            {caps.music ? <SettingRow icon="musical-notes-outline" label="Last.fm" value="Scrobble your music" onPress={() => router.push('/settings/lastfm' as never)} /> : null}
           </SettingSection>
 
           <SettingSection title="Devices">

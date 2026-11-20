@@ -14,7 +14,7 @@ import { PosterCard } from '../components/Cards';
 import { AddToContainerModal, EditMetadataModal, UploadArtworkModal } from '../components/ItemModals';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
-import { episodeCode, isAudio, isResumable, isVideo, itemLink, playLink, progressPct } from '../utils/items';
+import { episodeCode, hasAudioResume, isAudio, isResumable, isVideo, itemLink, playLink, progressPct } from '../utils/items';
 
 /* ---------------- Media info ---------------- */
 export function MediaBadges({ media }: { media?: MediaSource[] }) {
@@ -149,6 +149,49 @@ function EpisodeList({ seasonId }: { seasonId: string }) {
   );
 }
 
+/* ---------------- Podcast episodes (newest first) ---------------- */
+function PodcastEpisodes({ podcast }: { podcast: Item }) {
+  const play = usePlayItem();
+  const music = useMusic();
+  const eps = useAsync(() => api.items.children(podcast.id, { sort: 'releaseDate', order: 'desc', limit: 500 }), [podcast.id]);
+  useServerEvent((ev) => {
+    if (ev.type === 'userdata.updated') eps.setData((d) => d && { ...d, items: d.items.map((i) => (i.id === ev.itemId ? { ...i, userData: ev.userData } : i)) });
+  });
+  if (eps.loading && !eps.data) return <div className="episode-list">{[0, 1, 2, 3].map((i) => <Skeleton key={i} h={64} style={{ marginBottom: 8 }} />)}</div>;
+  if (eps.error) return <ErrorState message={eps.error} onRetry={eps.reload} />;
+  if (!eps.data?.items.length) return <EmptyState icon="podcast" title="No episodes yet" message="New episodes appear here when the feed refreshes." />;
+  return (
+    <section className="podcast-episodes">
+      <h2 className="section-title">Episodes</h2>
+      <ol className="pod-ep-list">
+        {eps.data.items.map((ep) => {
+          const pct = progressPct(ep);
+          const isCurrent = music.current?.id === ep.id;
+          const left = ep.durationMs && pct > 0 && !ep.userData.played ? ep.durationMs - ep.userData.positionMs : null;
+          return (
+            <li key={ep.id} className={`pod-ep ${ep.userData.played ? 'played' : ''} ${isCurrent ? 'current' : ''}`}>
+              <button className="pod-ep-play" onClick={() => play(ep)} aria-label={`${pct > 0 && !ep.userData.played ? 'Resume' : 'Play'} ${ep.title}`} data-nav>
+                {isCurrent && music.playing ? <span className="eq"><i /><i /><i /></span> : <Icon name="play" size={18} />}
+              </button>
+              <div className="pod-ep-body">
+                <Link to={itemLink(ep)} className="pod-ep-title">{ep.title}</Link>
+                <div className="pod-ep-meta muted">
+                  {ep.releaseDate && <span>{formatDate(ep.releaseDate)}</span>}
+                  {ep.durationMs ? <span>{formatDuration(ep.durationMs)}</span> : null}
+                  {left != null && <span className="pod-ep-left">{formatDuration(left)} left</span>}
+                  {ep.userData.played && <span className="pod-ep-played"><Icon name="check" size={13} /> Played</span>}
+                </div>
+                {pct > 0 && !ep.userData.played && <ProgressBar value={pct} />}
+                {ep.overview && <p className="pod-ep-overview">{ep.overview}</p>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
 function SeasonsBody({ show }: { show: Item }) {
   const seasons = useAsync(() => api.items.children(show.id, { sort: 'index', order: 'asc', limit: 200 }), [show.id]);
   const [active, setActive] = useState<string | null>(null);
@@ -185,7 +228,8 @@ function SeasonsBody({ show }: { show: Item }) {
 function TrackList({ parent, removable, onRemove }: { parent: Item; removable?: boolean; onRemove?: (i: Item) => void }) {
   const music = useMusic();
   const play = usePlayItem();
-  const tracks = useAsync(() => api.items.children(parent.id, { sort: parent.type === 'album' ? 'index' : undefined, limit: 1000 }), [parent.id]);
+  const ordered = parent.type === 'album' || parent.type === 'audiobook';
+  const tracks = useAsync(() => api.items.children(parent.id, { sort: ordered ? 'index' : undefined, limit: 1000 }), [parent.id]);
   const [addTo, setAddTo] = useState<Item | null>(null);
   if (tracks.loading && !tracks.data) return <div className="tracklist">{[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} h={44} style={{ marginBottom: 6 }} />)}</div>;
   const list = tracks.data?.items ?? [];
@@ -205,15 +249,15 @@ function TrackList({ parent, removable, onRemove }: { parent: Item; removable?: 
                 data-nav
               >
                 <span className="track-num">
-                  {isCurrent && music.playing ? <span className="eq"><i /><i /><i /></span> : <span className="track-idx">{parent.type === 'album' ? t.index ?? i + 1 : i + 1}</span>}
+                  {isCurrent && music.playing ? <span className="eq"><i /><i /><i /></span> : <span className="track-idx">{ordered ? t.index ?? i + 1 : i + 1}</span>}
                   <Icon name="play" size={14} className="track-playicon" />
                 </span>
-                {parent.type !== 'album' && (
+                {!ordered && (
                   <span className="track-art"><Img src={t.posterUrl ?? t.thumbUrl} width={64} fallback={<Icon name="music" size={14} />} /></span>
                 )}
                 <span className="track-title">
                   <span>{t.title}</span>
-                  {(parent.type !== 'album' || t.grandparentTitle !== parent.parentTitle) && <small>{[t.grandparentTitle, parent.type !== 'album' ? t.parentTitle : null].filter(Boolean).join(' · ')}</small>}
+                  {parent.type === 'audiobook' ? (progressPct(t) > 0 && !t.userData.played ? <small>{Math.round(progressPct(t))}% listened</small> : t.userData.played ? <small>Finished</small> : null) : (parent.type !== 'album' || t.grandparentTitle !== parent.parentTitle) && <small>{[t.grandparentTitle, parent.type !== 'album' ? t.parentTitle : null].filter(Boolean).join(' · ')}</small>}
                 </span>
                 {showDisc && <span className="muted track-disc">Disc {t.parentIndex}</span>}
                 <span className="track-dur">{t.durationMs ? formatClock(t.durationMs) : ''}</span>
@@ -273,7 +317,7 @@ export function ItemPage() {
   const res = useAsync(() => api.items.get(itemId), [itemId]);
   const [modal, setModal] = useState<null | 'edit' | 'art' | 'playlist' | 'collection' | 'trailer' | 'photo' | 'subs'>(null);
   const item = res.data;
-  const isSeries = item?.id === itemId && (item.type === 'show' || item.type === 'season');
+  const isSeries = item?.id === itemId && (item.type === 'show' || item.type === 'season' || item.type === 'audiobook' || item.type === 'podcast');
   // Next-up episode of a show/season (server: in progress → next unwatched → first).
   const nextUp = useAsync(
     async () => ({ forId: itemId, ep: isSeries ? await api.items.next(itemId).catch(() => null) : null }),
@@ -361,15 +405,18 @@ export function ItemPage() {
     }
   };
 
-  const playable = isVideo(item) || ['show', 'season', 'album', 'artist', 'playlist', 'track', 'collection'].includes(item.type);
-  const resumable = isVideo(item) && isResumable(item);
+  const playable = isVideo(item) || isAudio(item) || ['show', 'season', 'album', 'artist', 'playlist', 'collection', 'audiobook', 'podcast'].includes(item.type);
+  const resumable = (isVideo(item) || hasAudioResume(item)) && isResumable(item);
   const pct = progressPct(item);
-  const nextEp = nextUp.data?.forId === item.id && nextUp.data.ep?.type === 'episode' ? nextUp.data.ep : null;
+  const nextEp = nextUp.data?.forId === item.id && ['episode', 'bookpart', 'podcastepisode'].includes(nextUp.data.ep?.type ?? '') ? nextUp.data.ep : null;
+  const nextIsAudio = !!nextEp && isAudio(nextEp);
   const nextResumable = !!nextEp && isResumable(nextEp);
   const playLabel = resumable
     ? `Resume ${formatClock(item.userData.positionMs)}`
     : nextEp
-      ? `${nextResumable ? 'Resume' : 'Play'} ${episodeCode(nextEp) || nextEp.title}`
+      ? item.type === 'audiobook'
+        ? nextResumable ? `Resume ${nextEp.title}` : (nextEp.index ?? 1) > 1 ? `Continue · ${nextEp.title}` : 'Start listening'
+        : `${nextResumable ? 'Resume' : 'Play'} ${episodeCode(nextEp) || nextEp.title}`
       : item.type === 'show' || item.type === 'season' ? 'Play next' : 'Play';
   const downloadItems: MenuItem[] = (['original', '1080p', '720p', '480p'] as const).map((q) => ({
     label: q === 'original' ? 'Original file' : `${q} (MP4)`,
@@ -450,11 +497,11 @@ export function ItemPage() {
 
           <div className="detail-actions">
             {playable && (
-              <button className="btn btn-primary btn-lg" onClick={() => (nextEp ? navigate(playLink(nextEp)) : play(item))} data-nav autoFocus title={nextEp ? nextEp.title : undefined}>
+              <button className="btn btn-primary btn-lg" onClick={() => (nextEp && !nextIsAudio ? navigate(playLink(nextEp)) : play(item))} data-nav autoFocus title={nextEp ? nextEp.title : undefined}>
                 <Icon name="play" size={20} /> {playLabel}
               </button>
             )}
-            {resumable && (
+            {resumable && isVideo(item) && (
               <button className="btn btn-glass btn-lg" onClick={() => navigate(playLink(item, { fromStart: true }))} data-nav>
                 <Icon name="refresh" size={18} /> From start
               </button>

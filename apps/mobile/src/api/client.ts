@@ -23,6 +23,8 @@ import type {
   Library,
   LinkCodeResponse,
   LinkPollResponse,
+  LastfmAuthStart,
+  LastfmStatus,
   LivePlayRequest,
   Lyrics,
   LoginRequest,
@@ -414,6 +416,19 @@ export class MediaMaxClient {
   }
   traktDisconnect() {
     return this.del<TraktStatus>('/trakt');
+  }
+  /** Also completes a pending connection after the user approved in the browser. */
+  lastfm() {
+    return this.get<LastfmStatus>('/lastfm');
+  }
+  lastfmConnect() {
+    return this.post<LastfmAuthStart>('/lastfm/connect');
+  }
+  lastfmSetScrobble(scrobble: boolean) {
+    return this.patch<LastfmStatus>('/lastfm', { scrobble });
+  }
+  lastfmDisconnect() {
+    return this.del<LastfmStatus>('/lastfm');
   }
 
   /* ---------------------------- Playback ---------------------------- */
