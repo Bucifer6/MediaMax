@@ -1,0 +1,16 @@
+{
+  "id": "io.mediamax.anilist",
+  "name": "AniList (anime)",
+  "version": "1.0.0",
+  "description": "Fills synopses, genres, scores, cover art and banners for anime series and films from AniList. No API key needed.",
+  "author": "MediaMax",
+  "homepage": "https://anilist.co/",
+  "main": "index.js",
+  "minServerVersion": "0.1.0",
+  "capabilities": ["metadata", "network"],
+  "settings": [
+    { "key": "minScore", "label": "Minimum title match", "type": "select", "default": "strict", "options": [{ "value": "strict", "label": "Strict (exact title + year)" }, { "value": "loose", "label": "Loose (best search result)" }], "help": "Strict avoids tagging non-anime shows that share a title with an anime." },
+    { "key": "titleLanguage", "label": "Preferred title language for matching", "type": "select", "default": "any", "options": [{ "value": "any", "label": "Any (English, romaji, native)" }, { "value": "english", "label": "English only" }] },
+    { "key": "apiUrl", "label": "API URL (advanced)", "type": "string", "default": "https://graphql.anilist.co" }
+  ]
+}

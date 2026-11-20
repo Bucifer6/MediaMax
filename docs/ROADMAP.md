@@ -14,7 +14,7 @@ Channels DVR, TiviMate, Audiobookshelf, Navidrome, Infuse and Kodi. It was resea
 6. ✅ **Backup & restore** of the database, settings, branding and plugins. (S)
 7. ✅ **DVR robustness**: ✅ priorities and tuner-conflict detection, ✅ day/time-slot rules, ✅ repeat skipping,
    ✅ commercial detection (comskip/EDL). Plus ✅ **IPTV multiview** (web; apps next). (M)
-8. **Metadata breadth**: TVDB episode orderings, anime (AniList/AniDB), music (MusicBrainz, TheAudioDB, fanart.tv), RT/IMDb
+8. ⏳ (✅ AniList, ✅ MusicBrainz/Cover Art Archive, ✅ OMDb/IMDb plugins) **Metadata breadth**: TVDB episode orderings, anime (AniList/AniDB), music (MusicBrainz, TheAudioDB, fanart.tv), RT/IMDb
    ratings. Ship these as metadata-provider plugins. (M)
 9. ⏳ **Audiobook basics**: sleep timer, ✅ bookmarks, ✅ series, Audnexus metadata, per-book speed. (S/M)
 10. ✅ **Security & sharing**: TOTP two-factor, invite links, per-user stream/remote/transcode limits, API keys for integrations. (S)

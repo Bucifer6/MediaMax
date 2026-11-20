@@ -81,6 +81,8 @@ Working examples are in [`plugins/examples/`](../plugins/examples):
 
 - **discord-notify** posts new media, playback and requests to a Discord channel. It shows events, routes, settings and an admin page.
 - **omdb-ratings** is an OMDb metadata provider with a key-check task. It shows metadata providers, tasks and settings.
+- **anilist** fills anime series and films from AniList: synopsis, genres, score, cover and banner, plus AniList/MAL ids. It needs no key, matches strictly on title and year, and keeps under AniList's rate limit.
+- **musicbrainz** matches artists and albums to MusicBrainz. It adds MBIDs, genres and a short artist description, and fetches missing album covers from the Cover Art Archive. It sends one request per second, as MusicBrainz asks, with a configurable contact in the User-Agent.
 
 ## Publishing a repository
 
