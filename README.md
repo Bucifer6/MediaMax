@@ -176,6 +176,7 @@ The server listens on port **8484** and serves the web app and API. For developm
 | Variable | Default | Purpose |
 |---|---|---|
 | `MEDIAMAX_PORT` | `8484` | HTTP port |
+| `MEDIAMAX_HOST` | `0.0.0.0` | Address to listen on (`127.0.0.1` behind a local reverse proxy) |
 | `MEDIAMAX_DATA` | `./data` ([binaries and Docker](docs/INSTALL.md#where-your-data-lives-and-backups) differ) | Database, caches, branding assets, logs |
 | `MEDIAMAX_TRANSCODE_DIR` | `$DATA/transcodes` | HLS segment scratch space (a RAM disk is ideal) |
 | `MEDIAMAX_RECORDINGS` | `$DATA/recordings` | DVR output folder |
@@ -183,6 +184,9 @@ The server listens on port **8484** and serves the web app and API. For developm
 | `MEDIAMAX_HWACCEL` | `none` | Initial hardware accelerator |
 | `MEDIAMAX_TRUSTED_PROXIES` | loopback + private ranges | Proxies whose `X-Forwarded-*` headers are trusted |
 | `TMDB_API_KEY` | | Online metadata (also settable in the admin UI) |
+| `OPENSUBTITLES_API_KEY`, `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET`, `LASTFM_API_KEY` / `LASTFM_SECRET`, `ACOUSTID_API_KEY` | | Initial integration keys (the admin UI can set them too) |
+| `MEDIAMAX_WEB_DIR` / `MEDIAMAX_HELP_DIR` | bundled | Serve the web app / Help Centre articles from another folder |
+| `MEDIAMAX_ALLOW_PRIVATE_URLS` | unset | `1` lets podcast feeds and other user-supplied URLs point at LAN addresses |
 | `MEDIAMAX_LOG_LEVEL` | `info` | `debug` for verbose logs |
 
 More, including the security dashboard and integration variables, is in [docs/INSTALL.md](docs/INSTALL.md) and [docs/DEPLOY.md](docs/DEPLOY.md).

@@ -201,9 +201,41 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     arr: patch.arr !== undefined ? normaliseArr(patch.arr, cur.arr) : cur.arr,
     notificationAgents: patch.notificationAgents !== undefined ? mergeAgents(patch.notificationAgents, cur.notificationAgents, newId) : cur.notificationAgents ?? [],
   };
+  normaliseNumbers(next);
   setKv('server', next);
   cache = next;
   return next;
+}
+
+/** Whole number in [min, max]; anything else (NaN, '', a cleared form field) keeps the current value or the default. */
+function clampInt(v: unknown, min: number, max: number, fallback: number): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return Math.max(min, Math.min(max, fallback));
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+/**
+ * Numeric settings from the admin UI (a cleared number field arrives as 0 or ''): a 0 s HLS segment or trickplay
+ * interval would break playback, so keep every number in a sane range.
+ */
+function normaliseNumbers(s: ServerSettings) {
+  const d = DEFAULT_SETTINGS;
+  s.scanIntervalMinutes = clampInt(s.scanIntervalMinutes, 0, 7 * 24 * 60, d.scanIntervalMinutes);
+  s.epgRefreshHours = clampInt(s.epgRefreshHours, 1, 24 * 7, d.epgRefreshHours);
+  s.sessionTimeoutDays = clampInt(s.sessionTimeoutDays, 0, 3650, d.sessionTimeoutDays ?? 90); // 0 = never expire
+  const t = s.transcoding;
+  t.maxConcurrent = clampInt(t.maxConcurrent, 1, 64, d.transcoding.maxConcurrent);
+  t.defaultBitrate = clampInt(t.defaultBitrate, 300, 200000, d.transcoding.defaultBitrate);
+  t.segmentSeconds = clampInt(t.segmentSeconds, 1, 10, d.transcoding.segmentSeconds);
+  t.threads = clampInt(t.threads, 0, 128, d.transcoding.threads);
+  if (!['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium'].includes(t.preset)) t.preset = d.transcoding.preset;
+  s.trickplay.intervalSeconds = clampInt(s.trickplay.intervalSeconds, 2, 60, d.trickplay.intervalSeconds);
+  s.trickplay.width = clampInt(s.trickplay.width, 80, 640, d.trickplay.width);
+  s.cinema.trailers = clampInt(s.cinema.trailers, 0, 5, d.cinema.trailers);
+  s.dvr.paddingBeforeMin = clampInt(s.dvr.paddingBeforeMin, 0, 120, d.dvr.paddingBeforeMin);
+  s.dvr.paddingAfterMin = clampInt(s.dvr.paddingAfterMin, 0, 240, d.dvr.paddingAfterMin);
+  s.backups.intervalDays = clampInt(s.backups.intervalDays, 0, 365, d.backups.intervalDays);
+  s.backups.keep = clampInt(s.backups.keep, 1, 100, d.backups.keep);
 }
 
 const HW_ACCELS = ['none', 'vaapi', 'nvenc', 'qsv', 'videotoolbox', 'v4l2m2m', 'amf', 'rkmpp'];

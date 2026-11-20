@@ -269,6 +269,28 @@ export interface StemStore {
   close(): void;
 }
 
+const RESERVED_DIRS = new Set(['models', 'ort']);
+/**
+ * Remove cached stems of tracks that no longer exist (deleted items / libraries). Stems are ~4 FLAC files per track,
+ * so orphans add up. The model and onnxruntime folders and in-progress uploads (dot-prefixed) are left alone.
+ */
+export function pruneOrphanStems(exists: (itemId: string) => boolean, dataDir = config.dataDir): number {
+  const root = path.join(dataDir, 'stems');
+  let n = 0;
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(root);
+  } catch {
+    return 0;
+  }
+  for (const name of names) {
+    if (RESERVED_DIRS.has(name) || name.startsWith('.') || !ID_RE.test(name) || exists(name)) continue;
+    fs.rmSync(path.join(root, name), { recursive: true, force: true });
+    n++;
+  }
+  return n;
+}
+
 /** Open the stem store under `dataDir`. `fetchImpl` is injectable for tests. */
 export function createStemStore({ dataDir = config.dataDir, fetchImpl = globalThis.fetch, ffmpeg = config.ffmpeg, defaultModel = DEFAULT_MODEL }: { dataDir?: string; fetchImpl?: typeof fetch; ffmpeg?: string; defaultModel?: Readonly<ModelSpec> } = {}): StemStore {
   const root = path.join(dataDir, 'stems');

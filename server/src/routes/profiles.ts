@@ -6,6 +6,7 @@ import { getUserRow, profileSettings, setAvatar } from '../services/auth.js';
 import { avatarSvg, listAvatars } from '../services/avatars.js';
 import { HttpError, notFound } from '../util/errors.js';
 import { saveAvatar } from './auth.js';
+import { stopUserSessions } from '../services/playback.js';
 
 /* Per-IP limit on PIN guesses across all profiles (the per-profile lockout lives in the service). */
 const attempts = new Map<string, { n: number; until: number }>();
@@ -64,6 +65,7 @@ export default async function profileRoutes(app: FastifyInstance) {
     profiles.updateProfile(requireUser(req).user, req.params.id, req.body ?? {}));
   app.delete<{ Params: { id: string } }>('/profiles/:id', async (req) => {
     profiles.deleteProfile(requireUser(req).user, req.params.id);
+    stopUserSessions(req.params.id);
     return { ok: true };
   });
   app.post<{ Params: { id: string } }>('/profiles/:id/avatar', async (req) => {

@@ -171,6 +171,18 @@ export function sessionProgress(ctx: AuthContext, id: string, positionMs: number
   return { ok: true };
 }
 
+/** Server shutdown: stop every session so no ffmpeg transcode outlives the server. */
+export function stopAllSessions() {
+  for (const id of [...sessions.keys()]) stopSession(id, 'shutdown', false);
+}
+
+/** End every session of an account and its profiles (the account or profile is being deleted). */
+export function stopUserSessions(userId: string, reason = 'user_deleted') {
+  for (const s of [...sessions.values()]) {
+    if (s.ctx.user.id === userId || s.ctx.user.parentUserId === userId) stopSession(s.id, reason, false);
+  }
+}
+
 /** Reap idle sessions (no progress / segment requests). */
 export function reapSessions() {
   const now = Date.now();
@@ -261,7 +273,10 @@ export function decide(media: MediaSource, profile: DeviceProfile | undefined, o
   const needsRemux = !opts.isAudioOnly && range.needsRemux;
   if (needsRemux) reasons.push(...range.reasons.filter((r) => !reasons.includes(r)));
   // Transcoding an HDR source: the transcoder outputs 8-bit SDR, so tone-map (legacy clients: admin setting decides).
-  const toneMap = range.legacy ? undefined : !opts.isAudioOnly && range.delivery !== 'sdr';
+  // A Dolby Vision stream with an SDR base layer (8.2 / 9) is already SDR: tone-mapping it would distort the picture.
+  const sdrBaseLayer = !!media.videoRange?.dolbyVision && media.videoRange.fallback === 'sdr';
+  const hdrOut = range.delivery === 'tonemap' || (!sdrBaseLayer && outputRange(media.videoRange, media.hdr, range.delivery) !== 'sdr');
+  const toneMap = range.legacy ? undefined : !opts.isAudioOnly && hdrOut;
   if (!opts.forceTranscode && !opts.burnSubs && videoPlayable && !needsRemux && audioOk && containerOk && bitrateOk && widthOk && audioTrackOk) {
     return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [], range, audio: audioPlan };
   }
@@ -288,12 +303,27 @@ export function decide(media: MediaSource, profile: DeviceProfile | undefined, o
     const tm: RangeDecision = { ...base, delivery: 'tonemap', toneMap: true };
     return { method: 'transcode', videoCopy: false, audioCopy: audioOk && !opts.forceTranscode, reasons, toneMap: true, range: tm, audio: audioPlan };
   }
-  const willToneMap = toneMap ?? (range.delivery !== 'sdr' && !opts.isAudioOnly && getSettings().transcoding.toneMapHdr);
-  const tmRange: RangeDecision = willToneMap ? { ...range, delivery: 'tonemap', toneMap: true } : range;
+  const willToneMap = toneMap ?? (hdrOut && !opts.isAudioOnly && getSettings().transcoding.toneMapHdr);
+  const tmRange: RangeDecision = willToneMap ? { ...range, delivery: 'tonemap', toneMap: true }
+    : sdrBaseLayer && range.delivery === 'passthrough' ? { ...range, delivery: 'base-layer' } : range;
   const audioCopy = audioOk && !opts.forceTranscode && !opts.isAudioOnly;
   // Forced transcodes re-encode the audio too (as before), with the same target choice.
   if (audioPlan && !audioCopy && audioPlan.delivery === 'copy') audioPlan = planAudio(opts.audio!, p, { ...planOpts, noCopy: true });
-  return { method: 'transcode', videoCopy: false, audioCopy, reasons, toneMap, range: tmRange, audio: audioPlan };
+  // "remuxed to its HDR10 base layer" doesn't apply once the video is encoded.
+  const why = needsRemux ? reasons.filter((r) => !range.reasons.includes(r)) : reasons;
+  return { method: 'transcode', videoCopy: false, audioCopy, reasons: why, toneMap, range: tmRange, audio: audioPlan };
+}
+
+/**
+ * Tallest output a transcode may produce for a client: its `maxHeight`, and the height at which the source's aspect
+ * ratio reaches its `maxWidth` (a 2.39:1 film at 1920 wide is ~804 lines, not 1080). Null = no limit.
+ */
+export function outputMaxHeight(p: Pick<DeviceProfile, 'maxWidth' | 'maxHeight'>, sourceWidth: number | null, sourceHeight: number | null): number | null {
+  const aspect = sourceWidth && sourceHeight ? sourceWidth / sourceHeight : 16 / 9;
+  // Narrower-than-16:9 sources keep the old 16:9 assumption (maxWidth usually describes a 16:9 screen).
+  const limits = [p.maxHeight, p.maxWidth ? Math.round(p.maxWidth / Math.max(aspect, 16 / 9)) : null]
+    .filter((x): x is number => typeof x === 'number' && x > 0);
+  return limits.length ? Math.min(...limits) : null;
 }
 
 /** Output codec for a transcode: HEVC/AV1 with the hardware encoder when the client plays it (see chooseVideoCodec). */
@@ -427,8 +457,9 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
       input, inputArgs, startSec: 0, durationSec: media.durationMs ? media.durationMs / 1000 : null,
       mode: decision.method === 'remux' ? 'remux' : 'transcode',
       audioIndex: audio?.index ?? null, audioCopy: decision.audioCopy, videoCopy: decision.videoCopy,
-      bitrate: Math.round(target), maxHeight: p.maxWidth ? Math.round((p.maxWidth * 9) / 16) : null, sourceHeight: media.height,
-      sourceCodec: media.videoCodec, hdr: media.hdr, audioChannels: audio?.channels, hasVideo: !isAudioOnly,
+      bitrate: Math.round(target), maxHeight: outputMaxHeight(p, media.width, media.height), sourceHeight: media.height,
+      // Decoding Dolby Vision 8.2 / 9 gives its SDR base layer: nothing to tone-map.
+      sourceCodec: media.videoCodec, hdr: media.hdr && !(media.videoRange?.dolbyVision && media.videoRange.fallback === 'sdr'), audioChannels: audio?.channels, hasVideo: !isAudioOnly,
       burnSubtitle: effectiveBurn
         ? effectiveBurn.external
           ? { kind: 'external', file: effectiveBurn.path }

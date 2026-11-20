@@ -22,6 +22,7 @@ import { pluginTasks } from './plugins.js';
 import { createBackup } from './backup.js';
 import { analyseAll } from './dj/analysis.js';
 import { pruneVoices } from './dj/ai.js';
+import { pruneOrphanStems } from './stems.js';
 import { autoDownload } from './opensubtitles.js';
 import { refreshAll as refreshPodcasts } from './podcasts.js';
 import { checkAvailability } from './requests.js';
@@ -222,6 +223,7 @@ const DEFS: TaskDef[] = [
       pruneOldPrograms();
       pruneImageCache();
       pruneVoices();
+      pruneOrphanStems((id) => !!db.get('SELECT 1 FROM items WHERE id = ?', id));
       const active = new Set(listSessions().map((s) => s.id));
       for (const d of fs.readdirSync(config.transcodeDir)) {
         const p = path.join(config.transcodeDir, d);

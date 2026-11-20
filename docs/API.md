@@ -28,6 +28,8 @@ All types referenced below live in [`shared/src/types.ts`](../shared/src/types.t
 | PUT 🛡️ | `/branding/themes/:id` | `Theme` | `Branding` |
 | DELETE 🛡️ | `/branding/themes/:id` | | `Branding` |
 | GET 🔓 | `/branding/custom.css` | | `text/css` (customCss + theme CSS variables) |
+| GET 🛡️ | `/branding/looks` | | Starter looks (theme + accent presets) |
+| POST 🛡️ | `/branding/looks/:id/apply` | | `Branding` (applies the starter look) |
 
 Clients must: fetch `/branding` before showing the login screen; apply the user's
 `preferences.themeId` if `allowUserThemes` else `defaultThemeId`; re-fetch when
@@ -279,6 +281,14 @@ owners carry `profileCount` (> 0 → show the picker after sign-in). A profile's
 * `Item.lockedFields` on `GET /items/:id`.
 * `GET /stream/download/:itemId?quality=original|1080p|720p|480p` — non-original returns a fragmented H.264/AAC MP4 (no Content-Length; `X-MediaMax-Duration-Ms` header).
 * `GET /dvr/defaults` → `DvrDefaults` (any signed-in user).
+* `POST /items/:id/detect-intros` 🛡️ — re-run intro/credits detection now for an episode's season, a season or every season of a show → `{ ok, updated, item }`.
+
+## Help Centre
+* `GET /help` → `HelpIndex` (articles for the caller; admin articles only for admins) · `GET /help/search?q=` → `HelpSearchResponse` · `GET /help/:slug` → article · `GET /help/whats-new` → release notes (404 when none).
+* `GET /admin/diagnostics.zip` 🛡️ — redacted diagnostics bundle (settings, logs, hardware report, counts). See [HELP.md](HELP.md).
+
+## DLNA media server
+When Settings → DLNA is on, the server announces itself over SSDP and serves UPnP descriptions and SOAP control on its HTTP port (no MediaMax token; LAN clients only): `GET /dlna/description.xml`, `GET /dlna/ContentDirectory.xml`, `GET /dlna/ConnectionManager.xml`, `POST /dlna/control/ContentDirectory`, `POST /dlna/control/ConnectionManager`, `GET /dlna/stream/:file`, `GET /dlna/subtitle/:mediaId/:file`.
 
 ## Trickplay (seek-bar previews)
 * `GET /items/:id/trickplay[?mediaId=]` → `TrickplayInfo` (404 until generated). Thumbnail *n* (time = n × intervalMs) is on sheet `floor(n / (columns×rows))` at column `n % columns`, row `floor(n / columns) % rows`.
@@ -800,6 +810,7 @@ The AI DJ is free by default and works offline. Admins can connect free or cheap
   - `openai`: any OpenAI-compatible `/audio/speech` API, such as self-hosted Kokoro-FastAPI (free) or a hosted API (cheap)
 
   Clips are cached as MP3 and served from `GET /dj/voice/:file`. Clients duck the music to about 30% while the host speaks.
+- **Test the setup (admin):** `POST /dj/ai/test {kind: "llm"|"tts"}` → `{ok, reply, ms, usage}` for the language model, `{ok, audioUrl}` for the server voice.
 - **Taste:** `POST /dj/feedback {itemId, kind: 'skip'|'love'}`. Skipped tracks and artists are played less for 60 days, and "love" also favourites the track.
 - **Sounds-like:** analysis v2 adds a 26-number timbre fingerprint (MFCC 1–12 mean and deviation, spectral centroid and flatness). Mixes prefer tracks that sound like the previous one and the seed. `GET /dj/status` reports `ai: {enabled, llm, serverVoice, hostName, chattiness}`.
 

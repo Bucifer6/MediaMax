@@ -236,6 +236,23 @@ function enforceKeepLatest(ruleId: string | null) {
   }
 }
 
+/**
+ * Server shutdown: end running recordings (ffmpeg would otherwise keep recording as an orphan, holding a provider
+ * connection, while the next start "resumes" the same recording). Their rows stay 'recording', so the next tick resumes
+ * them when the programme is still on and marks them completed otherwise.
+ */
+export function stopActiveRecordings() {
+  for (const p of active.values()) {
+    try {
+      p.removeAllListeners('exit');
+      p.kill('SIGINT');
+    } catch {
+      /* already gone */
+    }
+  }
+  active.clear();
+}
+
 /** Called every 15s by the scheduler. */
 export async function tick() {
   const now = new Date().toISOString();
