@@ -212,7 +212,6 @@ interface ScanCtx {
   newItems: string[];
   force: boolean;
   progress: (done: number, total: number) => void;
-  afterMain?: () => Promise<void>;
 }
 
 async function scanMovies(ctx: ScanCtx, files: FileEntry[]) {
@@ -600,16 +599,13 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     },
   };
   try {
-    if (type === 'movies') await scanMovies(ctx, files);
-    if (extraFiles.length && (type === 'movies' || type === 'shows')) {
-      // Extras are attached after the main pass so their owners exist.
-      const run = async () => scanExtras(ctx, extraFiles);
-      if (type === 'shows') ctx.afterMain = run;
-      else await run();
-    }
-    else if (type === 'shows') {
+    // Extras (trailers, featurettes…) are attached after the main pass so their owners exist.
+    if (type === 'movies') {
+      await scanMovies(ctx, files);
+      if (extraFiles.length) await scanExtras(ctx, extraFiles);
+    } else if (type === 'shows') {
       await scanShows(ctx, files);
-      await ctx.afterMain?.();
+      if (extraFiles.length) await scanExtras(ctx, extraFiles);
     }
     else if (type === 'music') await scanMusic(ctx, files);
     else if (type === 'audiobooks') await scanAudiobooks(ctx, files);
