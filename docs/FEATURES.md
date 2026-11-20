@@ -92,10 +92,11 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Docker image with GPU passthrough | ✅ | ✅ | ✅ | ✅ |
 | DLNA / UPnP media server (smart TVs, consoles, VLC) | ✅ | ✅ | ✅ | ✅ (LAN-only, per-user access) |
 | Trakt scrobbling & watched sync | Plugin | Plugin | Plugin | ✅ built in |
+| Last.fm scrobbling | ✅ | Plugin | Plugin | ✅ built in |
 | Viewing statistics & yearly "Wrapped" | Pass | Plugin | Plugin | ✅ |
 | User avatars | ✅ | ✅ | ✅ | ✅ |
 | Hide unrated content from restricted users | ✅ | ✅ | ✅ | ✅ |
 | CI (typecheck, tests, web build, Docker smoke test) | — | ✅ | — | ✅ |
 
 ## Roadmap ideas
-Chromecast sender in apps · Last.fm scrobbling · music videos · plugin API · LDAP login · remote access relay.
+Chromecast sender in apps · music videos · plugin API · LDAP login · remote access relay.

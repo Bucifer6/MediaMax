@@ -196,3 +196,9 @@ SyncPlay (watch together): `syncplay.create` → server replies `syncplay.state`
 * `POST /podcasts/import` `{ opml }` → `{ added, skipped, failed }`.
 * Shows are `podcast` items with `podcastepisode` children in an automatic **Podcasts** library; play/resume/mark played
   like any item. `GET /items/:podcastId/next` = in-progress or newest unplayed episode. Feeds refresh hourly.
+
+## Last.fm
+* `GET /lastfm` → `LastfmStatus` (also completes a pending connection) · `POST /lastfm/connect` → `LastfmAuthStart` (open
+  `authUrl`, then poll `GET /lastfm`) · `PATCH /lastfm` `{ scrobble }` · `DELETE /lastfm`.
+* Admin sets `ServerSettings.lastfm.apiKey/sharedSecret` (create an API account at last.fm/api/account/create).
+  "Now playing" is sent on start; tracks are scrobbled after half their length or 4 minutes.

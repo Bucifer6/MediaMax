@@ -234,6 +234,12 @@ const MIGRATIONS: string[] = [
     auto_download INTEGER NOT NULL DEFAULT 0, etag TEXT, last_refresh_at TEXT, last_error TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL
   );
   `,
+  /* 5: Last.fm accounts */ `
+  CREATE TABLE lastfm_accounts (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, session_key TEXT, username TEXT,
+    pending_token TEXT, scrobble INTEGER NOT NULL DEFAULT 1
+  );
+  `,
 ];
 
 function migrate(db: Database) {

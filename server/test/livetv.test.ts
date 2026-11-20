@@ -103,3 +103,11 @@ test('remote URL safety', async () => {
   for (const ok of ['http://a/b.ts', 'https://a/b.m3u8', 'rtmp://x/live', 'udp://239.0.0.1:1234', 'rtsp://cam/1']) assert.ok(isSafeRemoteUrl(ok), ok);
   for (const bad of ['file:///etc/passwd', 'concat:/etc/passwd|x', 'pipe:0', '/etc/passwd', 'subfile,,start,0,end,1,,:/etc/passwd', 'data:text/plain,hi', '']) assert.ok(!isSafeRemoteUrl(bad), bad);
 });
+
+test('last.fm request signing', async () => {
+  const { sign } = await import('../src/services/lastfm.ts');
+  // md5("api_keyxxxmethodauth.getSessiontokenyyy" + "secret")
+  const crypto = await import('node:crypto');
+  const expected = crypto.createHash('md5').update('api_keyxxxmethodauth.getSessiontokenyyysecret').digest('hex');
+  assert.equal(sign({ method: 'auth.getSession', token: 'yyy', api_key: 'xxx', format: 'json' }, 'secret'), expected);
+});

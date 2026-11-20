@@ -5,6 +5,7 @@ import { startScheduler, stopScheduler } from './services/tasks.js';
 import { cleanupTranscodeDir, ffmpegAvailable } from './services/transcoder.js';
 import { initWebhooks } from './services/webhooks.js';
 import { initTrakt } from './services/trakt.js';
+import { initLastfm } from './services/lastfm.js';
 import { serverId } from './services/settings.js';
 import { syncDlna, stopDlna } from './services/dlna.js';
 
@@ -15,6 +16,7 @@ async function main() {
   cleanupTranscodeDir();
   initWebhooks();
   initTrakt();
+  initLastfm();
   const app = await buildApp();
   await app.listen({ port: config.port, host: config.host });
   log.info(`MediaMax ${config.version} (server ${serverId()}) listening on http://${config.host}:${config.port}`);

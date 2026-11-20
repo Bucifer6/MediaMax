@@ -11,6 +11,7 @@ import { notFound, badRequest, forbidden } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
 import { getLyrics } from '../services/lyrics.js';
 import * as podcasts from '../services/podcasts.js';
+import * as lastfm from '../services/lastfm.js';
 import type { SubscribePodcastRequest } from '@mediamax/shared';
 
 export default async function extraRoutes(app: FastifyInstance) {
@@ -34,6 +35,20 @@ export default async function extraRoutes(app: FastifyInstance) {
     if (!p) throw notFound();
     reply.type('image/jpeg').header('Cache-Control', 'private, max-age=604800');
     return fs.createReadStream(p);
+  });
+
+  /* -------------------------------- last.fm ------------------------- */
+  app.get('/lastfm', async (req) => lastfm.pollAuth(requireUser(req).user.id));
+  app.post('/lastfm/connect', async (req) => lastfm.startAuth(requireUser(req).user.id));
+  app.patch<{ Body: { scrobble: boolean } }>('/lastfm', async (req) => {
+    const { user } = requireUser(req);
+    lastfm.setLastfmScrobble(user.id, !!req.body?.scrobble);
+    return lastfm.lastfmStatus(user.id);
+  });
+  app.delete('/lastfm', async (req) => {
+    const { user } = requireUser(req);
+    lastfm.disconnectLastfm(user.id);
+    return lastfm.lastfmStatus(user.id);
   });
 
   /* ------------------------------- podcasts ------------------------- */

@@ -43,6 +43,7 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   openSubtitles: { apiKey: process.env.OPENSUBTITLES_API_KEY ?? null, username: null, password: null, autoLanguages: [] },
   trakt: { clientId: process.env.TRAKT_CLIENT_ID ?? null, clientSecret: process.env.TRAKT_CLIENT_SECRET ?? null },
   dlna: { enabled: false, friendlyName: null, userId: null },
+  lastfm: { apiKey: process.env.LASTFM_API_KEY ?? null, sharedSecret: process.env.LASTFM_SECRET ?? null },
   oidc: { enabled: false, issuer: null, clientId: null, clientSecret: null, buttonLabel: 'Sign in with SSO', autoCreateUsers: true, groupsClaim: 'groups', adminGroup: null, allowedGroup: null },
   sessionTimeoutDays: 90,
 };
@@ -61,6 +62,7 @@ export function getSettings(): ServerSettings {
     openSubtitles: { ...DEFAULT_SETTINGS.openSubtitles, ...(stored.openSubtitles ?? {}) },
     trakt: { ...DEFAULT_SETTINGS.trakt, ...(stored.trakt ?? {}) },
     dlna: { ...DEFAULT_SETTINGS.dlna, ...(stored.dlna ?? {}) },
+    lastfm: { ...DEFAULT_SETTINGS.lastfm, ...(stored.lastfm ?? {}) },
     oidc: { ...DEFAULT_SETTINGS.oidc, ...(stored.oidc ?? {}) },
     webhooks: stored.webhooks ?? [],
   };
@@ -78,6 +80,7 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     openSubtitles: { ...cur.openSubtitles, ...(patch.openSubtitles ?? {}) },
     trakt: { ...cur.trakt, ...(patch.trakt ?? {}) },
     dlna: { ...cur.dlna, ...(patch.dlna ?? {}) },
+    lastfm: { ...cur.lastfm, ...(patch.lastfm ?? {}) },
     oidc: { ...cur.oidc, ...(patch.oidc ?? {}) },
     webhooks: (patch.webhooks ?? cur.webhooks).map((w) => ({ ...w, id: w.id || newId() })),
   };

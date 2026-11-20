@@ -937,6 +937,10 @@ export interface ServerSettings {
     clientId: string | null;
     clientSecret: string | null;
   };
+  lastfm: {
+    apiKey: string | null;
+    sharedSecret: string | null;
+  };
   /** Single sign-on via any OpenID Connect provider (Authentik, Keycloak, Authelia, Google, Entra…). */
   oidc: {
     enabled: boolean;
@@ -1163,6 +1167,19 @@ export interface TraktStatus {
   connected: boolean;
   username: string | null;
   scrobble: boolean;
+}
+
+export interface LastfmStatus {
+  /** Admin configured a Last.fm API account. */
+  available: boolean;
+  connected: boolean;
+  username: string | null;
+  scrobble: boolean;
+}
+
+export interface LastfmAuthStart {
+  /** Open this in a browser to approve MediaMax; then poll GET /lastfm until connected. */
+  authUrl: string;
 }
 
 export interface TraktDeviceCode {
