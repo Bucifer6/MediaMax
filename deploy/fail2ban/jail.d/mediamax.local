@@ -1,0 +1,66 @@
+# fail2ban jails for MediaMax.
+#
+# Paths below are the ones inside the fail2ban container from deploy/install.sh (crazymax/fail2ban, which
+# reads /data/jail.d and /data/filter.d). For fail2ban installed on the host, change logpath to the host
+# path, e.g. /opt/mediamax/config/logs/security.log, and see docs/DEPLOY.md.
+#
+# WHY DOCKER-USER: Docker publishes ports with DNAT rules, so traffic to MediaMax, Caddy or nginx in a
+# container goes through the FORWARD chain and never reaches INPUT. A ban in INPUT alone does nothing for
+# it. Docker leaves the DOCKER-USER chain to us and evaluates it before its own rules, with the client's
+# real source address still on the packet. Each jail therefore bans in DOCKER-USER (containers) and in
+# INPUT (anything listening on the host itself, e.g. a host nginx or MediaMax with network_mode: host).
+# Docker must be running when fail2ban starts, or the DOCKER-USER chain doesn't exist yet. Docker's
+# nftables firewall backend (opt-in) has no DOCKER-USER chain: use the iptables backend, or CrowdSec.
+#
+# Behind Cloudflare: bans on the firewall don't help (the packets come from Cloudflare), see docs/DEPLOY.md.
+
+[mediamax]
+enabled  = true
+filter   = mediamax
+logpath  = /var/log/mediamax/security.log
+backend  = auto
+# 5 failures within 10 minutes = banned for 1 hour.
+maxretry = 5
+findtime = 10m
+bantime  = 1h
+# Repeat offenders: every new ban lasts twice as long as the previous one (1h, 2h, 4h ...), up to a week.
+# Needs fail2ban's database (on by default). Set to false for a flat 1 hour.
+bantime.increment = true
+bantime.factor    = 1
+bantime.maxtime   = 1w
+# Never ban these (add your LAN, e.g. 192.168.1.0/24, if family members mistype passwords a lot).
+ignoreip = 127.0.0.1/8 ::1
+# All ports: someone guessing passwords shouldn't get to try SSH next. Use iptables-multiport[...,
+# port="80,443,8484"] instead to block only the web ports.
+action   = iptables-allports[name=mediamax, chain=DOCKER-USER, protocol=all]
+           iptables-allports[name=mediamax-host, chain=INPUT, protocol=all]
+
+# --- Optional: floods of 401/403/404 at the reverse proxy (vulnerability scanners, credential stuffing
+# against other paths). Off by default; enable the one matching your proxy. The thresholds are high on
+# purpose: a TV app with an expired session or a library with missing artwork also produces some 401/404s.
+
+[mediamax-caddy]
+enabled  = false
+filter   = mediamax-caddy
+logpath  = /var/log/caddy/access.log
+backend  = auto
+maxretry = 40
+findtime = 2m
+bantime  = 1h
+bantime.increment = true
+bantime.maxtime   = 1w
+ignoreip = 127.0.0.1/8 ::1
+action   = iptables-allports[name=mediamax-caddy, chain=DOCKER-USER, protocol=all]
+
+[mediamax-nginx]
+enabled  = false
+filter   = mediamax-nginx
+logpath  = /var/log/nginx/mediamax.access.log
+backend  = auto
+maxretry = 40
+findtime = 2m
+bantime  = 1h
+bantime.increment = true
+bantime.maxtime   = 1w
+ignoreip = 127.0.0.1/8 ::1
+action   = iptables-allports[name=mediamax-nginx, chain=DOCKER-USER, protocol=all]
