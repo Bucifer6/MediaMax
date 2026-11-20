@@ -224,6 +224,7 @@ const DEFS: TaskDef[] = [
       pruneImageCache();
       pruneVoices();
       pruneOrphanStems((id) => !!db.get('SELECT 1 FROM items WHERE id = ?', id));
+      pruneSubtitleCache();
       const active = new Set(listSessions().map((s) => s.id));
       for (const d of fs.readdirSync(config.transcodeDir)) {
         const p = path.join(config.transcodeDir, d);
@@ -237,6 +238,33 @@ const DEFS: TaskDef[] = [
     },
   },
 ];
+
+/**
+ * Converted subtitles (cache/subs/<mediaId>_<index>_<mtime>.<ext>) and extracted fonts (cache/subfonts/<mediaId>_<mtime>)
+ * of media that is gone or has changed since (a new mtime gets a new cache entry, the old one is never read again).
+ */
+export function pruneSubtitleCache(cacheDir = config.cacheDir): number {
+  const mtimeOf = (id: string) => db.get<{ mtime: number | null }>('SELECT mtime FROM media WHERE id = ?', id);
+  let n = 0;
+  for (const [sub, re] of [['subs', /^(.+)_\d+_(-?\d+)\.[\w.]+$/], ['subfonts', /^(.+)_(-?\d+)$/]] as const) {
+    const dir = path.join(cacheDir, sub);
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      const m = re.exec(name);
+      if (!m) continue;
+      const row = mtimeOf(m[1]);
+      if (row && String(row.mtime ?? 0) === m[2]) continue;
+      fs.rmSync(path.join(dir, name), { recursive: true, force: true });
+      n++;
+    }
+  }
+  return n;
+}
 
 const running = new Map<string, number>(); // id -> progress
 

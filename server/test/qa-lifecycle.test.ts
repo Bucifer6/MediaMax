@@ -81,3 +81,17 @@ test('deleting an account removes its (and its profiles\u2019) series rules and 
   assert.deepEqual(db.all<{ status: string }>("SELECT status FROM recordings WHERE id IN ('rec-r1','rec-r2')").map((r) => r.status), ['cancelled', 'cancelled']);
   assert.equal(db.get<{ status: string }>("SELECT status FROM recordings WHERE id = 'rec-done'")!.status, 'completed');
 });
+
+test('subtitle cache entries of deleted or changed media are pruned', async () => {
+  const { pruneSubtitleCache } = await import('../src/services/tasks.ts');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-subcache-'));
+  db.run("INSERT INTO items (id, type, title, sort_title, added_at, updated_at) VALUES ('qa-sub-item', 'movie', 'S', 's', '2026', '2026')");
+  db.run("INSERT INTO media (id, item_id, path, mtime) VALUES ('qa_m-1', 'qa-sub-item', '/x/qa.mkv', 1700)");
+  fs.mkdirSync(path.join(dir, 'subs'));
+  fs.mkdirSync(path.join(dir, 'subfonts', 'qa_m-1_1700'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'subfonts', 'gone_5'), { recursive: true });
+  for (const f of ['qa_m-1_3_1700.vtt', 'qa_m-1_3_1600.vtt', 'gone_2_5.srt', 'qa_m-1_4_1700.ass.part', 'README']) fs.writeFileSync(path.join(dir, 'subs', f), '');
+  assert.equal(pruneSubtitleCache(dir), 3);
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'subs')).sort(), ['README', 'qa_m-1_3_1700.vtt', 'qa_m-1_4_1700.ass.part']);
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'subfonts')), ['qa_m-1_1700']);
+});

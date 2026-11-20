@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-process.env.MEDIAMAX_DATA = (await import('node:os')).tmpdir() + '/mediamax-sec-' + process.pid;
+process.env.MEDIAMAX_DATA ??= (await import('node:os')).tmpdir() + '/mediamax-sec-' + process.pid;
 const { ratingLevel } = await import('../src/util/misc.ts');
 const { isPrivateAddress } = await import('../src/util/net.ts');
 const { validateRedirect } = await import('../src/services/oidc.ts');
