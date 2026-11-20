@@ -9,6 +9,7 @@ import { useTheme } from '@/theme';
 import { formatTime } from '@/utils/format';
 import { Focusable } from './Focusable';
 import { Icon, type IconName } from './Icon';
+import { BrandWordmark } from './BrandWordmark';
 import { Img } from './Img';
 import { MiniPlayer } from './MiniPlayer';
 import { T } from './Text';
@@ -64,7 +65,7 @@ export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
     const logo = branding?.logoWideUrl ?? branding?.logoUrl;
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: t.space.gutter, paddingTop: t.s(24), paddingBottom: t.s(8), gap: t.space.lg, backgroundColor: 'transparent' }}>
-        {logo ? <Img path={logo} width={t.s(160)} contentFit="contain" style={{ width: t.s(150), height: t.s(40) }} /> : <T variant="heading">{branding?.serverName ?? 'MediaMax'}</T>}
+        {logo ? <Img path={logo} width={t.s(160)} contentFit="contain" style={{ width: t.s(150), height: t.s(40) }} /> : <BrandWordmark name={branding?.serverName} width={t.s(150)} textVariant="heading" />}
         <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'center', gap: t.s(8) }}>
           {routes.map((route) => {
             const focused = state.routes[state.index]?.key === route.key;

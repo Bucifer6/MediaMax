@@ -390,6 +390,21 @@ MEDIAMAX_BRAND=acme eas build --profile androidtv
 
 The icon must be a 1024×1024 PNG (iOS rejects transparency); prebuild resizes it for every density. If the server serves SVG or WebP, convert it first.
 
+### Stock MediaMax artwork
+
+Without `MEDIAMAX_BRAND` the build uses the MediaMax brand ([`branding/mediamax/`](../../branding/mediamax/README.md)), rendered into `assets/` by `node scripts/brand-export.mjs` (repo root):
+
+| File | Used for |
+|---|---|
+| `assets/icon.png` | iOS / tvOS fallback app icon (1024, opaque, mark ~70% optically centred) |
+| `assets/android-icon-foreground.png`, `-background.png`, `-monochrome.png` | Android adaptive icon (mark inside the 66 dp safe circle) and Android 13 themed icon |
+| `assets/splash-icon.png` | native splash (square, mark inside the Android 12 splash circle); light background `#F5F7FF`, dark `#0A0F22` |
+| `assets/notification-icon.png` | white silhouette for an Android notification small icon |
+| `assets/brand/` | wordmark / mark shown on login, connect, the in-app splash and the TV top bar when the server is still called "MediaMax" |
+| `assets/tv/` | Android TV banner and icon, Apple TV layered icons (front mark + back), top shelf and wide top shelf |
+
+A white-label build never falls back to the MediaMax TV artwork in `assets/tv/` or the MediaMax mark on the connect screen: a brand gets its own files from `branding/<brand>/` or the platform defaults. In the apps, the stock wordmark only appears while the server's name is "MediaMax"; a renamed server shows its name (or its uploaded logo).
+
 ## Assumptions and notes
 
 * `PlaybackInfo.url` is server-relative and already contains `?token=`. The app prepends the base URL and also sends the auth and device headers.

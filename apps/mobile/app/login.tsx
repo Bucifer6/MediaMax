@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ApiError } from '@/api/client';
 import type { AuthResponse, LinkCodeResponse, PublicProfile } from '@/api/types';
 import { Button } from '@/components/Button';
+import { BrandWordmark } from '@/components/BrandWordmark';
 import { Chip } from '@/components/Chip';
 import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
@@ -194,9 +195,7 @@ export default function LoginScreen() {
             {logo ? (
               <Img path={logo} width={t.s(320)} contentFit="contain" style={{ width: t.isTV ? t.s(360) : 240, height: t.isTV ? t.s(110) : 72 }} />
             ) : (
-              <T variant="hero" center>
-                {serverName}
-              </T>
+              <BrandWordmark name={serverName} width={t.isTV ? t.s(380) : 260} />
             )}
             {branding?.loginMessage ? (
               <T tone="muted" center>

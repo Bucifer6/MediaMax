@@ -36,7 +36,8 @@
 .brand-logo .img { object-fit: contain; object-position: left center; }
 .brand-logo .img-fallback { background: none; }
 .brand-text-wrap { display: inline-flex; align-items: center; gap: 10px; height: 100%; }
-.brand-mark { flex: none; filter: drop-shadow(0 4px 14px var(--c-primary-glow)); }
+.brand-mark { flex: none; }
+.brand-name { flex: none; display: block; }
 .brand-text { font-weight: 850; font-size: 1.15rem; letter-spacing: -0.02em; white-space: nowrap; }
 
 /* Topbar */
@@ -106,7 +107,7 @@
 @media (max-width: 1200px) and (min-width: 901px) {
   :root { --sidebar-w: 76px; }
   .sidebar { padding-left: 10px; padding-right: 10px; align-items: stretch; }
-  .sidebar .brand-text, .nav-label, .nav-section, .nav-tag, .sidebar-foot { display: none; }
+  .sidebar .brand-text, .sidebar .brand-name, .nav-label, .nav-section, .nav-tag, .sidebar-foot { display: none; }
   .sidebar-brand { justify-content: center; padding: 0; }
   .sidebar-brand .brand-logo .img { max-width: 40px; }
   .nav-item { justify-content: center; padding: 0; height: 46px; }

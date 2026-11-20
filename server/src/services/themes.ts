@@ -2,8 +2,22 @@ import type { Theme } from '@mediamax/shared';
 
 const base = { radius: 12, fontFamily: "'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif", fontUrl: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap', posterShape: 'rounded', cardSize: 'medium', heroStyle: 'carousel', builtIn: true } as const;
 
+/** Default theme for new installs (existing installs keep what they had; see branding.ts). */
+export const DEFAULT_THEME_ID = 'mediamax';
+
 /** Built-in theme presets. Admins can duplicate and edit them in the Branding Studio. */
 export const BUILTIN_THEMES: Theme[] = [
+  // The MediaMax brand themes (default for new installs): colours from the logo, Plus Jakarta Sans like the wordmark.
+  {
+    ...base, id: 'mediamax', name: 'MediaMax', mode: 'dark', radius: 14,
+    fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, Segoe UI, Roboto, sans-serif", fontUrl: 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap',
+    colors: { primary: '#1FB6F5', primaryText: '#04101F', background: '#0A0F22', surface: '#121936', surfaceAlt: '#1A2247', text: '#F2F5FF', textMuted: '#9AA6CC', accent: '#E040F0', border: '#27315C', success: '#2FD07F', warning: '#F5B014', danger: '#FF5C7A', overlay: '#0A0F22' },
+  },
+  {
+    ...base, id: 'mediamax-light', name: 'MediaMax Light', mode: 'light', radius: 14,
+    fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, Segoe UI, Roboto, sans-serif", fontUrl: 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap',
+    colors: { primary: '#1D63E8', primaryText: '#FFFFFF', background: '#F5F7FF', surface: '#FFFFFF', surfaceAlt: '#EAEFFC', text: '#0B1026', textMuted: '#4F5A7E', accent: '#B523C7', border: '#DCE3F5', success: '#15803D', warning: '#B45309', danger: '#D12A4A', overlay: '#F5F7FF' },
+  },
   {
     ...base, id: 'midnight', name: 'Midnight', mode: 'dark',
     colors: { primary: '#6d4aff', primaryText: '#ffffff', background: '#0b0c10', surface: '#15171e', surfaceAlt: '#1e212b', text: '#f4f5f8', textMuted: '#9aa0ae', accent: '#22d3ee', border: '#2a2e3a', success: '#22c55e', warning: '#f59e0b', danger: '#ef4444', overlay: '#0b0c10' },

@@ -1,11 +1,15 @@
 <div align="center">
 
-# MediaMax
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="branding/mediamax/wordmark-tagline-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="branding/mediamax/wordmark-tagline-light.svg">
+  <img alt="MediaMax: Stream without limits." src="branding/mediamax/wordmark-tagline-light.svg" width="460">
+</picture>
 
 **One self-hosted server for movies, TV, music, audiobooks, podcasts, photos, live TV and IPTV, with apps that wear *your* brand.**
 
 [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-D97757?logo=anthropic&logoColor=white)](https://claude.com/claude-code)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-2362FA.svg)](LICENSE)
 [![CI](https://github.com/Bucifer6/MediaMax/actions/workflows/ci.yml/badge.svg)](https://github.com/Bucifer6/MediaMax/actions/workflows/ci.yml)
 [![Native apps](https://github.com/Bucifer6/MediaMax/actions/workflows/apps.yml/badge.svg)](https://github.com/Bucifer6/MediaMax/actions/workflows/apps.yml)
 
@@ -110,15 +114,16 @@ The full comparison with Plex, Jellyfin and Emby is in **[docs/FEATURES.md](docs
 
 ## Themes
 
-24 built-in themes, each with its own colours, font, card shape and hero style, and every one meets **WCAG AA contrast**. Admins pick the default, can let people choose their own, or design new ones in the Branding Studio. **Starter looks** (Home Cinema, Family & Kids, Music Lover, Live TV & IPTV, Minimal, Easy to See) set the theme, home rows and features in one click.
+26 built-in themes, each with its own colours, font, card shape and hero style, and every one meets **WCAG AA contrast**. New servers start on the **MediaMax** theme (the brand's cyan, blue and magenta with Plus Jakarta Sans); admins pick the default, can let people choose their own, or design new ones in the Branding Studio. **Starter looks** (Home Cinema, Family & Kids, Music Lover, Live TV & IPTV, Minimal, Easy to See) set the theme, home rows and features in one click.
 
 ![Theme gallery](docs/screenshots/themes-grid.jpg)
 
 <details>
-<summary>All 24 themes</summary>
+<summary>All 26 themes</summary>
 
 | Dark | | | Light & special |
 |---|---|---|---|
+| **MediaMax** (default) | | | **MediaMax Light** |
 | Midnight | Cinema Gold | Oceanic | Daylight |
 | Crimson | Emerald | Pure OLED | Paper White |
 | Synthwave | Nordic Frost | Velvet Night | Sakura |
@@ -240,7 +245,7 @@ Profiles never have more access than their owner: library access is the owner's 
 **Admin → Branding studio** controls everything the apps show:
 
 - server name, tagline, login message, footer and support link;
-- logo, wide logo, favicon, app icon, splash and login background;
+- logo, wide logo, favicon, app icon, splash and login background (until you upload your own, the MediaMax logo from [`branding/mediamax/`](branding/mediamax/README.md) is used);
 - themes, starter looks, and your own themes (13 colour tokens, radius, font, poster shape, card size, hero style);
 - the home screen rows and their order;
 - feature toggles that hide areas in every app;

@@ -61,11 +61,23 @@ function asset(name: string, fallback: string): string {
   return fallback;
 }
 
+/**
+ * TV artwork: the brand folder's file, else (stock MediaMax builds only) the MediaMax artwork in
+ * assets/tv, rendered by scripts/brand-export.mjs. A white-label build never falls back to MediaMax
+ * TV artwork; without its own it gets the platform defaults derived from its icon.
+ */
 function optionalAsset(name: string): string | undefined {
-  if (brandDir && fs.existsSync(path.join(brandDir, name))) return `./branding/${brandName}/${name}`;
+  if (brandDir) return fs.existsSync(path.join(brandDir, name)) ? `./branding/${brandName}/${name}` : undefined;
   const stock = path.join(__dirname, 'assets', 'tv', name);
   if (fs.existsSync(stock)) return `./assets/tv/${name}`;
   return undefined;
+}
+
+/** Apple TV icon layers (front = mark, back = background) for the focus parallax, when available. */
+function appleTVLayers(size: string): { front: string; back: string } | undefined {
+  const front = optionalAsset(`appletv-icon-front-${size}.png`);
+  const back = optionalAsset(`appletv-icon-back-${size}.png`);
+  return front && back ? { front, back } : undefined;
 }
 
 export default ({ config }: ConfigContext): ExpoConfig => {
@@ -73,12 +85,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const appName = brand.appName ?? 'MediaMax';
   const bundleId = brand.bundleId ?? 'tv.mediamax.app';
   const androidPackage = brand.androidPackage ?? bundleId;
-  const splashBg = brand.splashBackgroundColor ?? '#0B0B12';
+  // Stock MediaMax: dark ground #0A0F22 (light-mode splash #F5F7FF). A brand's splash colour is used for both.
+  const splashBg = brand.splashBackgroundColor ?? '#0A0F22';
+  const splashBgLight = brand.splashBackgroundColor ?? '#F5F7FF';
   const icon = asset('icon.png', './assets/icon.png');
   const splash = asset('splash.png', './assets/splash-icon.png');
 
   const tvBanner = optionalAsset('tv-banner.png');
   const tvIcon = optionalAsset('tv-icon.png');
+  const layers = { iconLayers: appleTVLayers('1280x768'), iconSmallLayers: appleTVLayers('400x240'), iconSmall2xLayers: appleTVLayers('800x480') };
   const appleTV = {
     icon: optionalAsset('appletv-icon-1280x768.png'),
     iconSmall: optionalAsset('appletv-icon-400x240.png'),
@@ -89,6 +104,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     topShelfWide2x: optionalAsset('appletv-topshelfwide-4640x1440.png'),
   };
   const hasAppleTVImages = Object.values(appleTV).every(Boolean);
+  const appleTVImages = {
+    ...appleTV,
+    ...Object.fromEntries(Object.entries(layers).filter(([, v]) => v)),
+  };
 
   return {
     ...config,
@@ -136,8 +155,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         'expo-splash-screen',
         {
           image: splash,
-          imageWidth: 220,
-          backgroundColor: splashBg,
+          imageWidth: 260,
+          backgroundColor: splashBgLight,
           dark: { image: splash, backgroundColor: splashBg },
         },
       ],
@@ -165,7 +184,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           tvosDeploymentTarget: '16.4',
           ...(tvBanner ? { androidTVBanner: tvBanner } : {}),
           ...(tvIcon ? { androidTVIcon: tvIcon } : {}),
-          ...(hasAppleTVImages ? { appleTVImages: appleTV } : {}),
+          ...(hasAppleTVImages ? { appleTVImages } : {}),
         },
       ],
     ],
@@ -175,7 +194,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       brand: brandName ?? null,
       defaultServerUrl: brand.serverUrl ?? process.env.MEDIAMAX_SERVER_URL ?? null,
       lockServer: brand.lockServer ?? process.env.MEDIAMAX_LOCK_SERVER === '1',
-      fallbackPrimaryColor: brand.primaryColor ?? '#7C5CFF',
+      fallbackPrimaryColor: brand.primaryColor ?? '#1FB6F5',
       ...(brand.easProjectId ? { eas: { projectId: brand.easProjectId } } : {}),
     },
   };
