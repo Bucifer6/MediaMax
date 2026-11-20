@@ -91,7 +91,11 @@ export function topics(s: HomeAssistantSettings['mqtt'], sid = serverId()) {
 
 interface KnownPlayer { user: string; device: string; platform: string; lastSeen: string }
 
-/** Discovery messages (topic → retained JSON config). Exported for tests. */
+/**
+ * Discovery messages (topic → retained JSON config). Exported for tests. No object_id/default_entity_id: Home
+ * Assistant derives entity ids from device + entity name (sensor.<server_name>_active_streams,
+ * sensor.<device>_<user>_now_playing), which works across HA versions.
+ */
 export function discoveryConfigs(s: HomeAssistantSettings['mqtt'], players: Record<string, KnownPlayer>, sid = serverId()): { topic: string; payload: Record<string, unknown> }[] {
   const t = topics(s, sid);
   const serverName = getSettings().serverName;
@@ -101,7 +105,7 @@ export function discoveryConfigs(s: HomeAssistantSettings['mqtt'], players: Reco
     topic: '',
     object,
     payload: {
-      name, unique_id: `${t.node}_${object}`, object_id: `${slug(serverName).toLowerCase()}_${object}`,
+      name, unique_id: `${t.node}_${object}`,
       availability_topic: t.availability, payload_available: 'online', payload_not_available: 'offline',
       device, origin, ...extra,
     } as Record<string, unknown>,
@@ -124,7 +128,7 @@ export function discoveryConfigs(s: HomeAssistantSettings['mqtt'], players: Reco
       out.push({
         component: 'sensor', object,
         payload: {
-          name: 'Now playing', unique_id: `${t.node}_${object}`, object_id: `${slug(serverName).toLowerCase()}_${slug(p.device).toLowerCase()}_${slug(p.user).toLowerCase()}`,
+          name: 'Now playing', unique_id: `${t.node}_${object}`,
           state_topic: t.player(pid), value_template: '{{ value_json.state }}', json_attributes_topic: t.player(pid),
           availability_topic: t.availability, payload_available: 'online', payload_not_available: 'offline', icon: 'mdi:television-play',
           device: { identifiers: [`${t.node}_${slug(pid)}`], name: `${p.device} (${p.user})`, manufacturer: 'MediaMax', model: p.platform, via_device: t.node },

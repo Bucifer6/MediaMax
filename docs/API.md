@@ -150,6 +150,13 @@ browse, search, resume and play exactly like local media through `/items` and `/
 * `GET /activity?limit=&offset=` 🛡️ `Paged<ActivityEntry>`
 * `POST /settings/webhooks/test` 🛡️ `{ url }`
 
+### Smart home & storage
+* `GET /status/now-playing` (any user; API key via `X-Api-Key` or `?api_key=`) → `NowPlayingStatus { watching, activeStreams, transcodes, bandwidthKbps, sessions[], recentlyAdded[] }`. Admins see every stream, other users their own.
+* `GET /integrations/home-assistant` 🛡️ → `{ settings: HomeAssistantSettings (password masked "••••"), status: HomeAssistantStatus }` · `PUT` 🛡️ same body → reconnects.
+* `POST /integrations/home-assistant/test` 🛡️ `HomeAssistantSettings` (unsaved allowed) → `HomeAssistantTestResult` · `POST /integrations/home-assistant/discovery` 🛡️ → re-publish discovery.
+* `POST /integrations/home-assistant/webhook` 🛡️ `{ haUrl, webhookId, events? }` → adds a `format: "home-assistant"` webhook · `POST /integrations/home-assistant/webhook/test` 🛡️ `{ url }`.
+* `GET /storage` 🛡️ → `StorageStatus` (settings, window, postponed tasks, per-library mounts / disks / power state, watcher info) · `PUT /storage` 🛡️ `Partial<StorageSettings>` · `POST /storage/run-deferred` 🛡️ `{ diskKey? }`.
+
 ## Hardware transcoding detection (🛡️)
 | Method | Path | Body | Returns |
 |---|---|---|---|

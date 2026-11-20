@@ -168,6 +168,11 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | *arr suite hub: several Radarr/Sonarr/Lidarr/Readarr/Bazarr instances (incl. 4K), Test buttons, profile/root-folder pickers | ❌ | ❌ | ❌ | ✅ |
 | Instant, targeted library rescans from *arr webhooks (debounced, Docker path mappings) | Add-on | Plugin | ❌ | ✅ |
 | Downloads dashboard: queues, 14-day calendar, wanted/missing with Search, *arr health and disk space | ❌ | ❌ | ❌ | ✅ |
+| Home Assistant over MQTT discovery: now-playing sensor per device, active streams / transcodes / bandwidth, "someone is watching" binary sensor, recently added, Scan libraries button, playback event entity, LWT availability — see [HOME_ASSISTANT.md](HOME_ASSISTANT.md) | ❌ | Plugin | ❌ | ✅ (built-in MQTT client) |
+| Home Assistant webhook preset (flat JSON for HA's webhook trigger, one-click setup) + REST `GET /status/now-playing` for REST sensors / Homepage | 🟡 (Pass webhooks) | Plugin | 🟡 | ✅ |
+| NAS disk spin-down friendly: maintenance window for scans, thumbnails, trickplay, intro/DJ/HDR analysis and subtitle matching; piggybacks on disks that are awake (playback, file changes) | ❌ | ❌ | ❌ | ✅ |
+| Per-library disk state (active / idle / standby via hdparm, smartctl or /sys, never wakes a disk), directory-only inotify watching, opt-in long-interval polling for network shares | ❌ | ❌ | ❌ | ✅ (Linux) |
+| Media-folder artwork served from a cached copy in the data dir (browsing never wakes a media disk) | 🟡 | ❌ | ❌ | ✅ |
 
 ### Media automation (*arr suite)
 MediaMax can be the hub of a Radarr/Sonarr/Lidarr/Readarr/Bazarr setup (**Admin → Server settings → Media automation (*arr)**):

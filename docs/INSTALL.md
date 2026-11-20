@@ -280,6 +280,23 @@ Upgrade: select the file and press **Pull**, then **Up**. Hardware transcoding: 
 
 ---
 
+### NAS & disk spin-down
+
+MediaMax can leave NAS hard drives asleep while nobody is watching. Settings live in **Admin → Storage & disks**.
+
+1. **Put MediaMax's own files on an SSD.** The data folder (database, artwork cache, thumbnails, scrub previews, downloaded subtitles, backups) and the transcode folder are written all the time; keep them off the spinning array.
+   * **Synology:** map `/config` (and `MEDIAMAX_TRANSCODE_DIR`) to a folder on an SSD volume, or at least a different volume from the media.
+   * **Unraid:** use the cache pool — `/mnt/cache/appdata/mediamax`, *not* `/mnt/user/appdata` (the FUSE user share can wake array disks). Set the appdata share to *Use cache pool: Only/Prefer*.
+   * **TrueNAS SCALE:** put the app's config/transcode datasets on an SSD pool (or the apps pool), and media on the HDD pool.
+   * **QNAP / OMV:** the same idea — config on the system SSD / cache volume.
+2. **Don't poll.** File-change detection uses inotify on directories (no per-file watches, no polling) and never touches a sleeping disk. Only choose *Poll folder timestamps* for NFS/SMB mounts whose changes inotify cannot see, and keep the interval long (minimum 60 minutes). If inotify runs out of watches (very large libraries), raise `fs.inotify.max_user_watches` on the host (e.g. `sysctl fs.inotify.max_user_watches=524288`); the Storage page shows the error.
+3. **Turn on disk-friendly mode** and pick a maintenance window (e.g. 02:00–05:00, server time — set `TZ` on Docker containers). Scheduled library scans, thumbnail and scrub-preview generation, intro detection, DJ analysis, OpenSubtitles matching and HDR detection then only start in the window (one at a time, scan first). Manual *Run now*, playback, the Home Assistant *Scan libraries* button and scans triggered by real file changes are never held back.
+4. **Piggybacking** (on by default): when someone starts playing a file from a disk — or files change on it — MediaMax runs that disk's share of the postponed work while the disk is spinning anyway. With disk-state checks, a disk something else woke up counts too.
+5. **Disk-state awareness (Linux, optional):** MediaMax maps each library folder to its block devices via `/proc/self/mountinfo` and `/sys` (partitions, md/Unraid array devices, LVM/LUKS). If `hdparm` or `smartctl` is installed and allowed (root, or `--device /dev/sdX` + `--cap-add SYS_RAWIO` in Docker), it asks `hdparm -C` / `smartctl -n standby`, which answer **without waking** the drive. Outside disk-friendly mode, scheduled work then skips sleeping disks and catches up when they wake. Without those tools the Storage page shows *Idle* (no I/O for 10 minutes, read from `/sys`) or *Unknown*; nothing breaks. ZFS pools, mergerfs/Unraid user shares and network shares are shown as one "disk" each with unknown state.
+6. **Artwork next to media** (`poster.jpg`, `folder.jpg`…) is copied into the data folder the first time it is shown, so browsing never reads the media disk; rescans refresh the copy when the original changes.
+
+Limits: a library scan walks the whole library (all of its folders), so on an Unraid user share a scan in the window spins up every disk the share spans — point libraries at `/mnt/user/...` only if you accept that, or use per-disk paths. Background jobs that are already running when the window ends are allowed to finish. Plugin tasks are not held to the window.
+
 ## Hardware transcoding
 
 Software transcoding works everywhere. To use the GPU, give MediaMax the device (see your platform below), then
