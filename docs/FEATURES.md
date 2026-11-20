@@ -9,6 +9,8 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Movies, TV, music, photos, home videos | ✅ | ✅ | ✅ | ✅ |
 | Scene-style filename parsing (`Show.S01E02`, `1x02`, daily shows, multi-episode) | ✅ | ✅ | ✅ | ✅ |
 | Multiple versions of one movie (4K + 1080p) | ✅ | ✅ | ✅ | ✅ |
+| Movie editions (Director's Cut, Extended…) chosen before playing | ✅ (Pass) | 🟡 | 🟡 | ✅ |
+| Local extras (trailers, featurettes, deleted scenes…) | ✅ | ✅ | ✅ | ✅ |
 | Local NFO metadata (Kodi/Jellyfin/Emby format) | ✅ (PMS 1.43.2+) | ✅ | ✅ | ✅ |
 | Local artwork (poster/fanart/logo/season posters) | ✅ | ✅ | ✅ | ✅ |
 | Online metadata (TMDB) with cast, logos, trailers, ratings | ✅ | ✅ | ✅ | ✅ |
@@ -22,6 +24,8 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Real-time filesystem watching | ✅ | ✅ | ✅ | ✅ |
 | Synced lyrics (LRC sidecars, embedded tags) | ✅ | ✅ | ✅ | ✅ |
 | Subsonic/OpenSubsonic API (Symfonium, Feishin, play:Sub…) | ❌ | Plugin | ❌ | ✅ |
+| ReplayGain / R128 loudness levelling (track & album) | ✅ (Plexamp) | 🟡 | 🟡 | ✅ |
+| Anime (AniList) and MusicBrainz/Cover Art Archive metadata | 🟡 | Plugin | Plugin | ✅ (plugins) |
 | Audiobooks (multi-file & .m4b, chapters, author/narrator, resume) | 🟡 | ✅ | ✅ | ✅ |
 | Podcasts (RSS, iTunes directory search, OPML import, auto-download) | ✅ | Plugin? | Plugin? | ✅ |
 
@@ -38,6 +42,9 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Audio track selection & language preferences | ✅ | ✅ | ✅ | ✅ |
 | Resume, watched state, continue watching, next up | ✅ | ✅ | ✅ | ✅ |
 | Skip intro / credits (audio-fingerprint detection) | Pass | Plugin | Premiere | ✅ built in |
+| Skip recaps, previews and ad breaks (comskip / `.edl` markers) | 🟡 | 🟡 (plugins) | 🟡 | ✅ |
+| Cinema mode (trailers + pre-roll before a movie) | ✅ (Pass) | ✅ (plugin) | ✅ | ✅ |
+| Remote control: "Play on…" another device | ✅ | ✅ | ✅ | ✅ |
 | Auto-play next episode | ✅ | ✅ | ✅ | ✅ |
 | Downloads for offline | Pass | ✅ | Premiere | ✅ (mobile apps) |
 | Watch together | ✅ | ✅ | Plugin? | ✅ SyncPlay rooms with join codes |
@@ -51,6 +58,8 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 |---|:-:|:-:|:-:|:-:|
 | HDHomeRun tuners | ✅ | ✅ | ✅ | ✅ |
 | M3U playlists with XMLTV guide | 🟡 | ✅ | ✅ | ✅ |
+| Several merged EPG sources per playlist, provider guide as fallback | 🟡 | ✅ | ✅ | ✅ |
+| Multiview (up to four live channels at once) | ❌ | ❌ | ❌ | ✅ (web) |
 | **Xtream Codes** login (live + VOD + series + EPG) | ❌ | Plugin | Plugin | ✅ native |
 | Xtream VOD & series as real libraries (resume, search, watched) | ❌ | ❌ | ❌ | ✅ |
 | Catch-up / timeshift (Xtream `tv_archive`, M3U `catchup-source`) | ❌ | ❌ | 🟡 | ✅ |
@@ -60,6 +69,8 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Tuner sharing (one upstream connection per channel for all viewers) | ✅ | 🟡 | ✅ | ✅ |
 | Provider connection-limit awareness, account expiry display | ❌ | ❌ | ❌ | ✅ |
 | DVR: one-off, series rules, new-only, keep-latest, padding | Pass | ✅ | Premiere | ✅ |
+| DVR priorities, tuner-conflict detection, day/time-window rules, skip repeats | 🟡 | 🟡 | 🟡 | ✅ |
+| Commercial detection on recordings (comskip) | ✅ (Pass) | Plugin | 🟡 | ✅ |
 
 ## Users & access
 | Feature | Plex | Jellyfin | Emby | MediaMax |
@@ -83,7 +94,9 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Web, iOS, Android, Apple TV, Android TV apps | ✅ | ✅ | ✅ | ✅ |
 | Apple CarPlay (music, audiobooks, podcasts) | Plexamp | Third-party | Premiere | ✅ |
 | Android Auto (music, audiobooks, podcasts) | Plexamp | ✅ (no audiobooks) | Premiere | ✅ |
-| Roku, Samsung Tizen, LG webOS, Xbox | ✅ | ✅ | ✅ | 🗺️ |
+| Samsung Tizen, LG webOS (wrapper apps + web TV mode with D-pad navigation) | ✅ | ✅ | ✅ | ✅ |
+| Amazon Fire TV | ✅ | ✅ | ✅ | ✅ (Android TV build) |
+| Roku, Xbox | ✅ | 🟡 | ✅ | 🗺️ |
 | Desktop/HTPC app (mpv-class player) | ✅ | ✅ | ✅ | 🗺️ |
 
 ## Customisation (MediaMax's headline feature)
