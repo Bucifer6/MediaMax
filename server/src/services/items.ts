@@ -259,6 +259,19 @@ export function similarItems(user: User, id: string, limit = 12): Item[] {
 /** Next episode (or track) after `id`. */
 export function nextItem(user: User, id: string): Item | null {
   const row = assertCanSee(user, id);
+  if (row.type === 'show' || row.type === 'season') {
+    // Next up: resume an in-progress episode, else the first unplayed after the last watched, else the first episode.
+    const col = row.type === 'show' ? 'grandparent_id' : 'parent_id';
+    const order = 'ORDER BY COALESCE(i.parent_idx,0) = 0, COALESCE(i.parent_idx,0), COALESCE(i.idx,0)';
+    const inProgress = selectItems(user, `i.${col} = ? AND i.type = 'episode' AND ud.position_ms > 0 AND COALESCE(ud.played,0) = 0`, [id], 'ORDER BY ud.last_played_at DESC LIMIT 1');
+    if (inProgress[0]) return inProgress[0];
+    const last = db.get(`SELECT i.parent_idx, i.idx FROM items i JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ? WHERE i.${col} = ? AND ud.played = 1 ORDER BY COALESCE(i.parent_idx,0) DESC, COALESCE(i.idx,0) DESC LIMIT 1`, user.id, id);
+    if (last) {
+      const n = selectItems(user, `i.${col} = ? AND i.type = 'episode' AND COALESCE(ud.played,0) = 0 AND (COALESCE(i.parent_idx,0) > ? OR (COALESCE(i.parent_idx,0) = ? AND COALESCE(i.idx,0) > ?))`, [id, last.parent_idx ?? 0, last.parent_idx ?? 0, last.idx ?? 0], `${order} LIMIT 1`);
+      if (n[0]) return n[0];
+    }
+    return selectItems(user, `i.${col} = ? AND i.type = 'episode' AND COALESCE(ud.played,0) = 0`, [id], `${order} LIMIT 1`)[0] ?? null;
+  }
   if (row.type === 'episode' && row.grandparent_id) {
     const r = selectItems(user, `i.grandparent_id = ? AND i.type = 'episode' AND (COALESCE(i.parent_idx,0) > ? OR (COALESCE(i.parent_idx,0) = ? AND COALESCE(i.idx,0) > ?))`,
       [row.grandparent_id, row.parent_idx ?? 0, row.parent_idx ?? 0, row.idx ?? 0], 'ORDER BY COALESCE(i.parent_idx,0), COALESCE(i.idx,0) LIMIT 1');

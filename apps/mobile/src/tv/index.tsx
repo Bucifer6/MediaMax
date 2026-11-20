@@ -3,7 +3,7 @@
  * build swaps in react-native-tvos (see README). TV-only APIs are therefore
  * looked up at runtime so this file type-checks and runs on both.
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as RN from 'react-native';
 import { BackHandler, Platform, View, type ViewProps } from 'react-native';
 
@@ -48,27 +48,48 @@ export function useTVRemote(handler: (evt: TVRemoteEvent) => void, enabled = tru
   });
 }
 
-/** On tvOS the Menu button exits the app unless the menu key is enabled. */
-export function useTVMenuKey(enabled: boolean) {
+/*
+ * tvOS: the Menu button exits the app unless the "menu key" is enabled. We
+ * enable it whenever there is somewhere to go back to (root layout passes
+ * canGoBack) or a screen is holding it (useBackHandler), so Menu behaves like
+ * Back inside the app and like Home at the top level.
+ */
+let menuHolders = 0;
+const holderListeners = new Set<() => void>();
+function setHolders(delta: number) {
+  menuHolders += delta;
+  holderListeners.forEach((l) => l());
+}
+
+export function useTVMenuKeyManager(canGoBack: boolean) {
+  const [holders, setH] = useState(menuHolders);
+  useEffect(() => {
+    const l = () => setH(menuHolders);
+    holderListeners.add(l);
+    return () => {
+      holderListeners.delete(l);
+    };
+  }, []);
+  const enabled = canGoBack || holders > 0;
   useEffect(() => {
     if (!isTV || Platform.OS !== 'ios') return;
     if (enabled) tv.TVEventControl?.enableTVMenuKey?.();
     else tv.TVEventControl?.disableTVMenuKey?.();
-    return () => {
-      if (enabled) tv.TVEventControl?.disableTVMenuKey?.();
-    };
   }, [enabled]);
 }
 
-/** Hardware back (Android, Android TV) and tvOS Menu (when enabled). Return true to consume. */
+/** Hardware back (Android, Android TV) and tvOS Menu. Return true to consume. */
 export function useBackHandler(handler: () => boolean, enabled = true) {
   const ref = useRef(handler);
   ref.current = handler;
-  useTVMenuKey(enabled);
   useEffect(() => {
     if (!enabled) return;
+    setHolders(1);
     const sub = BackHandler.addEventListener('hardwareBackPress', () => ref.current());
-    return () => sub.remove();
+    return () => {
+      setHolders(-1);
+      sub.remove();
+    };
   }, [enabled]);
 }
 

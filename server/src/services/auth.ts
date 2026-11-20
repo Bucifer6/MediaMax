@@ -243,6 +243,7 @@ export function publicProfiles(): PublicProfile[] {
   if (!getBranding().features.profilePicker) return [];
   return db.all('SELECT * FROM users WHERE disabled = 0 ORDER BY is_admin DESC, display_name').map((r) => ({
     id: r.id,
+    username: r.username,
     displayName: r.display_name,
     avatarUrl: r.avatar ?? null,
     hasPin: !!r.pin_hash,

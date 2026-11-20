@@ -29,15 +29,16 @@ export default function RecordingsScreen() {
   const rules = useQuery('dvr:rules', (a) => a.rules());
   const [tab, setTab] = useState<'recordings' | 'rules'>('recordings');
 
+  const setRecs = recs.setData;
   useEffect(
     () =>
       on('recording', (r) =>
-        recs.setData((prev) => {
+        setRecs((prev) => {
           const list = prev ?? [];
           return list.some((x) => x.id === r.id) ? list.map((x) => (x.id === r.id ? r : x)) : [r, ...list];
         }),
       ),
-    [recs],
+    [setRecs],
   );
 
   const grouped = useMemo(() => {

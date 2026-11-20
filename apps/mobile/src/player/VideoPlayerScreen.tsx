@@ -232,7 +232,8 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
     // Work out whether the stream starts at 0 or at startMs (a transcode started mid-file).
     const full = pi.durationMs ?? 0;
     let offset = 0;
-    if (start && start > 0) {
+    if (pi.streamStartMs !== undefined) offset = pi.streamStartMs;
+    else if (start && start > 0) {
       if (isFinite(streamMs) && streamMs > 0 && full > 0) offset = Math.abs(streamMs - (full - start)) < Math.abs(streamMs - full) ? start : 0;
       else offset = pi.method === 'transcode' ? start : 0;
     }
@@ -426,6 +427,8 @@ export function VideoPlayerScreen({ target }: { target: PlayerTarget }) {
     if (sheet) return;
     if (!controls) {
       if (type === 'select') {
+        // A visible Skip / Up Next button has focus and handles select itself.
+        if ((activeMarker && (activeMarker.type !== 'credits' || !nextId)) || upNext) return;
         togglePlay();
         return poke();
       }

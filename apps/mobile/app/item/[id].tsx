@@ -17,7 +17,8 @@ export default function ItemScreen() {
   // Seasons render inside their show with that season selected.
   const parentShow = useQuery(item?.type === 'season' && item.parentId ? `item:${item.parentId}` : null, (api) => api.item(item!.parentId!));
 
-  const setUserData = useCallback((ud: UserItemData) => q.setData((prev) => (prev ? { ...prev, userData: ud } : prev)), [q]);
+  const { setData } = q;
+  const setUserData = useCallback((ud: UserItemData) => setData((prev) => (prev ? { ...prev, userData: ud } : prev)), [setData]);
   useEffect(() => on('userdata', (e) => e.itemId === id && setUserData(e.userData)), [id, setUserData]);
 
   // A track opens its album.

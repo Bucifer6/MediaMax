@@ -1,15 +1,17 @@
-import { Stack, router, useRootNavigationState, useSegments } from 'expo-router';
+import { Stack, router, useCanGoBack, useRootNavigationState, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import React, { useEffect, useMemo } from 'react';
 import { Platform, View } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandSplash } from '@/components/BrandSplash';
+import { MiniPlayer } from '@/components/MiniPlayer';
 import { DownloadsProvider } from '@/state/downloads';
 import { MusicProvider } from '@/state/music';
 import { SessionProvider, useSession } from '@/state/session';
 import { ThemeProvider, resolveTheme, useTheme } from '@/theme';
+import { useTVMenuKeyManager } from '@/tv';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -64,6 +66,7 @@ function useAuthGuard() {
 function Navigation() {
   const t = useTheme();
   useAuthGuard();
+  useTVMenuKeyManager(useCanGoBack());
 
   useEffect(() => {
     SystemUI.setBackgroundColorAsync(t.colors.background).catch(() => undefined);
@@ -88,7 +91,31 @@ function Navigation() {
         <Stack.Screen name="music" options={{ presentation: t.isTV ? 'fullScreenModal' : 'modal', animation: t.isTV ? 'fade' : 'slide_from_bottom' }} />
         <Stack.Screen name="photo/[id]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
       </Stack>
+      <FloatingMiniPlayer />
       <BrandSplash />
+    </View>
+  );
+}
+
+/** Mini player on stack screens outside the tabs (the tab bar hosts its own). */
+function FloatingMiniPlayer() {
+  const t = useTheme();
+  const insets = useSafeAreaInsets();
+  const segments = useSegments() as string[];
+  const first = segments[0];
+  const hidden =
+    !first ||
+    first === '(tabs)' ||
+    first === 'index' ||
+    PUBLIC.has(first) ||
+    first === 'player' ||
+    first === 'music' ||
+    first === 'photo' ||
+    (first === 'live' && segments[1] === '[id]');
+  if (hidden) return null;
+  return (
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: t.isTV ? t.space.lg : insets.bottom + 4, alignItems: t.isTV ? 'flex-end' : 'stretch', paddingRight: t.isTV ? t.space.gutter : 0 }}>
+      <MiniPlayer />
     </View>
   );
 }

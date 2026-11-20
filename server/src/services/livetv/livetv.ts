@@ -695,7 +695,7 @@ export async function playChannel(ctx: AuthContext, channelId: string, req: Live
     posterUrl: channel.logoUrl, durationMs: catchup ? catchup.durationMin * 60000 : null, remoteAddr,
   };
   const info = (session: PlaySession, url: string, mimeType: string, isHls: boolean): PlaybackInfo => ({
-    sessionId: session.id, itemId: null, channelId, method: 'live', url, mimeType, isHls, startMs: 0, durationMs: base.durationMs,
+    sessionId: session.id, itemId: null, channelId, method: 'live', url, mimeType, isHls, startMs: 0, streamStartMs: 0, durationMs: base.durationMs,
     audioStreams: [], subtitles: [], markers: [], nextItemId: null, title: channel.name, subtitle: base.subtitle, posterUrl: channel.logoUrl, backdropUrl: null,
   });
 

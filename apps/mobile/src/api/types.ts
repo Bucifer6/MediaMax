@@ -201,6 +201,8 @@ export interface AuthResponse {
 
 export interface PublicProfile {
   id: string;
+  /** Username to use with `/auth/login` when the profile requires a password. */
+  username: string;
   displayName: string;
   avatarUrl: string | null;
   hasPin: boolean;
@@ -582,7 +584,14 @@ export interface PlaybackInfo {
   url: string;
   mimeType: string;
   isHls: boolean;
+  /** Position (ms) the client should seek to once playback starts. */
   startMs: number;
+  /**
+   * Media position (ms) that stream time 0 corresponds to. MediaMax always
+   * produces full-timeline streams, so this is 0 for VOD; clients should
+   * compute `mediaPosition = streamTime + streamStartMs`.
+   */
+  streamStartMs?: number;
   durationMs: number | null;
   audioStreams: AudioStream[];
   subtitles: SubtitleTrack[];

@@ -54,7 +54,18 @@ export default function HomeScreen() {
   const { data, error, loading, refresh, refreshing } = useQuery('home', (api) => api.home(), { staleMs: 15000 });
 
   // Live-refresh when playback state changes elsewhere (continue watching etc.).
-  useEffect(() => on('userdata', () => void refresh()), [refresh]);
+  // Debounced: progress reports during playback can emit many events.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const off = on('userdata', () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void refresh(), 4000);
+    });
+    return () => {
+      off();
+      if (timer) clearTimeout(timer);
+    };
+  }, [refresh]);
 
   const rows = useMemo(
     () =>

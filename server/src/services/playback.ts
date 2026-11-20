@@ -309,6 +309,7 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     mimeType,
     isHls,
     startMs: responseStart,
+    streamStartMs: 0,
     durationMs: media.durationMs || item.durationMs,
     audioStreams: media.audioStreams,
     subtitles: effectiveBurn ? [] : subtitleTracks(ctx, media.id, rawSubs),

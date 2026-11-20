@@ -78,7 +78,7 @@ export default function LoginScreen() {
     setError(null);
     setPin('');
     if (p.requiresPassword) {
-      setUsername(p.displayName);
+      setUsername(p.username ?? p.displayName);
       setMode('password');
     } else if (p.hasPin) setMode('pin');
     else void enterProfile(p);

@@ -82,6 +82,8 @@ the WebSocket emits `branding.updated`.
 | GET 🔑 | `/search?q=&limit=` | | `SearchResponse` |
 | GET 🔓 | `/images/:imageId?w=` | | image bytes (cached) |
 
+`GET /items/:id/next` on a show or season returns its next-up episode (in progress → next unwatched → first).
+
 ### Collections & playlists
 * `GET /collections` → `Item[]` · `POST /collections` 🛡️ `CreateCollectionRequest` → `Item` · `POST /collections/:id/items` 🛡️ `{ itemIds }` · `DELETE /collections/:id/items/:itemId` 🛡️ · `DELETE /collections/:id` 🛡️
 * `GET /playlists` → `Item[]` (own) · `POST /playlists` `CreatePlaylistRequest` → `Item` · `POST /playlists/:id/items` `{ itemIds }` · `DELETE /playlists/:id/items/:itemId` · `DELETE /playlists/:id`
