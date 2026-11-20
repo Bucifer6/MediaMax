@@ -85,7 +85,7 @@ export function Login() {
     setSelected(p);
     setError(null);
     if (p.requiresPassword) {
-      setUsername(p.displayName);
+      setUsername(p.username || p.displayName);
       setPassword('');
       setMode('password');
       return;

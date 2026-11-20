@@ -215,12 +215,11 @@ export default function VideoPlayer() {
       const target = pendingSeek.current;
       pendingSeek.current = null;
       if (!info) return;
-      if (info.isHls && info.method !== 'direct' && target != null) {
-        const covers = isFinite(v.duration) && durationMs > 0 && v.duration * 1000 > durationMs - 15000;
-        if (covers) v.currentTime = target / 1000;
-        else offsetRef.current = info.startMs > 0 ? info.startMs : target;
-      } else if (target != null) {
-        v.currentTime = target / 1000;
+      // Stream time 0 corresponds to media position `streamStartMs` (0 for full-timeline streams).
+      offsetRef.current = info.streamStartMs ?? 0;
+      if (target != null) {
+        const local = (target - offsetRef.current) / 1000;
+        if (local > 0.5) v.currentTime = local;
       }
     };
     const onTime = () => {

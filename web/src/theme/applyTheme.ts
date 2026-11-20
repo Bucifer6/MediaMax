@@ -65,7 +65,10 @@ export function loadFont(url: string | null | undefined) {
 export function applyTheme(theme: Theme) {
   const root = document.documentElement;
   const vars = themeVars(theme);
-  for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+  for (const [k, v] of Object.entries(vars)) {
+    // Card width goes through --card-w-theme so responsive CSS can scale it.
+    root.style.setProperty(k === '--card-w' ? '--card-w-theme' : k, v);
+  }
   root.dataset.mode = theme.mode;
   root.dataset.posterShape = theme.posterShape;
   root.dataset.cardSize = theme.cardSize;
