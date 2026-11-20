@@ -6,7 +6,7 @@ import { db, type Row } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
 import { badRequest, forbidden, notFound } from '../util/errors.js';
-import { nowIso, parseJson } from '../util/misc.js';
+import { nowIso, parseJson, REMOTE_PROTOCOLS } from '../util/misc.js';
 import { logger } from '../util/log.js';
 import { getSettings } from './settings.js';
 import { events, bus } from './events.js';
@@ -128,7 +128,7 @@ function startRecording(r: Row) {
   const durationSec = Math.max(10, Math.round((Date.parse(r.end) - Date.now()) / 1000));
   const url = channelStreamUrl(ch);
   const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-user_agent', channelUserAgent(ch), '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '10',
-    '-i', url, '-map', '0:v?', '-map', '0:a?', '-c', 'copy', '-t', String(durationSec), '-f', 'mpegts', file];
+    ...REMOTE_PROTOCOLS, '-i', url, '-map', '0:v?', '-map', '0:a?', '-c', 'copy', '-t', String(durationSec), '-f', 'mpegts', file];
   log.info(`Recording "${r.title}" for ${durationSec}s → ${file}`);
   const p = spawn(config.ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
   let err = '';

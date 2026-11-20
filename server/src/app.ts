@@ -34,7 +34,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     if (err instanceof HttpError) return reply.status(err.statusCode).send({ error: err.code, message: err.message, statusCode: err.statusCode });
     if (err.validation) return reply.status(400).send({ error: 'bad_request', message: err.message, statusCode: 400 });
     const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
-    if (status >= 500) log.error(`${req.method} ${req.url} failed`, err);
+    if (status >= 500) log.error(`${req.method} ${req.url.replace(/([?&](token|api_key|password)=)[^&]+/gi, '$1***')} failed`, err);
     return reply.status(status).send({ error: status >= 500 ? 'internal_error' : 'error', message: status >= 500 ? 'Something went wrong on the server' : err.message, statusCode: status });
   });
 

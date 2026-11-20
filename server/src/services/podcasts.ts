@@ -55,7 +55,7 @@ export function parseFeed(xml: string): ParsedFeed {
     description: stripHtml(text(ch['itunes:summary']) ?? text(ch.description)),
     image: ch['itunes:image']?.['@href'] ?? text(ch.image?.url) ?? null,
     categories: [...new Set(cats)].slice(0, 5),
-    episodes: (ch.item ?? []).filter((i: any) => i.enclosure?.['@url']).map((i: any) => {
+    episodes: (ch.item ?? []).filter((i: any) => /^https?:\/\//i.test(String(i.enclosure?.['@url'] ?? ''))).map((i: any) => {
       const pub = text(i.pubDate);
       const d = pub ? new Date(pub) : null;
       return {

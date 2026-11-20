@@ -97,3 +97,9 @@ test('podcast feed, duration and OPML parsing', async () => {
   assert.equal(f.episodes[0].pubDate, '2026-11-16T10:00:00.000Z');
   assert.deepEqual(parseOpml('<opml><body><outline text="x"><outline xmlUrl="http://a/feed"/><outline xmlUrl="http://b/feed"/></outline></body></opml>'), ['http://a/feed', 'http://b/feed']);
 });
+
+test('remote URL safety', async () => {
+  const { isSafeRemoteUrl } = await import('../src/util/misc.ts');
+  for (const ok of ['http://a/b.ts', 'https://a/b.m3u8', 'rtmp://x/live', 'udp://239.0.0.1:1234', 'rtsp://cam/1']) assert.ok(isSafeRemoteUrl(ok), ok);
+  for (const bad of ['file:///etc/passwd', 'concat:/etc/passwd|x', 'pipe:0', '/etc/passwd', 'subfile,,start,0,end,1,,:/etc/passwd', 'data:text/plain,hi', '']) assert.ok(!isSafeRemoteUrl(bad), bad);
+});

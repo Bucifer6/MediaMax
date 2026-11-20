@@ -5,7 +5,7 @@ import type {
 import { db, type Row } from '../../db.js';
 import { newId, stableId } from '../../util/ids.js';
 import { HttpError, badRequest, forbidden, notFound } from '../../util/errors.js';
-import { nowIso, parseJson, sortTitle, toInt } from '../../util/misc.js';
+import { nowIso, parseJson, sortTitle, toInt, isSafeRemoteUrl } from '../../util/misc.js';
 import { logger } from '../../util/log.js';
 import { registerImage, imageUrl } from '../images.js';
 import { getBranding } from '../branding.js';
@@ -198,7 +198,9 @@ interface ChannelIn {
   custom?: Record<string, unknown>;
 }
 
-function syncChannels(sourceId: string, cats: { remoteId: string; name: string }[], chans: ChannelIn[]) {
+function syncChannels(sourceId: string, cats: { remoteId: string; name: string }[], allChans: ChannelIn[]) {
+  const chans = allChans.filter((c) => isSafeRemoteUrl(c.streamUrl));
+  if (chans.length < allChans.length) log.warn(`Ignored ${allChans.length - chans.length} channel(s) with unsupported stream URLs`);
   db.tx(() => {
     const catIds = new Map<string, string>();
     const seenCats = new Set<string>();
@@ -662,7 +664,7 @@ export function channelStreamUrl(r: Row, catchup?: { start: Date; durationMin: n
   if (src.type === 'xtream') return xt.timeshiftUrl(creds(src), r.remote_id, catchup.start, catchup.durationMin, sourceTimezones.get(src.id) ?? parseJson<any>(src.account_info, null)?.timezone ?? null);
   const custom = parseJson<Record<string, any>>(r.custom, {});
   const url = m3uCatchupUrl({ url: r.stream_url, catchup: custom.catchup ?? null, catchupSource: custom.catchupSource ?? null }, catchup.start, catchup.durationMin);
-  if (!url) throw badRequest('This channel does not support catch-up');
+  if (!url || !isSafeRemoteUrl(url)) throw badRequest('This channel does not support catch-up');
   return url;
 }
 

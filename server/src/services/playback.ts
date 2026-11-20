@@ -8,7 +8,7 @@ import { db, type Row } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
 import { HttpError, badRequest, forbidden, notFound } from '../util/errors.js';
-import { nowIso, parseJson } from '../util/misc.js';
+import { nowIso, parseJson, REMOTE_PROTOCOLS } from '../util/misc.js';
 import { logger } from '../util/log.js';
 import { TranscodeJob, type TranscodeOptions } from './transcoder.js';
 import { getSettings } from './settings.js';
@@ -348,7 +348,7 @@ export async function subtitleVtt(mediaId: string, index: number): Promise<strin
   if (!p) {
     p = new Promise<string>((resolve, reject) => {
       const input = s.external ? s.path! : m.path ?? m.remote_url;
-      const args = ['-v', 'error', '-y', '-i', input];
+      const args = ['-v', 'error', '-y', ...(path.isAbsolute(input) ? [] : REMOTE_PROTOCOLS), '-i', input];
       if (!s.external) args.push('-map', `0:${s.index}`);
       args.push('-f', 'webvtt', out + '.tmp');
       const proc = spawn(config.ffmpeg, args);

@@ -1,5 +1,11 @@
 export const nowIso = () => new Date().toISOString();
 
+/** Remote media must use a network protocol — never file:, concat:, pipe: etc. (a hostile playlist could read local files). */
+export const SAFE_URL = /^(https?|rtmps?|rtsp|rtp|udp|srt):\/\//i;
+export const isSafeRemoteUrl = (u: string | null | undefined) => !!u && SAFE_URL.test(u.trim());
+/** FFmpeg input options that restrict remote inputs to network protocols. */
+export const REMOTE_PROTOCOLS = ['-protocol_whitelist', 'http,https,tcp,tls,crypto,rtmp,rtmps,rtmpt,rtsp,rtp,udp,srt,httpproxy'];
+
 export function parseJson<T>(s: string | null | undefined, fallback: T): T {
   if (s == null || s === '') return fallback;
   try {
