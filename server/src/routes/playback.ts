@@ -15,6 +15,7 @@ import { config } from '../config.js';
 import { safeFetch } from '../util/net.js';
 import { logActivity } from '../services/activity.js';
 import { renditionRequest } from '../services/abr.js';
+import { doviMasterForJob } from '../services/dovi.js';
 import { serveSubtitle } from './streaming.js';
 
 const MIME: Record<string, string> = {
@@ -191,6 +192,12 @@ export default async function playbackRoutes(app: FastifyInstance) {
     const job = s.job ?? liveJobBySession.get(s.id);
     if (!job) throw notFound('No stream for this session');
     reply.header('Cache-Control', 'no-cache');
+    // Dolby Vision remux: a real master playlist (DV CODECS / SUPPLEMENTAL-CODECS / VIDEO-RANGE) over ffmpeg's media playlist.
+    if (file === 'master.m3u8' && job.opts.mode === 'remux' && job.opts.dolbyVision) {
+      reply.type('application/vnd.apple.mpegurl');
+      if (s.state === 'buffering') s.state = 'playing';
+      return doviMasterForJob(job.opts.dolbyVision, () => job.initSegment(), `stream.m3u8${q}`);
+    }
     if (file.endsWith('.m3u8')) {
       reply.type('application/vnd.apple.mpegurl');
       if (s.state === 'buffering') s.state = 'playing';

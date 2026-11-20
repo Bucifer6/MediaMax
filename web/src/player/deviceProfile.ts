@@ -1,7 +1,10 @@
 import type { DeviceProfile } from '@mediamax/shared';
-import { platformTag, videoCaps } from './capabilities';
+import { onCapabilitiesReset, platformTag, videoCaps } from './capabilities';
 
 let cached: DeviceProfile | null = null;
+onCapabilitiesReset(() => {
+  cached = null;
+});
 
 function mse(type: string): boolean {
   try {

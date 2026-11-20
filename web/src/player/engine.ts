@@ -126,7 +126,8 @@ export async function attachStream(el: HTMLMediaElement, info: PlaybackInfo, opt
         stats: () => {
           const lvl = hls.levels[hls.currentLevel] ?? hls.levels[0];
           return {
-            videoCodec: lvl?.videoCodec ?? null,
+            // Dolby Vision 8.x: hvc1 in CODECS plus dvh1 in SUPPLEMENTAL-CODECS.
+            videoCodec: lvl?.videoCodec ? (lvl.supplemental?.videoCodec ? `${lvl.videoCodec} + ${lvl.supplemental.videoCodec}` : lvl.videoCodec) : null,
             audioCodec: lvl?.audioCodec ?? null,
             bitrate: lvl?.bitrate ?? null,
             bandwidth: Number.isFinite(hls.bandwidthEstimate) ? hls.bandwidthEstimate : null,

@@ -104,26 +104,115 @@ async function detect(): Promise<VideoCaps> {
     hdr10: usable(pq),
     hdr10Plus: usable(hdr10Plus),
     hlg: usable(hlg),
-    // Dolby Vision is only claimed by engines that play DV-tagged streams themselves (Safari / AVFoundation).
-    // Through MSE our remuxed fMP4 is tagged hvc1, so DV 8.x reaches TVs and browsers as its HDR10/HLG base layer.
     dolbyVision: false,
     hdrDisplay,
   };
-  if (platform === 'safari') {
-    const v = document.createElement('video');
-    const dv = (c: string) => v.canPlayType(`video/mp4; codecs="${c}"`) !== '' || mse(`video/mp4; codecs="${c}"`);
-    const profiles: string[] = [];
-    if (dv('dvh1.05.06')) profiles.push('5');
-    if (dv('dvh1.08.06')) profiles.push('8.1', '8.4');
-    if (profiles.length && (hdrDisplay || tonemapsItself)) {
-      videoRange.dolbyVision = true;
-      videoRange.dolbyVisionProfiles = profiles;
-    }
+  // Dolby Vision: the server remuxes DV with its configuration box and announces dvh1/dav1 codecs (server dovi.ts),
+  // so any engine whose MSE (or native HLS, Safari) accepts the DV codec strings gets real Dolby Vision.
+  const detected = await detectDolbyVision(platform);
+  const profiles = applyDolbyVisionOverride(detected.length && (hdrDisplay || tonemapsItself || tv) ? detected : [], dolbyVisionOverride());
+  if (profiles.length) {
+    videoRange.dolbyVision = true;
+    videoRange.dolbyVisionProfiles = profiles;
   }
   const sh = Math.round(Math.min(window.screen?.width ?? 1920, window.screen?.height ?? 1080) * Math.min(window.devicePixelRatio || 1, 2));
   // TVs report a 1080p CSS viewport even on 4K panels; let MSE decide whether 2160p decodes.
   const maxHeight = tv ? ((await decodes({ contentType: HEVC10 }, 2160)) ? 2160 : 1080) : sh >= 2000 ? 2160 : null;
   return { videoRange, tenBitCodecs, maxHeight, platform };
+}
+
+/* ------------------------------ Dolby Vision ------------------------------ */
+
+/** Codec strings per Dolby Vision profile, as the server's DV master playlists announce them (level 06 = 4K24). */
+export const DV_PROBES: { profiles: string[]; codecs: string[] }[] = [
+  { profiles: ['5'], codecs: ['dvh1.05.06'] },
+  { profiles: ['8.1', '8.4'], codecs: ['dvh1.08.06'] },
+  { profiles: ['7'], codecs: ['dvhe.07.06', 'dvh1.07.06'] },
+  { profiles: ['10'], codecs: ['dav1.10.06'] },
+];
+
+/** Dolby Vision profiles this engine decodes. `probe` checks one codec string (exported for tests). */
+export async function dolbyVisionProfiles(probe: (codec: string) => Promise<boolean>): Promise<string[]> {
+  const out: string[] = [];
+  for (const p of DV_PROBES) {
+    for (const c of p.codecs) {
+      if (await probe(c)) {
+        out.push(...p.profiles);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+async function detectDolbyVision(platform: VideoCaps['platform']): Promise<string[]> {
+  const v = typeof document !== 'undefined' ? document.createElement('video') : null;
+  return dolbyVisionProfiles(async (codec) => {
+    const type = `video/mp4; codecs="${codec}"`;
+    // Safari plays HLS natively, so canPlayType counts there; everywhere else only MSE (our hls.js engine) matters.
+    const typeOk = mse(type) || (platform === 'safari' && !!v && v.canPlayType(type) !== '');
+    if (!typeOk) return false;
+    const mc = (navigator as Navigator & { mediaCapabilities?: MediaCapabilities }).mediaCapabilities;
+    if (!mc?.decodingInfo) return true;
+    // MediaCapabilities with Dolby Vision metadata (SMPTE ST 2094-10). Engines that don't know the members throw or
+    // say "unsupported" for every DV query; then the MSE answer stands (LG webOS reports dvh1 through MSE only).
+    try {
+      const r = await mc.decodingInfo({
+        type: 'media-source',
+        video: { contentType: type, width: 3840, height: 2160, bitrate: 20_000_000, framerate: 24, hdrMetadataType: 'smpteSt2094-10', transferFunction: 'pq', colorGamut: 'rec2020' } as VideoConfiguration,
+      });
+      if (r.supported) return true;
+      const plain = await mc.decodingInfo({ type: 'media-source', video: { contentType: type, width: 3840, height: 2160, bitrate: 20_000_000, framerate: 24 } });
+      // A plain "yes" but a "no" with DV metadata means this engine decodes the base layer only.
+      return !plain.supported;
+    } catch {
+      return true;
+    }
+  });
+}
+
+/** Settings → Playback → This device: "This device supports Dolby Vision": auto (detect), yes, no. */
+export type DolbyVisionOverride = 'auto' | 'yes' | 'no';
+const DV_KEY = 'mediamax.dolbyVision';
+
+export function dolbyVisionOverride(): DolbyVisionOverride {
+  try {
+    const v = localStorage.getItem(DV_KEY);
+    return v === 'yes' || v === 'no' ? v : 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+
+export function setDolbyVisionOverride(v: DolbyVisionOverride) {
+  try {
+    if (v === 'auto') localStorage.removeItem(DV_KEY);
+    else localStorage.setItem(DV_KEY, v);
+  } catch {
+    /* storage blocked: the choice lasts for this page only */
+  }
+  resetCapabilities();
+}
+
+/** Apply the user's override: "yes" adds the single-layer profiles every DV TV plays (5, 8.1, 8.4); "no" removes all. */
+export function applyDolbyVisionOverride(detected: string[], o: DolbyVisionOverride): string[] {
+  if (o === 'no') return [];
+  if (o === 'yes') return [...new Set(['5', '8.1', '8.4', ...detected])];
+  return detected;
+}
+
+const resetListeners = new Set<() => void>();
+/** Called when capabilities are detected again (the device profile drops its cached copy). */
+export const onCapabilitiesReset = (fn: () => void) => {
+  resetListeners.add(fn);
+  return () => resetListeners.delete(fn);
+};
+
+/** Forget the detected capabilities (after a setting changed); the next initCapabilities() detects again. */
+export function resetCapabilities() {
+  caps = null;
+  pending = null;
+  for (const fn of resetListeners) fn();
 }
 
 export function initCapabilities(): Promise<VideoCaps> {

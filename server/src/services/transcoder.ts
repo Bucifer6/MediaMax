@@ -5,6 +5,7 @@ import type { HwAccel, HwDetectReport, HwMethodResult, ToneMapPath, TranscodeVid
 import {
   TONEMAP_FILTERS, buildVideoPipeline, codecBitrate, encoderArgs, encoderFor, isHwToneMap, needsFmp4, rateArgs, toneMapCandidates, type VideoPipeline,
 } from './hwaccel.js';
+import { doviMuxArgs, type DoviRemux } from './dovi.js';
 import { config } from '../config.js';
 import { getSettings } from './settings.js';
 import { logger } from '../util/log.js';
@@ -73,6 +74,8 @@ export interface TranscodeOptions {
   toneMap?: boolean;
   /** Bitstream filter for copied video, e.g. stripping Dolby Vision RPU/EL NAL units (see hdr.ts STRIP_DOVI_BSF). */
   videoBsf?: string | null;
+  /** Copied video keeps real Dolby Vision: DV configuration box + sample entry, master playlist with DV codecs (dovi.ts). */
+  dolbyVision?: DoviRemux | null;
 }
 
 export interface TranscodeInfo {
@@ -204,7 +207,8 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
     if (o.videoCopy || !pipeline) {
       args.push('-c:v', 'copy');
       if (o.videoBsf) args.push('-bsf:v', o.videoBsf);
-      if (normCodec(o.sourceCodec) === 'hevc') args.push('-tag:v', 'hvc1');
+      if (o.dolbyVision && o.videoCopy) args.push(...doviMuxArgs(o.dolbyVision.sampleEntry));
+      else if (normCodec(o.sourceCodec) === 'hevc') args.push('-tag:v', 'hvc1');
     } else {
       if (!overlay && pipeline.filters.length) args.push('-vf', pipeline.filters.join(','));
       videoBitrate = codecBitrate(o.bitrate, codec);

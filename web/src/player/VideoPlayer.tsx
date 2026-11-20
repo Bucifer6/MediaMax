@@ -814,7 +814,7 @@ export default function VideoPlayer() {
         buffer: `${ahead.toFixed(1)} s`,
         dropped,
         extra: `${rate}× · subs ${formatDelay(subDelayRef.current)} · audio ${formatDelay(audioDelayMs)}`,
-        range: pi?.videoRange ? rangeDeliveryText(pi.videoRange) : media?.videoRange?.label ?? (media?.hdr ? 'HDR' : 'SDR'),
+        range: pi?.videoRange ? rangeDeliveryText(pi.videoRange, pi.dolbyVision) : media?.videoRange?.label ?? (media?.hdr ? 'HDR' : 'SDR'),
         why: pi?.reasons?.length ? pi.reasons.join('; ') : undefined,
       });
     };

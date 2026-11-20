@@ -12,6 +12,10 @@
  *                             units (types 62/63) so the HDR10 base layer plays cleanly; else tone-map.
  *   Dolby Vision 5          → only DV clients with profile 5; anything else has no usable fallback → tone-map
  *                             (libplacebo applies the RPU reshaping when available; otherwise colours will be off).
+ *   Dolby Vision 10 (AV1)   → like 8.x: DV clients listing 10, else the AV1 HDR10/HLG base layer (10.1/10.4).
+ *
+ * "passthrough" for DV that has to be remuxed means real Dolby Vision through HLS: playback.ts decide() adds the
+ * DV signalling from dovi.ts (DV box + codec strings), or falls back to these rules without DV when FFmpeg can't.
  */
 import type { DeviceProfile, DolbyVisionInfo, HdrFormat, VideoRangeCapabilities, VideoRangeDelivery, VideoRangeInfo } from '@mediamax/shared';
 
@@ -47,7 +51,8 @@ function doviFallback(dv: DolbyVisionInfo, transfer: string | null): VideoRangeI
 }
 
 export function doviProfileLabel(dv: DolbyVisionInfo): string {
-  if (dv.profile === 8 && dv.blCompatId != null && [1, 2, 4].includes(dv.blCompatId)) return `8.${dv.blCompatId}`;
+  // 8.1 / 8.2 / 8.4 (HEVC) and 10.1 / 10.2 / 10.4 (AV1): profile + base-layer compatibility id.
+  if ((dv.profile === 8 || dv.profile === 10) && dv.blCompatId != null && [1, 2, 4].includes(dv.blCompatId)) return `${dv.profile}.${dv.blCompatId}`;
   return String(dv.profile);
 }
 
