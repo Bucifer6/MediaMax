@@ -687,6 +687,13 @@ async function admin() {
     await waitFor(async () => ((await S.admin.get('/livetv/guide')).programs?.length ?? 0) > 20, 60000, 'guide data');
     await go(page, '/admin/guide');
     await page.getByRole('heading', { name: 'TV guide' }).first().waitFor();
+    await page.getByRole('tab', { name: 'Guide matching' }).click();
+    await page.getByRole('button', { name: /Re-run matching/ }).click();
+    await page.locator('.epg-match-table tbody tr').first().waitFor({ timeout: 15000 });
+    const rows = await page.locator('.epg-match-table tbody tr').count();
+    assert(rows >= 10, `only ${rows} channels in guide matching`);
+    const unmatched = await page.getByRole('tab', { name: /^Unmatched/ }).textContent();
+    assert(/\(0\)/.test(unmatched), `guide matching left channels unmatched: ${unmatched}`);
     await shot(page, 'admin-guide');
   });
 
@@ -951,6 +958,15 @@ async function viewer() {
     await k.locator('.karaoke-toggle input').check();
     await k.getByText('Quick').waitFor();
     await k.locator('.karaoke-toggle input').uncheck();
+    // The mini player's three columns must not overlap (the right-hand controls used to cover repeat + time).
+    const overlap = await page.evaluate(() => {
+      const c = document.querySelector('.mini-center')?.getBoundingClientRect();
+      const r = document.querySelector('.mini-right')?.getBoundingClientRect();
+      const l = document.querySelector('.mini-left')?.getBoundingClientRect();
+      return c && r && l ? Math.max(0, c.right - r.left, l.right - c.left) : 0;
+    });
+    await shot(page, 'viewer-miniplayer');
+    assert(overlap <= 1, `mini player controls overlap by ${Math.round(overlap)} px`);
     await page.getByRole('button', { name: 'Pause' }).first().click();
   });
 
