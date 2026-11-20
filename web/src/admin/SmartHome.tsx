@@ -115,7 +115,7 @@ export function SmartHomeAdmin() {
 
   return (
     <div>
-      <AdminHeader
+      <AdminHeader help="admin-home-assistant"
         title="Smart home"
         subtitle="Connect MediaMax to Home Assistant: now-playing sensors, a “someone is watching” switch for your lights, and playback events."
         actions={<button className="btn btn-primary" onClick={save} disabled={!dirty || busy === 'save'}>{busy === 'save' ? <Spinner size={18} /> : 'Save changes'}</button>}

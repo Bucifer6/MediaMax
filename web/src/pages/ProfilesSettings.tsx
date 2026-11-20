@@ -10,6 +10,7 @@ import { Badge, EmptyState, ErrorState, Field, Modal, Skeleton, Spinner } from '
 import { Icon } from '../components/Icon';
 import { PROFILE_COLORS, ProfileAvatar, ProfileEditor, useBuiltinAvatars } from '../components/ProfileEditor';
 import '../styles/profiles.css';
+import { HelpLink } from '../components/HelpLink';
 
 /** The account owner's own entry: name, built-in avatar and colour (stored on the account itself). */
 function OwnerEditor({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -84,7 +85,7 @@ export default function ProfilesSettings() {
     <section className="settings-card profiles-settings">
       <header>
         <div>
-          <h2>Profiles</h2>
+          <h2>Profiles <HelpLink slug="profiles" label="Profiles" /></h2>
           <p className="muted ps-intro">Everyone in your household gets their own watch history, My List, recommendations and settings. Profiles sign in through your account and share its stream limit.</p>
         </div>
       </header>

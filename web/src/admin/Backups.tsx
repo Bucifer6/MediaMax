@@ -203,7 +203,7 @@ export function BackupsAdmin() {
 
   return (
     <div>
-      <AdminHeader
+      <AdminHeader help="admin-backups"
         title="Backups"
         subtitle="Snapshots of your server’s database and settings."
         actions={

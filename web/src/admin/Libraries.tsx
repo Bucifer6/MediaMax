@@ -79,7 +79,7 @@ export function LibrariesAdmin() {
 
   return (
     <div>
-      <AdminHeader
+      <AdminHeader help="admin-libraries"
         title="Libraries"
         subtitle="Folders MediaMax watches for media. Xtream VOD & series libraries are created automatically from Live TV sources."
         actions={

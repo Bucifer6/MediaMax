@@ -75,6 +75,8 @@ function mergePrefs(stored: Partial<UserPreferences>, patch: Partial<UserPrefere
   const xf = Number(prefs.musicCrossfadeSec);
   prefs.musicCrossfadeSec = Number.isFinite(xf) ? Math.max(0, Math.min(12, Math.round(xf))) : 0;
   if (!['off', 'track', 'album', 'auto'].includes(prefs.replayGain as string)) prefs.replayGain = 'auto';
+  // Help Centre: the server version whose "What's new" card was dismissed.
+  if (prefs.whatsNewSeen !== undefined) prefs.whatsNewSeen = typeof prefs.whatsNewSeen === 'string' && /^[\w.+-]{1,32}$/.test(prefs.whatsNewSeen) ? prefs.whatsNewSeen : null;
   // Listening comforts (audio.ts): validated; per-device entries merge field by field, an empty one removes the device.
   if (prefs.audio !== undefined) prefs.audio = normalizeComforts(prefs.audio);
   if (prefs.audioDevices !== undefined) {

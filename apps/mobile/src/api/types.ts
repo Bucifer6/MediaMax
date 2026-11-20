@@ -3829,3 +3829,75 @@ export interface PlaybackInfo {
   /** Audio delivery decision for the selected track (absent from older servers). */
   audio?: AudioDecisionInfo | null;
 }
+
+/* ------------------------------------------------------------------ */
+/* Help Centre                                                         */
+/* ------------------------------------------------------------------ */
+
+export type HelpAudience = 'everyone' | 'admin';
+
+export interface HelpArticleSummary {
+  slug: string;
+  title: string;
+  summary: string;
+  section: string;
+  audience: HelpAudience;
+}
+
+export interface HelpSection {
+  id: string;
+  title: string;
+  description: string;
+  /** Web icon name (the app's Icon set). */
+  icon: string;
+  audience: HelpAudience;
+  articles: HelpArticleSummary[];
+}
+
+/** GET /help: sections and articles the caller may read (no bodies). */
+export interface HelpIndex {
+  product: string;
+  version: string;
+  sections: HelpSection[];
+}
+
+export interface HelpHeading {
+  level: 2 | 3;
+  text: string;
+  id: string;
+}
+
+/** GET /help/:slug */
+export interface HelpArticle extends HelpArticleSummary {
+  sectionTitle: string;
+  keywords: string[];
+  /** Markdown (a small subset: headings, lists, tables, links, bold/italic, code, <kbd>), placeholders filled in. */
+  markdown: string;
+  headings: HelpHeading[];
+  related: HelpArticleSummary[];
+}
+
+export interface HelpSearchResult extends HelpArticleSummary {
+  sectionTitle: string;
+  /** Plain-text excerpt around the first match. */
+  snippet: string;
+  score: number;
+}
+
+/** GET /help/search?q= */
+export interface HelpSearchResponse {
+  query: string;
+  results: HelpSearchResult[];
+}
+
+/** GET /help/whats-new: release notes for the running server version. */
+export interface HelpWhatsNew {
+  version: string;
+  title: string;
+  markdown: string;
+}
+
+export interface UserPreferences {
+  /** Server version whose "What's new" card this user dismissed. */
+  whatsNewSeen?: string | null;
+}

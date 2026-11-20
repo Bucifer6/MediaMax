@@ -16,6 +16,8 @@ import { ItemPage } from './pages/ItemDetail';
 import { SearchPage } from './pages/Search';
 import { LinkDevicePage } from './pages/LinkDevice';
 import { NotFound } from './pages/NotFound';
+import { ShortcutsHost } from './components/Shortcuts';
+import { WhatsNew } from './components/WhatsNew';
 
 /** Lazy-load a route chunk; after a server upgrade old chunk names 404, so reload once. */
 function lazyPage<T extends { default: React.ComponentType<any> }>(load: () => Promise<T>) {
@@ -59,6 +61,14 @@ const InvitePage = lazyPage(() => import('./pages/Invite'));
 const MyListPage = lazyPage(() => import('./pages/MyList'));
 const CalendarPage = lazyPage(() => import('./pages/Calendar'));
 const ProfilePickerPage = lazyPage(() => import('./pages/ProfilePicker'));
+const HelpPage = lazyPage(() => import('./pages/Help'));
+const PublicHelpShell = lazyPage(() => import('./pages/Help').then((m) => ({ default: m.PublicHelpShell })));
+
+/** The Help Centre is readable signed out too (login screen, phone and TV apps open it in a browser). */
+function HelpShell() {
+  const { user } = useApp();
+  return user ? <Layout /> : <PublicHelpShell />;
+}
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -140,6 +150,10 @@ function Gate() {
         <Route path="/play/:itemId" element={<RequireAuth><VideoPlayer /></RequireAuth>} />
         <Route path="/watch/multiview" element={<RequireAuth><Multiview /></RequireAuth>} />
         <Route path="/watch/live/:channelId" element={<RequireAuth><LivePlayer /></RequireAuth>} />
+        <Route path="/help" element={<HelpShell />}>
+          <Route index element={<HelpPage />} />
+          <Route path=":slug" element={<HelpPage />} />
+        </Route>
         <Route element={<RequireAuth><Layout /></RequireAuth>}>
           <Route index element={<Home />} />
           <Route path="library/:libraryId" element={<LibraryPage />} />
@@ -166,6 +180,8 @@ function Gate() {
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
+      <ShortcutsHost />
+      <WhatsNew />
     </Suspense>
   );
 }

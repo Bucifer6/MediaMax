@@ -52,7 +52,7 @@ export function StorageAdmin() {
 
   return (
     <div>
-      <AdminHeader
+      <AdminHeader help="admin-storage"
         title="Storage & disk spin-down"
         subtitle="Let NAS hard drives sleep when nobody is watching: background work waits for a maintenance window or for a disk that is awake anyway."
         actions={

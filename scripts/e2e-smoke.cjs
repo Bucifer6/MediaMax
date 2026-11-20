@@ -94,7 +94,8 @@ async function waitFor(fn, ms, what) {
       '/admin', '/admin/libraries', '/admin/stats', '/admin/users', `/admin/users/${users[0].id}/wrapped`, '/admin/livetv', '/admin/channels', '/admin/guide', '/admin/guide?tab=matching',
       '/admin/branding', '/admin/settings', '/admin/settings?tab=arr', '/admin/downloads', '/admin/plugins', '/admin/plugins?tab=catalog', '/admin/plugins?tab=repositories', '/admin/tasks', '/admin/activity', '/admin/devices',
       '/settings/security', '/profiles', '/settings/profiles', '/issues', '/issues/not-a-real-issue', '/admin/settings?tab=requests', '/admin/settings?tab=notifications', '/admin/invites', '/admin/backups', '/admin/remote', '/invite/not-a-real-code',
-      ...libs.filter((l) => l.type === 'audiobooks').map((l) => `/library/${l.id}?series=Smoke%20Series`)];
+      ...libs.filter((l) => l.type === 'audiobooks').map((l) => `/library/${l.id}?series=Smoke%20Series`),
+      '/help', '/help?q=subtitles', '/help/why-transcoding', '/help/admin-network', '/help/not-a-real-article'];
 
     browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
     const page = await (await browser.newContext({ viewport: { width: 1366, height: 860 } })).newPage();
@@ -124,6 +125,14 @@ async function waitFor(fn, ms, what) {
       return !!v && (v.readyState >= 2 || v.currentTime > 0);
     }, null, { timeout: 20000 }).then(() => true).catch(() => false);
     if (!started) failures.push('player: video never became ready');
+    // Help Centre API: index, search, an article, and admin-only articles hidden from signed-out readers.
+    const helpIdx = await (await fetch(`${B}/api/v1/help`)).json();
+    if (!helpIdx.sections?.length) failures.push('help: empty index');
+    if ((await fetch(`${B}/api/v1/help/admin-network`)).status !== 404) failures.push('help: admin article visible without signing in');
+    const helpSearch = await (await fetch(`${B}/api/v1/help/search?q=subtitels`)).json();
+    if (!helpSearch.results?.some((r) => r.slug === 'subtitles')) failures.push('help: typo search found nothing');
+    const helpArticle = await (await fetch(`${B}/api/v1/help/welcome`)).json();
+    if (!/Smoke Test/.test(helpArticle.title ?? '')) failures.push('help: product name not filled in: ' + helpArticle.title);
     console.log(`Visited ${pages.length + 1} pages.`);
   } catch (e) {
     failures.push(`setup: ${e.message}`);

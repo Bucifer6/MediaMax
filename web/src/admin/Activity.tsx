@@ -5,8 +5,32 @@ import { EmptyState, ErrorState, Skeleton, Spinner, Tabs } from '../components/u
 import { Icon } from '../components/Icon';
 import { formatDateTime } from '../utils/format';
 import { AdminHeader } from './AdminRoutes';
+import { downloadDiagnostics } from '../api/help';
+import { useToast } from '../state/toast';
 
 const PAGE = 50;
+
+/** Download a ZIP with versions, hardware, settings (secrets removed) and recent logs, for bug reports. */
+function DiagnosticsButton() {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      await downloadDiagnostics();
+      toast.success('Diagnostics downloaded. Passwords, keys and tokens were removed; check the files before sharing.');
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button className="btn" onClick={() => void run()} disabled={busy} title="Versions, hardware, settings without secrets, and recent logs">
+      {busy ? <Spinner size={16} /> : <Icon name="download" size={16} />} Download diagnostics
+    </button>
+  );
+}
 
 function Logs() {
   const [lines, setLines] = useState<string[] | null>(null);
@@ -63,7 +87,7 @@ export function ActivityAdmin() {
   const shown = sev ? items.filter((i) => i.severity === sev) : items;
   return (
     <div>
-      <AdminHeader title="Activity & logs" />
+      <AdminHeader help="admin-updates" title="Activity & logs" actions={<DiagnosticsButton />} />
       <Tabs value={tab} onChange={setTab} tabs={[{ value: 'activity', label: 'Activity' }, { value: 'logs', label: 'Server log' }]} />
       {tab === 'logs' ? <Logs /> : (
         <>

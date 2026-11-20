@@ -533,7 +533,7 @@ export function BrandingStudio() {
 
   return (
     <div className="studio">
-      <AdminHeader
+      <AdminHeader help="admin-branding"
         title="Branding studio"
         subtitle="Everything here is served to every MediaMax client — web, iOS, Android and TV — and updates live."
         actions={

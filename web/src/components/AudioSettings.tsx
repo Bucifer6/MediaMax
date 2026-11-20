@@ -5,6 +5,7 @@ import { getDeviceId } from '../api/device';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { initAudioCaps, type AudioCaps } from '../player/audioCaps';
+import { HelpLink } from './HelpLink';
 
 /** "+0.12s" / "−0.30s" (same style as the player's sync menu). */
 function formatDelay(ms: number) {
@@ -48,7 +49,7 @@ export function AudioSettingsCard() {
 
   return (
     <div className="settings-card audio-settings" id="audio">
-      <h2>Audio</h2>
+      <h2>Audio <HelpLink slug="audio" label="Audio" /></h2>
       {TOGGLES.map(([key, label, hint]) => (
         <button key={key} type="button" role="switch" aria-checked={!!comforts[key]} className="audio-toggle" onClick={() => void save({ audio: { ...comforts, [key]: !comforts[key] } })}>
           <span>{label}<small>{hint}</small></span>

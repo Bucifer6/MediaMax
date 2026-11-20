@@ -12,6 +12,7 @@ import './styles/stats.css';
 import './styles/tv.css';
 import './styles/discovery.css';
 import './styles/audio.css';
+import './styles/help.css';
 import { detectTv, installTvMode } from './tv/spatial';
 import { initCapabilities } from './player/capabilities';
 import { initAudioCaps } from './player/audioCaps';
