@@ -2738,6 +2738,26 @@ export interface PlaybackInfo {
   } | null;
 }
 
+/** How a Dolby Vision source reaches the client (shown in the player's info overlay). */
+export interface DolbyVisionPlayback {
+  /** "5", "7", "8.1", "8.4", "10.1" … (null when the profile is unknown). */
+  profile: string | null;
+  level: number | null;
+  /**
+   * `native`: real Dolby Vision (direct play, or a remux that keeps the DV configuration box and announces the DV codec);
+   * `base-layer`: its HDR10/HLG/SDR base layer; `stripped`: remuxed with the DV layers removed (profile 7 → HDR10);
+   * `tonemap`: transcoded to SDR.
+   */
+  mode: 'native' | 'base-layer' | 'stripped' | 'tonemap';
+  baseLayer: 'hdr10' | 'hlg' | 'sdr' | null;
+  /** DV codec string announced in the HLS master playlist for a native remux, e.g. "dvh1.08.06". */
+  codec: string | null;
+}
+
+export interface PlaybackInfo {
+  dolbyVision?: DolbyVisionPlayback | null;
+}
+
 /* ------------------------------------------------------------------ */
 /* Requests: Overseerr/Jellyseerr parity (permissions, quotas, issues)  */
 /* ------------------------------------------------------------------ */
