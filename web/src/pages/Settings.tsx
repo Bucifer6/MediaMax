@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
-import type { Device, Theme, TraktDeviceCode, UserPreferences } from '@mediamax/shared';
+import type { Device, SubtitleStyle, Theme, TraktDeviceCode, UserPreferences } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
@@ -10,6 +10,7 @@ import { Icon, type IconName } from '../components/Icon';
 import { themeStyle } from '../theme/applyTheme';
 import { DEFAULT_PREFERENCES } from '../theme/defaults';
 import { QUALITY_OPTIONS } from '../player/deviceProfile';
+import { DEFAULT_SUBTITLE_STYLE, SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitlePreviewStyle, subtitleStyleOf } from '../player/subtitleStyle';
 import { relativeTime } from '../utils/format';
 import { LinkDeviceForm } from './LinkDevice';
 import { ApiKeysCard, SubsonicCard, TwoFactorCard } from './SecuritySettings';
@@ -222,6 +223,74 @@ function Playback() {
       <div className="switch-group">
         <Switch checked={prefs.autoplayNext} onChange={(v) => save({ autoplayNext: v })} label="Autoplay next episode" hint="Shows an Up Next card with a countdown." />
         <Switch checked={prefs.skipIntros} onChange={(v) => save({ skipIntros: v })} label="Automatically skip intros" hint="Uses intro markers when available." />
+      </div>
+    </div>
+  );
+}
+
+/** Subtitle appearance with a live preview (applies to the video and live TV players). */
+function SubtitleSettings() {
+  const { prefs, save } = usePrefs();
+  const style = subtitleStyleOf(prefs.subtitleStyle);
+  const set = (patch: Partial<SubtitleStyle>) => save({ subtitleStyle: { ...style, ...patch } });
+  const isDefault = (Object.keys(DEFAULT_SUBTITLE_STYLE) as (keyof SubtitleStyle)[]).every((k) => style[k] === DEFAULT_SUBTITLE_STYLE[k]);
+  return (
+    <div className="settings-card" id="subtitles">
+      <h2>Subtitles</h2>
+      <div className={`subtitle-preview ${style.position === 'raised' ? 'raised' : ''}`} aria-label="Subtitle preview" role="img">
+        <span className="subtitle-preview-label">Preview</span>
+        <span className="subtitle-preview-text" style={subtitlePreviewStyle(style, 22)}>{'I never said she stole my money.\nSomeone else did.'}</span>
+      </div>
+      <div className="subtitle-fields">
+        {(Object.keys(SUBTITLE_OPTIONS) as (keyof SubtitleStyle)[]).map((field) => (
+          <Field key={field} label={SUBTITLE_FIELD_LABELS[field]}>
+            <select className="select" value={style[field]} onChange={(e) => set({ [field]: e.target.value } as Partial<SubtitleStyle>)}>
+              {SUBTITLE_OPTIONS[field].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </Field>
+        ))}
+      </div>
+      <p className="muted small">
+        Applies to text subtitles and live TV captions. While watching, the subtitle menu has the same options, and <kbd>G</kbd> / <kbd>H</kbd> shift subtitle timing by 0.1 s.
+        {!isDefault && <> <button type="button" className="btn btn-ghost btn-sm" onClick={() => save({ subtitleStyle: DEFAULT_SUBTITLE_STYLE })}>Reset to default</button></>}
+      </p>
+    </div>
+  );
+}
+
+/** Music playback: crossfade and loudness levelling. */
+function MusicSettings() {
+  const { prefs, save } = usePrefs();
+  const xf = prefs.musicCrossfadeSec ?? 0;
+  const [draft, setDraft] = useState(xf);
+  useEffect(() => setDraft(xf), [xf]);
+  return (
+    <div className="settings-card" id="music">
+      <h2>Music</h2>
+      <div className="form-row">
+        <Field label={`Crossfade · ${draft ? `${draft} s` : 'off (gapless)'}`} hint="Blend the end of one song into the next. Albums played in order stay gapless.">
+          <input
+            className="range"
+            type="range"
+            min={0}
+            max={12}
+            step={1}
+            value={draft}
+            onChange={(e) => setDraft(Number(e.target.value))}
+            onPointerUp={() => draft !== xf && save({ musicCrossfadeSec: draft })}
+            onKeyUp={() => draft !== xf && save({ musicCrossfadeSec: draft })}
+            onBlur={() => draft !== xf && save({ musicCrossfadeSec: draft })}
+            aria-label="Crossfade seconds"
+          />
+        </Field>
+        <Field label="Volume levelling (ReplayGain)">
+          <select className="select" value={prefs.replayGain ?? 'auto'} onChange={(e) => save({ replayGain: e.target.value as NonNullable<UserPreferences['replayGain']> })}>
+            <option value="auto">Automatic (album gain for albums in order)</option>
+            <option value="track">Track gain</option>
+            <option value="album">Album gain</option>
+            <option value="off">Off</option>
+          </select>
+        </Field>
       </div>
     </div>
   );
@@ -556,7 +625,7 @@ export default function SettingsPage() {
             <Route path="profile" element={<Profile />} />
             <Route path="security" element={<Security />} />
             <Route path="appearance" element={<Appearance />} />
-            <Route path="playback" element={<Playback />} />
+            <Route path="playback" element={<><Playback /><SubtitleSettings /><MusicSettings /></>} />
             <Route path="devices" element={<Devices />} />
             <Route path="services" element={<Services />} />
             <Route path="link" element={<LinkTab />} />

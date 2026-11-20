@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import type { Chapter, Lyrics } from '@mediamax/shared';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import type { Chapter, Item, Lyrics } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useMusic, type SleepTimer } from './music';
 import { PlayerBookmarks } from '../components/Bookmarks';
@@ -109,6 +109,40 @@ export function SleepTimerButton() {
   );
 }
 
+/** Radio entries for a track: song, album and artist radio. */
+export function radioMenuItems(t: Item, start: (seedId: string, title: string) => void): MenuItem[] {
+  if (t.type !== 'track') return [];
+  return [
+    { label: 'Start radio', icon: 'antenna', onClick: () => start(t.id, t.title) },
+    ...(t.parentId ? [{ label: 'Album radio', icon: 'antenna' as const, onClick: () => start(t.parentId!, t.parentTitle ?? 'this album') }] : []),
+    ...(t.grandparentId ? [{ label: 'Artist radio', icon: 'antenna' as const, onClick: () => start(t.grandparentId!, t.grandparentTitle ?? 'this artist') }] : []),
+  ];
+}
+
+/** Track menu of the music player. */
+function TrackMenu({ t }: { t: Item }) {
+  const m = useMusic();
+  const navigate = useNavigate();
+  const items: MenuItem[] = [
+    ...radioMenuItems(t, (id, title) => void m.startRadio(id, title)),
+    ...(t.type === 'track' ? [{ divider: true, label: '' }] : []),
+    ...(t.parentId ? [{ label: t.type === 'track' ? 'Go to album' : 'Go to book', icon: 'music' as const, onClick: () => navigate(`/item/${t.parentId}`) }] : []),
+    ...(t.grandparentId ? [{ label: 'Go to artist', icon: 'user' as const, onClick: () => navigate(`/item/${t.grandparentId}`) }] : []),
+  ];
+  if (!items.length) return null;
+  return (
+    <Dropdown
+      className="track-menu"
+      trigger={({ onClick, open }) => (
+        <button className="btn-icon" onClick={onClick} aria-label="More options" title="More" aria-expanded={open} aria-haspopup="menu">
+          <Icon name="more" />
+        </button>
+      )}
+      items={items}
+    />
+  );
+}
+
 export function MiniPlayer() {
   const m = useMusic();
   const [panel, setPanel] = useState<Panel>(null);
@@ -132,6 +166,7 @@ export function MiniPlayer() {
             <div className="mini-title">{t.title}</div>
             <div className="mini-sub">
               {m.casting ? <span className="mini-casting"><Icon name="cast" size={13} /> Casting to {m.cast.deviceName ?? 'device'}</span> : artist}
+              {m.radio && !m.casting && <span className="mini-radio" title={m.radio.label}><Icon name="antenna" size={12} /> {m.radio.label}</span>}
             </div>
           </div>
         </div>
@@ -190,6 +225,7 @@ export function MiniPlayer() {
               <Icon name="cast" />
             </button>
           )}
+          <TrackMenu t={t} />
           <button className={`btn-icon ${queueOpen ? 'active' : ''}`} onClick={() => setQueueOpen((o) => !o)} aria-label="Queue">
             <Icon name="queue" />
           </button>
@@ -227,8 +263,21 @@ export function MiniPlayer() {
       )}
       {queueOpen && (
         <aside className="queue-panel">
+          <div className="now-playing-card">
+            <span className="queue-art"><Img src={art} width={96} fallback={<Icon name="music" size={18} />} /></span>
+            <span className="queue-text">
+              <small className="now-playing-kicker">Now playing</small>
+              <span>{t.title}</span>
+              <small>{artist}</small>
+            </span>
+            {t.type === 'track' && (
+              <button className="btn btn-sm" onClick={() => void m.startRadio(t.id, t.title)} title={`Radio based on ${t.title}`}>
+                <Icon name="antenna" size={14} /> Start radio
+              </button>
+            )}
+          </div>
           <div className="queue-head">
-            <h3>Up next</h3>
+            <h3>{m.radio ? m.radio.label : 'Up next'}</h3>
             <div>
               <button className="btn btn-ghost btn-sm" onClick={m.clear}>Clear</button>
               <button className="btn-icon" onClick={() => setQueueOpen(false)} aria-label="Close queue">

@@ -306,6 +306,57 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX dj_feedback_user ON dj_feedback(user_id, at);
   `,
+  /* 13: discovery — My List, "not interested", TV schedules, in-app notifications */ `
+  CREATE TABLE watchlist (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    added_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, item_id)
+  );
+  CREATE INDEX watchlist_user ON watchlist(user_id, added_at);
+  CREATE INDEX watchlist_item ON watchlist(item_id);
+  ALTER TABLE user_data ADD COLUMN not_interested INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX user_data_item ON user_data(item_id);
+  CREATE INDEX play_history_started ON play_history(started_at);
+  CREATE TABLE show_schedule (
+    show_id TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+    status TEXT, in_production INTEGER, last_air_date TEXT,
+    next_air_date TEXT, next_season INTEGER, next_episode INTEGER, next_title TEXT, next_overview TEXT,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX show_schedule_next ON show_schedule(next_air_date);
+  CREATE TABLE notifications (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL, item_id TEXT, title TEXT NOT NULL, body TEXT, created_at TEXT NOT NULL, read_at TEXT
+  );
+  CREATE INDEX notifications_user ON notifications(user_id, created_at);
+  -- Cast & crew of movies/shows as rows (kept in sync by triggers) so "titles with these people" is an index lookup.
+  CREATE TABLE item_people (
+    item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE, name TEXT NOT NULL, kind TEXT, ord INTEGER NOT NULL
+  );
+  CREATE INDEX item_people_name ON item_people(name);
+  CREATE INDEX item_people_item ON item_people(item_id);
+  CREATE TRIGGER items_people_ins AFTER INSERT ON items WHEN new.type IN ('movie','show') BEGIN
+    INSERT INTO item_people (item_id, name, kind, ord)
+      SELECT new.id, json_extract(j.value, '$.name'), json_extract(j.value, '$.kind'), CAST(j.key AS INTEGER)
+      FROM json_each(CASE WHEN json_valid(new.people) THEN new.people ELSE '[]' END) j
+      WHERE json_extract(j.value, '$.name') IS NOT NULL
+        AND ((json_extract(j.value, '$.kind') = 'actor' AND CAST(j.key AS INTEGER) < 10) OR json_extract(j.value, '$.kind') IN ('director', 'writer'));
+  END;
+  CREATE TRIGGER items_people_upd AFTER UPDATE OF people ON items WHEN new.type IN ('movie','show') BEGIN
+    DELETE FROM item_people WHERE item_id = new.id;
+    INSERT INTO item_people (item_id, name, kind, ord)
+      SELECT new.id, json_extract(j.value, '$.name'), json_extract(j.value, '$.kind'), CAST(j.key AS INTEGER)
+      FROM json_each(CASE WHEN json_valid(new.people) THEN new.people ELSE '[]' END) j
+      WHERE json_extract(j.value, '$.name') IS NOT NULL
+        AND ((json_extract(j.value, '$.kind') = 'actor' AND CAST(j.key AS INTEGER) < 10) OR json_extract(j.value, '$.kind') IN ('director', 'writer'));
+  END;
+  INSERT INTO item_people (item_id, name, kind, ord)
+    SELECT i.id, json_extract(j.value, '$.name'), json_extract(j.value, '$.kind'), CAST(j.key AS INTEGER)
+    FROM items i, json_each(CASE WHEN json_valid(i.people) THEN i.people ELSE '[]' END) j
+    WHERE i.type IN ('movie','show') AND json_extract(j.value, '$.name') IS NOT NULL
+      AND ((json_extract(j.value, '$.kind') = 'actor' AND CAST(j.key AS INTEGER) < 10) OR json_extract(j.value, '$.kind') IN ('director', 'writer'));
+  `,
 ];
 
 function migrate(db: Database) {

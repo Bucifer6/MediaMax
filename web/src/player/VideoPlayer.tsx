@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { Item, Marker, PlaybackInfo, TrickplayInfo } from '@mediamax/shared';
+import type { Item, Marker, PlaybackInfo, SubtitleStyle, TrickplayInfo } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import { useApp } from '../state/app';
@@ -19,9 +19,55 @@ import { DEFAULT_PREFERENCES } from '../theme/defaults';
 import { isTypingTarget } from '../hooks';
 import { formatClock, languageName } from '../utils/format';
 import { isResumable } from '../utils/items';
+import { positionCues, SUBTITLE_CLASS, SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitleStyleOf, useSubtitleStyleSheet } from './subtitleStyle';
 
-type Menu = null | 'audio' | 'subs' | 'quality' | 'speed' | 'together' | 'chapters';
+type Menu = null | 'audio' | 'subs' | 'subStyle' | 'sync' | 'quality' | 'speed' | 'together' | 'chapters';
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+/** Subtitle delay range / step (ms), as in VLC's G/H. */
+const SUB_DELAY_MAX = 10000;
+const SUB_DELAY_STEP = 100;
+/** Audio delay (ms): Web Audio can only hold the sound back, so it is 0..+AUDIO_DELAY_MAX. */
+const AUDIO_DELAY_MAX = 3000;
+const AUDIO_DELAY_STEP = 50;
+/** Two taps within this window count as a double tap (touch: skip 10s on the left/right third). */
+const DOUBLE_TAP_MS = 300;
+
+const syncKey = (id: string) => `mm.sync.${id}`;
+/** Sync offsets are remembered per item for the browser session. */
+function loadSync(id: string): { sub: number; audio: number } {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(syncKey(id)) ?? '{}') as { sub?: number; audio?: number };
+    return { sub: Number(v.sub) || 0, audio: Number(v.audio) || 0 };
+  } catch {
+    return { sub: 0, audio: 0 };
+  }
+}
+function saveSync(id: string, sub: number, audio: number) {
+  try {
+    if (!sub && !audio) sessionStorage.removeItem(syncKey(id));
+    else sessionStorage.setItem(syncKey(id), JSON.stringify({ sub, audio }));
+  } catch {
+    /* ignore */
+  }
+}
+export function formatDelay(ms: number) {
+  const r = Math.round(ms / 10) * 10;
+  const abs = Math.abs(r / 1000).toFixed(r % 100 ? 2 : 1);
+  return `${r > 0 ? '+' : r < 0 ? '\u2212' : ''}${abs}s`;
+}
+
+interface Stats {
+  engine: string;
+  method: string;
+  resolution: string;
+  videoCodec: string;
+  audioCodec: string;
+  bitrate: string;
+  bandwidth: string;
+  buffer: string;
+  dropped: string;
+  extra: string;
+}
 
 interface StartOpts {
   startMs: number;
@@ -35,7 +81,7 @@ export default function VideoPlayer() {
   const { itemId = '' } = useParams();
   const [sp] = useSearchParams();
   const navigate = useNavigate();
-  const { user, system } = useApp();
+  const { user, system, setUser } = useApp();
   const toast = useToast();
   const music = useMusic();
   const cast = useCast(true);
@@ -47,6 +93,10 @@ export default function VideoPlayer() {
   const castOffsetRef = useRef(0);
   const [casting, setCasting] = useState(false);
   const prefs = { ...DEFAULT_PREFERENCES, ...(user?.preferences ?? {}) };
+  const subStyle = subtitleStyleOf(prefs.subtitleStyle);
+  useSubtitleStyleSheet(subStyle);
+  const subStyleRef = useRef(subStyle);
+  subStyleRef.current = subStyle;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
@@ -92,6 +142,15 @@ export default function VideoPlayer() {
   const [subSearch, setSubSearch] = useState(false);
   /** Subtitle index to select once the next PlaybackInfo arrives (after an online download). */
   const pendingSubPick = useRef<number | null>(null);
+  /** Subtitle / audio sync offsets (ms); positive = later. */
+  const [subDelayMs, setSubDelayMs] = useState(() => loadSync(itemId).sub);
+  const [audioDelayMs, setAudioDelayMs] = useState(() => Math.max(0, loadSync(itemId).audio));
+  const subDelayRef = useRef(subDelayMs);
+  subDelayRef.current = subDelayMs;
+  const [syncToast, setSyncToast] = useState<string | null>(null);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [showStats, setShowStats] = useState(false);
+  const [tapSkip, setTapSkip] = useState<{ side: 'left' | 'right'; n: number } | null>(null);
 
   const durationMs = info?.durationMs ?? item?.durationMs ?? 0;
   const markers: Marker[] = info?.markers?.length ? info.markers : item?.markers ?? [];
@@ -101,6 +160,12 @@ export default function VideoPlayer() {
     setOsd(text);
     window.clearTimeout((flash as unknown as { t?: number }).t);
     (flash as unknown as { t?: number }).t = window.setTimeout(() => setOsd(null), 900);
+  }, []);
+
+  const showSyncToast = useCallback((text: string) => {
+    setSyncToast(text);
+    window.clearTimeout((showSyncToast as unknown as { t?: number }).t);
+    (showSyncToast as unknown as { t?: number }).t = window.setTimeout(() => setSyncToast(null), 1400);
   }, []);
 
   const currentMs = useCallback(() => {
@@ -253,6 +318,9 @@ export default function VideoPlayer() {
     setTrickplay(null);
     setSubSearch(false);
     skippedMarkers.current.clear();
+    const sy = loadSync(itemId);
+    setSubDelayMs(sy.sub);
+    setAudioDelayMs(Math.max(0, sy.audio));
     // Scrub previews (404 until the server has generated them — just go without).
     const tpCtrl = new AbortController();
     api.items.trickplay(itemId, undefined, tpCtrl.signal).then((tp) => {
@@ -381,6 +449,97 @@ export default function VideoPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [info?.sessionId]);
 
+  /* ---------------- subtitle timing & position ---------------- */
+  /** Original cue times (file timeline), so offsets can be re-applied any number of times. */
+  const cueTimes = useRef(new WeakMap<TextTrackCue, [number, number]>());
+  /** Media position at stream time 0 for the current session's tracks. */
+  const cueBaseRef = useRef(0);
+  cueBaseRef.current = info?.streamStartMs ?? 0;
+  const applyCues = useCallback((track: TextTrack) => {
+    const cues = track.cues;
+    if (!cues) return;
+    const shift = (subDelayRef.current - cueBaseRef.current) / 1000;
+    for (const c of Array.from(cues)) {
+      let orig = cueTimes.current.get(c);
+      if (!orig) {
+        orig = [c.startTime, c.endTime];
+        cueTimes.current.set(c, orig);
+      }
+      const start = Math.max(0, orig[0] + shift);
+      const end = Math.max(0, orig[1] + shift);
+      if (c.startTime === start && c.endTime === end) continue;
+      // Keep start <= end at every step.
+      if (start > c.endTime) {
+        c.endTime = end;
+        c.startTime = start;
+      } else {
+        c.startTime = start;
+        c.endTime = end;
+      }
+    }
+    positionCues(track, subStyleRef.current.position);
+  }, []);
+  useEffect(() => {
+    trackEls.current.forEach((el) => applyCues(el.track));
+  }, [subDelayMs, subStyle.position, applyCues]);
+
+  const setSync = useCallback((sub: number, audio: number) => {
+    setSubDelayMs(sub);
+    setAudioDelayMs(audio);
+    saveSync(itemId, sub, audio);
+  }, [itemId]);
+  const nudgeSubtitles = useCallback((delta: number | null) => {
+    const next = delta == null ? 0 : Math.max(-SUB_DELAY_MAX, Math.min(SUB_DELAY_MAX, Math.round((subDelayRef.current + delta) / SUB_DELAY_STEP) * SUB_DELAY_STEP));
+    setSync(next, audioDelayMs);
+    showSyncToast(`Subtitles ${formatDelay(next)}`);
+  }, [audioDelayMs, setSync, showSyncToast]);
+  const nudgeAudio = useCallback((delta: number | null) => {
+    const next = delta == null ? 0 : Math.max(0, Math.min(AUDIO_DELAY_MAX, Math.round((audioDelayMs + delta) / AUDIO_DELAY_STEP) * AUDIO_DELAY_STEP));
+    setSync(subDelayRef.current, next);
+    showSyncToast(`Audio ${formatDelay(next)}`);
+  }, [audioDelayMs, setSync, showSyncToast]);
+
+  /* ---------------- audio delay (Web Audio) ---------------- */
+  // The element's sound is routed through a DelayNode the first time a delay is set. Web Audio can only
+  // hold audio back (positive delay); the routing stays in place for the life of the player.
+  const audioGraph = useRef<{ ctx: AudioContext; delay: DelayNode } | null>(null);
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || (!audioDelayMs && !audioGraph.current)) return;
+    if (!audioGraph.current) {
+      try {
+        const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        const ctx = new Ctx();
+        const src = ctx.createMediaElementSource(v);
+        const delay = ctx.createDelay(AUDIO_DELAY_MAX / 1000 + 1);
+        src.connect(delay).connect(ctx.destination);
+        audioGraph.current = { ctx, delay };
+      } catch {
+        toast.show('Audio delay is not supported in this browser');
+        setAudioDelayMs(0);
+        return;
+      }
+    }
+    const g = audioGraph.current;
+    void g.ctx.resume().catch(() => {});
+    g.delay.delayTime.setTargetAtTime(audioDelayMs / 1000, g.ctx.currentTime, 0.03);
+  }, [audioDelayMs, toast]);
+  useEffect(() => () => {
+    void audioGraph.current?.ctx.close().catch(() => {});
+    audioGraph.current = null;
+  }, []);
+
+  const saveSubStyle = useCallback(async (patch: Partial<SubtitleStyle>) => {
+    if (!user) return;
+    const next = { ...subStyleRef.current, ...patch };
+    setUser({ ...user, preferences: { ...user.preferences, subtitleStyle: next } });
+    try {
+      setUser(await api.auth.updateMe({ preferences: { subtitleStyle: next } }));
+    } catch (e) {
+      toast.error(e);
+    }
+  }, [user, setUser, toast]);
+
   // Apply subtitle track modes.
   subtitleRef.current = subtitleIndex;
   useEffect(() => {
@@ -481,6 +640,46 @@ export default function VideoPlayer() {
   useEffect(() => {
     if (videoRef.current) videoRef.current.playbackRate = rate;
   }, [rate]);
+
+  /* ---------------- stats overlay (I) ---------------- */
+  useEffect(() => {
+    if (!showStats) {
+      setStats(null);
+      return;
+    }
+    const kbps = (bps: number | null | undefined) => (bps ? (bps >= 1e6 ? `${(bps / 1e6).toFixed(1)} Mbps` : `${Math.round(bps / 1000)} kbps`) : '—');
+    const tick = () => {
+      const v = videoRef.current;
+      const pi = info;
+      if (!v) return;
+      const media = itemRef.current?.media?.[0];
+      const es = attached.current?.stats?.() ?? {};
+      const direct = pi?.method === 'direct' || pi?.method === 'remux';
+      const aIdx = optsRef.current.audioIndex;
+      const audio = media?.audioStreams.find((a) => a.index === aIdx) ?? media?.audioStreams.find((a) => a.default) ?? media?.audioStreams[0];
+      let ahead = 0;
+      for (let i = 0; i < v.buffered.length; i++) {
+        if (v.buffered.start(i) <= v.currentTime + 0.1 && v.buffered.end(i) >= v.currentTime) ahead = v.buffered.end(i) - v.currentTime;
+      }
+      const q = typeof v.getVideoPlaybackQuality === 'function' ? v.getVideoPlaybackQuality() : null;
+      const dropped = q ? `${q.droppedVideoFrames} / ${q.totalVideoFrames}${q.totalVideoFrames ? ` (${((q.droppedVideoFrames / q.totalVideoFrames) * 100).toFixed(1)}%)` : ''}` : '—';
+      setStats({
+        engine: attached.current?.engine ?? (castingRef.current ? 'cast' : '—'),
+        method: pi ? (pi.method === 'direct' ? 'Direct play' : pi.method === 'remux' ? 'Direct stream (remux)' : pi.method === 'transcode' ? 'Transcode' : pi.method) : '—',
+        resolution: v.videoWidth ? `${v.videoWidth}×${v.videoHeight}${media?.width && media.width !== v.videoWidth ? ` (source ${media.width}×${media.height})` : ''}` : '—',
+        videoCodec: es.videoCodec || (direct ? media?.videoCodec : null) || (pi?.method === 'transcode' ? 'h264 (transcoded)' : '—'),
+        audioCodec: es.audioCodec || (audio ? `${audio.codec}${audio.channels ? ` · ${audio.channels}ch` : ''}` : '—'),
+        bitrate: kbps(es.bitrate ?? (direct ? (media?.bitrate ?? null) : null)),
+        bandwidth: kbps(es.bandwidth),
+        buffer: `${ahead.toFixed(1)} s`,
+        dropped,
+        extra: `${rate}× · subs ${formatDelay(subDelayRef.current)} · audio ${formatDelay(audioDelayMs)}`,
+      });
+    };
+    tick();
+    const iv = window.setInterval(tick, 1000);
+    return () => window.clearInterval(iv);
+  }, [showStats, info, rate, audioDelayMs]);
 
   /* ---------------- controls ---------------- */
   const seekTo = useCallback((ms: number, fromRemote = false) => {
@@ -655,6 +854,43 @@ export default function VideoPlayer() {
     else poke();
   }, [paused, poke]);
 
+  /* ---------------- touch: tap = controls, double tap on a side = skip 10s ---------------- */
+  const lastTap = useRef<{ t: number; side: 'left' | 'right' | 'center' } | null>(null);
+  const tapTimer = useRef<number | null>(null);
+  /** Whether the controls were up when the finger came down (the shell's touchstart shows them). */
+  const controlsAtTouch = useRef(true);
+  const onVideoTouchEnd = (e: ReactTouchEvent<HTMLVideoElement>) => {
+    const touch = e.changedTouches[0];
+    if (!touch || e.touches.length) return;
+    // Handle taps ourselves: no synthesized click (which would toggle play) or dblclick (fullscreen).
+    e.preventDefault();
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = (touch.clientX - r.left) / r.width;
+    const side = x < 1 / 3 ? 'left' : x > 2 / 3 ? 'right' : 'center';
+    const now = performance.now();
+    const prev = lastTap.current;
+    if (prev && now - prev.t < DOUBLE_TAP_MS && prev.side === side && side !== 'center') {
+      if (tapTimer.current) window.clearTimeout(tapTimer.current);
+      tapTimer.current = null;
+      lastTap.current = { t: now, side }; // keep tapping to skip further
+      seekTo(currentMs() + (side === 'left' ? -10000 : 10000));
+      setTapSkip((cur) => ({ side, n: cur?.side === side ? cur.n + 1 : 1 }));
+      window.clearTimeout((setTapSkip as unknown as { t?: number }).t);
+      (setTapSkip as unknown as { t?: number }).t = window.setTimeout(() => setTapSkip(null), 700);
+      return;
+    }
+    lastTap.current = { t: now, side };
+    if (tapTimer.current) window.clearTimeout(tapTimer.current);
+    tapTimer.current = window.setTimeout(() => {
+      tapTimer.current = null;
+      // Single tap: show the controls, or hide them when they're already up.
+      if (controlsAtTouch.current && !videoRef.current?.paused) {
+        setControls(false);
+        setMenu(null);
+      } else poke();
+    }, DOUBLE_TAP_MS);
+  };
+
   /* ---------------- keyboard ---------------- */
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -700,6 +936,18 @@ export default function VideoPlayer() {
           break;
         case 'p':
           void togglePip();
+          break;
+        case 'g':
+        case 'G':
+          nudgeSubtitles(-SUB_DELAY_STEP);
+          break;
+        case 'h':
+        case 'H':
+          nudgeSubtitles(SUB_DELAY_STEP);
+          break;
+        case 'i':
+        case 'I':
+          setShowStats((x) => !x);
           break;
         case 'n':
         case 'MediaTrackNext':
@@ -787,11 +1035,13 @@ export default function VideoPlayer() {
       {backdrop && buffering && positionMs < 1000 && <div className="player-backdrop"><Img src={backdrop} width={1920} /></div>}
       <video
         ref={videoRef}
-        className="player-video"
+        className={`player-video ${SUBTITLE_CLASS}`}
         playsInline
         crossOrigin="anonymous"
         onClick={() => { togglePlay(); poke(); }}
         onDoubleClick={toggleFullscreen}
+        onTouchStart={() => { controlsAtTouch.current = controls; }}
+        onTouchEnd={onVideoTouchEnd}
         poster={undefined}
       >
         {!burned && textSubs.map((s) => (
@@ -805,13 +1055,7 @@ export default function VideoPlayer() {
               if (el) {
                 trackEls.current.set(s.index, el);
                 el.track.mode = s.index === subtitleIndex ? 'showing' : 'disabled';
-                el.onload = () => {
-                  const off = offsetRef.current / 1000;
-                  if (!off || el.dataset.shifted) return;
-                  el.dataset.shifted = '1';
-                  const cues = el.track.cues;
-                  if (cues) for (const c of Array.from(cues)) { c.startTime -= off; c.endTime -= off; }
-                };
+                el.onload = () => applyCues(el.track);
               } else trackEls.current.delete(s.index);
             }}
           />
@@ -832,6 +1076,32 @@ export default function VideoPlayer() {
         </div>
       )}
       {osd && <div className="player-osd">{osd}</div>}
+      {syncToast && <div className="player-sync-toast" role="status">{syncToast}</div>}
+      {tapSkip && (
+        <div className={`tap-skip tap-skip-${tapSkip.side}`} aria-hidden="true">
+          <Icon name={tapSkip.side === 'left' ? 'rewind10' : 'forward10'} size={34} />
+          <span>{tapSkip.n * 10} seconds</span>
+        </div>
+      )}
+      {showStats && stats && (
+        <div className="player-stats" role="dialog" aria-label="Playback statistics">
+          <div className="player-stats-head">
+            <strong>Stats for nerds</strong>
+            <button className="btn-icon" onClick={() => setShowStats(false)} aria-label="Close stats"><Icon name="x" size={14} /></button>
+          </div>
+          <dl>
+            <dt>Playback</dt><dd>{stats.method} · {stats.engine}</dd>
+            <dt>Resolution</dt><dd>{stats.resolution}</dd>
+            <dt>Video codec</dt><dd>{stats.videoCodec}</dd>
+            <dt>Audio codec</dt><dd>{stats.audioCodec}</dd>
+            <dt>Bitrate</dt><dd>{stats.bitrate}</dd>
+            <dt>Network</dt><dd>{stats.bandwidth}</dd>
+            <dt>Buffer</dt><dd>{stats.buffer}</dd>
+            <dt>Dropped frames</dt><dd>{stats.dropped}</dd>
+            <dt>Speed / sync</dt><dd>{stats.extra}</dd>
+          </dl>
+        </div>
+      )}
 
       {error && (
         <div className="player-error">
@@ -937,11 +1207,81 @@ export default function VideoPlayer() {
                     ...burnOnly.map((s) => ({ label: s.title || languageName(s.language), value: `b${s.index}`, sub: `${s.codec.toUpperCase()} · burn-in (transcodes)` })),
                   ]}
                 />
+                <button className="option option-action" onClick={() => setMenu('subStyle')}>
+                  <span className="option-check"><Icon name="type" size={16} /></span>
+                  <span className="option-label">Subtitle style…</span>
+                </button>
+                <button className="option option-action option-action-plain" onClick={() => setMenu('sync')}>
+                  <span className="option-check"><Icon name="clock" size={16} /></span>
+                  <span className="option-label">
+                    Sync &amp; delay…
+                    {(subDelayMs !== 0 || audioDelayMs !== 0) && <small>Subtitles {formatDelay(subDelayMs)} · Audio {formatDelay(audioDelayMs)}</small>}
+                  </span>
+                </button>
                 {canSearchSubtitles(item) && (
-                  <button className="option option-action" onClick={openSubSearch}>
+                  <button className="option option-action option-action-plain" onClick={openSubSearch}>
                     <span className="option-check"><Icon name="search" size={16} /></span>
                     <span className="option-label">Search online…</span>
                   </button>
+                )}
+              </Popover>
+              <Popover open={menu === 'subStyle'} onClose={() => setMenu(null)} className="substyle-popover">
+                <div className="option-title option-title-back">
+                  <button className="btn-icon" onClick={() => setMenu('subs')} aria-label="Back to subtitles"><Icon name="chevronLeft" size={16} /></button>
+                  Subtitle style
+                </div>
+                {(Object.keys(SUBTITLE_OPTIONS) as (keyof SubtitleStyle)[]).map((field) => (
+                  <div className="substyle-row" key={field} role="radiogroup" aria-label={SUBTITLE_FIELD_LABELS[field]}>
+                    <span className="substyle-label">{SUBTITLE_FIELD_LABELS[field]}</span>
+                    <div className="substyle-chips">
+                      {SUBTITLE_OPTIONS[field].map((o) => (
+                        <button
+                          key={o.value}
+                          role="radio"
+                          aria-checked={subStyle[field] === o.value}
+                          className={`chip ${subStyle[field] === o.value ? 'active' : ''}`}
+                          onClick={() => void saveSubStyle({ [field]: o.value } as Partial<SubtitleStyle>)}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </Popover>
+              <Popover open={menu === 'sync'} onClose={() => setMenu(null)} className="sync-popover">
+                <div className="option-title option-title-back">
+                  <button className="btn-icon" onClick={() => setMenu('subs')} aria-label="Back to subtitles"><Icon name="chevronLeft" size={16} /></button>
+                  Sync &amp; delay
+                </div>
+                <div className="sync-row">
+                  <span className="sync-label">Subtitles<small>G / H</small></span>
+                  <button className="btn-icon" onClick={() => nudgeSubtitles(-SUB_DELAY_STEP)} aria-label="Subtitles earlier"><Icon name="minus" size={16} /></button>
+                  <output className="sync-value" aria-live="polite">{formatDelay(subDelayMs)}</output>
+                  <button className="btn-icon" onClick={() => nudgeSubtitles(SUB_DELAY_STEP)} aria-label="Subtitles later"><Icon name="plus" size={16} /></button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => nudgeSubtitles(null)} disabled={!subDelayMs}>Reset</button>
+                </div>
+                <input
+                  className="sync-slider"
+                  type="range"
+                  min={-SUB_DELAY_MAX}
+                  max={SUB_DELAY_MAX}
+                  step={SUB_DELAY_STEP}
+                  value={subDelayMs}
+                  onChange={(e) => nudgeSubtitles(Number(e.target.value) - subDelayMs)}
+                  aria-label="Subtitle delay"
+                />
+                {!casting && (
+                  <>
+                    <div className="sync-row">
+                      <span className="sync-label">Audio<small>delay only</small></span>
+                      <button className="btn-icon" onClick={() => nudgeAudio(-AUDIO_DELAY_STEP)} aria-label="Audio earlier" disabled={!audioDelayMs}><Icon name="minus" size={16} /></button>
+                      <output className="sync-value" aria-live="polite">{formatDelay(audioDelayMs)}</output>
+                      <button className="btn-icon" onClick={() => nudgeAudio(AUDIO_DELAY_STEP)} aria-label="Audio later"><Icon name="plus" size={16} /></button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => nudgeAudio(null)} disabled={!audioDelayMs}>Reset</button>
+                    </div>
+                    <p className="sync-hint">Positive values make subtitles or sound come later. Audio can only be delayed (for sound that runs ahead of the picture).</p>
+                  </>
                 )}
               </Popover>
             </div>

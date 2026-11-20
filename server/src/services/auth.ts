@@ -2,7 +2,7 @@ import { securityEvent } from '../util/securityLog.js';
 import crypto from 'node:crypto';
 import type {
   ApiKey, AuthResponse, CreatedApiKey, CreateUserRequest, TotpEnabled, TotpSetup, Device, DeviceInfo, LinkCodeResponse, LinkPollResponse, Platform,
-  PublicProfile, UpdateMeRequest, UpdateUserRequest, User, UserPreferences,
+  PublicProfile, SubtitleStyle, UpdateMeRequest, UpdateUserRequest, User, UserPreferences,
 } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { newId, newToken, sha256, shortCode } from '../util/ids.js';
@@ -34,9 +34,42 @@ export function verifySecret(secret: string, stored: string | null | undefined):
 
 /* ------------------------------ users ------------------------------ */
 
+export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = { size: 'medium', color: 'white', background: 'shadow', font: 'default', position: 'bottom' };
+
 export const DEFAULT_PREFS: UserPreferences = {
   audioLanguage: null, subtitleLanguage: null, subtitleMode: 'auto', autoplayNext: true, skipIntros: false, maxBitrate: null, themeId: null,
+  replayGain: 'auto', subtitleStyle: DEFAULT_SUBTITLE_STYLE, musicCrossfadeSec: 0,
 };
+
+const SUBTITLE_CHOICES: { [K in keyof SubtitleStyle]: readonly SubtitleStyle[K][] } = {
+  size: ['small', 'medium', 'large', 'xlarge'],
+  color: ['white', 'yellow', 'cyan', 'green'],
+  background: ['none', 'shadow', 'box', 'boxSolid'],
+  font: ['default', 'serif', 'mono', 'rounded'],
+  position: ['bottom', 'raised'],
+};
+
+/** Fill in / validate a (possibly partial) subtitle style; unknown values fall back to the current or default value. */
+export function normalizeSubtitleStyle(input: unknown, base: SubtitleStyle = DEFAULT_SUBTITLE_STYLE): SubtitleStyle {
+  const src = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+  const out = { ...DEFAULT_SUBTITLE_STYLE, ...base };
+  for (const k of Object.keys(SUBTITLE_CHOICES) as (keyof SubtitleStyle)[]) {
+    const v = src[k];
+    if ((SUBTITLE_CHOICES[k] as readonly unknown[]).includes(v)) (out as Record<string, unknown>)[k] = v;
+  }
+  return out;
+}
+
+/** Stored preferences merged over the defaults (nested objects merged field by field). */
+function mergePrefs(stored: Partial<UserPreferences>, patch: Partial<UserPreferences> = {}): UserPreferences {
+  const prefs: UserPreferences = { ...DEFAULT_PREFS, ...stored, ...patch };
+  const base = normalizeSubtitleStyle(stored.subtitleStyle);
+  prefs.subtitleStyle = patch.subtitleStyle ? normalizeSubtitleStyle(patch.subtitleStyle, base) : base;
+  const xf = Number(prefs.musicCrossfadeSec);
+  prefs.musicCrossfadeSec = Number.isFinite(xf) ? Math.max(0, Math.min(12, Math.round(xf))) : 0;
+  if (!['off', 'track', 'album', 'auto'].includes(prefs.replayGain as string)) prefs.replayGain = 'auto';
+  return prefs;
+}
 
 export function toUser(r: Row): User {
   return {
@@ -58,7 +91,7 @@ export function toUser(r: Row): User {
     allowRemote: r.allow_remote === undefined ? true : !!r.allow_remote,
     maxStreams: r.max_streams ?? null,
     totpEnabled: !!r.totp_enabled,
-    preferences: { ...DEFAULT_PREFS, ...parseJson<Partial<UserPreferences>>(r.preferences, {}) },
+    preferences: mergePrefs(parseJson<Partial<UserPreferences>>(r.preferences, {})),
     createdAt: r.created_at,
     lastSeenAt: r.last_seen_at ?? null,
   };
@@ -167,7 +200,7 @@ export function updateMe(userId: string, req: UpdateMeRequest): User {
     patch.pin_length = req.pin ? req.pin.length : null;
   }
   if (req.preferences) {
-    const prefs = { ...DEFAULT_PREFS, ...parseJson(cur.preferences, {}), ...req.preferences };
+    const prefs = mergePrefs(parseJson<Partial<UserPreferences>>(cur.preferences, {}), req.preferences);
     if (prefs.themeId && !getBranding().themes.some((t) => t.id === prefs.themeId)) prefs.themeId = null;
     patch.preferences = JSON.stringify(prefs);
   }

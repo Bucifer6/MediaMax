@@ -25,6 +25,7 @@ import { pruneVoices } from './dj/ai.js';
 import { autoDownload } from './opensubtitles.js';
 import { refreshAll as refreshPodcasts } from './podcasts.js';
 import { checkAvailability } from './requests.js';
+import { refreshSchedules } from './calendar.js';
 
 const log = logger('tasks');
 
@@ -146,6 +147,14 @@ const DEFS: TaskDef[] = [
     run: async () => {
       const n = checkAvailability();
       if (n) log.info(`${n} request(s) now available`);
+    },
+  },
+  {
+    id: 'tv-schedules', name: 'Refresh TV schedules', description: 'Fetch the next airing episode of each show from TMDB for the calendar and the Coming Soon row.',
+    interval: () => 24 * 60,
+    run: async (progress) => {
+      const n = await refreshSchedules(progress);
+      if (n) log.info(`Refreshed the schedule of ${n} show(s)`);
     },
   },
   {

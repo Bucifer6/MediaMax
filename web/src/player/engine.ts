@@ -8,9 +8,20 @@ export interface AttachOptions {
   live?: boolean;
 }
 
+export interface StreamStats {
+  videoCodec?: string | null;
+  audioCodec?: string | null;
+  /** Bitrate of the variant being played (bits/s). */
+  bitrate?: number | null;
+  /** Estimated network throughput (bits/s). */
+  bandwidth?: number | null;
+}
+
 export interface Attached {
   destroy: () => void;
   engine: 'hls.js' | 'native-hls' | 'mpegts' | 'native';
+  /** Engine-level details for the stats overlay (hls.js / mpegts.js only). */
+  stats?: () => StreamStats;
 }
 
 function absolute(url: string) {
@@ -53,7 +64,19 @@ export async function attachStream(el: HTMLMediaElement, info: PlaybackInfo, opt
       });
       hls.loadSource(url);
       hls.attachMedia(el);
-      return { engine: 'hls.js', destroy: () => hls.destroy() };
+      return {
+        engine: 'hls.js',
+        destroy: () => hls.destroy(),
+        stats: () => {
+          const lvl = hls.levels[hls.currentLevel] ?? hls.levels[0];
+          return {
+            videoCodec: lvl?.videoCodec ?? null,
+            audioCodec: lvl?.audioCodec ?? null,
+            bitrate: lvl?.bitrate ?? null,
+            bandwidth: Number.isFinite(hls.bandwidthEstimate) ? hls.bandwidthEstimate : null,
+          };
+        },
+      };
     }
     if (supportsNativeHls()) {
       el.src = url;
@@ -75,6 +98,11 @@ export async function attachStream(el: HTMLMediaElement, info: PlaybackInfo, opt
       player.load();
       return {
         engine: 'mpegts',
+        stats: () => {
+          const mi = (player.mediaInfo ?? {}) as { videoCodec?: string; audioCodec?: string };
+          const si = (player.statisticsInfo ?? {}) as { speed?: number };
+          return { videoCodec: mi.videoCodec ?? null, audioCodec: mi.audioCodec ?? null, bandwidth: si.speed ? si.speed * 8 * 1024 : null };
+        },
         destroy: () => {
           try {
             player.pause();

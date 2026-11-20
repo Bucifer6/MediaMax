@@ -28,6 +28,34 @@ export interface RemoteMeta {
   logo?: string | null;
   trailerUrl?: string | null;
   collection?: { id: string; name: string; poster: string | null; backdrop: string | null } | null;
+  /** Shows only: airing status and the next episode to air (for the calendar). */
+  schedule?: TvSchedule | null;
+}
+
+export interface TvSchedule {
+  status: string | null;
+  inProduction: boolean | null;
+  lastAirDate: string | null;
+  next: { airDate: string; season: number | null; episode: number | null; title: string | null; overview: string | null } | null;
+}
+
+/** Status + next airing episode from a TMDB `/tv/{id}` response. */
+export function scheduleFrom(t: any): TvSchedule {
+  const n = t?.next_episode_to_air;
+  return {
+    status: typeof t?.status === 'string' ? t.status : null,
+    inProduction: typeof t?.in_production === 'boolean' ? t.in_production : null,
+    lastAirDate: t?.last_air_date || null,
+    next: n?.air_date
+      ? { airDate: String(n.air_date).slice(0, 10), season: n.season_number ?? null, episode: n.episode_number ?? null, title: n.name || null, overview: n.overview || null }
+      : null,
+  };
+}
+
+/** Just the airing schedule of a show (cheap: no credits/images). */
+export async function tvSchedule(id: string): Promise<TvSchedule | null> {
+  const t = await call<any>(`/tv/${id}`);
+  return t ? scheduleFrom(t) : null;
 }
 
 export interface RemoteEpisode {
@@ -188,6 +216,7 @@ export async function tvDetails(id: string): Promise<RemoteMeta | null> {
     backdrop: img(t.backdrop_path, 'w1280'),
     logo: pickLogo(t.images),
     trailerUrl: trailer(t.videos),
+    schedule: scheduleFrom(t),
   };
 }
 

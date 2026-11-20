@@ -10,13 +10,13 @@ export const STARTER_LOOKS: StarterLook[] = [
   {
     id: 'cinema', name: 'Home Cinema', themeId: 'cinema',
     description: 'Big artwork carousel, continue watching and next up first, plus action and comedy rows. For a movie-and-TV household.',
-    homeRows: [row('hero', 'hero', '', { limit: 10 }), row('continue', 'continue', 'Continue Watching'), row('nextup', 'nextup', 'Next Up'), row('recent', 'library-recent'), row('g-action', 'genre', 'Action & Adventure', { genre: 'Action' }), row('g-comedy', 'genre', 'Comedy', { genre: 'Comedy' }), row('favorites', 'favorites', 'Your Favourites')],
+    homeRows: [row('hero', 'hero', '', { limit: 10 }), row('continue', 'continue', 'Continue Watching'), row('nextup', 'nextup', 'Next Up'), row('top10', 'top10', '', { limit: 10 }), row('recommended', 'recommended'), row('watchlist', 'watchlist', 'My List'), row('recent', 'library-recent'), row('because', 'because'), row('g-action', 'genre', 'Action & Adventure', { genre: 'Action' }), row('g-comedy', 'genre', 'Comedy', { genre: 'Comedy' }), row('favorites', 'favorites', 'Your Favourites')],
     features: {},
   },
   {
     id: 'family', name: 'Family & Kids', themeId: 'kids',
     description: 'Bright, friendly theme with big posters, a profile picker on the sign-in screen, and animation and family rows up front.',
-    homeRows: [row('hero', 'hero', '', { limit: 6 }), row('continue', 'continue', 'Keep Watching'), row('g-anim', 'genre', 'Cartoons & Animation', { genre: 'Animation' }), row('g-family', 'genre', 'Family Favourites', { genre: 'Family' }), row('favorites', 'favorites', 'Our Favourites'), row('recent', 'library-recent')],
+    homeRows: [row('hero', 'hero', '', { limit: 6 }), row('continue', 'continue', 'Keep Watching'), row('recommended', 'recommended', 'Picked for you'), row('g-anim', 'genre', 'Cartoons & Animation', { genre: 'Animation' }), row('g-family', 'genre', 'Family Favourites', { genre: 'Family' }), row('favorites', 'favorites', 'Our Favourites'), row('recent', 'library-recent')],
     features: { profilePicker: true },
   },
   {

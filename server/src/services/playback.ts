@@ -44,6 +44,8 @@ export interface PlaySession {
   onStop?: () => void;
   /** Live multiview tile: several may run side by side on one device. */
   multiview?: boolean;
+  /** Muted trailer preview (home hero / card hover): runs beside other playback, no history, scrobbles or webhooks. */
+  preview?: boolean;
 }
 
 const MAX_MULTIVIEW = 4;
@@ -70,7 +72,7 @@ function toActive(s: PlaySession): ActiveSession {
   };
 }
 
-export const listSessions = (): ActiveSession[] => [...sessions.values()].map(toActive);
+export const listSessions = (): ActiveSession[] => [...sessions.values()].filter((s) => !s.preview).map(toActive);
 export const transcodeCount = () => [...sessions.values()].filter((s) => s.job && s.method === 'transcode').length;
 
 let broadcastTimer: NodeJS.Timeout | null = null;
@@ -93,7 +95,7 @@ export function assertCanStartSession(ctx: AuthContext, remoteAddr: string | nul
   }
   if (u.maxStreams && !u.isAdmin) {
     // Other devices count; on this device only multiview tiles that will keep running alongside the new one count.
-    const active = [...sessions.values()].filter((x) => x.ctx.user.id === u.id && (x.ctx.deviceRowId !== ctx.deviceRowId || (multiview && x.multiview))).length;
+    const active = [...sessions.values()].filter((x) => !x.preview && x.ctx.user.id === u.id && (x.ctx.deviceRowId !== ctx.deviceRowId || (multiview && x.multiview))).length;
     if (active >= u.maxStreams) {
       throw new HttpError(429, `You already have ${active} stream${active === 1 ? '' : 's'} playing (limit ${u.maxStreams}). Stop one and try again.`, 'stream_limit');
     }
@@ -102,8 +104,15 @@ export function assertCanStartSession(ctx: AuthContext, remoteAddr: string | nul
 
 export function registerSession(s: Omit<PlaySession, 'id' | 'startedAt' | 'lastActivity' | 'historyId' | 'state' | 'positionMs'> & { positionMs?: number }): PlaySession {
   assertCanStartSession(s.ctx, s.remoteAddr, !!s.multiview);
+  if (s.preview) {
+    // Previews only replace an earlier preview on this device and stay out of history, stats and integrations.
+    for (const old of [...sessions.values()]) if (old.preview && old.ctx.deviceRowId === s.ctx.deviceRowId) stopSession(old.id, 'replaced', false);
+    const session: PlaySession = { ...s, id: newId(), positionMs: s.positionMs ?? 0, state: 'buffering', startedAt: Date.now(), lastActivity: Date.now(), historyId: null };
+    sessions.set(session.id, session);
+    return session;
+  }
   // One active playback per device: replace the previous session. Multiview tiles coexist with each other (up to 4).
-  const mine = [...sessions.values()].filter((o) => o.ctx.deviceRowId === s.ctx.deviceRowId).sort((a, b) => a.startedAt - b.startedAt);
+  const mine = [...sessions.values()].filter((o) => o.ctx.deviceRowId === s.ctx.deviceRowId && !o.preview).sort((a, b) => a.startedAt - b.startedAt);
   const keep = s.multiview ? mine.filter((o) => o.multiview).slice(-(MAX_MULTIVIEW - 1)) : [];
   for (const old of mine) if (!keep.includes(old)) stopSession(old.id, 'replaced', false);
   const id = newId();
@@ -122,6 +131,7 @@ export function stopSession(id: string, reason = 'stopped', notify = true) {
   sessions.delete(id);
   s.job?.stop();
   s.onStop?.();
+  if (s.preview) return;
   if (s.historyId) db.run('UPDATE play_history SET ended_at = ?, duration_ms = ? WHERE id = ?', nowIso(), Date.now() - s.startedAt, s.historyId);
   if (notify && reason !== 'stopped' && reason !== 'replaced') events.toUser(s.ctx.user.id, { type: 'session.terminated', sessionId: id, reason });
   bus.emit('playback.stop', s);
@@ -136,6 +146,10 @@ export function sessionProgress(ctx: AuthContext, id: string, positionMs: number
   const prev = s.state;
   s.positionMs = Math.max(0, positionMs);
   if (state !== 'stopped') s.state = state;
+  if (s.preview) {
+    if (state === 'stopped') stopSession(id);
+    return { ok: true };
+  }
   if (s.itemId) reportProgress(ctx.user, s.itemId, s.positionMs, durationMs ?? s.durationMs, state);
   if (prev !== s.state) bus.emit(s.state === 'paused' ? 'playback.pause' : 'playback.resume', s);
   if (state === 'stopped') stopSession(id);
@@ -231,6 +245,8 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
   assertCanSee(ctx.user, itemId);
   assertCanStartSession(ctx, remoteAddr);
   const item = getItem(ctx.user, itemId, true);
+  const preview = !!req.preview;
+  if (preview && !(item.type === 'video' && item.parentId && item.extraType === 'trailer')) throw badRequest('Previews are only available for trailers');
   if (!item.media?.length) {
     if (item.type === 'show' || item.type === 'season') {
       // Play the next-up/first episode of a container.
@@ -275,7 +291,7 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
 
   const base = {
     ctx, itemId, channelId: null, mediaId: media.id, title: item.title, subtitle: subtitleText, posterUrl: item.posterUrl,
-    durationMs: media.durationMs || item.durationMs, remoteAddr, positionMs: startMs,
+    durationMs: media.durationMs || item.durationMs, remoteAddr, positionMs: preview ? 0 : startMs, preview,
   };
   const input = mediaRow.path ?? mediaRow.remote_url;
   const inputArgs = mediaRow.remote_url ? remoteInputArgs(mediaRow) : [];

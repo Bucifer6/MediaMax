@@ -106,7 +106,19 @@ export type HomeRowType =
   | 'live-now'
   | 'favorite-channels'
   | 'recordings'
-  | 'playlist';
+  | 'playlist'
+  /** "Recommended for you": scored from the viewer's history, favourites, ratings and what similar viewers watched. */
+  | 'recommended'
+  /** "Because you watched <title>": titles most similar to one recently finished movie or show. */
+  | 'because'
+  /** "Top 10 on <server> this week": most-played titles across all users in the last 7 days (episodes roll up to shows). */
+  | 'top10'
+  /** "Popular right now": recent plays weighted by recency. */
+  | 'trending'
+  /** "My List": the viewer's watchlist. */
+  | 'watchlist'
+  /** "Coming soon": next airing episodes of shows in the viewer's libraries (needs TMDB). */
+  | 'upcoming';
 
 export interface HomeRowConfig {
   id: string;
@@ -261,6 +273,23 @@ export interface UserPreferences {
   replayGain?: 'off' | 'track' | 'album' | 'auto';
   /** Play the server's cinema-mode intros (trailers, pre-roll) before movies. Default true when the server enables it. */
   cinemaMode?: boolean;
+  /** Play muted trailer previews in the home hero and on card hover. Default true (clients also respect reduced-motion settings). */
+  autoplayPreviews?: boolean;
+  /** How text subtitles look (web/TV players). Default: medium, white, shadow, default font, bottom. */
+  subtitleStyle?: SubtitleStyle;
+  /** Music: crossfade between tracks in seconds (0–12; 0 = gapless, no fade). Consecutive tracks of one album never crossfade. */
+  musicCrossfadeSec?: number;
+}
+
+/** Subtitle appearance, applied to text tracks (WebVTT `::cue`). */
+export interface SubtitleStyle {
+  size: 'small' | 'medium' | 'large' | 'xlarge';
+  color: 'white' | 'yellow' | 'cyan' | 'green';
+  /** none = plain text; shadow = outlined text, no box; box = translucent box; boxSolid = opaque black box. */
+  background: 'none' | 'shadow' | 'box' | 'boxSolid';
+  font: 'default' | 'serif' | 'mono' | 'rounded';
+  /** raised = lifted above the bottom edge (clears burnt-in lower thirds and the control bar). */
+  position: 'bottom' | 'raised';
 }
 
 export interface User {
@@ -445,6 +474,10 @@ export interface UserItemData {
   rating: number | null;
   /** For containers (show/season): number of unplayed children. */
   unplayedCount?: number;
+  /** On the viewer's watchlist ("My List"). */
+  inWatchlist: boolean;
+  /** The viewer said "Not interested": hidden from recommendation, because-you-watched and trending rows. */
+  notInterested: boolean;
 }
 
 export interface AudioStream {
@@ -614,8 +647,12 @@ export interface HomeRow {
   title: string;
   items: Item[];
   channels?: Channel[];
-  /** Deep link the client can use for "See all". */
-  link?: { libraryId?: string; itemId?: string; genre?: string; sort?: ItemSort };
+  /** Deep link the client can use for "See all". `page` points at a built-in screen (My List, calendar). */
+  link?: { libraryId?: string; itemId?: string; genre?: string; sort?: ItemSort; page?: 'watchlist' | 'calendar' };
+  /** `because` rows: the title the row is based on. */
+  seedItemId?: string;
+  /** `upcoming` rows: one entry per item, in the same order (items are the shows). */
+  calendar?: CalendarEntry[];
 }
 
 export interface HomeResponse {
@@ -665,6 +702,11 @@ export interface PlaybackRequest {
   burnSubtitles?: boolean;
   forceTranscode?: boolean;
   deviceProfile?: DeviceProfile;
+  /**
+   * Muted trailer preview (home hero, card hover). Only for trailer extras: it doesn't replace other playback on the
+   * device, isn't recorded in play history, and isn't scrobbled or sent to webhooks. Stop it with DELETE /playback/sessions/:id.
+   */
+  preview?: boolean;
 }
 
 export type PlayMethod = 'direct' | 'remux' | 'transcode' | 'live';
@@ -1177,7 +1219,9 @@ export type ServerEvent =
   /** A command from another of your devices (apply it to the local player). */
   | { type: 'remote.command'; fromDeviceName: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number }
   /** Your controllable devices changed (online/offline/now playing). */
-  | { type: 'remote.targets'; targets: RemoteTarget[] };
+  | { type: 'remote.targets'; targets: RemoteTarget[] }
+  /** A new in-app notification for you (e.g. a new episode of a show you watch). `unread` is your new unread total. */
+  | { type: 'notification'; notification: AppNotification; unread: number };
 
 export type ClientEvent =
   | { type: 'ping' }
@@ -1827,4 +1871,61 @@ export interface StarterLook {
   themeId: string;
   homeRows: HomeRowConfig[];
   features: Partial<FeatureFlags>;
+}
+
+/* ------------------------------------------------------------------ */
+/* Discovery: watchlist, calendar, notifications                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One calendar line. `upcoming`: a future episode from TMDB (`episode` is null, the file isn't here yet).
+ * `added`: an episode recently added to a library (`episode` is the real item).
+ */
+export interface CalendarEntry {
+  kind: 'upcoming' | 'added';
+  /** YYYY-MM-DD air date (upcoming) or the date it was added (added). */
+  date: string;
+  show: Item;
+  episode: Item | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
+  title: string | null;
+  overview: string | null;
+  /** The viewer watches this show (has played an episode) or has it on My List. */
+  following: boolean;
+}
+
+/** TMDB status for a show ("Returning Series", "Ended", "Canceled", "In Production"…). */
+export interface ShowSchedule {
+  status: string | null;
+  inProduction: boolean | null;
+  lastAirDate: string | null;
+  nextAirDate: string | null;
+}
+
+export interface CalendarResponse {
+  from: string;
+  to: string;
+  /** false when no TMDB API key is configured: upcoming episodes are unavailable (recently added still work). */
+  tmdbConfigured: boolean;
+  entries: CalendarEntry[];
+}
+
+export type NotificationKind = 'new-episode';
+
+export interface AppNotification {
+  id: string;
+  kind: NotificationKind;
+  itemId: string | null;
+  title: string;
+  body: string | null;
+  /** Artwork for the item (poster or episode thumbnail). */
+  imageUrl: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export interface NotificationsResponse {
+  items: AppNotification[];
+  unread: number;
 }

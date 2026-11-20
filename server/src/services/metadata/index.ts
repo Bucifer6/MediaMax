@@ -5,6 +5,7 @@ import { registerImage } from '../images.js';
 import { logger } from '../../util/log.js';
 import * as tmdb from './tmdb.js';
 import { applyPluginMetadata } from '../plugins.js';
+import { saveSchedule } from '../schedule.js';
 
 const log = logger('metadata');
 
@@ -76,6 +77,7 @@ async function enrichShow(item: Row) {
   const meta = await tmdb.tvDetails(id);
   if (!meta) return;
   applyMeta(item, meta);
+  if (meta.schedule) saveSchedule(item.id, meta.schedule);
   if (meta.contentRating) {
     db.run('UPDATE items SET content_rating = ? WHERE (parent_id = ? OR grandparent_id = ?) AND content_rating IS NULL', meta.contentRating, item.id, item.id);
   }
