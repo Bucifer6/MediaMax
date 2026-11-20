@@ -187,7 +187,7 @@ async function upsertMedia(itemId: string, f: FileEntry, force = false, preProbe
     id, item_id: itemId, path: f.path, remote_url: null, container: pr?.container ?? ext(f.path), duration_ms: pr?.durationMs ?? null,
     size: f.size, bitrate: pr?.bitrate ?? null, width: pr?.width ?? null, height: pr?.height ?? null, video_codec: pr?.videoCodec ?? null,
     hdr: pr?.hdr ?? false, audio: JSON.stringify(pr?.audio ?? []), subs: JSON.stringify([...(pr?.subs ?? []), ...subsSide]),
-    mtime: f.mtime, probed_at: pr ? nowIso() : null,
+    mtime: f.mtime, probed_at: pr ? nowIso() : null, chapters: JSON.stringify(pr?.chapters ?? []),
   };
   db.upsert('media', row);
   return { mediaId: id, probe: pr, changed: true };
@@ -383,6 +383,80 @@ async function scanMusic(ctx: ScanCtx, files: FileEntry[]) {
   db.run(`UPDATE items SET duration_ms = (SELECT SUM(duration_ms) FROM items t WHERE t.parent_id = items.id) WHERE library_id = ? AND type = 'album'`, ctx.lib.id);
 }
 
+/**
+ * Audiobooks: "Author/Book Title/01 - Part.mp3", "Author/Book Title.m4b", or "Book Title/part.mp3".
+ * Each book is an `audiobook` item with `bookpart` children (one per file); chapters come from the files.
+ */
+async function scanAudiobooks(ctx: ScanCtx, files: FileEntry[]) {
+  let done = 0;
+  const coverDir = path.join(config.cacheDir, 'covers');
+  fs.mkdirSync(coverDir, { recursive: true });
+  // Group files by book.
+  const books = new Map<string, FileEntry[]>();
+  for (const f of files) {
+    const parts = f.rel.split(path.sep);
+    const single = parts.length <= 2 && ['m4b', 'm4a'].includes(ext(f.path));
+    const key = single ? f.path : path.dirname(f.path);
+    const list = books.get(key) ?? [];
+    list.push(f);
+    books.set(key, list);
+  }
+  for (const [key, list] of books) {
+    list.sort((a, b) => a.rel.localeCompare(b.rel, undefined, { numeric: true }));
+    const first = list[0];
+    let pr: ProbeResult | null = null;
+    try {
+      pr = await probe(first.path, first.path);
+    } catch {
+      /* tags optional */
+    }
+    const tags = pr?.tags ?? {};
+    const rel = path.relative(first.root, key).split(path.sep);
+    const isFile = key === first.path;
+    const folderTitle = stripExt(rel[rel.length - 1] ?? 'Unknown book');
+    const folderAuthor = rel.length >= 2 ? rel[rel.length - 2] : null;
+    const title = tags.album || (isFile ? tags.title : null) || folderTitle.replace(/^\d{4}\s*-\s*/, '');
+    const author = tags.album_artist || tags.artist || folderAuthor || 'Unknown author';
+    const narrator = tags.composer || tags.narrator || null;
+    const year = parseInt((tags.date ?? tags.year ?? '').slice(0, 4), 10) || null;
+    const bookId = stableId(ctx.lib.id, 'audiobook', key);
+    const existed = !!db.get('SELECT 1 FROM items WHERE id = ?', bookId);
+    const dir = isFile ? path.dirname(key) : key;
+    let cover = findFile(dir, imgNames(isFile ? [stripExt(path.basename(key)), 'cover', 'folder'] : ['cover', 'folder', 'front', 'book']));
+    if (!cover && pr?.coverArtIndex != null) {
+      const dest = path.join(coverDir, `${bookId}.jpg`);
+      if (fs.existsSync(dest) || (await extractCover(first.path, dest))) cover = dest;
+    }
+    const descFile = findFile(dir, ['desc.txt', 'description.txt']);
+    const people = [{ name: author, role: 'Author', kind: 'writer' }, ...(narrator ? [{ name: narrator, role: 'Narrator', kind: 'actor' }] : [])];
+    ensureItem({
+      id: bookId, library_id: ctx.lib.id, type: 'audiobook', title, year, path: key, poster: registerImage(cover),
+      people: JSON.stringify(people), studios: JSON.stringify(tags.publisher ? [tags.publisher] : []),
+      genres: JSON.stringify(tags.genre ? tags.genre.split(/[;/,]/).map((g) => g.trim()).filter(Boolean) : ['Audiobook']),
+      overview: descFile ? fs.readFileSync(descFile, 'utf8').trim().slice(0, 4000) : tags.comment || tags.description || null,
+      extra: JSON.stringify({ parentTitle: author, author, narrator }),
+    });
+    if (!existed) ctx.newItems.push(bookId);
+    ctx.seenItems.add(bookId);
+    let n = 0;
+    for (const f of list) {
+      n++;
+      const partId = stableId(bookId, 'part', f.path);
+      const ptags = f === first ? tags : {};
+      ensureItem({
+        id: partId, library_id: ctx.lib.id, type: 'bookpart', title: list.length === 1 ? title : ptags.title || stripExt(path.basename(f.path)).replace(/^\d+[\s._-]+/, '') || `Part ${n}`,
+        idx: n, parent_id: bookId, path: f.path,
+      });
+      const m = await upsertMedia(partId, f, ctx.force, f === first ? pr : null);
+      ctx.seenMedia.add(m.mediaId);
+      ctx.seenItems.add(partId);
+      itemDuration(partId);
+      ctx.progress(++done, files.length);
+    }
+    db.run(`UPDATE items SET duration_ms = (SELECT SUM(duration_ms) FROM items p WHERE p.parent_id = ?) WHERE id = ?`, bookId, bookId);
+  }
+}
+
 async function scanFlat(ctx: ScanCtx, files: FileEntry[], type: 'photo' | 'video') {
   let done = 0;
   await pool(files, type === 'photo' ? 8 : 4, async (f) => {
@@ -421,6 +495,7 @@ const ACCEPT: Record<string, (e: string) => boolean> = {
   shows: (e) => VIDEO_EXT.has(e),
   videos: (e) => VIDEO_EXT.has(e),
   music: (e) => AUDIO_EXT.has(e),
+  audiobooks: (e) => AUDIO_EXT.has(e),
   photos: (e) => IMAGE_EXT.has(e),
 };
 
@@ -438,6 +513,11 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
   const type = lib.type as LibraryType;
   if (type.startsWith('iptv-')) {
     bus.emit('iptv.refreshLibrary', lib.source_id);
+    return;
+  }
+  if (type === 'podcasts') {
+    // Folder-less: "scanning" means refreshing the subscribed feeds. Never run removal logic here.
+    bus.emit('podcasts.refresh');
     return;
   }
   const started = Date.now();
@@ -466,18 +546,20 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     if (type === 'movies') await scanMovies(ctx, files);
     else if (type === 'shows') await scanShows(ctx, files);
     else if (type === 'music') await scanMusic(ctx, files);
+    else if (type === 'audiobooks') await scanAudiobooks(ctx, files);
     else if (type === 'photos') await scanFlat(ctx, files, 'photo');
     else await scanFlat(ctx, files, 'video');
 
     // Remove vanished media / items — but only if all library roots are reachable (avoid wiping on unmounted drives).
-    const allRootsOk = parseJson<string[]>(lib.paths, []).every((p) => fs.existsSync(p));
+    const roots = parseJson<string[]>(lib.paths, []);
+    const allRootsOk = roots.length > 0 && roots.every((p) => fs.existsSync(p));
     if (allRootsOk) {
       db.tx(() => {
         const media = db.all<{ id: string; item_id: string }>('SELECT m.id, m.item_id FROM media m JOIN items i ON i.id = m.item_id WHERE i.library_id = ?', libId);
         for (const m of media) if (!ctx.seenMedia.has(m.id)) db.run('DELETE FROM media WHERE id = ?', m.id);
-        const leafTypes = "('movie','episode','track','photo','video')";
+        const leafTypes = "('movie','episode','track','photo','video','bookpart')";
         db.run(`DELETE FROM items WHERE library_id = ? AND type IN ${leafTypes} AND NOT EXISTS (SELECT 1 FROM media m WHERE m.item_id = items.id)`, libId);
-        db.run(`DELETE FROM items WHERE library_id = ? AND type IN ('season','album') AND NOT EXISTS (SELECT 1 FROM items c WHERE c.parent_id = items.id)`, libId);
+        db.run(`DELETE FROM items WHERE library_id = ? AND type IN ('season','album','audiobook') AND NOT EXISTS (SELECT 1 FROM items c WHERE c.parent_id = items.id)`, libId);
         db.run(`DELETE FROM items WHERE library_id = ? AND type IN ('show','artist') AND NOT EXISTS (SELECT 1 FROM items c WHERE c.parent_id = items.id)`, libId);
       });
     }
@@ -510,7 +592,7 @@ export async function scanPath(filePath: string) {
 
 export function toLibrary(r: Row): Library {
   const count = db.get<{ n: number }>(
-    `SELECT COUNT(*) n FROM items WHERE library_id = ? AND type IN ('movie','show','artist','photo','video')`, r.id)!.n;
+    `SELECT COUNT(*) n FROM items WHERE library_id = ? AND type IN ('movie','show','artist','photo','video','audiobook','podcast')`, r.id)!.n;
   return {
     id: r.id, name: r.name, type: r.type, paths: parseJson(r.paths, []), sourceId: r.source_id ?? null, itemCount: count,
     lastScanAt: r.last_scan_at ?? null, scanning: isScanning(r.id), fetchMetadata: !!r.fetch_metadata, sortOrder: r.sort_order, createdAt: r.created_at,

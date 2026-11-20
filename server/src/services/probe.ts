@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import type { AudioStream, SubtitleStream } from '@mediamax/shared';
+import type { AudioStream, Chapter, SubtitleStream } from '@mediamax/shared';
 import { config } from '../config.js';
 
 export interface ProbeResult {
@@ -17,11 +17,12 @@ export interface ProbeResult {
   hasVideo: boolean;
   /** index of attached-picture (cover art) stream, if any. */
   coverArtIndex: number | null;
+  chapters: Chapter[];
 }
 
 export function ffprobeJson(input: string, extraArgs: string[] = [], timeoutMs = 60000): Promise<any> {
   return new Promise((resolve, reject) => {
-    const args = ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', ...extraArgs, input];
+    const args = ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', '-show_chapters', ...extraArgs, input];
     const p = spawn(config.ffprobe, args);
     let out = '';
     let err = '';
@@ -66,6 +67,13 @@ export async function probe(input: string, filePath?: string): Promise<ProbeResu
     if (ext === 'm4a' || ext === 'mov' || ext === 'm4v') container = ext === 'm4v' ? 'mp4' : ext;
   }
   if (filePath && container === 'mkv' && filePath.toLowerCase().endsWith('.webm')) container = 'webm';
+  // .m4b audiobooks are plain MP4 audio; report m4a so players treat them as such.
+  if (filePath && filePath.toLowerCase().endsWith('.m4b')) container = 'm4a';
+  const chapters: Chapter[] = (j.chapters ?? []).map((c: any, i: number) => ({
+    title: c.tags?.title || `Chapter ${i + 1}`,
+    startMs: Math.round(parseFloat(c.start_time ?? '0') * 1000),
+    endMs: Math.round(parseFloat(c.end_time ?? '0') * 1000),
+  })).filter((c: Chapter) => c.endMs > c.startMs);
   const hdr = !!video && (['smpte2084', 'arib-std-b67'].includes(video.color_transfer) || (video.side_data_list ?? []).some((s: any) => /DOVI/i.test(s.side_data_type ?? '')));
   const audio: AudioStream[] = streams.filter((s) => s.codec_type === 'audio').map((s) => ({
     index: s.index,
@@ -100,6 +108,7 @@ export async function probe(input: string, filePath?: string): Promise<ProbeResu
     tags: lowerTags(fmt.tags),
     hasVideo: !!video,
     coverArtIndex: cover?.index ?? null,
+    chapters,
   };
 }
 

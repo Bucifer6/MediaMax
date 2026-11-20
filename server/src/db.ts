@@ -225,6 +225,15 @@ const MIGRATIONS: string[] = [
     username TEXT, scrobble INTEGER NOT NULL DEFAULT 1
   );
   `,
+  /* 4: SSO identities, podcasts, chapters */ `
+  ALTER TABLE users ADD COLUMN oidc_sub TEXT;
+  CREATE UNIQUE INDEX users_oidc_sub ON users(oidc_sub) WHERE oidc_sub IS NOT NULL;
+  ALTER TABLE media ADD COLUMN chapters TEXT NOT NULL DEFAULT '[]';
+  CREATE TABLE podcast_feeds (
+    id TEXT PRIMARY KEY, item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE, feed_url TEXT NOT NULL UNIQUE,
+    auto_download INTEGER NOT NULL DEFAULT 0, etag TEXT, last_refresh_at TEXT, last_error TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL
+  );
+  `,
 ];
 
 function migrate(db: Database) {

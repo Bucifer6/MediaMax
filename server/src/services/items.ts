@@ -1,5 +1,5 @@
 import type {
-  HomeRow, HomeRowConfig, Item, SubtitleStream, ItemQuery, ItemSort, MediaSource, Marker, Paged, Person, User, UserItemData, UpdateItemRequest,
+  HomeRow, HomeRowConfig, Item, SubtitleStream, Chapter, ItemQuery, ItemSort, MediaSource, Marker, Paged, Person, User, UserItemData, UpdateItemRequest,
 } from '@mediamax/shared';
 import { db, type Param, type Row } from '../db.js';
 import { imageUrl } from './images.js';
@@ -60,7 +60,7 @@ const SELECT = (userParam = '?') => `
     p.logo p_logo, g.logo g_logo, p.content_rating p_rating, g.content_rating g_rating,
     ud.played u_played, ud.play_count u_play_count, ud.position_ms u_position, ud.favorite u_favorite, ud.last_played_at u_last, ud.rating u_rating,
     CASE WHEN i.type IN ('collection','playlist') THEN (SELECT COUNT(*) FROM collection_items ci WHERE ci.collection_id = i.id)
-         WHEN i.type IN ('show','season','artist','album') THEN (SELECT COUNT(*) FROM items c WHERE c.parent_id = i.id) ELSE 0 END child_count,
+         WHEN i.type IN ('show','season','artist','album','audiobook','podcast') THEN (SELECT COUNT(*) FROM items c WHERE c.parent_id = i.id) ELSE 0 END child_count,
     CASE WHEN i.type = 'show' THEN (SELECT COUNT(*) FROM items e LEFT JOIN user_data eu ON eu.item_id = e.id AND eu.user_id = ${userParam} WHERE e.grandparent_id = i.id AND e.type = 'episode' AND COALESCE(eu.played, 0) = 0)
          WHEN i.type = 'season' THEN (SELECT COUNT(*) FROM items e LEFT JOIN user_data eu ON eu.item_id = e.id AND eu.user_id = ${userParam} WHERE e.parent_id = i.id AND e.type = 'episode' AND COALESCE(eu.played, 0) = 0)
          ELSE NULL END unplayed
@@ -86,9 +86,9 @@ function userData(r: Row): UserItemData {
 }
 
 export function rowToItem(r: Row): Item {
-  const isEpisodeLike = r.type === 'episode' || r.type === 'track';
+  const isEpisodeLike = r.type === 'episode' || r.type === 'track' || r.type === 'bookpart' || r.type === 'podcastepisode';
   const isSeason = r.type === 'season';
-  const poster = r.poster ?? (isSeason ? r.p_poster : null) ?? (isEpisodeLike ? (r.type === 'track' ? r.p_poster : r.g_poster ?? r.p_poster) : null);
+  const poster = r.poster ?? (isSeason ? r.p_poster : null) ?? (isEpisodeLike ? (r.type === 'episode' ? r.g_poster ?? r.p_poster : r.p_poster) : null);
   const backdrop = r.backdrop ?? r.p_backdrop ?? r.g_backdrop ?? null;
   const extra = parseJson<Record<string, unknown>>(r.extra, {});
   return {
@@ -181,7 +181,7 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
     params.push(...types);
   } else if (!q.parentId && !q.ancestorId && !q.search) {
     // Library browsing defaults to top-level items.
-    where.push("i.type IN ('movie','show','artist','photo','video','album')");
+    where.push("i.type IN ('movie','show','artist','photo','video','album','audiobook','podcast')");
     if (q.libraryId) {
       const lib = db.get<{ type: string }>('SELECT type FROM libraries WHERE id = ?', q.libraryId);
       if (lib?.type === 'music') where.push("i.type = 'artist'");
@@ -234,6 +234,8 @@ export function getItem(user: User, id: string, withMedia = true): Item {
     const row = db.get('SELECT markers, locked_fields FROM items WHERE id = ?', id);
     item.markers = parseJson<Marker[]>(row?.markers, []);
     item.lockedFields = parseJson<string[]>(row?.locked_fields, []);
+    const ch = db.get<{ chapters: string }>("SELECT chapters FROM media WHERE item_id = ? AND chapters != '[]' LIMIT 1", id);
+    if (ch) item.chapters = parseJson<Chapter[]>(ch.chapters, []);
     if (item.type === 'show' || item.type === 'season') {
       // Aggregate duration hint for containers.
       item.media = [];
@@ -289,6 +291,17 @@ export function nextItem(user: User, id: string): Item | null {
       [row.grandparent_id, row.parent_idx ?? 0, row.parent_idx ?? 0, row.idx ?? 0], 'ORDER BY COALESCE(i.parent_idx,0), COALESCE(i.idx,0) LIMIT 1');
     return r[0] ?? null;
   }
+  if (row.type === 'bookpart' && row.parent_id) {
+    const r = selectItems(user, `i.parent_id = ? AND i.type = 'bookpart' AND COALESCE(i.idx,0) > ?`, [row.parent_id, row.idx ?? 0], 'ORDER BY COALESCE(i.idx,0) LIMIT 1');
+    return r[0] ?? null;
+  }
+  if (row.type === 'audiobook' || row.type === 'podcast') {
+    // Resume where the listener left off, else start at the first part / newest unplayed episode.
+    const inProgress = selectItems(user, `i.parent_id = ? AND ud.position_ms > 0 AND COALESCE(ud.played,0) = 0`, [id], 'ORDER BY ud.last_played_at DESC LIMIT 1');
+    if (inProgress[0]) return inProgress[0];
+    const order = row.type === 'audiobook' ? 'ORDER BY COALESCE(i.idx,0)' : "ORDER BY COALESCE(i.release_date,'') DESC";
+    return selectItems(user, `i.parent_id = ? AND COALESCE(ud.played,0) = 0`, [id], `${order} LIMIT 1`)[0] ?? null;
+  }
   if (row.type === 'track' && row.parent_id) {
     const r = selectItems(user, `i.parent_id = ? AND i.type = 'track' AND (COALESCE(i.parent_idx,0) > ? OR (COALESCE(i.parent_idx,0) = ? AND COALESCE(i.idx,0) > ?))`,
       [row.parent_id, row.parent_idx ?? 0, row.parent_idx ?? 0, row.idx ?? 0], 'ORDER BY COALESCE(i.parent_idx,0), COALESCE(i.idx,0) LIMIT 1');
@@ -324,7 +337,7 @@ function emitUd(user: User, itemId: string): UserItemData {
 /** Leaf items (playable) under an item, for cascade operations. */
 function leafIds(itemId: string, type: string): string[] {
   if (type === 'show' || type === 'artist') return db.all<{ id: string }>("SELECT id FROM items WHERE grandparent_id = ? AND type IN ('episode','track')", itemId).map((r) => r.id);
-  if (type === 'season' || type === 'album') return db.all<{ id: string }>('SELECT id FROM items WHERE parent_id = ?', itemId).map((r) => r.id);
+  if (type === 'season' || type === 'album' || type === 'audiobook' || type === 'podcast') return db.all<{ id: string }>('SELECT id FROM items WHERE parent_id = ?', itemId).map((r) => r.id);
   if (type === 'collection' || type === 'playlist') return db.all<{ item_id: string }>('SELECT item_id FROM collection_items WHERE collection_id = ?', itemId).map((r) => r.item_id);
   return [itemId];
 }
@@ -460,7 +473,7 @@ export function listContainers(user: User, type: 'collection' | 'playlist'): Ite
 /* ------------------------------- home ------------------------------ */
 
 export function continueWatching(user: User, limit = 20): Item[] {
-  return selectItems(user, "ud.position_ms > 0 AND COALESCE(ud.played,0) = 0 AND i.type IN ('movie','episode','video')", [], `ORDER BY ud.last_played_at DESC LIMIT ${toInt(limit, 20, 1, 100)}`);
+  return selectItems(user, "ud.position_ms > 0 AND COALESCE(ud.played,0) = 0 AND i.type IN ('movie','episode','video','bookpart','podcastepisode')", [], `ORDER BY ud.last_played_at DESC LIMIT ${toInt(limit, 20, 1, 100)}`);
 }
 
 export function nextUp(user: User, limit = 20): Item[] {
@@ -486,7 +499,8 @@ export function nextUp(user: User, limit = 20): Item[] {
 function recentlyAdded(user: User, libraryId: string | null, limit: number): Item[] {
   const lib = libraryId ? db.get<{ type: string }>('SELECT type FROM libraries WHERE id = ?', libraryId) : null;
   const t = lib?.type;
-  const types = t === 'shows' || t === 'iptv-shows' ? "('show')" : t === 'music' ? "('album')" : t === 'photos' ? "('photo')" : t === 'videos' ? "('video')" : t ? "('movie')" : "('movie','show','album')";
+  if (t === 'podcasts') return selectItems(user, `i.type = 'podcastepisode' AND i.library_id = ?`, [libraryId], `ORDER BY COALESCE(i.release_date, i.added_at) DESC LIMIT ${limit}`);
+  const types = t === 'shows' || t === 'iptv-shows' ? "('show')" : t === 'music' ? "('album')" : t === 'audiobooks' ? "('audiobook')" : t === 'photos' ? "('photo')" : t === 'videos' ? "('video')" : t ? "('movie')" : "('movie','show','album')";
   if (t === 'shows') {
     // Order shows by most recently added episode.
     return selectItems(user, `i.type = 'show' AND i.library_id = ?`, [libraryId],
@@ -586,7 +600,7 @@ export function searchItems(user: User, q: string, limit = 30): Item[] {
   if (!term) return [];
   const like = `%${term}%`;
   return selectItems(user,
-    `(i.title LIKE ? OR i.original_title LIKE ? OR EXISTS (SELECT 1 FROM json_each(i.people) WHERE json_extract(json_each.value,'$.name') LIKE ?)) AND i.type IN ('movie','show','episode','artist','album','track','collection','video')`,
+    `(i.title LIKE ? OR i.original_title LIKE ? OR EXISTS (SELECT 1 FROM json_each(i.people) WHERE json_extract(json_each.value,'$.name') LIKE ?)) AND i.type IN ('movie','show','episode','artist','album','track','collection','video','audiobook','podcast','podcastepisode')`,
     [like, like, like, term, `${term}%`],
     `ORDER BY CASE WHEN i.title LIKE ? THEN 0 WHEN i.title LIKE ? THEN 1 ELSE 2 END, CASE i.type WHEN 'movie' THEN 0 WHEN 'show' THEN 0 WHEN 'artist' THEN 1 ELSE 2 END, i.sort_title LIMIT ${toInt(limit, 30, 1, 200)}`)
 

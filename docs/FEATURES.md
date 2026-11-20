@@ -19,7 +19,9 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | `.mediamaxignore` / `.plexignore` folders | ✅ | ✅ | ❌ | ✅ |
 | Safe removal (no wipe when a drive is unmounted) | ✅ | 🟡 | 🟡 | ✅ |
 | Real-time filesystem watching | ✅ | ✅ | ✅ | ✅ |
-| Lyrics, music videos | ✅ | ✅ | ✅ | 🗺️ |
+| Synced lyrics (LRC sidecars, embedded tags) | ✅ | ✅ | ✅ | ✅ |
+| Audiobooks (multi-file & .m4b, chapters, author/narrator, resume) | 🟡 | ✅ | ✅ | ✅ |
+| Podcasts (RSS, iTunes directory search, OPML import, auto-download) | ✅ | ❌ | ❌ | ✅ |
 
 ## Playback
 | Feature | Plex | Jellyfin | Emby | MediaMax |
@@ -65,6 +67,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | TV sign-in with a short link code | ✅ | ✅ (Quick Connect) | ❌ | ✅ |
 | Device list and remote sign-out | ✅ | ✅ | ✅ | ✅ |
 | No cloud account required, fully self-hosted | ❌ | ✅ | 🟡 | ✅ |
+| Single sign-on (OpenID Connect) with group → admin mapping | ❌ | Plugin | ❌ | ✅ |
 
 ## Customisation (MediaMax's headline feature)
 | Feature | Plex | Jellyfin | Emby | MediaMax |
@@ -95,5 +98,4 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | CI (typecheck, tests, web build, Docker smoke test) | — | ✅ | — | ✅ |
 
 ## Roadmap ideas
-Chromecast sender in apps · Last.fm scrobbling · lyrics · audiobooks/podcasts · plugin API · LDAP/OIDC login ·
-remote access relay.
+Chromecast sender in apps · Last.fm scrobbling · music videos · plugin API · LDAP login · remote access relay.

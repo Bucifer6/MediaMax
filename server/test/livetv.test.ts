@@ -75,3 +75,25 @@ test('dlna soap helpers', async () => {
   assert.ok(isLocalAddress('::ffff:10.0.0.5'));
   assert.ok(!isLocalAddress('8.8.8.8'));
 });
+
+test('podcast feed, duration and OPML parsing', async () => {
+  const { parseFeed, parseDuration, parseOpml } = await import('../src/services/podcasts.ts');
+  assert.equal(parseDuration('01:02:03'), 3723000);
+  assert.equal(parseDuration('62:03'), 3723000);
+  assert.equal(parseDuration('3723'), 3723000);
+  assert.equal(parseDuration('n/a'), null);
+  const f = parseFeed(`<?xml version="1.0"?><rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>Cast</title>
+    <itunes:image href="http://img/c.jpg"/><itunes:category text="News"/><description>&lt;b&gt;Hi&lt;/b&gt; there</description>
+    <item><title>E1</title><guid isPermaLink="false">g1</guid><pubDate>Mon, 16 Nov 2026 10:00:00 GMT</pubDate><itunes:episode>3</itunes:episode>
+      <enclosure url="http://x/e1.mp3" type="audio/mpeg" length="123"/></item>
+    <item><title>No audio</title></item></channel></rss>`);
+  assert.equal(f.title, 'Cast');
+  assert.equal(f.image, 'http://img/c.jpg');
+  assert.equal(f.description, 'Hi there');
+  assert.deepEqual(f.categories, ['News']);
+  assert.equal(f.episodes.length, 1);
+  assert.equal(f.episodes[0].guid, 'g1');
+  assert.equal(f.episodes[0].episode, 3);
+  assert.equal(f.episodes[0].pubDate, '2026-11-16T10:00:00.000Z');
+  assert.deepEqual(parseOpml('<opml><body><outline text="x"><outline xmlUrl="http://a/feed"/><outline xmlUrl="http://b/feed"/></outline></body></opml>'), ['http://a/feed', 'http://b/feed']);
+});

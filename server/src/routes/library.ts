@@ -16,7 +16,7 @@ import { newId } from '../util/ids.js';
 import { nowIso, toInt } from '../util/misc.js';
 import { detectSeason } from '../services/introdetect.js';
 
-const LIB_TYPES = ['movies', 'shows', 'music', 'photos', 'videos'];
+const LIB_TYPES = ['movies', 'shows', 'music', 'photos', 'videos', 'audiobooks'];
 
 export default async function libraryRoutes(app: FastifyInstance) {
   /* ------------------------------ libraries ------------------------- */

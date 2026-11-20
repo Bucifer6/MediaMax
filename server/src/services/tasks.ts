@@ -19,6 +19,7 @@ import { enrichLibrary } from './metadata/index.js';
 import { syncWatchers } from './watcher.js';
 import { generateMissing } from './trickplay.js';
 import { autoDownload } from './opensubtitles.js';
+import { refreshAll as refreshPodcasts } from './podcasts.js';
 
 const log = logger('tasks');
 
@@ -124,6 +125,14 @@ const DEFS: TaskDef[] = [
     run: async (progress) => {
       const n = await autoDownload(progress);
       log.info(`Downloaded ${n} subtitle file(s)`);
+    },
+  },
+  {
+    id: 'podcasts', name: 'Refresh podcasts', description: 'Check subscribed podcast feeds for new episodes (and download them when auto-download is on).',
+    interval: () => 60,
+    run: async (progress) => {
+      const n = await refreshPodcasts(progress);
+      if (n) log.info(`${n} new podcast episode(s)`);
     },
   },
   {
