@@ -34,6 +34,8 @@ export function useVisibleTabs() {
     // Keep the phone bar to five tabs: while online, Downloads lives under Settings → Downloads
     // (it becomes a tab again in offline mode, when it's the main thing you can use).
     if (name === 'downloads') return false;
+    // Search is reachable from Home's header; when Discover is on, drop the tab on phones to stay at five.
+    if (name === 'search' && caps.requests && !Platform.isTV) return false;
     return name in TAB_META;
   };
 }
