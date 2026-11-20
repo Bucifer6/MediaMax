@@ -43,8 +43,43 @@ The script needs `ffmpeg` (already required by the server) to render the icons.
    ```
 3. Store release: submit the `.ipk` through the LG Seller Lounge. Change `id` in `tv/webos/appinfo.json` to your own reverse-DNS id.
 
+## Remote control
+
+TV mode (`web/src/tv/spatial.ts`) understands the full remote, whether the keys come from the TV's own remote,
+HDMI-CEC (a soundbar or receiver remote) or a Bluetooth remote:
+
+| Key | Action |
+|---|---|
+| Play / Pause / Play-Pause | Play or pause |
+| Stop | Leave the player |
+| Fast-forward / Rewind | Skip 10 s forward / back |
+| Next / Previous track | Next episode / back 30 s. In Live TV: next / previous channel |
+| Channel + / − | Change channel in Live TV |
+| 0–9 | Live TV: type a channel number (it switches after 1.5 s). Videos: jump to 0–90 % |
+| Info | Info overlay (playback method, HDR format, why it transcodes) |
+| Guide | TV guide |
+| Red / Green / Yellow / Blue | Subtitles / audio track / skip intro, credits or ad break / info (Live TV: channel list) |
+| Back (Tizen 10009, webOS 461) | Close a menu, leave the player, or go back |
+
+Tizen sends media, channel, colour, number, Info and Guide keys only to apps that register them. The wrapper
+registers them with `tizen.tvinputdevice.registerKey` before it opens the server's web app. Registration belongs to
+the app, so it should stay in force after the wrapper navigates there (not yet confirmed on a real TV). webOS, Android TV and Fire TV browsers send these
+keys without registration. Settings → Playback lists the keys in TV mode. The native Android TV app handles the same
+keys through the `mediamax-media` module (`apps/mobile/modules/mediamax-media`).
+
 ## Notes
 
-- **Playback:** Tizen and webOS play HLS natively, and the web player's device profile asks the server for HLS, so most content direct-streams or remuxes. Codecs the TV can't decode are transcoded as usual.
+- **Playback: our own engine, not the TV's player.** The TV apps play through MediaMax's JavaScript player: hls.js
+  on Media Source Extensions, the same engine as in browsers. The TV's built-in player (Samsung AVPlay, the
+  progressive `<video src>` pipeline) and its subtitle parser are not used, because they have been unreliable.
+  hls.js does the demuxing, buffering, bitrate switching, track switching and error recovery. The TV's hardware
+  decoder is used only through MSE `SourceBuffer`s. On Samsung and LG TVs the player asks the server to remux video
+  to fMP4 HLS. The video is copied, not re-encoded, so MKV/HEVC/HDR10/E-AC-3 files keep full quality. The server
+  transcodes only what MSE on that TV can't decode. The player detects this with `MediaSource.isTypeSupported` and
+  `MediaCapabilities.decodingInfo`; Settings → Playback → **This device** shows the result.
+- **HDR:** Samsung plays HDR10, HLG and (when MSE reports it) HDR10+. Samsung has no Dolby Vision, so DV 8.1 plays as
+  HDR10. LG plays HDR10 and HLG; DV 8.x plays as its base layer. See [docs/HDR.md](../docs/HDR.md).
+- **Samsung native player (AVPlay):** not included. It could be added later only as an opt-in, per-device fallback
+  that is off by default.
 - **Changing the server:** the wrapper reconnects to the saved server on launch. To switch servers, clear the app's data on the TV, or add `?change=1` to the wrapper URL when testing in a browser.
 - **HTTPS:** a server behind HTTPS with a valid certificate works the same way. Self-signed certificates are rejected by both TV browsers.

@@ -120,6 +120,11 @@ For seeking in a transcoded stream beyond what's generated, call `POST /playback
 | DELETE 🛡️ | `/livetv/sources/:id` | | `{ ok: true }` |
 | POST 🛡️ | `/livetv/sources/test` | `CreateLiveSourceRequest` | `TestSourceResponse` |
 | POST 🛡️ | `/livetv/sources/:id/refresh` | | `{ ok: true }` (channels + EPG + VOD/series) |
+| GET 🛡️ | `/livetv/tuners/discover` | | `DiscoveredTuner[]` (SAT>IP via SSDP, HDHomeRun via UDP 65001; ~2.5 s) |
+| GET 🛡️ | `/livetv/sources/:id/recordings` | | `TunerRecording[]` (TVHeadend finished recordings) |
+| GET 🛡️ | `/livetv/sources/:id/recordings/:recId/file` | `Range` supported | the recording file, proxied from TVHeadend |
+
+Tuner sources (`type` `tvheadend`, `satip`, `enigma2`) take driver settings in `options` (`LiveSourceOptions`: `profile`, `authType`, `satipMode`, `fritzLists`, `playlistUrl`, `rtspTransport`, `descriptionUrl`, `bouquets`, `streamPort`, `useTranscoding`, `transcodePort`, `streamAuth`, `guideDays`, `maxStreams`). They are always restreamed (`proxyStreams` is forced on); `LiveSource` adds `options`, `tunerCount` and `deviceInfo`, and `maxConnections` is the effective stream limit. `POST /livetv/sources/test` returns `tunerCount`, `deviceInfo`, `bouquets` (Enigma2), `profiles` (TVHeadend) and `warnings`; send `sourceId` to test an existing source with its saved password. See [TUNERS.md](TUNERS.md).
 | GET 🔑 | `/livetv/categories?sourceId=` | | `ChannelCategory[]` |
 | PATCH 🛡️ | `/livetv/categories/:id` | `{ hidden?, sortOrder?, name? }` | `ChannelCategory` |
 | GET 🔑 | `/livetv/channels` | `ChannelQuery` | `Paged<Channel>` |

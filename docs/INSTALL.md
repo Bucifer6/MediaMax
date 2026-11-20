@@ -426,6 +426,10 @@ Environment variables (Docker `environment:`, `systemctl edit mediamax`, or Wind
 
 The full list is in the [README](../README.md#configuration-environment-variables).
 
+## TV tuners and set-top boxes
+
+Under **Admin → Live TV sources → Add source** you can also add your own broadcast hardware: a **TVHeadend** server, a **SAT>IP** server (Octopus NET, minisatip, AVM FRITZ!Box Cable…) or an **Enigma2** receiver (Vu+, Dreambox… with OpenWebif). Each has a *Test connection* button that shows the device, its tuner count and the channel count; TVHeadend and Enigma2 bring their own guide. Network discovery of SAT>IP servers and HDHomeRun tuners, and RTSP over UDP (FRITZ!Box), need host networking in Docker (`network_mode: host`). Details: [TUNERS.md](TUNERS.md).
+
 ## TV guide setup
 
 Live TV needs a programme guide (EPG). Open **Admin → TV guide**:
@@ -435,6 +439,7 @@ Live TV needs a programme guide (EPG). Open **Admin → TV guide**:
    - **Free community guide:** iptv-org or epg.pw guides by country. These are free, volunteer-run services and their URLs can change.
    - **Schedules Direct:** a paid service (about $35 a year) with accurate listings, used by Plex, Channels DVR and MythTV. Enter your username and password, then add your lineup by country and postcode.
    - **HDHomeRun:** free guide data for HDHomeRun owners. Add the tuner as a Live TV source first, then pick it here.
+   - TVHeadend and Enigma2 sources add their own guide automatically; SAT>IP sources need one of the guides above (an iptv-org guide for your country works well).
 2. Set **priority** if you use more than one guide. The higher guide wins for each channel, and lower ones fill the gaps.
 3. **Guide matching** shows how each channel was matched and how confident the match is. Accept the suggestions, or click the pencil icon to search every guide, preview now/next, and set a time shift for channels whose guide runs early or late. A whole guide in the wrong time zone has a time-zone override in its settings.
 

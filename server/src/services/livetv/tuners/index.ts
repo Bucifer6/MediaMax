@@ -155,10 +155,15 @@ export async function openTunerStream(src: Row, url: string, userAgent: string, 
         kill();
         reject(new TunerHttpError('The tuner did not deliver a stream within 20 s'));
       }, 20000);
-      p.stdout.once('readable', () => {
-        clearTimeout(t);
-        resolve();
-      });
+      // 'readable' also fires at EOF: only real bytes count, an early exit is handled below.
+      const onReadable = () => {
+        if (p.stdout.readableLength > 0) {
+          clearTimeout(t);
+          p.stdout.off('readable', onReadable);
+          resolve();
+        }
+      };
+      p.stdout.on('readable', onReadable);
       p.once('error', (e) => {
         clearTimeout(t);
         reject(new TunerHttpError(`FFmpeg could not start: ${e.message}`));

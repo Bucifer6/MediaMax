@@ -71,6 +71,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register(authRoutes);
     await api.register(libraryRoutes);
     await api.register(playbackRoutes);
+    await api.register((await import('./routes/streaming.js')).default);
     await api.register(liveRoutes);
     await api.register(wsRoutes);
     await api.register(extraRoutes);
@@ -81,7 +82,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register(discoveryRoutes);
     await api.register(metadataRoutes);
     await api.register((await import('./routes/arr.js')).default);
+    await api.register((await import('./routes/requests.js')).default);
     await api.register((await import('./routes/transcoding.js')).default);
+    await api.register((await import('./routes/smarthome.js')).default);
+    await api.register((await import('./routes/renderers.js')).default);
   }, { prefix: '/api/v1' });
 
   await app.register(dlnaRoutes);

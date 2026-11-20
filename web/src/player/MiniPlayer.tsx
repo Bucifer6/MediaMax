@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import type { Chapter, Item, Lyrics } from '@mediamax/shared';
+import type { Chapter, Item, Lyrics, Renderer } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useMusic, type SleepTimer } from './music';
 import { PlayerBookmarks } from '../components/Bookmarks';
 import { useNow } from '../hooks';
 import { SeekBar, VolumeControl } from './controls';
+import { CastMenu } from './CastMenu';
+import { useRendererRemote } from './renderers';
+import { useToast } from '../state/toast';
 import { Icon } from '../components/Icon';
 import { Dropdown, Img, Spinner, type MenuItem } from '../components/ui';
 import { formatClock, formatDuration } from '../utils/format';
@@ -149,10 +152,19 @@ export function MiniPlayer() {
   const queueOpen = panel === 'queue';
   const setQueueOpen = (fn: boolean | ((o: boolean) => boolean)) => setPanel((p) => ((typeof fn === 'function' ? fn(p === 'queue') : fn) ? 'queue' : null));
   const loc = useLocation();
+  const remote = useRendererRemote();
+  const toast = useToast();
   if (!m.current) return null;
   if (loc.pathname.startsWith('/play/') || loc.pathname.startsWith('/watch/')) return null;
   const t = m.current;
   const art = m.info?.posterUrl ?? t.posterUrl ?? t.thumbUrl;
+  /** Send the rest of the queue to a network renderer (Sonos, DLNA, Kodi) and pause here. */
+  const playToRenderer = async (r: Renderer) => {
+    const rest = m.queue.slice(m.index, m.index + 200).map((q) => q.id);
+    await remote.start(r, { itemId: t.id, startMs: Math.round(m.positionMs), queueItemIds: rest.length > 1 ? rest : undefined });
+    m.pause();
+    toast.show(`Playing on ${r.name}`);
+  };
   const artist = t.grandparentTitle ?? t.parentTitle ?? m.info?.subtitle ?? '';
   return (
     <>
@@ -215,16 +227,7 @@ export function MiniPlayer() {
               <Icon name="lyrics" />
             </button>
           )}
-          {(m.cast.available || m.cast.connected) && (
-            <button
-              className={`btn-icon ${m.cast.connected ? 'active' : ''}`}
-              onClick={m.cast.toggle}
-              aria-label={m.cast.connected ? `Stop casting to ${m.cast.deviceName ?? 'device'}` : 'Cast to a device'}
-              title={m.cast.connected ? `Casting to ${m.cast.deviceName ?? 'device'}` : 'Cast'}
-            >
-              <Icon name="cast" />
-            </button>
-          )}
+          <CastMenu cast={m.cast} media="audio" size={20} onPlayTo={playToRenderer} />
           <TrackMenu t={t} />
           <button className={`btn-icon ${queueOpen ? 'active' : ''}`} onClick={() => setQueueOpen((o) => !o)} aria-label="Queue">
             <Icon name="queue" />

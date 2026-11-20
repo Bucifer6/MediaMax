@@ -87,8 +87,8 @@ export function splitUserInfo(url: string): { url: string; username: string | nu
 
 function friendly(e: unknown, url: string): TunerHttpError {
   if (e instanceof TunerHttpError) return e;
-  const err = e as Error & { cause?: { code?: string } };
-  const code = err.cause?.code ?? (err.name === 'TimeoutError' ? 'ETIMEDOUT' : '');
+  const err = e as Error & { cause?: { code?: string; errors?: { code?: string }[] } };
+  const code = err.cause?.code ?? err.cause?.errors?.[0]?.code ?? (err.name === 'TimeoutError' ? 'ETIMEDOUT' : '');
   const host = (() => {
     try {
       return new URL(url).host;
@@ -96,6 +96,7 @@ function friendly(e: unknown, url: string): TunerHttpError {
       return url;
     }
   })();
+  if ((err.cause as { message?: string } | undefined)?.message === 'bad port') return new TunerHttpError(`${host}: this port is blocked for HTTP by the runtime (use the device's web port)`);
   if (code === 'ECONNREFUSED') return new TunerHttpError(`Connection refused by ${host} — is the service running and the port right?`);
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return new TunerHttpError(`Host ${host} not found`);
   if (code === 'ETIMEDOUT' || code === 'UND_ERR_CONNECT_TIMEOUT' || err.name === 'TimeoutError' || err.name === 'AbortError') return new TunerHttpError(`No answer from ${host} (timed out)`);

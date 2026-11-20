@@ -14,6 +14,8 @@ import { spawn } from 'node:child_process';
 import { config } from '../config.js';
 import { safeFetch } from '../util/net.js';
 import { logActivity } from '../services/activity.js';
+import { renditionRequest } from '../services/abr.js';
+import { serveSubtitle } from './streaming.js';
 
 const MIME: Record<string, string> = {
   mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska', ts: 'video/mp2t', m2ts: 'video/mp2t', avi: 'video/x-msvideo',
@@ -168,10 +170,26 @@ export default async function playbackRoutes(app: FastifyInstance) {
     const s = touchSession(req.params.sessionId);
     if (!s) throw notFound('Playback session has ended');
     if (s.ctx.user.id !== a.user.id) throw forbidden();
-    const job = s.job ?? liveJobBySession.get(s.id);
-    if (!job) throw notFound('No stream for this session');
     const file = req.params.file;
     const q = `?token=${encodeURIComponent(a.token)}`;
+    // Adaptive transcode: master playlist of renditions + per-rendition playlists/segments (abr.ts).
+    if (s.abr) {
+      if (s.state === 'buffering' && file.endsWith('.m3u8')) s.state = 'playing';
+      if (file === 'master.m3u8') {
+        reply.header('Cache-Control', 'no-cache').type('application/vnd.apple.mpegurl');
+        return s.abr.master(q);
+      }
+      const r = await renditionRequest(s.abr, file, q);
+      if (!r) throw notFound();
+      if (r.kind === 'playlist') {
+        reply.header('Cache-Control', 'no-cache').type('application/vnd.apple.mpegurl');
+        return r.body;
+      }
+      reply.type(r.type).header('Cache-Control', 'private, max-age=600');
+      return fs.createReadStream(r.path);
+    }
+    const job = s.job ?? liveJobBySession.get(s.id);
+    if (!job) throw notFound('No stream for this session');
     reply.header('Cache-Control', 'no-cache');
     if (file.endsWith('.m3u8')) {
       reply.type('application/vnd.apple.mpegurl');
@@ -207,16 +225,8 @@ export default async function playbackRoutes(app: FastifyInstance) {
   app.get<{ Params: { sessionId: string; file: string } }>('/stream/hls/:sessionId/:file', hlsHandler);
   app.get<{ Params: { sessionId: string; file: string } }>('/livetv/hls/:sessionId/:file', hlsHandler);
 
-  app.get<{ Params: { mediaId: string; index: string } }>('/stream/subtitles/:mediaId/:index', async (req, reply) => {
-    const { user } = requireUser(req);
-    const m = db.get('SELECT item_id FROM media WHERE id = ?', req.params.mediaId);
-    if (!m) throw notFound();
-    assertCanSee(user, m.item_id);
-    const idx = parseInt(req.params.index.replace(/\.vtt$/, ''), 10);
-    const file = await subtitleVtt(req.params.mediaId, idx);
-    reply.type('text/vtt; charset=utf-8').header('Cache-Control', 'private, max-age=86400');
-    return fs.createReadStream(file);
-  });
+  // WebVTT (default, legacy) or the original format for the clients' own renderers: .srt / .ass / .ssa / .sup (streaming.ts).
+  app.get<{ Params: { mediaId: string; index: string }; Querystring: { partial?: string } }>('/stream/subtitles/:mediaId/:index', serveSubtitle);
 
   app.get<{ Params: { itemId: string }; Querystring: { mediaId?: string; quality?: DownloadQuality } }>('/stream/download/:itemId', async (req, reply) => {
     const { user } = requireUser(req);

@@ -118,11 +118,11 @@ export function analysisStatus() {
 }
 
 /** Analyse every new/changed track (two at a time). */
-export async function analyseAll(onProgress?: (p: number) => void, limit = Infinity): Promise<number> {
+export async function analyseAll(onProgress?: (p: number) => void, limit = Infinity, filter?: (mediaPath: string) => boolean): Promise<number> {
   if (running) return 0;
   running = true;
   try {
-    const ids = db.all<{ id: string }>(`SELECT DISTINCT i.id ${PENDING_SQL} ORDER BY i.added_at DESC`).map((r) => r.id).slice(0, limit === Infinity ? undefined : limit);
+    const ids = db.all<{ id: string; path: string }>(`SELECT i.id, MIN(m.path) path ${PENDING_SQL} GROUP BY i.id ORDER BY i.added_at DESC`).filter((r) => !filter || filter(r.path)).map((r) => r.id).slice(0, limit === Infinity ? undefined : limit);
     let done = 0;
     const queue = [...ids];
     const worker = async () => {

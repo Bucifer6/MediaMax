@@ -27,6 +27,7 @@ import { refreshAll as refreshPodcasts } from './podcasts.js';
 import { checkAvailability } from './requests.js';
 import { refreshSchedules } from './calendar.js';
 import { backfillVideoRanges } from './hdrBackfill.js';
+import { planScheduledRun, taskRunFinished, isDiskTask, getStorageSettings, type PathFilter, type RunPlan } from './storage/storage.js';
 
 const log = logger('tasks');
 
@@ -35,7 +36,10 @@ interface TaskDef {
   name: string;
   description: string;
   interval: () => number | null; // minutes
-  run: (progress: (p: number) => void) => Promise<void>;
+  /** `filter` (disk-friendly mode): only touch media whose path passes, i.e. files on disks that are awake. */
+  run: (progress: (p: number) => void, filter?: PathFilter) => Promise<void>;
+  /** The task honours `filter`, so it can run one disk's share (piggybacking on a disk that is awake). */
+  diskFilter?: boolean;
 }
 
 interface TaskState {
@@ -57,8 +61,11 @@ const DEFS: TaskDef[] = [
   {
     id: 'scan-libraries', name: 'Scan all libraries', description: 'Look for new, changed and removed media in every library.',
     interval: () => getSettings().scanIntervalMinutes || null,
-    run: async (progress) => {
-      const libs = db.all<{ id: string; type: string }>("SELECT id, type FROM libraries WHERE type NOT LIKE 'iptv-%'");
+    diskFilter: true,
+    run: async (progress, filter) => {
+      // With a disk filter, only libraries whose folders all sit on the awake disk(s).
+      const libs = db.all<{ id: string; type: string; paths: string }>("SELECT id, type, paths FROM libraries WHERE type NOT LIKE 'iptv-%'")
+        .filter((l) => !filter || (JSON.parse(l.paths || '[]') as string[]).every((p) => filter(p)));
       for (let i = 0; i < libs.length; i++) {
         await scanLibrary(libs[i].id);
         progress(Math.round(((i + 1) / libs.length) * 100));
@@ -96,17 +103,19 @@ const DEFS: TaskDef[] = [
   {
     id: 'detect-intros', name: 'Detect intros & credits', description: 'Audio-fingerprint TV episodes to find intros and end credits for Skip buttons.',
     interval: () => 24 * 60,
-    run: async (progress) => {
-      const n = await detectAll(progress);
+    diskFilter: true,
+    run: async (progress, filter) => {
+      const n = await detectAll(progress, filter);
       log.info(`Intro detection updated ${n} episode(s)`);
     },
   },
   {
     id: 'episode-thumbnails', name: 'Generate missing thumbnails', description: 'Extract preview images for episodes and videos that have none.',
     interval: () => 12 * 60,
-    run: async (progress) => {
+    diskFilter: true,
+    run: async (progress, filter) => {
       const rows = db.all(`SELECT i.id, m.path, m.duration_ms FROM items i JOIN media m ON m.item_id = i.id
-        WHERE i.type IN ('episode','video') AND i.thumb IS NULL AND m.path IS NOT NULL AND m.duration_ms > 0 GROUP BY i.id LIMIT 2000`);
+        WHERE i.type IN ('episode','video') AND i.thumb IS NULL AND m.path IS NOT NULL AND m.duration_ms > 0 GROUP BY i.id LIMIT 2000`).filter((r) => !filter || filter(r.path));
       const dir = path.join(config.cacheDir, 'thumbs');
       fs.mkdirSync(dir, { recursive: true });
       for (let i = 0; i < rows.length; i++) {
@@ -122,16 +131,18 @@ const DEFS: TaskDef[] = [
   {
     id: 'trickplay', name: 'Generate scrub previews', description: 'Build seek-bar preview thumbnails (trickplay) for movies and episodes. Enable in Settings → Trickplay.',
     interval: () => (getSettings().trickplay.enabled ? 6 * 60 : null),
-    run: async (progress) => {
-      const n = await generateMissing(progress);
+    diskFilter: true,
+    run: async (progress, filter) => {
+      const n = await generateMissing(progress, 500, filter);
       log.info(`Trickplay generated for ${n} file(s)`);
     },
   },
   {
     id: 'subtitles', name: 'Download missing subtitles', description: 'Fetch subtitles from OpenSubtitles in your preferred languages for recent media.',
     interval: () => (getSettings().openSubtitles.apiKey && getSettings().openSubtitles.autoLanguages.length ? 12 * 60 : null),
-    run: async (progress) => {
-      const n = await autoDownload(progress);
+    diskFilter: true,
+    run: async (progress, filter) => {
+      const n = await autoDownload(progress, filter);
       log.info(`Downloaded ${n} subtitle file(s)`);
     },
   },
@@ -167,8 +178,9 @@ const DEFS: TaskDef[] = [
   {
     id: 'dj-analysis', name: 'Analyse music for DJ mode', description: 'Detect tempo (BPM), musical key, energy and mix points of new or changed tracks.',
     interval: () => 6 * 60,
-    run: async (progress) => {
-      await analyseAll(progress);
+    diskFilter: true,
+    run: async (progress, filter) => {
+      await analyseAll(progress, Infinity, filter);
     },
   },
   {
@@ -226,10 +238,18 @@ const allDefs = (): TaskDef[] => [
 
 export const listTasks = () => allDefs().map(toTask);
 
-export async function runTask(id: string): Promise<void> {
+export const isTaskRunning = (id: string) => running.has(id);
+export const taskSupportsDiskFilter = (id: string) => !!allDefs().find((x) => x.id === id)?.diskFilter;
+
+/**
+ * Run a task now. With `filter` (a disk-friendly piggyback run) only that share of the work is done, so the
+ * task's last-run time is left alone and the rest still runs in the maintenance window.
+ */
+export async function runTask(id: string, filter?: PathFilter, plan?: RunPlan): Promise<void> {
   const d = allDefs().find((x) => x.id === id);
   if (!d) throw notFound('Task not found');
   if (running.has(id)) return;
+  if (filter && !d.diskFilter) return;
   running.set(id, 0);
   events.toAdmins({ type: 'task.updated', task: toTask(d) });
   const started = Date.now();
@@ -241,8 +261,10 @@ export async function runTask(id: string): Promise<void> {
         lastEmit = Date.now();
         events.toAdmins({ type: 'task.updated', task: toTask(d) });
       }
-    });
-    setKv(`task:${id}`, { lastRunAt: new Date().toISOString(), lastDurationMs: Date.now() - started, lastResult: 'ok', lastError: null });
+    }, filter);
+    if (filter && !plan) setKv(`task:${id}`, { ...state(id), lastResult: 'ok', lastError: null });
+    else setKv(`task:${id}`, { lastRunAt: new Date().toISOString(), lastDurationMs: Date.now() - started, lastResult: 'ok', lastError: null });
+    if (!filter || plan) taskRunFinished(id, plan);
   } catch (e) {
     log.error(`Task ${id} failed`, e);
     setKv(`task:${id}`, { lastRunAt: new Date().toISOString(), lastDurationMs: Date.now() - started, lastResult: 'error', lastError: (e as Error).message });
@@ -263,13 +285,27 @@ export function startScheduler() {
     timers.push(setInterval(() => syncWatchers(), 60000));
   }
   // Interval tasks: check every minute which are due.
+  // Disk-friendly mode (Admin → Storage) may postpone tasks that read media files to the maintenance window.
+  let checking = false;
   const check = () => {
-    for (const d of allDefs()) {
-      const iv = d.interval();
-      if (!iv || running.has(d.id)) continue;
-      const last = state(d.id).lastRunAt;
-      if (!last || Date.now() - Date.parse(last) > iv * 60000) void runTask(d.id);
-    }
+    if (checking) return;
+    checking = true;
+    void (async () => {
+      for (const d of allDefs()) {
+        const iv = d.interval();
+        if (!iv || running.has(d.id)) continue;
+        const last = state(d.id).lastRunAt;
+        if (last && Date.now() - Date.parse(last) <= iv * 60000) continue;
+        // Disk-friendly: one media-disk job at a time (scan first), instead of all of them at window start.
+        if (isDiskTask(d.id) && getStorageSettings().diskFriendly && [...running.keys()].some(isDiskTask)) continue;
+        const plan = await planScheduledRun(d.id).catch(() => ({ run: true }) as RunPlan);
+        if (!plan.run) continue;
+        if (plan.filter && !d.diskFilter) continue; // can't split this one by disk: wait for the window
+        void runTask(d.id, plan.filter, plan);
+      }
+    })().finally(() => {
+      checking = false;
+    });
   };
   // Give the server a moment to boot before heavy work.
   timers.push(setTimeout(check, 20000));

@@ -22,6 +22,29 @@ export default async function liveRoutes(app: FastifyInstance) {
     requireAdmin(req);
     return live.createSource(req.body);
   });
+  /** LAN discovery of SAT>IP servers (SSDP) and HDHomeRun tuners (UDP 65001). */
+  app.get('/livetv/tuners/discover', async (req) => {
+    requireAdmin(req);
+    return live.discoverTuners();
+  });
+  /** TVHeadend: finished recordings on the backend (read-only) and their files. */
+  app.get<{ Params: { id: string } }>('/livetv/sources/:id/recordings', async (req) => {
+    requireAdmin(req);
+    return live.tunerRecordings(req.params.id);
+  });
+  app.get<{ Params: { id: string; rec: string } }>('/livetv/sources/:id/recordings/:rec/file', async (req, reply) => {
+    requireAdmin(req);
+    const ctrl = new AbortController();
+    req.raw.on('close', () => ctrl.abort());
+    const res = await live.openTunerRecording(req.params.id, req.params.rec, ctrl.signal, req.headers.range);
+    if (!res.ok && res.status !== 206) throw notFound(`The backend returned ${res.status}`);
+    for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'content-disposition']) {
+      const v = res.headers.get(h);
+      if (v) reply.header(h, v);
+    }
+    reply.code(res.status);
+    return reply.send(res.body ? Readable.fromWeb(res.body as any) : '');
+  });
   app.post<{ Body: CreateLiveSourceRequest }>('/livetv/sources/test', async (req) => {
     requireAdmin(req);
     return live.testSource(req.body);
@@ -84,8 +107,7 @@ export default async function liveRoutes(app: FastifyInstance) {
     if (start && (Number.isNaN(start.getTime()) || start.getTime() > Date.now())) throw forbidden('Invalid catch-up time');
     const url = live.channelStreamUrl(r, start ? { start, durationMin: toInt(req.query.duration, 60, 1, 600) } : undefined);
     const ctrl = new AbortController();
-    const res = await fetch(url, { headers: { 'User-Agent': live.channelUserAgent(r) }, signal: ctrl.signal, redirect: 'follow' });
-    if (!res.ok || !res.body) throw notFound(`Provider returned ${res.status}`);
+    const body = await live.openChannelStream(r, url, ctrl.signal);
     live.trackUpstream(r.source_id, 1);
     const keepAlive = req.query.session ? setInterval(() => touchSession(req.query.session!), 20000) : null;
     let released = false;
@@ -97,7 +119,6 @@ export default async function liveRoutes(app: FastifyInstance) {
       ctrl.abort();
     };
     req.raw.on('close', release);
-    const body = Readable.fromWeb(res.body as any);
     body.on('end', release);
     body.on('error', release);
     reply.header('Content-Type', 'video/mp2t').header('Cache-Control', 'no-store');

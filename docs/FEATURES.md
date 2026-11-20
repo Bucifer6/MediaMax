@@ -44,6 +44,12 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | HEVC / AV1 transcode output for capable clients (fMP4 HLS) | ✅ | ✅ | Premiere | ✅ (hardware encoders) |
 | HDR → SDR tone mapping | Pass | ✅ | Premiere | ✅ |
 | Hardware HDR tone mapping (VA-API, QSV, CUDA, OpenCL) | Pass | ✅ | Premiere | ✅ (CPU fallback) |
+| HDR format detection: HDR10, HDR10+, HLG, Dolby Vision profile/level/fallback layer ([docs/HDR.md](HDR.md)) | 🟡 | ✅ | 🟡 | ✅ |
+| Per-device HDR decisions (direct play when the device supports the range, DV 8.x → HDR10/HLG base layer, tone-map otherwise) | 🟡 | ✅ | 🟡 | ✅ |
+| Dolby Vision profile 7 (dual-layer) → HDR10 base layer by stream copy, no re-encode | ❌ | 🟡 | ❌ | ✅ |
+| HDR10 / HDR10+ / HLG / Dolby Vision badges in item info and the player's info overlay | ✅ | ✅ | ✅ | ✅ |
+| Apple TV display matching (range + frame rate) | ✅ | ✅ | ✅ | ✅ (tvOS 17+) |
+| TV remote keys: media, channel ±, digits, colour keys, Info/Guide (Tizen, webOS, Android TV) | ✅ | 🟡 | 🟡 | ✅ |
 | "Hardware failed, used software" shown on the session | ❌ | ❌ | ❌ | ✅ |
 | Encoder throttling (pauses ffmpeg when far ahead) | ✅ | ✅ | ✅ | ✅ |
 | Sidecar & embedded text subtitles → WebVTT | ✅ | ✅ | ✅ | ✅ |
@@ -66,6 +72,11 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Feature | Plex | Jellyfin | Emby | MediaMax |
 |---|:-:|:-:|:-:|:-:|
 | HDHomeRun tuners | ✅ | ✅ | ✅ | ✅ |
+| HDHomeRun / SAT>IP network discovery (UDP 65001, SSDP) | ✅ | 🟡 | 🟡 | ✅ |
+| TVHeadend backend (Digest/Basic login, channel tags, stream profiles, tuner count, its EPG, recordings list) | ❌ | Plugin | Plugin | ✅ |
+| SAT>IP servers (DVB-S/S2/T/T2/C over RTSP; M3U of SAT>IP URLs; FRITZ!Box Cable lists; X_SATIPCAP tuner count) | ❌ | 🟡 | ❌ | ✅ |
+| Enigma2 / OpenWebif receivers (bouquet picker, picons, streamauth, transcoding port, receiver EPG) | ❌ | Plugin | Plugin | ✅ |
+| Concurrent streams limited to the device's tuner count | ✅ | ✅ | ✅ | ✅ |
 | M3U playlists with XMLTV guide | 🟡 | ✅ | ✅ | ✅ |
 | Several merged EPG sources per playlist, provider guide as fallback | 🟡 | ✅ | ✅ | ✅ |
 | Guide sources as their own entity: XMLTV URL/file (gzip, xz), per-guide priority and time-zone override | 🟡 | ✅ | ✅ | ✅ |

@@ -469,6 +469,13 @@ export function ServerSettingsAdmin() {
                   <button className="btn btn-sm" onClick={() => test(w)} disabled={!w.url || testing === w.id}>{testing === w.id ? <Spinner size={14} /> : <Icon name="zap" size={14} />} Test</button>
                   <button className="btn-icon" onClick={() => set({ webhooks: s.webhooks.filter((_, j) => j !== i) })} aria-label="Remove"><Icon name="trash" size={16} /></button>
                 </div>
+                <div className="row-gap">
+                  <select className="select" value={w.format ?? 'mediamax'} onChange={(e) => setHook(i, { format: e.target.value as Webhook['format'] })} aria-label="Payload format">
+                    <option value="mediamax">MediaMax JSON</option>
+                    <option value="home-assistant">Home Assistant (flat JSON)</option>
+                  </select>
+                  {w.format === 'home-assistant' && <span className="muted">Flat payload for HA’s webhook trigger — see Admin → Smart home.</span>}
+                </div>
                 <div className="event-chips">
                   {EVENTS.map((ev) => (
                     <label key={ev} className={`check-chip ${w.events.includes(ev) ? 'on' : ''}`}>

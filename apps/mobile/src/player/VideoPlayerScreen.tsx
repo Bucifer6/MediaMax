@@ -45,6 +45,7 @@ import { OnlineSubtitlesSheet } from './OnlineSubtitlesSheet';
 import { Scrubber } from './Scrubber';
 import { useTrickplay } from './Trickplay';
 import { WatchTogetherSheet } from './WatchTogether';
+import { createNumberEntry, matchDisplayFor, useNativeRemoteKeys } from './remoteKeys';
 import { activeCues, parseVtt, type Cue } from './vtt';
 
 export type PlayerTarget =
@@ -733,6 +734,50 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
     }
     poke();
   });
+
+  // ----- extra remote keys (Android TV: digits, colour keys, Info, Guide, channel/track keys) -----
+  const lastZap = useRef(0);
+  const zapOnce = useCallback((dir: 1 | -1) => {
+    // Channel keys can arrive both from react-native-tvos and from the native key hook.
+    if (Date.now() - lastZap.current < 300) return;
+    lastZap.current = Date.now();
+    zap(dir);
+  }, [zap]);
+  const numberEntry = useMemo(() => createNumberEntry(
+    (num) => {
+      const ch = channelList.find((c) => String(c.number) === num);
+      if (ch) {
+        setCatchup(null);
+        setChannelId(ch.id);
+        flash(`${ch.number}  ${ch.name}`);
+      } else flash(`No channel ${num}`);
+    },
+    (typed) => flash(`${typed}_`),
+  ), [channelList, flash]);
+  useEffect(() => () => numberEntry.cancel(), [numberEntry]);
+  useNativeRemoteKeys((key) => {
+    if (/^[0-9]$/.test(key)) {
+      if (isLive) numberEntry.push(key);
+      else if (canSeek && dur) userSeek((Number(key) / 10) * dur);
+      return;
+    }
+    switch (key) {
+      case 'ChannelUp': return zapOnce(1);
+      case 'ChannelDown': return zapOnce(-1);
+      case 'MediaTrackNext': return isLive ? zapOnce(1) : nextId ? goNext(nextId) : undefined;
+      case 'MediaTrackPrevious': return isLive ? zapOnce(-1) : canSeek ? seekBy(-30000) : undefined;
+      case 'MediaStop': return exit();
+      case 'Info': case 'ColorF3Blue': return isLive && key === 'ColorF3Blue' && channelList.length > 1 ? setSheet('channels') : poke();
+      case 'Guide': return router.push('/live/guide' as never);
+      case 'ColorF0Red': case 'ClosedCaptionToggle': return setSheet('subs');
+      case 'ColorF1Green': case 'AudioTrack': return audioStreams.length > 1 ? setSheet('audio') : undefined;
+      case 'ColorF2Yellow':
+        if (activeMarker) userSeek(activeMarker.endMs);
+        return;
+    }
+  }, Platform.isTV);
+  // Apple TV: match the display's range / frame rate to the content while it plays.
+  useEffect(() => (Platform.isTV ? matchDisplayFor(info) : undefined), [info?.sessionId]);
 
   useBackHandler(() => {
     if (sheet) {

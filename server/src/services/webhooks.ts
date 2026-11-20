@@ -55,4 +55,9 @@ export function initWebhooks() {
   bus.on('recording.failed', (r: any) => dispatch('recording.failed', { recording: r }));
   bus.on('request.created', (r: any) => dispatch('request.created', { request: r }));
   bus.on('request.available', (r: any) => dispatch('request.available', { request: r }));
+  bus.on('request.approved', ({ request, actor, auto }: any) => dispatch('request.approved', { request, approvedBy: { id: actor.id, name: actor.displayName }, auto }));
+  bus.on('request.declined', ({ request, actor, reason }: any) => dispatch('request.declined', { request, declinedBy: { id: actor.id, name: actor.displayName }, reason }));
+  bus.on('request.failed', ({ request }: any) => dispatch('request.failed', { request }));
+  bus.on('issue.created', ({ issue }: any) => dispatch('issue.created', { issue }));
+  bus.on('issue.resolved', ({ issue, user }: any) => dispatch('issue.resolved', { issue, resolvedBy: { id: user.id, name: user.displayName } }));
 }

@@ -136,7 +136,7 @@ export async function loadGuide(s: TvhSourceLike, sink: GuideSink) {
   for (const e of events) if (e.channelUuid && !chans.has(e.channelUuid)) chans.set(e.channelUuid, { name: e.channelName ?? e.channelUuid, number: e.channelNumber ?? null });
   try {
     for (const c of await grid<TvhChannel>(http, api(s, '/api/channel/grid'))) {
-      if (!chans.has(c.uuid)) chans.set(c.uuid, { name: c.name ?? c.uuid, number: c.number != null ? String(c.number) : null });
+      if (c.enabled !== false && !chans.has(c.uuid)) chans.set(c.uuid, { name: c.name ?? c.uuid, number: c.number != null ? String(c.number) : null });
     }
   } catch {
     /* EPG-only users */

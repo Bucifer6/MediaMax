@@ -1,0 +1,6 @@
+21 1 9:0 / / rw,noatime shared:1 - ext4 /dev/md0 rw,data=ordered
+24 21 0:20 / /proc rw,nosuid,nodev,noexec,relatime shared:2 - proc proc rw
+25 21 0:21 / /sys rw,nosuid,nodev,noexec,relatime shared:3 - sysfs sysfs rw
+40 21 253:1 / /volume1 rw,relatime shared:20 - btrfs /dev/mapper/cachedev_0 rw,synoacl,space_cache=v2,auto_reclaim_space,metadata_ratio=50,subvolid=256,subvol=/@syno
+41 21 253:2 / /volume2 rw,relatime shared:21 - ext4 /dev/mapper/cachedev_1 rw,data=ordered
+42 40 0:45 / /volume1/@docker/btrfs rw,relatime shared:22 - btrfs /dev/mapper/cachedev_0 rw

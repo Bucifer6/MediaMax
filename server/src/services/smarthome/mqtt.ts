@@ -84,7 +84,7 @@ export function encodeConnect(o: MqttOptions): Buffer {
 
 export function encodePublish(topic: string, payload: string | Buffer, opts: { qos?: 0 | 1; retain?: boolean; id?: number } = {}): Buffer {
   const qos = opts.qos ?? 0;
-  const parts = [str(topic)];
+  const parts: Uint8Array[] = [str(topic)];
   if (qos > 0) parts.push(u16(opts.id ?? 1));
   parts.push(typeof payload === 'string' ? Buffer.from(payload, 'utf8') : payload);
   return packet(3, (qos << 1) | (opts.retain ? 1 : 0), Buffer.concat(parts));
@@ -119,7 +119,7 @@ export function readPackets(buf: Buffer): { packets: { type: number; flags: numb
 
 export class MqttClient extends EventEmitter {
   private sock: net.Socket | null = null;
-  private buf = Buffer.alloc(0);
+  private buf: Buffer = Buffer.alloc(0);
   private nextId = 1;
   private pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
   private pingTimer: NodeJS.Timeout | null = null;
@@ -161,7 +161,8 @@ export class MqttClient extends EventEmitter {
       this.sock = sock;
       sock.setNoDelay(true);
       sock.on('data', (d) => {
-        this.buf = this.buf.length ? Buffer.concat([this.buf, d]) : d;
+        const chunk = typeof d === 'string' ? Buffer.from(d) : d;
+        this.buf = this.buf.length ? Buffer.concat([this.buf, chunk]) : chunk;
         const { packets, rest } = readPackets(this.buf);
         this.buf = Buffer.from(rest);
         for (const p of packets) {

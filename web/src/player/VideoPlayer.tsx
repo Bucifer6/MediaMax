@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { Item, Marker, PlaybackInfo, SubtitleStyle, TrickplayInfo } from '@mediamax/shared';
+import type { Item, Marker, PlaybackInfo, Renderer, SubtitleStyle, TrickplayInfo } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import { useApp } from '../state/app';
@@ -13,6 +13,8 @@ import { RangeBadge, rangeDeliveryText } from '../components/HdrBadge';
 import { OptionList, Popover, SeekBar, VolumeControl } from './controls';
 import { useSyncPlay } from './syncplay';
 import { absoluteUrl, castContentType, castDeviceProfile, claimCast, useCast } from './cast';
+import { CastMenu } from './CastMenu';
+import { useAirPlay, useRendererRemote } from './renderers';
 import { Icon } from '../components/Icon';
 import { Img, Spinner } from '../components/ui';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
@@ -782,6 +784,18 @@ export default function VideoPlayer() {
     else navigate(item ? `/item/${item.id}` : '/');
   }, [navigate, item]);
 
+  /* "Play to" a network renderer (DLNA TV, Kodi): the server takes over, this page becomes a remote. */
+  const rendererRemote = useRendererRemote();
+  const getVideoEl = useCallback(() => videoRef.current, []);
+  const airplay = useAirPlay(getVideoEl);
+  const playToRenderer = useCallback(async (r: Renderer) => {
+    if (!item) return;
+    await rendererRemote.start(r, { itemId: item.id, startMs: Math.round(currentMs()), audioStreamIndex: audioIndex, subtitleStreamIndex: burned ? null : subtitleIndex });
+    videoRef.current?.pause();
+    toast.show(`Playing on ${r.name}`);
+    exit();
+  }, [item, rendererRemote, currentMs, audioIndex, burned, subtitleIndex, toast, exit]);
+
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen();
     else void shellRef.current?.requestFullscreen?.().catch(() => {});
@@ -1056,6 +1070,7 @@ export default function VideoPlayer() {
       <video
         ref={videoRef}
         className={`player-video ${SUBTITLE_CLASS}`}
+        x-webkit-airplay="allow"
         playsInline
         crossOrigin="anonymous"
         onClick={() => { togglePlay(); poke(); }}
@@ -1374,16 +1389,7 @@ export default function VideoPlayer() {
                 )}
               </Popover>
             </div>
-            {(cast.available || cast.connected) && (
-              <button
-                className={`btn-icon ${cast.connected ? 'active' : ''}`}
-                onClick={cast.toggle}
-                aria-label={cast.connected ? `Stop casting to ${cast.deviceName ?? 'device'}` : 'Cast to a device'}
-                title={cast.connected ? `Casting to ${cast.deviceName ?? 'device'}` : 'Cast'}
-              >
-                <Icon name="cast" size={22} />
-              </button>
-            )}
+            <CastMenu cast={cast} airplay={airplay} media="video" onPlayTo={playToRenderer} />
             {!casting && 'pictureInPictureEnabled' in document && document.pictureInPictureEnabled && (
               <button className="btn-icon" onClick={togglePip} aria-label="Picture in picture"><Icon name="pip" size={22} /></button>
             )}

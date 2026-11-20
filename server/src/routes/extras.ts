@@ -18,7 +18,7 @@ import * as requests from '../services/requests.js';
 import * as smart from '../services/smart.js';
 import { createContainer } from '../services/items.js';
 import { getSettings } from '../services/settings.js';
-import type { CreateMediaRequest, CreateSmartListRequest, SmartFilter } from '@mediamax/shared';
+import type { CreateSmartListRequest, SmartFilter } from '@mediamax/shared';
 import type { SubscribePodcastRequest } from '@mediamax/shared';
 
 export default async function extraRoutes(app: FastifyInstance) {
@@ -45,16 +45,7 @@ export default async function extraRoutes(app: FastifyInstance) {
   });
 
   /* ------------------------------- requests ------------------------- */
-  app.get<{ Querystring: { q?: string; type?: 'movie' | 'show' | 'all'; page?: string } }>('/discover', async (req) =>
-    requests.discover(requireUser(req).user, req.query.q ?? '', req.query.type ?? 'all', toInt(req.query.page, 1, 1, 50)));
-  app.get<{ Querystring: { status?: string; mine?: string } }>('/requests', async (req) => requests.listRequests(requireUser(req).user, { status: req.query.status, mine: req.query.mine === 'true' }));
-  app.post<{ Body: CreateMediaRequest }>('/requests', async (req) => requests.createRequest(requireUser(req).user, req.body ?? ({} as CreateMediaRequest)));
-  app.post<{ Params: { id: string } }>('/requests/:id/approve', async (req) => requests.approveRequest(requireAdmin(req).user, req.params.id));
-  app.post<{ Params: { id: string }; Body: { note?: string } }>('/requests/:id/decline', async (req) => requests.declineRequest(requireAdmin(req).user, req.params.id, req.body?.note));
-  app.delete<{ Params: { id: string } }>('/requests/:id', async (req) => {
-    requests.deleteRequest(requireUser(req).user, req.params.id);
-    return { ok: true };
-  });
+  // Discover / requests / issues routes live in routes/requests.ts.
   app.post<{ Body: { url: string; apiKey: string } }>('/requests/arr/test', async (req) => {
     requireAdmin(req);
     if (!req.body?.url || !req.body?.apiKey) throw badRequest('url and apiKey are required');

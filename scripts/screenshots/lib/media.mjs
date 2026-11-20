@@ -41,25 +41,27 @@ async function longVideo(image, seconds, out, tmp) {
   const a = `${base}.a.mp4`;
   const b = `${base}.b.mp4`;
   const tail = `${base}.tail.jpg`;
-  const pan = Math.min(20, seconds);
-  await ffmpeg(['-loop', '1', '-framerate', '24', '-i', image, '-t', String(pan), '-vf', `scale=1440:-2,crop=1280:720:x='(iw-1280)*t/${pan}':y='(ih-720)/2',format=yuv420p`, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24', '-g', '48', '-video_track_timescale', '12288', a]);
+  const pan = Math.min(16, seconds);
+  const scaled = `${base}.src.jpg`;
+  await ffmpeg(['-i', image, '-vf', 'scale=1440:-2', '-q:v', '2', scaled]);
+  await ffmpeg(['-loop', '1', '-framerate', '24', '-i', scaled, '-t', String(pan), '-vf', `crop=1280:720:x='(iw-1280)*t/${pan}':y='(ih-720)/2',format=yuv420p`, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '22', '-g', '48', '-video_track_timescale', '12288', a]);
   if (seconds <= pan) return fs.renameSync(a, out);
-  await ffmpeg(['-i', image, '-vf', 'scale=1440:-2,crop=1280:720:160:(ih-720)/2', '-frames:v', '1', '-q:v', '3', tail]);
+  await ffmpeg(['-i', scaled, '-vf', 'crop=1280:720:160:(ih-720)/2', '-frames:v', '1', '-q:v', '3', tail]);
   const step = 20;
   const n = Math.ceil((seconds - pan) / step);
   const list = `${base}.list.txt`;
   fs.writeFileSync(list, Array.from({ length: n }, () => `file '${tail.replace(/'/g, "'\\''")}'\nduration ${step}\n`).join('') + `file '${tail.replace(/'/g, "'\\''")}'\n`);
-  await ffmpeg(['-f', 'concat', '-safe', '0', '-i', list, '-fps_mode', 'vfr', '-vf', 'format=yuv420p', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-g', '6', '-video_track_timescale', '12288', b]);
+  await ffmpeg(['-f', 'concat', '-safe', '0', '-i', list, '-fps_mode', 'vfr', '-vf', 'format=yuv420p', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '22', '-g', '6', '-video_track_timescale', '12288', b]);
   const list2 = `${base}.list2.txt`;
   fs.writeFileSync(list2, `file '${a.replace(/'/g, "'\\''")}'\nfile '${b.replace(/'/g, "'\\''")}'\n`);
   await ffmpeg(['-f', 'concat', '-safe', '0', '-i', list2, '-c', 'copy', '-movflags', '+faststart', out]);
-  for (const f of [a, b, tail, list, list2]) fs.rmSync(f, { force: true });
+  for (const f of [a, b, tail, list, list2, scaled]) fs.rmSync(f, { force: true });
 }
 
 /** Short clip with a soft chord (trailers, extras). */
 function clip(image, seconds, out, root = 220) {
   const chord = `aevalsrc='0.06*(sin(2*PI*${root}*t)+sin(2*PI*${root * 1.26}*t)+sin(2*PI*${root * 1.5}*t))*min(1,t/2)*min(1,(${seconds}-t)/2)':s=44100:d=${seconds}`;
-  return ffmpeg(['-loop', '1', '-framerate', '24', '-i', image, '-f', 'lavfi', '-i', chord, '-t', String(seconds), '-vf', `scale=1600:-2,crop=1280:720:x='(iw-1280)*t/${seconds}':y='(ih-720)/2',format=yuv420p`, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '25', '-c:a', 'aac', '-b:a', '96k', '-shortest', '-movflags', '+faststart', out]);
+  return ffmpeg(['-loop', '1', '-framerate', '24', '-i', image, '-f', 'lavfi', '-i', chord, '-t', String(seconds), '-vf', `scale=1600:-2,crop=1280:720:x='(iw-1280)*t/${seconds}':y='(ih-720)/2',format=yuv420p`, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '24', '-c:a', 'aac', '-b:a', '96k', '-shortest', '-movflags', '+faststart', out]);
 }
 
 /** A synthesised track with a steady beat, bass line and pads, so tempo and key detection have something real. */
@@ -150,7 +152,7 @@ export async function generateMedia({ root, renderer, assetBase, log }) {
     const still = path.join(art, `${m.slug}-still.jpg`);
     await R(A.backdropHtml(m, { seed: '-still', focusX: 0.55 }), 1920, 1080, still);
     jobs.push(() => longVideo(path.join(dir, 'fanart.jpg'), m.runtime * 60, path.join(dir, `${name}.mp4`)));
-    if (m.trailer) jobs.push(() => clip(path.join(dir, 'fanart.jpg'), 30, path.join(dir, `${name}-trailer.mp4`), 196 + (m.year % 7) * 20));
+    if (m.trailer) jobs.push(() => clip(path.join(dir, 'fanart.jpg'), 20, path.join(dir, `${name}-trailer.mp4`), 196 + (m.year % 7) * 20));
     if (m.featurette) {
       fs.mkdirSync(path.join(dir, 'Featurettes'), { recursive: true });
       jobs.push(() => clip(still, 18, path.join(dir, 'Featurettes', 'Building the Meridian Spire.mp4'), 262));
@@ -225,9 +227,17 @@ export async function generateMedia({ root, renderer, assetBase, log }) {
     const extras = ch.kind === 'movies' ? { html: A.backdropHtml(MOVIES[4]) } : ch.kind === 'comedy' ? { html: A.backdropHtml(SHOWS[2]) } : ch.kind === 'science' ? { html: A.backdropHtml(MOVIES[1]) } : ch.kind === 'travel' ? { html: A.photoHtml('travel', 'day', true) } : ch.kind === 'lifestyle' ? { html: A.backdropHtml(MOVIES[8]) } : { style: movie.style, pal: movie.pal };
     const frame = path.join(art, `ch-${ch.id}.jpg`);
     await R(A.channelFrameHtml(ch, extras), 1280, 720, frame, 86);
-    jobs.push(() => ffmpeg(['-loop', '1', '-framerate', '25', '-i', frame, '-f', 'lavfi', '-i', `sine=frequency=${180 + (ch.id % 10) * 30}:sample_rate=48000`, '-t', '90', '-vf', "scale=1280:720,zoompan=z='1+0.0004*on':d=1:s=1280x720:fps=25,format=yuv420p", '-af', 'volume=0.08', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-g', '50', '-c:a', 'aac', '-b:a', '64k', '-f', 'mpegts', path.join(assets, 'streams', `${ch.id}.ts`)]));
+    jobs.push(async () => {
+      // 4 s of video looped (stream copy) into a 2-minute transport stream.
+      const small = path.join(art, `ch-${ch.id}-small.jpg`);
+      const seg = path.join(art, `ch-${ch.id}.ts`);
+      await ffmpeg(['-i', frame, '-vf', 'scale=960:540', '-q:v', '2', small]);
+      await ffmpeg(['-loop', '1', '-framerate', '25', '-i', small, '-f', 'lavfi', '-i', `sine=frequency=${180 + (ch.id % 10) * 30}:sample_rate=48000`, '-t', '4', '-vf', 'format=yuv420p', '-af', 'volume=0.08', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-g', '25', '-c:a', 'aac', '-b:a', '64k', '-f', 'mpegts', seg]);
+      await ffmpeg(['-stream_loop', '29', '-i', seg, '-c', 'copy', '-f', 'mpegts', path.join(assets, 'streams', `${ch.id}.ts`)]);
+    });
   }
   fs.mkdirSync(path.join(assets, 'streams'), { recursive: true });
+  fs.mkdirSync(art, { recursive: true });
 
   log(`Artwork done; encoding ${jobs.length} media files…`);
   let done = 0;

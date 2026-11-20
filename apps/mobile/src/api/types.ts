@@ -2727,7 +2727,15 @@ export interface PlaybackInfo {
   /** Why the server remuxes or transcodes (empty for direct play). */
   reasons?: string[];
   /** Source range and how it reaches the client (`base-layer`: DV/HDR10+ played as HDR10; `tonemap`: HDR → SDR). */
-  videoRange?: { source: HdrFormat; label: string; delivery: VideoRangeDelivery } | null;
+  videoRange?: {
+    source: HdrFormat;
+    label: string;
+    delivery: VideoRangeDelivery;
+    /** Range the client's display should switch to (Apple TV AVDisplayCriteria / Android TV mode matching). */
+    output?: 'sdr' | 'hdr10' | 'hlg' | 'dolbyvision';
+    /** Source frame rate (fps) for display refresh-rate matching. */
+    frameRate?: number | null;
+  } | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -3453,4 +3461,126 @@ export interface TunerRecording {
   end: string | null;
   sizeBytes: number | null;
   status: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Client-side subtitle rendering & adaptive streaming                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * How a subtitle track reaches the client's own renderer. Players never hand subtitles to the platform's text-track
+ * renderer: they fetch the original format and draw it themselves (text overlay, libass for ASS, canvas for PGS).
+ *  - srt / vtt / ass: text, fetched from `rawUrl` in its original format (`url` stays WebVTT for older clients)
+ *  - pgs: Blu-ray bitmap subtitles (.sup), decoded on the client
+ *  - vobsub / dvb: bitmap subtitles the client can't decode: the player asks for burn-in (`burnSubtitles`)
+ */
+export type SubtitleFormat = 'srt' | 'vtt' | 'ass' | 'pgs' | 'vobsub' | 'dvb' | 'teletext';
+
+export interface SubtitleTrack {
+  /** Source codec as probed (subrip, ass, webvtt, hdmv_pgs_subtitle, dvd_subtitle …). */
+  codec?: string;
+  /** Format the client renders (see SubtitleFormat). */
+  format?: SubtitleFormat;
+  /** Bitmap subtitle (PGS / VobSub / DVB). */
+  isImage?: boolean;
+  /** Sidecar file rather than a stream of the media file. */
+  external?: boolean;
+  /**
+   * The track in its original format, with token: `.srt`, `.vtt`, `.ass` (SSA is served as ASS) or `.sup` (PGS).
+   * Add `&partial=1` to get what has been extracted so far while a long file is still being read; the response then
+   * carries `X-Subtitle-Complete: 0|1` and `X-Subtitle-Progress` (0..1). Poll until complete.
+   */
+  rawUrl?: string;
+  /** ASS only: GET returns `SubtitleFont[]` — fonts attached to the media file (MKV attachments) for libass. */
+  fontsUrl?: string;
+}
+
+/** An embedded font (MKV attachment) served for the client's libass renderer. */
+export interface SubtitleFont {
+  /** Attachment file name, e.g. "Roboto-Bold.ttf". */
+  name: string;
+  /** URL with token. */
+  url: string;
+  mimeType: string | null;
+}
+
+/** One variant of an adaptive (multi-rendition) HLS master playlist. */
+export interface HlsRendition {
+  /** Index used in the variant's URL (`r<id>.m3u8`). */
+  id: number;
+  width: number | null;
+  height: number | null;
+  /** Video bitrate (kbps, H.264-equivalent target). */
+  videoKbps: number;
+  /** Peak bandwidth incl. audio and container overhead (bits/s), as in the playlist's BANDWIDTH. */
+  bandwidth: number;
+  /** e.g. "1080p", "720p". */
+  label: string;
+}
+
+export interface PlaybackRequest {
+  /**
+   * Subtitle formats the client renders itself. Image formats listed here (e.g. "pgs") are returned in `subtitles`
+   * instead of requiring burn-in. Omitted: legacy behaviour (text tracks as WebVTT only).
+   */
+  subtitleFormats?: SubtitleFormat[];
+  /** Client-measured network throughput (kbps), from a bandwidth probe or playback. Used to pick direct play vs a transcode and the starting rendition. */
+  measuredBandwidth?: number | null;
+  /** The client follows a multi-variant master playlist (hls.js, AVPlayer, ExoPlayer): transcodes get a rendition ladder. */
+  adaptive?: boolean;
+}
+
+export interface PlaybackInfo {
+  /** Adaptive transcode: the variants of the master playlist (lazily encoded on the server). Absent for single-variant streams. */
+  renditions?: HlsRendition[];
+  /** Rendition the server expects the client to start with (best fit for `measuredBandwidth`), listed first in the master playlist. */
+  startRendition?: number | null;
+  /**
+   * How quality adapts during this session: 'renditions' = switch variants of the master playlist; 'restart' = the client
+   * restarts the stream at another bitrate; null = fixed.
+   */
+  adaptiveMode?: 'renditions' | 'restart' | null;
+  /** Effective bitrate cap (kbps) the server applied from the device profile, user preference and remote limit; null = none. */
+  maxBitrate?: number | null;
+  /** Source bitrate (kbps), for client ABR decisions about direct play. */
+  sourceBitrate?: number | null;
+  /** The client connects from the local network (treated as unlimited unless it measured otherwise). */
+  isLocal?: boolean;
+  /** True when bandwidth (not codec/container support) is why this stream is transcoded. */
+  bandwidthLimited?: boolean;
+  /** Bitmap subtitle tracks this client must have burned in (VobSub/DVB, or PGS when it doesn't render PGS). */
+  burnInSubtitles?: SubtitleTrack[];
+}
+
+export interface SubtitleStyle {
+  /**
+   * ASS/SSA styling: 'auto' = full libass rendering where the device can (WASM + Worker), simplified styled text
+   * otherwise; 'file' = always use the file's own styles (libass, even on slow devices); 'user' = plain text in this style.
+   */
+  assStyles?: 'auto' | 'file' | 'user';
+  /** Extra lift above the bottom edge, % of the video height (0–25); overrides `position` when set. */
+  verticalOffset?: number;
+  /** Text outline / edge (applies to shadow/none backgrounds). Default 'outline'. */
+  edge?: 'outline' | 'shadow' | 'none';
+}
+
+export interface UserPreferences {
+  /** Pick quality automatically from measured bandwidth (default true). `maxBitrate` still caps it when set. */
+  autoQuality?: boolean;
+}
+
+/** Server-wide adaptive streaming settings. */
+export interface StreamingSettings {
+  /** Offer multi-rendition (lazily encoded) HLS ladders for transcodes. Default true. */
+  adaptive: boolean;
+  /** Stop a rendition's encoder after this many seconds without requests. Default 20. */
+  renditionIdleSeconds: number;
+  /** Cap (kbps) for clients outside the local network; null = none. */
+  remoteMaxBitrate: number | null;
+  /** Largest bandwidth-test download (bytes). Default 20 MB. */
+  bandwidthTestMaxBytes: number;
+}
+
+export interface ServerSettings {
+  streaming?: StreamingSettings;
 }

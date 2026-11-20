@@ -285,7 +285,7 @@ test('request options follow the configured instances and the 4K permission', ()
   assert.equal(a.can4k.movie, true);
   assert.equal(a.can4k.show, false, 'no 4K Sonarr');
   assert.equal(requests.requestOptions(viewer).can4k.movie, false);
-  assert.equal(requests.requestOptions({ ...viewer, allowRequest4k: true }).can4k.movie, true);
+  assert.equal(requests.requestOptions({ ...viewer, requestPermissions: { ...viewer.requestPermissions!, movie4k: 'request' } }).can4k.movie, true);
 });
 
 test('Discover music and books through Lidarr/Readarr lookups', async () => {

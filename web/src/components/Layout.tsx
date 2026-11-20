@@ -6,6 +6,7 @@ import { Icon, type IconName } from './Icon';
 import { Avatar, Dropdown } from './ui';
 import { BrandLogo } from './BrandLogo';
 import { MiniPlayer } from '../player/MiniPlayer';
+import { RendererBar } from '../player/RendererBar';
 import { useMusic } from '../player/music';
 import { isTypingTarget } from '../hooks';
 import { useSpatialNav } from '../hooks/spatialNav';
@@ -192,6 +193,7 @@ export function Layout() {
         </main>
       </div>
       <MiniPlayer />
+      <RendererBar />
       <nav className="bottom-nav" aria-label="Quick navigation">
         <NavLink to="/" end className="bn-item">
           <Icon name="home" />

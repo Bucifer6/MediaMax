@@ -104,6 +104,7 @@ function SourcesTab({ liveSources }: { liveSources: LiveSource[] }) {
                     {s.managedBy === 'provider' && <> · {liveName(s.ownerSourceId!)}</>}
                     {!s.ownerSourceId && <> · {s.liveSourceIds ? `for ${s.liveSourceIds.map(liveName).join(', ') || 'no sources'}` : 'for all live sources'}</>}
                     {s.config.url && s.kind === 'xmltv' && <> · <span className="epg-url">{s.config.url}</span></>}
+                    {s.config.url && s.kind === 'provider' && / EPG API$/.test(s.config.url) && <> · {s.config.url}</>}
                     {s.config.path && <> · <code>{s.config.path}</code></>}
                   </div>
                 </div>

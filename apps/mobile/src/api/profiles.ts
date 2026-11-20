@@ -1,8 +1,42 @@
 /** Device profiles sent with POST /playback so the server picks direct play vs remux vs transcode. */
 import { Dimensions, PixelRatio, Platform } from 'react-native';
 import type { DeviceProfile } from './types';
+import { nativeCapabilities } from '../../modules/mediamax-media';
 
+/**
+ * Video profile with HDR / 10-bit / passthrough capabilities from the MediaMaxMedia native module (display HDR
+ * modes, MediaCodecList / VideoToolbox decoders, HDMI audio). Without the module (Expo Go) the static profile is
+ * sent without `videoRange`, so the server keeps its legacy behaviour.
+ */
 export function videoDeviceProfile(maxBitrate?: number | null): DeviceProfile {
+  const base = staticVideoProfile(maxBitrate);
+  const n = nativeCapabilities();
+  if (!n) return base;
+  const merge = (a: string[] = [], b: string[] = []) => [...new Set([...a, ...b])];
+  // Only codecs the hardware decodes (h264 always), so 4K HEVC/AV1 isn't direct-played onto a software decoder.
+  const videoCodecs = merge(['h264'], n.videoCodecs.filter((c) => (base.videoCodecs ?? []).includes(c) || c === 'av1' || c === 'hevc'));
+  const maxHeight = n.maxDecodeHeight || null;
+  return {
+    ...base,
+    videoCodecs: Platform.OS === 'ios' ? videoCodecs.filter((c) => c !== 'vp9') : videoCodecs,
+    audioCodecs: merge(base.audioCodecs, n.audioCodecs.filter((c) => c !== 'pcm')),
+    audioPassthrough: n.audioPassthrough,
+    tenBitCodecs: n.tenBitCodecs,
+    maxHeight,
+    maxWidth: maxHeight ? Math.max(base.maxWidth ?? 0, Math.round((maxHeight * 16) / 9)) : base.maxWidth,
+    player: Platform.OS === 'ios' ? 'avplayer' : 'exoplayer',
+    videoRange: {
+      hdr10: n.hdr10,
+      hdr10Plus: n.hdr10Plus,
+      hlg: n.hlg,
+      dolbyVision: n.dolbyVision,
+      dolbyVisionProfiles: n.dolbyVisionProfiles,
+      hdrDisplay: n.hdrDisplay,
+    },
+  };
+}
+
+function staticVideoProfile(maxBitrate?: number | null): DeviceProfile {
   const { width, height } = Dimensions.get('screen');
   const px = Math.round(Math.max(width, height) * PixelRatio.get());
   const maxWidth = Platform.isTV ? Math.max(1920, px) : Math.min(3840, Math.max(1280, px));

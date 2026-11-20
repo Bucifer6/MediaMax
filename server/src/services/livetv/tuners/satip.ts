@@ -78,15 +78,17 @@ export function descriptionCandidates(url: string, explicit?: string | null): st
 }
 
 export async function describe(s: SatipSourceLike, http = new TunerHttp({}, s.userAgent || 'MediaMax/1.0')): Promise<(SatipDescription & { descriptionUrl: string }) | null> {
-  for (const u of descriptionCandidates(s.url, s.options.descriptionUrl)) {
+  // Tried in parallel (closed ports fail fast, a missing host would otherwise cost every timeout in turn); first in order wins.
+  const urls = descriptionCandidates(s.url, s.options.descriptionUrl);
+  const found = await Promise.all(urls.map(async (u) => {
     try {
       const xml = await http.text(u, 5000);
-      if (/X_SATIPCAP|SatIPServer/i.test(xml)) return { ...parseDescription(xml), descriptionUrl: u };
+      return /X_SATIPCAP|SatIPServer/i.test(xml) ? { ...parseDescription(xml), descriptionUrl: u } : null;
     } catch {
-      /* try the next */
+      return null;
     }
-  }
-  return null;
+  }));
+  return found.find(Boolean) ?? null;
 }
 
 /**
@@ -123,10 +125,7 @@ export async function sync(s: SatipSourceLike): Promise<TunerSync> {
     return pl.entries.length;
   };
   if (mode === 'fritzbox') {
-    const base = `http://${(() => {
-      const h = hostOf(s.url);
-      return h.includes(':') ? `[${h}]` : h;
-    })()}`;
+    const base = new URL(baseUrl(s.url)).origin;
     const lists = s.options.fritzLists?.length ? s.options.fritzLists.filter((l) => FRITZ_LISTS[l]) : ['tvhd', 'tvsd'];
     let ok = 0;
     for (const l of lists) {
@@ -138,7 +137,7 @@ export async function sync(s: SatipSourceLike): Promise<TunerSync> {
     }
     if (!ok) throw new TunerHttpError(`No channel lists on the FRITZ!Box (${warnings[0] ?? 'empty'}). Run the channel scan under DVB-C in the FRITZ!Box first.`);
   } else {
-    const list = s.options.playlistUrl?.trim() || desc?.m3u || null;
+    const list = s.options.playlistUrl?.trim() || (/\.m3u8?(\?|$)/i.test(s.url) ? s.url.trim() : null) || desc?.m3u || null;
     if (!list) throw new TunerHttpError('Enter the URL of an M3U channel list with SAT>IP URLs for this server');
     const listUrl = /^https?:\/\//i.test(list) ? list : new URL(list, desc?.descriptionUrl ?? baseUrl(s.url)).toString();
     if (!add(await http.text(listUrl, 30000), null)) throw new TunerHttpError('The channel list has no entries');

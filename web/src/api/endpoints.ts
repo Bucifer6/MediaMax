@@ -11,6 +11,7 @@ import type {
   CalendarResponse, NotificationsResponse,
   BackupInfo, RemoteAccessStatus, Bookmark, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
+import type { ManualRendererRequest, Renderer, RendererAction, RendererAdminView, RendererCommandRequest, RendererPlayRequest, RendererSettings, RendererState } from '@mediamax/shared';
 import type { ApplyMatchRequest, MatchSearchResponse, MetadataProviderId, MetadataSettings, MetadataSettingsResponse, MetadataTestResult } from '@mediamax/shared';
 import { http, request, upload } from './client';
 import { deviceInfo } from './device';
@@ -233,6 +234,10 @@ export const api = {
     updateSource: (id: string, body: UpdateLiveSourceRequest) => http.patch<LiveSource>(`/livetv/sources/${enc(id)}`, body),
     removeSource: (id: string) => http.del<Ok>(`/livetv/sources/${enc(id)}`),
     testSource: (body: CreateLiveSourceRequest) => http.post<TestSourceResponse>('/livetv/sources/test', body),
+    /** SAT>IP (SSDP) and HDHomeRun (UDP) devices on the server's LAN. */
+    discoverTuners: () => http.get<import('@mediamax/shared').DiscoveredTuner[]>('/livetv/tuners/discover'),
+    /** TVHeadend sources: finished recordings on the backend. */
+    tunerRecordings: (sourceId: string) => http.get<import('@mediamax/shared').TunerRecording[]>(`/livetv/sources/${enc(sourceId)}/recordings`),
     refreshSource: (id: string) => http.post<Ok>(`/livetv/sources/${enc(id)}/refresh`),
     categories: (sourceId?: string) => http.get<ChannelCategory[]>('/livetv/categories', { sourceId }),
     updateCategory: (id: string, body: { hidden?: boolean; sortOrder?: number; name?: string }) =>
@@ -289,6 +294,19 @@ export const api = {
     clearCache: (provider?: MetadataProviderId) => http.del<Ok>('/admin/metadata/cache', { provider }),
     searchMatch: (itemId: string, q: { provider?: MetadataProviderId; q?: string; year?: number | '' }) => http.get<MatchSearchResponse>(`/items/${enc(itemId)}/match`, q),
     applyMatch: (itemId: string, body: ApplyMatchRequest) => http.post<Item>(`/items/${enc(itemId)}/match`, body),
+  },
+
+  /** "Play to" network renderers (DLNA/UPnP TVs, Sonos, Kodi). */
+  renderers: {
+    list: () => http.get<Renderer[]>('/renderers'),
+    discover: () => http.post<Renderer[]>('/renderers/discover'),
+    state: (id: string) => http.get<RendererState>(`/renderers/${enc(id)}/state`),
+    play: (id: string, body: RendererPlayRequest) => http.post<RendererState>(`/renderers/${enc(id)}/play`, body),
+    command: (id: string, action: RendererAction, body: RendererCommandRequest = {}) => http.post<RendererState>(`/renderers/${enc(id)}/${action}`, body),
+    admin: () => http.get<RendererAdminView>('/admin/renderers'),
+    saveSettings: (s: Partial<RendererSettings>) => http.put<RendererAdminView>('/admin/renderers/settings', s),
+    addManual: (body: ManualRendererRequest) => http.post<RendererAdminView>('/admin/renderers/manual', body),
+    removeManual: (id: string) => http.del<RendererAdminView>(`/admin/renderers/manual/${enc(id)}`),
   },
 
   plugins: {

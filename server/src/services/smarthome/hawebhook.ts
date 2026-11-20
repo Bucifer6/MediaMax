@@ -20,6 +20,11 @@ const ACTIONS: Record<WebhookEvent, string> = {
   'recording.failed': 'recording_failed',
   'request.created': 'request_created',
   'request.available': 'request_available',
+  'request.approved': 'request_approved',
+  'request.declined': 'request_declined',
+  'request.failed': 'request_failed',
+  'issue.created': 'issue_created',
+  'issue.resolved': 'issue_resolved',
 };
 
 /** Build HA's webhook URL from the HA base address and the webhook id (or accept a full URL as-is). */

@@ -27,3 +27,10 @@ export function parseSeasons(text: string): number[] | null {
   }
   return [...out].sort((x, y) => x - y);
 }
+
+/** May this user approve/decline/edit requests and manage issues? */
+export const canManageRequests = (u: { isAdmin: boolean; requestPermissions?: { manageRequests: boolean } } | null | undefined) =>
+  !!u && (u.isAdmin || !!u.requestPermissions?.manageRequests);
+
+export const ISSUES_CHANGED = 'mm:issues-changed';
+export const notifyIssuesChanged = () => window.dispatchEvent(new CustomEvent(ISSUES_CHANGED));

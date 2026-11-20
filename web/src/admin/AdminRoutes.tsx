@@ -20,6 +20,9 @@ import { InvitesAdmin } from './Invites';
 import { BackupsAdmin } from './Backups';
 import { RemoteAccessAdmin } from './RemoteAccess';
 import { DownloadsAdmin } from './Downloads';
+import { RenderersAdmin } from './Renderers';
+import { SmartHomeAdmin } from './SmartHome';
+import { StorageAdmin } from './Storage';
 import WrappedPage from '../pages/Wrapped';
 
 const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
@@ -34,6 +37,9 @@ const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/admin/downloads', label: 'Downloads', icon: 'download' },
   { to: '/admin/branding', label: 'Branding studio', icon: 'palette' },
   { to: '/admin/settings', label: 'Server settings', icon: 'server' },
+  { to: '/admin/storage', label: 'Storage & disks', icon: 'database' },
+  { to: '/admin/smarthome', label: 'Smart home', icon: 'zap' },
+  { to: '/admin/renderers', label: 'Play to devices', icon: 'cast' },
   { to: '/admin/remote', label: 'Remote access', icon: 'globe' },
   { to: '/admin/network', label: 'Network & HTTPS', icon: 'link' },
   { to: '/admin/security', label: 'Security', icon: 'shield' },
@@ -70,6 +76,9 @@ export default function AdminRoutes() {
             <Route path="settings" element={<ServerSettingsAdmin />} />
             <Route path="downloads" element={<DownloadsAdmin />} />
             <Route path="invites" element={<InvitesAdmin />} />
+            <Route path="storage" element={<StorageAdmin />} />
+            <Route path="smarthome" element={<SmartHomeAdmin />} />
+            <Route path="renderers" element={<RenderersAdmin />} />
             <Route path="remote" element={<RemoteAccessAdmin />} />
             <Route path="backups" element={<BackupsAdmin />} />
             <Route path="plugins" element={<PluginsAdmin />} />

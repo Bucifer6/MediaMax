@@ -32,6 +32,7 @@ MediaMax brings together the features people love in **Plex, Jellyfin and Emby**
 - Local NFO/artwork, TMDB, plus TheTVDB, fanart.tv, TheAudioDB, Audnexus, MusicBrainz and more
 - Direct play, remux or transcode per device, with on-demand HLS and instant seeking
 - Hardware transcoding (VA-API, QSV, NVENC, VideoToolbox, V4L2) and HDR → SDR tone mapping
+- HDR10, HDR10+, HLG and Dolby Vision detection with per-device direct play ([docs/HDR.md](docs/HDR.md))
 - Skip intro, credits, recaps and ad breaks; scrub previews; editions and extras
 - Cinema mode (trailers and pre-rolls), watch-together, Chromecast, "Play on…" another device
 - Subtitle styling and sync, OpenSubtitles search, picture-in-picture, stats overlay

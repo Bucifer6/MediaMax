@@ -11,6 +11,9 @@ import { serverId } from './services/settings.js';
 import { syncDlna, stopDlna } from './services/dlna.js';
 import { startRemoteAccess, stopRemoteAccess } from './services/remote.js';
 import { loadAll as loadPlugins } from './services/plugins.js';
+import { initHomeAssistant, stopHomeAssistant } from './services/smarthome/homeassistant.js';
+import { initStorage } from './services/storage/storage.js';
+import { startRenderers, stopRenderers } from './services/renderers/index.js';
 
 const log = logger('main');
 
@@ -20,6 +23,7 @@ async function main() {
   initWebhooks();
   initTrakt();
   initLastfm();
+  initStorage();
   const app = await buildApp();
   await app.listen({ port: config.port, host: config.host });
   log.info(`MediaMax ${config.version} (server ${serverId()}) listening on http://${config.host}:${config.port}`);
@@ -27,11 +31,15 @@ async function main() {
   if (process.env.MEDIAMAX_NO_SCHEDULER !== '1') startScheduler();
   syncDlna();
   startRemoteAccess();
+  initHomeAssistant();
+  startRenderers();
   await loadPlugins().catch((e) => log.error('Plugin loading failed', e));
   const shutdown = async (sig: string) => {
     log.info(`${sig} received, shutting down`);
     stopScheduler();
     stopDlna();
+    await stopHomeAssistant().catch(() => {});
+    await stopRenderers();
     await stopRemoteAccess();
     await app.close();
     cleanupTranscodeDir();

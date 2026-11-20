@@ -28,7 +28,7 @@ const REMOTE: Record<number, string> = {
 };
 const REMOTE_KEYS = new Set(Object.values(REMOTE).concat(['MediaPlay', 'MediaPause', 'Subtitle']));
 
-/** Keys the Tizen wrapper / web app register (`tizen.tvinputdevice.registerKeyBatch`); unknown names are skipped. */
+/** Keys the Tizen wrapper / web app register (`tizen.tvinputdevice.registerKey`); unknown names are skipped. */
 export const TIZEN_KEYS = ['MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop', 'MediaFastForward', 'MediaRewind', 'MediaTrackNext', 'MediaTrackPrevious',
   'ChannelUp', 'ChannelDown', 'ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue', 'Info', 'Guide', 'Caption', 'ChannelList',
   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -197,12 +197,12 @@ const DIRS: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft:
 export function installTvMode() {
   document.documentElement.classList.add('tv');
   // Ask the platforms for the media keys (they're swallowed by the system otherwise).
-  const w = window as unknown as { tizen?: { tvinputdevice?: { registerKeyBatch?: (k: string[]) => void } } };
+  const w = window as unknown as { tizen?: { tvinputdevice?: { registerKey?: (k: string) => void } } };
   try {
     // Register one by one so a key a model lacks doesn't fail the whole batch.
     for (const k of TIZEN_KEYS) {
       try {
-        w.tizen?.tvinputdevice?.registerKeyBatch?.([k]);
+        w.tizen?.tvinputdevice?.registerKey?.(k);
       } catch {
         /* key not on this model */
       }

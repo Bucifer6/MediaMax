@@ -11,7 +11,7 @@ MediaMax gets programme guides from **guide sources** and matches each live chan
 | Community preset | iptv-org (`iptv-org.github.io/epg/guides/...`) and epg.pw (`epg.pw/xmltv/epg_<CC>.xml`) by country | free | Volunteer-run; availability varies. You can paste any URL instead. |
 | Schedules Direct | `json.schedulesdirect.org/20141201` JSON API | about $35/year | Accurate US/Canada listings and more. Lineups are added by country + postcode. |
 | HDHomeRun | SiliconDust's guide for your tuner (`api.hdhomerun.com/api/guide.php`) | free for owners | Uses the `DeviceAuth` from the tuner's `discover.json`. Matched by guide number. |
-| Provider guide | Your IPTV provider's own guide (Xtream `xmltv.php`, M3U `url-tvg`) | — | Created automatically, lowest priority (0). |
+| Provider guide | Your IPTV provider's own guide (Xtream `xmltv.php`, M3U `url-tvg`), or the device EPG of a TVHeadend server (`/api/epg/events/grid`) or Enigma2 receiver (OpenWebif `/api/epgmulti`) | — | Created automatically, lowest priority (0). Tuner guides are keyed by the channel's own id (TVHeadend channel UUID, Enigma2 service reference), so matches are exact. See [TUNERS.md](TUNERS.md). |
 | Live source EPG URL | URLs typed into a live source's *EPG URL* field | — | Each becomes a guide for that source only, priority 100. Edit them on the source. |
 
 A guide can apply to **all** live sources or only to the ones you select.

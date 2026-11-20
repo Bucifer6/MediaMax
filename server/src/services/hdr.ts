@@ -192,3 +192,14 @@ export function rangeDecision(range: VideoRangeInfo | null | undefined, hdrFlag:
 
 /** Normalise DeviceProfile range caps (accepts legacy profiles without the field). */
 export const rangeCaps = (p: DeviceProfile | undefined): VideoRangeCapabilities | undefined => p?.videoRange ?? undefined;
+
+/** The range a client's display ends up showing for a delivery decision (for display-mode matching). */
+export function outputRange(range: VideoRangeInfo | null | undefined, hdrFlag: boolean, delivery: VideoRangeDelivery): 'sdr' | 'hdr10' | 'hlg' | 'dolbyvision' {
+  const fmt: HdrFormat = range?.hdrFormat ?? (hdrFlag ? 'hdr10' : 'sdr');
+  switch (delivery) {
+    case 'sdr': case 'tonemap': return 'sdr';
+    case 'strip-dovi': return 'hdr10';
+    case 'base-layer': return range?.fallback === 'hlg' ? 'hlg' : range?.fallback === 'sdr' || range?.fallback === 'none' ? 'sdr' : 'hdr10';
+    case 'passthrough': return fmt === 'hdr10plus' ? 'hdr10' : fmt === 'sdr' ? 'sdr' : fmt;
+  }
+}

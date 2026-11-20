@@ -248,3 +248,36 @@
 .now-playing-card .btn { flex: none; }
 .mini-radio { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; color: var(--c-primary); font-weight: 600; }
 .mini-radio::before { content: '·'; margin-right: 4px; color: var(--c-text-muted); }
+
+/* ---------- "Play to" menu (Chromecast + network renderers + AirPlay) ---------- */
+.cast-menu { position: relative; display: inline-flex; }
+.cast-popover { min-width: 280px; }
+.cast-option { align-items: center; gap: 12px; width: 100%; }
+.cast-option:disabled { opacity: 0.45; cursor: not-allowed; }
+.cast-option.selected { color: var(--c-primary); }
+.cast-option-text { display: flex; flex-direction: column; min-width: 0; }
+.cast-option-text > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cast-option-text small { color: rgb(255 255 255 / 0.55); font-size: 0.78rem; font-weight: 400; }
+.cast-search { align-items: center; gap: 10px; width: 100%; margin-top: 4px; border-top: 1px solid rgb(255 255 255 / 0.08); border-radius: 0 0 var(--radius-sm) var(--radius-sm); color: rgb(255 255 255 / 0.75); font-size: 0.85rem; }
+.cast-error { margin: 6px 10px; font-size: 0.82rem; }
+
+/* ---------- Remote bar while a TV / speaker plays ---------- */
+.renderer-bar {
+  position: fixed; right: 16px; bottom: 16px; z-index: 75; width: min(460px, calc(100vw - 32px));
+  display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px 14px 10px;
+  border-radius: var(--radius); background: color-mix(in srgb, var(--c-surface) 92%, transparent); color: var(--c-text);
+  backdrop-filter: blur(24px) saturate(1.4); -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid var(--c-line); box-shadow: var(--shadow-lg); animation: fadeIn 0.2s both;
+}
+body:has(.miniplayer) .renderer-bar { bottom: 92px; }
+.renderer-bar .renderer-seek { position: absolute; left: 12px; right: 12px; top: -6px; }
+.renderer-art { width: 48px; height: 48px; border-radius: var(--radius-sm); overflow: hidden; background: var(--c-surface-alt); display: grid; place-items: center; }
+.renderer-art img { width: 100%; height: 100%; object-fit: cover; }
+.renderer-text { min-width: 0; }
+.renderer-title { font-weight: 700; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.renderer-sub { font-size: 0.78rem; color: var(--c-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; }
+.renderer-controls { display: flex; align-items: center; gap: 2px; }
+@media (max-width: 760px) {
+  .renderer-bar { right: 16px; left: 16px; width: auto; bottom: calc(72px + env(safe-area-inset-bottom)); }
+  body:has(.miniplayer) .renderer-bar { bottom: calc(144px + env(safe-area-inset-bottom)); }
+}

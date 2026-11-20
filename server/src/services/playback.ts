@@ -18,8 +18,10 @@ import type { AuthContext } from './auth.js';
 import { events, bus } from './events.js';
 import { TEXT_SUB_CODECS } from './probe.js';
 import { isLocalAddress } from './dlna.js';
-import { rangeDecision, type RangeDecision } from './hdr.js';
+import { outputRange, rangeDecision, type RangeDecision } from './hdr.js';
 import { refreshVideoRange } from './hdrBackfill.js';
+import { subtitleTrackList } from './subtitles.js';
+import { bitrateCaps, buildLadder, createRenditionManager, pickStartRendition, streamingSettings, type RenditionManager } from './abr.js';
 
 const log = logger('playback');
 
@@ -33,6 +35,8 @@ export interface PlaySession {
   mediaId: string | null;
   method: PlayMethod;
   job: TranscodeJob | null;
+  /** Adaptive transcode: lazily encoded renditions of a multi-variant master playlist (abr.ts). `job` is the active one. */
+  abr?: RenditionManager | null;
   title: string;
   subtitle: string | null;
   posterUrl: string | null;
@@ -62,6 +66,7 @@ export function touchSession(id: string) {
   if (s) {
     s.lastActivity = Date.now();
     s.job?.tick();
+    s.abr?.tick();
   }
   return s;
 }
@@ -133,6 +138,7 @@ export function stopSession(id: string, reason = 'stopped', notify = true) {
   if (!s) return;
   sessions.delete(id);
   s.job?.stop();
+  s.abr?.stop();
   s.onStop?.();
   if (s.preview) return;
   if (s.historyId) db.run('UPDATE play_history SET ended_at = ?, duration_ms = ? WHERE id = ?', nowIso(), Date.now() - s.startedAt, s.historyId);
@@ -321,7 +327,12 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
   const effectiveBurn = burnSub ?? (imageSubSelected || null);
 
   const isAudioOnly = item.type === 'track' || !media.videoCodec;
-  const decision = decide(media, req.deviceProfile, {
+  // Bitrate limits: device profile, user preference, the remote cap (non-LAN clients) and — for the direct-play
+  // decision only — the client's measured bandwidth (abr.ts). LAN clients are unlimited unless they measured otherwise.
+  const isLocal = !!remoteAddr && isLocalAddress(remoteAddr);
+  const caps = bitrateCaps({ profileMax: req.deviceProfile?.maxBitrate, userMax: prefs.maxBitrate, isLocal, measuredKbps: req.measuredBandwidth, remoteMax: streamingSettings().remoteMaxBitrate });
+  const decideProfile = Number.isFinite(caps.decisionKbps) ? { ...(req.deviceProfile ?? {}), maxBitrate: Math.round(caps.decisionKbps) } : req.deviceProfile;
+  const decision = decide(media, decideProfile, {
     audio, burnSubs: !!effectiveBurn, forceTranscode: !!req.forceTranscode, allowTranscode: ctx.user.allowTranscode,
     userMaxBitrate: prefs.maxBitrate, isAudioOnly,
   });
@@ -347,13 +358,18 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
   let mimeType: string;
   let isHls = false;
   let responseStart = startMs;
+  let abr: RenditionManager | null = null;
+  let renditions: ReturnType<typeof buildLadder> | undefined;
+  let startRendition: number | null = null;
   if (decision.method === 'direct') {
     session = registerSession({ ...base, method: 'direct', job: null });
     url = `/api/v1/stream/direct/${media.id}${tokenQuery(ctx, session.id)}`;
     mimeType = MIME_BY_CONTAINER[media.container ?? ''] ?? (isAudioOnly ? 'audio/mpeg' : 'video/mp4');
   } else {
     const p = { ...DEFAULT_PROFILE, ...(req.deviceProfile ?? {}) };
-    const maxBitrate = [p.maxBitrate, prefs.maxBitrate].filter((x): x is number => !!x).reduce((a, b) => Math.min(a, b), Infinity);
+    // Adaptive (multi-rendition) transcodes let the player climb to the hard cap; single-variant streams start at the measured fit.
+    const adaptive = decision.method === 'transcode' && !!req.adaptive && streamingSettings().adaptive && !isAudioOnly && !preview && !!media.durationMs;
+    const maxBitrate = adaptive ? caps.capKbps : caps.decisionKbps;
     const target = Math.min(Number.isFinite(maxBitrate) ? maxBitrate : getSettings().transcoding.defaultBitrate, media.bitrate ? Math.max(media.bitrate, 1500) : Infinity, getSettings().transcoding.defaultBitrate * 4);
     const opts: TranscodeOptions = {
       // Always encode against the full timeline (segments are produced on demand),
@@ -374,10 +390,37 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     if (!decision.videoCopy && !isAudioOnly) opts.videoCodec = transcodeCodecFor(req.deviceProfile);
     if (decision.toneMap !== undefined) opts.toneMap = decision.toneMap;
     if (decision.videoCopy && decision.videoBsf) opts.videoBsf = decision.videoBsf;
-    const job = new TranscodeJob(newId(), opts);
-    session = registerSession({ ...base, method: decision.method, job });
+    const ladder = adaptive
+      ? buildLadder({ sourceWidth: media.width, sourceHeight: media.height, sourceKbps: media.bitrate, capKbps: caps.capKbps, maxHeight: opts.maxHeight, audioKbps: opts.audioCopy ? 320 : (audio?.channels ?? 2) > 2 ? 384 : 192 })
+      : [];
+    let job: TranscodeJob;
+    if (ladder.length > 1) {
+      const startSegment = startMs > 0 ? Math.floor(startMs / 1000 / getSettings().transcoding.segmentSeconds) : 0;
+      startRendition = pickStartRendition(ladder, req.measuredBandwidth);
+      const holder: { s: PlaySession | null } = { s: null };
+      abr = createRenditionManager(newId(), opts, ladder, startRendition, startSegment, {
+        otherEncoders: () => [...sessions.values()].filter((x) => x.job && !x.abr && x.method !== 'direct' && !x.job.exited).length,
+        onActiveChange: (j) => {
+          if (!holder.s) return;
+          holder.s.job = j as TranscodeJob;
+          broadcastSessions();
+        },
+      });
+      renditions = ladder;
+      job = abr.activeJob as TranscodeJob;
+      try {
+        session = registerSession({ ...base, method: decision.method, job, abr });
+      } catch (e) {
+        abr.stop();
+        throw e;
+      }
+      holder.s = session;
+    } else {
+      job = new TranscodeJob(newId(), opts);
+      session = registerSession({ ...base, method: decision.method, job });
+      job.start(decision.method === 'transcode' && startMs > 0 ? Math.floor(startMs / 1000 / job.segmentSeconds) : 0);
+    }
     job.onInfoChange = broadcastSessions;
-    job.start(decision.method === 'transcode' && startMs > 0 ? Math.floor(startMs / 1000 / job.segmentSeconds) : 0);
     if (decision.method === 'remux') {
       try {
         await job.waitForPlaylist();
@@ -391,6 +434,7 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     isHls = true;
     log.info(`${ctx.user.displayName} → ${decision.method} "${item.title}": ${decision.reasons.join('; ')}`);
   }
+  const subs = subtitleTrackList(tokenQuery(ctx), media.id, rawSubs, req.subtitleFormats);
   return {
     sessionId: session.id,
     itemId,
@@ -403,7 +447,16 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     streamStartMs: 0,
     durationMs: media.durationMs || item.durationMs,
     audioStreams: media.audioStreams,
-    subtitles: effectiveBurn ? [] : subtitleTracks(ctx, media.id, rawSubs),
+    subtitles: effectiveBurn ? [] : subs.tracks,
+    burnInSubtitles: subs.burnIn,
+    renditions,
+    startRendition,
+    adaptiveMode: abr ? 'renditions' : isAudioOnly || preview ? null : 'restart',
+    maxBitrate: Number.isFinite(caps.capKbps) ? caps.capKbps : null,
+    sourceBitrate: media.bitrate,
+    isLocal,
+    bandwidthLimited: decision.method === 'transcode' && caps.bandwidthLimited && !!media.bitrate && media.bitrate > caps.decisionKbps
+      && decision.reasons.every((r) => r.startsWith('bitrate')),
     markers,
     nextItemId: next?.id ?? null,
     title: item.title,
@@ -411,8 +464,11 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     posterUrl: item.posterUrl,
     backdropUrl: item.backdropUrl,
     reasons: decision.reasons,
-    videoRange: !isAudioOnly && media.hdr && decision.range
-      ? { source: media.videoRange?.hdrFormat ?? 'hdr10', label: media.videoRange?.label ?? 'HDR', delivery: decision.range.delivery }
+    videoRange: !isAudioOnly && (media.hdr || media.videoRange) && decision.range
+      ? {
+          source: media.videoRange?.hdrFormat ?? 'hdr10', label: media.videoRange?.label ?? 'HDR', delivery: decision.range.delivery,
+          output: outputRange(media.videoRange, media.hdr, decision.range.delivery), frameRate: media.videoRange?.frameRate ?? null,
+        }
       : null,
   };
 }
