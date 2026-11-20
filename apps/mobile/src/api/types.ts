@@ -1647,3 +1647,98 @@ export interface Bookmark {
   note: string | null;
   createdAt: string;
 }
+
+/* ------------------------------------------------------------------ */
+/* DJ mode: track analysis, automatic mixes, continuous playback       */
+/* ------------------------------------------------------------------ */
+
+/** Per-track audio analysis used for beat/key-aware mixing. Times are in ms from the start of the file. */
+export interface TrackAnalysis {
+  itemId: string;
+  /** Tempo in beats per minute (null when the track has no steady beat, e.g. ambient or speech). */
+  bpm: number | null;
+  /** 0–1: how sure the tempo estimate is. */
+  bpmConfidence: number;
+  /** Time of one beat of the beat grid (beats fall at beatOffsetMs + n × 60000/bpm). */
+  beatOffsetMs: number | null;
+  /** Musical key, e.g. "A minor". */
+  key: string | null;
+  /** Camelot wheel code, e.g. "8A" (minor = A, major = B). Neighbours on the wheel mix harmonically. */
+  camelot: string | null;
+  /** 0–1 overall intensity (loudness and density), comparable across the library. */
+  energy: number;
+  /** Integrated loudness estimate in dBFS. */
+  loudnessDb: number | null;
+  /** First audible moment (skips leading silence). */
+  cueInMs: number;
+  /** Last audible moment (drops trailing silence). */
+  cueOutMs: number;
+  /** End of a quieter intro, if there is one: a good point for the previous track to finish fading out. */
+  introEndMs: number | null;
+  /** Start of the outro (energy falls away): the natural place to start mixing into the next track. */
+  outroStartMs: number | null;
+  durationMs: number;
+  analyzedAt: string;
+}
+
+/** Shape of the mix over time. */
+export type DjEnergyCurve = 'steady' | 'build' | 'peak' | 'wave' | 'chill';
+
+export interface DjMixRequest {
+  /** Start from this track (or album/artist/playlist/genre item) and build around it. */
+  seedItemId?: string;
+  /** Only use tracks from these genres (case-insensitive). */
+  genres?: string[];
+  libraryId?: string;
+  /** Target length; default 60. Ignored when `count` is given. */
+  durationMin?: number;
+  /** Exact number of tracks (used by continuous mode to top up the queue). */
+  count?: number;
+  curve?: DjEnergyCurve;
+  bpmMin?: number;
+  bpmMax?: number;
+  /** Prefer key-compatible neighbours (Camelot wheel). Default true. */
+  harmonic?: boolean;
+  /** Tracks already played or queued (never repeated; the last one is the track to mix out of). */
+  history?: string[];
+  /** Minimum number of tracks between two songs by the same artist. Default 3. */
+  artistGap?: number;
+  /** Favourites and highly rated tracks get a boost. Default true. */
+  preferFavorites?: boolean;
+}
+
+export interface DjTransition {
+  /** Position in the outgoing track where the incoming one starts. */
+  mixOutMs: number;
+  /** Position in the incoming track to start playing from. */
+  mixInMs: number;
+  /** Length of the crossfade. */
+  crossfadeMs: number;
+  /** Playback rate for the incoming track to match tempo during the blend (1 = untouched; within ±8%). */
+  tempoRatio: number;
+  /** blend = long beat-matched mix; fade = plain crossfade; cut = quick swap (clashing keys or tempos). */
+  style: 'blend' | 'fade' | 'cut';
+  keyMatch: 'perfect' | 'compatible' | 'energy' | 'clash' | 'unknown';
+  bpmDelta: number | null;
+}
+
+export interface DjMixTrack {
+  item: Item;
+  analysis: TrackAnalysis | null;
+  /** How to get into this track from the previous one (null for the first track). */
+  transition: DjTransition | null;
+}
+
+export interface DjMix {
+  tracks: DjMixTrack[];
+  durationMs: number;
+  curve: DjEnergyCurve;
+  /** Share of candidate tracks that have been analysed (0–1); mixes improve as analysis completes. */
+  analyzedShare: number;
+}
+
+export interface DjStatus {
+  analyzed: number;
+  total: number;
+  running: boolean;
+}

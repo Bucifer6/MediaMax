@@ -20,6 +20,7 @@ import { syncWatchers } from './watcher.js';
 import { generateMissing } from './trickplay.js';
 import { pluginTasks } from './plugins.js';
 import { createBackup } from './backup.js';
+import { analyseAll } from './dj/analysis.js';
 import { autoDownload } from './opensubtitles.js';
 import { refreshAll as refreshPodcasts } from './podcasts.js';
 import { checkAvailability } from './requests.js';
@@ -150,6 +151,13 @@ const DEFS: TaskDef[] = [
     id: 'dvr-rules', name: 'Apply series recording rules', description: 'Schedule upcoming programmes that match your series recording rules.',
     interval: () => 60,
     run: async () => applyRules(),
+  },
+  {
+    id: 'dj-analysis', name: 'Analyse music for DJ mode', description: 'Detect tempo (BPM), musical key, energy and mix points of new or changed tracks.',
+    interval: () => 6 * 60,
+    run: async (progress) => {
+      await analyseAll(progress);
+    },
   },
   {
     id: 'backup', name: 'Back up server', description: 'Snapshot the database, branding, artwork, avatars, plugins and subtitles (Admin → Backups).',

@@ -286,6 +286,17 @@ const MIGRATIONS: string[] = [
   ALTER TABLE recording_rules ADD COLUMN time_to TEXT;
   ALTER TABLE recording_rules ADD COLUMN skip_repeats INTEGER NOT NULL DEFAULT 1;
   `,
+  /* 11: DJ mode track analysis */ `
+  CREATE TABLE track_analysis (
+    item_id TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+    media_mtime INTEGER, version INTEGER NOT NULL,
+    bpm REAL, bpm_confidence REAL NOT NULL DEFAULT 0, beat_offset_ms INTEGER, key_name TEXT, camelot TEXT, energy REAL NOT NULL DEFAULT 0, loudness_db REAL,
+    cue_in_ms INTEGER NOT NULL DEFAULT 0, cue_out_ms INTEGER NOT NULL DEFAULT 0, intro_end_ms INTEGER, outro_start_ms INTEGER,
+    duration_ms INTEGER NOT NULL DEFAULT 0, analyzed_at TEXT NOT NULL, error TEXT
+  );
+  CREATE INDEX track_analysis_bpm ON track_analysis(bpm);
+  CREATE INDEX track_analysis_camelot ON track_analysis(camelot);
+  `,
 ];
 
 function migrate(db: Database) {
