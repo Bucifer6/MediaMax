@@ -21,6 +21,7 @@ import dlnaRoutes from './routes/dlna.js';
 import pluginRoutes from './routes/plugins.js';
 import subsonicRoutes from './routes/subsonic.js';
 import djRoutes from './routes/dj.js';
+import securityRoutes from './routes/security.js';
 import discoveryRoutes from './routes/discovery.js';
 
 const log = logger('http');
@@ -72,6 +73,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register(extraRoutes);
     await api.register(pluginRoutes);
     await api.register(djRoutes);
+    await api.register(securityRoutes);
     await api.register(discoveryRoutes);
   }, { prefix: '/api/v1' });
 

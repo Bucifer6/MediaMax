@@ -554,3 +554,27 @@ needs `network_mode: host` on MediaMax, which this installer doesn't set up (the
 Docker network). Use the plain Docker setup in [INSTALL.md](INSTALL.md) if you need DLNA.
 
 **Start over** (keeps your data): `sudo /opt/mediamax/install.sh --uninstall`, then run the installer again.
+
+## Security dashboard (Admin → Security)
+
+When MediaMax is installed with `deploy/install.sh`, the admin area gets a **Security** page that shows everything in one place:
+
+- **Sign-in attempts:** failed sign-ins per hour, broken down by password, PIN, 2FA code, API key and music-app login. It also lists the top offending addresses (with a **Ban** button), the accounts being targeted, and lockouts.
+- **Reverse proxy:** Caddy or Nginx traffic for the last 24 hours, including requests per hour, status classes, the busiest addresses with their error counts, and the most common errors. This is where scanners probing `/wp-login.php` or `/.env` show up.
+- **HTTPS certificate:** days until expiry, the issuer, and whether the certificate is trusted.
+- **CrowdSec:** active decisions with their scenario and expiry (**Unban** works per address) and recent alerts.
+- **fail2ban:** each jail's failures and banned addresses, with **Unban**.
+- **Ban an address:** through CrowdSec (1 hour to 1 year) or a fail2ban jail. MediaMax refuses to ban the address you're using. Bans and unbans are written to Activity & logs.
+
+**How it connects.** The installer wires everything up for you:
+
+- **CrowdSec:** MediaMax signs in to CrowdSec's Local API as the machine `mediamax-dashboard`. The password is generated into `.env` (`CROWDSEC_DASHBOARD_PASSWORD`) and registered with `cscli machines add`.
+- **fail2ban:** fail2ban's control socket is root-only, so a small relay, the `fail2ban-bridge` service running `deploy/fail2ban/bridge.py`, exposes a socket that only MediaMax's group can open. It allows exactly four commands: ping, status, ban and unban. Requests are decoded with an unpickler that refuses every class, and MediaMax's own decoder refuses anything but plain data.
+- **Proxy logs:** mounted into MediaMax read-only at `/var/log/proxy`.
+- **Settings:** come from `MEDIAMAX_PROXY_KIND`, `MEDIAMAX_PROXY_LOG`, `MEDIAMAX_PUBLIC_HOST`, `MEDIAMAX_CROWDSEC_URL`, `MEDIAMAX_CROWDSEC_MACHINE_ID`, `MEDIAMAX_CROWDSEC_PASSWORD` and `MEDIAMAX_FAIL2BAN_SOCKET`.
+
+Set up by hand? Enter the same values under **Admin → Security → Connections**. For CrowdSec, register the machine with:
+
+```bash
+docker exec crowdsec cscli machines add mediamax-dashboard --password '<choose one>' -f /dev/null
+```

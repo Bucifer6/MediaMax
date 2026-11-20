@@ -420,3 +420,10 @@ The AI DJ is free by default and works offline. Admins can connect free or cheap
   Clips are cached as MP3 and served from `GET /dj/voice/:file`. Clients duck the music to about 30% while the host speaks.
 - **Taste:** `POST /dj/feedback {itemId, kind: 'skip'|'love'}`. Skipped tracks and artists are played less for 60 days, and "love" also favourites the track.
 - **Sounds-like:** analysis v2 adds a 26-number timbre fingerprint (MFCC 1–12 mean and deviation, spectral centroid and flatness). Mixes prefer tracks that sound like the previous one and the seed. `GET /dj/status` reports `ai: {enabled, llm, serverVoice, hostName, chattiness}`.
+
+## Security dashboard (admin)
+
+- `GET /admin/security[?refresh=1]` returns a `SecurityOverview`, cached for 15 s. It covers sign-in failures from MediaMax's security log (24 h and 7 d, by reason, top IPs, targeted users, an hourly histogram and recent events), proxy stats from the Caddy JSON or Nginx combined access log (24 h), the HTTPS certificate (expiry, issuer, trust), CrowdSec active decisions and alerts, and fail2ban jails with their banned IPs. Any part that isn't configured is `null`.
+- `GET/PUT /admin/security/settings` reads and writes `SecurityDashboardSettings`. Defaults come from the `MEDIAMAX_PROXY_KIND`, `MEDIAMAX_PROXY_LOG`, `MEDIAMAX_PUBLIC_HOST`, `MEDIAMAX_CROWDSEC_URL`, `MEDIAMAX_CROWDSEC_MACHINE_ID`, `MEDIAMAX_CROWDSEC_PASSWORD` and `MEDIAMAX_FAIL2BAN_SOCKET` environment variables. The CrowdSec password is write-only.
+- `POST /admin/security/ban {ip, tool: 'crowdsec'|'fail2ban', jail?, duration?, reason?}` bans an IP or CIDR. Your own address is refused.
+- `POST /admin/security/unban {ip, tool?, jail?}` unbans an address. Without `tool` it removes the address from CrowdSec and every fail2ban jail, and returns `removedFrom`.

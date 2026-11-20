@@ -10,6 +10,7 @@ import { BrandingStudio } from './Branding';
 import { ServerSettingsAdmin } from './ServerSettings';
 import { TasksAdmin } from './Tasks';
 import { ActivityAdmin } from './Activity';
+import { SecurityAdmin } from './Security';
 import { DevicesAdmin } from './Devices';
 import { StatsAdmin } from './Stats';
 import { PluginsAdmin } from './Plugins';
@@ -29,6 +30,7 @@ const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/admin/branding', label: 'Branding studio', icon: 'palette' },
   { to: '/admin/settings', label: 'Server settings', icon: 'server' },
   { to: '/admin/remote', label: 'Remote access', icon: 'globe' },
+  { to: '/admin/security', label: 'Security', icon: 'shield' },
   { to: '/admin/backups', label: 'Backups', icon: 'layers' },
   { to: '/admin/plugins', label: 'Plugins', icon: 'puzzle' },
   { to: '/admin/tasks', label: 'Scheduled tasks', icon: 'clock' },
@@ -65,6 +67,7 @@ export default function AdminRoutes() {
             <Route path="plugins" element={<PluginsAdmin />} />
             <Route path="tasks" element={<TasksAdmin />} />
             <Route path="activity" element={<ActivityAdmin />} />
+            <Route path="security" element={<SecurityAdmin />} />
             <Route path="devices" element={<DevicesAdmin />} />
           </Routes>
         </div>

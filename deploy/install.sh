@@ -336,7 +336,7 @@ fetch_sources() {
              nginx/40-mediamax-maintenance.sh \
              crowdsec/acquis.yaml crowdsec/parsers/s01-parse/mediamax-logs.yaml crowdsec/scenarios/mediamax-bf.yaml \
              fail2ban/filter.d/mediamax.conf fail2ban/filter.d/mediamax-caddy.conf fail2ban/filter.d/mediamax-nginx.conf \
-             fail2ban/jail.d/mediamax.local; do
+             fail2ban/jail.d/mediamax.local fail2ban/bridge.py; do
     mkdir -p "$SRC/$(dirname "$rel")"
     curl -fsSL --retry 3 -o "$SRC/$rel" "$REPO_RAW/deploy/$rel" || die "could not download deploy/$rel from $REPO_RAW"
   done
@@ -657,6 +657,9 @@ derive() {
   TRANSCODE_SIZE="$(env_get MEDIAMAX_TRANSCODE_SIZE)"; : "${TRANSCODE_SIZE:=4g}"
   LAPI_PORT="$(env_get CROWDSEC_LAPI_PORT)"; : "${LAPI_PORT:=8090}"
   BOUNCER_KEY="$(env_get CROWDSEC_BOUNCER_KEY)"
+  # Login for MediaMax's Security dashboard on CrowdSec's Local API (a "machine", like cscli).
+  DASH_PW="$(env_get CROWDSEC_DASHBOARD_PASSWORD)"
+  if [ -z "$DASH_PW" ] && has_crowdsec; then DASH_PW="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"; fi
   case "$PROXY" in
     caddy|nginx)
       # Only the proxy is reachable from outside; MediaMax is on the internal network (and on loopback
@@ -733,12 +736,13 @@ write_env() {
     say "MEDIAMAX_TRANSCODE_SIZE=$(env_quote "$TRANSCODE_SIZE")"
     say "MEDIAMAX_AUTO_UPGRADE=$AUTO_UPGRADE"
     say "CROWDSEC_BOUNCER_KEY=$(env_quote "$BOUNCER_KEY")"
+    say "CROWDSEC_DASHBOARD_PASSWORD=$(env_quote "$DASH_PW")"
     say "CROWDSEC_FIREWALL_BOUNCER=$FIREWALL_BOUNCER"
     say "CROWDSEC_LAPI_PORT=$(env_quote "$LAPI_PORT")"
     say "CLOUDFLARE_TUNNEL_TOKEN=$(env_quote "$TUNNEL_TOKEN")"
     # Keep anything else someone added by hand.
     if [ -f "$ENV_FILE" ]; then
-      local known=" COMPOSE_PROJECT_NAME COMPOSE_PROFILES MEDIAMAX_IMAGE MEDIAMAX_REF MEDIAMAX_DOMAIN ACME_EMAIL LE_STAGING MEDIAMAX_PROXY MEDIAMAX_SECURITY MEDIAMAX_SITE_ADDRESS MEDIAMAX_BIND MEDIAMAX_HTTP_PORT MEDIAMAX_EXISTING_PROXY_IP MEDIAMAX_SUBNET MEDIAMAX_TRUSTED_PROXIES MEDIAMAX_MEDIA_DIRS MEDIAMAX_PUID MEDIAMAX_PGID MEDIAMAX_TZ MEDIAMAX_HWACCEL MEDIAMAX_TRANSCODE_SIZE MEDIAMAX_AUTO_UPGRADE CROWDSEC_BOUNCER_KEY CROWDSEC_FIREWALL_BOUNCER CROWDSEC_LAPI_PORT CLOUDFLARE_TUNNEL_TOKEN "
+      local known=" COMPOSE_PROJECT_NAME COMPOSE_PROFILES MEDIAMAX_IMAGE MEDIAMAX_REF MEDIAMAX_DOMAIN ACME_EMAIL LE_STAGING MEDIAMAX_PROXY MEDIAMAX_SECURITY MEDIAMAX_SITE_ADDRESS MEDIAMAX_BIND MEDIAMAX_HTTP_PORT MEDIAMAX_EXISTING_PROXY_IP MEDIAMAX_SUBNET MEDIAMAX_TRUSTED_PROXIES MEDIAMAX_MEDIA_DIRS MEDIAMAX_PUID MEDIAMAX_PGID MEDIAMAX_TZ MEDIAMAX_HWACCEL MEDIAMAX_TRANSCODE_SIZE MEDIAMAX_AUTO_UPGRADE CROWDSEC_BOUNCER_KEY CROWDSEC_DASHBOARD_PASSWORD CROWDSEC_FIREWALL_BOUNCER CROWDSEC_LAPI_PORT CLOUDFLARE_TUNNEL_TOKEN "
       local first=1 line
       while IFS= read -r line || [ -n "$line" ]; do
         case "$line" in ''|'#'*) continue ;; esac
@@ -813,12 +817,30 @@ EOF
       # X-Forwarded-For is only believed from these (the proxy on the Docker network); see server/src/app.ts.
       MEDIAMAX_TRUSTED_PROXIES: ${MEDIAMAX_TRUSTED_PROXIES:-loopback}
       MEDIAMAX_HWACCEL: ${MEDIAMAX_HWACCEL:-none}
+EOF
+    # Admin → Security dashboard: where MediaMax finds the proxy log, the certificate, CrowdSec and fail2ban.
+    case "$PROXY" in
+      caddy) say "      MEDIAMAX_PROXY_KIND: caddy"; say "      MEDIAMAX_PROXY_LOG: /var/log/proxy/caddy/access.log" ;;
+      nginx) say "      MEDIAMAX_PROXY_KIND: nginx"; say "      MEDIAMAX_PROXY_LOG: /var/log/proxy/nginx/mediamax.access.log" ;;
+    esac
+    # shellcheck disable=SC2016 # literal ${…}: Docker Compose fills it in
+    if [ -n "$DOMAIN" ]; then say '      MEDIAMAX_PUBLIC_HOST: ${MEDIAMAX_DOMAIN}'; fi
+    if has_crowdsec; then
+      say "      MEDIAMAX_CROWDSEC_URL: http://crowdsec:8080"
+      say "      MEDIAMAX_CROWDSEC_MACHINE_ID: mediamax-dashboard"
+      # shellcheck disable=SC2016 # literal ${…}: Docker Compose fills it in
+      say '      MEDIAMAX_CROWDSEC_PASSWORD: ${CROWDSEC_DASHBOARD_PASSWORD:-}'
+    fi
+    if has_fail2ban; then say "      MEDIAMAX_FAIL2BAN_SOCKET: /run/mediamax-f2b/bridge.sock"; fi
+    cat <<'EOF'
     env_file:
       - ./mediamax.env
     volumes:
       - ./config:/config            # database, artwork, logs (logs/security.log), backups (backups/)
       - ./recordings:/recordings    # DVR recordings
 EOF
+    if [ "$PROXY" = caddy ] || [ "$PROXY" = nginx ]; then say "      - ./logs:/var/log/proxy:ro     # proxy access logs (Security dashboard)"; fi
+    if has_fail2ban; then say "      - ./run/f2b-bridge:/run/mediamax-f2b   # fail2ban bridge socket (Security dashboard)"; fi
     local IFS='|' e host ctr mode
     for e in $MEDIA; do
       host="${e%%:*}"; ctr="$(printf '%s' "$e" | cut -d: -f2)"; mode="$(printf '%s' "$e" | cut -d: -f3)"
@@ -1059,6 +1081,28 @@ EOF
       - ./config/logs:/var/log/mediamax:ro
       - ./logs/caddy:/var/log/caddy:ro
       - ./logs/nginx:/var/log/nginx:ro
+      - ./run/fail2ban:/var/run/fail2ban   # control socket, shared with the bridge only
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+  # fail2ban's control socket is root-only. This relay lets MediaMax's Security dashboard read jails and
+  # ban/unban through a socket only MediaMax's group can open, and allows nothing else (fail2ban/bridge.py).
+  fail2ban-bridge:
+    image: ${FAIL2BAN_IMAGE:-crazymax/fail2ban:latest}
+    container_name: mediamax-fail2ban-bridge
+    profiles: [fail2ban]
+    restart: unless-stopped
+    network_mode: none
+    entrypoint: ["python3", "/bridge/bridge.py"]
+    environment:
+      F2B_SOCKET: /var/run/fail2ban/fail2ban.sock
+      BRIDGE_SOCKET: /run/mediamax-f2b/bridge.sock
+      BRIDGE_GID: ${MEDIAMAX_PGID:-1000}
+    volumes:
+      - ./fail2ban/bridge.py:/bridge/bridge.py:ro
+      - ./run/fail2ban:/var/run/fail2ban
+      - ./run/f2b-bridge:/run/mediamax-f2b
     security_opt:
       - no-new-privileges:true
     logging: *logging
@@ -1093,7 +1137,7 @@ EOF
 
 install_files() {
   info "Writing configuration to $DIR"
-  mkdir -p "$DIR"/{logs/caddy,logs/nginx}
+  mkdir -p "$DIR"/{logs/caddy,logs/nginx,run/fail2ban,run/f2b-bridge}
   # A new data folder belongs to PUID:PGID. An existing one is left alone: if PUID changed, the container's
   # entrypoint notices the old owner and fixes the whole folder itself.
   if [ ! -d "$DIR/config" ]; then mkdir -p "$DIR/config/logs"; chown -R "$PUID:$PGID" "$DIR/config"; fi
@@ -1147,6 +1191,7 @@ EOF
   put fail2ban/filter.d/mediamax-caddy.conf "$DIR/fail2ban/filter.d/mediamax-caddy.conf"
   put fail2ban/filter.d/mediamax-nginx.conf "$DIR/fail2ban/filter.d/mediamax-nginx.conf"
   put fail2ban/jail.d/mediamax.local "$DIR/fail2ban/jail.d/mediamax.local"
+  put fail2ban/bridge.py "$DIR/fail2ban/bridge.py"
   # Never ban the Docker network itself: requests that Docker's userland proxy forwards (IPv6 clients to an
   # IPv4-only network, connections from the host) arrive from its gateway, and banning that would lock out
   # everyone who comes that way.
@@ -1260,6 +1305,18 @@ setup_caddy_bouncer() {
   ok "CrowdSec bouncer connected to Caddy"
 }
 
+# MediaMax's Security dashboard logs in to CrowdSec's Local API as a machine (read alerts, ban/unban).
+setup_dashboard_machine() {
+  has_crowdsec || return 0
+  wait_healthy mediamax-crowdsec 240 || { warn "CrowdSec isn't healthy yet; the Security dashboard will connect after you run the installer again"; return 0; }
+  cscli machines delete mediamax-dashboard >/dev/null 2>&1 || true
+  if cscli machines add mediamax-dashboard --password "$DASH_PW" -f /dev/null --force >/dev/null 2>&1; then
+    ok "Security dashboard connected to CrowdSec"
+  else
+    warn "could not register the dashboard with CrowdSec (cscli machines add); everything else works without it"
+  fi
+}
+
 setup_firewall_bouncer() {
   [ "$FIREWALL_BOUNCER" = yes ] || return 0
   wait_healthy mediamax-crowdsec 240 || { warn "CrowdSec isn't healthy; skipping the firewall bouncer"; return 0; }
@@ -1361,6 +1418,7 @@ start_stack() {
   fi
   nginx_real_cert
   setup_caddy_bouncer
+  setup_dashboard_machine
   setup_firewall_bouncer
   if [ "$PROXY" = caddy ] || [ "$PROXY" = nginx ]; then
     local proxy="mediamax-$PROXY"

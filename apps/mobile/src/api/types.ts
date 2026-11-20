@@ -1929,3 +1929,69 @@ export interface NotificationsResponse {
   items: AppNotification[];
   unread: number;
 }
+
+/* ------------------------------------------------------------------ */
+/* Admin → Security: reverse proxy, CrowdSec, fail2ban, sign-in log    */
+/* ------------------------------------------------------------------ */
+
+export interface SecurityDashboardSettings {
+  proxy: { kind: 'none' | 'caddy' | 'nginx'; accessLog: string | null };
+  /** Public host name to check the HTTPS certificate of. */
+  publicHost: string | null;
+  crowdsec: { url: string | null; machineId: string | null; password: string | null };
+  /** fail2ban control socket, normally the MediaMax bridge's socket. */
+  fail2banSocket: string | null;
+}
+
+export interface SecurityCount { key: string; count: number; extra?: string | null }
+
+export interface SecurityOverview {
+  generatedAt: string;
+  signIns: {
+    failures24h: number;
+    failures7d: number;
+    lockouts24h: number;
+    successes24h: number;
+    byReason: SecurityCount[];
+    topIps: SecurityCount[];
+    topUsers: SecurityCount[];
+    /** Failures per hour for the last 24 hours (oldest first). */
+    hourly: number[];
+    recent: { at: string; event: string; ip: string; user: string | null; reason: string | null }[];
+  };
+  proxy: null | {
+    kind: 'caddy' | 'nginx';
+    ok: boolean;
+    error: string | null;
+    lastRequestAt: string | null;
+    requests24h: number;
+    uniqueIps24h: number;
+    bytes24h: number;
+    status: { s2xx: number; s3xx: number; s4xx: number; s5xx: number };
+    hourly: number[];
+    topIps: SecurityCount[];
+    topErrors: SecurityCount[];
+  };
+  certificate: null | { host: string; ok: boolean; error: string | null; validTo: string | null; daysLeft: number | null; issuer: string | null };
+  crowdsec: null | {
+    ok: boolean;
+    error: string | null;
+    decisions: { id: number; ip: string; type: string; origin: string; scenario: string; duration: string; country: string | null; asName: string | null }[];
+    alerts: { id: number; scenario: string; at: string; ip: string | null; country: string | null; events: number }[];
+  };
+  fail2ban: null | {
+    ok: boolean;
+    error: string | null;
+    jails: { name: string; currentlyFailed: number; totalFailed: number; currentlyBanned: number; totalBanned: number; bannedIps: string[] }[];
+  };
+}
+
+export interface SecurityBanRequest {
+  ip: string;
+  /** Where to ban; unban without a tool removes the IP everywhere. */
+  tool?: 'crowdsec' | 'fail2ban';
+  jail?: string;
+  /** CrowdSec duration, e.g. "4h", "7d". */
+  duration?: string;
+  reason?: string;
+}

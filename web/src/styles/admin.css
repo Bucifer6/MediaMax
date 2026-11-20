@@ -375,3 +375,35 @@ a.stat:hover { transform: translateY(-2px); border-color: var(--c-primary); }
 .look-row > div { display: flex; gap: 4px; }
 .look-row i { flex: 1; aspect-ratio: 2 / 3; max-height: 40px; border: 1px solid; }
 .look-info { display: flex; flex-direction: column; gap: 4px; }
+
+/* Security dashboard */
+.sec-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.sec-tile { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 14px; background: var(--c-surface-alt); border: 1px solid var(--c-line); border-left-width: 4px; min-width: 0; }
+.sec-tile strong { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.sec-tile .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sec-tile-label { font-size: 0.78rem; font-weight: 700; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.sec-good { border-left-color: var(--c-success, #22c55e); }
+.sec-warn { border-left-color: var(--c-warning, #f59e0b); }
+.sec-bad { border-left-color: var(--c-danger, #ef4444); }
+.sec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 16px; }
+.sec-card { padding: 16px; border-radius: 14px; background: var(--c-surface-alt); border: 1px solid var(--c-line); display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.sec-card h2 { margin: 0; font-size: 1.05rem; display: flex; align-items: center; gap: 8px; }
+.sec-card h3 { margin: 6px 0 0; font-size: 0.9rem; }
+.sec-bars { display: flex; align-items: flex-end; gap: 2px; height: 56px; }
+.sec-bars i { flex: 1; border-radius: 2px 2px 0 0; background: var(--c-primary); opacity: 0.85; }
+.sec-bars-danger i { background: var(--c-danger, #ef4444); }
+.sec-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+.sec-table th { text-align: left; font-weight: 600; color: var(--c-text-muted); padding: 4px 6px; border-bottom: 1px solid var(--c-line); }
+.sec-table td { padding: 5px 6px; border-bottom: 1px solid var(--c-line); vertical-align: middle; }
+.sec-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.sec-table .right { text-align: right; }
+.sec-table td.mono { word-break: break-all; }
+.sec-status { display: flex; gap: 14px; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.sec-status .ok { color: var(--c-success, #22c55e); }
+.sec-status .warn { color: var(--c-warning, #f59e0b); }
+.sec-status .bad { color: var(--c-danger, #ef4444); }
+.sec-events, .sec-errors, .sec-banned { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 0.84rem; }
+.sec-banned li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sec-errors li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sec-card details summary { cursor: pointer; font-weight: 600; font-size: 0.88rem; }
+.sec-card .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }

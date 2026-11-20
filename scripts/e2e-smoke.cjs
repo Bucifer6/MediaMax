@@ -86,7 +86,7 @@ async function waitFor(fn, ms, what) {
     if (!Array.isArray(cal.entries)) failures.push('discovery: /calendar returned no entries array');
     const notes = await api('/notifications');
     if (typeof notes.unread !== 'number') failures.push('discovery: /notifications returned no unread count');
-    const pages = ['/', '/search?q=smoke', '/livetv', '/livetv/guide', '/dvr', '/playlists', '/collections', '/link', '/wrapped', '/podcasts', '/dj', '/watch/multiview', '/settings', '/discover', '/requests', '/my-list', '/calendar', '/settings/browsing',
+    const pages = ['/', '/search?q=smoke', '/livetv', '/livetv/guide', '/dvr', '/playlists', '/collections', '/link', '/wrapped', '/podcasts', '/dj', '/admin/security', '/watch/multiview', '/settings', '/discover', '/requests', '/my-list', '/calendar', '/settings/browsing',
       ...libs.map((l) => `/library/${l.id}`), ...ids.map((i) => `/item/${i}`),
       '/admin', '/admin/libraries', '/admin/stats', '/admin/users', `/admin/users/${users[0].id}/wrapped`, '/admin/livetv', '/admin/channels',
       '/admin/branding', '/admin/settings', '/admin/plugins', '/admin/plugins?tab=catalog', '/admin/plugins?tab=repositories', '/admin/tasks', '/admin/activity', '/admin/devices',
