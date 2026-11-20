@@ -102,4 +102,4 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | CI (typecheck, tests, web build, Docker smoke test) | — | ✅ | — | ✅ |
 
 ## Roadmap ideas
-Plugin API · music videos · plugin API · LDAP login · remote access relay.
+Plugin API · music videos · LDAP login · remote access relay.
