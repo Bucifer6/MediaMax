@@ -64,7 +64,7 @@
 .disc-track { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(140px, 160px); gap: 14px; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; }
 .disc-track > * { scroll-snap-align: start; min-width: 0; }
 .disc-genres { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
-.disc-card-tools { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; z-index: 2; }
+.disc-card-tools { position: absolute; bottom: 6px; right: 6px; display: flex; gap: 4px; z-index: 2; }
 .disc-card-tools .btn-icon { width: 30px; height: 30px; background: color-mix(in srgb, var(--c-bg) 70%, transparent); border-radius: 50%; }
 .disc-card-tools .btn-icon.on { color: var(--c-primary); }
 .discover-card { position: relative; }

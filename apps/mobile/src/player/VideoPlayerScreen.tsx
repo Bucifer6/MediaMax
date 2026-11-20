@@ -155,6 +155,8 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
     p.keepScreenOnWhilePlaying = true;
     p.showNowPlayingNotification = !Platform.isTV;
     p.staysActiveInBackground = !Platform.isTV;
+    // AirPlay: the route picker (VideoAirPlayButton) needs external playback allowed.
+    p.allowsExternalPlayback = true;
   });
 
   const flash = useCallback((text: string) => {

@@ -79,7 +79,7 @@ export async function seedServer({ base, media, data, mockBase, avatars, log }) 
   // Users
   const alexUser = await admin.post('/users', { username: USERS.alex.username, displayName: USERS.alex.displayName, password: USERS.alex.password });
   const kidsUser = await admin.post('/users', { username: USERS.kids.username, displayName: USERS.kids.displayName, password: USERS.kids.password, maxContentRating: USERS.kids.maxContentRating, allowLiveTv: true });
-  const login = async (u) => client(base, (await (await fetch(`${base}/api/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json', 'X-MediaMax-Device-Id': `demo-${u.username}`, 'X-MediaMax-Device-Name': u.username === 'kids' ? 'Living Room TV' : 'Alex’s iPad', 'X-MediaMax-Platform': u.username === 'kids' ? 'tv' : 'ios' }, body: JSON.stringify({ username: u.username, password: u.password }) })).json()).token);
+  const login = async (u) => client(base, (await (await fetch(`${base}/api/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json', 'X-MediaMax-Device-Id': `demo-${u.username}`, 'X-MediaMax-Device-Name': u.username === 'kids' ? 'Living Room TV' : 'Alex iPad', 'X-MediaMax-Platform': u.username === 'kids' ? 'tv' : 'ios' }, body: JSON.stringify({ username: u.username, password: u.password }) })).json()).token);
   const alex = await login(USERS.alex);
   const kids = await login(USERS.kids);
   for (const [id, file] of [[setup.user.id, avatars.sam], [alexUser.id, avatars.alex], [kidsUser.id, avatars.kids]]) await admin.upload(`/users/${id}/avatar`, file).catch((e) => log('  avatar upload skipped: ' + e.message));

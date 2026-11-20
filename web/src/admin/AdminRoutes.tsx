@@ -37,7 +37,7 @@ const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/admin/downloads', label: 'Downloads', icon: 'download' },
   { to: '/admin/branding', label: 'Branding studio', icon: 'palette' },
   { to: '/admin/settings', label: 'Server settings', icon: 'server' },
-  { to: '/admin/storage', label: 'Storage & disks', icon: 'database' },
+  { to: '/admin/storage', label: 'Storage & disks', icon: 'folder' },
   { to: '/admin/smarthome', label: 'Smart home', icon: 'zap' },
   { to: '/admin/renderers', label: 'Play to devices', icon: 'cast' },
   { to: '/admin/remote', label: 'Remote access', icon: 'globe' },

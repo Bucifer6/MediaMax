@@ -86,7 +86,7 @@ export function sessionEntry(s: PlaySession): NowPlayingEntry {
 export function recentlyAdded(limit = 5): NowPlayingStatus['recentlyAdded'] {
   return db.all(`SELECT i.id, i.type, i.title, i.year, i.added_at, COALESCE(i.poster, i.thumb, p.poster, g.poster) img, g.title gtitle, p.title ptitle FROM items i
     LEFT JOIN items p ON p.id = i.parent_id LEFT JOIN items g ON g.id = i.grandparent_id
-    WHERE i.type IN ('movie','episode','album','audiobook','video') ORDER BY i.added_at DESC, i.rowid DESC LIMIT ?`, limit).map((r) => ({
+    WHERE (i.type IN ('movie','episode','album','audiobook') OR (i.type = 'video' AND i.parent_id IS NULL)) ORDER BY i.added_at DESC, i.rowid DESC LIMIT ?`, limit).map((r) => ({
     id: r.id, type: r.type, title: r.title, series: r.type === 'episode' ? r.gtitle ?? null : r.type === 'album' ? r.ptitle ?? null : null,
     year: r.year ?? null, addedAt: r.added_at, posterUrl: absoluteUrl(imageUrl(r.img ?? null)),
   }));

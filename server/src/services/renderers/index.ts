@@ -5,7 +5,7 @@ import type {
 import { db, type Row } from '../../db.js';
 import { config } from '../../config.js';
 import { getKv, getSettings, setKv } from '../settings.js';
-import { assertCanSee, getItem } from '../items.js';
+import { assertCanSee, getChildren, getItem } from '../items.js';
 import { getSession, registerSession, sessionProgress, stopSession, touchSession, transcodeCount, type PlaySession } from '../playback.js';
 import type { AuthContext } from '../auth.js';
 import { HttpError, badRequest, forbidden, notFound } from '../../util/errors.js';
@@ -502,7 +502,14 @@ export async function playOnRenderer(ctx: AuthContext, id: string, req: Renderer
   assertCanSee(ctx.user, req.itemId);
 
   let ids = [req.itemId];
-  if (Array.isArray(req.queueItemIds) && req.queueItemIds.length > 1) {
+  const top = getItem(ctx.user, req.itemId, false);
+  if (['album', 'playlist', 'season', 'collection'].includes(top.type) && !req.queueItemIds?.length) {
+    // An album / playlist / season: play its tracks or episodes in order.
+    const kids = getChildren(ctx.user, req.itemId, { limit: 500, offset: 0 }).items.filter((c) => !!db.get('SELECT 1 FROM media WHERE item_id = ?', c.id)).map((c) => c.id);
+    if (!kids.length) throw badRequest(`"${top.title}" has nothing to play`);
+    req = { ...req, itemId: kids[0], queueItemIds: kids, startMs: req.startMs ?? 0 };
+    ids = kids;
+  } else if (Array.isArray(req.queueItemIds) && req.queueItemIds.length > 1) {
     ids = [...new Set(req.queueItemIds.map(String))].slice(0, 500).filter((x) => {
       try {
         assertCanSee(ctx.user, x);

@@ -197,7 +197,7 @@ export const api = {
   },
 
   discover: {
-    search: (q: { q?: string; type?: 'movie' | 'show' | 'all'; page?: number }, signal?: AbortSignal) =>
+    search: (q: { q?: string; type?: 'movie' | 'show' | 'all'; page?: number; hideAvailable?: boolean }, signal?: AbortSignal) =>
       http.get<DiscoverResponse>('/discover', q, signal),
   },
 

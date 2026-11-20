@@ -112,7 +112,7 @@ export function StorageAdmin() {
             {st.tools.mountinfo && !st.tools.hdparm && !st.tools.smartctl && <p className="muted">Neither <code>hdparm</code> nor <code>smartctl</code> is available, so standby can’t be confirmed; “Idle” means no disk I/O for 10 minutes (from /sys, which never wakes a disk).</p>}
             <div className="table-wrap">
               <table className="table">
-                <thead><tr><th>Library</th><th>Folder</th><th>Mount</th><th>Disks</th><th>State</th><th>Watching</th></tr></thead>
+                <thead><tr><th>Library</th><th>Folder</th><th>Mount</th><th>Disks</th><th>State</th><th>Watch</th></tr></thead>
                 <tbody>
                   {st.libraries.flatMap((l) => (l.paths.length ? l.paths : [null]).map((p, i) => (
                     <tr key={`${l.id}-${i}`}>

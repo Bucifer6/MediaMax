@@ -218,7 +218,7 @@ export function decide(media: MediaSource, profile: DeviceProfile | undefined, o
   const rangeOk = opts.isAudioOnly || range.ok;
   if (!rangeOk) reasons.push(...range.reasons);
   const tenBitOk = opts.isAudioOnly || !p.tenBitCodecs || !media.videoRange?.bitDepth || media.videoRange.bitDepth <= 8 || p.tenBitCodecs.map(norm).includes(norm(media.videoCodec));
-  if (!tenBitOk) reasons.push(`10-bit ${media.videoCodec} not supported`);
+  if (!tenBitOk && videoOk) reasons.push(`10-bit ${media.videoCodec} not supported`);
   const heightOk = !p.maxHeight || !media.height || media.height <= p.maxHeight;
   if (!heightOk) reasons.push(`resolution exceeds ${p.maxHeight}p`);
   const videoPlayable = videoOk && rangeOk && tenBitOk && heightOk;
