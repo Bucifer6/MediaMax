@@ -11,6 +11,7 @@ import { BrandLogo } from '../components/BrandLogo';
 import { ProfileAvatar } from '../components/ProfileEditor';
 import { PinPad } from './Login';
 import '../styles/profiles.css';
+import { safeNext } from '../utils/safeNext';
 
 /**
  * "Who's watching?" — shown after signing in to an account that has profiles, and from "Switch profile".
@@ -20,7 +21,7 @@ export default function ProfilePicker() {
   const { user, branding, login, logout } = useApp();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const next = params.get('next') || '/';
+  const next = safeNext(params.get('next'));
   const [list, setList] = useState<AccountProfile[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pinFor, setPinFor] = useState<AccountProfile | null>(null);

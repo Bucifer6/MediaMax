@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type {
-  ActiveSession, AudioComforts, AudioStream, DeviceProfile, MediaSource, PlayMethod, PlaybackInfo, PlaybackRequest, SubtitleStream, SubtitleTrack, Marker,
+  ActiveSession, AudioComforts, AudioStream, DeviceProfile, MediaSource, PlayMethod, PlaybackInfo, PlaybackRequest, SubtitleStream, SubtitleTrack, Marker, User,
 } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { config } from '../config.js';
@@ -98,11 +98,19 @@ export function broadcastSessions() {
  * Per-user limits: remote streaming permission and max simultaneous streams.
  * A new session on the same device replaces the old one, so it doesn't count against the limit.
  */
-export function assertCanStartSession(ctx: AuthContext, remoteAddr: string | null, multiview = false) {
-  const u = ctx.user;
+/**
+ * "Allow remote streaming" off: media bytes (direct streams, downloads, Subsonic, karaoke mixes, live TV) are only
+ * served to the home network, not just new playback sessions.
+ */
+export function assertRemoteAllowed(u: Pick<User, 'allowRemote' | 'isAdmin'>, remoteAddr: string | null | undefined) {
   if (!u.allowRemote && !u.isAdmin && remoteAddr && !isLocalAddress(remoteAddr)) {
     throw new HttpError(403, 'Your account can only stream on the home network', 'remote_not_allowed');
   }
+}
+
+export function assertCanStartSession(ctx: AuthContext, remoteAddr: string | null, multiview = false) {
+  const u = ctx.user;
+  assertRemoteAllowed(u, remoteAddr);
   if (u.maxStreams && !u.isAdmin) {
     // Other devices count; on this device only multiview tiles that will keep running alongside the new one count.
     // The limit is per account: the owner and all of its profiles share it.
@@ -169,6 +177,18 @@ export function sessionProgress(ctx: AuthContext, id: string, positionMs: number
   if (state === 'stopped') stopSession(id);
   else broadcastSessions();
   return { ok: true };
+}
+
+/** Server shutdown: stop every session so no ffmpeg transcode outlives the server. */
+export function stopAllSessions() {
+  for (const id of [...sessions.keys()]) stopSession(id, 'shutdown', false);
+}
+
+/** End every session of an account and its profiles (the account or profile is being deleted). */
+export function stopUserSessions(userId: string, reason = 'user_deleted') {
+  for (const s of [...sessions.values()]) {
+    if (s.ctx.user.id === userId || s.ctx.user.parentUserId === userId) stopSession(s.id, reason, false);
+  }
 }
 
 /** Reap idle sessions (no progress / segment requests). */
@@ -261,7 +281,10 @@ export function decide(media: MediaSource, profile: DeviceProfile | undefined, o
   const needsRemux = !opts.isAudioOnly && range.needsRemux;
   if (needsRemux) reasons.push(...range.reasons.filter((r) => !reasons.includes(r)));
   // Transcoding an HDR source: the transcoder outputs 8-bit SDR, so tone-map (legacy clients: admin setting decides).
-  const toneMap = range.legacy ? undefined : !opts.isAudioOnly && range.delivery !== 'sdr';
+  // A Dolby Vision stream with an SDR base layer (8.2 / 9) is already SDR: tone-mapping it would distort the picture.
+  const sdrBaseLayer = !!media.videoRange?.dolbyVision && media.videoRange.fallback === 'sdr';
+  const hdrOut = range.delivery === 'tonemap' || (!sdrBaseLayer && outputRange(media.videoRange, media.hdr, range.delivery) !== 'sdr');
+  const toneMap = range.legacy ? undefined : !opts.isAudioOnly && hdrOut;
   if (!opts.forceTranscode && !opts.burnSubs && videoPlayable && !needsRemux && audioOk && containerOk && bitrateOk && widthOk && audioTrackOk) {
     return { method: 'direct', videoCopy: true, audioCopy: true, reasons: [], range, audio: audioPlan };
   }
@@ -288,12 +311,28 @@ export function decide(media: MediaSource, profile: DeviceProfile | undefined, o
     const tm: RangeDecision = { ...base, delivery: 'tonemap', toneMap: true };
     return { method: 'transcode', videoCopy: false, audioCopy: audioOk && !opts.forceTranscode, reasons, toneMap: true, range: tm, audio: audioPlan };
   }
-  const willToneMap = toneMap ?? (range.delivery !== 'sdr' && !opts.isAudioOnly && getSettings().transcoding.toneMapHdr);
-  const tmRange: RangeDecision = willToneMap ? { ...range, delivery: 'tonemap', toneMap: true } : range;
+  const willToneMap = toneMap ?? (hdrOut && !opts.isAudioOnly && getSettings().transcoding.toneMapHdr);
+  const tmRange: RangeDecision = willToneMap ? { ...range, delivery: 'tonemap', toneMap: true }
+    : sdrBaseLayer && range.delivery === 'passthrough' ? { ...range, delivery: 'base-layer' } : range;
   const audioCopy = audioOk && !opts.forceTranscode && !opts.isAudioOnly;
   // Forced transcodes re-encode the audio too (as before), with the same target choice.
   if (audioPlan && !audioCopy && audioPlan.delivery === 'copy') audioPlan = planAudio(opts.audio!, p, { ...planOpts, noCopy: true });
-  return { method: 'transcode', videoCopy: false, audioCopy, reasons, toneMap, range: tmRange, audio: audioPlan };
+  // "remuxed to its HDR10 base layer" doesn't apply once the video is encoded.
+  const why = needsRemux ? reasons.filter((r) => !range.reasons.includes(r)) : reasons;
+  return { method: 'transcode', videoCopy: false, audioCopy, reasons: why, toneMap, range: tmRange, audio: audioPlan };
+}
+
+/**
+ * Tallest output a transcode may produce for a client: its `maxHeight`, and the height at which the source's aspect
+ * ratio reaches its `maxWidth` (a 2.39:1 film at 1920 wide is ~804 lines, not 1080). Null = no limit.
+ */
+export function outputMaxHeight(p: Pick<DeviceProfile, 'maxWidth' | 'maxHeight'>, sourceWidth: number | null, sourceHeight: number | null): number | null {
+  const aspect = sourceWidth && sourceHeight ? sourceWidth / sourceHeight : 16 / 9;
+  // Narrower-than-16:9 sources keep the old 16:9 assumption (maxWidth usually describes a 16:9 screen).
+  const limits = [p.maxHeight, p.maxWidth ? Math.round(p.maxWidth / Math.max(aspect, 16 / 9)) : null]
+    .filter((x): x is number => typeof x === 'number' && x > 0);
+  // Even: 4:2:0 encoders reject odd frame heights.
+  return limits.length ? Math.max(2, Math.floor(Math.min(...limits) / 2) * 2) : null;
 }
 
 /** Output codec for a transcode: HEVC/AV1 with the hardware encoder when the client plays it (see chooseVideoCodec). */
@@ -340,6 +379,10 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     : db.get('SELECT * FROM media WHERE item_id = ? ORDER BY COALESCE(width,0) DESC LIMIT 1', itemId);
   if (!mediaRow) throw notFound('Media not found');
   if (item.type === 'photo') throw badRequest('Photos are not playable');
+  // Empty or unreadable local files (ffprobe failed at scan time): say so instead of handing the player a broken stream.
+  if (mediaRow.path && !mediaRow.remote_url && (mediaRow.size === 0 || (!mediaRow.probed_at && !mediaRow.video_codec && !parseJson<unknown[]>(mediaRow.audio, []).length))) {
+    throw new HttpError(422, 'This file could not be read. It may be damaged or still being copied; rescan the library once it is complete.', 'unreadable_media');
+  }
   // Files scanned before HDR detection: identify the HDR format now (one quick ffprobe, stored for next time).
   if (mediaRow.hdr && mediaRow.video_range == null && mediaRow.path) {
     try {
@@ -427,8 +470,9 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
       input, inputArgs, startSec: 0, durationSec: media.durationMs ? media.durationMs / 1000 : null,
       mode: decision.method === 'remux' ? 'remux' : 'transcode',
       audioIndex: audio?.index ?? null, audioCopy: decision.audioCopy, videoCopy: decision.videoCopy,
-      bitrate: Math.round(target), maxHeight: p.maxWidth ? Math.round((p.maxWidth * 9) / 16) : null, sourceHeight: media.height,
-      sourceCodec: media.videoCodec, hdr: media.hdr, audioChannels: audio?.channels, hasVideo: !isAudioOnly,
+      bitrate: Math.round(target), maxHeight: outputMaxHeight(p, media.width, media.height), sourceHeight: media.height,
+      // Decoding Dolby Vision 8.2 / 9 gives its SDR base layer: nothing to tone-map.
+      sourceCodec: media.videoCodec, hdr: media.hdr && !(media.videoRange?.dolbyVision && media.videoRange.fallback === 'sdr'), audioChannels: audio?.channels, hasVideo: !isAudioOnly,
       burnSubtitle: effectiveBurn
         ? effectiveBurn.external
           ? { kind: 'external', file: effectiveBurn.path }

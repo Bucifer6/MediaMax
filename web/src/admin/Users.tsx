@@ -141,7 +141,7 @@ function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged, defa
         </div>
         <div className="form-row">
           <Field label={initial ? 'New password' : 'Password'} hint={initial ? 'Leave blank to keep' : 'Optional for PIN-only profiles'}>
-            <input className="input" type="password" value={f.password} onChange={(e) => set('password', e.target.value)} autoComplete="new-password" />
+            <input className="input" type="password" value={f.password} onChange={(e) => set('password', e.target.value)} autoComplete="new-password" minLength={8} placeholder="At least 8 characters" />
           </Field>
           <Field label="PIN" hint={pinInvalid ? 'PIN must be 4–8 digits' : initial?.hasPin ? `PIN set (${initial.pinLength ?? 4} digits) — enter a new one to replace` : '4–8 digits, optional'}>
             <input className="input" inputMode="numeric" value={f.pin} onChange={(e) => set('pin', e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="••••" maxLength={8} />

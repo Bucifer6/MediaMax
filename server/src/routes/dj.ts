@@ -1,10 +1,15 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import type { DjFeedback, DjHostRequest, DjMixRequest, DjStatus } from '@mediamax/shared';
+import type { DjFeedback, DjHostRequest, DjMixRequest, DjStatus, DjTransitionPreference } from '@mediamax/shared';
+import { db } from '../db.js';
 import { requireAdmin, requireUser } from '../http.js';
 import { assertCanSee } from '../services/items.js';
-import { analyseTrack, analysisStatus, getAnalysis } from '../services/dj/analysis.js';
-import { buildMix } from '../services/dj/mix.js';
+import { analyseTrack, analysisOutdated, analysisStatus, getAnalysis, upgradeLazily } from '../services/dj/analysis.js';
+import { buildMix, planTransition } from '../services/dj/mix.js';
+import { buildTransitionGraph, ffmpegHasFilter, renderTransition } from '../services/dj/render.js';
+import { parseJson } from '../util/misc.js';
 import { findSeed, hostLine, llmChat, llmUsage, parsePrompt, recordFeedback, serverVoiceConfigured, speak, voiceFile } from '../services/dj/ai.js';
 import { getSettings } from '../services/settings.js';
 import { runTask } from '../services/tasks.js';
@@ -41,6 +46,8 @@ export default async function djRoutes(app: FastifyInstance) {
     const { user } = requireUser(req);
     const row = assertCanSee(user, req.params.id);
     if (row.type !== 'track') throw badRequest('Only music tracks can be analysed');
+    // Outdated analyses (older algorithm) are re-run on demand; it takes about half a second.
+    if (analysisOutdated(req.params.id)) return (await analyseTrack(req.params.id)) ?? getAnalysis(req.params.id);
     return getAnalysis(req.params.id) ?? (await analyseTrack(req.params.id));
   });
 
@@ -66,7 +73,7 @@ export default async function djRoutes(app: FastifyInstance) {
     }
     // Make sure the track we're mixing out of has been analysed, so the first transition is beat-matched.
     const last = body.history?.[body.history.length - 1];
-    if (last && !getAnalysis(last)) {
+    if (last && (!getAnalysis(last) || analysisOutdated(last))) {
       try {
         if (assertCanSee(user, last).type === 'track') await analyseTrack(last);
       } catch {
@@ -83,6 +90,8 @@ export default async function djRoutes(app: FastifyInstance) {
       mix = buildMix(user, body);
       summary = `${summary} (relaxed: nothing matched exactly)`;
     }
+    // Tracks with an older-version analysis (no phrases yet) are upgraded in the background, a few per request.
+    upgradeLazily(mix.tracks.map((t) => t.item.id));
     const { history: _h, count: _c, ...resolved } = body;
     return { ...mix, summary, understoodBy, continuous, request: resolved };
   });
@@ -96,6 +105,45 @@ export default async function djRoutes(app: FastifyInstance) {
     assertCanSee(user, b.nextItemId);
     if (b.previousItemId) assertCanSee(user, b.previousItemId);
     return hostLine(user, { ...b, prompt: b.prompt?.slice(0, 300), position: Math.max(0, Number(b.position) || 0) });
+  });
+
+  /**
+   * Hear a transition: renders "end of A → start of B" with the planned style (bass swap, filter fade, echo-out,
+   * tempo match with key lock) through ffmpeg. ~25 s of MP3.
+   */
+  app.get<{ Querystring: { from?: string; to?: string; transitions?: string; maxStretchPct?: string } }>('/dj/transition-preview', async (req, reply) => {
+    const { user } = requireUser(req);
+    const { from, to } = req.query;
+    if (!from || !to) throw badRequest('from and to are required');
+    const file = (id: string) => {
+      if (assertCanSee(user, id).type !== 'track') throw badRequest('Only music tracks can be mixed');
+      const m = db.get<{ path: string; duration_ms: number | null; genres: string | null }>("SELECT m.path, m.duration_ms, i.genres FROM media m JOIN items i ON i.id = m.item_id WHERE i.id = ? AND m.path IS NOT NULL LIMIT 1", id);
+      if (!m) throw notFound('Track file not found');
+      return m;
+    };
+    const fa = file(from);
+    const fb = file(to);
+    const ensure = async (id: string) => (!getAnalysis(id) || analysisOutdated(id) ? await analyseTrack(id) : getAnalysis(id)) ?? getAnalysis(id);
+    const [a, b] = await Promise.all([ensure(from), ensure(to)]);
+    const prefs: DjTransitionPreference[] = ['auto', 'smooth', 'energetic', 'minimal'];
+    const pref = prefs.includes(req.query.transitions as DjTransitionPreference) ? (req.query.transitions as DjTransitionPreference) : 'auto';
+    const stretch = Number(req.query.maxStretchPct);
+    const tr = planTransition(a, fa.duration_ms ?? a?.durationMs ?? 0, b, {
+      preference: pref, maxStretch: Number.isFinite(stretch) && stretch > 0 ? Math.min(16, stretch) / 100 : 0.08,
+      genresA: parseJson<string[]>(fa.genres, []).map((g) => g.toLowerCase()), genresB: parseJson<string[]>(fb.genres, []).map((g) => g.toLowerCase()),
+    });
+    const glideMs = tr.beatMs ? tr.beatMs * 4 * 8 : 8000;
+    const plan = buildTransitionGraph(tr, { leadMs: 8000, tailMs: 10000, glideMs, rubberband: ffmpegHasFilter('rubberband') });
+    const out = path.join(os.tmpdir(), `mediamax-djprev-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp3`);
+    try {
+      await renderTransition(fa.path, fb.path, plan, out);
+      const buf = fs.readFileSync(out);
+      reply.header('Content-Type', 'audio/mpeg').header('Cache-Control', 'private, max-age=3600')
+        .header('X-DJ-Transition', encodeURIComponent(JSON.stringify({ style: tr.style, fx: tr.fx, crossfadeMs: tr.crossfadeMs, tempoRatio: tr.tempoRatio, stretch: plan.stretch })));
+      return reply.send(buf);
+    } finally {
+      fs.rm(out, { force: true }, () => {});
+    }
   });
 
   app.get<{ Params: { file: string } }>('/dj/voice/:file', async (req, reply) => {

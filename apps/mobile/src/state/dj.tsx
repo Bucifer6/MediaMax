@@ -181,10 +181,38 @@ interface DeckRt {
   seenPlaying: boolean;
 }
 
+/**
+ * Volume shape of a transition effect (the server picks bass swap / filter fade / echo-out per pair). expo-audio
+ * has no EQ, filters or delay, so on phone/TV each effect is approximated with the two deck volumes, timed like
+ * the web mixer (web/src/player/djMixer.ts): bass swap = the new track comes up to the phrase line, then the old
+ * one leaves; filter fade = old track holds, then fades over the second half while the new one eases in;
+ * echo-out = the new track sneaks in, the old one drops out on the beat at ~3/4 (no echo tail).
+ */
+export function fxGains(fx: DjTransition['fx'], p: number, kSwap = 0.5, kCut = 0.75): { out: number; inc: number } {
+  const c = (x: number) => Math.max(0, Math.min(1, x));
+  const ease = (x: number) => x * x * (3 - 2 * x);
+  p = c(p);
+  switch (fx) {
+    case 'bassSwap': {
+      const k = Math.max(0.05, Math.min(0.95, kSwap));
+      return { inc: Math.sin((c(p / k) * Math.PI) / 2), out: p < k ? 1 : Math.cos((c((p - k) / (1 - k)) * Math.PI) / 2) };
+    }
+    case 'filter':
+      return { inc: ease(c(p / 0.66)), out: p < 0.5 ? 1 : Math.cos((c((p - 0.5) / 0.5) * Math.PI) / 2) };
+    case 'echo':
+      return { inc: p < kCut ? 0.35 * ease(c(p / kCut)) : 1, out: p < kCut ? 1 : Math.max(0, 1 - (p - kCut) / 0.08) };
+    default:
+      return { inc: Math.sin((p * Math.PI) / 2), out: Math.cos((p * Math.PI) / 2) };
+  }
+}
+
 interface Fade {
   from: DeckId;
   to: DeckId;
   startedAt: number;
+  fx?: DjTransition['fx'];
+  kSwap?: number;
+  kCut?: number;
   durMs: number;
   /** Elapsed time frozen while paused. */
   pausedElapsed: number | null;
@@ -769,7 +797,7 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
   };
 
   /** Start the crossfade from the live deck into the deck holding the next track. */
-  const beginFade = (crossfadeMs: number, tempoRatio: number) => {
+  const beginFade = (crossfadeMs: number, tempoRatio: number, tr?: DjTransition | null) => {
     if (startTimer.current) {
       clearTimeout(startTimer.current);
       startTimer.current = null;
@@ -792,7 +820,11 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
     inc.lastReport = Date.now();
     inc.seenPlaying = false;
     report(inc, 'playing');
-    fadeRef.current = { from, to, startedAt: Date.now(), durMs: Math.max(crossfadeMs, TICK_MS), pausedElapsed: null, lockSwitched: false };
+    const L = Math.max(crossfadeMs, TICK_MS);
+    const kSwap = tr?.swapAtMs != null ? tr.swapAtMs / Math.max(1, tr.crossfadeMs) : 0.5;
+    const beat = tr?.beatMs ?? 0;
+    const kCut = tr?.fx === 'echo' && beat > 0 ? clamp((Math.round((L * 0.75) / beat) * beat) / L, 0.3, 0.95) : 0.75;
+    fadeRef.current = { from, to, startedAt: Date.now(), durMs: L, pausedElapsed: null, lockSwitched: false, fx: tr?.fx ?? 'none', kSwap, kCut };
     if (!deck(from).track) setLockScreen(inc);
     if (fadeRef.current && !deck(from).track) fadeRef.current.lockSwitched = true;
     if (phaseRef.current === 'loading') phaseRef.current = 'playing';
@@ -805,9 +837,10 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
     const p = clamp((Date.now() - f.startedAt) / f.durMs, 0, 1);
     const out = deck(f.from);
     const inc = deck(f.to);
-    // Equal-power curve: perceived loudness stays constant through the blend.
-    if (out.track) setVol(out, Math.cos((p * Math.PI) / 2) * out.gain);
-    setVol(inc, Math.sin((p * Math.PI) / 2) * inc.gain);
+    // Equal-power curve (perceived loudness stays constant), shaped by the transition effect.
+    const g = fxGains(f.fx, p, f.kSwap, f.kCut);
+    if (out.track) setVol(out, g.out * out.gain);
+    setVol(inc, g.inc * inc.gain);
     if (p >= 0.5 && !f.lockSwitched) {
       f.lockSwitched = true;
       setLockScreen(inc);
@@ -951,13 +984,13 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
           const fadeMs = Math.min(wantFade, left);
           const ratio = tr?.tempoRatio ?? 1;
           const remaining = mixOut - livePos;
-          if (remaining <= 0) beginFade(fadeMs, ratio);
+          if (remaining <= 0) beginFade(fadeMs, ratio, tr);
           else if (remaining < 400 && !startTimer.current) {
             // Precise start: a one-shot timer instead of waiting for the next 50 ms tick.
             const rate = live.rate || 1;
             startTimer.current = setTimeout(() => {
               startTimer.current = null;
-              if (phaseRef.current === 'playing') beginFade(fadeMs, ratio);
+              if (phaseRef.current === 'playing') beginFade(fadeMs, ratio, tr);
             }, remaining / rate);
           }
         }

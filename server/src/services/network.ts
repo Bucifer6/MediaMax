@@ -122,6 +122,13 @@ const caddyDir = () => {
 };
 export const builtinAccessLog = () => path.join(config.logDir, 'caddy-access.log');
 
+/**
+ * Credentials that can appear in a request URL: session token, API key (?api_key=, OpenSubsonic ?apiKey=), Subsonic
+ * password / token / salt (p, t, s) and the device-link poll token. Access logs replace their values.
+ */
+export const LOG_REDACT_QUERY = ['token', 'api_key', 'apiKey', 'pollToken', 'p', 't', 's'];
+export const LOG_REDACT_HEADERS = ['X-Api-Key', 'X-Mediamax-Token'];
+
 /** The Caddyfile MediaMax generates for built-in HTTPS (exported for tests). */
 export function caddyfile(s: NetworkSettings, upstreamPort = config.port, accessLog = builtinAccessLog()): string {
   const b = s.builtinHttps;
@@ -166,8 +173,10 @@ export function caddyfile(s: NetworkSettings, upstreamPort = config.port, access
     '\t\t}',
     '\t\tformat filter {',
     '\t\t\trequest>uri query {',
-    ...['token', 'api_key', 'p', 't', 's'].map((k) => `\t\t\t\treplace ${k} REDACTED`),
+    ...LOG_REDACT_QUERY.map((k) => `\t\t\t\treplace ${k} REDACTED`),
     '\t\t\t}',
+    // Caddy hides Authorization and Cookie itself; these are MediaMax's own credential headers.
+    ...LOG_REDACT_HEADERS.map((h) => `\t\t\trequest>headers>${h} delete`),
     '\t\t\twrap json',
     '\t\t}',
     '\t}',

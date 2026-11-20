@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useNavigate } from 'react-router-dom';
 import type { Chapter, DjMixRequest, Item, PlaybackInfo } from '@mediamax/shared';
 import { api } from '../api/endpoints';
-import { errorMessage } from '../api/client';
+import { errorMessage, withToken } from '../api/client';
 import { attachStream } from './engine';
 import { profileWithBitrate } from './deviceProfile';
 import { absoluteUrl, CAST_OWNER_EVENT, castContentType, castDeviceProfile, castOwner, claimCast, useCast, type CastHandle, type CastOwner } from './cast';
@@ -78,6 +78,25 @@ interface MusicApi {
   radio: RadioState | null;
   /** Start a radio mix seeded from a track, album or artist; `title` names it ("Radio based on <title>"). */
   startRadio: (seedId: string, title: string) => Promise<void>;
+  /** Local audio output hooks for lyrics, karaoke and visualisers (stable object). */
+  output: MusicOutputApi;
+  /** The live deck plays an alternative source (karaoke stem mix) instead of the track's own stream. */
+  altSource: string | null;
+}
+
+export interface MusicOutputApi {
+  /** Precise media position of the live deck (ms), for per-frame lyrics / visualisers. */
+  timeMs: () => number;
+  /** Audio output latency (ms). */
+  latencyMs: () => number;
+  /** Analyser tapped (fan-out) after the output chain; null when Web Audio isn't in use. */
+  analyser: () => AnalyserNode | null;
+  /** Create / resume the Web Audio graph (call from a user gesture). Returns whether Web Audio is active. */
+  ensureGraph: () => boolean;
+  /** Quick karaoke vocal level 0..1 (1 = off). */
+  setVocalLevel: (level: number) => void;
+  /** Play `url` (a seekable audio file, e.g. the server's karaoke mix) on the live deck from the current position; null = back to the normal stream. */
+  setAltSource: (url: string | null) => Promise<void>;
 }
 
 const Ctx = createContext<MusicApi | null>(null);
@@ -139,6 +158,9 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   stateRef.current = { queue, index, repeat, durationMs, positionMs, chapters, volume, muted, sleep, shuffle, crossfadeSec, rgMode, radio };
   const playingRef = useRef(playing);
   playingRef.current = playing;
+  /** Karaoke: the live deck plays this URL instead of the track's stream. */
+  const altRef = useRef<{ itemId: string; url: string } | null>(null);
+  const [altSource, setAltSourceState] = useState<string | null>(null);
 
   /** Route audio through Web Audio (gain ramps, ReplayGain boost) — except on iOS unless crossfade is on. */
   const wantGraph = () => !SUSPENDS_WEB_AUDIO_IN_BACKGROUND || stateRef.current.crossfadeSec > 0;
@@ -297,6 +319,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!out) return;
     const d = out.active;
+    if (altRef.current && altRef.current.itemId !== current?.id) {
+      altRef.current = null;
+      setAltSourceState(null);
+    }
     if (!current) {
       adoptRef.current = null;
       cancelHandover();
@@ -425,6 +451,55 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       }
     })();
   };
+
+  /** Switch the live deck to / from an alternative source (karaoke mix), keeping the position. */
+  const altSourceRef = useRef<(url: string | null) => Promise<void>>(async () => {});
+  altSourceRef.current = async (url: string | null) => {
+    const cur = stateRef.current.queue[stateRef.current.index];
+    if (!out || !cur || castingRef.current) return;
+    const same = url ? altRef.current?.url === url && altRef.current.itemId === cur.id : !altRef.current;
+    if (same) return;
+    const d = out.active;
+    const pos = d.offsetMs + d.el.currentTime * 1000;
+    const wasPlaying = !d.el.paused;
+    if (url) {
+      altRef.current = { itemId: cur.id, url };
+      d.attached?.destroy();
+      d.attached = null;
+      d.offsetMs = 0;
+      d.pendingSeek = pos;
+      if (d.info) d.info = { ...d.info, isHls: false };
+      d.el.src = withToken(url);
+      setAltSourceState(url);
+      if (wasPlaying) await d.el.play().catch(() => setPlaying(false));
+      return;
+    }
+    altRef.current = null;
+    setAltSourceState(null);
+    try {
+      const ok = await loadDeck(d, cur, stateRef.current.index, Math.round(pos), (msg) => toast.error(msg));
+      if (ok) {
+        setInfo(d.info);
+        if (wasPlaying) await d.el.play().catch(() => setPlaying(false));
+      }
+    } catch (e) {
+      toast.error(e);
+    }
+  };
+  const outputApi = useMemo<MusicOutputApi>(() => ({
+    timeMs: () => {
+      const d = out?.active;
+      return d ? d.offsetMs + d.el.currentTime * 1000 : 0;
+    },
+    latencyMs: () => out?.latencyMs ?? 0,
+    analyser: () => out?.analyser ?? null,
+    ensureGraph: () => {
+      out?.prime(true);
+      return !!out?.webAudio;
+    },
+    setVocalLevel: (v: number) => out?.setVocalLevel(v),
+    setAltSource: (url: string | null) => altSourceRef.current(url),
+  }), [out]);
 
   const goto = useCallback((i: number) => {
     const { queue: q } = stateRef.current;
@@ -1049,9 +1124,11 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       setSleep,
       radio,
       startRadio,
+      output: outputApi,
+      altSource,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto, togglePlayback, pausePlayback, cast, casting, sleep, setSleep, radio, startRadio, cancelHandover],
+    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto, togglePlayback, pausePlayback, cast, casting, sleep, setSleep, radio, startRadio, cancelHandover, outputApi, altSource],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

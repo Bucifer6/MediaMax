@@ -26,10 +26,19 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | `.mediamaxignore` / `.plexignore` folders | ✅ | ✅ | ❌ | ✅ |
 | Safe removal (no wipe when a drive is unmounted) | ✅ | 🟡 | 🟡 | ✅ |
 | Real-time filesystem watching | ✅ | ✅ | ✅ | ✅ |
-| Synced lyrics (LRC sidecars, embedded tags, LRCLIB fallback) | ✅ | ✅ | ✅ | ✅ |
+| Synced lyrics (LRC sidecars, embedded tags incl. ID3 SYLT, LRCLIB fallback) | ✅ | ✅ | ✅ | ✅ |
+| Word-by-word karaoke lyrics (enhanced LRC / SYLT word timing, wipe on line-timed lyrics) | ❌ | 🟡 | ❌ | ✅ |
+| Lyrics editor (tap-to-sync, import/export .lrc) and per-user lyrics timing offsets | ❌ | 🟡 | ❌ | ✅ |
+| Karaoke mode: instant vocal reduction + AI vocal separation (HT-Demucs stems, playable on every device) | ❌ | ❌ | ❌ | ✅ |
+| Music visualisers (cover ring, bars, waveform, starfield, ambient) and TV music screensaver | ❌ | ❌ | ❌ | ✅ |
+| Full-screen now playing (cover / lyrics / visualiser / karaoke) | ✅ | ✅ | ✅ | ✅ |
 | Subsonic/OpenSubsonic API (Symfonium, Feishin, play:Sub…) | ❌ | Plugin | ❌ | ✅ |
 | ReplayGain / R128 loudness levelling (track & album) | ✅ (Plexamp) | 🟡 | 🟡 | ✅ |
 | DJ mode: BPM/key/energy analysis, automatic beat-matched crossfades, harmonic auto-playlists, non-stop mixes | 🟡 (Plexamp sweet fades) | ❌ | ❌ | ✅ |
+| DJ phrase detection (intro/verse/build/drop/breakdown/outro on 8/16/32-bar lines); mixes start on phrase boundaries (outro → intro) | ❌ | ❌ | ❌ | ✅ |
+| DJ transition styles: EQ bass swap, filter fade, echo-out, blend/fade/cut — chosen per pair, with an auto/smooth/energetic/minimal preference | ❌ | ❌ | ❌ | ✅ (full effects on web; volume-shaped on phone/TV) |
+| DJ tempo matching with key lock (±8 % default, half/double time aware), glide back over N bars or stay | 🟡 (Plexamp sweet fades, no beat-matching) | ❌ | ❌ | ✅ (browser time-stretch or WSOLA AudioWorklet) |
+| Hear a planned DJ transition rendered by the server (ffmpeg: bass swap, filter, echo, rubberband/atempo) | ❌ | ❌ | ❌ | ✅ |
 | Anime (AniList) and MusicBrainz/Cover Art Archive metadata | 🟡 | Plugin | Plugin | ✅ (MusicBrainz built in; AniList plugin) |
 | MusicBrainz Picard tags (recording/release/release-group/artist MBIDs): MBID-based album/artist grouping, recording ids filled from the release, release types | 🟡 | ✅ | ✅ | ✅ |
 | Multi-artist credits ("A feat. B & C" with each artist linked, "Appears on", search by featured artist) | 🟡 | ✅ | 🟡 | ✅ |
@@ -94,6 +103,8 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Play to Kodi (JSON-RPC, mDNS discovery) | ❌ | 🟡 (as DLNA) | 🟡 (as DLNA) | ✅ |
 | AirPlay from the web player (Safari) and iOS app | ✅ | ✅ | ✅ | ✅ |
 | Seek-bar preview thumbnails (trickplay) | ✅ | ✅ | ✅ | ✅ |
+| Trickplay in the native apps (phone drag, Android TV / Apple TV D-pad and Siri Remote seek) with chapter names, offline with downloads, data-saver mode | ✅ | 🟡 | ✅ | ✅ |
+| Trickplay on Samsung/LG TV (web TV mode) while seeking with the remote | ✅ | 🟡 | 🟡 | ✅ |
 | Online subtitle search & auto-download (OpenSubtitles, hash matching) | ✅ | Plugin | ✅ | ✅ |
 | Converted downloads (device-friendly MP4 at 1080p/720p/480p) | Pass | ✅ | Premiere | ✅ |
 

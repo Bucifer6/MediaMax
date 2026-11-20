@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { Item, MediaSource, UserItemData } from '@mediamax/shared';
 import { api } from '../api/endpoints';
-import { withToken } from '../api/client';
+import { ApiRequestError, withToken } from '../api/client';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync, useServerEvent } from '../hooks';
@@ -392,7 +392,11 @@ export function ItemPage() {
   const confirm = useConfirm();
   const navigate = useNavigate();
   const play = usePlayItem();
-  const res = useAsync(() => api.items.get(itemId), [itemId]);
+  // A missing (or, for this profile, hidden) title is "not found", not a retryable error.
+  const res = useAsync(() => api.items.get(itemId).catch((e) => {
+    if (e instanceof ApiRequestError && (e.status === 404 || e.status === 403)) return null;
+    throw e;
+  }), [itemId]);
   const [modal, setModal] = useState<null | 'edit' | 'art' | 'playlist' | 'collection' | 'trailer' | 'photo' | 'subs' | 'smart'>(null);
   const item = res.data;
   const isSeries = item?.id === itemId && (item.type === 'show' || item.type === 'season' || item.type === 'audiobook' || item.type === 'podcast');
@@ -421,7 +425,15 @@ export function ItemPage() {
       </div>
     );
   }
-  if (res.error || !item) return <div className="page"><ErrorState message={res.error ?? 'Not found'} onRetry={res.reload} /></div>;
+  if (res.error) return <div className="page"><ErrorState message={res.error} onRetry={res.reload} /></div>;
+  if (!item) {
+    return (
+      <div className="page">
+        <EmptyState icon="alert" title="Title not found" message="It may have been removed from the library, or it isn't available on this profile."
+          action={<Link className="btn btn-primary" to="/">Go home</Link>} />
+      </div>
+    );
+  }
 
   const setUD = (ud: UserItemData) => res.setData((d) => d && { ...d, userData: ud });
   const togglePlayed = async () => {
@@ -565,7 +577,11 @@ export function ItemPage() {
             </nav>
           )}
           {item.logoUrl && item.type !== 'episode' ? (
-            <Img src={item.logoUrl} width={600} className="detail-logo" alt={item.title} fallback={<h1 className="detail-title">{item.title}</h1>} />
+            // The page keeps its heading when the title is shown as a logo image (screen readers, heading navigation).
+            <>
+              <h1 className="sr-only">{item.title}</h1>
+              <Img src={item.logoUrl} width={600} className="detail-logo" fallback={<div className="detail-title" aria-hidden="true">{item.title}</div>} />
+            </>
           ) : (
             <h1 className="detail-title">{item.title}</h1>
           )}
@@ -577,7 +593,7 @@ export function ItemPage() {
             {item.durationMs && item.type !== 'show' ? <span>{formatDuration(item.durationMs)}</span> : null}
             {item.type === 'show' && item.childCount > 0 && <span>{item.childCount} season{item.childCount > 1 ? 's' : ''}</span>}
             {item.type === 'album' && <ReleaseTypeBadges types={item.music?.releaseTypes} />}
-            {(item.type === 'album' || item.type === 'playlist' || item.type === 'collection') && item.childCount > 0 && <span>{item.childCount} items</span>}
+            {(item.type === 'album' || item.type === 'playlist' || item.type === 'collection') && item.childCount > 0 && <span>{item.childCount} {item.type === 'album' ? 'track' : 'item'}{item.childCount === 1 ? '' : 's'}</span>}
             {item.type === 'audiobook' && item.childCount > 1 && <span>{item.childCount} parts</span>}
             {item.type === 'audiobook' && item.series?.name && (
               <Link className="detail-series" to={seriesLink(item)}>

@@ -1888,7 +1888,7 @@ export interface Lyrics {
   itemId: string;
   synced: boolean;
   /** `lrclib`: fetched from LRCLIB (no local .lrc or embedded lyrics). */
-  source: 'lrc' | 'embedded' | 'txt' | 'lrclib';
+  source: 'lrc' | 'embedded' | 'txt' | 'lrclib' | 'user';
   lines: LyricLine[];
 }
 
@@ -2337,7 +2337,30 @@ export interface TrackAnalysis {
   outroStartMs: number | null;
   durationMs: number;
   analyzedAt: string;
+  /** First downbeat (bar 1, beat 1) of the beat grid; phrases count bars from here. */
+  downbeatMs?: number | null;
+  /** Song structure on 8/16/32-bar phrase boundaries (intro, verse, build, drop, breakdown, outro). */
+  phrases?: DjPhrase[] | null;
 }
+
+export type DjPhraseType = 'intro' | 'verse' | 'buildup' | 'drop' | 'breakdown' | 'outro';
+
+/** One phrase of a track's structure (from DJ analysis). */
+export interface DjPhrase {
+  startMs: number;
+  endMs: number;
+  type: DjPhraseType;
+  /** Length in bars (usually 8, 16 or 32). */
+  bars: number;
+  /** Relative energy of the section, 0–1 (1 = the loudest section of the track). */
+  energy: number;
+}
+
+/** How transitions should feel: auto picks per pair; smooth = long EQ/filter blends; energetic = bass swaps and echo-outs; minimal = short fades. */
+export type DjTransitionPreference = 'auto' | 'smooth' | 'energetic' | 'minimal';
+
+/** Mixer effect used during a transition (on top of the volume crossfade). */
+export type DjTransitionFx = 'none' | 'bassSwap' | 'filter' | 'echo';
 
 /** Shape of the mix over time. */
 export type DjEnergyCurve = 'steady' | 'build' | 'peak' | 'wave' | 'chill';
@@ -2370,6 +2393,10 @@ export interface DjMixRequest {
   artistGap?: number;
   /** Favourites and highly rated tracks get a boost. Default true. */
   preferFavorites?: boolean;
+  /** Transition feel (default auto). */
+  transitions?: DjTransitionPreference;
+  /** Largest tempo change used to beat-match two tracks, in percent (default 8, max 16). Half/double time counts as a match. */
+  maxStretchPct?: number;
 }
 
 export interface DjTransition {
@@ -2385,6 +2412,19 @@ export interface DjTransition {
   style: 'blend' | 'fade' | 'cut';
   keyMatch: 'perfect' | 'compatible' | 'energy' | 'clash' | 'unknown';
   bpmDelta: number | null;
+  /** Mixer effect on top of the crossfade: EQ bass swap, filter fade (HPF out / LPF in), echo-out. Absent = 'none'. */
+  fx?: DjTransitionFx;
+  /** Bass swap: when (ms after the transition starts) the lows change over; on a phrase/bar line of the incoming track. */
+  swapAtMs?: number;
+  /** The mix-out / mix-in points sit on phrase boundaries (outro of A → intro of B) rather than plain bars. */
+  phraseAligned?: boolean;
+  /** Phrase types at the mix points, for display ("outro → intro"). */
+  outPhrase?: DjPhraseType | null;
+  inPhrase?: DjPhraseType | null;
+  /** Beat length of the outgoing track in ms (echo-out delay and tempo glides are timed from it). */
+  beatMs?: number | null;
+  /** Why this transition was chosen (short, for the UI). */
+  reason?: string;
 }
 
 export interface DjMixTrack {
@@ -4077,4 +4117,126 @@ export interface MusicSettingsResponse {
   fingerprinter: { available: boolean; tool: 'fpcalc' | 'ffmpeg' | null; detail: string };
   /** Tracks without an MBID and without artist/title tags. */
   untagged: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Lyrics v2 (word timing, editor, offsets), karaoke stems, visualisers */
+/* ------------------------------------------------------------------ */
+
+/** One word of a line with enhanced (A2) or ID3 SYLT timing. */
+export interface LyricWord {
+  startMs: number;
+  text: string;
+}
+
+export interface LyricLine {
+  /** Word timing (enhanced LRC / SYLT), when the source has it. */
+  words?: LyricWord[];
+  /** End of the line (A2 trailing stamp); otherwise the next line's start. */
+  endMs?: number;
+}
+
+export interface Lyrics {
+  /** The lyrics as LRC text (editor / export). */
+  lrc?: string;
+  /** LRC metadata tags ([ti:], [ar:], ...). */
+  meta?: Record<string, string>;
+  /** The signed-in user's saved offset for this track in ms (+ = lyrics earlier). Add `UserPreferences.lyricsOffsetMs`. */
+  userOffsetMs?: number;
+  /** May save edits (administrators). */
+  canEdit?: boolean;
+  /** When these lyrics were last edited in MediaMax (source 'user'). */
+  editedAt?: string | null;
+}
+
+/** PUT /items/:id/lyrics (admin). Either LRC text (synced or plain) or lines. */
+export interface SaveLyricsRequest {
+  lrc?: string;
+  lines?: LyricLine[];
+  /** Also write `<file>.lrc` next to the audio file (needs `karaoke.writeLrcSidecars` and a writable library). */
+  writeSidecar?: boolean;
+}
+
+export interface SaveLyricsResponse extends Lyrics {
+  /** Path of the .lrc written next to the audio file, when one was written. */
+  wroteSidecar?: string | null;
+  sidecarError?: string | null;
+}
+
+export type NowPlayingView = 'cover' | 'lyrics' | 'visualizer' | 'karaoke';
+export type VisualizerStyle = 'ring' | 'bars' | 'wave' | 'particles' | 'ambient';
+
+export interface UserPreferences {
+  /** Full-screen music player: what it shows first. Default 'cover'. */
+  nowPlayingView?: NowPlayingView;
+  /** Default visualiser style. Default 'ring'. */
+  visualizerStyle?: VisualizerStyle;
+  /** Global lyrics offset in ms (-5000..5000, + = lyrics earlier); per-track offsets add to it. */
+  lyricsOffsetMs?: number;
+  /** Karaoke: vocal level 0-100 % (default 15). */
+  karaokeVocalLevel?: number;
+  /** TV mode: music screensaver after this many idle minutes while music plays (0 = off, default 3). */
+  musicScreensaverMinutes?: number;
+}
+
+export interface KaraokeSettings {
+  /** Allow AI stem separation (model download + stem cache). Default false. */
+  stemsEnabled: boolean;
+  /** Model URL (http(s); `.../x.tgz#path/in/archive.onnx` for an archive member); null = the default HT-Demucs export. */
+  stemsModelUrl: string | null;
+  /** Expected SHA-256 of a custom model (the default model is always pinned). */
+  stemsModelSha256: string | null;
+  /** Saving lyrics also writes an .lrc next to the audio file when the library folder is writable. Default false. */
+  writeLrcSidecars: boolean;
+}
+
+export interface ServerSettings {
+  karaoke?: KaraokeSettings;
+}
+
+export type StemName = 'vocals' | 'drums' | 'bass' | 'other';
+
+export interface StemsModelStatus {
+  id: string;
+  name: string;
+  url: string;
+  licence: string;
+  homepage: string | null;
+  custom: boolean;
+  bytes: number | null;
+  sha256: string | null;
+  /** Downloaded and checked against the pinned SHA-256. */
+  verified: boolean;
+  ready: boolean;
+  downloading: { received: number; total: number } | null;
+  error: string | null;
+}
+
+/** GET /stems/status */
+export interface StemsStatus {
+  enabled: boolean;
+  model: StemsModelStatus | null;
+  /** onnxruntime-web's browser files are on the server (served same-origin to the browser worker). */
+  ort: boolean;
+  ortVersion: string | null;
+  /** onnxruntime-web is downloaded on first use (not installed with MediaMax); progress of that download. */
+  ortDownload?: { state: 'idle' | 'downloading' | 'ready' | 'error'; received: number; total: number; error: string | null; version: string };
+  format: 'flac' | 'wav';
+  sampleRate: number;
+  stemNames: StemName[];
+  /** May download the model / prepare stems (administrators). */
+  canPrepare: boolean;
+}
+
+/** GET /items/:id/stems */
+export interface TrackStems {
+  itemId: string;
+  ready: boolean;
+  preparing: boolean;
+  model?: string;
+  backend?: string;
+  format?: 'flac' | 'wav';
+  frames?: number;
+  sampleRate?: number;
+  at?: number;
 }

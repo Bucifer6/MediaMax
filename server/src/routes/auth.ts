@@ -7,6 +7,7 @@ import * as invites from '../services/invites.js';
 import type { AcceptInviteRequest, CreateInviteRequest } from '@mediamax/shared';
 import { getSettings } from '../services/settings.js';
 import { logActivity } from '../services/activity.js';
+import { stopUserSessions } from '../services/playback.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { FastifyRequest } from 'fastify';
@@ -89,7 +90,7 @@ export default async function authRoutes(app: FastifyInstance) {
     return reply.redirect(await oidc.finishLogin(req.query.state, req.query.code, cookieState, remoteAddr(req) ?? undefined));
   });
 
-  app.post('/auth/link/request', async (req) => auth.requestLinkCode(deviceFromRequest(req, (req.body ?? {}) as any)));
+  app.post('/auth/link/request', async (req) => auth.requestLinkCode(deviceFromRequest(req, (req.body ?? {}) as any), remoteAddr(req)));
   app.get<{ Querystring: { pollToken: string } }>('/auth/link/poll', async (req, reply) => {
     noCache(reply);
     return auth.pollLinkCode(req.query.pollToken);
@@ -104,7 +105,10 @@ export default async function authRoutes(app: FastifyInstance) {
     noCache(reply);
     return requireUser(req).user;
   });
-  app.patch<{ Body: UpdateMeRequest }>('/auth/me', async (req) => auth.updateMe(requireUser(req).user.id, req.body ?? {}));
+  app.patch<{ Body: UpdateMeRequest }>('/auth/me', async (req) => {
+    const ctx = requireUser(req);
+    return auth.updateMe(ctx.user.id, req.body ?? {}, ctx.deviceRowId);
+  });
   app.post('/auth/me/avatar', async (req) => {
     const { user } = requireUser(req);
     return auth.setAvatar(user.id, await saveAvatar(req, user.id));
@@ -195,6 +199,8 @@ export default async function authRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>('/users/:id', async (req) => {
     const a = requireAdmin(req);
     auth.deleteUser(req.params.id, a.user.id);
+    // Its streams (and its profiles') would otherwise run on until reaped, failing every progress report.
+    stopUserSessions(req.params.id);
     logActivity('user.delete', `User ${req.params.id} deleted`, { userId: a.user.id, userName: a.user.displayName });
     return { ok: true };
   });

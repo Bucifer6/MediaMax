@@ -1,10 +1,11 @@
-import type { DjEnergyCurve, DjMix, DjMixRequest, DjMixTrack, DjTransition, TrackAnalysis, User } from '@mediamax/shared';
+import type { DjEnergyCurve, DjMix, DjMixRequest, DjMixTrack, DjPhraseType, DjTransition, DjTransitionFx, DjTransitionPreference, TrackAnalysis, User } from '@mediamax/shared';
 import { db, type Param } from '../../db.js';
 import { accessClause, getItem } from '../items.js';
 import { badRequest, notFound } from '../../util/errors.js';
 import { parseJson } from '../../util/misc.js';
 import { getAnalyses } from './analysis.js';
 import { keyCompatibility, similarity } from './dsp.js';
+import { phraseAt, phraseMixPoints } from './phrases.js';
 import { skipStats } from './ai.js';
 
 interface Cand {
@@ -43,45 +44,198 @@ export function tempoDistance(a: number | null, b: number | null): { d: number; 
   return best;
 }
 
-/** How to get from track A into track B. */
-export function planTransition(a: TrackAnalysis | null, aDur: number, b: TrackAnalysis | null): DjTransition {
+export interface PlanOptions {
+  /** Transition feel (default auto). */
+  preference?: DjTransitionPreference;
+  /** Largest tempo change (fraction, default 0.08) used to beat-match. */
+  maxStretch?: number;
+  /** Genre tags of the two tracks (lower case), for the effect chooser. */
+  genresA?: string[];
+  genresB?: string[];
+}
+
+const DANCE = /house|techno|trance|edm|electro|dance|drum ?(and|&|n) ?bass|dnb|dubstep|garage|breaks|disco|club|hardstyle|progressive/;
+const HIPHOP = /hip.?hop|rap|trap|r&b|rnb|grime/;
+const ACOUSTIC = /folk|acoustic|classical|jazz|singer|ambient|soundtrack|country|blues/;
+
+/**
+ * Pick the mixer effect for a transition (adapted from OpenDJ's automix styles — phrase/EQ bass swap, filter fade,
+ * echo-out, plain crossfade — OpenDJ lets the user pick one; here it is chosen per pair). Rules of thumb:
+ *  - beat-matched dance music: swap the basslines on a phrase line (two basslines together sound muddy);
+ *  - energy falling away, or harmonically awkward but tempo-close: filter the outgoing track out (HPF) so its
+ *    harmony and low end leave first;
+ *  - tempos too far apart to beat-match (or a key clash): echo the outgoing track out on its beat and drop the
+ *    new one in, which hides the change of groove;
+ *  - acoustic / no steady beat, or "minimal": a plain crossfade.
+ */
+export function chooseFx(input: {
+  style: DjTransition['style'];
+  preference: DjTransitionPreference;
+  energyDelta: number;
+  tempoGap: number | null;
+  maxStretch?: number;
+  keyMatch: DjTransition['keyMatch'];
+  outPhrase: DjPhraseType | null;
+  inPhrase: DjPhraseType | null;
+  hasBeat: boolean;
+  genres: string[];
+}): { fx: DjTransitionFx; reason: string } {
+  const { style, preference: pref, energyDelta: dE, tempoGap, keyMatch, outPhrase, inPhrase, hasBeat, genres } = input;
+  const maxStretch = input.maxStretch ?? 0.08;
+  const g = genres.join(' ');
+  const dance = DANCE.test(g);
+  const acoustic = !dance && ACOUSTIC.test(g);
+  const hiphop = HIPHOP.test(g);
+  if (pref === 'minimal') return { fx: 'none', reason: 'Minimal transitions' };
+  const farTempo = tempoGap != null && tempoGap > maxStretch;
+  if (style === 'cut' || (style === 'fade' && farTempo)) {
+    // Can't beat-match: echo the old groove out (needs a beat to time the echo).
+    if (hasBeat && pref !== 'smooth' && !acoustic) return { fx: 'echo', reason: farTempo ? 'Tempos too far apart to blend: echo out' : 'Keys clash: echo out' };
+    if (pref === 'smooth' && hasBeat) return { fx: 'filter', reason: 'Tempos differ: filter the old track out' };
+    return { fx: 'none', reason: 'No common groove: plain crossfade' };
+  }
+  if (style === 'fade') {
+    if (acoustic || !hasBeat) return { fx: 'none', reason: 'No steady beat: gentle crossfade' };
+    if (keyMatch === 'clash') return { fx: 'filter', reason: 'Keys clash: high-pass the old track out' };
+    return pref === 'energetic' ? { fx: 'echo', reason: 'Energetic: echo out' } : { fx: 'filter', reason: 'Filter fade' };
+  }
+  // Beat-matched blend.
+  if (acoustic) return { fx: dE < -0.15 ? 'filter' : 'none', reason: 'Acoustic: long crossfade' };
+  if (pref === 'energetic') {
+    if (outPhrase === 'drop' && dE < -0.1) return { fx: 'echo', reason: 'Out of a drop into calmer music: echo out' };
+    return { fx: 'bassSwap', reason: 'Energetic: bass swap on the phrase' };
+  }
+  if (dE < -0.15 || outPhrase === 'breakdown') return { fx: 'filter', reason: 'Energy falls: filter fade' };
+  if (pref === 'smooth' && !dance && !hiphop) return { fx: 'filter', reason: 'Smooth: filter fade' };
+  if (dE > 0.15) return { fx: 'bassSwap', reason: 'Energy rises: bass swap on the phrase' };
+  if (inPhrase === 'drop' || inPhrase === 'buildup') return { fx: 'bassSwap', reason: 'Into a drop: bass swap on the phrase' };
+  return { fx: 'bassSwap', reason: 'Bass swap on the phrase' };
+}
+
+const snapBars = (bars: number) => (bars >= 30 ? 32 : bars >= 14 ? 16 : bars >= 7 ? 8 : 4);
+
+/** How to get from track A into track B: mix points on phrases (falling back to bars), length, tempo and effect. */
+export function planTransition(a: TrackAnalysis | null, aDur: number, b: TrackAnalysis | null, opts: PlanOptions = {}): DjTransition {
+  const pref: DjTransitionPreference = opts.preference ?? 'auto';
+  const maxStretch = Math.max(0.01, Math.min(0.16, opts.maxStretch ?? 0.08));
   const keyMatch = keyCompatibility(a?.camelot ?? null, b?.camelot ?? null);
   const tempo = tempoDistance(a?.bpm ?? null, b?.bpm ?? null);
   if (!a || !b) {
     // Unanalysed: a plain fade over the last few seconds.
+    const len = pref === 'minimal' ? 4000 : 6000;
     const cueOut = a?.cueOutMs ?? aDur;
-    return { mixOutMs: Math.max(0, cueOut - 6000), mixInMs: b?.cueInMs ?? 0, crossfadeMs: 6000, tempoRatio: 1, style: 'fade', keyMatch, bpmDelta: null };
+    return { mixOutMs: Math.max(0, cueOut - len), mixInMs: b?.cueInMs ?? 0, crossfadeMs: len, tempoRatio: 1, style: 'fade', keyMatch, bpmDelta: null, fx: 'none', reason: 'Not analysed yet: plain fade' };
   }
   const bpmDelta = tempo ? Math.round(tempo.d * 1000) / 10 : null;
-  const beatable = !!tempo && tempo.d <= 0.08 && (a.bpmConfidence ?? 0) >= 0.35 && (b.bpmConfidence ?? 0) >= 0.35;
+  const hasBeat = !!a.bpm && (a.bpmConfidence ?? 0) >= 0.35;
+  const beatable = !!tempo && tempo.d <= maxStretch && hasBeat && (b.bpmConfidence ?? 0) >= 0.35;
   const clash = keyMatch === 'clash';
-  let style: DjTransition['style'] = beatable && !clash ? 'blend' : clash && (!tempo || tempo.d > 0.08) ? 'cut' : 'fade';
+  let style: DjTransition['style'] = beatable && !clash ? 'blend' : clash && (!tempo || tempo.d > maxStretch) ? 'cut' : 'fade';
   const beatMs = a.bpm ? 60000 / a.bpm : 500;
+  const barA = beatMs * 4;
+  const gridA = a.downbeatMs ?? a.beatOffsetMs;
+  const gridB = b.downbeatMs ?? b.beatOffsetMs;
+
+  // Mix-out: start of A's outro phrase (phrase analysis), else the loudness-based outro (snapped to a bar below).
+  let phraseAligned = false;
+  let mixOut: number;
+  const ph = a.phrases?.length && a.downbeatMs != null && a.bpm ? phraseMixPoints(a.phrases, a.downbeatMs, a.bpm, a.cueOutMs) : null;
+  if (ph) {
+    mixOut = ph.mixOutMs;
+    phraseAligned = true;
+  } else mixOut = a.outroStartMs ?? Infinity;
+
+  // Mix-in: B's first downbeat (bar 1 of its intro phrase), else the first beat after its cue-in.
+  let mixIn = b.cueInMs;
+  if (b.bpm && gridB != null) {
+    const beatB = 60000 / b.bpm;
+    const unit = b.downbeatMs != null ? beatB * 4 : beatB;
+    mixIn = gridB + Math.ceil((b.cueInMs - gridB - 30) / unit) * unit;
+    while (mixIn < 0) mixIn += unit;
+  }
+
+  // Length: whole phrases (4/8/16/32 bars) shaped by the outro/intro and the preference.
   let crossfade: number;
   if (style === 'blend') {
-    // 16 or 32 beats, shaped by how long the outro/intro are.
-    const outroLen = a.outroStartMs != null ? a.cueOutMs - a.outroStartMs : 0;
-    const introLen = b.introEndMs != null ? b.introEndMs - b.cueInMs : 0;
-    const room = Math.max(outroLen, introLen);
-    crossfade = (room >= beatMs * 30 ? 32 : 16) * beatMs;
-    crossfade = Math.min(Math.max(crossfade, 6000), 20000);
-  } else if (style === 'fade') crossfade = 5000;
+    const outroLen = Math.max(0, a.cueOutMs - (Number.isFinite(mixOut) ? mixOut : a.cueOutMs));
+    const introPhrase = b.phrases?.[0];
+    const introLen = introPhrase ? introPhrase.endMs - mixIn : b.introEndMs != null ? b.introEndMs - b.cueInMs : 0;
+    let bars = snapBars(Math.max(outroLen, introLen) / barA);
+    if (pref === 'minimal') bars = Math.min(bars, 8);
+    else if (pref === 'energetic') bars = Math.max(8, Math.min(bars, 16));
+    else if (pref === 'smooth') bars = Math.max(bars, 16);
+    else bars = Math.max(8, Math.min(bars, 32));
+    crossfade = Math.min(Math.max(bars * barA, 6000), pref === 'smooth' ? 48000 : 36000);
+  } else if (style === 'fade') crossfade = pref === 'minimal' ? 3500 : pref === 'smooth' ? 8000 : 5000;
   else crossfade = 1500;
-  // Mix out where the outro starts, but always early enough to finish the fade before the audio ends.
-  let mixOut = Math.min(a.outroStartMs ?? Infinity, a.cueOutMs - crossfade);
-  mixOut = Math.max(a.cueInMs + Math.min(30000, a.durationMs / 3), mixOut);
+
+  // Keep the whole transition inside A's audible part. On a phrase start, shorten the blend to the whole
+  // phrases that still fit (32 → 16 → 8 → 4 bars) rather than leaving the phrase line.
+  if (ph && style === 'blend' && mixOut + crossfade > a.cueOutMs) {
+    const fit = [32, 16, 8, 4].map((n) => n * barA).find((len) => len <= crossfade && mixOut + len <= a.cueOutMs + 0.25 * barA);
+    if (fit) crossfade = Math.min(fit, Math.max(1000, a.cueOutMs - mixOut));
+  }
+  if (!Number.isFinite(mixOut) || mixOut + crossfade > a.cueOutMs) mixOut = a.cueOutMs - crossfade;
+  const earliest = a.cueInMs + Math.min(30000, a.durationMs / 3);
+  if (mixOut < earliest) {
+    mixOut = earliest;
+    phraseAligned = false;
+  }
   if (mixOut + crossfade > a.cueOutMs) crossfade = Math.max(1000, a.cueOutMs - mixOut);
-  let mixIn = b.cueInMs;
-  if (style === 'blend' && a.bpm && b.bpm && a.beatOffsetMs != null && b.beatOffsetMs != null) {
-    // Snap the mix-out to a bar (4 beats) of A's grid and the mix-in to the first beat of B at/after its cue-in.
-    const barA = beatMs * 4;
-    mixOut = a.beatOffsetMs + Math.floor((mixOut - a.beatOffsetMs) / barA) * barA;
-    const beatB = 60000 / b.bpm;
-    mixIn = b.beatOffsetMs + Math.ceil((b.cueInMs - b.beatOffsetMs) / beatB) * beatB;
-    if (mixIn < 0) mixIn += beatB;
+
+  // Snap to A's grid: keep a phrase start as is; otherwise prefer an 8-bar line, then a bar.
+  if (a.bpm && gridA != null) {
+    const onBar = Math.abs(((mixOut - gridA) / barA) - Math.round((mixOut - gridA) / barA)) * barA < 5;
+    if (!onBar) {
+      phraseAligned = false;
+      const bar = gridA + Math.floor((mixOut - gridA) / barA + 1e-6) * barA;
+      const eight = gridA + Math.floor((mixOut - gridA) / (barA * 8) + 1e-6) * barA * 8;
+      mixOut = eight >= earliest && eight + crossfade <= a.cueOutMs + barA ? eight : bar;
+    }
   } else if (style === 'blend') style = 'fade';
-  const tempoRatio = style === 'blend' && tempo ? Math.round(tempo.ratio * 1000) / 1000 : 1;
-  return { mixOutMs: Math.round(Math.max(0, mixOut)), mixInMs: Math.round(Math.max(0, mixIn)), crossfadeMs: Math.round(crossfade), tempoRatio, style, keyMatch, bpmDelta };
+  if (style === 'blend' && (b.bpm == null || gridB == null)) style = 'fade';
+
+  const outPhrase = phraseAt(a.phrases, mixOut + 1)?.type ?? null;
+  const inPhrase = phraseAt(b.phrases, mixIn + 1)?.type ?? null;
+  const tempoRatio = style === 'blend' && tempo ? Math.round(tempo.ratio * 1e5) / 1e5 : 1; // 5 decimals: 0.1 % off drifts 60 ms a minute
+
+  const { fx, reason } = chooseFx({
+    style, preference: pref, energyDelta: (b.energy ?? 0.5) - (a.energy ?? 0.5), tempoGap: tempo?.d ?? null, maxStretch, keyMatch, outPhrase, inPhrase,
+    hasBeat, genres: [...(opts.genresA ?? []), ...(opts.genresB ?? [])],
+  });
+
+  // Echo-out: short (2 bars, timed on A's beat); the new track drops in on the bar.
+  if (fx === 'echo') crossfade = Math.max(2000, Math.min(6000, barA * 2));
+  const swapAtMs = fx === 'bassSwap' ? Math.round(bassSwapPoint(b, mixIn, crossfade, tempoRatio, barA)) : undefined;
+
+  return {
+    mixOutMs: Math.round(Math.max(0, mixOut)), mixInMs: Math.round(Math.max(0, mixIn)), crossfadeMs: Math.round(crossfade), tempoRatio, style, keyMatch, bpmDelta,
+    fx, ...(swapAtMs != null ? { swapAtMs } : {}), phraseAligned: phraseAligned && !!a.phrases?.length, outPhrase, inPhrase,
+    beatMs: a.bpm ? Math.round(beatMs * 100) / 100 : null, reason,
+  };
+}
+
+/**
+ * When to swap the basslines, in ms after the transition starts: a phrase boundary of the incoming track inside
+ * the middle of the window (closest to its centre), else an 8/4/2/1-bar line counted from the mix-in point
+ * (adapted from OpenDJ phraseSwapPoint).
+ */
+export function bassSwapPoint(b: TrackAnalysis, mixInMs: number, crossfadeMs: number, tempoRatio: number, barMs: number): number {
+  const r = tempoRatio || 1;
+  const lenIn = crossfadeMs * r; // incoming-track time covered by the transition
+  const lo = mixInMs + 0.2 * lenIn, hi = mixInMs + 0.85 * lenIn, mid = mixInMs + 0.5 * lenIn;
+  const pick = (c: number[]) => c.filter((x) => x >= lo && x <= hi).sort((x, y) => Math.abs(x - mid) - Math.abs(y - mid))[0];
+  const fromPhrases = pick((b.phrases ?? []).map((p) => p.startMs));
+  if (fromPhrases != null) return (fromPhrases - mixInMs) / r;
+  const barIn = b.bpm ? 240000 / b.bpm : barMs * r;
+  for (const bars of [8, 4, 2, 1]) {
+    const step = bars * barIn;
+    const c: number[] = [];
+    for (let k = Math.ceil((lo - mixInMs) / step - 1e-6); mixInMs + k * step <= hi + 1e-6; k++) c.push(mixInMs + k * step);
+    const p = pick(c);
+    if (p != null) return (p - mixInMs) / r;
+  }
+  return crossfadeMs / 2;
 }
 
 const lc = (s: string) => s.toLowerCase();
@@ -249,6 +403,12 @@ export function buildMix(user: User, req: DjMixRequest): DjMix {
     prev = best;
   }
 
+  const prefs: DjTransitionPreference[] = ['auto', 'smooth', 'energetic', 'minimal'];
+  const planOpts = (x: Cand, y: Cand): PlanOptions => ({
+    preference: prefs.includes(req.transitions as DjTransitionPreference) ? req.transitions : 'auto',
+    maxStretch: req.maxStretchPct != null && Number.isFinite(req.maxStretchPct) ? Math.max(1, Math.min(16, req.maxStretchPct)) / 100 : 0.08,
+    genresA: x.genres, genresB: y.genres,
+  });
   // Materialise items and transitions.
   const tracks: DjMixTrack[] = [];
   let before: Cand | null = history.length ? byId.get(history[history.length - 1]) ?? null : null;
@@ -260,7 +420,7 @@ export function buildMix(user: User, req: DjMixRequest): DjMix {
     } catch {
       continue;
     }
-    const transition = before ? planTransition(before.a, before.durationMs, c.a) : null;
+    const transition = before ? planTransition(before.a, before.durationMs, c.a, planOpts(before, c)) : null;
     tracks.push({ item, analysis: c.a, transition });
     durationMs += c.durationMs - (transition ? transition.crossfadeMs + transition.mixInMs : 0);
     before = c;

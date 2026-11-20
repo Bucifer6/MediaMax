@@ -68,8 +68,7 @@ import type {
   UpdateMeRequest,
   User,
   UserItemData,
-  UserStats,
-} from './types';
+  UserStats, TrackStems } from './types';
 
 export const API_PREFIX = '/api/v1';
 
@@ -488,6 +487,18 @@ export class MediaMaxClient {
   /** 404 (ApiError.status) when the track has no lyrics. */
   lyrics(itemId: string, signal?: AbortSignal) {
     return this.get<Lyrics>(`/items/${encodeURIComponent(itemId)}/lyrics`, undefined, signal);
+  }
+  /** Save this user's lyrics offset for a track (ms, + = lyrics earlier). */
+  setLyricsOffset(itemId: string, offsetMs: number) {
+    return this.request<{ offsetMs: number }>('PUT', `/items/${encodeURIComponent(itemId)}/lyrics/offset`, { body: { offsetMs } });
+  }
+  /** Karaoke stems prepared for a track (AI separation happens in the web app). */
+  trackStems(itemId: string) {
+    return this.get<TrackStems>(`/items/${encodeURIComponent(itemId)}/stems`);
+  }
+  /** Server-side karaoke mix (vocals 0–100 %), a seekable MP3 any device can play. */
+  karaokeMixPath(itemId: string, vocals: number) {
+    return `/api/v1/items/${encodeURIComponent(itemId)}/karaoke.mp3?vocals=${Math.round(vocals)}`;
   }
 
   /* ------------------------------ DJ mode ----------------------------- */

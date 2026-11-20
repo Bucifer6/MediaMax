@@ -9,6 +9,7 @@ import { Avatar, Spinner } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { BrandLogo } from '../components/BrandLogo';
 import { mediaUrl } from '../api/client';
+import { safeNext } from '../utils/safeNext';
 
 export function PinPad({ length = 4, onComplete, error, busy }: { length?: number; onComplete: (pin: string) => void; error?: string | null; busy?: boolean }) {
   const [pin, setPin] = useState('');
@@ -146,7 +147,7 @@ export function Login() {
   const navigate = useNavigate();
   const oidc = system?.oidc?.enabled ? system.oidc : null;
   const [params] = useSearchParams();
-  const next = params.get('next') || '/';
+  const next = safeNext(params.get('next'));
   const [profiles, setProfiles] = useState<PublicProfile[] | null>(null);
   const [mode, setMode] = useState<Mode>('password');
   const [selected, setSelected] = useState<PublicProfile | null>(null);

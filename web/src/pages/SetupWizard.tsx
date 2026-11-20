@@ -31,7 +31,7 @@ export function SetupWizard() {
 
   const createAdmin = async (e: FormEvent) => {
     e.preventDefault();
-    if (password.length < 6) return setError('Use at least 6 characters for the password.');
+    if (password.length < 8) return setError('Use at least 8 characters for the password.');
     if (password !== confirm) return setError('Passwords don’t match.');
     setBusy(true);
     setError(null);

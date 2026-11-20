@@ -479,6 +479,15 @@ const MIGRATIONS: string[] = [
     status TEXT NOT NULL DEFAULT 'pending', error TEXT, checked_at TEXT NOT NULL, applied_at TEXT
   );
   `,
+  /* Lyrics editor (admin edits win over every other source) and per-user per-track lyrics offsets */ `
+  CREATE TABLE IF NOT EXISTS lyrics_edits (
+    item_id TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE, lrc TEXT NOT NULL, edited_by TEXT, edited_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS lyrics_offsets (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    offset_ms INTEGER NOT NULL, PRIMARY KEY (user_id, item_id)
+  );
+  `,
 ];
 
 function migrate(db: Database) {

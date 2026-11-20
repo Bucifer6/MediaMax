@@ -236,6 +236,23 @@ function enforceKeepLatest(ruleId: string | null) {
   }
 }
 
+/**
+ * Server shutdown: end running recordings (ffmpeg would otherwise keep recording as an orphan, holding a provider
+ * connection, while the next start "resumes" the same recording). Their rows stay 'recording', so the next tick resumes
+ * them when the programme is still on and marks them completed otherwise.
+ */
+export function stopActiveRecordings() {
+  for (const p of active.values()) {
+    try {
+      p.removeAllListeners('exit');
+      p.kill('SIGINT');
+    } catch {
+      /* already gone */
+    }
+  }
+  active.clear();
+}
+
 /** Called every 15s by the scheduler. */
 export async function tick() {
   const now = new Date().toISOString();
@@ -363,7 +380,9 @@ export function applyRules() {
       }
       try {
         const owner = db.get('SELECT * FROM users WHERE id = ?', rule.created_by);
-        scheduleRecording({ id: rule.created_by, displayName: owner?.display_name ?? 'DVR', isAdmin: true } as User,
+        // A rule left behind by a deleted account must not keep recording with admin rights.
+        if (!owner) break;
+        scheduleRecording({ id: rule.created_by, displayName: owner.display_name ?? 'DVR', isAdmin: true } as User,
           { channelId: ch.id, programId: p.id, paddingBeforeMin: rule.padding_before, paddingAfterMin: rule.padding_after }, rule.id, rule.priority ?? 50);
       } catch (e) {
         log.debug(`Rule ${rule.title_match}: ${(e as Error).message}`);

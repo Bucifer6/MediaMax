@@ -8,6 +8,12 @@ import { listSessions } from '../services/playback.js';
 import { newId } from '../util/ids.js';
 import { extractToken } from '../http.js';
 
+/** How often an open socket pings and re-checks its session (tests shorten it). */
+let WS_RECHECK_MS = 30000;
+export const setWsRecheckMs = (ms: number) => {
+  WS_RECHECK_MS = ms;
+};
+
 export default async function wsRoutes(app: FastifyInstance) {
   app.get('/ws', { websocket: true }, (socket, req) => {
     const ctx = authenticate(extractToken(req));
@@ -32,13 +38,20 @@ export default async function wsRoutes(app: FastifyInstance) {
     events.announceTargets(ctx.user.id);
     client.send({ type: 'hello', serverId: serverId(), userId: ctx.user.id });
     if (ctx.user.isAdmin) client.send({ type: 'sessions.updated', sessions: listSessions() });
+    const token = extractToken(req);
     const ping = setInterval(() => {
+      // A signed-out, revoked, disabled or demoted session must not keep receiving events on an old socket.
+      const now = authenticate(token);
+      if (!now || now.user.id !== ctx.user.id || now.user.isAdmin !== ctx.user.isAdmin) {
+        socket.close(4001, 'unauthorized');
+        return;
+      }
       try {
         socket.ping();
       } catch {
         /* ignore */
       }
-    }, 30000);
+    }, WS_RECHECK_MS);
     socket.on('message', (raw: Buffer) => {
       let ev: ClientEvent;
       try {

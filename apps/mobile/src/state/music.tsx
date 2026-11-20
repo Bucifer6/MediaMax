@@ -87,6 +87,10 @@ interface MusicValue {
   /** Wall-clock time left on the sleep timer (null when off or unknown). */
   sleepRemainingMs: number | null;
   setSleep: (opt: SleepOption | null) => void;
+  /** Karaoke: server path the current track plays from instead of its own stream (the stems mix), or null. */
+  altSource: string | null;
+  /** Switch the current track to / from an alternative source at the same position. */
+  setAltSource: (path: string | null) => void;
 }
 
 const Ctx = createContext<MusicValue | null>(null);
@@ -183,6 +187,9 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   /** Load the next source paused (handing playback back from the TV). */
   const loadPaused = useRef(false);
   const [reloadTick, setReloadTick] = useState(0);
+  /** Karaoke mix for the current track (kept only while that track plays). */
+  const altRef = useRef<{ itemId: string; path: string } | null>(null);
+  const [altSource, setAltSourceState] = useState<string | null>(null);
 
   useEffect(() => {
     setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: 'doNotMix' }).catch(() => undefined);
@@ -279,7 +286,13 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       let uri: string;
-      if (local?.state === 'done' && local.fileUri) {
+      if (altRef.current && altRef.current.itemId !== current.id) {
+        altRef.current = null;
+        setAltSourceState(null);
+      }
+      if (altRef.current) {
+        uri = api.absolute(altRef.current.path);
+      } else if (local?.state === 'done' && local.fileUri) {
         uri = local.fileUri;
       } else {
         try {
@@ -656,8 +669,18 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       sleep,
       sleepRemainingMs,
       setSleep,
+      altSource,
+      setAltSource: (path: string | null) => {
+        const cur = currentRef.current;
+        if (!cur || (altRef.current?.path ?? null) === path) return;
+        altRef.current = path ? { itemId: cur.id, path } : null;
+        setAltSourceState(path);
+        startOverride.current = { id: cur.id, ms: Math.round(player.currentTime * 1000) };
+        loadedId.current = null;
+        setReloadTick((n) => n + 1);
+      },
     }),
-    [queue, index, current, status, durationMs, mode.longTrack, shuffle, repeat, error, spoken, rate, chapters, playQueue, player, report, advance, playing, castOn, castState, ours, cast.positionMs, cast.mediaStatus, cast.deviceName, seekAny, pauseAny, volume, sleep, sleepRemainingMs, setSleep],
+    [queue, index, current, status, durationMs, mode.longTrack, shuffle, repeat, error, spoken, rate, chapters, playQueue, player, report, advance, playing, castOn, castState, ours, cast.positionMs, cast.mediaStatus, cast.deviceName, seekAny, pauseAny, volume, sleep, sleepRemainingMs, setSleep, altSource],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

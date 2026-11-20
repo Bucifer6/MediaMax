@@ -10,6 +10,7 @@ import { isLocalAddress } from '../services/dlna.js';
 import { remoteInputArgs, subtitleVtt } from '../services/playback.js';
 import { hasFilter } from '../services/transcoder.js';
 import { getSettings } from '../services/settings.js';
+import { REMOTE_PROTOCOLS } from '../util/misc.js';
 import { logActivity } from '../services/activity.js';
 import { sendFileRange } from './playback.js';
 import {
@@ -83,6 +84,11 @@ export default async function rendererRoutes(app: FastifyInstance) {
   app.get<{ Params: { key: string; file: string } }>('/renderers/stream/:key/:file', async (req, reply) => deviceStream(req, reply));
 }
 
+/** ffmpeg input options for a renderer conversion: remote media (IPTV VOD, podcasts) only over network protocols. */
+export function deviceInputArgs(m: { path?: string | null; remote_url?: string | null; item_id?: string }): string[] {
+  return m.remote_url && !m.path ? [...remoteInputArgs(m as never), ...REMOTE_PROTOCOLS] : [];
+}
+
 function rendererPlay(req: FastifyRequest<{ Params: { id: string }; Body: RendererPlayRequest }>) {
   return playOnRenderer(requireUser(req), req.params.id, req.body ?? ({} as RendererPlayRequest));
 }
@@ -132,7 +138,7 @@ async function deviceStream(req: FastifyRequest<{ Params: { key: string; file: s
   const others = [...rendererTranscodes.entries()].filter(([k]) => k !== c.s).reduce((a, [, n]) => a + n, 0);
   if (others >= max) throw new HttpError(503, 'Transcoder busy', 'transcoder_busy');
   const args = transcodeArgs({
-    input, inputArgs: m.remote_url && !m.path ? remoteInputArgs(m) : [], f: c.f, startSec: c.t, audioIndex: c.a, copyVideo: fmt.copyVideo,
+    input, inputArgs: deviceInputArgs(m), f: c.f, startSec: c.t, audioIndex: c.a, copyVideo: fmt.copyVideo,
     bitrate: Math.min(getSettings().transcoding.defaultBitrate || 8000, 12000), sourceHeight: m.height, hdr: !!m.hdr,
     toneMap: m.hdr && getSettings().transcoding.toneMapHdr && hasFilter('zscale') ? SOFTWARE_TONEMAP : null,
   });

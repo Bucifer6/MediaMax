@@ -1,0 +1,134 @@
+/* Full-screen now playing, karaoke lyrics, visualisers, lyrics editor (web + TV mode). */
+
+/* Mini player art opens the full-screen player */
+.mini-art { position: relative; padding: 0; border: 0; cursor: pointer; }
+.mini-art-expand { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); color: #fff; opacity: 0; transition: opacity 0.15s; }
+.mini-art:hover .mini-art-expand, .mini-art:focus-visible .mini-art-expand { opacity: 1; }
+.mini-title a { color: inherit; }
+.mini-title a:hover { text-decoration: underline; }
+
+/* Karaoke word highlight: each word is a text-clipped gradient; --fill is written per frame. */
+.kw {
+  --fill: 0%;
+  background-image: linear-gradient(90deg, var(--k-sung, var(--c-primary)) var(--fill), var(--k-unsung, currentColor) var(--fill));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  white-space: pre-wrap;
+}
+.lyrics.synced .lyric-line.current { --k-unsung: var(--c-text); color: var(--c-text); }
+.lyrics.synced .lyric-line.current .kw { --k-sung: var(--c-primary); }
+
+/* Karaoke view: current + next lines, big type */
+.karaoke-view { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6em; text-align: center; padding: 4vh 6vw; width: 100%; min-height: 100%; font-size: clamp(1.4rem, 4.2vw, 3.4rem); font-weight: 800; line-height: 1.2; color: rgba(255, 255, 255, 0.55); text-shadow: 0 2px 18px rgba(0, 0, 0, 0.6); }
+.karaoke-view .karaoke-current { --k-unsung: rgba(255, 255, 255, 0.92); --k-sung: var(--c-primary); font-size: 1.25em; color: #fff; max-width: 22ch; animation: karaoke-in 0.28s ease-out; }
+.karaoke-view .karaoke-prev { font-size: 0.6em; opacity: 0.45; min-height: 1.2em; }
+.karaoke-view .karaoke-next { font-size: 0.85em; color: rgba(255, 255, 255, 0.72); min-height: 1.2em; max-width: 26ch; }
+.karaoke-view .karaoke-after { font-size: 0.65em; opacity: 0.45; min-height: 1.2em; }
+.karaoke-view .karaoke-dots { letter-spacing: 0.3em; color: var(--c-primary); opacity: 0.8; animation: karaoke-pulse 1.2s ease-in-out infinite; }
+.karaoke-view.unsynced { font-size: clamp(1.1rem, 2.6vw, 2rem); color: #fff; }
+.karaoke-plain { margin: 0; }
+@keyframes karaoke-in { from { transform: translateY(0.4em); opacity: 0.4; } to { transform: none; opacity: 1; } }
+@keyframes karaoke-pulse { 50% { opacity: 0.3; } }
+
+/* Now playing overlay */
+.now-playing { position: fixed; inset: 0; z-index: 900; display: grid; grid-template-rows: auto 1fr auto; color: #fff; background: #07080c; overflow: hidden; }
+.np-backdrop { position: absolute; inset: -40px; background-size: cover; background-position: center; filter: blur(48px) saturate(1.3) brightness(0.45); transform: scale(1.1); }
+.now-playing::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.1) 40%, rgba(0, 0, 0, 0.7)); pointer-events: none; }
+.np-stage { position: absolute; inset: 0; z-index: 0; outline: none; }
+.np-stage:focus-visible { box-shadow: inset 0 0 0 4px var(--c-primary); }
+.visualizer-canvas { width: 100%; height: 100%; display: block; }
+.view-karaoke .np-stage { opacity: 0.85; }
+.np-head, .np-main, .np-foot { position: relative; z-index: 2; }
+.np-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; transition: opacity 0.4s; }
+.np-head .btn-icon { color: #fff; }
+.np-views { display: flex; gap: 4px; margin: 0 auto; padding: 4px; border-radius: 999px; background: rgba(0, 0, 0, 0.35); backdrop-filter: blur(10px); }
+.np-view-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px; color: rgba(255, 255, 255, 0.8); font-weight: 600; font-size: 0.9rem; }
+.np-view-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
+.np-view-btn.active { background: var(--c-primary); color: var(--c-primary-text); }
+.np-head-right { min-width: 40px; display: flex; justify-content: flex-end; }
+.np-head-right .btn { color: #fff; }
+.np-main { min-height: 0; display: flex; align-items: center; justify-content: center; }
+.np-cover-view { display: grid; place-items: center; padding: 2vh 4vw; height: 100%; width: 100%; }
+.np-art { width: min(56vh, 80vw); aspect-ratio: 1; border-radius: 14px; overflow: hidden; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55); background: rgba(255, 255, 255, 0.06); display: grid; place-items: center; }
+.np-art img { width: 100%; height: 100%; object-fit: cover; }
+.np-art.small { width: min(34vh, 30vw); flex: none; }
+.np-lyrics-view { display: flex; align-items: center; gap: 5vw; width: min(1200px, 100%); height: 100%; padding: 0 4vw; }
+.np-lyrics { flex: 1; height: 100%; max-height: 100%; padding-top: 18vh !important; padding-bottom: 40vh !important; mask-image: linear-gradient(transparent, #000 15%, #000 80%, transparent); }
+.np-lyrics .lyric-line { font-size: clamp(1.25rem, 2.4vw, 2rem); color: rgba(255, 255, 255, 0.55); }
+.np-lyrics.synced .lyric-line.current { color: #fff; --k-unsung: #fff; }
+.np-karaoke { height: 100%; }
+.np-styles { position: absolute; bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; padding: 6px 10px; border-radius: 999px; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(8px); transition: opacity 0.4s; }
+.np-styles .btn-icon { color: #fff; }
+.np-foot { display: grid; grid-template-columns: 1fr; gap: 8px; padding: 10px 4vw 22px; transition: opacity 0.4s; }
+.np-meta { text-align: center; }
+.np-title { font-size: clamp(1.2rem, 2.4vw, 1.8rem); font-weight: 800; }
+.np-artist { color: rgba(255, 255, 255, 0.72); font-weight: 600; }
+.np-seek { width: 100%; }
+.np-times { display: flex; justify-content: space-between; font-size: 0.8rem; color: rgba(255, 255, 255, 0.65); margin-top: -4px; }
+.np-controls { display: flex; align-items: center; justify-content: center; gap: 14px; }
+.np-controls .btn-icon { color: #fff; }
+.np-play { width: 64px; height: 64px; }
+.np-extras { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 22px; }
+.np-offset { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; }
+.np-offset output { min-width: 3.4em; text-align: center; font-variant-numeric: tabular-nums; }
+.now-playing.idle .np-head, .now-playing.idle .np-foot, .now-playing.idle .np-styles { opacity: 0; pointer-events: none; }
+.now-playing.idle.view-karaoke .np-foot { opacity: 0.0; }
+.now-playing.screensaver { cursor: none; }
+.now-playing.screensaver .np-foot { opacity: 0.85; position: absolute; left: 0; right: 0; bottom: 4vh; pointer-events: none; }
+
+/* Karaoke controls */
+.karaoke-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.karaoke-controls.compact { flex-direction: column; align-items: stretch; min-width: 260px; }
+.karaoke-toggle { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; cursor: pointer; }
+.karaoke-vocals { display: inline-flex; align-items: center; gap: 8px; }
+.karaoke-vocals input[type='range'] { width: 140px; accent-color: var(--c-primary); }
+.karaoke-vocals output { min-width: 3em; font-variant-numeric: tabular-nums; }
+.karaoke-progress { display: inline-flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+.karaoke-error { color: var(--c-danger); max-width: 32ch; }
+.karaoke-pop-wrap { position: relative; }
+.karaoke-pop { position: absolute; bottom: calc(100% + 12px); right: -40px; z-index: 50; padding: 14px 16px; border-radius: var(--radius-md, 12px); background: var(--c-surface); border: 1px solid var(--c-line); box-shadow: var(--shadow-lg, 0 10px 40px rgba(0, 0, 0, 0.4)); }
+
+/* Lyrics editor */
+.lyrics-editor .modal-body { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.lyrics-editor .modal-foot { flex-wrap: wrap; gap: 10px; }
+.lyrics-editor .spacer, .lyr-ed-bar .spacer, .lyr-ed-controls .spacer { flex: 1; }
+.lyr-ed-bar, .lyr-ed-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lyr-ed-time { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 1.1rem; min-width: 6ch; }
+.lyr-ed-tap { min-width: 140px; }
+.lyr-ed-hint { margin: 0; font-size: 0.85rem; }
+.lyr-ed-text { width: 100%; min-height: 320px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem; line-height: 1.5; resize: vertical; }
+.lyr-ed-list { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow-y: auto; border: 1px solid var(--c-line); border-radius: var(--radius-sm, 8px); }
+.lyr-ed-list li { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--c-line); }
+.lyr-ed-list li.cursor { background: var(--c-primary-soft); box-shadow: inset 3px 0 0 var(--c-primary); }
+.lyr-ed-list li.playing .lyr-ed-line { color: var(--c-primary); }
+.lyr-ed-list li.untimed .lyr-ed-t { color: var(--c-text-muted); }
+.lyr-ed-t { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; padding: 2px 6px; border-radius: 6px; background: var(--c-surface-alt); }
+.lyr-ed-nudge { display: inline-flex; }
+.lyr-ed-nudge .btn-icon { width: 26px; height: 26px; font-weight: 800; }
+.lyr-ed-line { flex: 1; text-align: left; padding: 4px 2px; }
+
+@media (max-width: 640px) {
+  .np-views span { display: none; }
+  .np-view-btn { padding: 8px 12px; }
+  .np-lyrics-view { padding: 0 16px; }
+  .np-art { width: min(44vh, 84vw); }
+  .np-foot { padding: 8px 16px 18px; }
+  .karaoke-vocals input[type='range'] { width: 110px; }
+  .np-extras { gap: 8px 12px; }
+  .np-offset .muted { display: none; }
+  .karaoke-pop { right: -90px; }
+}
+
+/* 10-foot (TV mode) */
+html.tv .now-playing .np-view-btn { font-size: 1.25rem; padding: 12px 22px; }
+html.tv .now-playing .np-title { font-size: 2.6rem; }
+html.tv .now-playing .np-artist { font-size: 1.5rem; }
+html.tv .karaoke-view { font-size: 4.2vw; }
+html.tv .np-lyrics .lyric-line { font-size: 2.6rem; }
+html.tv .np-foot { padding: 1vh 6vw 5vh; }
+
+@media (prefers-reduced-motion: reduce) {
+  .karaoke-view .karaoke-current, .karaoke-view .karaoke-dots { animation: none; }
+  .np-backdrop { transform: none; }
+}
