@@ -78,6 +78,7 @@ export interface LadderInput {
 }
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+const rungs0 = (maxH: number) => RUNGS.filter((r) => r.height <= maxH);
 
 /**
  * Renditions for a source: rungs no taller than the source/device, bitrates capped by the source bitrate and the hard
@@ -87,20 +88,19 @@ export function buildLadder(i: LadderInput): HlsRendition[] {
   const srcH = i.sourceHeight ?? 1080;
   const maxH = Math.min(srcH, i.maxHeight ?? Infinity);
   const aspect = i.sourceWidth && i.sourceHeight ? i.sourceWidth / i.sourceHeight : 16 / 9;
+  if (!rungs0(maxH).length) return [{ id: 0, height: srcH, width: even(srcH * aspect), videoKbps: Math.max(MIN_KBPS, Math.min((i.sourceKbps ?? 912) - i.audioKbps, Number.isFinite(i.capKbps) ? i.capKbps - i.audioKbps : 720)), bandwidth: 0, label: `${srcH}p` }].map((r) => ({ ...r, bandwidth: Math.round((r.videoKbps + i.audioKbps) * 1000 * 1.08) }));
   // Video share of the source bitrate: no point encoding above what the source carries.
   const srcVideo = i.sourceKbps ? Math.max(MIN_KBPS, i.sourceKbps - i.audioKbps) : Infinity;
   const cap = Number.isFinite(i.capKbps) ? Math.max(MIN_KBPS, i.capKbps - i.audioKbps) : Infinity;
-  let rungs = RUNGS.filter((r) => r.height <= maxH);
-  // A source between rungs (e.g. 800p) gets its own top rung at native height.
-  const top = RUNGS.find((r) => r.height > maxH);
-  if (Number.isFinite(maxH) && (!rungs.length || rungs[0].height < maxH) && top) rungs = [{ height: maxH, kbps: Math.round(top.kbps * (maxH / top.height) ** 1.5) }, ...rungs];
+  // (A source between rungs, e.g. 800p, starts at the next rung down: the transcoder picks output height by bitrate.)
+  const rungs = RUNGS.filter((r) => r.height <= maxH);
   const out: { height: number; kbps: number }[] = [];
   for (const r of rungs) {
     const kbps = Math.round(Math.min(r.kbps, srcVideo, cap));
     // The bitrate has to be worth the height: targetHeight() is what the transcoder will actually output.
     const h = Math.min(r.height, targetHeight(kbps, srcH, r.height) ?? r.height);
     const prev = out[out.length - 1];
-    if (prev && (kbps >= prev.kbps * 0.8 || h >= prev.height)) continue;
+    if (prev && (kbps >= prev.kbps * 0.85 || h >= prev.height)) continue;
     out.push({ height: h, kbps });
   }
   if (!out.length) out.push({ height: Math.min(360, srcH), kbps: Math.max(MIN_KBPS, Math.min(cap, 720)) });

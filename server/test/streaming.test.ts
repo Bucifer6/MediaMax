@@ -21,6 +21,46 @@ const { encodeSup, sampleBitmap } = await import('../../web/test/pgsEncode.ts');
 
 const hasFfmpeg = spawnSync('ffmpeg', ['-version']).status === 0;
 
+/* ------------------- fixtures (created before any test is registered) ------------------- */
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-stream-'));
+after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+const admin = createUser({ username: 'streamadmin', password: 'pw-123456', isAdmin: true });
+const viewer = createUser({ username: 'streamviewer', password: 'pw-123456' });
+const atok = issueToken(admin.id, { deviceId: 'stream-a', deviceName: 'test', platform: 'web' }).token;
+const vtok = issueToken(viewer.id, { deviceId: 'stream-v', deviceName: 'test', platform: 'web' }).token;
+const app = await buildApp();
+after(() => app.close());
+const auth = (t: string) => ({ authorization: `Bearer ${t}` });
+
+/** A short MKV with SRT, ASS, PGS subtitle tracks and an attached font, registered as a movie. */
+async function fixtureMovie(): Promise<{ itemId: string; mediaId: string; file: string; subs: { index: number; codec: string }[] }> {
+  const sup = path.join(tmp, 's.sup');
+  fs.writeFileSync(sup, encodeSup([{ startMs: 500, endMs: 2500, bitmap: { x: 40, y: 150, width: 240, height: 40, pixels: sampleBitmap(240, 40) }, palette: [{ index: 1, r: 0, g: 0, b: 255, a: 255 }, { index: 2, r: 255, g: 255, b: 255, a: 255 }, { index: 3, r: 255, g: 0, b: 0, a: 255 }] }], { width: 320, height: 240 }));
+  fs.writeFileSync(path.join(tmp, 's.srt'), '1\n00:00:00,500 --> 00:00:02,000\nHello <i>SRT</i>\n\n2\n00:00:02,000 --> 00:00:03,000\nSecond\n');
+  fs.writeFileSync(path.join(tmp, 's.ass'), '[Script Info]\nScriptType: v4.00+\nPlayResX: 1280\nPlayResY: 720\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,DejaVu Sans,40,&H0000FFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.50,0:00:02.50,Default,,0,0,0,,{\\pos(640,360)}Styled ASS\n');
+  const font = ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'].find((f) => fs.existsSync(f));
+  const file = path.join(tmp, 'movie.mkv');
+  const args = ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=1280x720:d=3:r=25', '-f', 'lavfi', '-i', 'sine=d=3',
+    '-i', path.join(tmp, 's.srt'), '-i', path.join(tmp, 's.ass'), '-i', sup,
+    '-map', '0:v', '-map', '1:a', '-map', '2', '-map', '3', '-map', '4', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', '-c:s:0', 'srt', '-c:s:1', 'ass', '-c:s:2', 'copy'];
+  if (font) args.push('-attach', font, '-metadata:s:t', 'mimetype=application/x-truetype-font');
+  args.push(file);
+  const r = spawnSync('ffmpeg', args);
+  assert.equal(r.status, 0, r.stderr?.toString());
+  const p = await probe(file, file);
+  const now = new Date().toISOString();
+  const lib = 'lib-stream';
+  db.run('INSERT OR IGNORE INTO libraries (id, name, type, paths, created_at) VALUES (?, ?, ?, ?, ?)', lib, 'Streaming test', 'movies', JSON.stringify([tmp]), now);
+  db.run('INSERT INTO items (id, library_id, type, title, sort_title, added_at, updated_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 'item-stream', lib, 'movie', 'Stream test', 'stream test', now, now, p.durationMs);
+  db.run('INSERT INTO media (id, item_id, path, container, duration_ms, size, bitrate, width, height, video_codec, audio, subs, mtime) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    'media-stream', 'item-stream', file, p.container, p.durationMs, p.size, p.bitrate, p.width, p.height, p.videoCodec, JSON.stringify(p.audio), JSON.stringify(p.subs), fs.statSync(file).mtimeMs | 0);
+  return { itemId: 'item-stream', mediaId: 'media-stream', file, subs: p.subs };
+}
+
+const fx = hasFfmpeg ? await fixtureMovie() : null;
+
 /* --------------------------------- ladder --------------------------------- */
 
 const L = (i: Partial<Parameters<typeof abr.buildLadder>[0]>) => abr.buildLadder({ sourceWidth: 1920, sourceHeight: 1080, sourceKbps: 10000, capKbps: Infinity, maxHeight: null, audioKbps: 192, ...i });
@@ -42,10 +82,9 @@ test('ladder: capped by source bitrate, hard cap and device height; close rungs 
   // Remote cap 5 Mbps (incl. audio) → top rung 4.8 Mbps video at 720p; the 720p@4000 rung is too close to keep.
   assert.deepEqual(shape(L({ capKbps: 5000 })), ['720@4808', '480@1500', '360@720']);
   assert.deepEqual(shape(L({ maxHeight: 720 })), ['720@4000', '480@1500', '360@720']);
-  // A source between rungs gets its own top rung at native height.
-  const odd = L({ sourceWidth: 1920, sourceHeight: 800, sourceKbps: 9000 });
-  assert.equal(odd[0].height, 800);
-  assert.ok(odd[0].videoKbps > odd[1].videoKbps);
+  // A source between rungs starts at the next rung down; a source below the lowest rung keeps its own size.
+  assert.deepEqual(shape(L({ sourceWidth: 1920, sourceHeight: 800, sourceKbps: 9000 })), ['720@4000', '480@1500', '360@720']);
+  assert.deepEqual(shape(L({ sourceWidth: 320, sourceHeight: 240, sourceKbps: 600 })), ['240@408']);
   // Tiny cap: still one playable rendition.
   assert.deepEqual(shape(L({ capKbps: 200 })), ['360@300']);
 });
@@ -209,43 +248,6 @@ test('rendition requests: file names map to playlists, segments and init', async
 
 /* ------------------------- real adaptive transcode ------------------------- */
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-stream-'));
-after(() => fs.rmSync(tmp, { recursive: true, force: true }));
-
-const admin = createUser({ username: 'streamadmin', password: 'pw-123456', isAdmin: true });
-const viewer = createUser({ username: 'streamviewer', password: 'pw-123456' });
-const atok = issueToken(admin.id, { deviceId: 'stream-a', deviceName: 'test', platform: 'web' }).token;
-const vtok = issueToken(viewer.id, { deviceId: 'stream-v', deviceName: 'test', platform: 'web' }).token;
-const app = await buildApp();
-after(() => app.close());
-const auth = (t: string) => ({ authorization: `Bearer ${t}` });
-
-/** A short MKV with SRT, ASS, PGS subtitle tracks and an attached font, registered as a movie. */
-async function fixtureMovie(): Promise<{ itemId: string; mediaId: string; file: string; subs: { index: number; codec: string }[] }> {
-  const sup = path.join(tmp, 's.sup');
-  fs.writeFileSync(sup, encodeSup([{ startMs: 500, endMs: 2500, bitmap: { x: 40, y: 150, width: 240, height: 40, pixels: sampleBitmap(240, 40) }, palette: [{ index: 1, r: 0, g: 0, b: 255, a: 255 }, { index: 2, r: 255, g: 255, b: 255, a: 255 }, { index: 3, r: 255, g: 0, b: 0, a: 255 }] }], { width: 320, height: 240 }));
-  fs.writeFileSync(path.join(tmp, 's.srt'), '1\n00:00:00,500 --> 00:00:02,000\nHello <i>SRT</i>\n\n2\n00:00:02,000 --> 00:00:03,000\nSecond\n');
-  fs.writeFileSync(path.join(tmp, 's.ass'), '[Script Info]\nScriptType: v4.00+\nPlayResX: 320\nPlayResY: 240\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,DejaVu Sans,20,&H0000FFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.50,0:00:02.50,Default,,0,0,0,,{\\pos(160,120)}Styled ASS\n');
-  const font = ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'].find((f) => fs.existsSync(f));
-  const file = path.join(tmp, 'movie.mkv');
-  const args = ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=320x240:d=3:r=25', '-f', 'lavfi', '-i', 'sine=d=3',
-    '-i', path.join(tmp, 's.srt'), '-i', path.join(tmp, 's.ass'), '-i', sup,
-    '-map', '0:v', '-map', '1:a', '-map', '2', '-map', '3', '-map', '4', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', '-c:s:0', 'srt', '-c:s:1', 'ass', '-c:s:2', 'copy'];
-  if (font) args.push('-attach', font, '-metadata:s:t', 'mimetype=application/x-truetype-font');
-  args.push(file);
-  const r = spawnSync('ffmpeg', args);
-  assert.equal(r.status, 0, r.stderr?.toString());
-  const p = await probe(file, file);
-  const now = new Date().toISOString();
-  const lib = 'lib-stream';
-  db.run('INSERT OR IGNORE INTO libraries (id, name, type, paths, created_at) VALUES (?, ?, ?, ?, ?)', lib, 'Streaming test', 'movies', JSON.stringify([tmp]), now);
-  db.run('INSERT INTO items (id, library_id, type, title, sort_title, added_at, updated_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 'item-stream', lib, 'movie', 'Stream test', 'stream test', now, now, p.durationMs);
-  db.run('INSERT INTO media (id, item_id, path, container, duration_ms, size, bitrate, width, height, video_codec, audio, subs, mtime) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-    'media-stream', 'item-stream', file, p.container, p.durationMs, p.size, p.bitrate, p.width, p.height, p.videoCodec, JSON.stringify(p.audio), JSON.stringify(p.subs), fs.statSync(file).mtimeMs | 0);
-  return { itemId: 'item-stream', mediaId: 'media-stream', file, subs: p.subs };
-}
-
-const fx = hasFfmpeg ? await fixtureMovie() : null;
 
 test('subtitle track list: text tracks get rawUrl/format; PGS only for clients that render it', { skip: !fx && 'ffmpeg not installed' }, () => {
   const stored = fx!.subs as never[];
@@ -271,12 +273,13 @@ test('subtitle endpoints: original formats, legacy VTT, partial flag, auth, font
   let r = await get(`${srt.index}.srt`);
   assert.equal(r.statusCode, 200);
   assert.match(r.headers['content-type'] as string, /subrip/);
-  assert.match(r.body, /00:00:00,500 --> 00:00:02,000\r?\nHello <i>SRT<\/i>/);
+  // (ffmpeg normalises the file's start time — here +23 ms of AAC priming — exactly as the transcoder does.)
+  assert.match(r.body, /00:00:00,5\d\d --> 00:00:02,0\d\d\r?\nHello <i>SRT<\/i>/);
   assert.equal(r.headers['x-subtitle-complete'], '1');
   r = await get(String(srt.index)); // legacy: no extension = WebVTT
   assert.match(r.body, /^WEBVTT/);
   r = await get(`${ass.index}.ass?partial=1`);
-  assert.match(r.body, /\{\\pos\(160,120\)\}Styled ASS/);
+  assert.match(r.body, /\{\\pos\(640,360\)\}Styled ASS/);
   assert.equal(r.headers['x-subtitle-complete'], '1');
   r = await get(`${ass.index}.ssa`);
   assert.equal(r.statusCode, 200);
@@ -342,7 +345,7 @@ test('adaptive transcode end to end: master playlist, lazily encoded renditions,
     const f = path.join(tmp, `p${Math.random()}.ts`);
     fs.writeFileSync(f, buf);
     const o = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'packet=pts_time', '-read_intervals', '%+#1', '-of', 'csv=p=0', f]).stdout.toString().trim();
-    return Number(o.split('\n')[0]);
+    return parseFloat(o.split('\n')[0]);
   };
   assert.ok(Math.abs(pts(seg0.rawPayload) - pts(segHi.rawPayload)) < 0.05, `${pts(seg0.rawPayload)} vs ${pts(segHi.rawPayload)}`);
   const sizes = [seg0.rawPayload.length, segHi.rawPayload.length];

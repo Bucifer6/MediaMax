@@ -68,11 +68,56 @@ export function legacyPermissions(r: Row): RequestPermissions {
   return { ...DEFAULT_PERMISSIONS, movie: base, show: base, music: base, book: base, movie4k: uhd, show4k: uhd };
 }
 
-/** Stored (or legacy-derived) permissions of a user row. */
+/**
+ * Stored (or legacy-derived) permissions of a user row. Profiles without their own permissions inherit their owner's
+ * (an admin owner's profiles may request anything); profiles never manage other people's requests.
+ */
 export function storedPermissions(r: Row): RequestPermissions {
   const stored = parseJson<Partial<RequestPermissions> | null>(r.request_perms, null);
+  if (r.parent_user_id) {
+    if (stored) return { ...normalizePermissions(stored), manageRequests: false };
+    const owner = db.get('SELECT * FROM users WHERE id = ?', r.parent_user_id);
+    const base = !owner ? { ...DEFAULT_PERMISSIONS } : owner.is_admin ? { ...ADMIN_PERMISSIONS } : storedPermissions(owner);
+    return { ...base, manageRequests: false };
+  }
   return stored ? normalizePermissions(stored) : legacyPermissions(r);
 }
+
+/** Request permissions for new kids profiles: nothing. */
+export const NO_REQUEST_PERMISSIONS: RequestPermissions = {
+  movie: 'none', show: 'none', movie4k: 'none', show4k: 'none', music: 'none', book: 'none', manageRequests: false, reportIssues: false, watchlistAutoRequest: false,
+};
+
+const LEVEL_RANK: Record<RequestPermissionLevel, number> = { none: 0, request: 1, auto: 2 };
+/** Cap permissions at a ceiling (an owner can give a profile at most what the owner has). */
+export function capPermissions(p: RequestPermissions, ceiling: RequestPermissions): RequestPermissions {
+  const out = { ...p };
+  for (const k of PERMISSION_KINDS) if (LEVEL_RANK[out[k]] > LEVEL_RANK[ceiling[k]]) out[k] = ceiling[k];
+  for (const k of ['reportIssues', 'watchlistAutoRequest'] as const) out[k] = out[k] && ceiling[k];
+  out.manageRequests = false;
+  return out;
+}
+
+/** What an owner row may do (admins: everything). */
+export const ownerPermissions = (owner: Row): RequestPermissions => (owner.is_admin ? { ...ADMIN_PERMISSIONS } : storedPermissions(owner));
+
+/**
+ * Whose quota a request counts against. Profiles share their owner's quota (and the owner's exemption) unless an
+ * admin gave the profile its own; the shared quota counts the requests of the owner and every sharing profile.
+ */
+function quotaScope(user: User): { quotaUser: User; ids: string[] } {
+  const row = db.get('SELECT id, parent_user_id, request_quotas FROM users WHERE id = ?', user.id);
+  if (!row) return { quotaUser: user, ids: [user.id] };
+  if (row.parent_user_id && row.request_quotas) return { quotaUser: user, ids: [user.id] };
+  const accountId = row.parent_user_id || row.id;
+  const owner = row.parent_user_id ? db.get('SELECT * FROM users WHERE id = ?', accountId) : null;
+  const quotaUser: User = owner
+    ? ({ ...user, id: owner.id, isAdmin: !!owner.is_admin, requestPermissions: storedPermissions(owner), requestQuotas: storedQuotas(owner) } as User)
+    : user;
+  const ids = db.all<{ id: string }>('SELECT id FROM users WHERE id = ? OR (parent_user_id = ? AND request_quotas IS NULL)', accountId, accountId).map((r) => r.id);
+  return { quotaUser, ids };
+}
+
 export const storedQuotas = (r: Row): RequestQuotas | null => {
   const q = parseJson<RequestQuotas | null>(r.request_quotas, null);
   return q ? normalizeQuotas(q, defaultQuotas()) : null;
@@ -125,15 +170,16 @@ export function quotaExempt(user: User, kind: RequestQuotaKind): boolean {
  * Declined requests don't count (Overseerr semantics).
  */
 export function quotaStatus(user: User, kind: RequestQuotaKind, now = Date.now()): RequestQuotaStatus {
-  const q = quotasFor(user)[kind];
-  const exempt = quotaExempt(user, kind);
+  const scope = quotaScope(user);
+  const q = quotasFor(scope.quotaUser)[kind];
+  const exempt = quotaExempt(scope.quotaUser, kind);
   if (!q.limit) return { limit: 0, days: q.days, used: 0, remaining: null, resetsAt: null, exempt };
   const since = new Date(now - q.days * 86400000).toISOString();
   const types = typesOf(kind);
   const rows = db.all<{ requested_at: string; units: number }>(
     `SELECT requested_at, COALESCE(json_extract(options, '$.units'), 1) units FROM media_requests
-     WHERE requested_by = ? AND requested_at > ? AND status != 'declined' AND media_type IN (${types.map(() => '?').join(',')}) ORDER BY requested_at`,
-    user.id, since, ...types);
+     WHERE requested_by IN (${scope.ids.map(() => '?').join(',')}) AND requested_at > ? AND status != 'declined' AND media_type IN (${types.map(() => '?').join(',')}) ORDER BY requested_at`,
+    ...scope.ids, since, ...types);
   const used = rows.reduce((n, r) => n + Math.max(1, Number(r.units) || 1), 0);
   const resetsAt = rows.length ? new Date(Date.parse(rows[0].requested_at) + q.days * 86400000).toISOString() : null;
   return { limit: q.limit, days: q.days, used, remaining: exempt ? null : Math.max(0, q.limit - used), resetsAt, exempt };

@@ -73,7 +73,7 @@ export function touchSession(id: string) {
 
 function toActive(s: PlaySession): ActiveSession {
   return {
-    id: s.id, userId: s.ctx.user.id, userName: s.ctx.user.displayName, deviceName: s.ctx.device.deviceName, platform: s.ctx.device.platform,
+    id: s.id, userId: s.ctx.user.id, userName: s.ctx.user.parentUserId && s.ctx.user.ownerName ? `${s.ctx.user.ownerName} › ${s.ctx.user.displayName}` : s.ctx.user.displayName, deviceName: s.ctx.device.deviceName, platform: s.ctx.device.platform,
     itemId: s.itemId, channelId: s.channelId, title: s.title, subtitle: s.subtitle, posterUrl: s.posterUrl, method: s.method, state: s.state,
     positionMs: s.positionMs, durationMs: s.durationMs, startedAt: new Date(s.startedAt).toISOString(), remoteAddress: s.remoteAddr,
     transcodeInfo: s.job?.info && s.method !== 'direct' ? s.job.info : null,
@@ -103,9 +103,12 @@ export function assertCanStartSession(ctx: AuthContext, remoteAddr: string | nul
   }
   if (u.maxStreams && !u.isAdmin) {
     // Other devices count; on this device only multiview tiles that will keep running alongside the new one count.
-    const active = [...sessions.values()].filter((x) => !x.preview && x.ctx.user.id === u.id && (x.ctx.deviceRowId !== ctx.deviceRowId || (multiview && x.multiview))).length;
+    // The limit is per account: the owner and all of its profiles share it.
+    const account = u.parentUserId || u.id;
+    const active = [...sessions.values()].filter((x) => !x.preview && (x.ctx.user.parentUserId || x.ctx.user.id) === account && (x.ctx.deviceRowId !== ctx.deviceRowId || (multiview && x.multiview))).length;
     if (active >= u.maxStreams) {
-      throw new HttpError(429, `You already have ${active} stream${active === 1 ? '' : 's'} playing (limit ${u.maxStreams}). Stop one and try again.`, 'stream_limit');
+      const who = u.parentUserId ? 'Your account already has' : 'You already have';
+      throw new HttpError(429, `${who} ${active} stream${active === 1 ? '' : 's'} playing (limit ${u.maxStreams}). Stop one and try again.`, 'stream_limit');
     }
   }
 }
@@ -455,8 +458,11 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     maxBitrate: Number.isFinite(caps.capKbps) ? caps.capKbps : null,
     sourceBitrate: media.bitrate,
     isLocal,
+    // Transcoding only because of measured bandwidth (without it: direct play or remux)? Then the client may go back up.
     bandwidthLimited: decision.method === 'transcode' && caps.bandwidthLimited && !!media.bitrate && media.bitrate > caps.decisionKbps
-      && decision.reasons.every((r) => r.startsWith('bitrate')),
+      && decide(media, Number.isFinite(caps.capKbps) ? { ...(req.deviceProfile ?? {}), maxBitrate: caps.capKbps } : req.deviceProfile, {
+        audio, burnSubs: !!effectiveBurn, forceTranscode: !!req.forceTranscode, allowTranscode: ctx.user.allowTranscode, userMaxBitrate: prefs.maxBitrate, isAudioOnly,
+      }).method !== 'transcode',
     markers,
     nextItemId: next?.id ?? null,
     title: item.title,

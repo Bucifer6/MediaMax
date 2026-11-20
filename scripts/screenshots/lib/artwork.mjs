@@ -757,15 +757,15 @@ export function channelFrameHtml(ch, extras = {}) {
     case 'news':
       content = `<div class="art" style="background:radial-gradient(circle at 70% 30%,#1d3b6e,#081226)">
         <svg class="scene" viewBox="0 0 1280 720">${skyline(rng('news'), 1280, 720, 560, '#0c1a33', 220, '#ffd27a')}<rect x="0" y="560" width="1280" height="160" fill="#0a1426"/></svg>
-        <div style="position:absolute;left:0;right:0;bottom:70px;height:84px;background:#fff;display:flex;align-items:center"><div style="background:${a};color:#fff;height:100%;display:flex;align-items:center;padding:0 26px;font:700 30px/1 ${FONT.sans};letter-spacing:.06em">BREAKING</div><div style="padding:0 26px;font:700 34px/1 ${FONT.sans};color:#111">Harbour bridge reopens after record-breaking restoration</div></div>
-        <div style="position:absolute;left:0;right:0;bottom:30px;height:40px;background:#111;color:#ddd;font:500 22px/40px ${FONT.sans};padding-left:24px;white-space:nowrap">MARKETS ▲ 1.2% · WEATHER Sunny spells, 21° · SPORT Coastal League kicks off tonight</div></div>`;
+        <div style="position:absolute;left:0;right:0;bottom:160px;height:84px;background:#fff;display:flex;align-items:center"><div style="background:${a};color:#fff;height:100%;display:flex;align-items:center;padding:0 26px;font:700 30px/1 ${FONT.sans};letter-spacing:.06em">BREAKING</div><div style="padding:0 26px;font:700 34px/1 ${FONT.sans};color:#111">Harbour bridge reopens after record-breaking restoration</div></div>
+        <div style="position:absolute;left:0;right:0;bottom:120px;height:40px;background:#111;color:#ddd;font:500 22px/40px ${FONT.sans};padding-left:24px;white-space:nowrap">MARKETS ▲ 1.2% · WEATHER Sunny spells, 21° · SPORT Coastal League kicks off tonight</div></div>`;
       break;
     case 'sports':
       content = `<div class="art" style="background:#1b5e20"><svg class="scene" viewBox="0 0 1280 720">${Array.from({ length: 10 }, (_, i) => `<rect x="${i * 128}" y="0" width="64" height="720" fill="#2e7d32"/>`).join('')}<g stroke="#fff" stroke-width="5" fill="none" opacity=".85"><rect x="60" y="60" width="1160" height="600"/><line x1="640" y1="60" x2="640" y2="660"/><circle cx="640" cy="360" r="90"/><rect x="60" y="220" width="150" height="280"/><rect x="1070" y="220" width="150" height="280"/></g><circle cx="700" cy="400" r="12" fill="#fff"/></svg>
         <div style="position:absolute;left:40px;top:34px;display:flex;font:700 30px/1 ${FONT.sans};color:#fff;box-shadow:0 6px 20px #0006"><span style="background:#03045e;padding:12px 18px">HAR</span><span style="background:#fff;color:#111;padding:12px 18px">2 – 1</span><span style="background:#9d0208;padding:12px 18px">NOR</span><span style="background:#111;padding:12px 18px">67:12</span></div></div>`;
       break;
     case 'nature':
-      content = photoHtml('wild-' + ch.name, 'dawn', false);
+      content = photoHtml('wild-' + ch.name, 'dusk', true);
       break;
     case 'kids':
       content = `<div class="art">${scene('family', ['#1b2a6b', '#4f7cff', '#ffcf3f', '#ffffff'], 1280, 720, 'kids-ch', { focusX: 0.5 })}</div>`;

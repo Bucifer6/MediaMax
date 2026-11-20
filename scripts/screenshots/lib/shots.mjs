@@ -158,15 +158,10 @@ export const SHOTS = {
     await ctx.close();
   },
 
+  // Taller than the other shots (1440×1200) so the logo, credits and the cast row all fit.
   async 'item-movie'(s) {
-    const { ctx, page } = await s.context();
-    await s.goto(page, `/item/${s.state.M['neon-meridian']}`, 1200);
-    // Scroll just enough to bring the cast row into view under the logo and actions.
-    await page.evaluate(() => {
-      const cast = [...document.querySelectorAll('.section-title')].find((h) => /cast/i.test(h.textContent));
-      if (cast) window.scrollTo(0, Math.max(0, cast.getBoundingClientRect().top + scrollY - 560));
-    });
-    await s.settle(page, 800);
+    const { ctx, page } = await s.context({ height: 1200 });
+    await s.goto(page, `/item/${s.state.M['neon-meridian']}`, 1500);
     await s.capture(page, 'item-movie.jpg');
     await ctx.close();
   },
@@ -284,7 +279,7 @@ export const SHOTS = {
     await s.goto(page, '/admin', 2000);
     await page.evaluate(() => {
       const h = [...document.querySelectorAll('h2, h3')].find((x) => /now playing/i.test(x.textContent));
-      if (h) window.scrollTo(0, Math.max(0, h.getBoundingClientRect().top + scrollY - 470));
+      if (h) window.scrollTo(0, Math.max(0, h.getBoundingClientRect().top + scrollY - 575));
     });
     await s.settle(page, 600);
     await s.capture(page, 'admin-dashboard.jpg');
@@ -346,13 +341,18 @@ export const SHOTS = {
   },
 
   async themes(s) {
-    for (const id of THEMES) {
+    // A different featured title per theme so the gallery shows the themes against varied artwork.
+    const heroes = ['neon-meridian', 'paper-kites', 'last-lighthouse-kepler', 'velvet-ledger', 'crimson-freight', 'quiet-frontier', 'rainwater-alley', 'signal-drift', 'cartographers-gambit', 'lemon-trees', 'pip-moon-machine', 'hollow-choir'];
+    const original = s.state.heroId;
+    for (const [i, id] of THEMES.entries()) {
+      s.state.heroId = s.state.M[heroes[i]] ?? s.state.S[heroes[i]] ?? original;
       await s.state.admin.patch('/auth/me', { preferences: { themeId: id } });
       const { ctx, page } = await s.context({ width: 1280, height: 800, dsf: 1 });
       await s.goto(page, '/', 1500);
       await s.capture(page, `themes/${id}.jpg`, 1280);
       await ctx.close();
     }
+    s.state.heroId = original;
     await s.state.admin.patch('/auth/me', { preferences: { themeId: null } });
   },
 

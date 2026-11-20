@@ -446,6 +446,14 @@ const MIGRATIONS: string[] = [
   /* Hardware tuner / set-top-box live sources (TVHeadend, SAT>IP, Enigma2): per-source driver options */ `
   ALTER TABLE live_sources ADD COLUMN options TEXT NOT NULL DEFAULT '{}';
   `,
+  /* Account profiles (Plex Home style): a profile is a users row owned by an account (parent_user_id); existing users are owners */ `
+  ALTER TABLE users ADD COLUMN parent_user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
+  ALTER TABLE users ADD COLUMN profile_kids INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN profile_color TEXT;
+  ALTER TABLE users ADD COLUMN avatar_builtin TEXT;
+  ALTER TABLE users ADD COLUMN hide_unrated INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX users_parent ON users(parent_user_id);
+  `,
 ];
 
 function migrate(db: Database) {

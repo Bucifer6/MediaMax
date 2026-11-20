@@ -37,7 +37,7 @@ export function accessClause(user: User, alias = 'i'): { sql: string; params: Pa
     const eff = `COALESCE(${alias}.content_rating, CASE WHEN ${alias}.parent_id IS NOT NULL THEN (SELECT x.content_rating FROM items x WHERE x.id = COALESCE(${alias}.grandparent_id, ${alias}.parent_id)) END)`;
     // Unrated and unrecognised ratings are allowed by default, or hidden when blockUnratedForRestricted is on
     // (containers like collections/playlists and music stay visible).
-    const unratedOk = getSettings().blockUnratedForRestricted ? `${alias}.type IN ('collection','playlist','season','artist','album','track','photo')` : '1';
+    const unratedOk = getSettings().blockUnratedForRestricted || user.hideUnrated ? `${alias}.type IN ('collection','playlist','season','artist','album','track','photo')` : '1';
     parts.push(`mm_rating_ok(${eff}, ?, ${unratedOk}) = 1`);
     params.push(max);
   }

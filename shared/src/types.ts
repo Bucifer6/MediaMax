@@ -3584,3 +3584,136 @@ export interface StreamingSettings {
 export interface ServerSettings {
   streaming?: StreamingSettings;
 }
+
+/* ------------------------------------------------------------------ */
+/* Account profiles ("Who's watching?", Plex Home / Netflix style)     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A profile is a lightweight managed user that belongs to an account owner. It is a row in `users` with
+ * `parentUserId` set, so watch progress, history, My List, ratings, recommendations and preferences are all
+ * per profile. It has no password or email and is entered through the owner's account ("Who's watching?").
+ */
+export interface User {
+  /** Set on profiles: the account owner's user id. null/absent for normal accounts (account owners). */
+  parentUserId?: string | null;
+  /** Profiles: the owner's display name (for "Owner › Profile" labels). */
+  ownerName?: string | null;
+  /** Kids profile (rating limit, no requests by default, kids theme). */
+  isKids?: boolean;
+  /** Profile colour (hex), used behind built-in avatars and in the picker. */
+  profileColor?: string | null;
+  /** Built-in avatar id (see GET /avatars); null when an uploaded picture or initials are used. */
+  avatarId?: string | null;
+  /** Hide titles without a content rating from this user (in addition to the server-wide setting). */
+  hideUnrated?: boolean;
+  /** Account owners: number of extra profiles on the account (0 = no "Who's watching?" picker). */
+  profileCount?: number;
+}
+
+/** One entry of the "Who's watching?" picker (GET /auth/account/profiles). */
+export interface AccountProfile {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+  avatarId: string | null;
+  color: string | null;
+  isKids: boolean;
+  /** The account owner's own profile (always first). */
+  isOwner: boolean;
+  hasPin: boolean;
+  pinLength: number | null;
+  /** The profile this session is signed in as. */
+  current: boolean;
+}
+
+/** A profile as seen by its manager (the owner, or an admin): stored settings, not effective ones. */
+export interface Profile {
+  id: string;
+  /** Account owner (user id). */
+  ownerId: string;
+  ownerName: string;
+  displayName: string;
+  avatarUrl: string | null;
+  avatarId: string | null;
+  color: string | null;
+  isKids: boolean;
+  hasPin: boolean;
+  pinLength: number | null;
+  /** Preferred audio/subtitle language (ISO 639-1), stored in the profile's preferences. */
+  language: string | null;
+  /** Own rating limit; the effective limit is the stricter of this and the owner's. */
+  maxContentRating: string | null;
+  hideUnrated: boolean;
+  /** Own library subset (null = all of the owner's libraries). */
+  libraryIds: string[] | null;
+  allowLiveTv: boolean;
+  allowDownloads: boolean;
+  /** null = inherits the owner's request permissions. */
+  requestPermissions: RequestPermissions | null;
+  /** null = shares the owner's request quota (admin-only override). */
+  requestQuotas: RequestQuotas | null;
+  /** Kids profiles: use the kids-friendly theme. */
+  themeId: string | null;
+  createdAt: string;
+  lastSeenAt: string | null;
+}
+
+export interface CreateProfileRequest {
+  displayName: string;
+  avatarId?: string | null;
+  color?: string | null;
+  isKids?: boolean;
+  /** 4–8 digits; empty string or null = no PIN. */
+  pin?: string | null;
+  language?: string | null;
+  maxContentRating?: string | null;
+  hideUnrated?: boolean;
+  libraryIds?: string[] | null;
+  allowLiveTv?: boolean;
+  allowDownloads?: boolean;
+  /** null = inherit the owner's. Owners can only lower levels; admins can set anything. */
+  requestPermissions?: Partial<RequestPermissions> | null;
+  /** Admin only. null = share the owner's quota. */
+  requestQuotas?: RequestQuotas | null;
+  /** Use the kids theme (sets the profile's theme preference). */
+  kidsTheme?: boolean;
+}
+export type UpdateProfileRequest = Partial<CreateProfileRequest>;
+
+/** POST /auth/profiles/:id/switch */
+export interface SwitchProfileRequest {
+  /** The target profile's PIN (the owner's PIN when switching back to the owner). */
+  pin?: string;
+}
+
+/** Built-in avatar (GET /avatars). `url` serves a self-contained SVG. */
+export interface BuiltinAvatar {
+  id: string;
+  name: string;
+  url: string;
+  color: string;
+}
+
+/** Server-wide profile settings (Admin → Users → Profiles). */
+export interface ProfileSettings {
+  /** Allow account owners to create profiles. Default true. */
+  enabled: boolean;
+  /** Profiles per account, including the owner's own. Default 6. */
+  maxPerAccount: number;
+  /** Kids profiles may watch Live TV (there is no per-channel rating filter). Default false. */
+  kidsLiveTv: boolean;
+  /** Default rating limit for new kids profiles. Default "PG". */
+  kidsDefaultRating: string;
+  /** New kids profiles hide unrated titles. Default true. */
+  kidsHideUnrated: boolean;
+}
+export interface ServerSettings {
+  profiles?: ProfileSettings;
+}
+export interface UpdateMeRequest {
+  /** Built-in avatar id (replaces an uploaded picture); null clears it. */
+  avatarId?: string | null;
+  /** Profile colour (#rrggbb); null clears it. */
+  profileColor?: string | null;
+}

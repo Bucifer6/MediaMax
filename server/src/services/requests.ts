@@ -45,8 +45,8 @@ export function assertManager(user: User) {
 
 export const userRef = (id: string | null) => {
   if (!id) return null;
-  const u = db.get('SELECT id, display_name FROM users WHERE id = ?', id);
-  return u ? { id: u.id, displayName: u.display_name } : { id, displayName: 'Deleted user' };
+  const u = db.get('SELECT u.id, u.display_name, o.display_name oname FROM users u LEFT JOIN users o ON o.id = u.parent_user_id WHERE u.id = ?', id);
+  return u ? { id: u.id, displayName: u.oname ? `${u.oname} › ${u.display_name}` : u.display_name } : { id, displayName: 'Deleted user' };
 };
 
 interface RequestOpts {

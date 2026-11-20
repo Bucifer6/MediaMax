@@ -2,7 +2,7 @@ import { securityEvent } from './util/securityLog.js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { DeviceInfo } from '@mediamax/shared';
 import { authenticate, authenticateApiKey, type AuthContext } from './services/auth.js';
-import { forbidden, unauthorized } from './util/errors.js';
+import { forbidden, HttpError, unauthorized } from './util/errors.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -30,6 +30,16 @@ export async function authHook(req: FastifyRequest) {
 export function requireUser(req: FastifyRequest): AuthContext {
   if (!req.auth) throw unauthorized();
   return req.auth;
+}
+
+/**
+ * Account-level actions (security, API keys, device linking, managing profiles): the account owner's own session
+ * only, never a profile session, even when the owner is an administrator.
+ */
+export function requireAccountOwner(req: FastifyRequest): AuthContext {
+  const a = requireUser(req);
+  if (a.user.parentUserId) throw new HttpError(403, 'Switch to the account owner\'s profile to do this', 'profile_session');
+  return a;
 }
 
 export function requireAdmin(req: FastifyRequest): AuthContext {

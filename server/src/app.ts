@@ -86,6 +86,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register((await import('./routes/transcoding.js')).default);
     await api.register((await import('./routes/smarthome.js')).default);
     await api.register((await import('./routes/renderers.js')).default);
+    await api.register((await import('./routes/profiles.js')).default);
   }, { prefix: '/api/v1' });
 
   await app.register(dlnaRoutes);
