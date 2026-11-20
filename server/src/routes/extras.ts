@@ -9,6 +9,7 @@ import { deleteDownloadedSubtitle, downloadSubtitle, searchSubtitles } from '../
 import { disconnect, setScrobble, startDeviceAuth, traktStatus } from '../services/trakt.js';
 import { notFound, badRequest } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
+import { getLyrics } from '../services/lyrics.js';
 
 export default async function extraRoutes(app: FastifyInstance) {
   /* ------------------------------ trickplay ------------------------- */
@@ -31,6 +32,15 @@ export default async function extraRoutes(app: FastifyInstance) {
     if (!p) throw notFound();
     reply.type('image/jpeg').header('Cache-Control', 'private, max-age=604800');
     return fs.createReadStream(p);
+  });
+
+  /* -------------------------------- lyrics -------------------------- */
+  app.get<{ Params: { id: string } }>('/items/:id/lyrics', async (req) => {
+    const { user } = requireUser(req);
+    assertCanSee(user, req.params.id);
+    const l = await getLyrics(req.params.id);
+    if (!l) throw notFound('No lyrics for this track');
+    return l;
   });
 
   /* -------------------------------- stats --------------------------- */

@@ -1105,3 +1105,20 @@ export interface TraktDeviceCode {
   expiresAt: string;
   intervalSeconds: number;
 }
+
+/* ------------------------------------------------------------------ */
+/* Lyrics                                                              */
+/* ------------------------------------------------------------------ */
+
+export interface LyricLine {
+  /** Start time in ms; null for unsynced lyrics. */
+  startMs: number | null;
+  text: string;
+}
+
+export interface Lyrics {
+  itemId: string;
+  synced: boolean;
+  source: 'lrc' | 'embedded' | 'txt';
+  lines: LyricLine[];
+}
