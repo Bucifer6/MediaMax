@@ -75,3 +75,39 @@ test('dlna soap helpers', async () => {
   assert.ok(isLocalAddress('::ffff:10.0.0.5'));
   assert.ok(!isLocalAddress('8.8.8.8'));
 });
+
+test('podcast feed, duration and OPML parsing', async () => {
+  const { parseFeed, parseDuration, parseOpml } = await import('../src/services/podcasts.ts');
+  assert.equal(parseDuration('01:02:03'), 3723000);
+  assert.equal(parseDuration('62:03'), 3723000);
+  assert.equal(parseDuration('3723'), 3723000);
+  assert.equal(parseDuration('n/a'), null);
+  const f = parseFeed(`<?xml version="1.0"?><rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>Cast</title>
+    <itunes:image href="http://img/c.jpg"/><itunes:category text="News"/><description>&lt;b&gt;Hi&lt;/b&gt; there</description>
+    <item><title>E1</title><guid isPermaLink="false">g1</guid><pubDate>Mon, 16 Nov 2026 10:00:00 GMT</pubDate><itunes:episode>3</itunes:episode>
+      <enclosure url="http://x/e1.mp3" type="audio/mpeg" length="123"/></item>
+    <item><title>No audio</title></item></channel></rss>`);
+  assert.equal(f.title, 'Cast');
+  assert.equal(f.image, 'http://img/c.jpg');
+  assert.equal(f.description, 'Hi there');
+  assert.deepEqual(f.categories, ['News']);
+  assert.equal(f.episodes.length, 1);
+  assert.equal(f.episodes[0].guid, 'g1');
+  assert.equal(f.episodes[0].episode, 3);
+  assert.equal(f.episodes[0].pubDate, '2026-11-16T10:00:00.000Z');
+  assert.deepEqual(parseOpml('<opml><body><outline text="x"><outline xmlUrl="http://a/feed"/><outline xmlUrl="http://b/feed"/></outline></body></opml>'), ['http://a/feed', 'http://b/feed']);
+});
+
+test('remote URL safety', async () => {
+  const { isSafeRemoteUrl } = await import('../src/util/misc.ts');
+  for (const ok of ['http://a/b.ts', 'https://a/b.m3u8', 'rtmp://x/live', 'udp://239.0.0.1:1234', 'rtsp://cam/1']) assert.ok(isSafeRemoteUrl(ok), ok);
+  for (const bad of ['file:///etc/passwd', 'concat:/etc/passwd|x', 'pipe:0', '/etc/passwd', 'subfile,,start,0,end,1,,:/etc/passwd', 'data:text/plain,hi', '']) assert.ok(!isSafeRemoteUrl(bad), bad);
+});
+
+test('last.fm request signing', async () => {
+  const { sign } = await import('../src/services/lastfm.ts');
+  // md5("api_keyxxxmethodauth.getSessiontokenyyy" + "secret")
+  const crypto = await import('node:crypto');
+  const expected = crypto.createHash('md5').update('api_keyxxxmethodauth.getSessiontokenyyysecret').digest('hex');
+  assert.equal(sign({ method: 'auth.getSession', token: 'yyy', api_key: 'xxx', format: 'json' }, 'secret'), expected);
+});

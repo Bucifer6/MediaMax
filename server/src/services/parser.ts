@@ -4,7 +4,7 @@
  */
 
 export const VIDEO_EXT = new Set(['mkv', 'mp4', 'm4v', 'avi', 'mov', 'wmv', 'ts', 'm2ts', 'mts', 'webm', 'flv', 'mpg', 'mpeg', 'vob', 'ogv', '3gp', 'divx', 'iso']);
-export const AUDIO_EXT = new Set(['mp3', 'flac', 'm4a', 'aac', 'ogg', 'opus', 'wav', 'wma', 'alac', 'aiff', 'ape', 'wv', 'dsf']);
+export const AUDIO_EXT = new Set(['mp3', 'flac', 'm4a', 'm4b', 'aac', 'ogg', 'opus', 'wav', 'wma', 'alac', 'aiff', 'ape', 'wv', 'dsf']);
 export const IMAGE_EXT = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'avif', 'bmp', 'tiff']);
 export const SUB_EXT = new Set(['srt', 'vtt', 'ass', 'ssa', 'sub', 'smi']);
 

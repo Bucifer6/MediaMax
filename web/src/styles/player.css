@@ -47,6 +47,9 @@
 .seek-thumb { position: absolute; top: 50%; width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; border-radius: 50%; background: var(--c-primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c-primary) 30%, transparent); transform: scale(0); transition: transform 0.15s var(--ease); }
 .seekbar:hover .seek-thumb, .seekbar:focus-visible .seek-thumb { transform: scale(1); }
 .seek-tooltip { position: absolute; bottom: 26px; transform: translateX(-50%); padding: 4px 8px; border-radius: 6px; background: rgb(0 0 0 / 0.85); color: #fff; font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none; white-space: nowrap; }
+.seek-preview { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 3px; border-radius: 8px; background: rgb(0 0 0 / 0.85); border: 1px solid rgb(255 255 255 / 0.18); box-shadow: 0 8px 24px rgb(0 0 0 / 0.5); }
+.seek-preview span { padding: 0 6px 2px; }
+.trickplay-thumb { border-radius: 5px; background-color: #111; background-repeat: no-repeat; }
 .miniplayer .seekbar { height: 12px; }
 .miniplayer .seek-track { height: 3px; background: color-mix(in srgb, var(--c-text) 15%, transparent); }
 .miniplayer .seekbar:hover .seek-track { height: 5px; }
@@ -127,3 +130,19 @@
   .zap-num { font-size: 1.6rem; min-width: 40px; }
   .zap-logo { width: 56px; }
 }
+
+/* Modals opened inside the player (portal into the fullscreen element) */
+.player .modal-backdrop { cursor: auto; user-select: text; }
+.player .modal { color: var(--c-text); }
+.player .modal .btn-icon { color: var(--c-text); }
+.player .modal .btn-icon:hover:not(:disabled) { background: var(--c-hover); }
+.player .modal .muted { color: var(--c-text-muted); }
+.player .modal .badge { background: var(--c-hover-strong); color: var(--c-text); }
+.player .modal .badge-accent { background: color-mix(in srgb, var(--c-accent) 18%, transparent); color: var(--c-accent); }
+.player .modal .badge-warning { background: color-mix(in srgb, var(--c-warning) 18%, transparent); color: var(--c-warning); }
+.player .modal .badge-muted { background: var(--c-hover); color: var(--c-text-muted); }
+.option.option-action { width: 100%; margin-top: 4px; border-top: 1px solid rgb(255 255 255 / 0.1); border-radius: 0 0 var(--radius-sm) var(--radius-sm); color: var(--c-primary); font-weight: 600; }
+.chapters-popover { width: 320px; }
+.chapters-popover .chapter-list { padding: 0; }
+.chapters-popover .chapter-item:hover { background: rgb(255 255 255 / 0.1); }
+.chapters-popover .chapter-num, .chapters-popover .chapter-item small { color: rgb(255 255 255 / 0.55); }

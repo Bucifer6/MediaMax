@@ -1,10 +1,45 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { TrickplayInfo } from '@mediamax/shared';
 import { formatClock } from '../utils/format';
 import { Icon } from '../components/Icon';
 
-/** Scrubbable seek bar with buffered range, markers and hover time. */
+/** One trickplay thumbnail cut out of its sprite sheet, scaled to `displayWidth`. */
+export function TrickplayThumb({ info, ms, displayWidth }: { info: TrickplayInfo; ms: number; displayWidth: number }) {
+  const perSheet = Math.max(1, info.columns * info.rows);
+  const n = Math.max(0, Math.min(info.count - 1, Math.floor(ms / Math.max(1, info.intervalMs))));
+  const sheet = info.sheets[Math.floor(n / perSheet)];
+  if (!sheet) return null;
+  const k = displayWidth / info.width;
+  const w = info.width * k;
+  const h = info.height * k;
+  const col = n % info.columns;
+  const row = Math.floor(n / info.columns) % info.rows;
+  return (
+    <div
+      className="trickplay-thumb"
+      style={{
+        width: w,
+        height: h,
+        backgroundImage: `url("${sheet}")`,
+        backgroundSize: `${info.columns * w}px ${info.rows * h}px`,
+        backgroundPosition: `${-col * w}px ${-row * h}px`,
+      }}
+    />
+  );
+}
+
+/** Warm the browser cache with all sprite sheets so scrubbing feels instant. */
+function preloadSheets(info: TrickplayInfo) {
+  for (const url of info.sheets) {
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = url;
+  }
+}
+
+/** Scrubbable seek bar with buffered range, markers, hover time and optional trickplay previews. */
 export function SeekBar({
-  positionMs, durationMs, bufferedMs = 0, onSeek, markers, className, disabled,
+  positionMs, durationMs, bufferedMs = 0, onSeek, markers, className, disabled, trickplay,
 }: {
   positionMs: number;
   durationMs: number;
@@ -13,11 +48,20 @@ export function SeekBar({
   markers?: { startMs: number; endMs: number; type: string }[];
   className?: string;
   disabled?: boolean;
+  trickplay?: TrickplayInfo | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<number | null>(null);
   const [hover, setHover] = useState<{ x: number; ms: number } | null>(null);
+  const preloaded = useRef<TrickplayInfo | null>(null);
   const dur = durationMs > 0 ? durationMs : 1;
+  const active = hover !== null || drag !== null;
+  useEffect(() => {
+    if (active && trickplay && preloaded.current !== trickplay) {
+      preloaded.current = trickplay;
+      preloadSheets(trickplay);
+    }
+  }, [active, trickplay]);
 
   const msAt = (clientX: number) => {
     const r = ref.current!.getBoundingClientRect();
@@ -79,11 +123,23 @@ export function SeekBar({
         <div className="seek-fill" style={{ width: `${Math.min(100, (shown / dur) * 100)}%` }} />
         <div className="seek-thumb" style={{ left: `${Math.min(100, (shown / dur) * 100)}%` }} />
       </div>
-      {(hover || drag !== null) && durationMs > 0 && (
-        <div className="seek-tooltip" style={{ left: drag !== null ? `${(drag / dur) * 100}%` : hover!.x }}>
-          {formatClock(drag ?? hover!.ms)}
-        </div>
-      )}
+      {active && durationMs > 0 && (() => {
+        const ms = drag ?? hover!.ms;
+        const width = ref.current?.getBoundingClientRect().width ?? 0;
+        const x = (ms / dur) * width;
+        if (!trickplay) {
+          return <div className="seek-tooltip" style={{ left: x }}>{formatClock(ms)}</div>;
+        }
+        // Keep the preview inside the bar so it never runs off-screen.
+        const thumbW = Math.min(trickplay.width, width < 500 ? 150 : 240);
+        const left = Math.max(thumbW / 2, Math.min(width - thumbW / 2, x));
+        return (
+          <div className="seek-tooltip seek-preview" style={{ left }}>
+            <TrickplayThumb info={trickplay} ms={ms} displayWidth={thumbW} />
+            <span>{formatClock(ms)}</span>
+          </div>
+        );
+      })()}
     </div>
   );
 }

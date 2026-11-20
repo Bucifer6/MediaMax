@@ -1,33 +1,46 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { FlatList, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
 import { Img } from '@/components/Img';
+import { OptionSheet } from '@/components/OptionSheet';
 import { EmptyState } from '@/components/States';
 import { T } from '@/components/Text';
+import { LyricsView, useLyrics } from '@/player/Lyrics';
 import { Scrubber } from '@/player/Scrubber';
-import { useMusic } from '@/state/music';
+import { SPEEDS, useMusic } from '@/state/music';
 import { useTheme } from '@/theme';
 import { useTVRemote } from '@/tv';
 import { formatClock } from '@/utils/format';
+
+type Panel = 'queue' | 'lyrics' | 'chapters';
+const speedLabel = (r: number) => `${r}x`;
 
 export default function NowPlaying() {
   const t = useTheme();
   const m = useMusic();
   const insets = useSafeAreaInsets();
+  const [panel, setPanel] = useState<Panel>('queue');
+  const [speedSheet, setSpeedSheet] = useState(false);
+  const cur = m.current;
+  const isTrack = cur?.type === 'track';
+  const lyrics = useLyrics(isTrack && panel === 'lyrics' ? cur.id : null);
+  // A panel that no longer applies (track ↔ episode) falls back to the queue.
+  useEffect(() => {
+    if ((panel === 'lyrics' && !isTrack) || (panel === 'chapters' && !m.chapters.length)) setPanel('queue');
+  }, [panel, isTrack, m.chapters.length]);
   useTVRemote((e) => {
     if (e.eventType === 'playPause') m.toggle();
-    if (e.eventType === 'fastForward') m.next();
-    if (e.eventType === 'rewind') m.previous();
+    if (e.eventType === 'fastForward') (m.spoken ? m.skip(30000) : m.next());
+    if (e.eventType === 'rewind') (m.spoken ? m.skip(-15000) : m.previous());
   });
-  const cur = m.current;
   if (!cur) return <View style={{ flex: 1, backgroundColor: t.colors.background }}><EmptyState icon="musical-notes-outline" title="Nothing playing" action="Close" onAction={() => router.back()} /></View>;
 
   const art = cur.posterUrl ?? cur.thumbUrl;
-  const size = t.isTV ? t.s(420) : Math.min(t.width - 64, t.height * 0.42, 420);
+  const size = t.isTV ? t.s(panel === 'queue' ? 420 : 300) : Math.min(t.width - 64, t.height * (panel === 'queue' || t.wide ? 0.42 : 0.22), 420);
   const transportIcon = t.isTV ? t.s(34) : 32;
 
   const controls = (
@@ -40,9 +53,16 @@ export default function NowPlaying() {
       </View>
       <Scrubber positionMs={m.positionMs} durationMs={m.durationMs} onSeek={m.seek} />
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Focusable onPress={() => m.setShuffle(!m.shuffle)} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel="Shuffle">
-          <Icon name="shuffle" size={t.isTV ? t.s(26) : 24} color={m.shuffle ? t.colors.primary : 'rgba(255,255,255,0.7)'} />
-        </Focusable>
+        {m.spoken ? (
+          <Focusable onPress={() => m.skip(-15000)} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel="Back 15 seconds">
+            <Icon name="play-back-outline" size={t.isTV ? t.s(28) : 26} color="#fff" />
+            <T variant="caption" color="rgba(255,255,255,0.8)" center style={{ letterSpacing: 0 }}>15</T>
+          </Focusable>
+        ) : (
+          <Focusable onPress={() => m.setShuffle(!m.shuffle)} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel="Shuffle">
+            <Icon name="shuffle" size={t.isTV ? t.s(26) : 24} color={m.shuffle ? t.colors.primary : 'rgba(255,255,255,0.7)'} />
+          </Focusable>
+        )}
         <Focusable onPress={m.previous} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel="Previous">
           <Icon name="play-skip-back" size={transportIcon} color="#fff" />
         </Focusable>
@@ -52,16 +72,48 @@ export default function NowPlaying() {
         <Focusable onPress={m.next} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel="Next">
           <Icon name="play-skip-forward" size={transportIcon} color="#fff" />
         </Focusable>
-        <Focusable onPress={m.cycleRepeat} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel="Repeat">
-          <View>
-            <Icon name="repeat" size={t.isTV ? t.s(26) : 24} color={m.repeat !== 'off' ? t.colors.primary : 'rgba(255,255,255,0.7)'} />
-            {m.repeat === 'one' ? <T variant="caption" color={t.colors.primary} style={{ position: 'absolute', right: -6, top: -6 }}>1</T> : null}
-          </View>
-        </Focusable>
+        {m.spoken ? (
+          <Focusable onPress={() => m.skip(30000)} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel="Forward 30 seconds">
+            <Icon name="play-forward-outline" size={t.isTV ? t.s(28) : 26} color="#fff" />
+            <T variant="caption" color="rgba(255,255,255,0.8)" center style={{ letterSpacing: 0 }}>30</T>
+          </Focusable>
+        ) : (
+          <Focusable onPress={m.cycleRepeat} ringRadius={999} style={{ padding: 10, borderRadius: 999 }} accessibilityLabel="Repeat">
+            <View>
+              <Icon name="repeat" size={t.isTV ? t.s(26) : 24} color={m.repeat !== 'off' ? t.colors.primary : 'rgba(255,255,255,0.7)'} />
+              {m.repeat === 'one' ? <T variant="caption" color={t.colors.primary} style={{ position: 'absolute', right: -6, top: -6 }}>1</T> : null}
+            </View>
+          </Focusable>
+        )}
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.space.sm, justifyContent: 'center' }}>
+        <PanelChip icon="list" label="Up next" active={panel === 'queue'} onPress={() => setPanel('queue')} />
+        {isTrack ? <PanelChip icon="chatbubble-ellipses-outline" label="Lyrics" active={panel === 'lyrics'} onPress={() => setPanel(panel === 'lyrics' ? 'queue' : 'lyrics')} /> : null}
+        {m.chapters.length ? <PanelChip icon="bookmarks-outline" label="Chapters" active={panel === 'chapters'} onPress={() => setPanel(panel === 'chapters' ? 'queue' : 'chapters')} /> : null}
+        {m.spoken ? <PanelChip icon="speedometer-outline" label={speedLabel(m.rate)} active={m.rate !== 1} onPress={() => setSpeedSheet(true)} /> : null}
       </View>
       {m.error ? <T tone="danger">{m.error}</T> : null}
     </View>
   );
+
+  const chapterIdx = m.chapters.reduce((best, c, i) => (c.startMs <= m.positionMs + 500 ? i : best), -1);
+  const chapterList = (
+    <FlatList
+      data={m.chapters}
+      keyExtractor={(c, i) => `${c.startMs}-${i}`}
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingBottom: insets.bottom + t.space.lg }}
+      ListHeaderComponent={<T variant="heading" color="#fff" style={{ marginBottom: t.space.sm }}>Chapters</T>}
+      renderItem={({ item: c, index }) => (
+        <Focusable onPress={() => m.seek(c.startMs)} hasTVPreferredFocus={t.isTV && index === chapterIdx} focusScale={t.isTV ? 1.02 : 1} style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.md, paddingVertical: t.space.sm, paddingHorizontal: t.space.sm, borderRadius: t.radius, backgroundColor: index === chapterIdx ? 'rgba(255,255,255,0.12)' : 'transparent' }}>
+          {index === chapterIdx ? <Icon name="volume-high" size={16} color={t.colors.primary} /> : <T variant="small" color="rgba(255,255,255,0.6)" style={{ width: 16 }}>{index + 1}</T>}
+          <T weight={index === chapterIdx ? '800' : '600'} color="#fff" numberOfLines={2} style={{ flex: 1 }}>{c.title || `Chapter ${index + 1}`}</T>
+          <T variant="small" color="rgba(255,255,255,0.6)">{formatClock(c.startMs)}</T>
+        </Focusable>
+      )}
+    />
+  );
+  const lyricsPanel = <LyricsView lyrics={lyrics} positionMs={m.positionMs} onSeek={m.seek} />;
 
   const queue = (
     <FlatList
@@ -106,7 +158,7 @@ export default function NowPlaying() {
             </View>
             {controls}
           </View>
-          <View style={{ flex: 1, alignSelf: 'stretch' }}>{queue}</View>
+          <View style={{ flex: 1, alignSelf: 'stretch' }}>{panel === 'lyrics' ? lyricsPanel : panel === 'chapters' ? chapterList : queue}</View>
         </View>
       ) : (
         <View style={{ flex: 1, paddingHorizontal: 32, gap: t.space.xl, paddingTop: t.space.lg }}>
@@ -114,9 +166,31 @@ export default function NowPlaying() {
             {art ? <Img path={art} width={size} style={{ width: '100%', height: '100%' }} /> : null}
           </View>
           {controls}
-          {queue}
+          {panel === 'lyrics' ? lyricsPanel : panel === 'chapters' ? chapterList : queue}
         </View>
       )}
+      <OptionSheet
+        visible={speedSheet}
+        title="Playback speed"
+        options={SPEEDS.map((r) => ({ key: String(r), label: r === 1 ? '1x (normal)' : speedLabel(r), selected: r === m.rate }))}
+        onSelect={(k) => {
+          m.setRate(Number(k));
+          setSpeedSheet(false);
+        }}
+        onClose={() => setSpeedSheet(false)}
+      />
     </View>
+  );
+}
+
+function PanelChip({ icon, label, active, onPress }: { icon: React.ComponentProps<typeof Icon>['name']; label: string; active: boolean; onPress: () => void }) {
+  const t = useTheme();
+  return (
+    <Focusable onPress={onPress} ringRadius={999} accessibilityLabel={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: t.isTV ? t.s(14) : 12, paddingVertical: t.isTV ? t.s(8) : 6, borderRadius: 999, backgroundColor: active ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)' }}>
+      <Icon name={icon} size={t.isTV ? t.s(18) : 16} color={active ? t.colors.primary : '#fff'} />
+      <T variant="small" weight="700" color="#fff">
+        {label}
+      </T>
+    </Focusable>
   );
 }

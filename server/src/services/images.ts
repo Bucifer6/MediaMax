@@ -7,6 +7,7 @@ import { stableId } from '../util/ids.js';
 import { nowIso } from '../util/misc.js';
 import { notFound } from '../util/errors.js';
 import { logger } from '../util/log.js';
+import { safeFetch } from '../util/net.js';
 
 const log = logger('images');
 
@@ -15,10 +16,31 @@ const log = logger('images');
  * exposed as `/api/v1/images/:id`. Remote images are fetched once and cached;
  * resized variants (`?w=`) are produced with ffmpeg and cached too.
  */
+const LOCAL_IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.tbn', '.avif', '.bmp', '.heic', '.heif', '.tiff']);
+const isLocalImagePath = (p: string) => path.isAbsolute(p) && LOCAL_IMAGE_EXT.has(path.extname(p).toLowerCase());
+
+/**
+ * Register an image found by the server itself: a local file (scanner, uploads, generated thumbnails)
+ * or a URL from a trusted metadata provider. Local paths must be image files.
+ */
 export function registerImage(source: string | null | undefined): string | null {
   if (!source) return null;
+  if (!/^https?:\/\//i.test(source) && !isLocalImagePath(source)) return null;
   const id = stableId('img', source);
   db.run('INSERT OR IGNORE INTO images (id, source, created_at) VALUES (?, ?, ?)', id, source, nowIso());
+  return id;
+}
+
+/**
+ * Register an image URL that came from third-party content (IPTV playlists, podcast feeds).
+ * Only http(s) is accepted — never a local path — and `untrusted` images are fetched through the
+ * SSRF guard (no private/loopback addresses).
+ */
+export function registerRemoteImage(url: string | null | undefined, opts: { untrusted?: boolean } = {}): string | null {
+  if (!url || !/^https?:\/\//i.test(url.trim())) return null;
+  const id = stableId('img', url.trim());
+  db.run('INSERT OR IGNORE INTO images (id, source, created_at, untrusted) VALUES (?, ?, ?, ?)', id, url.trim(), nowIso(), opts.untrusted ? 1 : 0);
+  if (opts.untrusted) db.run('UPDATE images SET untrusted = 1 WHERE id = ?', id);
   return id;
 }
 
@@ -29,14 +51,20 @@ const inflight = new Map<string, Promise<string>>();
 const MIME: Record<string, string> = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.avif': 'image/avif', '.ico': 'image/x-icon', '.tbn': 'image/jpeg' };
 export const mimeFor = (p: string) => MIME[path.extname(p).toLowerCase()] ?? 'image/jpeg';
 
-async function fetchRemote(id: string, url: string): Promise<string> {
-  const ext = (path.extname(new URL(url).pathname).toLowerCase().match(/^\.(jpe?g|png|webp|gif|svg|avif)$/)?.[0]) ?? '.jpg';
+async function fetchRemote(id: string, url: string, untrusted: boolean): Promise<string> {
+  const ext = (path.extname(new URL(url).pathname).toLowerCase().match(/^\.(jpe?g|png|webp|gif|avif)$/)?.[0]) ?? '.jpg';
   const dest = path.join(config.imageCacheDir, id.slice(0, 2), id + ext);
   if (fs.existsSync(dest)) return dest;
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  const res = await fetch(url, { signal: AbortSignal.timeout(20000), headers: { 'User-Agent': 'MediaMax/1.0' } });
+  const init = { signal: AbortSignal.timeout(20000), headers: { 'User-Agent': 'MediaMax/1.0' } };
+  const res = untrusted ? await safeFetch(url, init) : await fetch(url, init);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  // Remote images must be raster images — never SVG/HTML (script on our origin).
+  const type = (res.headers.get('content-type') ?? '').toLowerCase();
+  if (!type.startsWith('image/') || type.includes('svg')) throw new Error(`Not a raster image (${type || 'unknown type'})`);
+  if (Number(res.headers.get('content-length') ?? 0) > 20 * 1024 * 1024) throw new Error('Image too large');
   const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length > 20 * 1024 * 1024) throw new Error('Image too large');
   fs.writeFileSync(dest, buf);
   db.run('UPDATE images SET cached = ? WHERE id = ?', dest, id);
   return dest;
@@ -59,7 +87,7 @@ export async function resolveImage(id: string, width?: number): Promise<{ path: 
     else {
       let p = inflight.get(id);
       if (!p) {
-        p = fetchRemote(id, row.source).finally(() => inflight.delete(id));
+        p = fetchRemote(id, row.source, !!row.untrusted).finally(() => inflight.delete(id));
         inflight.set(id, p);
       }
       try {
@@ -71,10 +99,11 @@ export async function resolveImage(id: string, width?: number): Promise<{ path: 
     }
   } else {
     file = row.source;
-    if (!fs.existsSync(file)) throw notFound('Image file missing');
+    if (!isLocalImagePath(file) || !fs.existsSync(file)) throw notFound('Image file missing');
   }
   const ext = path.extname(file).toLowerCase();
-  if (width && width > 0 && width < 3000 && ext !== '.svg' && ext !== '.gif') {
+  if (ext === '.svg') throw notFound('Image unavailable');
+  if (width && width > 0 && width < 3000 && ext !== '.gif') {
     const w = Math.ceil(width / 80) * 80; // bucket sizes to keep cache small
     const dest = path.join(config.imageCacheDir, 'w', `${id}_${w}.jpg`);
     if (!fs.existsSync(dest)) {

@@ -12,8 +12,9 @@ import { Badge, Dropdown, EmptyState, ErrorState, Img, Modal, ProgressBar, Skele
 import { Row } from '../components/Row';
 import { PosterCard } from '../components/Cards';
 import { AddToContainerModal, EditMetadataModal, UploadArtworkModal } from '../components/ItemModals';
+import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
-import { episodeCode, isAudio, isResumable, isVideo, itemLink, playLink, progressPct } from '../utils/items';
+import { episodeCode, hasAudioResume, isAudio, isResumable, isVideo, itemLink, playLink, progressPct } from '../utils/items';
 
 /* ---------------- Media info ---------------- */
 export function MediaBadges({ media }: { media?: MediaSource[] }) {
@@ -148,6 +149,49 @@ function EpisodeList({ seasonId }: { seasonId: string }) {
   );
 }
 
+/* ---------------- Podcast episodes (newest first) ---------------- */
+function PodcastEpisodes({ podcast }: { podcast: Item }) {
+  const play = usePlayItem();
+  const music = useMusic();
+  const eps = useAsync(() => api.items.children(podcast.id, { sort: 'releaseDate', order: 'desc', limit: 500 }), [podcast.id]);
+  useServerEvent((ev) => {
+    if (ev.type === 'userdata.updated') eps.setData((d) => d && { ...d, items: d.items.map((i) => (i.id === ev.itemId ? { ...i, userData: ev.userData } : i)) });
+  });
+  if (eps.loading && !eps.data) return <div className="episode-list">{[0, 1, 2, 3].map((i) => <Skeleton key={i} h={64} style={{ marginBottom: 8 }} />)}</div>;
+  if (eps.error) return <ErrorState message={eps.error} onRetry={eps.reload} />;
+  if (!eps.data?.items.length) return <EmptyState icon="podcast" title="No episodes yet" message="New episodes appear here when the feed refreshes." />;
+  return (
+    <section className="podcast-episodes">
+      <h2 className="section-title">Episodes</h2>
+      <ol className="pod-ep-list">
+        {eps.data.items.map((ep) => {
+          const pct = progressPct(ep);
+          const isCurrent = music.current?.id === ep.id;
+          const left = ep.durationMs && pct > 0 && !ep.userData.played ? ep.durationMs - ep.userData.positionMs : null;
+          return (
+            <li key={ep.id} className={`pod-ep ${ep.userData.played ? 'played' : ''} ${isCurrent ? 'current' : ''}`}>
+              <button className="pod-ep-play" onClick={() => play(ep)} aria-label={`${pct > 0 && !ep.userData.played ? 'Resume' : 'Play'} ${ep.title}`} data-nav>
+                {isCurrent && music.playing ? <span className="eq"><i /><i /><i /></span> : <Icon name="play" size={18} />}
+              </button>
+              <div className="pod-ep-body">
+                <Link to={itemLink(ep)} className="pod-ep-title">{ep.title}</Link>
+                <div className="pod-ep-meta muted">
+                  {ep.releaseDate && <span>{formatDate(ep.releaseDate)}</span>}
+                  {ep.durationMs ? <span>{formatDuration(ep.durationMs)}</span> : null}
+                  {left != null && <span className="pod-ep-left">{formatDuration(left)} left</span>}
+                  {ep.userData.played && <span className="pod-ep-played"><Icon name="check" size={13} /> Played</span>}
+                </div>
+                {pct > 0 && !ep.userData.played && <ProgressBar value={pct} />}
+                {ep.overview && <p className="pod-ep-overview">{ep.overview}</p>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
 function SeasonsBody({ show }: { show: Item }) {
   const seasons = useAsync(() => api.items.children(show.id, { sort: 'index', order: 'asc', limit: 200 }), [show.id]);
   const [active, setActive] = useState<string | null>(null);
@@ -184,7 +228,8 @@ function SeasonsBody({ show }: { show: Item }) {
 function TrackList({ parent, removable, onRemove }: { parent: Item; removable?: boolean; onRemove?: (i: Item) => void }) {
   const music = useMusic();
   const play = usePlayItem();
-  const tracks = useAsync(() => api.items.children(parent.id, { sort: parent.type === 'album' ? 'index' : undefined, limit: 1000 }), [parent.id]);
+  const ordered = parent.type === 'album' || parent.type === 'audiobook';
+  const tracks = useAsync(() => api.items.children(parent.id, { sort: ordered ? 'index' : undefined, limit: 1000 }), [parent.id]);
   const [addTo, setAddTo] = useState<Item | null>(null);
   if (tracks.loading && !tracks.data) return <div className="tracklist">{[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} h={44} style={{ marginBottom: 6 }} />)}</div>;
   const list = tracks.data?.items ?? [];
@@ -204,15 +249,15 @@ function TrackList({ parent, removable, onRemove }: { parent: Item; removable?: 
                 data-nav
               >
                 <span className="track-num">
-                  {isCurrent && music.playing ? <span className="eq"><i /><i /><i /></span> : <span className="track-idx">{parent.type === 'album' ? t.index ?? i + 1 : i + 1}</span>}
+                  {isCurrent && music.playing ? <span className="eq"><i /><i /><i /></span> : <span className="track-idx">{ordered ? t.index ?? i + 1 : i + 1}</span>}
                   <Icon name="play" size={14} className="track-playicon" />
                 </span>
-                {parent.type !== 'album' && (
+                {!ordered && (
                   <span className="track-art"><Img src={t.posterUrl ?? t.thumbUrl} width={64} fallback={<Icon name="music" size={14} />} /></span>
                 )}
                 <span className="track-title">
                   <span>{t.title}</span>
-                  {(parent.type !== 'album' || t.grandparentTitle !== parent.parentTitle) && <small>{[t.grandparentTitle, parent.type !== 'album' ? t.parentTitle : null].filter(Boolean).join(' · ')}</small>}
+                  {parent.type === 'audiobook' ? (progressPct(t) > 0 && !t.userData.played ? <small>{Math.round(progressPct(t))}% listened</small> : t.userData.played ? <small>Finished</small> : null) : (parent.type !== 'album' || t.grandparentTitle !== parent.parentTitle) && <small>{[t.grandparentTitle, parent.type !== 'album' ? t.parentTitle : null].filter(Boolean).join(' · ')}</small>}
                 </span>
                 {showDisc && <span className="muted track-disc">Disc {t.parentIndex}</span>}
                 <span className="track-dur">{t.durationMs ? formatClock(t.durationMs) : ''}</span>
@@ -261,6 +306,35 @@ function ChildrenGrid({ parent, title, removable, onRemove }: { parent: Item; ti
   );
 }
 
+function ChaptersSection({ item }: { item: Item }) {
+  const music = useMusic();
+  const navigate = useNavigate();
+  const play = usePlayItem();
+  const chapters = item.chapters ?? [];
+  const playing = music.current?.id === item.id;
+  const go = (ms: number) => {
+    if (isVideo(item)) navigate(`/play/${item.id}?start=${Math.round(ms)}`);
+    else if (playing) music.seek(ms);
+    else void play(item);
+  };
+  return (
+    <section className="chapters-section">
+      <h2 className="section-title">Chapters <span className="tab-count">{chapters.length}</span></h2>
+      <ol className="chapter-grid">
+        {chapters.map((c, i) => (
+          <li key={`${c.startMs}-${i}`}>
+            <button className="chapter-item" onClick={() => go(c.startMs)} data-nav>
+              <span className="chapter-num">{i + 1}</span>
+              <span className="chapter-title">{c.title || `Chapter ${i + 1}`}</span>
+              <small>{formatClock(c.startMs)}</small>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 /* ---------------- Page ---------------- */
 export function ItemPage() {
   const { itemId = '' } = useParams();
@@ -270,9 +344,9 @@ export function ItemPage() {
   const navigate = useNavigate();
   const play = usePlayItem();
   const res = useAsync(() => api.items.get(itemId), [itemId]);
-  const [modal, setModal] = useState<null | 'edit' | 'art' | 'playlist' | 'collection' | 'trailer' | 'photo'>(null);
+  const [modal, setModal] = useState<null | 'edit' | 'art' | 'playlist' | 'collection' | 'trailer' | 'photo' | 'subs'>(null);
   const item = res.data;
-  const isSeries = item?.id === itemId && (item.type === 'show' || item.type === 'season');
+  const isSeries = item?.id === itemId && (item.type === 'show' || item.type === 'season' || item.type === 'audiobook' || item.type === 'podcast');
   // Next-up episode of a show/season (server: in progress → next unwatched → first).
   const nextUp = useAsync(
     async () => ({ forId: itemId, ep: isSeries ? await api.items.next(itemId).catch(() => null) : null }),
@@ -360,22 +434,25 @@ export function ItemPage() {
     }
   };
 
-  const playable = isVideo(item) || ['show', 'season', 'album', 'artist', 'playlist', 'track', 'collection'].includes(item.type);
-  const resumable = isVideo(item) && isResumable(item);
+  const playable = isVideo(item) || isAudio(item) || ['show', 'season', 'album', 'artist', 'playlist', 'collection', 'audiobook', 'podcast'].includes(item.type);
+  const resumable = (isVideo(item) || hasAudioResume(item)) && isResumable(item);
   const pct = progressPct(item);
-  const nextEp = nextUp.data?.forId === item.id && nextUp.data.ep?.type === 'episode' ? nextUp.data.ep : null;
+  const nextEp = nextUp.data?.forId === item.id && ['episode', 'bookpart', 'podcastepisode'].includes(nextUp.data.ep?.type ?? '') ? nextUp.data.ep : null;
+  const nextIsAudio = !!nextEp && isAudio(nextEp);
   const nextResumable = !!nextEp && isResumable(nextEp);
   const playLabel = resumable
     ? `Resume ${formatClock(item.userData.positionMs)}`
     : nextEp
-      ? `${nextResumable ? 'Resume' : 'Play'} ${episodeCode(nextEp) || nextEp.title}`
+      ? item.type === 'audiobook'
+        ? nextResumable ? `Resume ${nextEp.title}` : (nextEp.index ?? 1) > 1 ? `Continue · ${nextEp.title}` : 'Start listening'
+        : `${nextResumable ? 'Resume' : 'Play'} ${episodeCode(nextEp) || nextEp.title}`
       : item.type === 'show' || item.type === 'season' ? 'Play next' : 'Play';
   const downloadItems: MenuItem[] = (['original', '1080p', '720p', '480p'] as const).map((q) => ({
     label: q === 'original' ? 'Original file' : `${q} (MP4)`,
     icon: 'download',
     onClick: () => startDownload(withToken(api.playback.downloadUrl(item.id, q))),
   }));
-  const square = ['album', 'artist', 'track', 'playlist', 'photo'].includes(item.type);
+  const square = ['album', 'artist', 'track', 'playlist', 'photo', 'audiobook', 'bookpart', 'podcast', 'podcastepisode'].includes(item.type);
   const isAdmin = !!user?.isAdmin;
   const canDownload = features.downloads && user?.allowDownloads && (isVideo(item) || isAudio(item)) && !item.media?.[0]?.remote;
 
@@ -390,6 +467,7 @@ export function ItemPage() {
       ]
     : [];
   const containerOwned = item.type === 'playlist' || (item.type === 'collection' && isAdmin);
+  const subtitleItems: MenuItem[] = canSearchSubtitles(item) ? [{ label: 'Find subtitles online…', icon: 'subtitles', onClick: () => setModal('subs') }] : [];
 
   const crumbs: { label: string; to: string }[] = [];
   if (item.type === 'episode') {
@@ -397,9 +475,14 @@ export function ItemPage() {
     if (item.parentId) crumbs.push({ label: item.parentTitle ?? `Season ${item.parentIndex}`, to: `/item/${item.parentId}` });
   } else if (item.type === 'season' && item.parentId) crumbs.push({ label: item.parentTitle ?? 'Show', to: `/item/${item.parentId}` });
   else if ((item.type === 'album' || item.type === 'track') && item.parentId) crumbs.push({ label: item.parentTitle ?? 'Artist', to: `/item/${item.parentId}` });
+  else if ((item.type === 'bookpart' || item.type === 'podcastepisode') && item.parentId) crumbs.push({ label: item.parentTitle ?? (item.type === 'bookpart' ? 'Audiobook' : 'Podcast'), to: `/item/${item.parentId}` });
 
   const directors = item.people.filter((p) => p.kind === 'director').map((p) => p.name);
-  const writers = item.people.filter((p) => p.kind === 'writer').map((p) => p.name);
+  const writers = item.people.filter((p) => p.kind === 'writer' && !/^(author|narrator)$/i.test(p.role ?? '')).map((p) => p.name);
+  const authors = item.type === 'audiobook' || item.type === 'bookpart'
+    ? Array.from(new Set([...item.people.filter((p) => /^author$/i.test(p.role ?? '')).map((p) => p.name), ...(item.people.some((p) => /^author$/i.test(p.role ?? '')) || !item.parentTitle || item.type === 'bookpart' ? [] : [item.parentTitle])]))
+    : [];
+  const narrators = item.people.filter((p) => /^narrator$/i.test(p.role ?? '')).map((p) => p.name);
 
   return (
     <div className={`detail detail-${item.type}`}>
@@ -409,7 +492,7 @@ export function ItemPage() {
       </div>
       <div className="detail-main">
         <div className={`detail-poster ${square ? 'square' : item.type === 'episode' || item.type === 'video' ? 'landscape' : ''}`}>
-          <Img src={item.type === 'episode' || item.type === 'video' ? item.thumbUrl ?? item.posterUrl : item.posterUrl ?? item.thumbUrl} width={400} alt={item.title} fallback={<Icon name={square ? 'music' : item.type === 'show' || item.type === 'season' || item.type === 'episode' ? 'shows' : 'film'} size={40} />} />
+          <Img src={item.type === 'episode' || item.type === 'video' ? item.thumbUrl ?? item.posterUrl : item.posterUrl ?? item.thumbUrl} width={400} alt={item.title} fallback={<Icon name={item.type === 'audiobook' || item.type === 'bookpart' ? 'book' : item.type === 'podcast' || item.type === 'podcastepisode' ? 'podcast' : square ? 'music' : item.type === 'show' || item.type === 'season' || item.type === 'episode' ? 'shows' : 'film'} size={40} />} />
           {item.type === 'photo' && <button className="detail-poster-zoom" onClick={() => setModal('photo')} aria-label="View full size"><Icon name="fullscreen" /></button>}
         </div>
         <div className="detail-info">
@@ -433,6 +516,9 @@ export function ItemPage() {
             {item.durationMs && item.type !== 'show' ? <span>{formatDuration(item.durationMs)}</span> : null}
             {item.type === 'show' && item.childCount > 0 && <span>{item.childCount} season{item.childCount > 1 ? 's' : ''}</span>}
             {(item.type === 'album' || item.type === 'playlist' || item.type === 'collection') && item.childCount > 0 && <span>{item.childCount} items</span>}
+            {item.type === 'audiobook' && item.childCount > 1 && <span>{item.childCount} parts</span>}
+            {item.type === 'podcast' && item.childCount > 0 && <span>{item.childCount} episodes</span>}
+            {item.type === 'podcastepisode' && item.releaseDate && <span>{formatDate(item.releaseDate)}</span>}
             {item.communityRating != null && (
               <span className="detail-rating"><Icon name="starFill" size={14} /> {item.communityRating.toFixed(1)}</span>
             )}
@@ -448,11 +534,11 @@ export function ItemPage() {
 
           <div className="detail-actions">
             {playable && (
-              <button className="btn btn-primary btn-lg" onClick={() => (nextEp ? navigate(playLink(nextEp)) : play(item))} data-nav autoFocus title={nextEp ? nextEp.title : undefined}>
+              <button className="btn btn-primary btn-lg" onClick={() => (nextEp && !nextIsAudio ? navigate(playLink(nextEp)) : play(item))} data-nav autoFocus title={nextEp ? nextEp.title : undefined}>
                 <Icon name="play" size={20} /> {playLabel}
               </button>
             )}
-            {resumable && (
+            {resumable && isVideo(item) && (
               <button className="btn btn-glass btn-lg" onClick={() => navigate(playLink(item, { fromStart: true }))} data-nav>
                 <Icon name="refresh" size={18} /> From start
               </button>
@@ -490,10 +576,12 @@ export function ItemPage() {
                 <Icon name="download" />
               </a>
             ))}
-            {(adminItems.length > 0 || containerOwned) && (
+            {(adminItems.length > 0 || containerOwned || subtitleItems.length > 0) && (
               <Dropdown
-                trigger={({ onClick }) => <button className="btn-round" onClick={onClick} title="More" data-nav><Icon name="more" /></button>}
+                trigger={({ onClick }) => <button className="btn-round" onClick={onClick} title="More" aria-label="More" data-nav><Icon name="more" /></button>}
                 items={[
+                  ...subtitleItems,
+                  ...(subtitleItems.length && (containerOwned || adminItems.length) ? [{ divider: true, label: '' }] : []),
                   ...(containerOwned ? [{ label: `Delete ${item.type}`, icon: 'trash' as const, danger: true, onClick: deleteContainer }] : []),
                   ...(containerOwned && adminItems.length ? [{ divider: true, label: '' }] : []),
                   ...adminItems,
@@ -518,6 +606,8 @@ export function ItemPage() {
           {item.overview && <p className="detail-overview">{item.overview}</p>}
 
           <dl className="detail-credits">
+            {authors.length > 0 && (<><dt>Author</dt><dd>{authors.join(', ')}</dd></>)}
+            {narrators.length > 0 && (<><dt>Narrated by</dt><dd>{narrators.join(', ')}</dd></>)}
             {directors.length > 0 && (<><dt>Director</dt><dd>{directors.join(', ')}</dd></>)}
             {writers.length > 0 && (<><dt>Writers</dt><dd>{writers.slice(0, 4).join(', ')}</dd></>)}
             {item.studios.length > 0 && (<><dt>Studio</dt><dd>{item.studios.slice(0, 3).join(', ')}</dd></>)}
@@ -530,18 +620,24 @@ export function ItemPage() {
       <div className="detail-sections">
         {item.type === 'show' && <SeasonsBody show={item} />}
         {item.type === 'season' && <EpisodeList seasonId={item.id} />}
+        {item.type === 'podcast' && <PodcastEpisodes podcast={item} />}
+        {item.type === 'audiobook' && item.childCount !== 1 && <TrackList parent={item} />}
+        {(item.chapters?.length ?? 0) > 0 && <ChaptersSection item={item} />}
         {(item.type === 'album' || item.type === 'playlist') && <TrackList parent={item} removable={item.type === 'playlist'} onRemove={removeFromContainer} />}
         {item.type === 'artist' && <ChildrenGrid parent={item} title="Albums" />}
         {item.type === 'collection' && <ChildrenGrid parent={item} removable={isAdmin} onRemove={removeFromContainer} />}
         <CastRow item={item} />
         {item.media && item.media.length > 0 && <MediaInfo media={item.media} />}
-        {!['playlist', 'collection', 'track', 'photo', 'season'].includes(item.type) && <SimilarRow item={item} />}
+        {!['playlist', 'collection', 'track', 'photo', 'season', 'bookpart', 'podcastepisode'].includes(item.type) && <SimilarRow item={item} />}
       </div>
 
       <AddToContainerModal open={modal === 'playlist'} onClose={() => setModal(null)} items={[item]} kind="playlist" />
       <AddToContainerModal open={modal === 'collection'} onClose={() => setModal(null)} items={[item]} kind="collection" />
       {isAdmin && <EditMetadataModal open={modal === 'edit'} onClose={() => setModal(null)} item={item} onUpdated={(i) => res.setData({ ...item, ...i })} />}
       {isAdmin && <UploadArtworkModal open={modal === 'art'} onClose={() => setModal(null)} item={item} onUpdated={(i) => res.setData({ ...item, ...i })} />}
+      {canSearchSubtitles(item) && (
+        <SubtitleSearchModal open={modal === 'subs'} onClose={() => setModal(null)} item={item} onUpdated={(i) => res.setData((d) => (d ? { ...d, ...i, userData: i.userData ?? d.userData } : i))} />
+      )}
       <Modal open={modal === 'trailer'} onClose={() => setModal(null)} size="xl" className="trailer-modal" title={`${item.title} — Trailer`}>
         {item.trailerUrl && /youtube\.com|youtu\.be/.test(item.trailerUrl) ? (
           <iframe className="trailer-frame" src={youtubeEmbed(item.trailerUrl)} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen title="Trailer" />

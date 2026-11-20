@@ -172,3 +172,33 @@ SyncPlay (watch together): `syncplay.create` → server replies `syncplay.state`
 ## Trakt
 * `GET /trakt` → `TraktStatus` · `POST /trakt/connect` → `TraktDeviceCode` (show `userCode` + `verificationUrl`; poll `GET /trakt` until `connected`) · `PATCH /trakt` `{ scrobble }` · `DELETE /trakt`.
 * Admin sets `ServerSettings.trakt.clientId/clientSecret` (create an app at trakt.tv/oauth/applications). Playback start/pause/stop and "mark watched" are scrobbled automatically.
+
+## Lyrics
+* `GET /items/:id/lyrics` → `Lyrics` (from `.lrc`/`.txt` sidecars or embedded tags; `synced` lines carry `startMs`). 404 when none.
+
+## Single sign-on (OpenID Connect)
+* `SystemInfo.oidc` is non-null when SSO is configured — show a button labelled `buttonLabel`.
+* Open `GET /api/v1/auth/oidc/start?redirect=<url>&deviceId=&deviceName=&platform=` **in a browser**. After sign-in the
+  browser is sent to `<redirect>#token=<token>` (or `#error=<message>`). `redirect` must be on the server's own origin /
+  `publicUrl`, or use the `mediamax://` scheme (native apps: open with an auth session and read the fragment).
+* Configure `ServerSettings.oidc` (issuer, client id/secret, auto-create users, admin group, allowed group). Register
+  `<publicUrl>/api/v1/auth/oidc/callback` as the redirect URI at your provider.
+
+## Audiobooks
+* Library type `audiobooks`: folders `Author/Book/parts…` or `Author/Book.m4b`. Items: `audiobook` (container, author in
+  `parentTitle` and `people`, narrator as `people` role "Narrator") → `bookpart` (playable).
+* `Item.chapters` (on `GET /items/:id`) lists embedded chapters. `GET /items/:bookId/next` resumes the right part.
+
+## Podcasts
+* `GET /podcasts` → `PodcastSubscription[]` · `POST /podcasts` `SubscribePodcastRequest` · `PATCH /podcasts/:id` `{ autoDownload }` ·
+  `POST /podcasts/:id/refresh` · `DELETE /podcasts/:id` (subscriber or admin).
+* `GET /podcasts/search?q=` → `PodcastSearchResult[]` (iTunes directory; a pasted URL is returned as-is).
+* `POST /podcasts/import` `{ opml }` → `{ added, skipped, failed }`.
+* Shows are `podcast` items with `podcastepisode` children in an automatic **Podcasts** library; play/resume/mark played
+  like any item. `GET /items/:podcastId/next` = in-progress or newest unplayed episode. Feeds refresh hourly.
+
+## Last.fm
+* `GET /lastfm` → `LastfmStatus` (also completes a pending connection) · `POST /lastfm/connect` → `LastfmAuthStart` (open
+  `authUrl`, then poll `GET /lastfm`) · `PATCH /lastfm` `{ scrobble }` · `DELETE /lastfm`.
+* Admin sets `ServerSettings.lastfm.apiKey/sharedSecret` (create an API account at last.fm/api/account/create).
+  "Now playing" is sent on start; tracks are scrobbled after half their length or 4 minutes.

@@ -1,6 +1,7 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { config } from './config.js';
 import { logger } from './util/log.js';
+import { ratingLevel } from './util/misc.js';
 
 const log = logger('db');
 
@@ -225,6 +226,24 @@ const MIGRATIONS: string[] = [
     username TEXT, scrobble INTEGER NOT NULL DEFAULT 1
   );
   `,
+  /* 4: SSO identities, podcasts, chapters */ `
+  ALTER TABLE users ADD COLUMN oidc_sub TEXT;
+  CREATE UNIQUE INDEX users_oidc_sub ON users(oidc_sub) WHERE oidc_sub IS NOT NULL;
+  ALTER TABLE media ADD COLUMN chapters TEXT NOT NULL DEFAULT '[]';
+  CREATE TABLE podcast_feeds (
+    id TEXT PRIMARY KEY, item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE, feed_url TEXT NOT NULL UNIQUE,
+    auto_download INTEGER NOT NULL DEFAULT 0, etag TEXT, last_refresh_at TEXT, last_error TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL
+  );
+  `,
+  /* 5: Last.fm accounts */ `
+  CREATE TABLE lastfm_accounts (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, session_key TEXT, username TEXT,
+    pending_token TEXT, scrobble INTEGER NOT NULL DEFAULT 1
+  );
+  `,
+  /* 6: mark images that came from untrusted feeds */ `
+  ALTER TABLE images ADD COLUMN untrusted INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 function migrate(db: Database) {
@@ -243,4 +262,6 @@ function migrate(db: Database) {
 }
 
 export const db = new Database(process.env.MEDIAMAX_DB ?? config.dbPath);
+// SQL helper used by parental-control filters.
+db.raw.function('mm_rating_level', { deterministic: true }, (r: unknown) => ratingLevel(r == null ? null : String(r)));
 migrate(db);

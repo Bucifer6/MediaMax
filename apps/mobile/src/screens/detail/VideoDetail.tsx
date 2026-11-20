@@ -14,7 +14,7 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
   const t = useTheme();
   const similar = useQuery(item.type !== 'episode' ? `similar:${item.id}` : null, (api) => api.similar(item.id, 16), { staleMs: 300000 });
   const siblings = useQuery(item.type === 'episode' && item.parentId ? `children:${item.parentId}` : null, (api) => api.children(item.parentId!, { sort: 'index', order: 'asc', limit: 200 }));
-  const { togglePlayed, toggleFavorite } = useUserDataActions(item, onUserData);
+  const { togglePlayed, toggleFavorite, setRating } = useUserDataActions(item, onUserData);
   const p = progressFraction(item);
   const resumable = p > 0.01 && p < 0.95;
   const play = () => playItem(item.id, { startMs: resumable ? item.userData.positionMs : 0 });
@@ -26,7 +26,7 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
     ) : null;
 
   const actions = (
-    <ActionBar item={item} onPlay={play} onRestart={restart} playLabel={resumable ? 'Resume' : 'Play'} togglePlayed={togglePlayed} toggleFavorite={toggleFavorite} downloadable extra={showLink} />
+    <ActionBar item={item} onPlay={play} onRestart={restart} playLabel={resumable ? 'Resume' : 'Play'} togglePlayed={togglePlayed} toggleFavorite={toggleFavorite} downloadable extra={showLink} onRate={setRating} playlistItems />
   );
 
   const below = (

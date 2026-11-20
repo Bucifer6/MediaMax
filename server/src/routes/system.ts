@@ -13,6 +13,7 @@ import { listTasks, runTask } from '../services/tasks.js';
 import { listActivity, logActivity } from '../services/activity.js';
 import { sendWebhook } from '../services/webhooks.js';
 import { syncDlna } from '../services/dlna.js';
+import { oidcEnabled } from '../services/oidc.js';
 import { recentLogLines } from '../util/log.js';
 import { badRequest, forbidden } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
@@ -20,7 +21,8 @@ import { toInt } from '../util/misc.js';
 export default async function systemRoutes(app: FastifyInstance) {
   app.get('/system/info', async (_req, reply): Promise<SystemInfo> => {
     noCache(reply);
-    return { id: serverId(), name: getBranding().serverName, version: config.version, setupRequired: userCount() === 0, publicUrl: getSettings().publicUrl, features: getBranding().features };
+    return { id: serverId(), name: getBranding().serverName, version: config.version, setupRequired: userCount() === 0, publicUrl: getSettings().publicUrl, features: getBranding().features,
+      oidc: oidcEnabled() ? { enabled: true, buttonLabel: getSettings().oidc.buttonLabel || 'Sign in with SSO' } : null };
   });
 
   app.post<{ Body: SetupRequest }>('/setup', async (req) => {

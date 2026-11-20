@@ -23,23 +23,33 @@ import type {
   Library,
   LinkCodeResponse,
   LinkPollResponse,
+  LastfmAuthStart,
+  LastfmStatus,
   LivePlayRequest,
+  Lyrics,
   LoginRequest,
   Paged,
   PinLoginRequest,
   PlaybackInfo,
   PlaybackRequest,
+  PodcastSearchResult,
+  PodcastSubscription,
   Program,
   ProgressReport,
   PublicProfile,
   Recording,
   RecordingRule,
   RecordingStatus,
+  RemoteSubtitle,
   SearchResponse,
   SystemInfo,
+  TraktDeviceCode,
+  TraktStatus,
+  TrickplayInfo,
   UpdateMeRequest,
   User,
   UserItemData,
+  UserStats,
 } from './types';
 
 export const API_PREFIX = '/api/v1';
@@ -341,6 +351,84 @@ export class MediaMaxClient {
   }
   addToPlaylist(id: string, itemIds: string[]) {
     return this.post<{ ok: true }>(`/playlists/${encodeURIComponent(id)}/items`, { itemIds });
+  }
+  removeFromPlaylist(id: string, itemId: string) {
+    return this.del<{ ok: true }>(`/playlists/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}`);
+  }
+  deletePlaylist(id: string) {
+    return this.del<{ ok: true }>(`/playlists/${encodeURIComponent(id)}`);
+  }
+
+  /* --------------------- Trickplay / subtitles ---------------------- */
+  /** Scrub-preview sprite sheets. 404 (ApiError.status) until generated. */
+  trickplay(itemId: string, mediaId?: string, signal?: AbortSignal) {
+    return this.get<TrickplayInfo>(`/items/${encodeURIComponent(itemId)}/trickplay`, { mediaId }, signal);
+  }
+  searchSubtitles(itemId: string, languages: string[]) {
+    return this.request<RemoteSubtitle[]>('GET', `/items/${encodeURIComponent(itemId)}/subtitles/search`, { query: { languages: languages.join(',') }, timeoutMs: 30000 });
+  }
+  downloadSubtitle(itemId: string, body: { fileId: string; language: string; hearingImpaired?: boolean; forced?: boolean }) {
+    return this.post<Item>(`/items/${encodeURIComponent(itemId)}/subtitles/download`, body, { timeoutMs: 45000 });
+  }
+
+  /* ---------------------- Podcasts / lyrics ------------------------ */
+  podcasts() {
+    return this.get<PodcastSubscription[]>('/podcasts');
+  }
+  searchPodcasts(q: string, signal?: AbortSignal) {
+    return this.request<PodcastSearchResult[]>('GET', '/podcasts/search', { query: { q }, signal, timeoutMs: 30000 });
+  }
+  subscribePodcast(feedUrl: string, autoDownload = false) {
+    return this.post<PodcastSubscription>('/podcasts', { feedUrl, autoDownload }, { timeoutMs: 60000 });
+  }
+  updatePodcast(id: string, body: { autoDownload: boolean }) {
+    return this.patch<PodcastSubscription>(`/podcasts/${encodeURIComponent(id)}`, body);
+  }
+  refreshPodcast(id: string) {
+    return this.post<unknown>(`/podcasts/${encodeURIComponent(id)}/refresh`, {}, { timeoutMs: 60000 });
+  }
+  unsubscribePodcast(id: string) {
+    return this.del<{ ok: true }>(`/podcasts/${encodeURIComponent(id)}`);
+  }
+  /** 404 (ApiError.status) when the track has no lyrics. */
+  lyrics(itemId: string, signal?: AbortSignal) {
+    return this.get<Lyrics>(`/items/${encodeURIComponent(itemId)}/lyrics`, undefined, signal);
+  }
+
+  /* ------------------------------- SSO ------------------------------ */
+  /** Browser URL that starts an OpenID Connect sign-in and ends at `${redirect}#token=…`. */
+  oidcStartUrl(redirect: string) {
+    return `${this.baseUrl}${API_PREFIX}/auth/oidc/start${buildQuery({ redirect, deviceId: this.device.deviceId, deviceName: this.device.deviceName, platform: this.device.platform })}`;
+  }
+
+  /* ------------------------- Stats / Trakt -------------------------- */
+  myStats(year?: number | null) {
+    return this.get<UserStats>('/stats/me', { year: year ?? undefined });
+  }
+  trakt() {
+    return this.get<TraktStatus>('/trakt');
+  }
+  traktConnect() {
+    return this.post<TraktDeviceCode>('/trakt/connect');
+  }
+  traktSetScrobble(scrobble: boolean) {
+    return this.patch<TraktStatus>('/trakt', { scrobble });
+  }
+  traktDisconnect() {
+    return this.del<TraktStatus>('/trakt');
+  }
+  /** Also completes a pending connection after the user approved in the browser. */
+  lastfm() {
+    return this.get<LastfmStatus>('/lastfm');
+  }
+  lastfmConnect() {
+    return this.post<LastfmAuthStart>('/lastfm/connect');
+  }
+  lastfmSetScrobble(scrobble: boolean) {
+    return this.patch<LastfmStatus>('/lastfm', { scrobble });
+  }
+  lastfmDisconnect() {
+    return this.del<LastfmStatus>('/lastfm');
   }
 
   /* ---------------------------- Playback ---------------------------- */

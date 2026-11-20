@@ -5,12 +5,14 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { DownloadQuality, PlaybackRequest, ProgressReport } from '@mediamax/shared';
 import { db } from '../db.js';
 import { requireAdmin, requireUser, remoteAddr } from '../http.js';
-import { getSession, listSessions, sessionProgress, startPlayback, stopSession, subtitleVtt, touchSession } from '../services/playback.js';
+import { transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, subtitleVtt, touchSession } from '../services/playback.js';
 import { assertCanSee } from '../services/items.js';
 import { liveJobBySession } from '../services/livetv/livetv.js';
-import { badRequest, forbidden, notFound } from '../util/errors.js';
+import { badRequest, forbidden, notFound, HttpError } from '../util/errors.js';
+import { getSettings } from '../services/settings.js';
 import { spawn } from 'node:child_process';
 import { config } from '../config.js';
+import { safeFetch } from '../util/net.js';
 import { logActivity } from '../services/activity.js';
 
 const MIME: Record<string, string> = {
@@ -45,12 +47,12 @@ export function sendFileRange(req: FastifyRequest, reply: FastifyReply, file: st
 }
 
 /** Proxy a remote (IPTV) file preserving Range semantics, without exposing provider credentials. */
-async function proxyRemote(req: FastifyRequest, reply: FastifyReply, url: string, userAgent: string, mime: string) {
+async function proxyRemote(req: FastifyRequest, reply: FastifyReply, url: string, userAgent: string, mime: string, untrusted = false) {
   const headers: Record<string, string> = { 'User-Agent': userAgent };
   if (req.headers.range) headers.Range = req.headers.range;
   const ctrl = new AbortController();
   req.raw.on('close', () => ctrl.abort());
-  const res = await fetch(url, { headers, signal: ctrl.signal, redirect: 'follow' });
+  const res = untrusted ? await safeFetch(url, { headers, signal: ctrl.signal }) : await fetch(url, { headers, signal: ctrl.signal, redirect: 'follow' });
   if (!res.ok && res.status !== 206) throw notFound(`Provider returned ${res.status}`);
   reply.status(res.status);
   for (const h of ['content-length', 'content-range', 'accept-ranges']) {
@@ -60,6 +62,9 @@ async function proxyRemote(req: FastifyRequest, reply: FastifyReply, url: string
   reply.header('Content-Type', res.headers.get('content-type')?.startsWith('video') ? res.headers.get('content-type')! : mime);
   return reply.send(res.body ? Readable.fromWeb(res.body as any) : '');
 }
+
+/** Remote media from user-added podcast feeds must go through the SSRF guard. */
+const isUntrustedMedia = (itemId: string) => db.get<{ type: string }>('SELECT l.type FROM items i JOIN libraries l ON l.id = i.library_id WHERE i.id = ?', itemId)?.type === 'podcasts';
 
 const QUALITY: Record<string, { height: number; bitrate: number }> = {
   '1080p': { height: 1080, bitrate: 8000 },
@@ -71,8 +76,24 @@ const QUALITY: Record<string, { height: number; bitrate: number }> = {
  * Stream a device-friendly H.264/AAC MP4 (fragmented, so it can be written while encoding).
  * Used by mobile apps for offline downloads of files their platform can't play (e.g. MKV on iOS).
  */
-function convertedDownload(req: FastifyRequest, reply: FastifyReply, m: Record<string, any>, baseName: string, quality: string) {
+/** Active converted downloads, counted against the transcoding limit (global + per user). */
+export const activeConversions = new Map<string, number>();
+const conversionTotal = () => [...activeConversions.values()].reduce((a, b) => a + b, 0);
+
+function convertedDownload(req: FastifyRequest, reply: FastifyReply, m: Record<string, any>, baseName: string, quality: string, userId: string) {
   const q = QUALITY[quality];
+  const max = getSettings().transcoding.maxConcurrent;
+  if (transcodeCount() + conversionTotal() >= max) throw new HttpError(503, 'The server is busy converting other media. Try again shortly or download the original file.', 'transcoder_busy');
+  if ((activeConversions.get(userId) ?? 0) >= 2) throw new HttpError(429, 'You already have 2 converted downloads in progress.', 'too_many');
+  activeConversions.set(userId, (activeConversions.get(userId) ?? 0) + 1);
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    const n = (activeConversions.get(userId) ?? 1) - 1;
+    if (n <= 0) activeConversions.delete(userId);
+    else activeConversions.set(userId, n);
+  };
   const input = m.path ?? m.remote_url;
   const isAudio = !m.video_codec;
   const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-i', input, '-map', '0:v:0?', '-map', '0:a:0?', '-sn', '-map_metadata', '0'];
@@ -83,7 +104,12 @@ function convertedDownload(req: FastifyRequest, reply: FastifyReply, m: Record<s
   }
   args.push('-c:a', 'aac', '-ac', '2', '-b:a', '160k', '-movflags', 'frag_keyframe+empty_moov+default_base_moof', '-f', 'mp4', 'pipe:1');
   const p = spawn(config.ffmpeg, args, { stdio: ['ignore', 'pipe', 'ignore'] });
-  req.raw.on('close', () => p.kill('SIGKILL'));
+  p.on('exit', release);
+  p.on('error', release);
+  req.raw.on('close', () => {
+    p.kill('SIGKILL');
+    release();
+  });
   reply.header('Content-Type', isAudio ? 'audio/mp4' : 'video/mp4')
     .header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`${baseName} - ${quality}.${isAudio ? 'm4a' : 'mp4'}`)}`)
     .header('Cache-Control', 'no-store');
@@ -134,7 +160,7 @@ export default async function playbackRoutes(app: FastifyInstance) {
       return sendFileRange(req, reply, m.path, mime);
     }
     const ua = db.get<{ user_agent: string | null }>('SELECT s.user_agent FROM live_sources s JOIN libraries l ON l.source_id = s.id JOIN items i ON i.library_id = l.id WHERE i.id = ?', m.item_id)?.user_agent;
-    return proxyRemote(req, reply, m.remote_url, ua || 'MediaMax/1.0', mime);
+    return proxyRemote(req, reply, m.remote_url, ua || 'MediaMax/1.0', mime, isUntrustedMedia(m.item_id));
   });
 
   const hlsHandler = async (req: FastifyRequest<{ Params: { sessionId: string; file: string } }>, reply: FastifyReply) => {
@@ -199,11 +225,11 @@ export default async function playbackRoutes(app: FastifyInstance) {
     if (quality) {
       if (!['1080p', '720p', '480p'].includes(quality)) throw badRequest('quality must be original, 1080p, 720p or 480p');
       if (!user.allowTranscode && !user.isAdmin) throw forbidden('Converted downloads need transcoding permission');
-      return convertedDownload(req, reply, m, `${item.title}${item.year ? ` (${item.year})` : ''}`.replace(/[\\/:*?"<>|]/g, ''), quality);
+      return convertedDownload(req, reply, m, `${item.title}${item.year ? ` (${item.year})` : ''}`.replace(/[\\/:*?"<>|]/g, ''), quality, user.id);
     }
     const name = `${item.title}${item.year ? ` (${item.year})` : ''}.${ext}`.replace(/[\\/:*?"<>|]/g, '');
     if (m.path) return sendFileRange(req, reply, m.path, mime, name);
     reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);
-    return proxyRemote(req, reply, m.remote_url, 'MediaMax/1.0', mime);
+    return proxyRemote(req, reply, m.remote_url, 'MediaMax/1.0', mime, isUntrustedMedia(item.id));
   });
 }

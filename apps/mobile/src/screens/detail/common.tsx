@@ -3,7 +3,10 @@ import React, { useState } from 'react';
 import { Alert, FlatList, Linking, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { DownloadQuality, Item, Person, UserItemData } from '@/api/types';
+import { AddToPlaylistSheet } from '@/components/AddToPlaylistSheet';
 import { Button } from '@/components/Button';
+import { Focusable } from '@/components/Focusable';
+import { Icon } from '@/components/Icon';
 import { MetaLine } from '@/components/Hero';
 import { OptionSheet } from '@/components/OptionSheet';
 import { Img } from '@/components/Img';
@@ -16,9 +19,20 @@ import { useApi, useCapabilities } from '@/state/session';
 import { useTheme } from '@/theme';
 import { formatClock, progressFraction } from '@/utils/format';
 
-/** Played / favourite toggles with optimistic updates. */
+/** Played / favourite toggles and the star rating, with optimistic updates. */
 export function useUserDataActions(item: Item | undefined, onChange: (ud: UserItemData) => void) {
   const api = useApi();
+  const setRating = async (rating: number | null) => {
+    if (!item) return;
+    const prev = item.userData;
+    onChange({ ...prev, rating });
+    try {
+      const ud = await api.rate(item.id, rating);
+      if (ud) onChange(ud);
+    } catch {
+      onChange(prev);
+    }
+  };
   const toggle = async (kind: 'played' | 'favorite') => {
     if (!item) return;
     const prev = item.userData;
@@ -31,7 +45,40 @@ export function useUserDataActions(item: Item | undefined, onChange: (ud: UserIt
       onChange(prev);
     }
   };
-  return { togglePlayed: () => toggle('played'), toggleFavorite: () => toggle('favorite') };
+  return { togglePlayed: () => toggle('played'), toggleFavorite: () => toggle('favorite'), setRating };
+}
+
+/**
+ * 5-star rating row. The server stores 0-10, so one star = 2 points.
+ * Tapping the current star again clears the rating. Each star is focusable on TV.
+ */
+export function RatingStars({ rating, onRate, label = true }: { rating: number | null | undefined; onRate: (rating: number | null) => void; label?: boolean }) {
+  const t = useTheme();
+  const stars = rating == null ? 0 : Math.round(rating / 2);
+  const size = t.isTV ? t.s(30) : 26;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.isTV ? t.s(4) : 2 }} accessibilityRole="adjustable" accessibilityLabel={`Your rating: ${stars} of 5 stars`}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Focusable
+          key={n}
+          onPress={() => onRate(n === stars ? null : n * 2)}
+          ringRadius={999}
+          focusScale={t.isTV ? 1.2 : 1}
+          accessibilityRole="button"
+          accessibilityLabel={n === stars ? 'Clear rating' : `Rate ${n} star${n > 1 ? 's' : ''}`}
+          hitSlop={4}
+          style={{ padding: t.isTV ? t.s(6) : 4, borderRadius: 999 }}
+        >
+          {({ focused }) => <Icon name={n <= stars ? 'star' : 'star-outline'} size={size} color={n <= stars ? t.colors.warning : focused ? t.colors.primary : t.colors.textMuted} />}
+        </Focusable>
+      ))}
+      {label ? (
+        <T variant="small" tone="muted" style={{ marginLeft: t.space.sm }}>
+          {stars ? `Your rating · ${stars}/5` : 'Rate this'}
+        </T>
+      ) : null}
+    </View>
+  );
 }
 
 export function DetailBackdrop({ item, height }: { item: Item; height: number }) {
@@ -141,6 +188,8 @@ export function ActionBar({
   extra,
   downloadable,
   downloadItems,
+  onRate,
+  playlistItems,
 }: {
   item: Item;
   onPlay?: () => void;
@@ -152,6 +201,10 @@ export function ActionBar({
   downloadable?: boolean;
   /** For seasons/albums: what "Download" grabs. */
   downloadItems?: () => Promise<Item[]>;
+  /** Show the star rating row. */
+  onRate?: (rating: number | null) => void;
+  /** Show "Add to playlist"; resolves the item ids to add (default: this item). */
+  playlistItems?: true | (() => Promise<string[]>);
 }) {
   const t = useTheme();
   const caps = useCapabilities();
@@ -159,8 +212,9 @@ export function ActionBar({
   const rec = downloads.get(item.id);
   const [busy, setBusy] = useState(false);
   const [pickQuality, setPickQuality] = useState(false);
+  const [playlistSheet, setPlaylistSheet] = useState(false);
   const canDownload = downloadable && caps.downloads && downloads.supported;
-  const isAudio = item.type === 'track' || item.type === 'album';
+  const isAudio = item.type === 'track' || item.type === 'album' || item.type === 'audiobook' || item.type === 'bookpart' || item.type === 'podcast' || item.type === 'podcastepisode';
 
   const onDownload = async () => {
     if (rec?.state === 'done') {
@@ -192,27 +246,34 @@ export function ActionBar({
   const dlLabel = rec?.state === 'downloading' ? (rec.total ? `${Math.round(rec.progress * 100)}%` : 'Downloading') : rec?.state === 'queued' ? 'Queued' : rec?.state === 'done' ? 'Downloaded' : undefined;
 
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.space.sm, alignItems: 'center' }}>
-      {onPlay ? <Button label={playLabel ?? 'Play'} icon="play" onPress={onPlay} size="lg" hasTVPreferredFocus /> : null}
-      {onRestart ? <Button label={t.isTV ? 'From start' : undefined} icon="refresh" variant="secondary" size="lg" onPress={onRestart} accessibilityLabel="Play from start" /> : null}
-      <Button icon={item.userData.played ? 'checkmark-done-circle' : 'checkmark-circle-outline'} variant="secondary" size="lg" onPress={togglePlayed} accessibilityLabel={item.userData.played ? 'Mark unwatched' : 'Mark watched'} />
-      <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" size="lg" onPress={toggleFavorite} accessibilityLabel={item.userData.favorite ? 'Remove favourite' : 'Add favourite'} />
-      {canDownload ? <Button icon={dlIcon} label={dlLabel} variant="secondary" size="lg" onPress={onDownload} loading={busy} accessibilityLabel="Download" /> : null}
-      {item.trailerUrl ? <Button icon="film-outline" label={t.isTV ? 'Trailer' : undefined} variant="secondary" size="lg" onPress={() => Linking.openURL(item.trailerUrl!)} accessibilityLabel="Trailer" /> : null}
-      {extra}
-      {canDownload ? (
-        <OptionSheet
-          visible={pickQuality}
-          title="Download quality"
-          options={DOWNLOAD_QUALITIES.map((q) => ({
-            key: q.key,
-            label: q.key === downloads.defaultQuality ? `${q.label} (default)` : q.label,
-            description: q.key === 'original' && iosConverts ? 'This format does not play offline on iOS — 1080p will be used' : q.description,
-            selected: q.key === downloads.defaultQuality,
-          }))}
-          onSelect={(k) => void start(k)}
-          onClose={() => setPickQuality(false)}
-        />
+    <View style={{ gap: t.space.md }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.space.sm, alignItems: 'center' }}>
+        {onPlay ? <Button label={playLabel ?? 'Play'} icon="play" onPress={onPlay} size="lg" hasTVPreferredFocus /> : null}
+        {onRestart ? <Button label={t.isTV ? 'From start' : undefined} icon="refresh" variant="secondary" size="lg" onPress={onRestart} accessibilityLabel="Play from start" /> : null}
+        <Button icon={item.userData.played ? 'checkmark-done-circle' : 'checkmark-circle-outline'} variant="secondary" size="lg" onPress={togglePlayed} accessibilityLabel={item.userData.played ? 'Mark unwatched' : 'Mark watched'} />
+        <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" size="lg" onPress={toggleFavorite} accessibilityLabel={item.userData.favorite ? 'Remove favourite' : 'Add favourite'} />
+        {canDownload ? <Button icon={dlIcon} label={dlLabel} variant="secondary" size="lg" onPress={onDownload} loading={busy} accessibilityLabel="Download" /> : null}
+        {item.trailerUrl ? <Button icon="film-outline" label={t.isTV ? 'Trailer' : undefined} variant="secondary" size="lg" onPress={() => Linking.openURL(item.trailerUrl!)} accessibilityLabel="Trailer" /> : null}
+        {playlistItems ? <Button icon="list-outline" label={t.isTV ? 'Playlist' : undefined} variant="secondary" size="lg" onPress={() => setPlaylistSheet(true)} accessibilityLabel="Add to playlist" /> : null}
+        {extra}
+        {canDownload ? (
+          <OptionSheet
+            visible={pickQuality}
+            title="Download quality"
+            options={DOWNLOAD_QUALITIES.map((q) => ({
+              key: q.key,
+              label: q.key === downloads.defaultQuality ? `${q.label} (default)` : q.label,
+              description: q.key === 'original' && iosConverts ? 'This format does not play offline on iOS — 1080p will be used' : q.description,
+              selected: q.key === downloads.defaultQuality,
+            }))}
+            onSelect={(k) => void start(k)}
+            onClose={() => setPickQuality(false)}
+          />
+        ) : null}
+      </View>
+      {onRate ? <RatingStars rating={item.userData.rating} onRate={onRate} /> : null}
+      {playlistItems ? (
+        <AddToPlaylistSheet visible={playlistSheet} title={item.title} getItemIds={playlistItems === true ? () => [item.id] : playlistItems} onClose={() => setPlaylistSheet(false)} />
       ) : null}
     </View>
   );

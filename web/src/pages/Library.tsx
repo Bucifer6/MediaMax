@@ -112,7 +112,7 @@ export function LibraryPage() {
 
   const years: number[] = [];
   for (let y = new Date().getFullYear() + 1; y >= 1920; y--) years.push(y);
-  const shape = library?.type === 'music' || library?.type === 'photos' ? 'square' : library?.type === 'videos' ? 'landscape' : 'poster';
+  const shape = library?.type === 'music' || library?.type === 'photos' || library?.type === 'audiobooks' || library?.type === 'podcasts' ? 'square' : library?.type === 'videos' ? 'landscape' : 'poster';
 
   const scan = async () => {
     try {

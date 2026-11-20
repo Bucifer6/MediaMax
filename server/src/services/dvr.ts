@@ -6,12 +6,12 @@ import { db, type Row } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
 import { badRequest, forbidden, notFound } from '../util/errors.js';
-import { nowIso, parseJson } from '../util/misc.js';
+import { nowIso, parseJson, REMOTE_PROTOCOLS } from '../util/misc.js';
 import { logger } from '../util/log.js';
 import { getSettings } from './settings.js';
 import { events, bus } from './events.js';
 import { logActivity } from './activity.js';
-import { channelStreamUrl, channelUserAgent, trackUpstream } from './livetv/livetv.js';
+import { accessibleChannelRow, channelStreamUrl, channelUserAgent, trackUpstream } from './livetv/livetv.js';
 import { scanLibrary } from './scanner.js';
 import { homeHooks, getItem } from './items.js';
 import { getBranding } from './branding.js';
@@ -47,7 +47,7 @@ function emit(id: string) {
 
 export function scheduleRecording(user: User, req: CreateRecordingRequest, ruleId: string | null = null): Recording {
   if (ruleId === null) assertDvr(user);
-  const ch = db.get('SELECT * FROM channels WHERE id = ?', req.channelId);
+  const ch = ruleId === null ? accessibleChannelRow(user, req.channelId) : db.get('SELECT * FROM channels WHERE id = ?', req.channelId);
   if (!ch) throw notFound('Channel not found');
   const custom = parseJson<Record<string, any>>(ch.custom, {});
   const s = getSettings().dvr;
@@ -65,10 +65,13 @@ export function scheduleRecording(user: User, req: CreateRecordingRequest, ruleI
     start = new Date(p.start);
     end = new Date(p.end);
   }
-  start = new Date(start.getTime() - (req.paddingBeforeMin ?? s.paddingBeforeMin) * 60000);
-  end = new Date(end.getTime() + (req.paddingAfterMin ?? s.paddingAfterMin) * 60000);
+  const pad = (v: number | undefined, d: number) => Math.max(0, Math.min(120, Number.isFinite(Number(v)) ? Number(v) : d));
+  start = new Date(start.getTime() - pad(req.paddingBeforeMin, s.paddingBeforeMin) * 60000);
+  end = new Date(end.getTime() + pad(req.paddingAfterMin, s.paddingAfterMin) * 60000);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) throw badRequest('Invalid start or end time');
   if (end.getTime() <= Date.now()) throw badRequest('That programme has already finished');
   if (end <= start) throw badRequest('End must be after start');
+  if (end.getTime() - start.getTime() > 12 * 3600000) throw badRequest('Recordings are limited to 12 hours');
   const id = newId();
   db.insert('recordings', {
     id, channel_id: ch.id, channel_name: custom.name ?? ch.name, program_id: req.programId ?? null, title: title || `${custom.name ?? ch.name} recording`,
@@ -128,7 +131,7 @@ function startRecording(r: Row) {
   const durationSec = Math.max(10, Math.round((Date.parse(r.end) - Date.now()) / 1000));
   const url = channelStreamUrl(ch);
   const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-user_agent', channelUserAgent(ch), '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '10',
-    '-i', url, '-map', '0:v?', '-map', '0:a?', '-c', 'copy', '-t', String(durationSec), '-f', 'mpegts', file];
+    ...REMOTE_PROTOCOLS, '-i', url, '-map', '0:v?', '-map', '0:a?', '-c', 'copy', '-t', String(durationSec), '-f', 'mpegts', file];
   log.info(`Recording "${r.title}" for ${durationSec}s → ${file}`);
   const p = spawn(config.ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
   let err = '';
@@ -191,6 +194,8 @@ export async function tick() {
 
 /* -------------------------------- rules ----------------------------- */
 
+const clampPad = (v: unknown, d: number) => Math.max(0, Math.min(120, Number.isFinite(Number(v)) ? Number(v) : d));
+
 export function listRules(user: User): RecordingRule[] {
   assertDvr(user);
   return db.all('SELECT * FROM recording_rules ORDER BY title_match').map(toRule);
@@ -198,12 +203,13 @@ export function listRules(user: User): RecordingRule[] {
 
 export function createRule(user: User, req: CreateRecordingRuleRequest): RecordingRule {
   assertDvr(user);
-  if (!req.titleMatch?.trim()) throw badRequest('Title match is required');
+  if (!req.titleMatch?.trim() || req.titleMatch.trim().length < 2) throw badRequest('Title match is required (at least 2 characters)');
+  if (req.channelId) accessibleChannelRow(user, req.channelId);
   const id = newId();
   const s = getSettings().dvr;
   db.insert('recording_rules', {
-    id, title_match: req.titleMatch.trim(), channel_id: req.channelId ?? null, new_only: !!req.newOnly, keep_latest: req.keepLatest ?? null,
-    padding_before: req.paddingBeforeMin ?? s.paddingBeforeMin, padding_after: req.paddingAfterMin ?? s.paddingAfterMin, enabled: req.enabled ?? true, created_by: user.id,
+    id, title_match: req.titleMatch.trim().slice(0, 200), channel_id: req.channelId ?? null, new_only: !!req.newOnly, keep_latest: req.keepLatest ? Math.max(1, Math.min(1000, req.keepLatest)) : null,
+    padding_before: clampPad(req.paddingBeforeMin, s.paddingBeforeMin), padding_after: clampPad(req.paddingAfterMin, s.paddingAfterMin), enabled: req.enabled ?? true, created_by: user.id,
   });
   applyRules();
   return toRule(db.get('SELECT * FROM recording_rules WHERE id = ?', id)!);
@@ -213,13 +219,14 @@ export function updateRule(user: User, id: string, req: Partial<CreateRecordingR
   assertDvr(user);
   const r = db.get('SELECT * FROM recording_rules WHERE id = ?', id);
   if (!r) throw notFound('Rule not found');
+  if (r.created_by !== user.id && !user.isAdmin) throw forbidden('You can only change your own recording rules');
   const p: Row = {};
   if (req.titleMatch !== undefined) p.title_match = req.titleMatch;
   if (req.channelId !== undefined) p.channel_id = req.channelId;
   if (req.newOnly !== undefined) p.new_only = req.newOnly;
-  if (req.keepLatest !== undefined) p.keep_latest = req.keepLatest;
-  if (req.paddingBeforeMin !== undefined) p.padding_before = req.paddingBeforeMin;
-  if (req.paddingAfterMin !== undefined) p.padding_after = req.paddingAfterMin;
+  if (req.keepLatest !== undefined) p.keep_latest = req.keepLatest ? Math.max(1, Math.min(1000, req.keepLatest)) : null;
+  if (req.paddingBeforeMin !== undefined) p.padding_before = clampPad(req.paddingBeforeMin, 1);
+  if (req.paddingAfterMin !== undefined) p.padding_after = clampPad(req.paddingAfterMin, 5);
   if (req.enabled !== undefined) p.enabled = req.enabled;
   db.update('recording_rules', id, p);
   applyRules();
@@ -228,6 +235,9 @@ export function updateRule(user: User, id: string, req: Partial<CreateRecordingR
 
 export function deleteRule(user: User, id: string) {
   assertDvr(user);
+  const r = db.get('SELECT created_by FROM recording_rules WHERE id = ?', id);
+  if (!r) throw notFound('Rule not found');
+  if (r.created_by !== user.id && !user.isAdmin) throw forbidden('You can only delete your own recording rules');
   db.run('DELETE FROM recording_rules WHERE id = ?', id);
   db.run("UPDATE recordings SET status = 'cancelled' WHERE rule_id = ? AND status = 'scheduled'", id);
 }

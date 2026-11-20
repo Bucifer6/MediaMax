@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { CreateUserRequest, Library, User } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
@@ -144,6 +145,7 @@ export function UsersAdmin() {
   const toast = useToast();
   const confirm = useConfirm();
   const { user: me } = useApp();
+  const navigate = useNavigate();
   const users = useAsync(() => api.users.list(), []);
   const libs = useAsync(() => api.libraries.list().catch(() => [] as Library[]), []);
   const [edit, setEdit] = useState<User | 'new' | null>(null);
@@ -195,6 +197,7 @@ export function UsersAdmin() {
                       trigger={({ onClick }) => <button className="btn-icon" onClick={onClick} aria-label="Actions"><Icon name="more" /></button>}
                       items={[
                         { label: 'Edit', icon: 'edit', onClick: () => setEdit(u) },
+                        { label: 'Year in review', icon: 'sparkles', onClick: () => navigate(`/admin/users/${u.id}/wrapped`) },
                         ...(u.id !== me?.id ? [{ label: 'Delete', icon: 'trash' as const, danger: true, onClick: () => remove(u) }] : []),
                       ]}
                     />

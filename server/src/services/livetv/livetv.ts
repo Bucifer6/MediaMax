@@ -5,9 +5,9 @@ import type {
 import { db, type Row } from '../../db.js';
 import { newId, stableId } from '../../util/ids.js';
 import { HttpError, badRequest, forbidden, notFound } from '../../util/errors.js';
-import { nowIso, parseJson, sortTitle, toInt } from '../../util/misc.js';
+import { nowIso, parseJson, sortTitle, toInt, isSafeRemoteUrl } from '../../util/misc.js';
 import { logger } from '../../util/log.js';
-import { registerImage, imageUrl } from '../images.js';
+import { registerRemoteImage, imageUrl } from '../images.js';
 import { getBranding } from '../branding.js';
 import { getSettings } from '../settings.js';
 import { events, bus } from '../events.js';
@@ -51,7 +51,7 @@ function toChannel(r: Row): Channel {
   const custom = parseJson<Record<string, any>>(r.custom, {});
   return {
     id: r.id, sourceId: r.source_id, number: custom.number ?? r.number ?? null, name: custom.name ?? r.name,
-    logoUrl: imageUrl(custom.logo ? registerImage(custom.logo) : r.logo), categoryId: r.category_id ?? null, categoryName: r.cat_name ?? null,
+    logoUrl: imageUrl(custom.logo ? registerRemoteImage(custom.logo) : r.logo), categoryId: r.category_id ?? null, categoryName: r.cat_name ?? null,
     hasArchive: !!r.has_archive, archiveDays: r.archive_days ?? 0, favorite: !!r.fav, hidden: !!r.hidden, epgChannelId: custom.epgChannelId ?? r.epg_channel_id ?? null,
   };
 }
@@ -198,7 +198,9 @@ interface ChannelIn {
   custom?: Record<string, unknown>;
 }
 
-function syncChannels(sourceId: string, cats: { remoteId: string; name: string }[], chans: ChannelIn[]) {
+function syncChannels(sourceId: string, cats: { remoteId: string; name: string }[], allChans: ChannelIn[]) {
+  const chans = allChans.filter((c) => isSafeRemoteUrl(c.streamUrl));
+  if (chans.length < allChans.length) log.warn(`Ignored ${allChans.length - chans.length} channel(s) with unsupported stream URLs`);
   db.tx(() => {
     const catIds = new Map<string, string>();
     const seenCats = new Set<string>();
@@ -218,7 +220,7 @@ function syncChannels(sourceId: string, cats: { remoteId: string; name: string }
       const id = stableId(sourceId, 'ch', c.remoteId);
       seen.add(id);
       const row = {
-        source_id: sourceId, remote_id: c.remoteId, number: c.number ?? i + 1, name: c.name, logo: registerImage(c.logo),
+        source_id: sourceId, remote_id: c.remoteId, number: c.number ?? i + 1, name: c.name, logo: registerRemoteImage(c.logo),
         category_id: c.category ? catIds.get(c.category) ?? null : null, stream_url: c.streamUrl, has_archive: c.archive, archive_days: c.archiveDays,
         epg_channel_id: c.epgId, sort_order: i,
       };
@@ -385,11 +387,11 @@ async function importVod(src: Row) {
       if (!ex) {
         db.insert('items', {
           id, library_id: libId, type: 'movie', title, sort_title: sortTitle(title), year: yearFrom(v.name ?? '', v.year), community_rating: rating,
-          poster: registerImage(v.stream_icon || null), added_at: added, updated_at: now, remote_ref: String(v.stream_id),
+          poster: registerRemoteImage(v.stream_icon || null), added_at: added, updated_at: now, remote_ref: String(v.stream_id),
           genres: JSON.stringify(genre ? [genre] : []), external_ids: JSON.stringify({ xtream: String(v.stream_id), ...(v.tmdb ? { tmdb: String(v.tmdb) } : {}) }),
         });
       } else if (!ex.metadata_fetched_at) {
-        db.run('UPDATE items SET title = ?, sort_title = ?, poster = COALESCE(?, poster), community_rating = ? WHERE id = ?', title, sortTitle(title), registerImage(v.stream_icon || null), rating, id);
+        db.run('UPDATE items SET title = ?, sort_title = ?, poster = COALESCE(?, poster), community_rating = ? WHERE id = ?', title, sortTitle(title), registerRemoteImage(v.stream_icon || null), rating, id);
       }
       db.upsert('media', { id: stableId('xmedia', id), item_id: id, path: null, remote_url: xt.vodUrl(c, v.stream_id, v.container_extension || 'mp4'), container: (v.container_extension || 'mp4').toLowerCase(), probed_at: null });
     }
@@ -418,7 +420,7 @@ async function importSeries(src: Row) {
       const ex = db.get('SELECT id, extra FROM items WHERE id = ?', id);
       const fields = {
         title, sort_title: sortTitle(title), year: yearFrom(s.name ?? '', s.year ?? s.releaseDate ?? s.release_date), overview: s.plot || null,
-        community_rating: s.rating != null && s.rating !== '' ? Number(s.rating) || null : null, poster: registerImage(s.cover || null), backdrop: registerImage(backdrop || null),
+        community_rating: s.rating != null && s.rating !== '' ? Number(s.rating) || null : null, poster: registerRemoteImage(s.cover || null), backdrop: registerRemoteImage(backdrop || null),
         genres: JSON.stringify([...new Set(genres)]), trailer_url: s.youtube_trailer ? `https://www.youtube.com/watch?v=${s.youtube_trailer}` : null,
         people: JSON.stringify((s.cast ?? '').split(',').map((n) => n.trim()).filter(Boolean).slice(0, 15).map((name) => ({ name, role: null, kind: 'actor', imageUrl: null }))),
       };
@@ -463,8 +465,8 @@ export async function ensureIptvDetails(itemId: string): Promise<void> {
       const genres = String(i.genre ?? '').split(/[,/]/).map((g) => g.trim()).filter(Boolean);
       const rel = i.releasedate ?? i.release_date ?? null;
       db.update('items', target.id, {
-        overview: i.plot ?? i.description ?? target.overview, backdrop: bd ? registerImage(bd) : target.backdrop,
-        poster: target.poster ?? registerImage(i.movie_image ?? i.cover_big ?? null), duration_ms: i.duration_secs ? i.duration_secs * 1000 : target.duration_ms,
+        overview: i.plot ?? i.description ?? target.overview, backdrop: bd ? registerRemoteImage(bd) : target.backdrop,
+        poster: target.poster ?? registerRemoteImage(i.movie_image ?? i.cover_big ?? null), duration_ms: i.duration_secs ? i.duration_secs * 1000 : target.duration_ms,
         people: people.length ? JSON.stringify(people) : target.people, genres: genres.length ? JSON.stringify([...new Set([...parseJson<string[]>(target.genres, []), ...genres])]) : target.genres,
         release_date: rel, year: target.year ?? (rel ? parseInt(rel, 10) || null : null), content_rating: i.mpaa_rating || i.age || null,
         trailer_url: i.youtube_trailer ? `https://www.youtube.com/watch?v=${i.youtube_trailer}` : null, original_title: i.o_name && i.o_name !== target.title ? i.o_name : null,
@@ -483,7 +485,7 @@ export async function ensureIptvDetails(itemId: string): Promise<void> {
         for (const sn of seasonNums) {
           const sid = stableId(target.id, 'season', sn);
           const meta = info.seasons?.find((s) => Number(s.season_number) === sn);
-          const fields = { library_id: target.library_id, type: 'season', title: meta?.name && !/^season \d+$/i.test(meta.name) ? meta.name : `Season ${sn}`, idx: sn, parent_id: target.id, poster: registerImage(meta?.cover_big || meta?.cover || null), overview: meta?.overview || null };
+          const fields = { library_id: target.library_id, type: 'season', title: meta?.name && !/^season \d+$/i.test(meta.name) ? meta.name : `Season ${sn}`, idx: sn, parent_id: target.id, poster: registerRemoteImage(meta?.cover_big || meta?.cover || null), overview: meta?.overview || null };
           if (db.get('SELECT 1 FROM items WHERE id = ?', sid)) db.update('items', sid, { ...fields, updated_at: now });
           else db.insert('items', { id: sid, ...fields, sort_title: fields.title.toLowerCase(), added_at: now, updated_at: now });
         }
@@ -495,7 +497,7 @@ export async function ensureIptvDetails(itemId: string): Promise<void> {
           const title = (e.title ?? '').replace(new RegExp(`^${(target.title as string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*-\\s*`, 'i'), '').replace(/^S\d+E\d+\s*-?\s*/i, '').trim() || `Episode ${en ?? ''}`;
           const fields = {
             library_id: target.library_id, type: 'episode', title, sort_title: sortTitle(title), idx: en, parent_idx: sn, parent_id: sid, grandparent_id: target.id,
-            overview: e.info?.plot || null, thumb: registerImage(e.info?.movie_image || null), duration_ms: e.info?.duration_secs ? e.info.duration_secs * 1000 : null,
+            overview: e.info?.plot || null, thumb: registerRemoteImage(e.info?.movie_image || null), duration_ms: e.info?.duration_secs ? e.info.duration_secs * 1000 : null,
             release_date: e.info?.releasedate || e.info?.air_date || null, community_rating: e.info?.rating ? Number(e.info.rating) || null : null, remote_ref: String(e.id),
           };
           if (db.get('SELECT 1 FROM items WHERE id = ?', eid)) db.update('items', eid, { ...fields, updated_at: now });
@@ -557,8 +559,17 @@ export function listChannels(user: User, q: ChannelQuery & { favorite?: boolean 
   return { items, total, limit, offset };
 }
 
-export function getChannel(user: User, id: string): Channel {
+/** A channel row the user may access (hidden channels/categories and disabled sources excluded for non-admins). */
+export function accessibleChannelRow(user: User, id: string): Row {
   assertLive(user);
+  const w = channelWhere(user, {});
+  const r = db.get(`SELECT c.* FROM channels c JOIN live_sources s ON s.id = c.source_id WHERE c.id = ? AND ${w.sql}`, id, ...w.params);
+  if (!r) throw notFound('Channel not found');
+  return r;
+}
+
+export function getChannel(user: User, id: string): Channel {
+  accessibleChannelRow(user, id);
   const r = db.get(`${CHANNEL_SELECT} WHERE c.id = ?`, user.id, id);
   if (!r) throw notFound('Channel not found');
   const c = toChannel(r);
@@ -591,9 +602,7 @@ function recordingMap(ids: string[]): Map<string, string> {
 }
 
 export function channelPrograms(user: User, id: string, start?: string, end?: string): Program[] {
-  assertLive(user);
-  const r = db.get('SELECT * FROM channels WHERE id = ?', id);
-  if (!r) throw notFound('Channel not found');
+  const r = accessibleChannelRow(user, id);
   const epg = effEpg(r);
   if (!epg) return [];
   const s = start ?? new Date(Date.now() - 3 * 3600000).toISOString();
@@ -632,7 +641,7 @@ export function searchLive(user: User, q: string, limit = 20): { channels: Chann
   const now = nowIso();
   const rows = db.all(
     `SELECT p.*, c.id cid FROM programs p JOIN channels c ON COALESCE(json_extract(c.custom,'$.epgChannelId'), c.epg_channel_id) = p.epg_channel_id JOIN live_sources s ON s.id = c.source_id
-     WHERE s.enabled = 1 AND c.hidden = 0 AND p.title LIKE ? AND p.end > ? GROUP BY p.id ORDER BY p.start LIMIT ?`, `%${q}%`, now, limit);
+     WHERE s.enabled = 1 AND c.hidden = 0 AND COALESCE((SELECT hidden FROM channel_categories x WHERE x.id = c.category_id), 0) = 0 AND p.title LIKE ? AND p.end > ? GROUP BY p.id ORDER BY p.start LIMIT ?`, `%${q}%`, now, limit);
   return { channels, programs: rows.map((r) => toProgram(r, r.cid)) };
 }
 
@@ -649,7 +658,7 @@ const upstreamCounts = new Map<string, number>();
 
 export const activeUpstreams = (sourceId: string) => (upstreamCounts.get(sourceId) ?? 0) + [...sharedLive.values()].filter((s) => s.sourceId === sourceId).length;
 
-function checkConnectionLimit(src: Row) {
+export function checkConnectionLimit(src: Row) {
   const max = src.max_connections;
   if (max && activeUpstreams(src.id) >= max) {
     throw new HttpError(503, `All ${max} connection(s) to "${src.name}" are in use. Stop another live stream and try again.`, 'tuner_busy');
@@ -662,7 +671,7 @@ export function channelStreamUrl(r: Row, catchup?: { start: Date; durationMin: n
   if (src.type === 'xtream') return xt.timeshiftUrl(creds(src), r.remote_id, catchup.start, catchup.durationMin, sourceTimezones.get(src.id) ?? parseJson<any>(src.account_info, null)?.timezone ?? null);
   const custom = parseJson<Record<string, any>>(r.custom, {});
   const url = m3uCatchupUrl({ url: r.stream_url, catchup: custom.catchup ?? null, catchupSource: custom.catchupSource ?? null }, catchup.start, catchup.durationMin);
-  if (!url) throw badRequest('This channel does not support catch-up');
+  if (!url || !isSafeRemoteUrl(url)) throw badRequest('This channel does not support catch-up');
   return url;
 }
 
@@ -673,9 +682,7 @@ export function channelUserAgent(r: Row): string {
 }
 
 export async function playChannel(ctx: AuthContext, channelId: string, req: LivePlayRequest & { deviceProfile?: { containers?: string[] } }, remoteAddr: string | null): Promise<PlaybackInfo> {
-  assertLive(ctx.user);
-  const r = db.get('SELECT * FROM channels WHERE id = ?', channelId);
-  if (!r) throw notFound('Channel not found');
+  const r = accessibleChannelRow(ctx.user, channelId);
   const src = getSourceRow(r.source_id);
   const channel = getChannel(ctx.user, channelId);
   let catchup: { start: Date; durationMin: number } | undefined;

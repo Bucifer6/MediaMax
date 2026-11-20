@@ -16,7 +16,7 @@ import { newId } from '../util/ids.js';
 import { nowIso, toInt } from '../util/misc.js';
 import { detectSeason } from '../services/introdetect.js';
 
-const LIB_TYPES = ['movies', 'shows', 'music', 'photos', 'videos'];
+const LIB_TYPES = ['movies', 'shows', 'music', 'photos', 'videos', 'audiobooks'];
 
 export default async function libraryRoutes(app: FastifyInstance) {
   /* ------------------------------ libraries ------------------------- */
@@ -187,7 +187,7 @@ export default async function libraryRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string }; Querystring: { w?: string } }>('/images/:id', async (req, reply) => {
     const img = await resolveImage(req.params.id, req.query.w ? toInt(req.query.w, 0, 0, 4000) : undefined);
-    reply.header('Cache-Control', 'public, max-age=604800').type(img.mime);
+    reply.header('Cache-Control', 'public, max-age=604800').header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox").type(img.mime);
     return fs.createReadStream(img.path);
   });
 

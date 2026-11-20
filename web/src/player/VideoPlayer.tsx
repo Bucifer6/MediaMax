@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { Item, Marker, PlaybackInfo } from '@mediamax/shared';
+import type { Item, Marker, PlaybackInfo, TrickplayInfo } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import { useApp } from '../state/app';
@@ -12,12 +12,14 @@ import { OptionList, Popover, SeekBar, VolumeControl } from './controls';
 import { useSyncPlay } from './syncplay';
 import { Icon } from '../components/Icon';
 import { Img, Spinner } from '../components/ui';
+import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
+import { ChapterList } from './MiniPlayer';
 import { DEFAULT_PREFERENCES } from '../theme/defaults';
 import { isTypingTarget } from '../hooks';
 import { formatClock, languageName } from '../utils/format';
 import { isResumable } from '../utils/items';
 
-type Menu = null | 'audio' | 'subs' | 'quality' | 'speed' | 'together';
+type Menu = null | 'audio' | 'subs' | 'quality' | 'speed' | 'together' | 'chapters';
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
 interface StartOpts {
@@ -77,6 +79,10 @@ export default function VideoPlayer() {
   const [ended, setEnded] = useState(false);
   const [osd, setOsd] = useState<string | null>(null);
   const [joinCode, setJoinCode] = useState('');
+  const [trickplay, setTrickplay] = useState<TrickplayInfo | null>(null);
+  const [subSearch, setSubSearch] = useState(false);
+  /** Subtitle index to select once the next PlaybackInfo arrives (after an online download). */
+  const pendingSubPick = useRef<number | null>(null);
 
   const durationMs = info?.durationMs ?? item?.durationMs ?? 0;
   const markers: Marker[] = info?.markers?.length ? info.markers : item?.markers ?? [];
@@ -160,7 +166,14 @@ export default function VideoPlayer() {
     setUpNextDismissed(false);
     setCountdown(null);
     setEnded(false);
+    setTrickplay(null);
+    setSubSearch(false);
     skippedMarkers.current.clear();
+    // Scrub previews (404 until the server has generated them — just go without).
+    const tpCtrl = new AbortController();
+    api.items.trickplay(itemId, undefined, tpCtrl.signal).then((tp) => {
+      if (!cancelled && tp.count > 0 && tp.sheets.length) setTrickplay(tp);
+    }).catch(() => {});
     (async () => {
       const it = await api.items.get(itemId).catch(() => null);
       if (cancelled) return;
@@ -179,6 +192,7 @@ export default function VideoPlayer() {
     })();
     return () => {
       cancelled = true;
+      tpCtrl.abort();
       endSession();
       attached.current?.destroy();
       attached.current = null;
@@ -196,6 +210,12 @@ export default function VideoPlayer() {
     if (prefs.subtitleMode === 'always') pick = (byLang(subs) ?? subs.find((s) => s.default) ?? subs[0])?.index ?? null;
     else if (prefs.subtitleMode === 'forced') pick = (byLang(subs.filter((s) => s.forced)) ?? subs.find((s) => s.forced))?.index ?? null;
     else if (prefs.subtitleMode === 'auto') pick = (subs.find((s) => s.forced) ?? subs.find((s) => s.default))?.index ?? null;
+    const wanted = pendingSubPick.current;
+    pendingSubPick.current = null;
+    if (wanted != null && subs.some((s) => s.index === wanted)) {
+      setSubtitleIndex(wanted);
+      return;
+    }
     setSubtitleIndex((cur) => (cur != null && subs.some((s) => s.index === cur) ? cur : pick));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [info?.sessionId]);
@@ -394,6 +414,23 @@ export default function VideoPlayer() {
     flash(next == null ? 'Subtitles off' : `Subtitles: ${textSubs.find((s) => s.index === next)?.title ?? languageName(textSubs.find((s) => s.index === next)?.language)}`);
   };
 
+  const openSubSearch = () => {
+    setMenu(null);
+    setSubSearch(true);
+  };
+  /** A subtitle was downloaded or removed: re-request playback at the current spot so the track list updates. */
+  const onSubtitlesChanged = (updated: Item) => {
+    const before = new Set((item?.media?.[0]?.subtitleStreams ?? []).map((s) => s.index));
+    const added = (updated.media?.[0]?.subtitleStreams ?? []).find((s) => !before.has(s.index));
+    setItem(updated);
+    pendingSubPick.current = added && !burned ? added.index : null;
+    if (!added && subtitleIndex != null && !(updated.media?.[0]?.subtitleStreams ?? []).some((s) => s.index === subtitleIndex)) setSubtitleIndex(null);
+    const wasPaused = videoRef.current?.paused ?? false;
+    void start({ ...optsRef.current, startMs: currentMs() }).then(() => {
+      if (wasPaused) videoRef.current?.pause();
+    });
+  };
+
   const selectQuality = (kbps: number | null) => {
     setMenu(null);
     setMaxBitrate(kbps);
@@ -420,7 +457,7 @@ export default function VideoPlayer() {
   /* ---------------- keyboard ---------------- */
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (subSearch || isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       const v = videoRef.current;
       if (!v) return;
       let handled = true;
@@ -656,7 +693,7 @@ export default function VideoPlayer() {
       <div className="player-bottom" onClick={(e) => e.stopPropagation()}>
         <div className="player-seek-row">
           <span className="player-time">{formatClock(positionMs)}</span>
-          <SeekBar positionMs={positionMs} durationMs={durationMs} bufferedMs={bufferedMs} onSeek={(ms) => seekTo(ms)} markers={markers} />
+          <SeekBar positionMs={positionMs} durationMs={durationMs} bufferedMs={bufferedMs} onSeek={(ms) => seekTo(ms)} markers={markers} trickplay={trickplay} />
           <span className="player-time">-{formatClock(Math.max(0, durationMs - positionMs))}</span>
         </div>
         <div className="player-controls">
@@ -681,8 +718,23 @@ export default function VideoPlayer() {
                     ...burnOnly.map((s) => ({ label: s.title || languageName(s.language), value: `b${s.index}`, sub: `${s.codec.toUpperCase()} · burn-in (transcodes)` })),
                   ]}
                 />
+                {canSearchSubtitles(item) && (
+                  <button className="option option-action" onClick={openSubSearch}>
+                    <span className="option-check"><Icon name="search" size={16} /></span>
+                    <span className="option-label">Search online…</span>
+                  </button>
+                )}
               </Popover>
             </div>
+            {(item?.chapters?.length ?? 0) > 0 && (
+              <div className="pc-menu">
+                <button className={`btn-icon ${menu === 'chapters' ? 'active' : ''}`} onClick={() => setMenu(menu === 'chapters' ? null : 'chapters')} aria-label="Chapters"><Icon name="chapters" size={22} /></button>
+                <Popover open={menu === 'chapters'} onClose={() => setMenu(null)} className="chapters-popover">
+                  <div className="option-title">Chapters</div>
+                  <ChapterList chapters={item!.chapters!} positionMs={positionMs} onSeek={(ms) => { setMenu(null); seekTo(ms); }} />
+                </Popover>
+              </div>
+            )}
             {audioStreams.length > 1 && (
               <div className="pc-menu">
                 <button className="btn-icon" onClick={() => setMenu(menu === 'audio' ? null : 'audio')} aria-label="Audio track"><Icon name="audio" size={22} /></button>
@@ -748,6 +800,9 @@ export default function VideoPlayer() {
           </div>
         </div>
       </div>
+      {canSearchSubtitles(item) && (
+        <SubtitleSearchModal open={subSearch} onClose={() => setSubSearch(false)} item={item} onUpdated={onSubtitlesChanged} container={shellRef.current} />
+      )}
     </div>
   );
 }

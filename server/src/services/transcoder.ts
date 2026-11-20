@@ -5,7 +5,7 @@ import type { HwAccel } from '@mediamax/shared';
 import { config } from '../config.js';
 import { getSettings } from './settings.js';
 import { logger } from '../util/log.js';
-import { sleep } from '../util/misc.js';
+import { sleep, REMOTE_PROTOCOLS } from '../util/misc.js';
 
 const log = logger('transcoder');
 
@@ -93,6 +93,7 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
   }
   if (o.mode === 'live') args.push('-fflags', '+genpts+discardcorrupt', '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5');
   args.push(...(o.inputArgs ?? []));
+  if (!path.isAbsolute(o.input)) args.push(...REMOTE_PROTOCOLS);
   if (o.startSec > 0 && o.mode !== 'live') args.push('-ss', o.startSec.toFixed(3));
   args.push('-i', o.input);
 

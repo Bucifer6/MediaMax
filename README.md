@@ -62,6 +62,9 @@ npm run dev:web
 | `MEDIAMAX_HWACCEL` | `none` | Initial hardware accelerator |
 | `TMDB_API_KEY` | | Online metadata (also settable in the admin UI) |
 | `MEDIAMAX_LOG_LEVEL` | `info` | `debug` for verbose logs |
+| `MEDIAMAX_TRUSTED_PROXIES` | loopback + private ranges | Comma list of proxy IPs/CIDRs whose `X-Forwarded-*` headers are trusted |
+| `MEDIAMAX_ALLOW_PRIVATE_URLS` | off | Set to `1` to allow podcast feeds/artwork hosted on your LAN (blocked by default as SSRF protection) |
+| `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET`, `LASTFM_API_KEY` / `LASTFM_SECRET`, `OPENSUBTITLES_API_KEY` | | Optional integrations (also settable in the admin UI) |
 
 ## Adding IPTV
 **Admin → Live TV → Add source → Xtream Codes**, then enter the portal URL, username and password and press
@@ -89,6 +92,15 @@ M3U playlists (with `url-tvg`, `tvg-*`, `catchup-source`) and HDHomeRun tuners a
 - custom CSS for the web app.
 
 Every connected app receives a `branding.updated` event and re-themes instantly.
+
+## Security notes
+- Put MediaMax behind HTTPS (Caddy, Traefik, nginx) when exposing it to the internet and set **Public URL** in settings.
+- Passwordless profiles are only allowed for non-admin, non-SSO accounts; administrators must keep a password.
+- Sign-in attempts are locked per account after 5 failures (15 minutes), regardless of client IP.
+- Content from IPTV playlists and podcast feeds is treated as untrusted: only network URLs are accepted, images must
+  be raster images, and user-added feeds can't reach private addresses.
+- DLNA has no login: it only answers devices directly on the LAN (never through a proxy) and serves exactly what the
+  chosen "browse as" user may see.
 
 ## Repository layout
 ```

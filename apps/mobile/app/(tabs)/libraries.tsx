@@ -4,6 +4,7 @@ import React, { useMemo } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import type { Item, Library } from '@/api/types';
 import { useQuery } from '@/api/useQuery';
+import { Button } from '@/components/Button';
 import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
 import { ItemRow } from '@/components/Row';
@@ -49,7 +50,7 @@ export default function LibrariesScreen() {
         contentContainerStyle={{ paddingBottom: bottom }}
         refreshControl={t.isTV ? undefined : <RefreshControl refreshing={libs.refreshing} onRefresh={() => { void libs.refresh(); void collections.refresh(); void playlists.refresh(); }} tintColor={t.colors.primary} />}
       >
-        <ScreenHeader title="Library" back={false} />
+        <ScreenHeader title="Library" back={false} right={<Button label="Podcasts" icon="mic-outline" size="sm" variant="secondary" onPress={() => router.push('/podcasts' as never)} />} />
         {!visible.length ? <EmptyState title="No libraries" message="Your administrator hasn't shared any libraries with you yet." /> : null}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap, paddingHorizontal: t.space.gutter, marginBottom: t.space.xl }}>
           {visible.map((lib, i) => (

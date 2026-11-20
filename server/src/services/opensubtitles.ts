@@ -122,7 +122,8 @@ export async function downloadSubtitle(itemId: string, fileId: string, language:
   if (!file.ok) throw new HttpError(502, 'Could not fetch subtitle file', 'provider_error');
   const dir = subtitlesDir(media.id);
   fs.mkdirSync(dir, { recursive: true });
-  const lang = (language || 'en').toLowerCase().slice(0, 3);
+  const lang = /^[a-z]{2,3}$/i.test(language ?? '') ? language.toLowerCase() : 'und';
+  if (!/^\d+$/.test(fileId)) throw badRequest('Invalid subtitle id');
   const flag = flags.forced ? 'forced' : flags.hearingImpaired ? 'hi' : 'std';
   fs.writeFileSync(path.join(dir, `${lang}.${flag}.${fileId}.srt`), Buffer.from(await file.arrayBuffer()));
   refreshMediaSubs(media.id);

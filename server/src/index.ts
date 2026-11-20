@@ -5,6 +5,7 @@ import { startScheduler, stopScheduler } from './services/tasks.js';
 import { cleanupTranscodeDir, ffmpegAvailable } from './services/transcoder.js';
 import { initWebhooks } from './services/webhooks.js';
 import { initTrakt } from './services/trakt.js';
+import { initLastfm } from './services/lastfm.js';
 import { serverId } from './services/settings.js';
 import { syncDlna, stopDlna } from './services/dlna.js';
 
@@ -15,6 +16,7 @@ async function main() {
   cleanupTranscodeDir();
   initWebhooks();
   initTrakt();
+  initLastfm();
   const app = await buildApp();
   await app.listen({ port: config.port, host: config.host });
   log.info(`MediaMax ${config.version} (server ${serverId()}) listening on http://${config.host}:${config.port}`);
@@ -32,6 +34,10 @@ async function main() {
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
+
+// Never let one bad request/socket take the whole server down.
+process.on('uncaughtException', (e) => log.error('Uncaught exception', e));
+process.on('unhandledRejection', (e) => log.error('Unhandled rejection', e));
 
 main().catch((e) => {
   log.error('Fatal startup error', e);

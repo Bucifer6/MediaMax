@@ -6,7 +6,7 @@ import { db } from '../db.js';
 import { config } from '../config.js';
 import { getSettings, serverId } from './settings.js';
 import { getBranding } from './branding.js';
-import { getUser, listUsers } from './auth.js';
+import { getUser } from './auth.js';
 import { allowedLibraryIds, getChildren, queryItems, getItem } from './items.js';
 import { logger } from '../util/log.js';
 
@@ -36,14 +36,16 @@ export function lanAddress(): string {
 const baseUrl = () => `http://${lanAddress()}:${config.port}`;
 const friendlyName = () => getSettings().dlna.friendlyName || getBranding().serverName || 'MediaMax';
 
+/** The account DLNA browses as. Must be chosen explicitly by an admin — there is no admin fallback. */
 export function dlnaUser(): User | null {
   const id = getSettings().dlna.userId;
+  if (!id) return null;
   try {
-    if (id) return getUser(id);
+    const u = getUser(id);
+    return u.disabled ? null : u;
   } catch {
-    /* fall through */
+    return null;
   }
-  return listUsers().find((u) => u.isAdmin && !u.disabled) ?? null;
 }
 
 /** DLNA streams are unauthenticated, so only serve the local network. */

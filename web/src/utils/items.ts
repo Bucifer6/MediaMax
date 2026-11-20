@@ -7,7 +7,11 @@ export function isVideo(item: Pick<Item, 'type'>) {
   return PLAYABLE_VIDEO.includes(item.type);
 }
 export function isAudio(item: Pick<Item, 'type'>) {
-  return item.type === 'track';
+  return item.type === 'track' || item.type === 'bookpart' || item.type === 'podcastepisode';
+}
+/** Spoken-word audio remembers where you stopped (music tracks don't). */
+export function hasAudioResume(item: Pick<Item, 'type'>) {
+  return item.type === 'bookpart' || item.type === 'podcastepisode';
 }
 
 export function itemLink(item: Pick<Item, 'id' | 'type'>): string {
@@ -47,6 +51,14 @@ export function itemSubtitle(item: Item): string {
       return [item.parentTitle, item.year].filter(Boolean).join(' · ');
     case 'track':
       return [item.grandparentTitle ?? item.parentTitle].filter(Boolean).join('');
+    case 'audiobook':
+      return item.parentTitle ?? (item.year ? String(item.year) : '');
+    case 'bookpart':
+      return item.parentTitle ?? '';
+    case 'podcast':
+      return item.childCount ? `${item.childCount} episode${item.childCount === 1 ? '' : 's'}` : '';
+    case 'podcastepisode':
+      return [item.parentTitle, item.releaseDate ? new Date(item.releaseDate).toLocaleDateString(undefined, { dateStyle: 'medium' }) : ''].filter(Boolean).join(' · ');
     case 'show':
       return [item.year, item.childCount ? `${item.childCount} season${item.childCount > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
     default:
@@ -68,7 +80,7 @@ export function landscapeFor(item: Item): string | null {
 }
 
 export function isSquare(item: Pick<Item, 'type'>) {
-  return item.type === 'album' || item.type === 'artist' || item.type === 'track' || item.type === 'playlist' || item.type === 'photo';
+  return ['album', 'artist', 'track', 'playlist', 'photo', 'audiobook', 'bookpart', 'podcast', 'podcastepisode'].includes(item.type);
 }
 
 export function libraryIcon(type: LibraryType): IconName {
@@ -83,6 +95,10 @@ export function libraryIcon(type: LibraryType): IconName {
       return 'music';
     case 'photos':
       return 'image';
+    case 'audiobooks':
+      return 'book';
+    case 'podcasts':
+      return 'podcast';
     default:
       return 'video';
   }
@@ -102,6 +118,10 @@ export function libraryItemTypes(type: LibraryType): string {
       return 'photo';
     case 'videos':
       return 'video';
+    case 'audiobooks':
+      return 'audiobook';
+    case 'podcasts':
+      return 'podcast';
   }
 }
 

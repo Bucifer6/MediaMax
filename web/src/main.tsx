@@ -8,6 +8,7 @@ import './styles/layout.css';
 import './styles/pages.css';
 import './styles/player.css';
 import './styles/admin.css';
+import './styles/stats.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

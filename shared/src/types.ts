@@ -41,6 +41,8 @@ export interface SystemInfo {
   /** Public URL configured by the admin, if any. */
   publicUrl: string | null;
   features: FeatureFlags;
+  /** Single sign-on, when the admin configured it. */
+  oidc: { enabled: boolean; buttonLabel: string } | null;
 }
 
 export interface SetupRequest {
@@ -315,6 +317,10 @@ export type LibraryType =
   | 'music'
   | 'photos'
   | 'videos'
+  /** Audiobooks: one folder (or one .m4b) per book, grouped under the author. */
+  | 'audiobooks'
+  /** Podcast subscriptions (RSS); managed via /podcasts, has no folders. */
+  | 'podcasts'
   /** Virtual libraries populated from an Xtream source. */
   | 'iptv-movies'
   | 'iptv-shows';
@@ -336,9 +342,36 @@ export interface Library {
   createdAt: string;
 }
 
+export interface PodcastSubscription {
+  id: string;
+  /** Item id of the podcast (browse/play it like any item). */
+  itemId: string;
+  feedUrl: string;
+  title: string;
+  imageUrl: string | null;
+  episodeCount: number;
+  lastRefreshAt: string | null;
+  lastError: string | null;
+  /** Download new episodes to the server automatically. */
+  autoDownload: boolean;
+}
+
+export interface SubscribePodcastRequest {
+  feedUrl: string;
+  autoDownload?: boolean;
+}
+
+export interface PodcastSearchResult {
+  title: string;
+  author: string | null;
+  feedUrl: string;
+  imageUrl: string | null;
+  genre: string | null;
+}
+
 export interface CreateLibraryRequest {
   name: string;
-  type: Exclude<LibraryType, 'iptv-movies' | 'iptv-shows'>;
+  type: Exclude<LibraryType, 'iptv-movies' | 'iptv-shows' | 'podcasts'>;
   paths: string[];
   fetchMetadata?: boolean;
 }
@@ -360,7 +393,15 @@ export type ItemType =
   | 'photo'
   | 'video'
   | 'collection'
-  | 'playlist';
+  | 'playlist'
+  /** Audiobook (container of parts). Author in `people` (kind writer) and `grandparentTitle`-style `parentTitle`. */
+  | 'audiobook'
+  /** One file of an audiobook (child of `audiobook`). */
+  | 'bookpart'
+  /** Podcast show (container of episodes). */
+  | 'podcast'
+  /** Podcast episode (child of `podcast`, streamed from the feed's enclosure URL). */
+  | 'podcastepisode';
 
 export interface Person {
   name: string;
@@ -464,6 +505,14 @@ export interface Item {
   trailerUrl?: string | null;
   /** Populated on GET /items/:id only: fields protected from metadata refreshes. */
   lockedFields?: string[];
+  /** Populated on GET /items/:id for media with embedded chapters (audiobooks, movies). */
+  chapters?: Chapter[];
+}
+
+export interface Chapter {
+  title: string;
+  startMs: number;
+  endMs: number;
 }
 
 export type ItemSort =
@@ -888,12 +937,33 @@ export interface ServerSettings {
     clientId: string | null;
     clientSecret: string | null;
   };
+  lastfm: {
+    apiKey: string | null;
+    sharedSecret: string | null;
+  };
+  /** Single sign-on via any OpenID Connect provider (Authentik, Keycloak, Authelia, Google, Entra…). */
+  oidc: {
+    enabled: boolean;
+    /** Issuer URL, e.g. https://auth.example.com/application/o/mediamax/ */
+    issuer: string | null;
+    clientId: string | null;
+    clientSecret: string | null;
+    buttonLabel: string;
+    /** Create a MediaMax user on first SSO sign-in. */
+    autoCreateUsers: boolean;
+    /** Claim holding group names (default "groups"). */
+    groupsClaim: string;
+    /** Members of this group become administrators. */
+    adminGroup: string | null;
+    /** If set, only members of this group may sign in. */
+    allowedGroup: string | null;
+  };
   /** DLNA / UPnP media server for smart TVs, consoles and players on the local network. */
   dlna: {
     enabled: boolean;
     /** Name shown on TVs; defaults to the server name. */
     friendlyName: string | null;
-    /** Browse as this user (library access & rating limits apply). Null = first admin. */
+    /** Browse as this user (library access & rating limits apply). Required — DLNA serves nothing until set. */
     userId: string | null;
   };
   sessionTimeoutDays: number;
@@ -1097,6 +1167,19 @@ export interface TraktStatus {
   connected: boolean;
   username: string | null;
   scrobble: boolean;
+}
+
+export interface LastfmStatus {
+  /** Admin configured a Last.fm API account. */
+  available: boolean;
+  connected: boolean;
+  username: string | null;
+  scrobble: boolean;
+}
+
+export interface LastfmAuthStart {
+  /** Open this in a browser to approve MediaMax; then poll GET /lastfm until connected. */
+  authUrl: string;
 }
 
 export interface TraktDeviceCode {

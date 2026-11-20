@@ -1,10 +1,11 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { PanResponder, View, type LayoutChangeEvent } from 'react-native';
-import type { Marker } from '@/api/types';
+import type { Marker, TrickplayInfo } from '@/api/types';
 import { Focusable } from '@/components/Focusable';
 import { T } from '@/components/Text';
 import { useTheme } from '@/theme';
 import { formatClock } from '@/utils/format';
+import { TrickplayThumb } from './Trickplay';
 
 export function Scrubber({
   positionMs,
@@ -15,6 +16,7 @@ export function Scrubber({
   onScrubbing,
   onFocusChange,
   pendingMs,
+  trickplay,
 }: {
   positionMs: number;
   durationMs: number;
@@ -26,6 +28,8 @@ export function Scrubber({
   onFocusChange?: (focused: boolean) => void;
   /** TV: a seek target being dialled in with the D-pad. */
   pendingMs?: number | null;
+  /** Scrub-preview sprite sheets (shown while dragging / dialling a seek). */
+  trickplay?: TrickplayInfo | null;
 }) {
   const t = useTheme();
   const [width, setWidth] = useState(1);
@@ -69,6 +73,7 @@ export function Scrubber({
   const frac = durationMs > 0 ? Math.max(0, Math.min(1, shown / durationMs)) : 0;
   const bufFrac = durationMs > 0 && bufferedMs ? Math.max(0, Math.min(1, bufferedMs / durationMs)) : 0;
   const h = t.isTV ? t.s(6) : 4;
+  const thumbW = Math.min(Math.max(1, width - 4), t.isTV ? t.s(280) : t.wide ? 220 : 160);
   const onLayout = (e: LayoutChangeEvent) => {
     widthRef.current = e.nativeEvent.layout.width;
     setWidth(e.nativeEvent.layout.width);
@@ -97,6 +102,11 @@ export function Scrubber({
           shadowRadius: 8,
         }}
       />
+      {(dragMs != null || pendingMs != null) && trickplay ? (
+        <View pointerEvents="none" style={{ position: 'absolute', bottom: (t.isTV ? t.s(34) : 30) + (t.isTV ? t.s(34) : 28), left: Math.max(0, Math.min(width - thumbW - 4, frac * width - thumbW / 2 - 2)) }}>
+          <TrickplayThumb info={trickplay} ms={shown} width={thumbW} />
+        </View>
+      ) : null}
       {dragMs != null || pendingMs != null ? (
         <View pointerEvents="none" style={{ position: 'absolute', bottom: t.isTV ? t.s(34) : 30, left: Math.max(0, Math.min(width - 70, frac * width - 35)), width: 70, alignItems: 'center' }}>
           <View style={{ backgroundColor: 'rgba(0,0,0,0.8)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
