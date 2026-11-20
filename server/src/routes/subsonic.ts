@@ -10,6 +10,8 @@ import { authenticateApiKey, getUser, verifySecret } from '../services/auth.js';
 import { getItem, getChildren, queryItems, searchItems, setFavorite, reportProgress, allowedLibraryIds, addToContainer, createContainer, removeFromContainer, listContainers } from '../services/items.js';
 import { resolveImage } from '../services/images.js';
 import { getLyrics } from '../services/lyrics.js';
+import { creditsFor } from '../services/music/credits.js';
+import { dispatchListen, dispatchNowPlaying } from '../services/scrobble.js';
 import { parseJson } from '../util/misc.js';
 import { logger } from '../util/log.js';
 
@@ -101,24 +103,51 @@ const year = (i: Item) => i.year ?? undefined;
 const secs = (ms: number | null | undefined) => (ms ? Math.round(ms / 1000) : undefined);
 const starred = (i: Item) => (i.userData.favorite ? i.userData.lastPlayedAt ?? i.addedAt : undefined);
 
+/** OpenSubsonic ArtistID3 references for a track's credited artists (id only when the artist is in the library). */
+function creditedArtists(t: Item): Obj[] {
+  const credits = t.music?.credits ?? creditsFor([t.id]).get(t.id) ?? [];
+  if (!credits.length) return t.grandparentId ? [{ id: t.grandparentId, name: t.grandparentTitle ?? '' }] : [];
+  return credits.map((c) => ({ id: c.artistId ?? undefined, name: c.name, musicBrainzId: c.mbid ?? undefined }));
+}
+
+/** "1999-05-01" / "1999" → OpenSubsonic ItemDate. */
+function itemDate(d: string | null | undefined, year?: number | null): Obj | undefined {
+  const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(d ?? '');
+  if (m) return { year: Number(m[1]), month: m[2] ? Number(m[2]) : undefined, day: m[3] ? Number(m[3]) : undefined };
+  return year ? { year } : undefined;
+}
+
 function songOf(t: Item): Obj {
   const m = db.get('SELECT * FROM media WHERE item_id = ? LIMIT 1', t.id);
+  const artists = creditedArtists(t);
+  const display = t.music?.displayArtist ?? t.grandparentTitle ?? undefined;
   const suffix = (m?.container ?? (m?.path ? path.extname(m.path).slice(1) : 'mp3')).toLowerCase();
   const ct: Record<string, string> = { mp3: 'audio/mpeg', flac: 'audio/flac', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', opus: 'audio/ogg', wav: 'audio/wav' };
   return {
-    id: t.id, parent: t.parentId ?? undefined, isDir: false, title: t.title, album: t.parentTitle ?? undefined, artist: t.grandparentTitle ?? undefined,
+    id: t.id, parent: t.parentId ?? undefined, isDir: false, title: t.title, album: t.parentTitle ?? undefined, artist: display,
     track: t.index ?? undefined, discNumber: t.parentIndex ?? undefined, year: year(t), genre: t.genres[0], coverArt: t.parentId ?? t.id,
     size: m?.size ?? undefined, contentType: ct[suffix] ?? 'audio/mpeg', suffix, duration: secs(t.durationMs), bitRate: m?.bitrate ?? undefined,
     path: m?.path ? path.basename(m.path) : undefined, albumId: t.parentId ?? undefined, artistId: t.grandparentId ?? undefined, type: 'music',
     mediaType: 'song', starred: starred(t), playCount: t.userData.playCount, played: t.userData.lastPlayedAt ?? undefined,
     userRating: t.userData.rating ? Math.round(t.userData.rating / 2) : undefined, created: t.addedAt,
     // OpenSubsonic extras
-    genres: t.genres.map((g) => ({ name: g })), displayArtist: t.grandparentTitle ?? undefined, displayAlbumArtist: t.grandparentTitle ?? undefined,
+    genres: t.genres.map((g) => ({ name: g })), displayArtist: display, displayAlbumArtist: t.grandparentTitle ?? undefined,
+    musicBrainzId: t.externalIds.musicbrainzRecording ?? '', artists,
+    albumArtists: t.grandparentId ? [{ id: t.grandparentId, name: t.grandparentTitle ?? '' }] : [],
     replayGain: t.replayGain ? { trackGain: t.replayGain.trackGainDb ?? undefined, albumGain: t.replayGain.albumGainDb ?? undefined, trackPeak: t.replayGain.trackPeak ?? undefined, albumPeak: t.replayGain.albumPeak ?? undefined } : undefined,
   };
 }
 function albumOf(a: Item): Obj {
+  const mu = a.music ?? {};
+  const discTitles = Object.entries(mu.discTitles ?? {}).map(([disc, title]) => ({ disc: Number(disc), title }));
   return {
+    musicBrainzId: a.externalIds.musicbrainzRelease ?? '',
+    releaseTypes: (mu.releaseTypes ?? []).map((x) => x.replace(/^ep$/, 'EP').replace(/^\w/, (c) => c.toUpperCase())),
+    originalReleaseDate: itemDate(mu.originalDate, mu.originalYear),
+    recordLabels: mu.label ? [{ name: mu.label }] : [],
+    isCompilation: !!mu.compilation,
+    discTitles,
+    artists: a.parentId ? [{ id: a.parentId, name: a.parentTitle ?? '' }] : [],
     id: a.id, name: a.title, title: a.title, album: a.title, artist: a.parentTitle ?? undefined, artistId: a.parentId ?? undefined, coverArt: a.id,
     songCount: a.childCount, duration: secs(a.durationMs) ?? 0, created: a.addedAt, year: year(a), genre: a.genres[0], starred: starred(a),
     playCount: a.userData.playCount, isDir: true, parent: a.parentId ?? undefined, genres: a.genres.map((g) => ({ name: g })),
@@ -126,7 +155,7 @@ function albumOf(a: Item): Obj {
   };
 }
 function artistOf(a: Item): Obj {
-  return { id: a.id, name: a.title, coverArt: a.id, artistImageUrl: undefined, albumCount: a.childCount, starred: starred(a), mediaType: 'artist' };
+  return { id: a.id, name: a.title, coverArt: a.id, artistImageUrl: undefined, albumCount: a.childCount, starred: starred(a), mediaType: 'artist', musicBrainzId: a.externalIds.musicbrainzArtist ?? '' };
 }
 
 const musicLibraries = (u: User) => db.all("SELECT * FROM libraries WHERE type = 'music' ORDER BY sort_order, name").filter((l) => allowedLibraryIds(u).includes(l.id));
@@ -260,15 +289,23 @@ export default async function subsonicRoutes(app: FastifyInstance) {
     },
     scrobble: (req, _p, u) => {
       const submission = param(req, 'submission') !== 'false';
-      for (const id of params(req, 'id')) {
+      const times = params(req, 'time').map(Number);
+      params(req, 'id').forEach((id, i) => {
         try {
           const it = getItem(u, id, false);
-          if (submission) reportProgress(u, id, it.durationMs ?? 0, it.durationMs, 'stopped');
-          else reportProgress(u, id, 1000, it.durationMs, 'playing');
+          if (submission) {
+            reportProgress(u, id, it.durationMs ?? 0, it.durationMs, 'stopped');
+            // The client decided the track counts as played; `time` (ms) is when it was listened to.
+            const at = times[i] > 0 ? times[i] : Date.now() - (it.durationMs ?? 0);
+            void dispatchListen(u.id, id, at, it.durationMs ?? 240000);
+          } else {
+            reportProgress(u, id, 1000, it.durationMs, 'playing');
+            void dispatchNowPlaying(u.id, id);
+          }
         } catch {
           /* ignore unknown ids */
         }
-      }
+      });
       return {};
     },
     getPlaylists: (_r, _p, u) => ({

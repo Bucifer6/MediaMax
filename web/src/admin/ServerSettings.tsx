@@ -71,7 +71,7 @@ export function ServerSettingsAdmin() {
   const [s, setS] = useState<ServerSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [params] = useSearchParams();
-  const [tab, setTab] = useState<Tab>(() => (params.get('tab') === 'arr' ? 'arr' : params.get('tab') === 'requests' ? 'requests' : params.get('tab') === 'notifications' ? 'notifications' : 'general'));
+  const [tab, setTab] = useState<Tab>(() => { const t = params.get('tab'); return t === 'arr' || t === 'requests' || t === 'notifications' || t === 'metadata' ? t : 'general'; });
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);

@@ -18,6 +18,8 @@ import { RatingBadges } from '../components/RatingBadges';
 import { MediaRangeBadge, rangeDetails } from '../components/HdrBadge';
 import { AudioBadges, audioFormat, channelText } from '../components/AudioBadge';
 import { ArrItemActions } from '../components/ArrItemActions';
+import { AlbumFacts, ArtistCredits, MusicBrainzLinks, ReleaseTypeBadges } from '../components/MusicBits';
+import { ArtistDiscography, RelatedArtists } from '../components/ArtistMusic';
 import { ReportIssueButton } from '../components/ReportIssue';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
@@ -260,6 +262,15 @@ function SeasonsBody({ show }: { show: Item }) {
 }
 
 /* ---------------- Tracks ---------------- */
+/** On an album, a track's artist line shows only when it differs from the album artist (features, compilations). */
+function showTrackArtist(t: Item, parent: Item): boolean {
+  if (parent.type !== 'album') return true;
+  const credits = t.music?.credits ?? [];
+  if (credits.length > 1) return true;
+  const shown = t.music?.displayArtist ?? t.grandparentTitle;
+  return !!shown && shown !== parent.parentTitle;
+}
+
 function TrackList({ parent, removable, onRemove }: { parent: Item; removable?: boolean; onRemove?: (i: Item) => void }) {
   const music = useMusic();
   const play = usePlayItem();
@@ -278,11 +289,9 @@ function TrackList({ parent, removable, onRemove }: { parent: Item; removable?: 
           const isCurrent = music.current?.id === t.id;
           return (
             <li key={t.id} className={`track ${isCurrent ? 'current' : ''}`}>
-              <button
-                className="track-main"
-                onClick={() => (isAudio(t) ? music.playQueue(audioList, audioList.indexOf(t)) : play(t))}
-                data-nav
-              >
+              {/* The row is one big play button (stretched under the content) so the artist names can be real links. */}
+              <div className="track-main">
+                <button className="track-hit" onClick={() => (isAudio(t) ? music.playQueue(audioList, audioList.indexOf(t)) : play(t))} aria-label={`Play ${t.title}`} data-nav />
                 <span className="track-num">
                   {isCurrent && music.playing ? <span className="eq"><i /><i /><i /></span> : <span className="track-idx">{ordered ? t.index ?? i + 1 : i + 1}</span>}
                   <Icon name="play" size={14} className="track-playicon" />
@@ -292,11 +301,16 @@ function TrackList({ parent, removable, onRemove }: { parent: Item; removable?: 
                 )}
                 <span className="track-title">
                   <span>{t.title}</span>
-                  {parent.type === 'audiobook' ? (progressPct(t) > 0 && !t.userData.played ? <small>{Math.round(progressPct(t))}% listened</small> : t.userData.played ? <small>Finished</small> : null) : (parent.type !== 'album' || t.grandparentTitle !== parent.parentTitle) && <small>{[t.grandparentTitle, parent.type !== 'album' ? t.parentTitle : null].filter(Boolean).join(' · ')}</small>}
+                  {parent.type === 'audiobook' ? (progressPct(t) > 0 && !t.userData.played ? <small>{Math.round(progressPct(t))}% listened</small> : t.userData.played ? <small>Finished</small> : null) : showTrackArtist(t, parent) && (
+                    <small className="track-credits">
+                      <ArtistCredits credits={t.music?.credits} fallback={t.music?.displayArtist ?? t.grandparentTitle} />
+                      {parent.type !== 'album' && t.parentTitle ? ` · ${t.parentTitle}` : ''}
+                    </small>
+                  )}
                 </span>
-                {showDisc && <span className="muted track-disc">Disc {t.parentIndex}</span>}
+                {showDisc && <span className="muted track-disc">Disc {t.parentIndex}{parent.music?.discTitles?.[String(t.parentIndex)] ? ` · ${parent.music.discTitles[String(t.parentIndex)]}` : ''}</span>}
                 <span className="track-dur">{t.durationMs ? formatClock(t.durationMs) : ''}</span>
-              </button>
+              </div>
               <Dropdown
                 trigger={({ onClick }) => <button className="btn-icon track-more" onClick={onClick} aria-label="More"><Icon name="more" size={18} /></button>}
                 items={[
@@ -562,6 +576,7 @@ export function ItemPage() {
             {item.contentRating && <Badge className="badge-outline">{item.contentRating}</Badge>}
             {item.durationMs && item.type !== 'show' ? <span>{formatDuration(item.durationMs)}</span> : null}
             {item.type === 'show' && item.childCount > 0 && <span>{item.childCount} season{item.childCount > 1 ? 's' : ''}</span>}
+            {item.type === 'album' && <ReleaseTypeBadges types={item.music?.releaseTypes} />}
             {(item.type === 'album' || item.type === 'playlist' || item.type === 'collection') && item.childCount > 0 && <span>{item.childCount} items</span>}
             {item.type === 'audiobook' && item.childCount > 1 && <span>{item.childCount} parts</span>}
             {item.type === 'audiobook' && item.series?.name && (
@@ -585,6 +600,8 @@ export function ItemPage() {
               ))}
             </div>
           )}
+
+          {(item.type === 'artist' || item.type === 'album' || item.type === 'track') && <MusicBrainzLinks item={item} />}
 
           <div className="detail-actions">
             {playable && (
@@ -688,7 +705,9 @@ export function ItemPage() {
           {item.overview && <p className="detail-overview">{item.overview}</p>}
 
           <dl className="detail-credits">
-            {authors.length > 0 && (<><dt>Author</dt><dd>{authors.join(', ')}</dd></>)}
+            {item.type === 'track' && (item.music?.credits?.length || item.music?.displayArtist) ? (<><dt>Artist</dt><dd><ArtistCredits credits={item.music?.credits} fallback={item.music?.displayArtist} /></dd></>) : null}
+            {item.type === 'album' && <AlbumFacts item={item} />}
+            {authors.length > 0 &&(<><dt>Author</dt><dd>{authors.join(', ')}</dd></>)}
             {narrators.length > 0 && (<><dt>Narrated by</dt><dd>{narrators.join(', ')}</dd></>)}
             {directors.length > 0 && (<><dt>Director</dt><dd>{directors.join(', ')}</dd></>)}
             {writers.length > 0 && (<><dt>Writers</dt><dd>{writers.slice(0, 4).join(', ')}</dd></>)}
@@ -708,7 +727,8 @@ export function ItemPage() {
         {(item.type === 'audiobook' || item.type === 'bookpart') && <BookmarksSection item={item} />}
         {item.type === 'audiobook' && item.series?.name && <SeriesRow item={item} />}
         {(item.type === 'album' || item.type === 'playlist') && <TrackList key={item.smart ? JSON.stringify(item.smart) : 'manual'} parent={item} removable={item.type === 'playlist' && !item.smart} onRemove={removeFromContainer} />}
-        {item.type === 'artist' && <ChildrenGrid parent={item} title="Albums" />}
+        {item.type === 'artist' && <ArtistDiscography artist={item} />}
+        {item.type === 'artist' && <RelatedArtists artist={item} />}
         {item.type === 'collection' && <ChildrenGrid key={item.smart ? JSON.stringify(item.smart) : 'manual'} parent={item} removable={isAdmin && !item.smart} onRemove={removeFromContainer} />}
         <CastRow item={item} />
         {item.media && item.media.length > 0 && <MediaInfo media={item.media} />}

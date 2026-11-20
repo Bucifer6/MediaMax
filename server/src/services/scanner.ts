@@ -21,6 +21,9 @@ import { enrichLibrary } from './metadata/index.js';
 import { logActivity } from './activity.js';
 import { downloadedSubs } from './opensubtitles.js';
 import { applyPluginMetadata } from './plugins.js';
+import { mbTagSubset, parseMbTags, tagsWithId3, type MbTags } from './music/tags.js';
+import { rebuildCredits } from './music/credits.js';
+import { autoIdentifyAfterScan } from './music/acoustid.js';
 
 const log = logger('scanner');
 
@@ -377,17 +380,23 @@ async function scanMusic(ctx: ScanCtx, files: FileEntry[]) {
     const unchanged = m0 && m0.mtime === f.mtime && m0.size === f.size && m0.probed_at && !ctx.force;
     let pr: ProbeResult | null = null;
     let tags: Record<string, string> = {};
-    if (unchanged) {
-      const cached = db.get('SELECT extra FROM items WHERE id = ?', m0.item_id);
-      tags = parseJson<{ tags?: Record<string, string> }>(cached?.extra, {}).tags ?? {};
+    let mbRaw: Record<string, string> = {};
+    const cachedExtra = unchanged ? parseJson<{ tags?: Record<string, string>; mbTags?: Record<string, string>; tagv?: number }>(db.get('SELECT extra FROM items WHERE id = ?', m0.item_id)?.extra, {}) : null;
+    if (cachedExtra && cachedExtra.tagv === MUSIC_TAG_VERSION) {
+      tags = cachedExtra.tags ?? {};
+      mbRaw = cachedExtra.mbTags ?? {};
     } else {
+      // New or changed files, and files scanned before MusicBrainz tags were read (one re-probe fills their MBIDs).
       try {
         pr = await probe(f.path, f.path);
         tags = pr.tags;
+        mbRaw = mbTagSubset(tagsWithId3(f.path, pr.tags));
       } catch (e) {
         log.warn(`Probe failed for ${f.path}: ${(e as Error).message}`);
+        if (cachedExtra) tags = cachedExtra.tags ?? {};
       }
     }
+    const mb = parseMbTags(mbRaw);
     const parts = f.rel.split(path.sep);
     const folderArtist = parts.length >= 3 ? parts[parts.length - 3] : parts.length === 2 ? parts[0] : 'Unknown Artist';
     const folderAlbum = parts.length >= 2 ? parts[parts.length - 2] : 'Unknown Album';
@@ -397,13 +406,23 @@ async function scanMusic(ctx: ScanCtx, files: FileEntry[]) {
     const discNo = parseInt(tags.disc ?? tags.discnumber ?? '', 10) || 1;
     const year = parseInt((tags.date ?? tags.year ?? '').slice(0, 4), 10) || null;
     const genre = tags.genre ? tags.genre.split(/[;/]/).map((g) => g.trim()).filter(Boolean) : [];
-    const artistId = stableId(ctx.lib.id, 'artist', artistName.toLowerCase());
-    const albumId = stableId(artistId, 'album', albumName.toLowerCase());
+    // MusicBrainz ids (Picard tags) decide grouping when present; libraries without them group by name as before.
+    const hasAlbumArtistTag = !!(tags.album_artist || tags.albumartist || tags['album artist']);
+    const artistMbid = mb.albumArtists[0] ?? (!hasAlbumArtistTag && mb.artists.length === 1 ? mb.artists[0] : null);
+    const artistId = resolveMusicArtist(ctx.lib.id, artistName, artistMbid);
+    const albumId = resolveMusicAlbum(artistId, albumName, mb.release);
     const albumDir = path.dirname(f.path);
-    ensureItem({ id: artistId, library_id: ctx.lib.id, type: 'artist', title: artistName, path: `artist:${artistName.toLowerCase()}`,
+    // Name variants merged by MBID ("Beyonce" / "Beyoncé") keep the title the artist was first seen with.
+    const artistTitle = artistId !== stableId(ctx.lib.id, 'artist', artistName.toLowerCase()) ? db.get<{ title: string }>('SELECT title FROM items WHERE id = ?', artistId)?.title ?? artistName : artistName;
+    ensureItem({ id: artistId, library_id: ctx.lib.id, type: 'artist', title: artistTitle, path: `artist:${artistTitle.toLowerCase()}`,
       poster: registerImage(parts.length >= 3 ? findFile(path.join(f.root, ...parts.slice(0, parts.length - 2)), imgNames(['artist', 'folder', 'poster'])) : null),
       backdrop: registerImage(parts.length >= 3 ? findFile(path.join(f.root, ...parts.slice(0, parts.length - 2)), imgNames(['fanart', 'backdrop'])) : null) });
+    if (artistMbid) setTagIds(artistId, { musicbrainzArtist: artistMbid }, { mbTag: true });
     const albumExisted = !!db.get('SELECT 1 FROM items WHERE id = ?', albumId);
+    // Create the album before any await so concurrent tracks of the same release find it by MBID.
+    ensureItem({ id: albumId, library_id: ctx.lib.id, type: 'album', title: albumName, year, parent_id: artistId, path: `album:${artistId}:${albumName.toLowerCase()}` });
+    if (mb.release || mb.releaseGroup) setTagIds(albumId, { musicbrainzRelease: mb.release, musicbrainzReleaseGroup: mb.releaseGroup }, null);
+    setAlbumMusic(albumId, mb, discNo);
     let cover = findFile(albumDir, imgNames(['cover', 'folder', 'front', 'album', 'albumart']));
     if (!cover && !albumArtDone.has(albumId) && pr?.coverArtIndex != null) {
       albumArtDone.add(albumId);
@@ -418,10 +437,16 @@ async function scanMusic(ctx: ScanCtx, files: FileEntry[]) {
       id: trackId, library_id: ctx.lib.id, type: 'track', title: tags.title || stripExt(path.basename(f.path)).replace(/^\d+[\s.-]+/, ''),
       idx: trackNo, parent_idx: discNo, parent_id: albumId, grandparent_id: artistId, path: f.path, year,
       ...(genre.length ? { genres: JSON.stringify(genre) } : {}),
-      extra: JSON.stringify({ tags: { artist: tags.artist ?? null, album: tags.album ?? null, title: tags.title ?? null, track: tags.track ?? null, disc: tags.disc ?? null, date: tags.date ?? null, genre: tags.genre ?? null, album_artist: tags.album_artist ?? null, ...gainTags(tags) }, replayGain: parseReplayGain(tags) }),
+      extra: JSON.stringify({ tags: { artist: tags.artist ?? null, album: tags.album ?? null, title: tags.title ?? null, track: tags.track ?? null, disc: tags.disc ?? null, date: tags.date ?? null, genre: tags.genre ?? null, album_artist: tags.album_artist ?? null, ...gainTags(tags) }, replayGain: parseReplayGain(tags), ...(Object.keys(mbRaw).length ? { mbTags: mbRaw } : {}), tagv: MUSIC_TAG_VERSION }),
     });
+    if (mb.recording || mb.releaseTrack || mb.work || mb.acoustid) setTagIds(trackId, { musicbrainzRecording: mb.recording, musicbrainzReleaseTrack: mb.releaseTrack, musicbrainzWork: mb.work, acoustid: mb.acoustid }, null);
     const res = await upsertMedia(trackId, f, ctx.force, pr);
-    if (m0 && m0.item_id !== trackId) db.run('DELETE FROM items WHERE id = ? AND NOT EXISTS (SELECT 1 FROM media WHERE item_id = ?)', m0.item_id, m0.item_id);
+    if (m0 && m0.item_id !== trackId) {
+      // The track moved (e.g. to its own album once MBIDs split two editions): keep its play history and playlist entries.
+      db.run('UPDATE OR IGNORE user_data SET item_id = ? WHERE item_id = ?', trackId, m0.item_id);
+      db.run('UPDATE OR IGNORE collection_items SET item_id = ? WHERE item_id = ?', trackId, m0.item_id);
+      db.run('DELETE FROM items WHERE id = ? AND NOT EXISTS (SELECT 1 FROM media WHERE item_id = ?)', m0.item_id, m0.item_id);
+    }
     ctx.seenMedia.add(res.mediaId);
     ctx.seenItems.add(trackId).add(albumId).add(artistId);
     itemDuration(trackId);
@@ -429,6 +454,82 @@ async function scanMusic(ctx: ScanCtx, files: FileEntry[]) {
   });
   // Album durations.
   db.run(`UPDATE items SET duration_ms = (SELECT SUM(duration_ms) FROM items t WHERE t.parent_id = items.id) WHERE library_id = ? AND type = 'album'`, ctx.lib.id);
+  // Track → credited artists ("A feat. B & C"), now that every artist of the library exists.
+  try {
+    rebuildCredits(ctx.lib.id);
+  } catch (e) {
+    log.warn(`Artist credits: ${(e as Error).message}`);
+  }
+}
+
+/** Bump to make the next scan re-read the tags of unchanged music files (v2: MusicBrainz tags). */
+const MUSIC_TAG_VERSION = 2;
+
+/**
+ * Artist item for a name + optional MusicBrainz artist id. Without an MBID: the name-based id (as always).
+ * With one: the library artist that already has it (name variants merge), else the name-based id unless that one
+ * belongs to a different MBID from tags (two artists sharing a name stay apart).
+ */
+export function resolveMusicArtist(libraryId: string, name: string, mbid: string | null): string {
+  const nameId = stableId(libraryId, 'artist', name.toLowerCase());
+  if (!mbid) return nameId;
+  const byMb = db.get<{ id: string }>("SELECT id FROM items WHERE library_id = ? AND type = 'artist' AND json_extract(external_ids, '$.musicbrainzArtist') = ? LIMIT 1", libraryId, mbid);
+  if (byMb) return byMb.id;
+  const ex = db.get<{ external_ids: string; extra: string }>('SELECT external_ids, extra FROM items WHERE id = ?', nameId);
+  if (!ex) return nameId;
+  const exMb = parseJson<Record<string, string>>(ex.external_ids, {}).musicbrainzArtist;
+  // An MBID found by a name search (not from tags) yields to the tagged one.
+  if (!exMb || exMb === mbid || !parseJson<{ mbTag?: boolean }>(ex.extra, {}).mbTag) return nameId;
+  return stableId(libraryId, 'artist', 'mbid', mbid);
+}
+
+/** Album item under an artist: by release MBID when tagged (deluxe and standard editions stay apart), else by name. */
+export function resolveMusicAlbum(artistId: string, name: string, releaseMbid: string | null): string {
+  const nameId = stableId(artistId, 'album', name.toLowerCase());
+  if (!releaseMbid) return nameId;
+  const byMb = db.get<{ id: string }>("SELECT id FROM items WHERE parent_id = ? AND type = 'album' AND json_extract(external_ids, '$.musicbrainzRelease') = ? LIMIT 1", artistId, releaseMbid);
+  if (byMb) return byMb.id;
+  const ex = db.get<{ external_ids: string }>('SELECT external_ids FROM items WHERE id = ?', nameId);
+  if (!ex) return nameId;
+  const exRel = parseJson<Record<string, string>>(ex.external_ids, {}).musicbrainzRelease;
+  if (!exRel || exRel === releaseMbid) return nameId;
+  return stableId(artistId, 'album', 'mbrel', releaseMbid);
+}
+
+/** Merge ids read from tags into an item's external_ids (tags win over ids found by searching). */
+function setTagIds(itemId: string, ids: Record<string, string | null>, extraFlags: Record<string, unknown> | null) {
+  const row = db.get<{ external_ids: string; extra: string }>('SELECT external_ids, extra FROM items WHERE id = ?', itemId);
+  if (!row) return;
+  const cur = parseJson<Record<string, string>>(row.external_ids, {});
+  const next = { ...cur };
+  for (const [k, v] of Object.entries(ids)) if (v) next[k] = v;
+  const patch: Row = {};
+  if (JSON.stringify(next) !== JSON.stringify(cur)) patch.external_ids = JSON.stringify(next);
+  if (extraFlags) {
+    const ex = parseJson<Record<string, unknown>>(row.extra, {});
+    const merged = { ...ex, ...extraFlags };
+    if (JSON.stringify(merged) !== JSON.stringify(ex)) patch.extra = JSON.stringify(merged);
+  }
+  if (Object.keys(patch).length) db.update('items', itemId, patch);
+}
+
+/** Release facts from tags on the album (extra.music): types, status, original year, label, catalogue no., barcode, disc titles. */
+function setAlbumMusic(albumId: string, mb: MbTags, disc: number) {
+  const row = db.get<{ extra: string }>('SELECT extra FROM items WHERE id = ?', albumId);
+  if (!row) return;
+  const ex = parseJson<Record<string, any>>(row.extra, {});
+  const cur = ex.music ?? {};
+  const m: Record<string, unknown> = { ...cur };
+  if (mb.releaseTypes.length) m.releaseTypes = mb.releaseTypes;
+  if (mb.releaseStatus) m.releaseStatus = mb.releaseStatus;
+  if (mb.originalYear) m.originalYear = mb.originalYear;
+  if (mb.originalDate) m.originalDate = mb.originalDate;
+  if (mb.label) m.label = mb.label;
+  if (mb.catalogNumber) m.catalogNumber = mb.catalogNumber;
+  if (mb.barcode) m.barcode = mb.barcode;
+  if (mb.compilation) m.compilation = true;
+  if (mb.discSubtitle) m.discTitles = { ...(cur.discTitles ?? {}), [String(disc)]: mb.discSubtitle };
+  if (JSON.stringify(m) !== JSON.stringify(cur)) db.update('items', albumId, { extra: JSON.stringify({ ...ex, music: m }) });
 }
 
 /**
@@ -634,6 +735,8 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     log.info(`Scan of "${lib.name}" finished in ${secs}s: ${files.length} files, ${ctx.newItems.length} new items`);
     // Metadata-provider plugins fill gaps for new music/audiobooks/videos (movies/shows were handled by enrichLibrary).
     if (type !== 'movies' && type !== 'shows') for (const id of ctx.newItems.slice(0, 500)) await applyPluginMetadata(id);
+    // AcoustID for untagged tracks (only when the admin enabled automatic identification).
+    if (type === 'music') void autoIdentifyAfterScan().catch((e) => log.debug(`AcoustID: ${(e as Error).message}`));
     if (ctx.newItems.length) {
       logActivity('library.scan', `${ctx.newItems.length} new item(s) added to ${lib.name}`);
       bus.emit('library.new', { libraryId: libId, itemIds: ctx.newItems });

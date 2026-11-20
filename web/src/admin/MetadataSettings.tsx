@@ -6,6 +6,7 @@ import { Badge, ErrorState, Field, Skeleton, Spinner, Switch } from '../componen
 import { Icon } from '../components/Icon';
 import { formatBytes } from '../utils/format';
 import '../styles/metadata.css';
+import { MusicIdentificationSettings } from './MusicIdentification';
 
 const MASK = '••••';
 const TARGETS: { value: ArtworkTarget; label: string }[] = [
@@ -200,12 +201,14 @@ export function MetadataSettingsPanel() {
         <span className="muted small">{resp.cache.entries.toLocaleString()} cached responses · {formatBytes(resp.cache.bytes)}</span>
         <button className="btn btn-sm" onClick={() => void clearCache()} disabled={!resp.cache.entries}><Icon name="trash" size={14} /> Clear cache</button>
       </div>
+
+      <MusicIdentificationSettings />
     </div>
   );
 }
 
 /** Write-only key field: a stored key comes back as "••••"; typing replaces it, the × removes it. */
-function SecretInput({ value, onChange, label }: { value: string | null; onChange: (v: string | null) => void; label: string }) {
+export function SecretInput({ value, onChange, label }: { value: string | null; onChange: (v: string | null) => void; label: string }) {
   const stored = value === MASK;
   return (
     <div className="md-secret">

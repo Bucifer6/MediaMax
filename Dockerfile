@@ -32,7 +32,7 @@ RUN set -eux; \
       extra=""; \
     fi; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ffmpeg ca-certificates tzdata mesa-va-drivers $extra; \
+    apt-get install -y --no-install-recommends ffmpeg libchromaprint-tools ca-certificates tzdata mesa-va-drivers $extra; \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /src/node_modules node_modules

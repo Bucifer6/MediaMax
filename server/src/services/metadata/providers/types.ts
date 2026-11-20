@@ -57,6 +57,8 @@ export interface ProviderResult {
     series?: { name: string; index: number | null };
     artistInfo?: { formedYear?: number | null; country?: string | null; mood?: string | null; style?: string | null };
     isbn?: string;
+    /** MusicBrainz release facts (release types, status, first release date, label, catalogue no., barcode). */
+    mb?: Record<string, unknown>;
   };
   /** Shows: per-episode data in the show's chosen ordering. */
   episodes?: RemoteEpisodeInfo[];

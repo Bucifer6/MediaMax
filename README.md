@@ -59,6 +59,8 @@ MediaMax brings together the features people love in **Plex, Jellyfin and Emby**
 - Gapless playback, crossfade, ReplayGain, synced lyrics, song and artist radio
 - **DJ mode**: BPM, key and energy analysis, harmonic auto-mixes and beat-matched two-deck crossfades
 - **AI DJ**: ask in plain words ("chilled 90s house, 1 hour"); a voice host talks between songs. Free by default; can use local models (Ollama) or free and cheap hosted APIs
+- MusicBrainz Picard tags, multi-artist credits, discography with missing albums, AcoustID "identify by sound"
+- Last.fm and ListenBrainz scrobbling, ListenBrainz weekly playlists
 - Subsonic/OpenSubsonic API for Symfonium, Feishin, Sonos and more
 - CarPlay and Android Auto
 

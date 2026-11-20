@@ -292,7 +292,7 @@ export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: bo
 
   if (view === 'match') {
     return (
-      <Modal open={open} onClose={onClose} title={`Fix match — ${item.title}`} size="lg">
+      <Modal open={open} onClose={onClose} title={`${item.type === 'track' ? 'Identify by sound' : 'Fix match'} — ${item.title}`} size="lg">
         <FixMatchPanel item={item} onCancel={() => setView('form')} onDone={(i) => { onUpdated(i); onClose(); }} />
       </Modal>
     );
@@ -327,8 +327,8 @@ export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: bo
             ) : <span />}
             {canFixMatch(item) && (
               <div className="field">
-                <span className="field-label">Wrong title or artwork?</span>
-                <button type="button" className="btn" onClick={() => setView('match')}><Icon name="search" size={16} /> Fix match…</button>
+                <span className="field-label">{item.type === 'track' ? 'Untagged or wrongly tagged?' : 'Wrong title or artwork?'}</span>
+                <button type="button" className="btn" onClick={() => setView('match')}>{item.type === 'track' ? <><Icon name="audio" size={16} /> Identify by sound…</> : <><Icon name="search" size={16} /> Fix match…</>}</button>
               </div>
             )}
           </div>

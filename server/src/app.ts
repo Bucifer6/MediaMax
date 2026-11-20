@@ -88,6 +88,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register((await import('./routes/renderers.js')).default);
     await api.register((await import('./routes/profiles.js')).default);
     await api.register((await import('./routes/help.js')).default);
+    await api.register((await import('./routes/music.js')).default);
   }, { prefix: '/api/v1' });
 
   await app.register(dlnaRoutes);

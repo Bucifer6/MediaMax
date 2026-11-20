@@ -454,6 +454,31 @@ const MIGRATIONS: string[] = [
   ALTER TABLE users ADD COLUMN hide_unrated INTEGER NOT NULL DEFAULT 0;
   CREATE INDEX users_parent ON users(parent_user_id);
   `,
+  /* MusicBrainz: MBID lookups for grouping, track → credited artists, ListenBrainz accounts + offline listen queue, AcoustID results */ `
+  CREATE INDEX items_mb_artist ON items(library_id, json_extract(external_ids, '$.musicbrainzArtist')) WHERE type = 'artist';
+  CREATE INDEX items_mb_release ON items(parent_id, json_extract(external_ids, '$.musicbrainzRelease')) WHERE type = 'album';
+  CREATE INDEX items_mb_recording ON items(json_extract(external_ids, '$.musicbrainzRecording')) WHERE type = 'track';
+  CREATE TABLE track_artists (
+    track_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE, position INTEGER NOT NULL,
+    name TEXT NOT NULL, artist_id TEXT, mbid TEXT, join_phrase TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (track_id, position)
+  );
+  CREATE INDEX track_artists_artist ON track_artists(artist_id);
+  CREATE INDEX track_artists_name ON track_artists(name COLLATE NOCASE);
+  CREATE TABLE listenbrainz_accounts (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, token TEXT NOT NULL, username TEXT,
+    server_url TEXT, scrobble INTEGER NOT NULL DEFAULT 1, feedback INTEGER NOT NULL DEFAULT 0, last_error TEXT, connected_at TEXT NOT NULL
+  );
+  CREATE TABLE listenbrainz_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    listened_at INTEGER NOT NULL, payload TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, created_at TEXT NOT NULL
+  );
+  CREATE INDEX listenbrainz_queue_user ON listenbrainz_queue(user_id, id);
+  CREATE TABLE acoustid_results (
+    item_id TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE, candidates TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'pending', error TEXT, checked_at TEXT NOT NULL, applied_at TEXT
+  );
+  `,
 ];
 
 function migrate(db: Database) {

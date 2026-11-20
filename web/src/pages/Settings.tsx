@@ -19,6 +19,7 @@ import { ApiKeysCard, SubsonicCard, TwoFactorCard } from './SecuritySettings';
 import { BrowsingSettings } from './BrowsingSettings';
 import ProfilesSettings from './ProfilesSettings';
 import { HelpLink } from '../components/HelpLink';
+import { ListenBrainzCard } from '../components/ListenBrainz';
 
 const LANGS = [
   ['', 'Default'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'],
@@ -587,6 +588,7 @@ function Services() {
     <>
       <TraktCard />
       <LastfmCard />
+      <ListenBrainzCard />
       <Link to="/wrapped" className="settings-card wrapped-promo">
         <span className="wrapped-promo-icon"><Icon name="sparkles" size={22} /></span>
         <div>

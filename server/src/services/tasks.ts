@@ -27,6 +27,9 @@ import { refreshAll as refreshPodcasts } from './podcasts.js';
 import { checkAvailability } from './requests.js';
 import { refreshSchedules } from './calendar.js';
 import { backfillVideoRanges } from './hdrBackfill.js';
+import { identifyUntagged } from './music/acoustid.js';
+import { flushQueue as flushListenBrainz } from './listenbrainz.js';
+import { getMusicSettings } from './music/settings.js';
 import { planScheduledRun, taskRunFinished, isDiskTask, getStorageSettings, type PathFilter, type RunPlan } from './storage/storage.js';
 
 const log = logger('tasks');
@@ -188,6 +191,20 @@ const DEFS: TaskDef[] = [
     interval: () => (getSettings().backups.intervalDays > 0 ? getSettings().backups.intervalDays * 24 * 60 : null),
     run: async () => {
       createBackup('scheduled');
+    },
+  },
+  {
+    id: 'identify-untagged', name: 'Identify untagged tracks', description: 'Fingerprint music files without MusicBrainz ids or artist/title tags and look them up on AcoustID (needs an AcoustID key and fpcalc). Files are never modified.',
+    interval: () => (getMusicSettings().acoustid.autoIdentify ? 24 * 60 : null),
+    run: async (progress) => {
+      await identifyUntagged(progress, 2000);
+    },
+  },
+  {
+    id: 'listenbrainz-queue', name: 'Send queued ListenBrainz listens', description: 'Retry listens that could not be sent to ListenBrainz (offline or rate limited).',
+    interval: () => 30,
+    run: async () => {
+      await flushListenBrainz();
     },
   },
   {

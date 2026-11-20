@@ -172,6 +172,13 @@
 .track-dur { color: var(--c-text-muted); font-variant-numeric: tabular-nums; font-size: 0.88rem; }
 .track-more { opacity: 0; }
 .track:hover .track-more, .track-more:focus-visible { opacity: 1; }
+/* The whole row plays (a stretched button under the content) while artist names inside stay real links. */
+.track-main { position: relative; cursor: pointer; }
+.track-hit { position: absolute; inset: 0; z-index: 0; padding: 0; border: 0; background: none; border-radius: var(--radius-sm); cursor: pointer; }
+.track-hit:focus-visible { outline: 2px solid var(--c-primary); outline-offset: -2px; }
+.track-main > :not(.track-hit) { position: relative; z-index: 1; pointer-events: none; }
+.track-credits a { pointer-events: auto; color: inherit; }
+.track-credits a:hover, .track-credits a:focus-visible { color: var(--c-primary); text-decoration: underline; }
 
 /* ------------------------------ search ------------------------------ */
 .search-box { display: flex; align-items: center; gap: 14px; padding: 0 20px; height: 68px; border-radius: var(--radius-lg); background: var(--c-surface); border: 1px solid var(--c-line); margin-bottom: 32px; box-shadow: var(--shadow); transition: border-color 0.2s, box-shadow 0.2s; }
