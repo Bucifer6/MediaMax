@@ -372,7 +372,7 @@ const MIGRATIONS: string[] = [
   ALTER TABLE items ADD COLUMN provider_meta TEXT NOT NULL DEFAULT '{}';
   ALTER TABLE items ADD COLUMN providers_fetched_at TEXT;
   `,
-  /* EPG providers: guide sources, guide channel lists, channel↔guide matching, Schedules Direct caches */ `
+  /* 16: EPG providers — guide sources, guide channel lists, channel↔guide matching, Schedules Direct caches */ `
   CREATE TABLE epg_sources (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, config TEXT NOT NULL DEFAULT '{}', secret TEXT, state TEXT NOT NULL DEFAULT '{}',
     priority INTEGER NOT NULL DEFAULT 50, enabled INTEGER NOT NULL DEFAULT 1, live_source_ids TEXT,

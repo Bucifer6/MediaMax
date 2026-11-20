@@ -81,6 +81,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register(discoveryRoutes);
     await api.register(metadataRoutes);
     await api.register((await import('./routes/arr.js')).default);
+    await api.register((await import('./routes/transcoding.js')).default);
   }, { prefix: '/api/v1' });
 
   await app.register(dlnaRoutes);

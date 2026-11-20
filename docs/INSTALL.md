@@ -332,6 +332,20 @@ Environment variables (Docker `environment:`, `systemctl edit mediamax`, or Wind
 
 The full list is in the [README](../README.md#configuration-environment-variables).
 
+## TV guide setup
+
+Live TV needs a programme guide (EPG). Open **Admin → TV guide**:
+
+1. **Guide sources → Add guide.** Pick one:
+   - **XMLTV:** any guide URL or a file on the server (`.xml`, `.xml.gz`, `.xml.xz`). Most IPTV providers already include a guide; it appears here automatically as the provider guide.
+   - **Free community guide:** iptv-org or epg.pw guides by country. These are free, volunteer-run services and their URLs can change.
+   - **Schedules Direct:** a paid service (about $35 a year) with accurate listings, used by Plex, Channels DVR and MythTV. Enter your username and password, then add your lineup by country and postcode.
+   - **HDHomeRun:** free guide data for HDHomeRun owners. Add the tuner as a Live TV source first, then pick it here.
+2. Set **priority** if you use more than one guide. The higher guide wins for each channel, and lower ones fill the gaps.
+3. **Guide matching** shows how each channel was matched and how confident the match is. Accept the suggestions, or click the pencil icon to search every guide, preview now/next, and set a time shift for channels whose guide runs early or late. A whole guide in the wrong time zone has a time-zone override in its settings.
+
+Channels without guide data get a **Missing guide** badge under Admin → Channels. Details: [EPG.md](EPG.md).
+
 ## Building the release archives yourself
 
 ```bash

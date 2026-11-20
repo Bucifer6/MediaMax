@@ -64,6 +64,13 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | HDHomeRun tuners | ✅ | ✅ | ✅ | ✅ |
 | M3U playlists with XMLTV guide | 🟡 | ✅ | ✅ | ✅ |
 | Several merged EPG sources per playlist, provider guide as fallback | 🟡 | ✅ | ✅ | ✅ |
+| Guide sources as their own entity: XMLTV URL/file (gzip, xz), per-guide priority and time-zone override | 🟡 | ✅ | ✅ | ✅ |
+| Schedules Direct (lineups by country + postcode, md5-cached downloads) | ✅ | ✅ | ✅ | ✅ |
+| HDHomeRun guide data (free for owners, matched by guide number) | ✅ | 🟡 | 🟡 | ✅ |
+| Free community guide picker (iptv-org, epg.pw by country) | ❌ | ❌ | ❌ | ✅ |
+| Automatic fuzzy channel ↔ guide matching with confidence and a review queue | 🟡 | ❌ | 🟡 | ✅ |
+| Guide matching page: search every guide, now/next preview, accept all, per-channel time shift | 🟡 | 🟡 | 🟡 | ✅ |
+| Guide quality report (coverage, days ahead, errors) and "missing guide" badges | ❌ | ❌ | ❌ | ✅ |
 | Multiview (up to four live channels at once) | ❌ | ❌ | ❌ | ✅ (web) |
 | **Xtream Codes** login (live + VOD + series + EPG) | ❌ | Plugin | Plugin | ✅ native |
 | Xtream VOD & series as real libraries (resume, search, watched) | ❌ | ❌ | ❌ | ✅ |

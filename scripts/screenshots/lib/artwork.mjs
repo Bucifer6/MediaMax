@@ -1,0 +1,669 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+/**
+ * Artwork templates (HTML + inline SVG) rendered to JPEG/PNG with Playwright.
+ * Every function returns an HTML fragment; `Renderer.render()` lays it out at the requested size and saves it.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
+
+export function rng(seedText) {
+  let h = 1779033703 ^ seedText.length;
+  for (let i = 0; i < seedText.length; i++) {
+    h = Math.imul(h ^ seedText.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  let a = h >>> 0;
+  const next = () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  next.range = (lo, hi) => lo + next() * (hi - lo);
+  next.int = (lo, hi) => Math.floor(lo + next() * (hi - lo + 1));
+  next.pick = (arr) => arr[Math.floor(next() * arr.length)];
+  return next;
+}
+
+export const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const f = (n) => Math.round(n * 10) / 10;
+
+/** Film grain overlay. */
+const grain = (op = 0.18, freq = 0.85) => `<svg class="grain" style="opacity:${op}" xmlns="http://www.w3.org/2000/svg"><filter id="gr"><feTurbulence type="fractalNoise" baseFrequency="${freq}" numOctaves="3" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 1.4 -0.2"/></filter><rect width="100%" height="100%" filter="url(#gr)"/></svg>`;
+
+export const FONT = {
+  scifi: "'Orbitron', 'Inter Display', 'DejaVu Sans', sans-serif",
+  noir: "'DM Serif Display', 'Playfair Display', 'DejaVu Serif', serif",
+  drama: "'Cormorant Garamond', 'Libre Baskerville', 'DejaVu Serif', serif",
+  family: "'Fredoka', 'Lilita One', 'Inter', sans-serif",
+  horror: "'Cinzel', 'DejaVu Serif', serif",
+  action: "'Bebas Neue', 'Oswald', 'Inter Display', sans-serif",
+  adventure: "'Cinzel', 'Libre Baskerville', serif",
+  comedy: "'Lilita One', 'Fredoka', 'Inter Display', sans-serif",
+  condensed: "'Oswald', 'Bebas Neue', 'Liberation Sans Narrow', sans-serif",
+  sans: "'Space Grotesk', 'Inter', sans-serif",
+  hand: "'Caveat', 'Fredoka', cursive",
+  retro: "'Monoton', 'Orbitron', sans-serif",
+  serif: "'Libre Baskerville', 'DejaVu Serif', serif",
+};
+
+/* ------------------------------------------------------------------ */
+/* Scenes (SVG), parametrised by size so posters and backdrops share   */
+/* ------------------------------------------------------------------ */
+
+function stars(r, w, h, n, maxY = 1, op = 0.9) {
+  let s = '';
+  for (let i = 0; i < n; i++) s += `<circle cx="${f(r() * w)}" cy="${f(r() * h * maxY)}" r="${f(r.range(0.5, 2.2))}" fill="#fff" opacity="${f(r.range(0.2, op))}"/>`;
+  return s;
+}
+
+function ridge(r, w, h, baseY, amp, steps, smooth = true) {
+  const pts = [];
+  for (let i = 0; i <= steps; i++) pts.push([(w / steps) * i, baseY - r.range(0, amp)]);
+  let d = `M0 ${h} L0 ${f(pts[0][1])}`;
+  for (let i = 1; i < pts.length; i++) {
+    if (smooth) {
+      const [x0, y0] = pts[i - 1];
+      const [x1, y1] = pts[i];
+      d += ` C${f(x0 + (x1 - x0) / 2)} ${f(y0)} ${f(x0 + (x1 - x0) / 2)} ${f(y1)} ${f(x1)} ${f(y1)}`;
+    } else d += ` L${f(pts[i][0])} ${f(pts[i][1])}`;
+  }
+  return d + ` L${w} ${h} Z`;
+}
+
+function skyline(r, w, h, baseY, color, maxH, windows) {
+  let s = '';
+  let x = -10;
+  while (x < w) {
+    const bw = r.range(w * 0.03, w * 0.08);
+    const bh = r.range(maxH * 0.25, maxH);
+    s += `<rect x="${f(x)}" y="${f(baseY - bh)}" width="${f(bw)}" height="${f(bh + h)}" fill="${color}"/>`;
+    if (r() < 0.3) s += `<rect x="${f(x + bw / 2 - 1)}" y="${f(baseY - bh - maxH * 0.12)}" width="2" height="${f(maxH * 0.12)}" fill="${color}"/>`;
+    if (windows) {
+      for (let wy = baseY - bh + 10; wy < baseY - 6; wy += 14) for (let wx = x + 5; wx < x + bw - 6; wx += 10) if (r() < 0.16) s += `<rect x="${f(wx)}" y="${f(wy)}" width="4" height="6" fill="${windows}" opacity="${f(r.range(0.4, 1))}"/>`;
+    }
+    x += bw + r.range(0, 6);
+  }
+  return s;
+}
+
+function tree(r, x, y, len, ang, depth, color, width) {
+  if (depth === 0 || len < 4) return '';
+  const x2 = x + Math.cos(ang) * len;
+  const y2 = y + Math.sin(ang) * len;
+  let s = `<path d="M${f(x)} ${f(y)} L${f(x2)} ${f(y2)}" stroke="${color}" stroke-width="${f(width)}" stroke-linecap="round"/>`;
+  const n = depth > 5 ? 2 : r.int(2, 3);
+  for (let i = 0; i < n; i++) s += tree(r, x2, y2, len * r.range(0.62, 0.8), ang + r.range(-0.7, 0.7), depth - 1, color, width * 0.68);
+  return s;
+}
+
+function figure(cx, baseY, hgt, color) {
+  // A trench-coat silhouette with a brimmed hat.
+  const s = hgt / 100;
+  return `<g fill="${color}" transform="translate(${f(cx)} ${f(baseY)}) scale(${f(s)})">
+    <ellipse cx="0" cy="-88" rx="12" ry="2.6"/><path d="M-6 -88 Q-6 -97 0 -97 Q6 -97 6 -88 Z"/>
+    <ellipse cx="0" cy="-82" rx="5" ry="6.2"/>
+    <path d="M-5 -76 L5 -76 L13 -68 L16 -30 L11 -28 L9 -6 L4 0 L1 -6 L-1 -6 L-4 0 L-9 -6 L-11 -28 L-16 -30 L-13 -68 Z"/>
+  </g>`;
+}
+
+function scene(style, pal, w, h, seed, opts = {}) {
+  const r = rng(seed);
+  const [c0, c1, ac, lt] = pal;
+  const focusX = opts.focusX ?? 0.5;
+  const id = 's' + Math.floor(r() * 1e9);
+  let defs = '';
+  let body = '';
+  switch (style) {
+    case 'scifi': {
+      const sunR = Math.min(w, h) * (opts.poster ? 0.33 : 0.3);
+      const sx = w * focusX;
+      const sy = h * (opts.poster ? 0.42 : 0.5);
+      const horizon = h * (opts.poster ? 0.62 : 0.68);
+      defs += `<linearGradient id="${id}sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c0}"/><stop offset="0.65" stop-color="${c1}"/><stop offset="1" stop-color="${c0}"/></linearGradient>
+        <linearGradient id="${id}sun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${lt}"/><stop offset="0.55" stop-color="${ac}"/><stop offset="1" stop-color="${c1}"/></linearGradient>
+        <filter id="${id}glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="${f(sunR * 0.18)}"/></filter>
+        <filter id="${id}lg"><feGaussianBlur stdDeviation="2.4"/></filter>
+        <mask id="${id}m"><rect width="${w}" height="${h}" fill="#fff"/>${Array.from({ length: 7 }, (_, i) => `<rect x="0" y="${f(sy + sunR * (0.12 + i * 0.13))}" width="${w}" height="${f(2 + i * 2.6)}" fill="#000"/>`).join('')}</mask>`;
+      body += `<rect width="${w}" height="${h}" fill="url(#${id}sky)"/>${stars(r, w, h, 160, 0.6)}`;
+      body += `<circle cx="${f(sx)}" cy="${f(sy)}" r="${f(sunR * 1.25)}" fill="${ac}" opacity="0.45" filter="url(#${id}glow)"/>`;
+      body += `<circle cx="${f(sx)}" cy="${f(sy)}" r="${f(sunR)}" fill="url(#${id}sun)" mask="url(#${id}m)"/>`;
+      body += skyline(r, w, h, horizon, c0, h * 0.2, lt);
+      // perspective grid
+      let g = '';
+      for (let i = -24; i <= 24; i++) g += `<line x1="${f(sx + i * w * 0.012)}" y1="${f(horizon)}" x2="${f(sx + i * w * 0.14)}" y2="${h}" stroke="${lt}" stroke-width="1.6"/>`;
+      for (let i = 1; i < 14; i++) {
+        const y = horizon + (h - horizon) * Math.pow(i / 13, 2.1);
+        g += `<line x1="0" y1="${f(y)}" x2="${w}" y2="${f(y)}" stroke="${lt}" stroke-width="1.6"/>`;
+      }
+      body += `<rect x="0" y="${f(horizon)}" width="${w}" height="${f(h - horizon)}" fill="${c0}"/><g opacity="0.75">${g}</g><g opacity="0.6" filter="url(#${id}lg)">${g}</g>`;
+      body += `<rect x="0" y="${f(horizon - 2)}" width="${w}" height="3" fill="${ac}" opacity="0.9"/>`;
+      break;
+    }
+    case 'noir': {
+      defs += `<radialGradient id="${id}lamp" cx="${focusX}" cy="0.25" r="0.6"><stop offset="0" stop-color="${lt}" stop-opacity="0.55"/><stop offset="0.5" stop-color="${c1}" stop-opacity="0.35"/><stop offset="1" stop-color="${c0}" stop-opacity="0"/></radialGradient>
+        <filter id="${id}b"><feGaussianBlur stdDeviation="${f(w * 0.01)}"/></filter>`;
+      body += `<rect width="${w}" height="${h}" fill="${c0}"/><rect width="${w}" height="${h}" fill="url(#${id}lamp)"/>`;
+      // venetian blind light
+      let blinds = '';
+      for (let i = 0; i < 16; i++) blinds += `<rect x="${f(-w * 0.5)}" y="${f(i * h * 0.06)}" width="${f(w * 2)}" height="${f(h * 0.028)}" fill="${lt}"/>`;
+      body += `<g opacity="0.1" transform="rotate(-24 ${w / 2} ${h / 2}) translate(${f(w * (focusX - 0.5))} ${f(-h * 0.1)})" filter="url(#${id}b)">${blinds}</g>`;
+      // brick wall hint + street
+      body += `<path d="${ridge(r, w, h, h * 0.86, h * 0.02, 6, false)}" fill="${c1}" opacity="0.55"/>`;
+      // neon sign
+      const nx = w * (focusX > 0.5 ? 0.2 : 0.8);
+      body += `<rect x="${f(nx - w * 0.012)}" y="${f(h * 0.12)}" width="${f(w * 0.024)}" height="${f(h * 0.36)}" rx="6" fill="${ac}" opacity="0.95" filter="url(#${id}b)"/><rect x="${f(nx - w * 0.006)}" y="${f(h * 0.12)}" width="${f(w * 0.012)}" height="${f(h * 0.36)}" rx="4" fill="${ac}"/>`;
+      // figure under the lamp
+      body += figure(w * focusX, h * 0.9, h * (opts.poster ? 0.42 : 0.5), '#000');
+      body += `<ellipse cx="${f(w * focusX)}" cy="${f(h * 0.905)}" rx="${f(w * 0.12)}" ry="${f(h * 0.012)}" fill="#000" opacity="0.7"/>`;
+      // rain
+      let rain = '';
+      for (let i = 0; i < 260; i++) {
+        const x = r() * w;
+        const y = r() * h;
+        const l = r.range(h * 0.015, h * 0.04);
+        rain += `<line x1="${f(x)}" y1="${f(y)}" x2="${f(x - l * 0.18)}" y2="${f(y + l)}" stroke="${lt}" stroke-width="1" opacity="${f(r.range(0.08, 0.3))}"/>`;
+      }
+      body += rain;
+      break;
+    }
+    case 'drama': {
+      defs += `<linearGradient id="${id}sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${lt}"/><stop offset="0.45" stop-color="${ac}"/><stop offset="0.8" stop-color="${c1}"/><stop offset="1" stop-color="${c0}"/></linearGradient>
+        <radialGradient id="${id}sun"><stop offset="0" stop-color="#fff" stop-opacity="0.95"/><stop offset="0.3" stop-color="${lt}" stop-opacity="0.85"/><stop offset="1" stop-color="${ac}" stop-opacity="0"/></radialGradient>`;
+      body += `<rect width="${w}" height="${h}" fill="url(#${id}sky)"/>`;
+      const sr = Math.min(w, h) * 0.42;
+      body += `<circle cx="${f(w * focusX)}" cy="${f(h * 0.56)}" r="${f(sr)}" fill="url(#${id}sun)"/>`;
+      const layers = 5;
+      for (let i = 0; i < layers; i++) {
+        const t = i / (layers - 1);
+        const y = h * (0.6 + t * 0.26);
+        body += `<path d="${ridge(r, w, h, y, h * (0.12 - t * 0.06), 5 + i)}" fill="${mix(c1, c0, t)}" opacity="${f(0.55 + t * 0.45)}"/>`;
+      }
+      // birds or kites
+      for (let i = 0; i < 7; i++) {
+        const bx = w * r.range(0.1, 0.9);
+        const by = h * r.range(0.12, 0.42);
+        const s = r.range(6, 14) * (w / 800);
+        body += `<path d="M${f(bx - s)} ${f(by)} Q${f(bx - s / 2)} ${f(by - s * 0.6)} ${f(bx)} ${f(by)} Q${f(bx + s / 2)} ${f(by - s * 0.6)} ${f(bx + s)} ${f(by)}" stroke="${c0}" stroke-width="${f(1.5 * (w / 800))}" fill="none" opacity="0.7"/>`;
+      }
+      break;
+    }
+    case 'family': {
+      defs += `<linearGradient id="${id}sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c0}"/><stop offset="0.7" stop-color="${c1}"/><stop offset="1" stop-color="${lt}"/></linearGradient>`;
+      body += `<rect width="${w}" height="${h}" fill="url(#${id}sky)"/>${stars(r, w, h, 70, 0.55)}`;
+      const mr = Math.min(w, h) * 0.24;
+      const mx = w * focusX;
+      const my = h * 0.33;
+      body += `<circle cx="${f(mx)}" cy="${f(my)}" r="${f(mr * 1.35)}" fill="${ac}" opacity="0.25"/><circle cx="${f(mx)}" cy="${f(my)}" r="${f(mr)}" fill="${ac}"/>`;
+      for (let i = 0; i < 5; i++) body += `<circle cx="${f(mx + r.range(-0.6, 0.6) * mr)}" cy="${f(my + r.range(-0.6, 0.6) * mr)}" r="${f(r.range(0.08, 0.18) * mr)}" fill="#000" opacity="0.08"/>`;
+      // clouds
+      for (let i = 0; i < 5; i++) {
+        const cx = w * r.range(0.05, 0.95);
+        const cy = h * r.range(0.45, 0.62);
+        const s = r.range(0.06, 0.1) * w;
+        body += `<g fill="#fff" opacity="${f(r.range(0.75, 0.95))}"><circle cx="${f(cx)}" cy="${f(cy)}" r="${f(s)}"/><circle cx="${f(cx + s)}" cy="${f(cy + s * 0.2)}" r="${f(s * 0.8)}"/><circle cx="${f(cx - s)}" cy="${f(cy + s * 0.25)}" r="${f(s * 0.7)}"/><rect x="${f(cx - s * 1.7)}" y="${f(cy + s * 0.2)}" width="${f(s * 3.4)}" height="${f(s * 0.75)}" rx="${f(s * 0.37)}"/></g>`;
+      }
+      // rolling hills
+      const hills = [mix(ac, '#3bb273', 0.7), '#2fa866', '#1f8a55'];
+      hills.forEach((c, i) => {
+        body += `<path d="${ridge(r, w, h, h * (0.74 + i * 0.08), h * 0.08, 3)}" fill="${c}"/>`;
+      });
+      // tiny clock tower / house
+      const tx = w * (focusX > 0.5 ? 0.22 : 0.78);
+      body += `<g fill="${c0}"><rect x="${f(tx - w * 0.03)}" y="${f(h * 0.6)}" width="${f(w * 0.06)}" height="${f(h * 0.2)}"/><path d="M${f(tx - w * 0.045)} ${f(h * 0.6)} L${f(tx)} ${f(h * 0.53)} L${f(tx + w * 0.045)} ${f(h * 0.6)} Z"/></g><circle cx="${f(tx)}" cy="${f(h * 0.64)}" r="${f(w * 0.017)}" fill="${lt}"/>`;
+      // confetti
+      for (let i = 0; i < 40; i++) body += `<rect x="${f(r() * w)}" y="${f(r() * h * 0.7)}" width="${f(r.range(4, 10) * (w / 800))}" height="${f(r.range(8, 16) * (w / 800))}" rx="2" fill="${r.pick([ac, lt, '#ff5e5b', '#2ec4b6', '#ffb84c'])}" transform="rotate(${f(r.range(0, 180))} ${f(r() * w)} ${f(r() * h)})" opacity="0.85"/>`;
+      break;
+    }
+    case 'horror': {
+      defs += `<radialGradient id="${id}bg" cx="${focusX}" cy="0.35" r="0.75"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c0}"/></radialGradient>
+        <radialGradient id="${id}moon"><stop offset="0" stop-color="${lt}"/><stop offset="0.7" stop-color="${lt}" stop-opacity="0.9"/><stop offset="1" stop-color="${lt}" stop-opacity="0"/></radialGradient>
+        <filter id="${id}fog"><feGaussianBlur stdDeviation="${f(h * 0.03)}"/></filter>
+        <radialGradient id="${id}vig" cx="0.5" cy="0.5" r="0.75"><stop offset="0.55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.85"/></radialGradient>`;
+      body += `<rect width="${w}" height="${h}" fill="url(#${id}bg)"/>${stars(r, w, h, 40, 0.5, 0.5)}`;
+      const mr = Math.min(w, h) * 0.2;
+      body += `<circle cx="${f(w * focusX)}" cy="${f(h * 0.3)}" r="${f(mr * 1.6)}" fill="${lt}" opacity="0.12" filter="url(#${id}fog)"/><circle cx="${f(w * focusX)}" cy="${f(h * 0.3)}" r="${f(mr)}" fill="url(#${id}moon)"/>`;
+      body += `<path d="${ridge(r, w, h, h * 0.84, h * 0.05, 5)}" fill="#020202"/>`;
+      // dead trees
+      const nTrees = opts.poster ? 3 : 5;
+      for (let i = 0; i < nTrees; i++) {
+        const tx = w * (0.08 + (0.84 * i) / Math.max(1, nTrees - 1)) + r.range(-30, 30);
+        body += tree(r, tx, h * 0.86, h * r.range(0.13, 0.2), -Math.PI / 2 + r.range(-0.12, 0.12), 8, '#020202', w * 0.012);
+      }
+      // a lit window in a distant house
+      const hx = w * (focusX > 0.5 ? 0.3 : 0.7);
+      body += `<path d="M${f(hx - w * 0.05)} ${f(h * 0.84)} L${f(hx - w * 0.05)} ${f(h * 0.74)} L${f(hx)} ${f(h * 0.69)} L${f(hx + w * 0.05)} ${f(h * 0.74)} L${f(hx + w * 0.05)} ${f(h * 0.84)} Z" fill="#030303"/><rect x="${f(hx - w * 0.01)}" y="${f(h * 0.76)}" width="${f(w * 0.02)}" height="${f(h * 0.025)}" fill="${ac}"/><rect x="${f(hx - w * 0.02)}" y="${f(h * 0.75)}" width="${f(w * 0.04)}" height="${f(h * 0.045)}" fill="${ac}" opacity="0.4" filter="url(#${id}fog)"/>`;
+      for (let i = 0; i < 4; i++) body += `<ellipse cx="${f(w * r.range(0.1, 0.9))}" cy="${f(h * r.range(0.8, 0.95))}" rx="${f(w * r.range(0.3, 0.6))}" ry="${f(h * 0.04)}" fill="${lt}" opacity="0.13" filter="url(#${id}fog)"/>`;
+      body += `<rect width="${w}" height="${h}" fill="url(#${id}vig)"/>`;
+      break;
+    }
+    case 'action': {
+      defs += `<linearGradient id="${id}sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c0}"/><stop offset="0.5" stop-color="${c1}"/><stop offset="0.78" stop-color="${ac}"/><stop offset="1" stop-color="${c0}"/></linearGradient>
+        <radialGradient id="${id}boom" cx="${focusX}" cy="0.72" r="0.5"><stop offset="0" stop-color="${lt}"/><stop offset="0.25" stop-color="${ac}"/><stop offset="1" stop-color="${ac}" stop-opacity="0"/></radialGradient>`;
+      body += `<rect width="${w}" height="${h}" fill="url(#${id}sky)"/><rect width="${w}" height="${h}" fill="url(#${id}boom)" opacity="0.85"/>`;
+      // mesas
+      body += `<path d="${ridge(r, w, h, h * 0.76, h * 0.12, 7, false)}" fill="${mix(c0, c1, 0.3)}"/>`;
+      // train silhouette on a bridge
+      const ty = h * 0.8;
+      body += `<rect x="0" y="${f(ty)}" width="${w}" height="${f(h * 0.012)}" fill="#000"/>`;
+      for (let i = 0; i < 12; i++) body += `<rect x="${f(w * 0.06 + i * w * 0.075)}" y="${f(ty - h * 0.045)}" width="${f(w * 0.07)}" height="${f(h * 0.042)}" rx="3" fill="#000"/>`;
+      for (let i = 0; i < 14; i++) body += `<rect x="${f(i * w * 0.08)}" y="${f(ty)}" width="${f(w * 0.01)}" height="${f(h)}" fill="#000"/>`;
+      body += `<rect x="0" y="${f(h * 0.86)}" width="${w}" height="${f(h * 0.14)}" fill="#000"/>`;
+      // slashes and sparks
+      for (let i = 0; i < 3; i++) body += `<rect x="${f(w * r.range(-0.2, 0.8))}" y="${f(-h * 0.1)}" width="${f(w * 0.05)}" height="${f(h * 1.4)}" fill="${ac}" opacity="0.08" transform="rotate(28 ${w / 2} ${h / 2})"/>`;
+      for (let i = 0; i < 120; i++) {
+        const x = w * focusX + r.range(-0.4, 0.4) * w;
+        const y = h * 0.72 + r.range(-0.4, 0.15) * h;
+        body += `<line x1="${f(x)}" y1="${f(y)}" x2="${f(x + r.range(-8, 8))}" y2="${f(y - r.range(4, 18))}" stroke="${r() < 0.5 ? lt : ac}" stroke-width="${f(r.range(1, 2.5))}" opacity="${f(r.range(0.4, 1))}" stroke-linecap="round"/>`;
+      }
+      break;
+    }
+    case 'adventure': {
+      defs += `<radialGradient id="${id}bg" cx="0.5" cy="0.45" r="0.8"><stop offset="0" stop-color="${lt}"/><stop offset="0.7" stop-color="${mix(lt, ac, 0.45)}"/><stop offset="1" stop-color="${c1}"/></radialGradient>`;
+      body += `<rect width="${w}" height="${h}" fill="url(#${id}bg)"/>`;
+      // island contours
+      const ix = w * focusX;
+      const iy = h * 0.5;
+      for (let k = 0; k < 7; k++) {
+        const rr = Math.min(w, h) * (0.32 - k * 0.04);
+        let d = '';
+        const n = 14;
+        for (let i = 0; i <= n; i++) {
+          const a = (i / n) * Math.PI * 2;
+          const rad = rr * (1 + 0.18 * Math.sin(a * 3 + k) + 0.08 * Math.cos(a * 5));
+          d += `${i ? 'L' : 'M'}${f(ix + Math.cos(a) * rad * 1.3)} ${f(iy + Math.sin(a) * rad)}`;
+        }
+        body += `<path d="${d}Z" fill="${k === 6 ? ac : 'none'}" stroke="${c1}" stroke-width="${k === 0 ? 3 : 1.5}" opacity="${k === 6 ? 0.5 : 0.55}"/>`;
+      }
+      // waves
+      for (let i = 0; i < 40; i++) {
+        const x = r() * w;
+        const y = r() * h;
+        if (Math.hypot(x - ix, y - iy) < Math.min(w, h) * 0.45) continue;
+        body += `<path d="M${f(x)} ${f(y)} q8 -6 16 0 q8 6 16 0" stroke="${c1}" stroke-width="1.6" fill="none" opacity="0.45"/>`;
+      }
+      // dashed route and X
+      const ex = ix + w * 0.08;
+      const ey = iy - h * 0.03;
+      body += `<path d="M${f(w * 0.05)} ${f(h * 0.9)} C${f(w * 0.3)} ${f(h * 0.7)} ${f(w * 0.2)} ${f(h * 0.4)} ${f(ex)} ${f(ey)}" stroke="#8a1c1c" stroke-width="4" stroke-dasharray="12 10" fill="none"/>`;
+      body += `<g stroke="#8a1c1c" stroke-width="7" stroke-linecap="round"><line x1="${f(ex - 16)}" y1="${f(ey - 16)}" x2="${f(ex + 16)}" y2="${f(ey + 16)}"/><line x1="${f(ex + 16)}" y1="${f(ey - 16)}" x2="${f(ex - 16)}" y2="${f(ey + 16)}"/></g>`;
+      // compass rose
+      const cx = w * (focusX > 0.5 ? 0.18 : 0.82);
+      const cy = h * 0.2;
+      const cr = Math.min(w, h) * 0.09;
+      body += `<g fill="${c1}" opacity="0.8"><circle cx="${f(cx)}" cy="${f(cy)}" r="${f(cr)}" fill="none" stroke="${c1}" stroke-width="2"/>${[0, 90, 180, 270].map((a) => `<path d="M${f(cx)} ${f(cy - cr * 1.3)} L${f(cx + cr * 0.18)} ${f(cy)} L${f(cx - cr * 0.18)} ${f(cy)} Z" transform="rotate(${a} ${f(cx)} ${f(cy)})"/>`).join('')}</g>`;
+      body += `<rect width="${w}" height="${h}" fill="none" stroke="${c1}" stroke-width="${f(w * 0.02)}" opacity="0.35"/>`;
+      break;
+    }
+    case 'comedy': {
+      body += `<rect width="${w}" height="${h}" fill="${c0}"/>`;
+      // sunburst
+      let rays = '';
+      const cx = w * focusX;
+      const cy = h * 0.42;
+      for (let i = 0; i < 24; i += 2) {
+        const a1 = (i / 24) * Math.PI * 2;
+        const a2 = ((i + 1) / 24) * Math.PI * 2;
+        const R = Math.max(w, h) * 1.2;
+        rays += `<path d="M${f(cx)} ${f(cy)} L${f(cx + Math.cos(a1) * R)} ${f(cy + Math.sin(a1) * R)} L${f(cx + Math.cos(a2) * R)} ${f(cy + Math.sin(a2) * R)} Z"/>`;
+      }
+      body += `<g fill="#fff" opacity="0.25">${rays}</g>`;
+      // halftone dots
+      let dots = '';
+      const step = w / 40;
+      for (let y = h * 0.65; y < h; y += step) for (let x = 0; x < w; x += step) dots += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(((y - h * 0.65) / (h * 0.35)) * step * 0.42)}"/>`;
+      body += `<g fill="${c1}" opacity="0.6">${dots}</g>`;
+      body += `<circle cx="${f(cx + w * 0.25)}" cy="${f(h * 0.2)}" r="${f(w * 0.08)}" fill="${ac}"/><circle cx="${f(cx - w * 0.3)}" cy="${f(h * 0.62)}" r="${f(w * 0.05)}" fill="${c1}"/>`;
+      // two rings (wedding)
+      body += `<g fill="none" stroke="${lt}" stroke-width="${f(w * 0.018)}"><circle cx="${f(cx - w * 0.05)}" cy="${f(cy)}" r="${f(w * 0.09)}"/><circle cx="${f(cx + w * 0.05)}" cy="${f(cy)}" r="${f(w * 0.09)}"/></g>`;
+      break;
+    }
+    default:
+      body += `<rect width="${w}" height="${h}" fill="${c0}"/>`;
+  }
+  return `<svg class="scene" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice"><defs>${defs}</defs>${body}</svg>`;
+}
+
+/** Hex colour mix. */
+function mix(a, b, t) {
+  const p = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+  const [x, y] = [p(a), p(b)];
+  return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('');
+}
+
+/* ------------------------------------------------------------------ */
+/* Title typography per style                                          */
+/* ------------------------------------------------------------------ */
+
+function titleCss(style, pal) {
+  const [c0, c1, ac, lt] = pal;
+  switch (style) {
+    case 'scifi': return `font-family:${FONT.scifi};font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#fff;text-shadow:0 0 8px ${ac},0 0 24px ${ac},0 0 60px ${ac};`;
+    case 'noir': return `font-family:${FONT.noir};font-weight:400;text-transform:uppercase;letter-spacing:.04em;color:${lt};text-shadow:0 4px 30px #000;`;
+    case 'drama': return `font-family:${FONT.drama};font-weight:700;letter-spacing:.02em;color:#fff;text-shadow:0 2px 24px ${c0}aa;`;
+    case 'family': return `font-family:${FONT.family};font-weight:700;color:#fff;-webkit-text-stroke:.09em ${c0};paint-order:stroke fill;text-shadow:0 .08em 0 ${c0};letter-spacing:.01em;`;
+    case 'horror': return `font-family:${FONT.horror};font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:${lt};text-shadow:0 0 18px ${ac},0 0 50px ${ac}88;`;
+    case 'action': return `font-family:${FONT.action};font-weight:400;text-transform:uppercase;letter-spacing:.03em;background:linear-gradient(180deg,#fff 0%,${lt} 45%,${ac} 100%);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 6px 18px #000a);`;
+    case 'adventure': return `font-family:${FONT.adventure};font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:${c0};text-shadow:0 2px 0 ${lt};`;
+    case 'comedy': return `font-family:${FONT.comedy};color:${lt};letter-spacing:.01em;text-shadow:.05em .05em 0 ${c1};`;
+    default: return `font-family:${FONT.sans};font-weight:700;color:#fff;`;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Public templates                                                    */
+/* ------------------------------------------------------------------ */
+
+const BASE_CSS = `
+.art{position:relative;overflow:hidden;width:100%;height:100%}
+.art .scene{position:absolute;inset:0;width:100%;height:100%}
+.grain{position:absolute;inset:0;width:100%;height:100%;mix-blend-mode:overlay;pointer-events:none}
+.fit{display:block}
+`;
+
+export function posterHtml(it, opts = {}) {
+  const { style, pal } = it;
+  const [c0, , ac, lt] = pal;
+  const dark = !['adventure', 'comedy'].includes(style);
+  const ink = dark ? '#fff' : c0;
+  const credits = [it.studio?.toUpperCase(), 'PRESENTS', it.director ? `A ${it.director.toUpperCase()} FILM` : null, ...(it.cast ?? []).slice(0, 4).map((c) => c.name.toUpperCase())].filter(Boolean).join('   ');
+  const top = (it.cast ?? []).slice(0, 3).map((c) => c.name.toUpperCase()).join('  ·  ');
+  const label = opts.label ?? it.tagline;
+  const titleTop = ['scifi', 'family', 'comedy'].includes(style);
+  return `<div class="art poster" style="background:${c0}">
+    ${scene(style, pal, 800, 1200, it.slug + (opts.seed ?? ''), { poster: true, focusX: 0.5 })}
+    <div style="position:absolute;inset:0;background:linear-gradient(180deg,${dark ? '#0008' : '#0000'} 0%,#0000 22%,#0000 58%,${dark ? c0 + 'ee' : '#0000'} 100%)"></div>
+    <div style="position:absolute;top:44px;left:0;right:0;text-align:center;font:500 22px/1 ${FONT.condensed};letter-spacing:.32em;color:${ink};opacity:.85">${esc(top)}</div>
+    <div class="title-box" style="position:absolute;left:56px;right:56px;${titleTop ? 'top:120px' : 'bottom:220px'};height:${titleTop ? 300 : 330}px;display:flex;align-items:${titleTop ? 'flex-start' : 'flex-end'};justify-content:center;text-align:center">
+      <div class="fit" data-max="150" data-min="40" style="${titleCss(style, pal)};line-height:.98;width:100%">${esc(it.title)}</div>
+    </div>
+    ${opts.badge ? `<div style="position:absolute;left:0;right:0;bottom:250px;text-align:center"><span style="display:inline-block;padding:12px 28px;border-radius:999px;background:${ac};color:${c0};font:700 30px/1 ${FONT.sans};letter-spacing:.18em;text-transform:uppercase;box-shadow:0 10px 30px #0006">${esc(opts.badge)}</span></div>` : ''}
+    <div style="position:absolute;left:70px;right:70px;bottom:${titleTop ? 150 : 150}px;text-align:center;font:${style === 'drama' || style === 'noir' ? `italic 500 34px/1.25 ${FONT.drama}` : `500 26px/1.3 ${FONT.sans}`};color:${ink};opacity:.92;text-shadow:${dark ? '0 2px 12px #000' : 'none'}">${esc(label ?? '')}</div>
+    <div style="position:absolute;left:60px;right:60px;bottom:58px;text-align:center;font:400 15px/1.5 ${FONT.condensed};letter-spacing:.12em;color:${ink};opacity:.6">${esc(credits)}</div>
+    <div style="position:absolute;left:0;right:0;bottom:30px;text-align:center;font:600 14px/1 ${FONT.condensed};letter-spacing:.4em;color:${lt};opacity:.75">${it.year ? (opts.tv ? `NOW STREAMING · ${it.year}` : `IN CINEMAS · ${it.year}`) : ''}</div>
+    ${grain(0.16)}
+  </div>`;
+}
+
+export function backdropHtml(it, opts = {}) {
+  const [c0] = it.pal;
+  return `<div class="art" style="background:${c0}">${scene(it.style, it.pal, opts.w ?? 1920, opts.h ?? 1080, it.slug + (opts.seed ?? '-bd'), { focusX: opts.focusX ?? 0.68 })}${grain(0.12)}</div>`;
+}
+
+export function logoHtml(it) {
+  return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:20px 30px;box-sizing:border-box">
+    <div class="fit" data-max="180" data-min="40" style="${titleCss(it.style, it.pal)};line-height:.95;text-align:center;width:100%">${esc(it.title)}</div></div>`;
+}
+
+export function headshotHtml(name) {
+  const r = rng(name);
+  const hue = Math.floor(r() * 360);
+  const skin = r.pick(['#3b2a22', '#5a3d2e', '#7a5440', '#9a6b50', '#b98668', '#d3a487']);
+  const hair = r.pick(['#141010', '#2b1d14', '#4a3020', '#6b4a2e', '#1a1a22', '#8a6a4a']);
+  const long = r() < 0.5;
+  return `<div class="art" style="background:radial-gradient(circle at 50% 35%,hsl(${hue} 45% 52%),hsl(${(hue + 30) % 360} 50% 18%))">
+    <svg viewBox="0 0 400 600" width="100%" height="100%" class="scene">
+      <defs><linearGradient id="sh" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="hsl(${(hue + 180) % 360} 25% 28%)"/><stop offset="1" stop-color="hsl(${(hue + 180) % 360} 25% 12%)"/></linearGradient>
+      <radialGradient id="face" cx=".4" cy=".35" r=".8"><stop offset="0" stop-color="${mix(skin, '#ffffff', 0.18)}"/><stop offset="1" stop-color="${mix(skin, '#000000', 0.25)}"/></radialGradient></defs>
+      ${long ? `<path d="M118 230 Q110 120 200 110 Q290 120 282 230 L300 420 Q200 450 100 420 Z" fill="${hair}"/>` : ''}
+      <path d="M40 600 Q50 450 200 430 Q350 450 360 600 Z" fill="url(#sh)"/>
+      <rect x="172" y="340" width="56" height="100" rx="24" fill="${mix(skin, '#000000', 0.2)}"/>
+      <ellipse cx="200" cy="262" rx="82" ry="102" fill="url(#face)"/>
+      <path d="M118 250 Q112 150 200 148 Q288 150 282 250 Q270 190 200 188 Q130 190 118 250 Z" fill="${hair}"/>
+      <ellipse cx="200" cy="262" rx="82" ry="102" fill="none" stroke="#fff" stroke-opacity=".15" stroke-width="3"/>
+    </svg>${grain(0.1)}</div>`;
+}
+
+export function seasonLabel(n) {
+  return `Season ${n}`;
+}
+
+/* ---------------- Music ---------------- */
+
+export function albumCoverHtml(a) {
+  const [c0, c1, c2, lt] = a.pal;
+  const r = rng(a.album);
+  let art = '';
+  switch (a.style) {
+    case 'synthwave':
+      art = scene('scifi', [c0, '#3a0b5e', c1, lt], 1000, 1000, a.album, { poster: false, focusX: 0.5 });
+      return `<div class="art">${art}<div style="position:absolute;top:70px;left:0;right:0;text-align:center;font:400 92px/1 ${FONT.retro};color:#fff;text-shadow:0 0 18px ${c1},0 0 40px ${c1}">${esc(a.artist.split(' ')[0].toUpperCase())}</div><div style="position:absolute;top:180px;left:0;right:0;text-align:center;font:700 34px/1 ${FONT.scifi};letter-spacing:.5em;color:${c2};text-shadow:0 0 12px ${c2}">${esc(a.artist.split(' ').slice(1).join(' ').toUpperCase())}</div><div style="position:absolute;bottom:48px;left:0;right:0;text-align:center;font:italic 700 44px/1 ${FONT.noir};color:#fff">${esc(a.album)}</div>${grain(0.12)}</div>`;
+    case 'lofi': {
+      let drops = '';
+      for (let i = 0; i < 90; i++) {
+        const x = 230 + r() * 540;
+        const y = 170 + r() * 470;
+        drops += `<line x1="${f(x)}" y1="${f(y)}" x2="${f(x - 2)}" y2="${f(y + r.range(8, 22))}" stroke="#fff" stroke-width="2" opacity="${f(r.range(0.2, 0.6))}" stroke-linecap="round"/>`;
+      }
+      art = `<svg class="scene" viewBox="0 0 1000 1000"><defs><linearGradient id="win" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7d93b2"/><stop offset="1" stop-color="#c8b6c9"/></linearGradient></defs>
+        <rect width="1000" height="1000" fill="${lt}"/><rect x="200" y="140" width="600" height="530" rx="18" fill="#6c584c"/><rect x="225" y="165" width="550" height="480" rx="8" fill="url(#win)"/>
+        ${skyline(r, 1000, 1000, 645, '#5b6d8a', 170, '#ffd6a5').replace(/<rect x="-?\d+(\.\d)?"/g, (m) => m)}
+        <rect x="225" y="165" width="550" height="480" fill="none"/>${drops}
+        <rect x="492" y="165" width="16" height="480" fill="#6c584c"/><rect x="225" y="398" width="550" height="14" fill="#6c584c"/>
+        <rect x="150" y="670" width="700" height="40" rx="10" fill="#8b6f5c"/>
+        <path d="M300 670 L320 590 L380 590 L400 670 Z" fill="${c2}"/><path d="M350 590 C300 520 330 470 350 440 C370 470 400 520 350 590" fill="${c1}"/><path d="M350 590 C390 530 430 520 450 500 C440 550 410 580 350 590" fill="${c1}" opacity=".85"/><path d="M350 590 C310 540 270 540 250 520 C265 560 300 585 350 590" fill="${c1}" opacity=".85"/>
+        <rect x="560" y="610" width="70" height="60" rx="10" fill="${c0}"/><path d="M630 625 q28 0 28 18 q0 18 -28 18" stroke="${c0}" stroke-width="10" fill="none"/>
+        <path d="M580 600 q10 -20 0 -40 M600 600 q10 -20 0 -40" stroke="#fff" stroke-width="5" fill="none" opacity=".6" stroke-linecap="round"/>
+      </svg>`;
+      return `<div class="art">${art}<div style="position:absolute;bottom:150px;left:0;right:0;text-align:center;font:600 92px/1 ${FONT.hand};color:${c0}">${esc(a.album)}</div><div style="position:absolute;bottom:90px;left:0;right:0;text-align:center;font:500 30px/1 ${FONT.sans};letter-spacing:.4em;color:${c0};opacity:.75">${esc(a.artist.toUpperCase())}</div>${grain(0.2)}</div>`;
+    }
+    case 'house': {
+      art = `<svg class="scene" viewBox="0 0 1000 1000"><rect width="1000" height="1000" fill="${lt}"/>
+        <circle cx="620" cy="420" r="300" fill="${c1}"/><path d="M200 1000 A300 300 0 0 1 800 1000 Z" fill="${c2}"/>
+        <rect x="120" y="120" width="260" height="260" fill="${c0}"/><circle cx="250" cy="250" r="90" fill="${lt}"/>
+        <path d="M620 120 A300 300 0 0 1 920 420 L620 420 Z" fill="${c2}" opacity=".9"/>
+        ${Array.from({ length: 9 }, (_, i) => `<line x1="80" y1="${560 + i * 22}" x2="460" y2="${560 + i * 22}" stroke="${c0}" stroke-width="8"/>`).join('')}
+      </svg>`;
+      return `<div class="art">${art}<div style="position:absolute;right:70px;bottom:80px;text-align:right;font:700 76px/0.95 ${FONT.sans};color:${c0};letter-spacing:-.02em">${esc(a.album).replace(' ', '<br>')}</div><div style="position:absolute;left:80px;top:420px;font:700 26px/1 ${FONT.sans};letter-spacing:.3em;color:${c0}">${esc(a.artist.toUpperCase())}</div>${grain(0.14)}</div>`;
+    }
+    case 'techno':
+    default: {
+      let lines = '';
+      for (let i = 0; i < 46; i++) {
+        let d = '';
+        for (let x = 0; x <= 1000; x += 20) {
+          const amp = Math.exp(-Math.pow((x - 500) / 180, 2)) * 90 * (0.5 + r());
+          d += `${x ? 'L' : 'M'}${x} ${f(200 + i * 14 - amp * (r() * 0.6 + 0.4))}`;
+        }
+        lines += `<path d="${d}" stroke="${i % 9 === 4 ? c2 : '#e8e8e8'}" stroke-width="2" fill="none" opacity="${i % 9 === 4 ? 1 : 0.55}"/>`;
+      }
+      art = `<svg class="scene" viewBox="0 0 1000 1000"><rect width="1000" height="1000" fill="${c0}"/>${lines}</svg>`;
+      return `<div class="art">${art}<div style="position:absolute;left:70px;top:70px;font:700 30px/1 'JetBrains Mono',monospace;letter-spacing:.3em;color:#fff">${esc(a.artist.toUpperCase())}</div><div style="position:absolute;left:70px;bottom:70px;font:700 84px/1 ${FONT.sans};color:#fff;letter-spacing:-.02em">${esc(a.album)}</div><div style="position:absolute;right:70px;top:70px;font:500 22px/1 'JetBrains Mono',monospace;color:${c2}">HXD-0${a.year % 100}</div>${grain(0.16)}</div>`;
+    }
+  }
+}
+
+export function artistHtml(a, wide = false) {
+  const [c0, c1, c2, lt] = a.pal;
+  const w = wide ? 1920 : 1000;
+  const h = wide ? 1080 : 1000;
+  const r = rng(a.artist + wide);
+  const n = a.style === 'house' || a.style === 'techno' ? 1 : 2;
+  let figs = '';
+  for (let i = 0; i < n; i++) {
+    const cx = w * (wide ? 0.62 + i * 0.12 : 0.38 + i * 0.26) + r.range(-20, 20);
+    figs += `<g transform="translate(${f(cx)} ${f(h)}) scale(${f(h / 1000)})" fill="#050505"><ellipse cx="0" cy="-640" rx="78" ry="96"/><path d="M-230 0 Q-220 -420 0 -470 Q220 -420 230 0 Z"/></g>`;
+  }
+  let beams = '';
+  for (let i = 0; i < 5; i++) {
+    const x = w * (0.2 + i * 0.16);
+    beams += `<path d="M${f(x)} 0 L${f(x - w * 0.12)} ${h} L${f(x + w * 0.12)} ${h} Z" fill="${i % 2 ? c1 : c2}" opacity="0.18"/>`;
+  }
+  return `<div class="art" style="background:${c0}"><svg class="scene" viewBox="0 0 ${w} ${h}"><defs><radialGradient id="ag" cx="${wide ? 0.66 : 0.5}" cy="0.35" r="0.7"><stop offset="0" stop-color="${mix(c1, lt, 0.3)}"/><stop offset="0.6" stop-color="${mix(c1, c0, 0.6)}"/><stop offset="1" stop-color="${c0}"/></radialGradient><filter id="ab"><feGaussianBlur stdDeviation="30"/></filter></defs>
+    <rect width="${w}" height="${h}" fill="url(#ag)"/><g filter="url(#ab)">${beams}</g>${stars(r, w, h, 60, 1, 0.5)}${figs}</svg>${grain(0.18)}</div>`;
+}
+
+export function audiobookHtml(b) {
+  const [c0, c1, ac, lt] = b.pal;
+  const r = rng(b.title);
+  let art = '';
+  if (b.style === 'clock') {
+    const gear = (cx, cy, R, teeth, col, op) => {
+      let d = '';
+      for (let i = 0; i < teeth * 2; i++) {
+        const a = (i / (teeth * 2)) * Math.PI * 2;
+        const rr = i % 2 ? R : R * 1.12;
+        const a2 = ((i + 1) / (teeth * 2)) * Math.PI * 2;
+        d += `${i ? 'L' : 'M'}${f(cx + Math.cos(a) * rr)} ${f(cy + Math.sin(a) * rr)} L${f(cx + Math.cos(a2) * rr)} ${f(cy + Math.sin(a2) * rr)}`;
+      }
+      return `<path d="${d}Z" fill="${col}" opacity="${op}"/><circle cx="${cx}" cy="${cy}" r="${f(R * 0.55)}" fill="${c0}" opacity="${op}"/><circle cx="${cx}" cy="${cy}" r="${f(R * 0.18)}" fill="${col}" opacity="${op}"/>`;
+    };
+    art = `<svg class="scene" viewBox="0 0 1000 1000"><defs><radialGradient id="bg" cx=".5" cy=".4"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c0}"/></radialGradient></defs><rect width="1000" height="1000" fill="url(#bg)"/>
+      ${gear(260, 300, 150, 14, ac, 0.55)}${gear(470, 470, 110, 11, ac, 0.75)}${gear(720, 330, 190, 18, ac, 0.4)}${gear(640, 640, 80, 9, lt, 0.6)}
+      <circle cx="500" cy="420" r="230" fill="none" stroke="${lt}" stroke-width="6" opacity=".7"/>
+      ${Array.from({ length: 12 }, (_, i) => `<line x1="500" y1="205" x2="500" y2="235" stroke="${lt}" stroke-width="6" transform="rotate(${i * 30} 500 420)"/>`).join('')}
+      <line x1="500" y1="420" x2="500" y2="270" stroke="${lt}" stroke-width="8" stroke-linecap="round" transform="rotate(-50 500 420)"/><line x1="500" y1="420" x2="500" y2="230" stroke="${lt}" stroke-width="5" stroke-linecap="round" transform="rotate(40 500 420)"/>
+    </svg>`;
+  } else {
+    let waves = '';
+    for (let i = 0; i < 7; i++) {
+      let d = `M0 ${640 + i * 50}`;
+      for (let x = 0; x <= 1000; x += 50) d += ` Q${x + 25} ${f(640 + i * 50 + (i % 2 ? 18 : -18))} ${x + 50} ${640 + i * 50}`;
+      waves += `<path d="${d} L1000 1000 L0 1000 Z" fill="${mix(c1, c0, i / 7)}" opacity="0.9"/>`;
+    }
+    art = `<svg class="scene" viewBox="0 0 1000 1000"><defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c0}"/><stop offset=".7" stop-color="${c1}"/></linearGradient></defs><rect width="1000" height="1000" fill="url(#bg)"/>${stars(r, 1000, 1000, 220, 0.62)}
+      <circle cx="720" cy="230" r="70" fill="${lt}"/><circle cx="745" cy="215" r="62" fill="${c0}"/>
+      <g transform="translate(330 610)" fill="#0a0f1c"><path d="M-90 0 L90 0 L60 30 L-60 30 Z"/><rect x="-4" y="-150" width="8" height="150"/><path d="M6 -140 L80 -20 L6 -20 Z" fill="${lt}"/><path d="M-6 -120 L-60 -20 L-6 -20 Z" fill="${ac}"/></g>${waves}</svg>`;
+  }
+  return `<div class="art">${art}<div style="position:absolute;left:60px;right:60px;bottom:150px;text-align:center;font:700 74px/1.02 ${FONT.drama};color:#fff;text-shadow:0 4px 20px #000a">${esc(b.title)}</div><div style="position:absolute;left:0;right:0;bottom:84px;text-align:center;font:500 28px/1 ${FONT.sans};letter-spacing:.35em;color:${lt}">${esc(b.author.toUpperCase())}</div><div style="position:absolute;left:0;right:0;top:56px;text-align:center;font:500 22px/1 ${FONT.sans};letter-spacing:.3em;color:${lt};opacity:.8">READ BY ${esc(b.narrator.toUpperCase())}</div>${grain(0.16)}</div>`;
+}
+
+export function photoHtml(name, tod, coastal) {
+  const r = rng(name);
+  const skies = {
+    dawn: ['#2d3a6b', '#e07a5f', '#f6c28b'],
+    day: ['#4ea8de', '#90e0ef', '#e0f7ff'],
+    dusk: ['#1d1a4a', '#8e3b6b', '#f7a072'],
+    night: ['#02030a', '#0b1440', '#26336e'],
+  }[tod];
+  const w = 1600;
+  const h = 1067;
+  let body = `<defs><linearGradient id="sk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${skies[0]}"/><stop offset=".6" stop-color="${skies[1]}"/><stop offset="1" stop-color="${skies[2]}"/></linearGradient><filter id="hz"><feGaussianBlur stdDeviation="2"/></filter></defs><rect width="${w}" height="${h}" fill="url(#sk)"/>`;
+  if (tod === 'night') body += stars(r, w, h, 500, 0.7, 1);
+  if (tod !== 'night') body += `<circle cx="${f(w * r.range(0.25, 0.75))}" cy="${f(h * (tod === 'day' ? 0.18 : 0.52))}" r="${tod === 'day' ? 50 : 90}" fill="#fff8e7" opacity=".9"/>`;
+  const base = coastal ? 0.62 : 0.55;
+  for (let i = 0; i < 4; i++) {
+    const t = i / 3;
+    const col = mix(skies[1], tod === 'night' ? '#05060c' : '#1f2a2e', 0.35 + t * 0.6);
+    body += `<path d="${ridge(r, w, h, h * (base + t * 0.12), h * (0.28 - t * 0.12), 6 + i * 2, i > 1)}" fill="${col}"/>`;
+  }
+  if (coastal) {
+    body += `<rect x="0" y="${f(h * 0.8)}" width="${w}" height="${f(h * 0.2)}" fill="${mix(skies[1], '#0b2a3a', 0.6)}"/>`;
+    for (let i = 0; i < 60; i++) body += `<rect x="${f(r() * w)}" y="${f(h * r.range(0.81, 1))}" width="${f(r.range(20, 90))}" height="2" fill="${skies[2]}" opacity="${f(r.range(0.2, 0.6))}"/>`;
+  } else {
+    body += `<path d="${ridge(r, w, h, h * 0.92, h * 0.04, 10)}" fill="#0d1a12"/>`;
+  }
+  return `<div class="art"><svg class="scene" viewBox="0 0 ${w} ${h}">${body}</svg>${grain(0.14, 0.9)}</div>`;
+}
+
+export function channelLogoHtml(ch) {
+  const [a, b] = ch.colors;
+  return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center"><div style="width:92%;height:84%;border-radius:28px;background:linear-gradient(135deg,${a},${mix(a, b, 0.35)});display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 6px #ffffff22">
+    <div class="fit" data-max="130" data-min="40" style="font:400 130px/1 ${FONT.action};letter-spacing:.04em;color:${b === '#ffffff' ? '#fff' : mix(b, '#ffffff', 0.6)};text-align:center;width:88%;text-shadow:0 4px 0 #0003">${esc(ch.short)}</div></div></div>`;
+}
+
+/** A frame for a channel's mock live stream: a scene plus on-screen graphics. */
+export function channelFrameHtml(ch, extras = {}) {
+  const [a, b] = ch.colors;
+  const bug = `<div style="position:absolute;right:40px;top:34px;font:400 44px/1 ${FONT.action};color:#fff;opacity:.8;letter-spacing:.06em;text-shadow:0 2px 8px #000">${esc(ch.short)}</div>`;
+  let content = '';
+  switch (ch.kind) {
+    case 'news':
+      content = `<div class="art" style="background:radial-gradient(circle at 70% 30%,#1d3b6e,#081226)">
+        <svg class="scene" viewBox="0 0 1280 720">${skyline(rng('news'), 1280, 720, 560, '#0c1a33', 220, '#ffd27a')}<rect x="0" y="560" width="1280" height="160" fill="#0a1426"/></svg>
+        <div style="position:absolute;left:0;right:0;bottom:70px;height:84px;background:#fff;display:flex;align-items:center"><div style="background:${a};color:#fff;height:100%;display:flex;align-items:center;padding:0 26px;font:700 30px/1 ${FONT.sans};letter-spacing:.06em">BREAKING</div><div style="padding:0 26px;font:700 34px/1 ${FONT.sans};color:#111">Harbour bridge reopens after record-breaking restoration</div></div>
+        <div style="position:absolute;left:0;right:0;bottom:30px;height:40px;background:#111;color:#ddd;font:500 22px/40px ${FONT.sans};padding-left:24px;white-space:nowrap">MARKETS ▲ 1.2% · WEATHER Sunny spells, 21° · SPORT Coastal League kicks off tonight</div></div>`;
+      break;
+    case 'sports':
+      content = `<div class="art" style="background:#1b5e20"><svg class="scene" viewBox="0 0 1280 720">${Array.from({ length: 10 }, (_, i) => `<rect x="${i * 128}" y="0" width="64" height="720" fill="#2e7d32"/>`).join('')}<g stroke="#fff" stroke-width="5" fill="none" opacity=".85"><rect x="60" y="60" width="1160" height="600"/><line x1="640" y1="60" x2="640" y2="660"/><circle cx="640" cy="360" r="90"/><rect x="60" y="220" width="150" height="280"/><rect x="1070" y="220" width="150" height="280"/></g><circle cx="700" cy="400" r="12" fill="#fff"/></svg>
+        <div style="position:absolute;left:40px;top:34px;display:flex;font:700 30px/1 ${FONT.sans};color:#fff;box-shadow:0 6px 20px #0006"><span style="background:#03045e;padding:12px 18px">HAR</span><span style="background:#fff;color:#111;padding:12px 18px">2 – 1</span><span style="background:#9d0208;padding:12px 18px">NOR</span><span style="background:#111;padding:12px 18px">67:12</span></div></div>`;
+      break;
+    case 'nature':
+      content = photoHtml('wild-' + ch.name, 'dawn', false);
+      break;
+    case 'kids':
+      content = `<div class="art">${scene('family', ['#1b2a6b', '#4f7cff', '#ffcf3f', '#ffffff'], 1280, 720, 'kids-ch', { focusX: 0.5 })}</div>`;
+      break;
+    case 'music':
+      content = albumCoverHtml({ artist: 'Tempo Live', album: 'Countdown', year: 2026, style: 'techno', pal: ['#140024', '#3a3a3a', '#f72585', '#fff'] });
+      break;
+    default:
+      content = extras.html ?? `<div class="art">${scene(extras.style ?? 'drama', extras.pal ?? [b, a, '#ffffff', '#ffffff'], 1280, 720, ch.name, { focusX: 0.5 })}</div>`;
+  }
+  return `<div style="position:relative;width:100%;height:100%;overflow:hidden">${content}${bug}</div>`;
+}
+
+export function avatarHtml(name, hue) {
+  return `<div style="width:100%;height:100%;background:linear-gradient(135deg,hsl(${hue} 80% 60%),hsl(${(hue + 50) % 360} 75% 45%));display:flex;align-items:center;justify-content:center;font:700 120px/1 ${FONT.family};color:#fff;text-shadow:0 4px 0 #0002">${esc(name[0])}</div>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Renderer                                                            */
+/* ------------------------------------------------------------------ */
+
+export class Renderer {
+  constructor(browser, workDir, fontCss) {
+    this.browser = browser;
+    this.base = path.join(workDir, 'render.html');
+    fs.writeFileSync(this.base, `<!doctype html><html><head><meta charset="utf-8"><style>${fontCss}\nhtml,body{margin:0;padding:0;background:transparent}*{box-sizing:border-box}#root{position:relative;overflow:hidden}${BASE_CSS}</style></head><body><div id="root"></div></body></html>`);
+  }
+
+  async open() {
+    this.page = await this.browser.newPage({ viewport: { width: 800, height: 1200 } });
+    await this.page.goto('file://' + this.base);
+    await this.page.evaluate(() => document.fonts.ready);
+  }
+
+  /** Render `html` at w×h and write it to `out` (.jpg or .png; PNGs keep transparency). */
+  async render(html, w, h, out, quality = 88) {
+    const page = this.page;
+    await page.setViewportSize({ width: w, height: h });
+    await page.evaluate(
+      async ({ html, w, h }) => {
+        const root = document.getElementById('root');
+        root.style.width = w + 'px';
+        root.style.height = h + 'px';
+        root.innerHTML = html;
+        await document.fonts.ready;
+        // Shrink-to-fit titles: largest size that keeps every word on one line and the block inside its box.
+        for (const el of root.querySelectorAll('.fit')) {
+          const box = el.parentElement;
+          let size = Number(el.dataset.max || 120);
+          const min = Number(el.dataset.min || 30);
+          const fits = () => {
+            el.style.fontSize = size + 'px';
+            if (el.scrollWidth > el.clientWidth + 1) return false;
+            const words = el.textContent.split(/\s+/);
+            const probe = document.createElement('span');
+            const cs = getComputedStyle(el);
+            probe.style.font = cs.font;
+            probe.style.letterSpacing = cs.letterSpacing;
+            probe.style.textTransform = cs.textTransform;
+            probe.style.position = 'absolute';
+            probe.style.visibility = 'hidden';
+            probe.style.whiteSpace = 'nowrap';
+            probe.style.width = 'auto';
+            document.body.appendChild(probe);
+            let ok = true;
+            for (const word of words) {
+              probe.textContent = word;
+              if (probe.getBoundingClientRect().width > el.clientWidth) ok = false;
+            }
+            probe.remove();
+            return ok && el.scrollHeight <= box.clientHeight + 2;
+          };
+          while (size > min && !fits()) size -= 4;
+        }
+      },
+      { html, w, h },
+    );
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    const png = out.endsWith('.png');
+    await page.screenshot({ path: out, type: png ? 'png' : 'jpeg', quality: png ? undefined : quality, omitBackground: png, clip: { x: 0, y: 0, width: w, height: h } });
+  }
+}

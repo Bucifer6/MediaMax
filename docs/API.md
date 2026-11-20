@@ -124,7 +124,8 @@ For seeking in a transcoded stream beyond what's generated, call `POST /playback
 | PATCH 🛡️ | `/livetv/categories/:id` | `{ hidden?, sortOrder?, name? }` | `ChannelCategory` |
 | GET 🔑 | `/livetv/channels` | `ChannelQuery` | `Paged<Channel>` |
 | GET 🔑 | `/livetv/channels/:id` | | `Channel` |
-| PATCH 🛡️ | `/livetv/channels/:id` | `{ number?, name?, hidden?, epgChannelId?, logoUrl? }` | `Channel` |
+| PATCH 🛡️ | `/livetv/channels/:id` | `{ number?, name?, hidden?, epgChannelId?, logoUrl? }` | `Channel` (a bare `epgChannelId` is looked up in the guides by priority) |
+| PUT 🛡️ | `/livetv/channels/:id/match` | `SetChannelMatchRequest` | `ChannelMatch` |
 | POST/DELETE 🔑 | `/livetv/channels/:id/favorite` | | `{ favorite }` |
 | GET 🔑 | `/livetv/channels/:id/programs?start=&end=` | | `Program[]` |
 | GET 🔑 | `/livetv/guide?start=&end=&categoryId=&favorite=&offset=&limit=` | | `GuideResponse` (default: now-30m → +6h) |
@@ -432,13 +433,44 @@ Rules (`POST /dvr/rules`) accept these optional fields:
 
 Every change to the schedule (create, cancel, rule delete, rule run) re-checks each live source's `maxConnections`. Recordings are given slots in order: recordings already in progress first, then by priority, then oldest first. A recording that cannot get a slot has `conflict: true`, and a `recording.updated` event is sent. If it is still in conflict at start time, it fails with a clear error. Cancelling another recording frees its slot straight away.
 
-## Multiple EPG sources
+## TV guide (EPG) providers
 
-A live source's `epgUrl` may contain up to 10 XMLTV URLs, separated by commas or newlines, highest priority first. On refresh, every guide is downloaded and merged:
+Guides are their own entity, `EpgSource` (all endpoints 🛡️ admin). Kinds: `xmltv` (URL or local file, gzip and xz detected from the file's magic bytes; the iptv-org / epg.pw presets are `xmltv` with `config.preset`), `schedulesdirect`, `hdhomerun`, and `provider` (a live source's own guide, created automatically). See [EPG.md](EPG.md) for setup.
 
-- Each channel takes its programmes from the first guide that covers it.
-- The provider's own guide (the Xtream `xmltv.php`, or the M3U `url-tvg` list) is always appended last, so it fills any gaps.
-- A guide that fails is skipped and logged. Existing programmes are replaced only once at least one guide has loaded, so a broken guide never empties the EPG.
+| Method | Path | Body / query | Returns |
+|---|---|---|---|
+| GET | `/livetv/epg-sources` | | `EpgSource[]` (highest priority first, with `report`) |
+| POST | `/livetv/epg-sources` | `CreateEpgSourceRequest` | `EpgSource` (refresh kicked off; Schedules Direct logins are checked first, 400 on bad credentials) |
+| GET | `/livetv/epg-sources/:id` | | `EpgSource` |
+| PATCH / PUT | `/livetv/epg-sources/:id` | `UpdateEpgSourceRequest` | `EpgSource` |
+| DELETE | `/livetv/epg-sources/:id` | | `{ ok: true }` (guide data removed; channels fall back to other guides) |
+| POST | `/livetv/epg-sources/:id/refresh` | | `{ ok: true }`; 429 for Schedules Direct within 15 min of the last refresh |
+| GET | `/livetv/epg-sources/:id/sd/status` | | `SdStatus` (account expiry, lineups, system status) |
+| GET | `/livetv/epg-sources/:id/sd/headends?country=USA&postalcode=10001` | | `SdHeadend[]` |
+| PUT / DELETE | `/livetv/epg-sources/:id/sd/lineups/:lineup` | | `{ status: SdStatus, changesRemaining }` |
+| GET | `/livetv/epg-presets` | | `EpgPreset[]` (built-in iptv-org / epg.pw guides by country) |
+| GET | `/livetv/epg-channels?q=&epgSourceId=&limit=` | | `EpgGuideChannel[]` across all guides, ranked by name similarity |
+| GET | `/livetv/epg-preview?epgSourceId=&epgChannelId=&offsetHours=` | | `{ now, next, upcoming: Program[] }` |
+| GET | `/livetv/matching?filter=all\|matched\|unmatched\|low\|missing&sourceId=&search=&offset=&limit=` | | `MatchingResponse` (`items`, `counts`, `thresholds`) |
+| PUT | `/livetv/channels/:id/match` | `{ epgSourceId, epgChannelId }` or `{ none: true }` or `{ epgChannelId: null }` (back to automatic), plus `offsetHours` | `ChannelMatch` |
+| POST | `/livetv/matching/accept-all` | `{ sourceId?, minConfidence? }` | `{ accepted }` |
+| POST | `/livetv/matching/rematch` | | `{ ok: true }` |
+
+`GET /livetv/channels?guideStatus=true` (admins) adds `hasGuide` to each channel. `Channel` also carries `epgSourceId`, `guideStatus` and `epgOffsetHours`.
+
+**Credentials are write-only.** A Schedules Direct `config.password` is accepted on create/update, stored only as the SHA1 hex digest SD's `/token` call expects, and never returned. Responses only say `config.hasPassword`. Provider-guide URLs (which contain Xtream credentials) are returned redacted.
+
+**Priority merging.** A higher `priority` wins per channel and lower guides fill gaps: for each channel, the highest-priority guide with an automatic match that has programmes is used. A manual match always wins. Each guide's data is staged and swapped in only after the guide loads, so a broken guide keeps its previous programmes and never empties the EPG. Defaults: global guides 50, URLs from a live source's `epgUrl` 100, 99… (in field order), the provider's own guide 0.
+
+**`epgUrl` compatibility.** A live source's `epgUrl` field still works: each URL becomes an `xmltv` guide with `managedBy: "epgUrl"` and `ownerSourceId` set, applying only to that source. Existing fields are migrated on startup. These guides, and the `provider` guide, can only change `priority` and `enabled`; edit the URLs on the live source. They refresh with their live source. Other guides refresh on their own `refreshIntervalHours` from the "Refresh Live TV & IPTV" scheduled task (Schedules Direct: at least 12 h).
+
+**Matching.** Channel names are normalised: country prefixes (`UK:`, `|US|`, `[DE]`), quality tags (HD/FHD/UHD/4K/HEVC…), `+1`, punctuation, number words, and camelCase guide ids (`BBCOne.uk@HD`). Candidates are then tried in order: exact guide id (tvg-id, confidence 1.0), tuner guide number (HDHomeRun sources, 0.99), callsign (0.96), exact normalised name (0.95), and fuzzy similarity (token Dice, trigram Dice and Jaro-Winkler). Mismatched numbers, countries and near-ties are penalised. A match at 0.80 or above is applied (`auto`). One from 0.50 to 0.80 waits as a suggestion (`review`). A `+1` channel matched to its base channel gets a +60 min shift automatically. Manual matches live in `channels.custom` (`epgSourceId`, `epgChannelId`, `epgNone`, `epgOffsetHours`), so they survive refreshes.
+
+**Time shift.** `offsetHours` (−24…24, quarter-hour steps) per channel is served from shifted programme copies, so the guide, now/next, search and the DVR all see shifted times. For XMLTV guides with the wrong time zone, set `config.timezone` (an IANA zone or `+01:00`): the file's offsets are ignored and its times are read as wall-clock times in that zone.
+
+**Quality report.** `EpgSource.report` gives `channels`, `programmes`, `matchedChannels` (channels using this guide), `daysAhead`, `lastDurationMs` and `warnings` (e.g. one URL of a multi-URL guide failed). Failures are in `lastError`.
+
+**Big guides.** Guides with more than 3000 channels store programmes only for channels that are matched or suggested. A manual match to another channel of such a guide triggers a refresh.
 
 ## Commercial and preview markers
 

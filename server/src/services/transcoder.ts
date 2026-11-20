@@ -66,6 +66,11 @@ export interface TranscodeOptions {
   hasVideo: boolean;
   /** Preferred output codec (chosen from the client's device profile); H.264 when omitted. */
   videoCodec?: TranscodeVideoCodec;
+  /**
+   * HDR → SDR tone-mapping decision from the HDR/client-capability logic (source is PQ/HLG/DV and the client
+   * can't display it). When omitted, falls back to `hdr && settings.toneMapHdr`. See shouldToneMap().
+   */
+  toneMap?: boolean;
 }
 
 export interface TranscodeInfo {
@@ -141,6 +146,16 @@ export function pickToneMap(hw: HwAccel, platform: string, gpuPathsPossible: boo
 
 /* ------------------------------- args -------------------------------- */
 
+/**
+ * Whether this transcode tone-maps HDR to SDR. The explicit `opts.toneMap` decision (HDR source + client without
+ * HDR support) wins; otherwise any HDR source is tone-mapped when the admin setting is on. Copying video never tone-maps.
+ */
+export function shouldToneMap(o: Pick<TranscodeOptions, 'hdr' | 'toneMap' | 'videoCopy' | 'hasVideo'>, toneMapHdrSetting = getSettings().transcoding.toneMapHdr): boolean {
+  if (!o.hasVideo || o.videoCopy) return false;
+  if (o.toneMap !== undefined) return o.toneMap && toneMapHdrSetting;
+  return o.hdr && toneMapHdrSetting;
+}
+
 export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: number, hwOrCtx: HwAccel | BuildContext): { args: string[]; info: TranscodeInfo; segmentType: SegmentType } {
   const ctx: BuildContext = typeof hwOrCtx === 'string' ? { hw: hwOrCtx } : hwOrCtx;
   const platform = ctx.platform ?? process.platform;
@@ -161,7 +176,7 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
   if (o.burnSubtitle?.kind === 'embedded-text' && o.burnSubtitle.relIndex != null) swFilters.push(`subtitles='${escapeFilterPath(o.input)}':si=${o.burnSubtitle.relIndex}`);
   let pipeline: VideoPipeline | null = null;
   if (encodeVideo) {
-    const wantToneMap = o.hdr && s.toneMapHdr;
+    const wantToneMap = shouldToneMap(o, s.toneMapHdr);
     const gpuPossible = !overlay && swFilters.length === 0;
     const toneMap = !wantToneMap ? null : ctx.toneMap === undefined || ctx.toneMap === 'auto' ? pickToneMap(hw, platform, gpuPossible) : ctx.toneMap;
     const target = { hw, platform, vaapiDevice: s.vaapiDevice, gpuIndex: s.gpuIndex ?? 0 };
