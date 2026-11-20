@@ -12,10 +12,21 @@ export function Img({
   src, width, alt = '', className, fallback, style,
 }: { src: string | null | undefined; width?: number; alt?: string; className?: string; fallback?: ReactNode; style?: CSSProperties }) {
   const [state, setState] = useState<'loading' | 'ok' | 'error'>(src ? 'loading' : 'error');
-  useEffect(() => setState(src ? 'loading' : 'error'), [src]);
+  // Reset only when the source really changes. (A reset in an effect also ran on mount, after a cached image had
+  // already fired `load`, and left it invisible at opacity 0 for good: the custom logo after signing in.)
+  const [shown, setShown] = useState(src);
+  if (shown !== src) {
+    setShown(src);
+    setState(src ? 'loading' : 'error');
+  }
+  // An image that is already decoded (memory cache) may have loaded before React saw it.
+  const ref = useCallback((el: HTMLImageElement | null) => {
+    if (el?.complete && el.naturalWidth > 0) setState('ok');
+  }, []);
   if (!src || state === 'error') return <div className={`img-fallback ${className ?? ''}`} style={style}>{fallback}</div>;
   return (
     <img
+      ref={ref}
       src={mediaUrl(src, width)}
       alt={alt}
       loading="lazy"

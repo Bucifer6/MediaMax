@@ -128,7 +128,8 @@ function scope(): ParentNode {
 }
 
 function candidates(): HTMLElement[] {
-  return [...scope().querySelectorAll(FOCUSABLE)].filter(visible).filter((el) => !el.closest('[aria-hidden="true"], [inert]'));
+  // tabindex="-1" marks controls that are deliberately out of the focus order (hover-only card buttons, row arrows).
+  return [...scope().querySelectorAll(FOCUSABLE)].filter(visible).filter((el) => el.getAttribute('tabindex') !== '-1' && !el.closest('[aria-hidden="true"], [inert]'));
 }
 
 function best(from: DOMRect, dir: Dir, els: HTMLElement[], current: Element | null): HTMLElement | null {
@@ -218,8 +219,13 @@ export function installTvMode() {
     // Back key.
     if (BACK.has(e.keyCode) && !(e.keyCode === 8 && isTextInput(target))) {
       e.preventDefault();
-      // An open dialog/picker closes on Escape; otherwise go back a page (players exit the same way).
-      if (scope() !== document) (target ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      // One press is one step back: the players also listen for Backspace, and both handling it went back twice
+      // (player → home instead of player → title page).
+      e.stopImmediatePropagation();
+      // An open dialog/picker, or a player (its menus first, then the player itself), handles it as Escape;
+      // otherwise go back a page.
+      if (inPlayer && document.fullscreenElement && scope() === document) void document.exitFullscreen().catch(() => undefined);
+      else if (scope() !== document || inPlayer) (target ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       else if (window.history.length > 1) window.history.back();
       return;
     }

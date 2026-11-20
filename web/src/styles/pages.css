@@ -129,9 +129,10 @@
 .media-card h3 { grid-column: 1 / -1; margin-bottom: 8px; }
 .media-card h4 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--c-text-muted); margin: 0 0 8px; grid-row: 1; }
 .media-card h4 + .stream-list { grid-row: 2; }
-.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; font-size: 0.88rem; grid-row: 1 / span 2; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0; font-size: 0.88rem; grid-row: 1 / span 2; }
 .kv dt { color: var(--c-text-muted); }
-.kv dd { margin: 0; font-weight: 500; }
+.kv dd { margin: 0; font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
+.kv dd select { max-width: 100%; }
 .stream-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 0.86rem; }
 .stream-list li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .stream-list .icon { color: var(--c-text-muted); }
@@ -338,10 +339,10 @@
 
 /* ------------------------------ responsive pages ------------------------------ */
 @media (max-width: 1000px) {
-  .livetv-layout { grid-template-columns: 1fr; }
+  .livetv-layout { grid-template-columns: minmax(0, 1fr); }
   .cat-list { display: none; }
   .cat-chips { display: flex; }
-  .settings-layout { grid-template-columns: 1fr; }
+  .settings-layout { grid-template-columns: minmax(0, 1fr); }
   .settings-nav { position: static; flex-direction: row; overflow-x: auto; scrollbar-width: none; }
   .settings-link { white-space: nowrap; }
   .media-card { grid-template-columns: 1fr; }

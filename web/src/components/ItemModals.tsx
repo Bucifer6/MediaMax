@@ -70,7 +70,7 @@ export function AddToContainerModal({ open, onClose, items, kind }: { open: bool
               <span className="pick-art"><Img src={l.posterUrl ?? l.thumbUrl} width={80} fallback={<Icon name={kind === 'playlist' ? 'playlist' : 'collection'} size={18} />} /></span>
               <span className="pick-text">
                 <span>{l.title}</span>
-                <small>{l.childCount} items</small>
+                <small>{l.childCount} item{l.childCount === 1 ? '' : 's'}</small>
               </span>
               <Icon name="plus" size={16} />
             </button>
