@@ -132,6 +132,9 @@ export function rowToItem(r: Row): Item {
     ...((extra as any).series ? { series: (extra as any).series } : {}),
     ...((extra as any).extraType ? { extraType: (extra as any).extraType } : {}),
     ...((extra as any).replayGain ? { replayGain: (extra as any).replayGain } : {}),
+    ...(!(extra as any).series && r.provider_meta && r.provider_meta !== '{}' && parseJson<any>(r.provider_meta, {}).series ? { series: parseJson<any>(r.provider_meta, {}).series } : {}),
+    ...(r.ratings ? { ratings: parseJson(r.ratings, null) } : {}),
+    ...(r.type === 'show' ? { episodeOrder: (extra as any).episodeOrder === 'dvd' || (extra as any).episodeOrder === 'absolute' ? (extra as any).episodeOrder : 'aired' } : {}),
   };
 }
 
@@ -281,6 +284,11 @@ export function getItem(user: User, id: string, withMedia = true): Item {
     item.lockedFields = parseJson<string[]>(row?.locked_fields, []);
     const ch = db.get<{ chapters: string }>("SELECT chapters FROM media WHERE item_id = ? AND chapters != '[]' LIMIT 1", id);
     if (ch) item.chapters = parseJson<Chapter[]>(ch.chapters, []);
+    // Built-in metadata providers: Audnexus chapters (audiobooks), fanart.tv/TheAudioDB extra art, artist facts.
+    const pm = parseJson<{ chapters?: Chapter[]; art?: Record<string, string>; artistInfo?: Item['artistInfo'] }>(db.get<{ provider_meta: string }>('SELECT provider_meta FROM items WHERE id = ?', id)?.provider_meta, {});
+    if (!item.chapters?.length && pm.chapters?.length && item.type === 'audiobook') item.chapters = pm.chapters;
+    if (pm.art && Object.keys(pm.art).length) item.extraArt = { clearArtUrl: imageUrl(pm.art.clearart), discArtUrl: imageUrl(pm.art.discart), bannerUrl: imageUrl(pm.art.banner) };
+    if (pm.artistInfo && item.type === 'artist') item.artistInfo = pm.artistInfo;
     if (item.type === 'show' || item.type === 'season') {
       // Aggregate duration hint for containers.
       item.media = [];
@@ -509,6 +517,9 @@ export function updateItem(id: string, req: UpdateItemRequest): void {
   }
   patch.locked_fields = JSON.stringify([...locked]);
   if (req.markers) patch.markers = JSON.stringify(req.markers.filter((m) => m.endMs > m.startMs));
+  if (req.episodeOrder !== undefined && cur.type === 'show' && ['aired', 'dvd', 'absolute'].includes(req.episodeOrder)) {
+    patch.extra = JSON.stringify({ ...parseJson<Record<string, unknown>>(cur.extra, {}), episodeOrder: req.episodeOrder });
+  }
   db.update('items', id, patch);
 }
 
