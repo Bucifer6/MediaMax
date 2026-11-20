@@ -901,6 +901,10 @@ export interface Recording {
   error: string | null;
   sizeBytes: number | null;
   createdBy: string;
+  /** Higher wins when tuners/provider connections run out (manual recordings: 100). */
+  priority: number;
+  /** Scheduled but would exceed the source's tuner/connection limit; won't record unless something else is cancelled. */
+  conflict: boolean;
 }
 
 export interface CreateRecordingRequest {
@@ -924,9 +928,25 @@ export interface RecordingRule {
   paddingBeforeMin: number;
   paddingAfterMin: number;
   enabled: boolean;
+  /** 0-99; higher wins tuner conflicts. Default 50. */
+  priority: number;
+  /** Only airings on these weekdays (0 = Sunday … 6 = Saturday), local server time; null = any day. */
+  daysOfWeek: number[] | null;
+  /** Only airings starting within this local-time window ("HH:MM"); null = any time. */
+  timeFrom: string | null;
+  timeTo: string | null;
+  /** Skip airings whose episode (number or episode title) was already recorded or scheduled by this rule. */
+  skipRepeats: boolean;
 }
 
-export type CreateRecordingRuleRequest = Omit<RecordingRule, 'id' | 'enabled'> & { enabled?: boolean };
+export type CreateRecordingRuleRequest = Omit<RecordingRule, 'id' | 'enabled' | 'priority' | 'daysOfWeek' | 'timeFrom' | 'timeTo' | 'skipRepeats'> & {
+  enabled?: boolean;
+  priority?: number;
+  daysOfWeek?: number[] | null;
+  timeFrom?: string | null;
+  timeTo?: string | null;
+  skipRepeats?: boolean;
+};
 
 /* ------------------------------------------------------------------ */
 /* Admin: settings, tasks, activity                                    */

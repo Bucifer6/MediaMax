@@ -277,6 +277,15 @@ const MIGRATIONS: string[] = [
   /* 9: movie editions */ `
   ALTER TABLE media ADD COLUMN edition TEXT;
   `,
+  /* 10: DVR priorities, conflicts and rule constraints */ `
+  ALTER TABLE recordings ADD COLUMN priority INTEGER NOT NULL DEFAULT 100;
+  ALTER TABLE recordings ADD COLUMN conflict INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE recording_rules ADD COLUMN priority INTEGER NOT NULL DEFAULT 50;
+  ALTER TABLE recording_rules ADD COLUMN days TEXT;
+  ALTER TABLE recording_rules ADD COLUMN time_from TEXT;
+  ALTER TABLE recording_rules ADD COLUMN time_to TEXT;
+  ALTER TABLE recording_rules ADD COLUMN skip_repeats INTEGER NOT NULL DEFAULT 1;
+  `,
 ];
 
 function migrate(db: Database) {

@@ -271,3 +271,18 @@ getScanStatus, stream (raw or `format=mp3|opus&maxBitRate=`), download, getCover
 * `GET /items/:id/extras` → `Item[]` (type `video`, `extraType` trailer/featurette/behindthescenes/deleted/interview/scene/short/other),
   from Plex/Jellyfin-style folders (`Trailers/`, `Featurettes/`, `Behind The Scenes/`, `Extras/`…) or `-trailer`-style suffixes.
   Extras never appear in library lists or search.
+
+## DVR priorities, rule filters and tuner conflicts
+
+Recordings and rules carry a `priority` (0–100, higher wins). Manual recordings default to 100 and rules to 50.
+
+Rules (`POST /dvr/rules`) accept these optional fields:
+
+| Field | Meaning |
+|---|---|
+| `daysOfWeek` | `[0..6]` (0 = Sunday); only match programmes starting on these days |
+| `timeFrom` / `timeTo` | `"HH:MM"` 24-hour window (server local time); may wrap past midnight, e.g. `22:00`–`02:00` |
+| `skipRepeats` | default `true`; skip episodes already recorded (by episode number, else title + subtitle) |
+| `priority` | rule priority, passed on to the recordings it schedules |
+
+Every change to the schedule (create, cancel, rule delete, rule run) re-checks each live source's `maxConnections`. Recordings are given slots in order: recordings already in progress first, then by priority, then oldest first. A recording that cannot get a slot has `conflict: true`, and a `recording.updated` event is sent. If it is still in conflict at start time, it fails with a clear error. Cancelling another recording frees its slot straight away.
