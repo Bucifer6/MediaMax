@@ -25,6 +25,8 @@ const label = arg('label', 'run');
 const serverRepo = path.resolve(arg('repo', repo));
 const cpu = Number(arg('cpu', '4'));
 const runs = Number(arg('runs', '3'));
+/** Comma list of sections to run: home,library,guide (default all). */
+const sections = arg('only', 'home,library,guide').split(',');
 const cacheRoot = arg('cache', path.join(os.tmpdir(), 'mediamax-perf'));
 const pristine = path.join(cacheRoot, `seed-${arg('scale', '1')}`);
 if (!fs.existsSync(path.join(pristine, 'perf-manifest.json'))) {
@@ -44,7 +46,7 @@ process.on('exit', () => {
   } catch { /* gone */ }
 });
 const browser = await chromium.launch();
-const med = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
+const med = (a) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : null);
 const r0 = (n) => Math.round(n);
 
 async function newPage() {
@@ -55,6 +57,13 @@ async function newPage() {
       localStorage.setItem('mm.whatsNewSeen', '999');
     } catch { /* ignore */ }
     window.__lt = [];
+    window.__seen = {};
+    try {
+      const sels = ['.splash', '.home .skeleton', '.home-rows a.card[href^="/item/"]', '.grid a.card[href^="/item/"]', '.guide-row .guide-prog', '.detail-actions button', '.player .player-video-host'];
+      new MutationObserver(() => {
+        for (const sel of sels) if (!(sel in window.__seen) && document.querySelector(sel)) window.__seen[sel] = Math.round(performance.now());
+      }).observe(document, { childList: true, subtree: true });
+    } catch { /* ignore */ }
     try {
       new PerformanceObserver((l) => {
         for (const e of l.getEntries()) window.__lt.push(e.duration);
@@ -112,40 +121,52 @@ const out = { label, date: new Date().toISOString(), cpuThrottle: cpu, runs, hom
 try {
   for (let r = 0; r < runs; r++) {
     /* ------------------------------ Home ------------------------------ */
-    {
+    if (sections.includes('home')) {
       const { ctx, page, bytes } = await newPage();
+      const api = [];
+      page.on('requestfinished', (req) => {
+        const u = new URL(req.url());
+        if (u.pathname.startsWith('/api/v1/') && !u.pathname.startsWith('/api/v1/images')) {
+          const t = req.timing();
+          api.push(`${u.pathname} ${Math.round(t.startTime - nav0)}+${Math.round(t.responseEnd)}`);
+        }
+      });
+      const nav0 = Date.now();
       await page.goto(`${server.base}/`, { waitUntil: 'commit' });
-      await page.waitForSelector('.home-rows .row .card', { timeout: 60000 });
-      const rowsAt = await page.evaluate(() => performance.now());
+      // Real title cards (the loading skeleton uses .card too). The time comes from a MutationObserver in the page, so
+      // it doesn't depend on how often Playwright polls a busy, throttled main thread.
+      await page.waitForSelector('.home-rows a.card[href^="/item/"]', { timeout: 60000, state: 'attached' });
+      const rowsAt = await page.evaluate(() => window.__seen['.home-rows a.card[href^="/item/"]'] ?? performance.now());
       const fcp = await page.evaluate(() => performance.getEntriesByName('first-contentful-paint')[0]?.startTime ?? null);
       await page.waitForLoadState('networkidle').catch(() => {});
       const lt = await longTasks(page);
+      if (process.env.MM_PERF_DEBUG) console.log(api.join('\n'), await page.evaluate(() => JSON.stringify(window.__seen)));
       out.home.push({ fcpMs: r0(fcp), rowsVisibleMs: r0(rowsAt), jsKB: r0(bytes.js / 1024), cssKB: r0(bytes.css / 1024), apiKB: r0(bytes.api / 1024), longTasks: lt });
       console.log(`home      FCP ${r0(fcp)}ms  rows ${r0(rowsAt)}ms  JS ${r0(bytes.js / 1024)}KB CSS ${r0(bytes.css / 1024)}KB API ${r0(bytes.api / 1024)}KB  long tasks ${lt.count} / ${lt.totalMs}ms`);
 
       /* ------------------------ Home → item → play ----------------------- */
-      const t0 = Date.now();
+      const t0 = await page.evaluate(() => performance.now());
       // A poster row (cards in Continue Watching / Next Up start playback instead of opening the title).
       await page.locator('.home-rows .row:not(.row-wide):not(.row-channels) .card[href^="/item/"]').first().click();
       try {
-        await page.waitForSelector('.detail-actions button', { timeout: 60000 });
+        await page.waitForSelector('.detail-actions button', { timeout: 60000, state: 'attached' });
       } catch (e) {
         await page.screenshot({ path: path.join(os.tmpdir(), 'mm-web-perf-fail.png') });
         throw e;
       }
-      const itemMs = Date.now() - t0;
+      const itemMs = r0((await page.evaluate(() => window.__seen['.detail-actions button'])) - t0);
       await page.waitForTimeout(1500); // idle time a viewer spends reading the page (prefetch may happen here)
-      const t1 = Date.now();
+      const t1 = await page.evaluate(() => performance.now());
       await page.locator('.detail-actions [data-nav]').first().click();
-      await page.waitForSelector('video', { timeout: 60000, state: 'attached' });
-      const playerMs = Date.now() - t1;
+      await page.waitForSelector('.player .player-video-host', { timeout: 60000, state: 'attached' });
+      const playerMs = r0((await page.evaluate(() => window.__seen['.player .player-video-host'])) - t1);
       out.nav.push({ homeToItemMs: itemMs, itemToPlayerUiMs: playerMs });
       console.log(`nav       home → item ${itemMs}ms   item → player UI ${playerMs}ms`);
       await ctx.close();
     }
 
     /* ----------------------------- Library ---------------------------- */
-    {
+    if (sections.includes('library')) {
       const { ctx, page } = await newPage();
       await page.goto(`${server.base}/library/${manifest.libraries.movies}`);
       await page.waitForSelector('.grid .card', { timeout: 60000 });
@@ -160,12 +181,11 @@ try {
     }
 
     /* ------------------------------ Guide ----------------------------- */
-    {
+    if (sections.includes('guide')) {
       const { ctx, page } = await newPage();
-      const t0 = Date.now();
       await page.goto(`${server.base}/livetv/guide`);
-      await page.waitForSelector('.guide-row .guide-prog', { timeout: 60000 });
-      const firstMs = Date.now() - t0;
+      await page.waitForSelector('.guide-row .guide-prog', { timeout: 60000, state: 'attached' });
+      const firstMs = await page.evaluate(() => window.__seen['.guide-row .guide-prog'] ?? performance.now());
       const box = await page.locator('.guide-grid').boundingBox();
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       const load = await scrollFps(page, { steps: 120, dy: 600, pauseMs: 40 });
@@ -183,6 +203,7 @@ try {
   fs.rmSync(work, { recursive: true, force: true });
 }
 
+const q = (o, f) => (o.length ? f() : null);
 out.summary = {
   homeFcpMs: med(out.home.map((h) => h.fcpMs)),
   homeRowsMs: med(out.home.map((h) => h.rowsVisibleMs)),
