@@ -16,6 +16,7 @@ import {
 } from './common.js';
 import { embyDriver } from './emby.js';
 import { plexDriver } from './plex.js';
+import { importMetadata } from './metadata.js';
 
 /**
  * Import from another server (Admin → Import from another server): Emby, Jellyfin or Plex users, their permissions and
@@ -177,6 +178,8 @@ function cleanOptions(o: ImportOptions): ImportOptions {
     importPlaylists: o.importPlaylists !== false,
     importCollections: o.importCollections !== false,
     importHistory: o.importHistory !== false,
+    importMetadata: !!o.importMetadata,
+    overwriteMetadata: !!o.importMetadata && !!o.overwriteMetadata,
     linkExpiryDays: Math.max(1, Math.min(365, Math.round(Number(o.linkExpiryDays) || 30))),
   };
 }
@@ -189,7 +192,7 @@ export function startImport(s: ImportSource, admin: User, options: ImportOptions
   const L = SOURCE_LABEL[s];
   const job: ImportJob = {
     id: crypto.randomBytes(6).toString('hex'), source: s, status: 'running', phase: `Connecting to ${L}`, progress: 0, startedAt: nowIso(), finishedAt: null,
-    error: null, options: o, results: [], collections: { created: 0, updated: 0, items: 0 }, notes: [],
+    error: null, options: o, results: [], collections: { created: 0, updated: 0, items: 0 }, metadata: null, notes: [],
   };
   current = job;
   logActivity(`${s}.import`, `${L} import started`, { userId: admin.id, userName: admin.displayName });
@@ -335,6 +338,13 @@ export async function runImport(c: Conn, admin: User, job: ImportJob, origin: st
       else job.collections.updated++;
       job.collections.items += uniqIds(col.items).length;
     }
+  }
+
+  if (o.importMetadata) {
+    setPhase('Importing metadata', 92, true);
+    const md = await importMetadata(session, matcher, { overwrite: !!o.overwriteMetadata }, (phase, f = 0) => setPhase(phase, 92 + f * 7));
+    job.metadata = md;
+    if (md.imageErrors) job.notes.push(`${md.imageErrors} artwork download(s) failed`);
   }
 
   const n = (st: ImportUserResult['status']) => job.results.filter((r) => r.status === st).length;

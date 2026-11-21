@@ -13,7 +13,7 @@ import { AdminHeader } from './AdminRoutes';
 const MASK = '••••';
 const DEFAULT_OPTIONS: ImportOptions = {
   updateExisting: false, mergeExisting: true, includeDisabled: true, importWatched: true, importResume: true, importFavorites: true,
-  importPlaylists: true, importCollections: true, importHistory: true, linkExpiryDays: 30,
+  importPlaylists: true, importCollections: true, importHistory: true, importMetadata: true, overwriteMetadata: false, linkExpiryDays: 30,
 };
 const ACTION: Record<string, { label: string; tone: 'success' | 'primary' | 'accent' | 'muted' | 'danger' | 'warning' }> = {
   create: { label: 'Create', tone: 'success' }, update: { label: 'Update', tone: 'primary' }, merge: { label: 'Merge data', tone: 'accent' }, skip: { label: 'Skip', tone: 'muted' },
@@ -150,6 +150,8 @@ function OptionsCard({ source, o, set }: { source: ImportSource; o: ImportOption
         <Switch checked={o.importHistory !== false} onChange={(v) => set({ importHistory: v })} label="Play history" hint={`${S.history} Feeds stats and Year in review; never added twice.`} />
         <Switch checked={o.importPlaylists !== false} onChange={(v) => set({ importPlaylists: v })} label="Playlists" hint="Recreated for each user; re-runs add missing items instead of duplicating." />
         <Switch checked={o.importCollections !== false} onChange={(v) => set({ importCollections: v })} label="Collections" />
+        <Switch checked={!!o.importMetadata} onChange={(v) => set({ importMetadata: v })} label="Metadata and artwork" hint={`Descriptions, genres, cast, ratings, posters, backgrounds, logos, season posters and episode images from ${S.name}, for titles that match. Artwork is copied to this server.`} />
+        {o.importMetadata && <Switch checked={!!o.overwriteMetadata} onChange={(v) => set({ overwriteMetadata: v })} label="Replace metadata Kinora already has" hint="Off: only fills in what is missing. Fields you locked on a title are never changed." />}
         {S.disabled && <Switch checked={o.includeDisabled !== false} onChange={(v) => set({ includeDisabled: v })} label={`Include users that are disabled in ${S.name}`} hint="They are created disabled, without a set-password link." />}
         <Switch checked={o.mergeExisting !== false} onChange={(v) => set({ mergeExisting: v })} label="Merge watch data into existing accounts" hint="Accounts with the same username, or imported before." />
         <Switch checked={!!o.updateExisting} onChange={(v) => set({ updateExisting: v })} label="Also overwrite permissions of existing accounts" hint="Admin flag, library access, limits. Your own account is never demoted or disabled." />
@@ -279,6 +281,7 @@ function ResultsView({ job }: { job: ImportJob }) {
           <p className="muted">
             {job.finishedAt ? `Finished ${formatDateTime(job.finishedAt)}` : `Started ${formatDateTime(job.startedAt)}`} · {n('created')} created, {n('updated') + n('merged')} updated, {n('skipped')} skipped{n('error') ? `, ${n('error')} failed` : ''}
             {job.options.importCollections ? ` · collections: ${job.collections.created} new, ${job.collections.updated} updated` : ''}
+            {job.metadata ? ` · metadata: ${job.metadata.updated} titles updated, ${job.metadata.images} images (${job.metadata.matched} of ${job.metadata.read} matched)` : ''}
           </p>
         </div>
         <div className="row-gap">
@@ -373,9 +376,16 @@ export function ServerImportAdmin() {
     if (!preview) return;
     const users = preview.users.filter((u) => selected.has(u.sourceId) && u.action !== 'skip');
     const creates = users.filter((u) => u.action === 'create').length;
-    if (!(await confirm({
+    const metadataOnly = !users.length && !!opts.importMetadata;
+    if (!(await confirm(metadataOnly ? {
+      title: `Import metadata and artwork from ${S.name}?`,
+      message: opts.overwriteMetadata
+        ? 'Metadata and artwork of matching titles will replace what this server has (locked fields stay as they are). No accounts are created.'
+        : 'Missing metadata and artwork of matching titles will be filled in. Nothing this server already has is changed, and no accounts are created.',
+      confirmLabel: 'Start import',
+    } : {
       title: `Import ${users.length} user${users.length === 1 ? '' : 's'} from ${S.name}?`,
-      message: `${creates} new account${creates === 1 ? '' : 's'} will be created, each with a one-time set-password link. Existing watch data is only ever added to, never removed. You can run the import again later.`,
+      message: `${creates} new account${creates === 1 ? '' : 's'} will be created, each with a one-time set-password link. Existing watch data is only ever added to, never removed.${opts.importMetadata ? ' Metadata and artwork of matching titles are imported too.' : ''} You can run the import again later.`,
       confirmLabel: 'Start import',
     }))) return;
     try {
@@ -414,7 +424,7 @@ export function ServerImportAdmin() {
           {shown && <PreviewView p={shown} selected={selected} setSelected={setSelected} />}
           {shown && (
             <div className="row-gap">
-              <button className="btn btn-primary btn-lg" onClick={() => void start()} disabled={running || !selectedCount}><Icon name="upload" size={18} /> Import {selectedCount} user{selectedCount === 1 ? '' : 's'}</button>
+              <button className="btn btn-primary btn-lg" onClick={() => void start()} disabled={running || (!selectedCount && !opts.importMetadata)}><Icon name="upload" size={18} /> {selectedCount ? `Import ${selectedCount} user${selectedCount === 1 ? '' : 's'}` : 'Import metadata only'}</button>
             </div>
           )}
         </div>

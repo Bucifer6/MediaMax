@@ -505,6 +505,27 @@ export interface QuickCounts { watched: number; resume: number; favorites: numbe
 
 export type Progress = (phase: string, fraction?: number) => void;
 
+/** Artwork kinds Kinora keeps per item (episode stills are `thumb`). */
+export type MetaImageKind = 'poster' | 'backdrop' | 'logo' | 'thumb';
+
+/**
+ * A title's metadata on the source server, in neutral form. Seasons carry `kind: 'season'` with `seriesId` and
+ * `season`; they are matched through their show. `images` values are opaque refs for `Session.fetchImage`.
+ */
+export interface SrcMeta {
+  item: SrcItem | (Omit<SrcItem, 'kind'> & { kind: 'season' });
+  overview?: string | null;
+  tagline?: string | null;
+  originalTitle?: string | null;
+  genres?: string[];
+  studios?: string[];
+  people?: { name: string; role: string | null; kind: string }[];
+  contentRating?: string | null;
+  communityRating?: number | null;
+  releaseDate?: string | null;
+  images: Partial<Record<MetaImageKind, string>>;
+}
+
 /** One connected read of a source server (a preview or an import). */
 export interface Session {
   server: { id: string | null; name: string; version: string };
@@ -518,6 +539,10 @@ export interface Session {
   countUser(u: SourceUser, want: Want): Promise<QuickCounts>;
   collections(): Promise<SrcList[]>;
   countCollections(): Promise<number>;
+  /** Every movie, show, season and episode with its metadata and artwork refs (Import → metadata). */
+  metadata?(progress: Progress): Promise<{ items: SrcMeta[]; series: Map<string, SrcSeries> }>;
+  /** Download one artwork ref from `metadata()`; null when the source has none. */
+  fetchImage?(ref: string): Promise<{ data: Buffer; type: string } | null>;
 }
 
 export interface Driver {
