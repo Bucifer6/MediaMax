@@ -488,6 +488,18 @@ const MIGRATIONS: string[] = [
     offset_ms INTEGER NOT NULL, PRIMARY KEY (user_id, item_id)
   );
   `,
+  /* Smart downloads: per-device, per-show rules ("keep the next N unwatched episodes on this phone") */ `
+  CREATE TABLE IF NOT EXISTS download_rules (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id TEXT NOT NULL, device_name TEXT NOT NULL, platform TEXT NOT NULL,
+    show_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    keep_count INTEGER NOT NULL DEFAULT 3, delete_watched_after_hours INTEGER,
+    wifi_only INTEGER NOT NULL DEFAULT 1, charging_only INTEGER NOT NULL DEFAULT 0, quality TEXT NOT NULL DEFAULT 'original',
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_sync_at TEXT,
+    UNIQUE (user_id, device_id, show_id)
+  );
+  CREATE INDEX IF NOT EXISTS download_rules_user ON download_rules(user_id);
+  `,
 ];
 
 function migrate(db: Database) {

@@ -4322,6 +4322,8 @@ export interface DownloadPlan {
   rules: DownloadRule[];
   want: { ruleId: string; showId: string; items: Item[] }[];
   have: DownloadedItemState[];
+  /** Downloads to delete now: episodes of a rule's show watched longer ago than the rule allows, or items that are gone. */
+  remove: { itemId: string; reason: 'watched' | 'gone' }[];
   generatedAt: string;
 }
 
