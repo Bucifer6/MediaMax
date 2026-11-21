@@ -306,3 +306,15 @@ test('a short duration from a still-running transcode does not mark a film watch
   assert.equal(ud.played, false);
   assert.equal(ud.positionMs, 56000);
 });
+
+test('re-watching a watched film part-way keeps it watched and offers it in Continue Watching', () => {
+  const viewer = auth.getUser(admin.id);
+  db.run('UPDATE items SET duration_ms = ? WHERE id = ?', 90000, 'm-pg');
+  items.reportProgress(viewer, 'm-pg', 85000, 90000, 'stopped');
+  assert.equal(items.getItem(viewer, 'm-pg').userData?.played, true);
+  assert.equal(items.continueWatching(viewer).some((i) => i.id === 'm-pg'), false);
+  const ud = items.reportProgress(viewer, 'm-pg', 40000, 90000, 'stopped');
+  assert.equal(ud.played, true);
+  assert.equal(ud.positionMs, 40000);
+  assert.ok(items.continueWatching(viewer).some((i) => i.id === 'm-pg'));
+});
