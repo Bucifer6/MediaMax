@@ -118,7 +118,9 @@ export type HomeRowType =
   /** "My List": the viewer's watchlist. */
   | 'watchlist'
   /** "Coming soon": next airing episodes of shows in the viewer's libraries (needs TMDB). */
-  | 'upcoming';
+  | 'upcoming'
+  /** "Random spotlight": random movies/shows from chosen libraries (e.g. "Random Movie", "Kids Spotlight"). Add several. */
+  | 'spotlight';
 
 export interface HomeRowConfig {
   id: string;
@@ -133,6 +135,14 @@ export interface HomeRowConfig {
   /** For genre. */
   genre?: string;
   limit?: number;
+  /** spotlight: libraries to pick from (empty/absent = every library the viewer can see). */
+  libraryIds?: string[];
+  /** spotlight: item types to pick (default both). */
+  itemTypes?: ('movie' | 'show')[];
+  /** spotlight: 'load' = new random picks on every page load (default), 'daily' = the same picks all day (server date). */
+  rotation?: 'load' | 'daily';
+  /** top10: admin-pinned titles (movies/shows), always first in this order; the chart fills the rest. Titles a viewer can't see are skipped. */
+  pinnedItemIds?: string[];
 }
 
 export interface FeatureFlags {
@@ -169,8 +179,17 @@ export interface Branding {
   tvBannerUrl: string | null;
   /** Apple TV top shelf artwork. */
   topShelfUrl: string | null;
-  /** The default theme applied to everyone. */
+  /**
+   * The theme applied to everyone right now: the theme of the active seasonal schedule (`themeSchedules`) while one is
+   * active, else `baseThemeId`. Clients just apply this one (users who picked their own theme keep it).
+   */
   defaultThemeId: string;
+  /** The admin's chosen default theme (outside any seasonal schedule). Send this to change the default. */
+  baseThemeId: string;
+  /** Seasonal themes, e.g. Halloween 10-20 → 11-01, Christmas 12-01 → 01-06. The first active one wins. */
+  themeSchedules: ThemeSchedule[];
+  /** Id of the schedule in effect now (null = none, `defaultThemeId` = `baseThemeId`). */
+  activeThemeScheduleId: string | null;
   /** All themes available (presets + admin-made). */
   themes: Theme[];
   /** Let users pick a theme from `themes` for themselves. */
@@ -181,6 +200,21 @@ export interface Branding {
   customCss: string;
   /** Bumped every time branding changes so clients can cache-bust. */
   revision: number;
+}
+
+/**
+ * A date window (server's local date, every year) during which `themeId` replaces the default theme.
+ * Inclusive; a window whose end is before its start wraps the year end (12-01 → 01-06).
+ */
+export interface ThemeSchedule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  /** "MM-DD". */
+  start: string;
+  /** "MM-DD". */
+  end: string;
+  themeId: string;
 }
 
 export type BrandingAssetKind =
@@ -319,6 +353,11 @@ export interface User {
   maxStreams: number | null;
   /** Two-factor authentication enabled. */
   totpEnabled: boolean;
+  /**
+   * Listed on the public sign-in screen ("Who's watching?" before anyone signs in). Default false: nobody's name is
+   * shown to people who are not signed in unless an admin opts them in (see ServerSettings.signInScreen).
+   */
+  showOnSignIn?: boolean;
   preferences: UserPreferences;
   createdAt: string;
   lastSeenAt: string | null;
@@ -339,6 +378,8 @@ export interface CreateUserRequest {
   allowRequest4k?: boolean;
   allowRemote?: boolean;
   maxStreams?: number | null;
+  /** List this user on the public sign-in screen. Default false. */
+  showOnSignIn?: boolean;
 }
 
 export type UpdateUserRequest = Partial<CreateUserRequest> & { disabled?: boolean };
@@ -397,6 +438,23 @@ export interface Library {
   /** Admin-defined sort order for menus. */
   sortOrder: number;
   createdAt: string;
+  /** Where an item's "date added" comes from (Recently Added, sort by date added). */
+  dateAdded: DateAddedSource;
+}
+
+/**
+ * Source of an item's "date added": the time the scan found it, or its file's creation / modification time.
+ * `created` falls back to the modification time where the filesystem has no creation time (some Linux filesystems),
+ * and a date in the future is never used. Shows, seasons, albums and artists get the earliest date of their children
+ * (Recently Added still bubbles a show up when a new episode arrives: shows are ordered by their newest episode).
+ */
+export type DateAddedSource = 'scan' | 'created' | 'modified';
+
+export interface SignInScreenSettings {
+  /** Master switch: list opted-in users at all. */
+  showUsers: boolean;
+  /** Only list them to devices on the home network (private / loopback addresses); others see the username form. */
+  homeNetworkOnly: boolean;
 }
 
 export interface PodcastSubscription {
@@ -431,6 +489,8 @@ export interface CreateLibraryRequest {
   type: Exclude<LibraryType, 'iptv-movies' | 'iptv-shows' | 'podcasts'>;
   paths: string[];
   fetchMetadata?: boolean;
+  /** Default: the server's `defaultDateAdded`. */
+  dateAdded?: DateAddedSource;
 }
 
 export type UpdateLibraryRequest = Partial<CreateLibraryRequest> & { sortOrder?: number };
@@ -1672,6 +1732,13 @@ export interface ServerSettings {
     userId: string | null;
   };
   sessionTimeoutDays: number;
+  /**
+   * Users on the public sign-in screen. Only users with `showOnSignIn` are ever listed, and only while the branding
+   * feature `profilePicker` is on. Default: { showUsers: true, homeNetworkOnly: true }.
+   */
+  signInScreen?: SignInScreenSettings;
+  /** "Date added" rule given to new libraries. Default 'created' (file creation time). */
+  defaultDateAdded?: DateAddedSource;
 }
 
 export type WebhookEvent =
