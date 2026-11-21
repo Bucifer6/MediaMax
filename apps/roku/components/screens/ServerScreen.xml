@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- First run: pick a server found on the LAN (SSDP) or type its address. -->
+<component name="ServerScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Screen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/screens/ServerScreen.brs" />
+  <children>
+    <Poster id="logo" uri="pkg:/images/logo.png" translation="[160,120]" width="160" height="160" />
+    <Label id="heading" translation="[360,140]" width="1400" text="Connect to your Kinora server" color="0xFFFFFFFF" font="font:LargeBoldSystemFont" />
+    <Label id="hint" translation="[360,210]" width="1400" wrap="true" maxLines="2" color="0xA9B0D6FF" font="font:SmallSystemFont"
+      text="Choose a server found on your network, or enter its address (for example 192.168.1.20:8484 or https://media.example.com)." />
+    <Label id="error" translation="[160,330]" width="1600" wrap="true" maxLines="2" color="0xF87171FF" font="font:SmallSystemFont" />
+    <Label id="status" translation="[160,420]" width="1600" color="0xA9B0D6FF" font="font:SmallSystemFont" text="Searching your network..." />
+    <LabelList id="list" translation="[160,480]" itemSize="[1000,72]" numRows="7" vertFocusAnimationStyle="floatingFocus"
+      color="0xFFFFFFFF" focusedColor="0x0B0E26FF" focusBitmapBlendColor="0x22D3EEFF" font="font:MediumSystemFont" focusedFont="font:MediumBoldSystemFont" />
+  </children>
+</component>

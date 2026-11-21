@@ -115,7 +115,7 @@ async function normServerUrl(user: User, raw: string | null | undefined): Promis
     throw badRequest('Invalid server URL');
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') throw badRequest('The server URL must start with http:// or https://');
-  // Only admins may point MediaMax at addresses on the local network (a LAN-hosted ListenBrainz).
+  // Only admins may point Kinora at addresses on the local network (a LAN-hosted ListenBrainz).
   if (!user.isAdmin) await assertPublicUrl(s);
   return s;
 }
@@ -161,8 +161,8 @@ export function lbDisconnect(userId: string): ListenBrainzStatus {
 /** The listen payload ListenBrainz expects (track_metadata + additional_info with MBIDs). */
 export function buildListen(t: ScrobbleTrack, listenedAt?: number): Record<string, unknown> {
   const info: Record<string, unknown> = {
-    media_player: 'MediaMax', media_player_version: config.version,
-    submission_client: 'MediaMax', submission_client_version: config.version,
+    media_player: 'Kinora', media_player_version: config.version,
+    submission_client: 'Kinora', submission_client_version: config.version,
   };
   if (isMbid(t.recordingMbid)) info.recording_mbid = t.recordingMbid;
   if (isMbid(t.releaseMbid)) info.release_mbid = t.releaseMbid;
@@ -428,7 +428,7 @@ export async function lbRecommendations(user: User, refresh = false): Promise<Lb
   return { connected: true, lists: mapped, error, canRequest };
 }
 
-/** Save the in-library tracks of a recommendation list as a MediaMax playlist. */
+/** Save the in-library tracks of a recommendation list as a Kinora playlist. */
 export async function lbSaveAsPlaylist(user: User, listId: string): Promise<{ id: string; count: number }> {
   const recs = await lbRecommendations(user);
   const list = recs.lists.find((l) => l.id === listId);

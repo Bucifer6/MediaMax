@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { StatsTopEntry, UserStats } from '@mediamax/shared';
 import { api } from '../api/endpoints';
@@ -7,6 +7,10 @@ import { useAsync } from '../hooks';
 import { Icon, type IconName } from '../components/Icon';
 import { ErrorState, Img, Skeleton } from '../components/ui';
 import { BarChart, CountUp, HBars, formatMinutes } from '../components/Charts';
+import { pairApi } from '../remote/api';
+import { useToast } from '../state/toast';
+
+const WrappedStory = lazy(() => import('../wrapped/WrappedStory').then((m) => ({ default: m.WrappedStory })));
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -186,6 +190,30 @@ export default function WrappedPage() {
   const s = res.data;
   const empty = !!s && s.totalPlays === 0 && s.totalMinutes === 0;
   const period = year == null ? 'all time' : String(year);
+  // The animated story (your own Wrapped only): opened from the hero, or straight away with ?story=1.
+  const toast = useToast();
+  const [story, setStory] = useState<import('@mediamax/shared').WrappedStory | null>(null);
+  const [storyBusy, setStoryBusy] = useState(false);
+  const openStory = async () => {
+    setStoryBusy(true);
+    try {
+      setStory(await pairApi.wrapped(year));
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setStoryBusy(false);
+    }
+  };
+  const autoStory = sp.get('story') === '1';
+  const autoDone = useRef(false);
+  const canStory = self && !userId && !!s && !empty;
+  useEffect(() => {
+    if (autoStory && canStory && !autoDone.current) {
+      autoDone.current = true;
+      void openStory();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStory, canStory]);
 
   return (
     <div className={`${userId ? '' : 'page '}wrapped`}>
@@ -196,6 +224,11 @@ export default function WrappedPage() {
           <h1>
             {self ? 'Your' : `${name}’s`} {year == null ? <>story <em>so far</em></> : <><em>{year}</em> in review</>}
           </h1>
+          {self && !userId && s && !empty && (
+            <button className="btn btn-primary btn-lg wr-story-cta" onClick={() => void openStory()} disabled={storyBusy} autoFocus={document.documentElement.classList.contains('tv')}>
+              <Icon name="play" size={18} /> {storyBusy ? 'Loading your story…' : 'Play your story'}
+            </button>
+          )}
           {!self && userId && <p className="wr-sub">Viewing as an administrator · <Link to="/admin/stats">Back to statistics</Link></p>}
           <div className="wr-years" role="radiogroup" aria-label="Period">
             {years.map((y) => (
@@ -229,6 +262,11 @@ export default function WrappedPage() {
         <div className={`wr-body ${res.loading ? 'is-loading' : ''}`} aria-busy={res.loading}>
           <WrappedBody s={s} name={name} self={self} />
         </div>
+      )}
+      {story && (
+        <Suspense fallback={null}>
+          <WrappedStory story={story} brand={branding.serverName} onClose={() => setStory(null)} />
+        </Suspense>
       )}
     </div>
   );

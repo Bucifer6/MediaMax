@@ -131,7 +131,7 @@ export function StorageAdmin() {
           </div>
 
           <div className="settings-card guidance">
-            <h2><Icon name="server" size={18} /> Keep MediaMax’s own files on an SSD</h2>
+            <h2><Icon name="server" size={18} /> Keep Kinora’s own files on an SSD</h2>
             <p className="muted">Artwork, thumbnails, scrub previews, downloaded subtitles and the database live in the data folder; transcodes in the transcode folder. Media-folder artwork is copied there on first view, so browsing never wakes a media disk.</p>
             <dl className="kv-list">
               <dt>Data folder</dt><dd><code>{st.dataDir}</code></dd>

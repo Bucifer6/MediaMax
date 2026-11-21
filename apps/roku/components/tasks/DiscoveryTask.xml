@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Finds Kinora servers on the LAN. Kinora answers SSDP M-SEARCH for UPnP MediaServer:1 when its DLNA server is on
+  (Settings → DLNA); its SERVER header contains "Kinora/<version>" and LOCATION points at <base>/dlna/description.xml.
+  Each hit is confirmed with GET /api/v1/system/info.
+-->
+<component name="DiscoveryTask" extends="Task">
+  <interface>
+    <field id="timeoutMs" type="integer" value="3000" />
+    <!-- [{ url, name, version }] -->
+    <field id="servers" type="array" />
+    <field id="done" type="boolean" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/tasks/DiscoveryTask.brs" />
+</component>

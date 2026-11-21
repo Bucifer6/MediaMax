@@ -1,5 +1,5 @@
 /**
- * The demo catalogue. Every title, name, plot, studio and channel here is invented for the MediaMax
+ * The demo catalogue. Every title, name, plot, studio and channel here is invented for the Kinora
  * screenshots; any resemblance to real works or people is unintended.
  */
 

@@ -4,7 +4,7 @@
  */
 import Constants from 'expo-constants';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Alert } from 'react-native';
 import { ApiError, MediaMaxClient, probeServer } from '@/api/client';
 import { getDeviceInfo } from '@/api/device';
 import { getJSON, secureGet, secureRemove, secureSet, setJSON } from '@/api/storage';
@@ -237,6 +237,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           break;
         case 'session.terminated':
           emit('sessionTerminated', { sessionId: evt.sessionId, reason: evt.reason });
+          break;
+        case 'session.message':
+          // A message from the server administrator (dashboard "Send message").
+          Alert.alert(evt.header || `Message from ${evt.from}`, evt.text);
           break;
       }
     });

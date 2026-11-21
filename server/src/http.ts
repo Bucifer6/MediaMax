@@ -10,11 +10,24 @@ declare module 'fastify' {
   }
 }
 
+/**
+ * A client header by its short name (e.g. `device-id`): `X-Kinora-<name>` wins, the original `X-MediaMax-<name>` is
+ * still accepted (older clients, scripts and integrations keep working).
+ */
+export function clientHeader(req: Pick<FastifyRequest, 'headers'>, name: string): string | undefined {
+  for (const prefix of ['x-kinora-', 'x-mediamax-']) {
+    const v = req.headers[prefix + name];
+    const s = Array.isArray(v) ? v[0] : v;
+    if (typeof s === 'string' && s) return s;
+  }
+  return undefined;
+}
+
 export function extractToken(req: FastifyRequest): string | null {
   const h = req.headers.authorization;
   if (h?.startsWith('Bearer ')) return h.slice(7).trim();
-  const x = req.headers['x-mediamax-token'];
-  if (typeof x === 'string' && x) return x;
+  const x = clientHeader(req, 'token');
+  if (x) return x;
   const q = (req.query as Record<string, unknown> | undefined)?.token;
   if (typeof q === 'string' && q) return q;
   return null;
@@ -52,10 +65,10 @@ export function deviceFromRequest(req: FastifyRequest, body: Partial<DeviceInfo>
   const h = req.headers;
   const ua = String(h['user-agent'] ?? '');
   return {
-    deviceId: body.deviceId ?? (h['x-mediamax-device-id'] as string | undefined),
-    deviceName: body.deviceName ?? (h['x-mediamax-device-name'] as string | undefined) ?? guessDevice(ua),
-    platform: body.platform ?? (h['x-mediamax-platform'] as DeviceInfo['platform'] | undefined) ?? 'web',
-    appVersion: body.appVersion ?? (h['x-mediamax-version'] as string | undefined),
+    deviceId: body.deviceId ?? clientHeader(req, 'device-id'),
+    deviceName: body.deviceName ?? clientHeader(req, 'device-name') ?? guessDevice(ua),
+    platform: body.platform ?? (clientHeader(req, 'platform') as DeviceInfo['platform'] | undefined) ?? 'web',
+    appVersion: body.appVersion ?? clientHeader(req, 'version'),
   };
 }
 
@@ -67,6 +80,13 @@ function guessDevice(ua: string): string {
 
 /** Client address as resolved by Fastify's trusted-proxy rules (never the raw, spoofable header). */
 export const remoteAddr = (req: FastifyRequest) => req.ip ?? null;
+
+/** What the dashboard shows about a client's connection: User-Agent, HTTP version and whether it came over HTTPS. */
+export const clientHints = (req: FastifyRequest) => ({
+  userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'].slice(0, 400) : null,
+  httpVersion: req.raw.httpVersion ?? null,
+  secure: req.protocol === 'https',
+});
 
 export function noCache(reply: FastifyReply) {
   reply.header('Cache-Control', 'no-store');

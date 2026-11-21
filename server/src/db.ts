@@ -8,6 +8,12 @@ const log = logger('db');
 export type Row = Record<string, any>;
 export type Param = SQLInputValue | boolean | undefined;
 
+/**
+ * Perf mode (MEDIAMAX_PERF=1, used by scripts/perf): counts statements (exposed per request as X-MM-Queries)
+ * and logs statements slower than MEDIAMAX_PERF_SLOW_MS (default 20 ms). Off by default: zero overhead.
+ */
+export const dbPerf = { enabled: process.env.MEDIAMAX_PERF === '1', queries: 0, slowMs: Number(process.env.MEDIAMAX_PERF_SLOW_MS ?? 20) };
+
 class Database {
   readonly raw: DatabaseSync;
   private stmtCache = new Map<string, ReturnType<DatabaseSync['prepare']>>();
@@ -15,6 +21,10 @@ class Database {
   constructor(file: string) {
     this.raw = new DatabaseSync(file);
     this.raw.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+    // SQLite's default page cache is 2 MB; a 20k-title library's tables and indexes are a few hundred MB, so browsing
+    // re-read pages from the OS on every query. 64 MB of cache plus memory-mapped reads keep the hot pages in process,
+    // and sorts / temp b-trees stay in memory.
+    this.raw.exec('PRAGMA cache_size = -65536; PRAGMA mmap_size = 268435456; PRAGMA temp_store = MEMORY;');
   }
 
   private stmt(sql: string) {
@@ -30,13 +40,25 @@ class Database {
     return params.map((p) => (p === undefined ? null : typeof p === 'boolean' ? (p ? 1 : 0) : p));
   }
 
+  private timed<R>(sql: string, fn: () => R): R {
+    dbPerf.queries++;
+    const t = performance.now();
+    const r = fn();
+    const ms = performance.now() - t;
+    if (ms >= dbPerf.slowMs) log.warn(`slow query ${ms.toFixed(1)}ms: ${sql.replace(/\s+/g, ' ').slice(0, 400)}`);
+    return r;
+  }
+
   all<T = Row>(sql: string, ...params: Param[]): T[] {
+    if (dbPerf.enabled) return this.timed(sql, () => this.stmt(sql).all(...this.norm(params)) as T[]);
     return this.stmt(sql).all(...this.norm(params)) as T[];
   }
   get<T = Row>(sql: string, ...params: Param[]): T | undefined {
+    if (dbPerf.enabled) return this.timed(sql, () => this.stmt(sql).get(...this.norm(params)) as T | undefined);
     return this.stmt(sql).get(...this.norm(params)) as T | undefined;
   }
   run(sql: string, ...params: Param[]) {
+    if (dbPerf.enabled) return this.timed(sql, () => this.stmt(sql).run(...this.norm(params)));
     return this.stmt(sql).run(...this.norm(params));
   }
   exec(sql: string) {
@@ -488,6 +510,96 @@ const MIGRATIONS: string[] = [
     offset_ms INTEGER NOT NULL, PRIMARY KEY (user_id, item_id)
   );
   `,
+  /* "Date added" per library: scan | created | modified. Existing libraries keep the scan time they always used. */ `
+  ALTER TABLE libraries ADD COLUMN date_added TEXT NOT NULL DEFAULT 'created';
+  UPDATE libraries SET date_added = 'scan';
+  `,
+  /* Public sign-in screen: only users an admin opts in are ever listed (default hidden) */ `
+  ALTER TABLE users ADD COLUMN show_on_signin INTEGER NOT NULL DEFAULT 0;
+  `,
+  /* Emby migration: one-time set-password links, Emby id → Kinora id map (re-runs) */ `
+  CREATE TABLE password_links (
+    token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, purpose TEXT NOT NULL,
+    created_by TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT
+  );
+  CREATE INDEX password_links_user ON password_links(user_id);
+  CREATE TABLE emby_import_map (
+    kind TEXT NOT NULL, emby_id TEXT NOT NULL, local_id TEXT NOT NULL, imported_at TEXT NOT NULL,
+    PRIMARY KEY (kind, emby_id)
+  );
+  `,
+  /* Subtitle providers: every downloaded subtitle file (data folder or sidecar), so sidecars Kinora wrote can be listed and deleted */ `
+  CREATE TABLE IF NOT EXISTS subtitle_downloads (
+    path TEXT PRIMARY KEY, media_id TEXT NOT NULL, provider TEXT NOT NULL, provider_file_id TEXT, language TEXT, release TEXT,
+    score INTEGER, synced INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_subtitle_downloads_media ON subtitle_downloads(media_id);
+  `,
+  /* Import from another server (Emby / Jellyfin / Plex): the id map gains a source; existing rows are Emby's */ `
+  CREATE TABLE import_map (
+    source TEXT NOT NULL, kind TEXT NOT NULL, source_id TEXT NOT NULL, local_id TEXT NOT NULL, imported_at TEXT NOT NULL,
+    PRIMARY KEY (source, kind, source_id)
+  );
+  INSERT INTO import_map (source, kind, source_id, local_id, imported_at) SELECT 'emby', kind, emby_id, local_id, imported_at FROM emby_import_map;
+  DROP TABLE emby_import_map;
+  CREATE INDEX import_map_local ON import_map(kind, local_id);
+  `,
+  /* Phone ↔ TV pairings (QR pairing: phone remote + second screen). Device rows go away on sign-out, and so do their pairings. */ `
+  CREATE TABLE IF NOT EXISTS remote_pairings (
+    id TEXT PRIMARY KEY,
+    tv_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tv_device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    ctl_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ctl_device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    cross_user INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS remote_pairings_tv ON remote_pairings(tv_device_id);
+  CREATE INDEX IF NOT EXISTS remote_pairings_ctl ON remote_pairings(ctl_device_id);
+  `,
+  /* AI: automatic subtitle jobs (resumable), Ask search embeddings (float32 blobs), per-user series recaps */ `
+  CREATE TABLE IF NOT EXISTS ai_subtitle_jobs (
+    id TEXT PRIMARY KEY, item_id TEXT NOT NULL, media_id TEXT NOT NULL, language TEXT NOT NULL, status TEXT NOT NULL,
+    phase TEXT, progress INTEGER NOT NULL DEFAULT 0, eta_s INTEGER, spoken_language TEXT, translated INTEGER NOT NULL DEFAULT 0,
+    cues INTEGER, error TEXT, source TEXT NOT NULL DEFAULT 'task', priority INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_subtitle_jobs_media_lang ON ai_subtitle_jobs(media_id, language);
+  CREATE INDEX IF NOT EXISTS idx_ai_subtitle_jobs_queue ON ai_subtitle_jobs(status, priority, created_at);
+  CREATE TABLE IF NOT EXISTS item_embeddings (
+    item_id TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE, model TEXT NOT NULL, hash TEXT NOT NULL,
+    dims INTEGER NOT NULL, vec BLOB NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS recap_cache (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, show_id TEXT NOT NULL, last_episode_id TEXT NOT NULL,
+    source TEXT NOT NULL, text TEXT, bullets TEXT NOT NULL DEFAULT '[]', episodes TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, show_id, last_episode_id)
+  );
+  `,
+  /* Smart downloads: per-device, per-show rules ("keep the next N unwatched episodes on this phone") */ `
+  CREATE TABLE IF NOT EXISTS download_rules (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id TEXT NOT NULL, device_name TEXT NOT NULL, platform TEXT NOT NULL,
+    show_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    keep_count INTEGER NOT NULL DEFAULT 3, delete_watched_after_hours INTEGER,
+    wifi_only INTEGER NOT NULL DEFAULT 1, charging_only INTEGER NOT NULL DEFAULT 0, quality TEXT NOT NULL DEFAULT 'original',
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_sync_at TEXT,
+    UNIQUE (user_id, device_id, show_id)
+  );
+  CREATE INDEX IF NOT EXISTS download_rules_user ON download_rules(user_id);
+  `,
+  /* Performance (scripts/perf): library browsing sorted by title / date added / rating walks an index instead of
+     sorting the whole library; type-wide queries (hero, recently added, calendar, recommendations) no longer scan
+     every row; recommendation candidates walk titles best-rated first; "recently added shows" finds each show's newest
+     episode by index. */ `
+  CREATE INDEX IF NOT EXISTS items_lib_type_sort ON items(library_id, type, sort_title);
+  CREATE INDEX IF NOT EXISTS items_lib_type_added ON items(library_id, type, added_at);
+  CREATE INDEX IF NOT EXISTS items_lib_type_rating ON items(library_id, type, COALESCE(community_rating, 0));
+  CREATE INDEX IF NOT EXISTS items_type_added ON items(type, added_at);
+  CREATE INDEX IF NOT EXISTS items_type_rating ON items(type, COALESCE(community_rating, 0));
+  CREATE INDEX IF NOT EXISTS items_grandparent_added ON items(grandparent_id, added_at);
+  ANALYZE;
+  `,
   /* Files a library scan skipped because their names aren't valid UTF-8; recordings resumed after a restart:
      parts recorded so far, the time lost between them, and parts kept separately when joining them failed */ `
   ALTER TABLE libraries ADD COLUMN skipped_names TEXT;
@@ -533,3 +645,17 @@ db.raw.function('mm_rating_ok', { deterministic: true }, (r: unknown, max: unkno
   return lvl <= Number(max) ? 1 : 0;
 });
 migrate(db);
+
+/*
+ * A counter bumped by any change to the item rows that list-wide caches depend on (membership, type, library, genres,
+ * ratings). Temp triggers live only on this connection, which is the only one that writes.
+ */
+db.exec(`
+  CREATE TEMP TABLE IF NOT EXISTS mm_items_version (v INTEGER NOT NULL);
+  INSERT INTO mm_items_version SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM mm_items_version);
+  CREATE TEMP TRIGGER IF NOT EXISTS mm_items_v_ins AFTER INSERT ON main.items BEGIN UPDATE mm_items_version SET v = v + 1; END;
+  CREATE TEMP TRIGGER IF NOT EXISTS mm_items_v_del AFTER DELETE ON main.items BEGIN UPDATE mm_items_version SET v = v + 1; END;
+  CREATE TEMP TRIGGER IF NOT EXISTS mm_items_v_upd AFTER UPDATE OF type, library_id, genres, content_rating, parent_id, grandparent_id, owner_id ON main.items
+    BEGIN UPDATE mm_items_version SET v = v + 1; END;
+`);
+export const itemsVersion = (): number => db.get<{ v: number }>('SELECT v FROM temp.mm_items_version')?.v ?? 0;

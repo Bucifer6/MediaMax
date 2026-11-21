@@ -19,7 +19,8 @@ import { useTheme } from '@/theme';
 import { useBackHandler } from '@/tv';
 import { webBrowser } from '@/utils/browser';
 
-const OIDC_REDIRECT = 'mediamax://oidc';
+// kinora:// is the app's primary scheme (mediamax:// stays registered for links from older servers).
+const OIDC_REDIRECT = 'kinora://oidc';
 
 /** Read `token` / `error` from the redirect's `#fragment` (no URLSearchParams: RN's is incomplete). */
 function parseFragment(url: string): Record<string, string> {
@@ -173,7 +174,7 @@ export default function LoginScreen() {
 
   const logo = branding?.logoWideUrl ?? branding?.logoUrl;
   const panelWidth = t.isTV ? t.s(760) : Math.min(t.width - 32, 480);
-  const serverName = branding?.serverName ?? info?.name ?? server?.name ?? 'MediaMax';
+  const serverName = branding?.serverName ?? info?.name ?? server?.name ?? 'Kinora';
 
   const modes: { key: Mode; label: string; icon: React.ComponentProps<typeof Chip>['icon'] }[] = [];
   if (profiles?.length) modes.push({ key: 'profiles', label: 'Profiles', icon: 'people-outline' });

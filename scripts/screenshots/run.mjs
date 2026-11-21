@@ -6,7 +6,7 @@
  *
  * 1. Generates a fictional demo library with ffmpeg (movies, shows, music with real beats, audiobooks, photos)
  *    plus Kodi NFOs and artwork rendered from HTML/SVG templates with Playwright.
- * 2. Boots a fresh MediaMax server on a free port with a temporary MEDIAMAX_DATA, runs setup ("MediaMax Demo"),
+ * 2. Boots a fresh Kinora server on a free port with a temporary MEDIAMAX_DATA, runs setup ("Kinora Demo"),
  *    scans, creates users, viewing history, My List, favourites, DJ analysis, and Live TV from a mock Xtream provider.
  *    Then the feature extras (lib/showcase.mjs + seedFeatures): profiles, requests and issues against mock TMDB /
  *    Radarr / Sonarr (scripts/e2e/mocks.mjs), Home Assistant over a mock MQTT broker, Play to devices (mock Kodi and
@@ -124,7 +124,7 @@ async function main() {
       const mqtt = await startMqttBroker();
       cleanup.unshift(() => services.close(), () => devices.close(), () => mqtt.close());
       const accessLog = seedLogs(data);
-      log('Booting MediaMax…');
+      log('Booting Kinora…');
       const server = await bootServer({ repo, data, env: { MEDIAMAX_ALLOW_PRIVATE_URLS: '1', MEDIAMAX_PROXY_KIND: 'nginx', MEDIAMAX_PROXY_LOG: accessLog, MEDIAMAX_TMDB_API_BASE: `${services.base}/3`, MEDIAMAX_TMDB_IMAGE_BASE: `${services.base}/t/p/`, MEDIAMAX_NO_WATCH: '1' } });
       cleanup.unshift(() => server.stop());
       log(`Server on ${server.base}`);

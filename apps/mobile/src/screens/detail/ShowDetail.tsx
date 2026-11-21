@@ -11,7 +11,9 @@ import { ItemRow } from '@/components/Row';
 import { T } from '@/components/Text';
 import { Icon } from '@/components/Icon';
 import { useDownloads } from '@/state/downloads';
-import { useApi } from '@/state/session';
+import { useApi, useSession } from '@/state/session';
+import { prepareVideo } from '@/player/warmup';
+import { SmartDownloadButton } from './SmartDownloadButton';
 import { useTheme } from '@/theme';
 import { formatDuration, progressFraction } from '@/utils/format';
 import { openItem, playItem } from '@/utils/nav';
@@ -40,6 +42,11 @@ export function ShowDetail({ show, initialSeasonId, onUserData }: { show: Item; 
   const next = useMemo(() => nextUp.data ?? eps.find((e) => !e.userData.played) ?? eps[0] ?? null, [nextUp.data, eps]);
   const nextP = next ? progressFraction(next) : 0;
   const playLabel = next ? `${nextP > 0.01 ? 'Resume' : 'Play'} S${next.parentIndex ?? '?'}E${next.index ?? '?'}` : 'Play';
+  // Instant play: warm up the next-up episode while the show page is open.
+  const { user } = useSession();
+  useEffect(() => {
+    if (nextUp.data) void prepareVideo(api, nextUp.data, user?.preferences);
+  }, [api, nextUp.data?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const play = next ? () => playItem(next.id, { startMs: nextP > 0.01 && nextP < 0.95 ? next.userData.positionMs : 0 }) : undefined;
 
   const seasonChips = seasonList.length > 1 ? (
@@ -62,6 +69,7 @@ export function ShowDetail({ show, initialSeasonId, onUserData }: { show: Item; 
       downloadItems={async () => (await api.children(seasonId!, { sort: 'index', order: 'asc', limit: 500 })).items}
       onRate={setRating}
       playlistItems={async () => (await api.items({ ancestorId: show.id, type: 'episode', sort: 'index', order: 'asc', limit: 2000 })).items.map((e) => e.id)}
+      extra={<SmartDownloadButton show={show} />}
     />
   );
 

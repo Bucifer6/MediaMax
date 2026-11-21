@@ -16,7 +16,7 @@ test('network defaults: direct mode, built-in proxy off, private networks truste
   assert.deepEqual(DEFAULT_NETWORK.trustedProxies, ['loopback', 'linklocal', 'uniquelocal']);
 });
 
-test('caddyfile proxies to MediaMax, streams unbuffered, redacts tokens in the access log', () => {
+test('caddyfile proxies to Kinora, streams unbuffered, redacts tokens in the access log', () => {
   const c = caddyfile(settings(), 8484, '/logs/caddy-access.log');
   assert.match(c, /^\tadmin off$/m);
   assert.match(c, /^media\.example\.com \{$/m);

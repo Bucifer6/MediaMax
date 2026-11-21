@@ -1,15 +1,15 @@
-# MediaMax on TrueNAS SCALE 24.10 (Electric Eel) or newer: Apps -> Discover Apps -> ⋮ -> Install via YAML,
-# name it "mediamax" and paste this file. Guide: docs/INSTALL.md#truenas-scale
+# Kinora on TrueNAS SCALE 24.10 (Electric Eel) or newer: Apps -> Discover Apps -> ⋮ -> Install via YAML,
+# name it "kinora" and paste this file. Guide: docs/INSTALL.md#truenas-scale
 #
 # Before you start:
-#   1. Datasets -> create tank/apps/mediamax (Apps preset) with children config, transcode and recordings.
+#   1. Datasets -> create tank/apps/kinora (Apps preset) with children config, transcode and recordings.
 #   2. PUID/PGID 568 is TrueNAS's built-in "apps" user. Give it read access to your media datasets
 #      (dataset -> Permissions -> add an ACL entry for "apps"), or use your own user's uid/gid instead.
 #   3. Change "tank" and the media paths to your pool and datasets.
 services:
-  mediamax:
-    image: ghcr.io/bucifer6/mediamax:latest
-    container_name: mediamax
+  kinora:
+    image: ghcr.io/bucifer6/kinora:latest
+    container_name: kinora
     restart: unless-stopped
     ports:
       - "8484:8484"
@@ -18,8 +18,8 @@ services:
       - PGID=568
       - TZ=Europe/London
     volumes:
-      - /mnt/tank/apps/mediamax/config:/config
-      - /mnt/tank/apps/mediamax/recordings:/recordings
+      - /mnt/tank/apps/kinora/config:/config
+      - /mnt/tank/apps/kinora/recordings:/recordings
       - /mnt/tank/media/movies:/media/movies:ro
       - /mnt/tank/media/tv:/media/tv:ro
       - /mnt/tank/media/music:/media/music:ro

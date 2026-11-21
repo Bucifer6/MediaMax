@@ -25,7 +25,7 @@ These work with the TV's own remote, a soundbar or receiver remote over HDMI-CEC
 | Button | Action |
 |---|---|
 | **Red** | Subtitles on / next language |
-| **Green** | Next audio track |
+| **Green** | Next audio track (outside the player: open [Roulette](help:roulette)) |
 | **Yellow** | Skip intro, credits or ad break (when the Skip button shows) |
 | **Blue** | Info overlay. In Live TV: the channel list |
 

@@ -9,6 +9,7 @@ import { Focusable } from '@/components/Focusable';
 import { HeroCarousel, TVSpotlightBackground, TVSpotlightInfo } from '@/components/Hero';
 import { Icon } from '@/components/Icon';
 import { BrandWordmark } from '@/components/BrandWordmark';
+import { DecideChips } from '@/components/DecideChips';
 import { Img } from '@/components/Img';
 import type { CardVariant } from '@/components/MediaCard';
 import { ChannelRow, ItemRow } from '@/components/Row';
@@ -102,6 +103,7 @@ function PhoneHome({ rows, refreshing, onRefresh }: { rows: HomeRow[]; refreshin
         showsVerticalScrollIndicator={false}
       >
         {hero ? <HeroCarousel items={hero.items} style={heroStyle === 'static' ? 'static' : 'carousel'} /> : null}
+        <DecideChips />
         {rows
           .filter((r) => r !== hero && r.type !== 'hero')
           .map((row) =>
@@ -165,6 +167,7 @@ function TVHome({ rows }: { rows: HomeRow[] }) {
       {t.theme.heroStyle !== 'none' ? <TVSpotlightBackground item={focused} /> : null}
       <ScrollView contentContainerStyle={{ paddingBottom: t.space.xxl }} showsVerticalScrollIndicator={false}>
         <TVSpotlightInfo item={t.theme.heroStyle === 'none' ? null : focused} height={spotlightHeight} />
+        <DecideChips />
         {rows.map((row, idx) =>
           row.type === 'live-now' || row.type === 'favorite-channels' ? (
             <ChannelRow key={row.id} title={row.title || DEFAULT_TITLES[row.type]} channels={row.channels ?? []} />

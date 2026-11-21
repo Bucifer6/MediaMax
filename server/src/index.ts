@@ -22,7 +22,7 @@ import { stopActiveRecordings } from './services/dvr.js';
 const log = logger('main');
 
 async function main() {
-  if (!ffmpegAvailable()) log.warn('ffmpeg was not found — transcoding, live TV remuxing and DVR will not work. Set MEDIAMAX_FFMPEG.');
+  if (!ffmpegAvailable()) log.warn('ffmpeg was not found — transcoding, live TV remuxing and DVR will not work. Set KINORA_FFMPEG.');
   cleanupTranscodeDir();
   initWebhooks();
   initTrakt();
@@ -31,7 +31,7 @@ async function main() {
   initStorage();
   const app = await buildApp();
   await app.listen({ port: config.port, host: config.host });
-  log.info(`MediaMax ${config.version} (server ${serverId()}) listening on http://${config.host}:${config.port}`);
+  log.info(`Kinora ${config.version} (server ${serverId()}) listening on http://${config.host}:${config.port}`);
   log.info(`Data directory: ${config.dataDir}`);
   log.info(`Help Centre: ${helpArticleCount()} articles from ${config.helpDir}`);
   if (process.env.MEDIAMAX_NO_SCHEDULER !== '1') startScheduler();

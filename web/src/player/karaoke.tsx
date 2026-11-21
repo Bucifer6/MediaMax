@@ -12,7 +12,7 @@ import { karaokeApi } from '../api/karaoke';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useMusic } from './music';
-import { prepareStems, type PrepareProgress } from '../stems/prepare';
+import type { PrepareProgress } from '../stems/prepare';
 
 export const DEFAULT_VOCAL_LEVEL = 15;
 
@@ -117,6 +117,7 @@ export function KaraokeProvider({ children }: { children: ReactNode }) {
     setPreparing({ phase: 'decoding', done: 0, total: 0 });
     try {
       const stub = (window as unknown as { __mmStemsStub?: boolean }).__mmStemsStub === true;
+      const { prepareStems } = await import('../stems/prepare'); // the AI stems code loads only when someone prepares a track
       const r = await prepareStems(trackId, setPreparing, { signal: ctrl.signal, stub });
       setStems(r);
     } catch (e) {

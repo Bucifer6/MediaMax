@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import type { Branding, FeatureFlags, Theme } from '@/api/types';
 
-const primary = (Constants.expoConfig?.extra?.fallbackPrimaryColor as string | undefined) ?? '#1FB6F5';
+const primary = (Constants.expoConfig?.extra?.fallbackPrimaryColor as string | undefined) ?? '#9198FF';
 
 /** Dark or white button text, whichever reads better on `hex` (#rrggbb). */
 function onColor(hex: string): string {
@@ -9,28 +9,28 @@ function onColor(hex: string): string {
   if (!m) return '#FFFFFF';
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
   const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return 1.05 / (l + 0.05) >= (l + 0.05) / 0.05 ? '#FFFFFF' : '#04101F';
+  return 1.05 / (l + 0.05) >= (l + 0.05) / 0.05 ? '#FFFFFF' : '#0B0A1F';
 }
 
-/** Used until /branding arrives (and when the server's theme is malformed): the MediaMax brand theme. */
+/** Used until /branding arrives (and when the server's theme is malformed): the Kinora brand theme. */
 export const FALLBACK_THEME: Theme = {
   id: 'mediamax',
-  name: 'MediaMax',
+  name: 'Kinora',
   mode: 'dark',
   colors: {
     primary,
     primaryText: onColor(primary),
-    background: '#0A0F22',
-    surface: '#121936',
-    surfaceAlt: '#1A2247',
-    text: '#F2F5FF',
-    textMuted: '#9AA6CC',
-    accent: '#E040F0',
-    border: '#27315C',
+    background: '#0D0C1D',
+    surface: '#17152E',
+    surfaceAlt: '#211E3D',
+    text: '#F4F3FF',
+    textMuted: '#A6A3CC',
+    accent: '#FFA45C',
+    border: '#2E2A52',
     success: '#2FD07F',
     warning: '#F5B014',
     danger: '#FF5C7A',
-    overlay: '#0A0F22',
+    overlay: '#0D0C1D',
   },
   radius: 14,
   fontFamily: 'System',

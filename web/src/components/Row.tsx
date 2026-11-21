@@ -1,11 +1,93 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type React from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from './Icon';
+
+/**
+ * Mouse drag-to-scroll with momentum for a horizontal row (touch and trackpads already have native momentum).
+ * A drag past a few pixels swallows the click that ends it, so dragging over a poster doesn't open it.
+ */
+function useDragScroll(ref: React.RefObject<HTMLDivElement>) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let startX = 0;
+    let startLeft = 0;
+    let lastX = 0;
+    let lastT = 0;
+    let v = 0;
+    let dragging = false;
+    let moved = false;
+    let raf = 0;
+    const glide = () => {
+      v *= 0.94;
+      if (Math.abs(v) < 0.02) return;
+      el.scrollLeft -= v * 16;
+      raf = requestAnimationFrame(glide);
+    };
+    const down = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      cancelAnimationFrame(raf);
+      dragging = true;
+      moved = false;
+      startX = lastX = e.clientX;
+      startLeft = el.scrollLeft;
+      lastT = performance.now();
+      v = 0;
+    };
+    const move = (e: PointerEvent) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      if (!moved && Math.abs(dx) > 6) {
+        moved = true;
+        el.classList.add('dragging');
+        el.setPointerCapture(e.pointerId);
+      }
+      if (!moved) return;
+      const now = performance.now();
+      v = (e.clientX - lastX) / Math.max(1, now - lastT);
+      lastX = e.clientX;
+      lastT = now;
+      el.scrollLeft = startLeft - dx;
+    };
+    const up = (e: PointerEvent) => {
+      if (!dragging) return;
+      dragging = false;
+      el.classList.remove('dragging');
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+      if (moved) raf = requestAnimationFrame(glide);
+    };
+    const click = (e: MouseEvent) => {
+      if (moved) {
+        e.preventDefault();
+        e.stopPropagation();
+        moved = false;
+      }
+    };
+    const noDrag = (e: DragEvent) => e.preventDefault();
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('click', click, true);
+    el.addEventListener('dragstart', noDrag);
+    return () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener('pointerdown', down);
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      el.removeEventListener('click', click, true);
+      el.removeEventListener('dragstart', noDrag);
+    };
+  }, [ref]);
+}
 
 export function Row({ title, link, children, className, subtitle }: { title: ReactNode; link?: string; children: ReactNode; className?: string; subtitle?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
+  useDragScroll(ref);
 
   const update = () => {
     const el = ref.current;
@@ -42,10 +124,11 @@ export function Row({ title, link, children, className, subtitle }: { title: Rea
         </h2>
         {subtitle && <span className="row-sub">{subtitle}</span>}
       </div>
-      <div className="row-wrap">
+      {/* Edge fades show there is more to either side (data-left / data-right drive the mask in CSS). */}
+      <div className="row-wrap" data-left={canLeft || undefined} data-right={canRight || undefined}>
         {canLeft && (
           <button className="row-arrow left" onClick={() => scroll(-1)} aria-label="Scroll left" tabIndex={-1}>
-            <Icon name="chevronLeft" size={28} />
+            <Icon name="chevronLeft" size={26} />
           </button>
         )}
         <div className="row-scroller" ref={ref} onScroll={update}>
@@ -53,7 +136,7 @@ export function Row({ title, link, children, className, subtitle }: { title: Rea
         </div>
         {canRight && (
           <button className="row-arrow right" onClick={() => scroll(1)} aria-label="Scroll right" tabIndex={-1}>
-            <Icon name="chevronRight" size={28} />
+            <Icon name="chevronRight" size={26} />
           </button>
         )}
       </div>

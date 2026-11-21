@@ -1,5 +1,5 @@
 {
-  "_comment": "ffprobe (ffmpeg >= 6.1) -show_streams output for formats FFmpeg can't encode: TrueHD Atmos, E-AC-3 JOC, DTS-HD MA, DTS:X (UHD Blu-ray remuxes / streaming WEB-DLs). Trimmed to the fields MediaMax reads.",
+  "_comment": "ffprobe (ffmpeg >= 6.1) -show_streams output for formats FFmpeg can't encode: TrueHD Atmos, E-AC-3 JOC, DTS-HD MA, DTS:X (UHD Blu-ray remuxes / streaming WEB-DLs). Trimmed to the fields Kinora reads.",
   "truehd_atmos": {
     "index": 1, "codec_name": "truehd", "profile": "Dolby TrueHD + Dolby Atmos", "codec_type": "audio", "sample_fmt": "s32",
     "sample_rate": "48000", "channels": 8, "channel_layout": "7.1", "bits_per_raw_sample": "24",

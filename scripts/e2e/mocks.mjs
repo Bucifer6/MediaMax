@@ -8,7 +8,7 @@ import path from 'node:path';
  *   /radarr/api/v3  Radarr          /sonarr/api/v3  Sonarr
  *   /hook           JSON webhook receiver (notification agents)
  *   /lb/1/…         ListenBrainz (token validation, listens)
- * Every call is recorded in `calls` so a journey can assert that MediaMax really talked to it.
+ * Every call is recorded in `calls` so a journey can assert that Kinora really talked to it.
  *
  * The screenshot pipeline (scripts/screenshots) reuses these with `opts`: TMDB results get poster and backdrop
  * paths served from a local folder (/t/p/<size>/<file>, pointed at by MEDIAMAX_TMDB_IMAGE_BASE), Discover rows come
@@ -38,7 +38,7 @@ export const DISCOVER_SHOWS = [
   { id: 9505, name: 'The Fog Bell', first_air_date: '2025-03-28', overview: 'A coastal village where the fog bell rings for people, not ships.', vote_average: 7.1, genre_ids: [9648] },
 ];
 
-/** Poster artwork for the screenshot pipeline (ignored by MediaMax): [style, palette, motif]. */
+/** Poster artwork for the screenshot pipeline (ignored by Kinora): [style, palette, motif]. */
 const ART = {
   9001: ['drama', ['#14210f', '#3d5a2a', '#cfe8ff', '#f4f7ee'], 'grove'], 9002: ['adventure', ['#0c2a33', '#1f6f78', '#e3a54a', '#f6e7c1'], null],
   9003: ['drama', ['#1a1424', '#4a3060', '#ffb35c', '#ffe7c4'], null], 9004: ['scifi', ['#0a1022', '#21406b', '#ff8a5c', '#d8f1ff'], 'dish'],

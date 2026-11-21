@@ -1,5 +1,5 @@
 /**
- * MediaMax plugin SDK — type definitions for plugin authors.
+ * Kinora plugin SDK — type definitions for plugin authors.
  *
  * A plugin is a folder (packaged as .tar.gz) with a `plugin.json` manifest and an ES module entry that
  * exports `activate(ctx)` (and optionally `deactivate()`). Plugins run inside the server process with
@@ -53,6 +53,68 @@ export interface MetadataProvider {
   fetch(item: Pick<Item, 'id' | 'type' | 'title' | 'year' | 'externalIds'> & { parentTitle: string | null; index: number | null; parentIndex: number | null }): Promise<PluginMetadata | null>;
 }
 
+/** What Kinora knows about the title a subtitle search is for. */
+export interface SubtitleQuery {
+  item: { id: string; type: string; title: string; year: number | null };
+  media: { id: string; path: string | null; size: number | null } | null;
+  /** ISO 639-1 codes, lower case (e.g. ["ro", "en"]). Never empty. */
+  languages: string[];
+  /** The item's own ids (imdb with its "tt"); for an episode these are often missing. */
+  imdbId: string | null;
+  tmdbId: string | null;
+  /** For episodes: the show's ids and title. */
+  showImdbId: string | null;
+  showTmdbId: string | null;
+  showTitle: string | null;
+  season: number | null;
+  episode: number | null;
+  /** Movie title, or the show title for an episode. */
+  title: string;
+  year: number | null;
+  /** Media file name, e.g. "Show.S01E02.1080p.WEB-DL.DDP5.1.H.264-NTb.mkv" — Kinora scores releases against it. */
+  releaseName: string | null;
+  /** OpenSubtitles-style movie hash of the media file, when available. */
+  movieHash: string | null;
+}
+
+export interface SubtitleSearchResult {
+  /** Your id for this subtitle; passed back to download(). */
+  id: string;
+  /** ISO 639-1 where possible ("ro"). */
+  language: string;
+  /** Release text the subtitle was made for (used for scoring: group, source, resolution, SxxEyy). */
+  release: string | null;
+  fileName?: string | null;
+  downloads?: number;
+  hearingImpaired?: boolean;
+  forced?: boolean;
+  aiTranslated?: boolean;
+  rating?: number | null;
+  /** You matched the file hash: scored 100. */
+  hashMatch?: boolean;
+  /** Known archive type of the download ('rar' results are flagged when the server has no unrar/7z). */
+  archive?: 'zip' | 'rar' | '7z' | null;
+  /** Anything else you need at download time. */
+  extra?: Record<string, unknown>;
+}
+
+/**
+ * A subtitle source. Kinora fans searches out to every enabled provider (admin-ordered in Server settings →
+ * Subtitles), scores and merges the results, and runs every download through the same pipeline: archives are
+ * unpacked (ZIP built in; RAR/7z with unrar/7z), the right episode is picked from season packs, the text is
+ * converted to UTF-8 with diacritics and adverts fixed, optionally synced with alass, then saved.
+ */
+export interface SubtitleProvider {
+  /** Unique within your plugin; stored as "<plugin id>:<id>". */
+  id: string;
+  name: string;
+  /** Return false while credentials are missing (the provider is then skipped). */
+  configured?(): boolean;
+  search(query: SubtitleQuery): Promise<SubtitleSearchResult[]>;
+  /** The subtitle file or an archive (zip/rar/7z) of them; fileName's extension helps format detection. */
+  download(result: SubtitleSearchResult): Promise<{ data: Buffer | Uint8Array; fileName: string }>;
+}
+
 /** Server events plugins can listen to (payload shapes follow the webhook payloads). */
 export type PluginEvent =
   | 'playback.start' | 'playback.pause' | 'playback.resume' | 'playback.stop' | 'playback.scrobble'
@@ -77,6 +139,8 @@ export interface PluginContext {
   /** Tasks appear in Admin → Scheduled tasks. */
   tasks: { register(task: PluginTask): void };
   metadata: { registerProvider(provider: MetadataProvider): void };
+  /** Subtitle sources appear in Admin → Server settings → Subtitles next to OpenSubtitles and Subs.ro. */
+  subtitles: { registerProvider(provider: SubtitleProvider): void };
   /** Read-only library access (as the server's first administrator). */
   library: { getItem(id: string): Item | null; search(query: string, limit?: number): Item[] };
 }

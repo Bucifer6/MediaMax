@@ -1,0 +1,85 @@
+{
+ "label": "after",
+ "date": "2026-11-21T03:06:50.275Z",
+ "runs": 5,
+ "results": {
+  "direct": {
+   "postMedianMs": 3,
+   "firstMediaMedianMs": 8,
+   "runs": [
+    {
+     "post": 7,
+     "firstMedia": 15
+    },
+    {
+     "post": 3,
+     "firstMedia": 8
+    },
+    {
+     "post": 3,
+     "firstMedia": 8
+    },
+    {
+     "post": 5,
+     "firstMedia": 11
+    },
+    {
+     "post": 2,
+     "firstMedia": 7
+    }
+   ]
+  },
+  "remux": {
+   "postMedianMs": 249,
+   "firstMediaMedianMs": 266,
+   "runs": [
+    {
+     "post": 250,
+     "firstMedia": 266
+    },
+    {
+     "post": 249,
+     "firstMedia": 265
+    },
+    {
+     "post": 249,
+     "firstMedia": 266
+    },
+    {
+     "post": 249,
+     "firstMedia": 266
+    },
+    {
+     "post": 251,
+     "firstMedia": 265
+    }
+   ]
+  },
+  "transcode": {
+   "postMedianMs": 9,
+   "firstMediaMedianMs": 1244,
+   "runs": [
+    {
+     "post": 9,
+     "firstMedia": 1274
+    },
+    {
+     "post": 9,
+     "firstMedia": 1310
+    },
+    {
+     "post": 7,
+     "firstMedia": 1205
+    },
+    {
+     "post": 11,
+     "firstMedia": 1233
+    },
+    {
+     "post": 10,
+     "firstMedia": 1244
+    }
+   ]
+  }
+ }
+}

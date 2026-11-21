@@ -1,0 +1,170 @@
+{
+ "label": "after",
+ "date": "2026-11-21T02:45:19.188Z",
+ "cpuThrottle": 4,
+ "runs": 2,
+ "home": [
+  {
+   "fcpMs": 460,
+   "rowsVisibleMs": 1059,
+   "jsKB": 134,
+   "cssKB": 37,
+   "apiKB": 52,
+   "longTasks": {
+    "count": 14,
+    "totalMs": 1254,
+    "maxMs": 230
+   }
+  },
+  {
+   "fcpMs": 496,
+   "rowsVisibleMs": 827,
+   "jsKB": 105,
+   "cssKB": 31,
+   "apiKB": 52,
+   "longTasks": {
+    "count": 4,
+    "totalMs": 381,
+    "maxMs": 176
+   }
+  }
+ ],
+ "library": [
+  {
+   "cards": 3060,
+   "loadingScroll": {
+    "fps": 9.2,
+    "ms": 44104,
+    "longTasks": {
+     "count": 273,
+     "totalMs": 31640,
+     "maxMs": 367
+    }
+   },
+   "sweep": {
+    "fps": 7.3,
+    "ms": 35991,
+    "longTasks": {
+     "count": 152,
+     "totalMs": 33156,
+     "maxMs": 439
+    }
+   }
+  },
+  {
+   "cards": 3000,
+   "loadingScroll": {
+    "fps": 9.5,
+    "ms": 41217,
+    "longTasks": {
+     "count": 259,
+     "totalMs": 29630,
+     "maxMs": 400
+    }
+   },
+   "sweep": {
+    "fps": 7.4,
+    "ms": 34743,
+    "longTasks": {
+     "count": 145,
+     "totalMs": 31514,
+     "maxMs": 427
+    }
+   }
+  }
+ ],
+ "guide": [
+  {
+   "firstRowsMs": 848,
+   "rows": 960,
+   "loadingScroll": {
+    "fps": 6.5,
+    "ms": 37276,
+    "longTasks": {
+     "count": 250,
+     "totalMs": 31873,
+     "maxMs": 315
+    }
+   },
+   "sweep": {
+    "fps": 6.2,
+    "ms": 26170,
+    "longTasks": {
+     "count": 147,
+     "totalMs": 23169,
+     "maxMs": 299
+    }
+   },
+   "horizontal": {
+    "fps": 77.9,
+    "ms": 3697,
+    "longTasks": {
+     "count": 9,
+     "totalMs": 608,
+     "maxMs": 95
+    }
+   }
+  },
+  {
+   "firstRowsMs": 854,
+   "rows": 960,
+   "loadingScroll": {
+    "fps": 6.7,
+    "ms": 36078,
+    "longTasks": {
+     "count": 253,
+     "totalMs": 31020,
+     "maxMs": 363
+    }
+   },
+   "sweep": {
+    "fps": 6.1,
+    "ms": 26389,
+    "longTasks": {
+     "count": 148,
+     "totalMs": 23460,
+     "maxMs": 328
+    }
+   },
+   "horizontal": {
+    "fps": 77.1,
+    "ms": 3709,
+    "longTasks": {
+     "count": 9,
+     "totalMs": 635,
+     "maxMs": 100
+    }
+   }
+  }
+ ],
+ "nav": [
+  {
+   "homeToItemMs": 374,
+   "itemToPlayerUiMs": 144
+  },
+  {
+   "homeToItemMs": 561,
+   "itemToPlayerUiMs": 185
+  }
+ ],
+ "summary": {
+  "homeFcpMs": 496,
+  "homeRowsMs": 1059,
+  "homeJsKB": 134,
+  "homeCssKB": 37,
+  "homeLongTaskMs": 1254,
+  "homeToItemMs": 561,
+  "itemToPlayerUiMs": 185,
+  "libraryCards": 3060,
+  "libraryLoadFps": 9.5,
+  "libraryLoadLongTaskMs": 31640,
+  "librarySweepFps": 7.4,
+  "librarySweepLongTaskMs": 33156,
+  "guideFirstRowsMs": 854,
+  "guideRows": 960,
+  "guideLoadFps": 6.7,
+  "guideLoadLongTaskMs": 31873,
+  "guideSweepFps": 6.2,
+  "guideHorizontalFps": 77.9
+ }
+}

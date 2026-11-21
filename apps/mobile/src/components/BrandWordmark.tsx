@@ -1,5 +1,5 @@
 /**
- * The stock "MediaMax" logo (mark + outlined wordmark, rendered by scripts/brand-export.mjs) for a
+ * The stock "Kinora" logo (mark + outlined wordmark, rendered by scripts/brand-export.mjs) for a
  * server that has not been renamed; a white-labelled server shows its own name in the theme font.
  * Uploaded logos are handled by the callers (they always win).
  */
@@ -12,27 +12,27 @@ import { Icon } from './Icon';
 import { T } from './Text';
 
 const WORDMARK = { dark: require('../../assets/brand/wordmark-dark.png'), light: require('../../assets/brand/wordmark-light.png') };
-const ASPECT = 960 / 237;
+const ASPECT = 960 / 328; // wordmark-*.png from scripts/brand-export.mjs
 
 export function BrandWordmark({ name, width, textVariant = 'hero' }: { name?: string | null; width: number; textVariant?: 'hero' | 'heading' }) {
   const t = useTheme();
-  if (name && name !== 'MediaMax') {
+  if (name && name !== 'Kinora' && name !== 'MediaMax') {
     return (
       <T variant={textVariant} center={textVariant === 'hero'}>
         {name}
       </T>
     );
   }
-  return <Image source={WORDMARK[t.dark ? 'dark' : 'light']} style={{ width, height: width / ASPECT }} contentFit="contain" accessibilityLabel="MediaMax" accessible />;
+  return <Image source={WORDMARK[t.dark ? 'dark' : 'light']} style={{ width, height: width / ASPECT }} contentFit="contain" accessibilityLabel="Kinora" accessible />;
 }
 
 const MARK = require('../../assets/brand/mark.png');
-const MARK_ASPECT = 512 / 384;
+const MARK_ASPECT = 512 / 582; // brand/mark.png
 const isWhiteLabel = !!Constants.expoConfig?.extra?.brand;
 
 /**
  * The app's own mark on the connect screen (shown before any server, so it is the app's identity).
- * White-label builds (MEDIAMAX_BRAND) show a neutral play tile in their primary colour instead.
+ * White-label builds (KINORA_BRAND) show a neutral play tile in their primary colour instead.
  */
 export function BrandMarkImage({ size }: { size: number }) {
   const t = useTheme();
@@ -43,5 +43,5 @@ export function BrandMarkImage({ size }: { size: number }) {
       </View>
     );
   }
-  return <Image source={MARK} style={{ width: size * MARK_ASPECT, height: size }} contentFit="contain" accessibilityLabel="MediaMax" />;
+  return <Image source={MARK} style={{ width: size * MARK_ASPECT, height: size }} contentFit="contain" accessibilityLabel="Kinora" />;
 }

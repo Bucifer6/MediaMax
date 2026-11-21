@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Live TV: categories, channel list with now / next (GET /livetv/channels, paged), * toggles a favourite. -->
+<component name="LiveTvScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Screen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Content.brs" />
+  <script type="text/brightscript" uri="pkg:/components/screens/LiveTvScreen.brs" />
+  <children>
+    <Label translation="[96,50]" width="600" text="Live TV" color="0xFFFFFFFF" font="font:LargeBoldSystemFont" />
+    <Label id="hint" translation="[700,64]" width="1124" horizAlign="right" color="0xA9B0D6FF" font="font:SmallSystemFont"
+      text="OK to watch  ·  * to add or remove a favourite" />
+    <LabelList id="categories" translation="[96,150]" itemSize="[380,64]" numRows="13" vertFocusAnimationStyle="floatingFocus"
+      color="0xD5DAF5FF" focusedColor="0x0B0E26FF" focusBitmapBlendColor="0x22D3EEFF" font="font:MediumSystemFont" focusedFont="font:MediumBoldSystemFont" />
+    <Label id="empty" translation="[520,200]" width="1300" wrap="true" color="0xA9B0D6FF" font="font:MediumSystemFont" visible="false" />
+    <MarkupList id="channels" translation="[520,150]" itemComponentName="ChannelItem" itemSize="[1304,124]" itemSpacing="[0,12]"
+      numRows="7" drawFocusFeedback="false" vertFocusAnimationStyle="floatingFocus" />
+    <Timer id="refresh" duration="60" repeat="true" />
+  </children>
+</component>

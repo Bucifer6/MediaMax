@@ -1,5 +1,6 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import type { HomeRow, ItemSort } from '@mediamax/shared';
+import type { HomeResponse, HomeRow, ItemSort } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useAsync, useServerEvent } from '../hooks';
@@ -8,6 +9,8 @@ import { Row } from '../components/Row';
 import { CardSkeleton, ChannelCard, LandscapeCard, PosterCard, RankedCard, UpcomingCard } from '../components/Cards';
 import { EmptyState, ErrorState } from '../components/ui';
 import { Icon } from '../components/Icon';
+import { DecideBar } from '../components/decide/DecideBar';
+import { prefetchCommonPagesWhenIdle } from '../utils/prefetch';
 
 function rowLink(row: HomeRow): string | undefined {
   const l = row.link;
@@ -62,9 +65,29 @@ function HomeRowView({ row }: { row: HomeRow }) {
   );
 }
 
+/**
+ * The last Home response (per signed-in profile). Coming back to Home shows it straight away while the fresh copy
+ * loads (stale-while-revalidate), instead of a skeleton on every Back.
+ */
+let lastHome: { userId: string; data: HomeResponse } | null = null;
+
 export function Home() {
   const { theme, user, libraries } = useApp();
-  const home = useAsync(() => api.items.home(), []);
+  const userId = user?.id ?? '';
+  const home = useAsync(() => api.items.home().then((d) => {
+    // Keep the featured titles the viewer is already looking at (the server picks new random ones each time), so the
+    // hero doesn't swap under them when the fresh copy arrives.
+    const shownHero = lastHome?.userId === userId ? lastHome.data.rows.find((r) => r.type === 'hero') : undefined;
+    const data = shownHero && d.rows.some((r) => r.type === 'hero') ? { ...d, rows: d.rows.map((r) => (r.type === 'hero' ? shownHero : r)) } : d;
+    lastHome = { userId, data };
+    return data;
+  }), []);
+  const homeData = home.data ?? (lastHome?.userId === userId ? lastHome.data : undefined);
+  // The likely next pages (title, library, search) load once Home is on screen and the browser is idle.
+  const shown = !!homeData;
+  useEffect(() => {
+    if (shown) prefetchCommonPagesWhenIdle();
+  }, [shown]);
   useServerEvent((ev) => {
     if (ev.type === 'library.updated' || (ev.type === 'library.scan' && ev.status === 'finished')) home.reload();
     if (ev.type === 'userdata.updated') {
@@ -85,7 +108,7 @@ export function Home() {
     }
   });
 
-  if (home.loading && !home.data) {
+  if (home.loading && !homeData) {
     return (
       <div className="home">
         {theme.heroStyle !== 'none' && <HeroSkeleton />}
@@ -100,9 +123,9 @@ export function Home() {
       </div>
     );
   }
-  if (home.error && !home.data) return <div className="page"><ErrorState message={home.error} onRetry={home.reload} /></div>;
+  if (home.error && !homeData) return <div className="page"><ErrorState message={home.error} onRetry={home.reload} /></div>;
 
-  const rows = home.data?.rows ?? [];
+  const rows = homeData?.rows ?? [];
   const heroRow = rows.find((r) => r.type === 'hero');
   const rest = rows.filter((r) => r.type !== 'hero');
   const hasContent = rows.some((r) => r.items.length || r.channels?.length);
@@ -115,7 +138,7 @@ export function Home() {
           title={libraries.length ? 'Your libraries are filling up' : 'Nothing here yet'}
           message={
             libraries.length
-              ? 'MediaMax is scanning your media. New movies and shows will appear here as soon as they are found.'
+              ? 'Kinora is scanning your media. New movies and shows will appear here as soon as they are found.'
               : user?.isAdmin
                 ? 'Add a library or an IPTV source to start building your collection.'
                 : 'Ask your server admin to add some media.'
@@ -135,6 +158,7 @@ export function Home() {
     <div className={`home ${heroRow && theme.heroStyle !== 'none' && heroRow.items.length ? 'has-hero' : 'no-hero'}`}>
       {heroRow && theme.heroStyle !== 'none' && heroRow.items.length > 0 && <Hero items={heroRow.items} style={theme.heroStyle} />}
       <div className="home-rows">
+        <DecideBar className="home-decide" />
         {rest.map((r) => (
           <HomeRowView key={r.id} row={r} />
         ))}

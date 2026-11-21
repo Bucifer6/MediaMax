@@ -1,13 +1,13 @@
 import Intents
 
-/// Siri "Play <something> in MediaMax" (`INPlayMediaIntent`), handled inside the app (iOS 14+ in-app
+/// Siri "Play <something> in Kinora" (`INPlayMediaIntent`), handled inside the app (iOS 14+ in-app
 /// intent handling, no Intents extension).
 ///
 /// Wiring (plugins/withMediaMaxCar.js):
 /// * AppDelegate.swift gets `application(_:handlerFor:)`, which looks this class up by its Objective-C
 ///   name and asks it for a handler (so AppDelegate does not need to import this pod). Inert unless
 ///   the Info.plist lists the intent.
-/// * With the `siri` plugin option (MEDIAMAX_SIRI=1): `INIntentsSupported: [INPlayMediaIntent]`,
+/// * With the `siri` plugin option (KINORA_SIRI=1): `INIntentsSupported: [INPlayMediaIntent]`,
 ///   `INSupportedMediaCategories`, `NSSiriUsageDescription` and the `com.apple.developer.siri`
 ///   entitlement (needs the Siri capability on the App ID / provisioning profile).
 ///
@@ -38,7 +38,7 @@ final class PlayMediaIntentHandler: NSObject, INPlayMediaIntentHandling {
     let search = intent.mediaSearch
     let title = [search?.mediaName, search?.albumName, search?.artistName]
       .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .first(where: { !$0.isEmpty }) ?? "MediaMax"
+      .first(where: { !$0.isEmpty }) ?? "Kinora"
     let item = INMediaItem(identifier: "mediamax.search", title: title, type: search?.mediaType ?? .unknown, artwork: nil)
     completion(INPlayMediaMediaItemResolutionResult.successes(with: [item]))
   }
@@ -54,7 +54,7 @@ final class PlayMediaIntentHandler: NSObject, INPlayMediaIntentHandling {
   /// `CarPlayFromSearch` in modules/mediamax-car/index.ts.
   static func payload(for search: INMediaSearch?) -> [String: Any?] {
     guard let search, search.reference != .currentlyPlaying else {
-      // "Play MediaMax" / "resume": JS resumes the queue, or continues listening.
+      // "Play Kinora" / "resume": JS resumes the queue, or continues listening.
       return ["query": "", "source": "siri"]
     }
     return [

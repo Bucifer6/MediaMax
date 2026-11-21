@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!-- Unraid Community Applications template for Kinora. Guide: docs/INSTALL.md#unraid
+     Until it is listed in Community Applications: save this file as
+     /boot/config/plugins/dockerMan/templates-user/my-Kinora.xml (the flash drive's config folder),
+     then Docker tab -> Add Container -> Template: pick "Kinora". -->
+<Container version="2">
+  <Name>Kinora</Name>
+  <Repository>ghcr.io/bucifer6/kinora:latest</Repository>
+  <Registry>https://github.com/Bucifer6/MediaMax/pkgs/container/kinora</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Bucifer6/MediaMax/issues</Support>
+  <Project>https://github.com/Bucifer6/MediaMax</Project>
+  <Overview>All-in-one self-hosted media server: movies, TV, music, audiobooks, podcasts, photos, live TV, Xtream Codes / M3U IPTV with EPG and catch-up, DVR, and server-driven branding for the web, phone and TV apps. Open the WebUI and follow the setup wizard.</Overview>
+  <Category>MediaServer:Video MediaServer:Music MediaServer:Photos</Category>
+  <WebUI>http://[IP]:[PORT:8484]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/Bucifer6/MediaMax/main/nas/unraid/kinora.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Bucifer6/MediaMax/main/web/public/favicon.svg</Icon>
+  <ExtraParams>--restart=unless-stopped</ExtraParams>
+  <PostArgs/>
+  <Requires/>
+  <Config Name="WebUI port" Target="8484" Default="8484" Mode="tcp" Description="Web app and API port." Type="Port" Display="always" Required="true" Mask="false">8484</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/kinora" Mode="rw" Description="Database, artwork, branding, logs and backups. Keep on the cache pool." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/kinora</Config>
+  <Config Name="Media" Target="/media" Default="/mnt/user/media" Mode="ro" Description="Your media share. Add libraries under /media/... in the setup wizard." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/media</Config>
+  <Config Name="Recordings" Target="/recordings" Default="/mnt/user/media/recordings" Mode="rw" Description="DVR recordings." Type="Path" Display="always" Required="false" Mask="false">/mnt/user/media/recordings</Config>
+  <Config Name="Transcode" Target="/transcode" Default="/tmp/kinora" Mode="rw" Description="Scratch space for streaming segments. /tmp/... is in RAM on Unraid; use a cache pool folder if RAM is tight." Type="Path" Display="advanced" Required="false" Mask="false">/tmp/kinora</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Description="User id Kinora runs as (99 = nobody, the Unraid default for shares)." Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Description="Group id (100 = users)." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  <Config Name="Timezone" Target="TZ" Default="Etc/UTC" Description="For DVR schedules and the guide, e.g. Europe/London." Type="Variable" Display="always" Required="false" Mask="false">Etc/UTC</Config>
+  <Config Name="Intel/AMD GPU" Target="/dev/dri" Default="/dev/dri" Mode="" Description="Hardware transcoding: enter /dev/dri (needs the Intel GPU TOP or Radeon TOP plugin), then pick VA-API or QSV in Admin -> Settings -> Transcoding. Leave empty if you have no GPU." Type="Device" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="TMDB API key" Target="TMDB_API_KEY" Default="" Description="Optional; can also be set in Admin -> Settings." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+</Container>

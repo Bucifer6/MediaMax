@@ -3,7 +3,7 @@ import type {
   ChannelQuery, CreateCollectionRequest, CreateLibraryRequest, CreateLiveSourceRequest, CreatePlaylistRequest,
   CreateRecordingRequest, CreateRecordingRuleRequest, CreateUserRequest, DashboardStats, Device, DirectoryEntry, DownloadQuality, DvrDefaults,
   GuideResponse, HomeResponse, Item, LastfmAuthStart, LastfmStatus, Lyrics, PodcastSearchResult, PodcastSubscription, SubscribePodcastRequest, ItemQuery, ItemSort, Library, LivePlayRequest, LiveSource, LoginRequest,
-  Paged, PinLoginRequest, PlaybackInfo, PlaybackRequest, Program, ProgressReport, PublicProfile, Recording,
+  Paged, PinLoginRequest, DownloadRule, PlaybackInfo, PlaybackPrepareRequest, PlaybackPrepareResult, PlaybackRequest, Program, ProgressReport, PublicProfile, Recording,
   RecordingRule, RecordingStatus, RemoteSubtitle, ScheduledTask, SearchResponse, ServerSettings, ServerStats, SetupRequest, SystemInfo,
   TestSourceResponse, Theme, TraktDeviceCode, TraktStatus, TrickplayInfo, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
   UpdateUserRequest, User, UserItemData, UserStats,
@@ -91,6 +91,7 @@ export const api = {
     remove: (id: string) => http.del<Ok>(`/libraries/${enc(id)}`),
     scan: (id: string, refreshMetadata = false) => http.post<Ok>(`/libraries/${enc(id)}/scan`, { refreshMetadata }),
     scanAll: () => http.post<Ok>('/libraries/scan'),
+    recalculateDateAdded: (id: string) => http.post<Ok & { changed: number }>(`/libraries/${enc(id)}/recalculate-date-added`),
   },
 
   items: {
@@ -137,7 +138,7 @@ export const api = {
   subtitles: {
     search: (itemId: string, languages: string, signal?: AbortSignal) =>
       http.get<RemoteSubtitle[]>(`/items/${enc(itemId)}/subtitles/search`, { languages }, signal),
-    download: (itemId: string, body: { fileId: string; language: string; hearingImpaired?: boolean; forced?: boolean }) =>
+    download: (itemId: string, body: { fileId: string; language: string; provider?: string; hearingImpaired?: boolean; forced?: boolean; release?: string | null; score?: number | null }) =>
       http.post<Item>(`/items/${enc(itemId)}/subtitles/download`, body),
     remove: (itemId: string, index: number) => http.del<Item>(`/items/${enc(itemId)}/subtitles/${index}`),
   },
@@ -219,14 +220,24 @@ export const api = {
     update: (id: string, body: { title?: string; overview?: string; filter?: SmartFilter }) => http.put<Item>(`/smart/${enc(id)}`, body),
   },
 
+  downloads: {
+    /** Smart download rules of all the user's devices. */
+    rules: () => http.get<DownloadRule[]>('/downloads/rules'),
+    removeRule: (id: string) => http.del<Ok>(`/downloads/rules/${enc(id)}`),
+  },
+
   playback: {
     start: (itemId: string, body: PlaybackRequest) => http.post<PlaybackInfo>(`/playback/${enc(itemId)}`, body),
+    /** Instant play: decide now and warm up the stream (no session is created). */
+    prepare: (itemId: string, body: PlaybackPrepareRequest) => request<PlaybackPrepareResult>('POST', `/playback/${enc(itemId)}/prepare`, { body, silent401: true }),
     progress: (sessionId: string, body: ProgressReport, keepalive = false) =>
       request<Ok>('POST', `/playback/sessions/${enc(sessionId)}/progress`, { body, keepalive, silent401: true }),
     stop: (sessionId: string, keepalive = false) =>
       request<Ok>('DELETE', `/playback/sessions/${enc(sessionId)}`, { keepalive, silent401: true }),
     sessions: () => http.get<ActiveSession[]>('/sessions'),
     kill: (id: string, reason?: string) => http.del<Ok>(`/sessions/${enc(id)}`, { reason }),
+    command: (id: string, body: { action: 'pause' | 'play' | 'togglePause' | 'message'; text?: string; header?: string }) =>
+      http.post<Ok & { delivered: number }>(`/sessions/${enc(id)}/command`, body),
     downloadUrl: (itemId: string, quality: DownloadQuality = 'original') =>
       `/api/v1/stream/download/${enc(itemId)}${quality === 'original' ? '' : `?quality=${quality}`}`,
   },

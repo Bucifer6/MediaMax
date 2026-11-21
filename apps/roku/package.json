@@ -1,0 +1,16 @@
+{
+  "name": "mediamax-roku",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Kinora native Roku channel (BrightScript + SceneGraph). Deliberately not a root workspace.",
+  "license": "MIT",
+  "scripts": {
+    "lint": "bsc",
+    "images": "node build.mjs --images-only",
+    "build": "node build.mjs",
+    "deploy": "node build.mjs --deploy"
+  },
+  "devDependencies": {
+    "brighterscript": "0.73.8"
+  }
+}

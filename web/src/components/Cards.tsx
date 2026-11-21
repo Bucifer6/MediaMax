@@ -1,12 +1,13 @@
-import { memo, useEffect, useRef, useState, type MouseEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { memo, useEffect, useState, type MouseEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import type { CalendarEntry, Channel, Item } from '@mediamax/shared';
 import { Icon } from './Icon';
 import { Img, ProgressBar } from './ui';
 import { usePlayItem } from '../player/music';
 import { api } from '../api/endpoints';
 import { useToast } from '../state/toast';
-import { TrailerPreview, useHoverPreviews } from './Preview';
+import { peekHandlers } from './Peek';
+import { posterTransition } from '../utils/viewTransition';
 import { isSquare, itemLink, itemSubtitle, landscapeFor, posterFor, progressPct } from '../utils/items';
 import { formatTime } from '../utils/format';
 
@@ -15,7 +16,7 @@ export const canWatchlist = (item: Pick<Item, 'type' | 'parentId'>) =>
   ['movie', 'show', 'episode', 'audiobook', 'podcast'].includes(item.type) || (item.type === 'video' && !item.parentId);
 
 /** "+ My List" / "✓ In My List" toggle. `card` is a small round button for card hover actions. */
-export function WatchlistButton({ item, variant = 'detail', onChange }: { item: Item; variant?: 'detail' | 'hero' | 'card'; onChange?: (on: boolean) => void }) {
+export function WatchlistButton({ item, variant = 'detail', onChange }: { item: Item; variant?: 'detail' | 'hero' | 'card' | 'peek'; onChange?: (on: boolean) => void }) {
   const toast = useToast();
   const [on, setOn] = useState(!!item.userData?.inWatchlist);
   const [busy, setBusy] = useState(false);
@@ -40,6 +41,13 @@ export function WatchlistButton({ item, variant = 'detail', onChange }: { item: 
   };
   const label = on ? 'In My List' : 'My List';
   const title = on ? 'Remove from My List' : 'Add to My List';
+  if (variant === 'peek') {
+    return (
+      <button className={`peek-btn ${on ? 'active' : ''}`} onClick={toggle} aria-label={title} title={title} aria-pressed={on}>
+        <Icon name={on ? 'check' : 'plus'} size={20} />
+      </button>
+    );
+  }
   if (variant === 'card') {
     return (
       <button className={`card-action ${on ? 'active' : ''}`} onClick={toggle} aria-label={title} title={title} aria-pressed={on} tabIndex={-1}>
@@ -52,33 +60,6 @@ export function WatchlistButton({ item, variant = 'detail', onChange }: { item: 
       <Icon name={on ? 'check' : 'plus'} size={20} /> {label}
     </button>
   );
-}
-
-/** Hover a card for this long (desktop only) before its trailer starts. */
-const HOVER_PREVIEW_MS = 1000;
-
-function useHoverPreview(item: Item) {
-  const allowed = useHoverPreviews() && (item.type === 'movie' || item.type === 'show');
-  const [active, setActive] = useState(false);
-  const timer = useRef<number | null>(null);
-  useEffect(() => () => {
-    if (timer.current) window.clearTimeout(timer.current);
-  }, []);
-  if (!allowed) return { active: false, handlers: {} };
-  return {
-    active,
-    handlers: {
-      onMouseEnter: () => {
-        if (timer.current) window.clearTimeout(timer.current);
-        timer.current = window.setTimeout(() => setActive(true), HOVER_PREVIEW_MS);
-      },
-      onMouseLeave: () => {
-        if (timer.current) window.clearTimeout(timer.current);
-        timer.current = null;
-        setActive(false);
-      },
-    },
-  };
 }
 
 function Fallback({ title, icon = 'film' }: { title: string; icon?: Parameters<typeof Icon>[0]['name'] }) {
@@ -123,20 +104,28 @@ export const PosterCard = memo(function PosterCard({ item, shape, showProgress =
   const img = s === 'landscape' ? landscapeFor(item) : posterFor(item);
   const pct = showProgress ? progressPct(item) : 0;
   const unplayed = item.userData?.unplayedCount;
-  const hover = useHoverPreview(item);
+  const navigate = useNavigate();
   const onPlay = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     play(item);
   };
   return (
-    <Link to={itemLink(item)} className={`card card-${s}`} style={width ? { width } : undefined} data-nav title={item.title} {...hover.handlers}>
+    <Link
+      to={itemLink(item)}
+      className={`card card-${s}`}
+      style={width ? { width } : undefined}
+      data-nav
+      title={item.title}
+      {...peekHandlers(item)}
+      // Poster → title page as a shared-element transition where the browser supports it (utils/viewTransition.ts).
+      onClick={s === 'poster' ? (e) => posterTransition(e, navigate, itemLink(item), item) : undefined}
+    >
       <div className="card-art">
         <Img src={img} width={s === 'landscape' ? 400 : 260} alt={item.title} fallback={<Fallback title={item.title} icon={fallbackIcon(item)} />} />
-        {hover.active && <TrailerPreview itemId={item.id} active className="card-trailer" maxBitrate={2000} />}
         <div className="card-hover">
           {item.type !== 'photo' && (
-            <button className="card-play" onClick={onPlay} aria-label={`Play ${item.title}`} tabIndex={-1}>
+            <button className="card-play" data-play onClick={onPlay} aria-label={`Play ${item.title}`} tabIndex={-1}>
               <Icon name="play" size={22} />
             </button>
           )}
@@ -174,11 +163,15 @@ export const LandscapeCard = memo(function LandscapeCard({ item }: { item: Item 
   const remaining = item.durationMs && item.userData?.positionMs ? item.durationMs - item.userData.positionMs : null;
   const title = item.type === 'episode' ? item.grandparentTitle ?? item.title : item.title;
   const sub = item.type === 'episode' ? `${item.parentIndex != null ? `S${item.parentIndex} · ` : ''}E${item.index ?? '?'} — ${item.title}` : itemSubtitle(item);
+  // A wide "frame": title, episode and time left sit inside the picture over a soft shade, progress along the bottom edge.
   return (
     <Link
       to={itemLink(item)}
       className="card card-landscape card-continue"
       data-nav
+      aria-label={`${title}${item.type === 'episode' ? `, ${sub}` : ''}${remaining != null && remaining > 60000 && pct > 0 ? `, ${Math.round(remaining / 60000)} minutes left` : ''}`}
+      {...peekHandlers(item)}
+      data-play={pct > 0 ? '' : undefined}
       onClick={(e) => {
         if (pct > 0) {
           e.preventDefault();
@@ -187,18 +180,20 @@ export const LandscapeCard = memo(function LandscapeCard({ item }: { item: Item 
       }}
     >
       <div className="card-art">
-        <Img src={landscapeFor(item)} width={480} alt={title} fallback={<Fallback title={title} icon={fallbackIcon(item)} />} />
+        <Img src={landscapeFor(item)} width={480} alt="" fallback={<Fallback title={title} icon={fallbackIcon(item)} />} />
         <div className="card-hover">
-          <button className="card-play" onClick={(e) => { e.preventDefault(); e.stopPropagation(); play(item); }} aria-label={`Play ${title}`} tabIndex={-1}>
+          <button className="card-play" data-play onClick={(e) => { e.preventDefault(); e.stopPropagation(); play(item); }} aria-label={`Play ${title}`} tabIndex={-1}>
             <Icon name="play" size={22} />
           </button>
         </div>
-        {remaining != null && remaining > 60000 && pct > 0 && <span className="card-remaining">{Math.round(remaining / 60000)} min left</span>}
-        {pct > 0 && <ProgressBar value={pct} className="card-progress" />}
-      </div>
-      <div className="card-meta">
-        <div className="card-title">{title}</div>
-        <div className="card-sub">{sub}</div>
+        <div className="cw-info" aria-hidden="true">
+          <div className="cw-title">{title}</div>
+          <div className="cw-sub">
+            <span>{sub}</span>
+            {remaining != null && remaining > 60000 && pct > 0 && <span className="cw-left">{Math.round(remaining / 60000)} min left</span>}
+          </div>
+        </div>
+        {pct > 0 && <ProgressBar value={pct} className="card-progress cw-progress" />}
       </div>
     </Link>
   );

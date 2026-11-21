@@ -16,7 +16,7 @@ import { accessibleChannelRow, channelInputArgs, channelStreamUrl, trackUpstream
 import { effEpg } from './livetv/epg/epg.js';
 import { scanLibrary } from './scanner.js';
 import { ffprobeJson } from './probe.js';
-import { homeHooks, getItem } from './items.js';
+import { homeHooks, getItem, itemsByIds } from './items.js';
 import { getBranding } from './branding.js';
 
 const log = logger('dvr');
@@ -635,12 +635,7 @@ bus.on('epg.refreshed', () => applyRules());
 homeHooks.recordingsRow = (user, cfg): HomeRow | null => {
   if (!getBranding().features.dvr) return null;
   const rows = db.all("SELECT item_id FROM recordings WHERE status = 'completed' AND item_id IS NOT NULL ORDER BY start DESC LIMIT ?", cfg.limit ?? 20);
-  const items = rows.map((r) => {
-    try {
-      return getItem(user, r.item_id, false);
-    } catch {
-      return null;
-    }
-  }).filter((x): x is NonNullable<typeof x> => !!x);
+  // One query for the whole row (hidden or deleted items are skipped, as before).
+  const items = itemsByIds(user, rows.map((r) => r.item_id));
   return items.length ? { id: cfg.id, type: 'recordings', title: cfg.title ?? 'Recordings', items } : null;
 };

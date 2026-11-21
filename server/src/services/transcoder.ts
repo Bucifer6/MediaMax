@@ -93,6 +93,8 @@ export interface TranscodeInfo {
   audioCodecString?: string | null;
   /** Audio output and why, for the dashboard (see audio.ts planDetail). */
   audioDetail?: string | null;
+  /** Output frame height when encoding video. */
+  height?: number | null;
 }
 
 export type SegmentType = 'mpegts' | 'fmp4';
@@ -266,6 +268,7 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
     segmentType,
     info: {
       videoCodec: pipeline?.encoder ?? 'copy', audioCodec, bitrate: videoBitrate, hwAccel: hw, toneMap: pipeline?.toneMap ?? null, hwFallback: null,
+      height: pipeline ? h : null,
       // Audio decision details (only with an audio plan, so other callers see the same info as before).
       ...(o.audioPlan && o.hasVideo ? {
         audioCodecString: o.audioCopy && o.audioPlan.codec !== 'copy' ? null : o.audioPlan.codecString,
@@ -277,10 +280,15 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
 
 /* ------------------------------- jobs ------------------------------- */
 
+/** Polling interval while waiting for output: tight for the first seconds (playback start), relaxed after. */
+export const pollDelay = (waitedMs: number) => (waitedMs < 3000 ? 40 : waitedMs < 10000 ? 100 : 200);
+
 export class TranscodeJob {
   readonly dir: string;
   private proc: ChildProcess | null = null;
   private startNumber = 0;
+  /** Highest complete segment seen in the current run (segments only appear, so later scans resume here). */
+  private latestKnown = -1;
   private paused = false;
   private lastRequested = 0;
   private stderr = '';
@@ -289,6 +297,8 @@ export class TranscodeJob {
   private toneMapOverride: ToneMapPath | null | 'auto' = 'auto';
   private runStartedAt = 0;
   private initServed = false;
+  /** Instant-play warm job: pause ffmpeg once segments up to this number exist, until released (see hold()). */
+  private holdUntil: number | null = null;
   /** Why this job is no longer on the configured hardware path (shown on the admin dashboard). */
   private fallbackReason: string | null = null;
   readonly segmentType: SegmentType;
@@ -327,6 +337,9 @@ export class TranscodeJob {
   start(fromSegment = 0) {
     this.stopProcess();
     this.startNumber = fromSegment;
+    // The player asks for this segment next: don't let the throttle see a far-ahead encoder before it does.
+    this.lastRequested = fromSegment;
+    this.latestKnown = fromSegment - 1;
     this.exited = false;
     this.failed = null;
     this.stderr = '';
@@ -415,8 +428,11 @@ export class TranscodeJob {
 
   /** Highest segment number fully written (ffmpeg writes seg N+1 only after N is complete, temp_file renames on completion). */
   latestSegment(): number {
-    let n = this.startNumber - 1;
+    // Resume from the last segment found in this run instead of re-checking every file from the start of it
+    // (late in a film that was thousands of synchronous stat calls per segment request).
+    let n = Math.max(this.startNumber - 1, this.latestKnown);
     while (fs.existsSync(this.segmentPath(n + 1))) n++;
+    this.latestKnown = n;
     return n;
   }
 
@@ -440,13 +456,14 @@ export class TranscodeJob {
       }
       if (this.failed) throw new Error(this.failed);
       if (this.exited && !this.killed && this.opts.mode === 'transcode' && !fs.existsSync(raw)) this.start(this.startNumber);
-      await sleep(150);
+      await sleep(pollDelay(timeoutMs - (deadline - Date.now())));
     }
     throw new Error('Timed out waiting for stream to start');
   }
 
   /** Wait for segment n, (re)starting the encoder when the request is outside the encoded window. */
   async waitForSegment(n: number, timeoutMs = 45000): Promise<string> {
+    if (this.holdUntil != null) this.release();
     this.lastRequested = n;
     this.throttle();
     const latest = this.latestSegment();
@@ -456,15 +473,19 @@ export class TranscodeJob {
       this.start(n);
     }
     const deadline = Date.now() + timeoutMs;
+    const t0 = Date.now();
+    // VOD runs write segments with hls_flags temp_file (renamed into place once complete), so an existing segment is
+    // a finished one; waiting for the next segment as well only added a whole segment of encoding to every start/seek.
+    const ready = (k: number) => this.segmentExists(k) && (this.opts.mode !== 'live' || this.segmentExists(k + 1) || this.exited);
     while (Date.now() < deadline) {
-      if (this.segmentExists(n) && (this.segmentExists(n + 1) || this.exited)) return this.segmentPath(n);
+      if (ready(n)) return this.segmentPath(n);
       if (this.failed) throw new Error(this.failed);
       if (this.exited && !this.segmentExists(n)) {
         if (this.opts.mode === 'transcode' && !this.failed && !this.killed) {
           this.start(n);
         } else throw new Error('Transcoder stopped');
       }
-      await sleep(150);
+      await sleep(pollDelay(Date.now() - t0));
     }
     throw new Error('Timed out waiting for segment');
   }
@@ -472,6 +493,17 @@ export class TranscodeJob {
   /** Pause ffmpeg when it is far ahead of the player, resume when the player catches up. */
   private throttle() {
     if (!this.proc || this.exited || process.platform === 'win32' || this.opts.mode === 'live') return;
+    if (this.holdUntil != null) {
+      try {
+        if (!this.paused && this.latestSegment() >= this.holdUntil) {
+          this.proc.kill('SIGSTOP');
+          this.paused = true;
+        }
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     const ahead = this.latestSegment() - this.lastRequested;
     try {
       if (!this.paused && ahead > 45) {
@@ -490,14 +522,43 @@ export class TranscodeJob {
     this.throttle();
   }
 
+  /** The player fetched segment `n` (remux / live: served straight from disk), for the throttle. */
+  requested(n: number) {
+    this.lastRequested = n;
+    this.throttle();
+  }
+
+  /**
+   * Instant play (playback.ts warm jobs): encode up to segment `segment`, then pause until `release()` — the first
+   * segments are ready when the user presses Play, without encoding a film nobody may watch. Polled through tick().
+   */
+  hold(segment: number) {
+    this.holdUntil = segment;
+    this.throttle();
+  }
+
+  /** End a hold(): the job belongs to a playback session now and runs (and is throttled) normally. */
+  release() {
+    this.holdUntil = null;
+    if (this.paused && this.proc && !this.exited) {
+      try {
+        this.proc.kill('SIGCONT');
+      } catch {
+        /* ignore */
+      }
+      this.paused = false;
+    }
+  }
+
   async waitForPlaylist(timeoutMs = 30000): Promise<string> {
     const p = path.join(this.dir, 'ff.m3u8');
     const deadline = Date.now() + timeoutMs;
+    const t0 = Date.now();
     while (Date.now() < deadline) {
       if (fs.existsSync(p) && fs.readFileSync(p, 'utf8').includes('#EXTINF')) return p;
       if (this.failed) throw new Error(this.failed);
       if (this.exited && !fs.existsSync(p)) throw new Error('Transcoder stopped before producing output');
-      await sleep(200);
+      await sleep(pollDelay(Date.now() - t0));
     }
     throw new Error('Timed out waiting for stream to start');
   }

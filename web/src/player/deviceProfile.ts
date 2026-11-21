@@ -1,5 +1,5 @@
 import type { DeviceProfile } from '@mediamax/shared';
-import { onCapabilitiesReset, platformTag, videoCaps } from './capabilities';
+import { isTvPlatform, onCapabilitiesReset, platformTag, videoCaps } from './capabilities';
 import { audioCaps } from './audioCaps';
 
 let cached: DeviceProfile | null = null;
@@ -70,10 +70,10 @@ export function detectDeviceProfile(): DeviceProfile {
   const hlsJs = supportsMse() && (mse('video/mp4; codecs="avc1.42E01E,mp4a.40.2"') || mse('video/mp4; codecs="avc1.42E01E"'));
   const maxWidth = Math.round(Math.max(window.screen?.width ?? 1920, window.screen?.height ?? 1080) * Math.min(window.devicePixelRatio || 1, 2));
 
-  // Samsung/LG TVs: never hand a video file to the TV's built-in progressive pipeline. Leaving video containers out
+  // Samsung/LG/Hisense TVs: never hand a video file to the TV's built-in progressive pipeline. Leaving video containers out
   // makes the server remux to fMP4/HLS (cheap: video and audio are copied), which our hls.js engine feeds to the
   // hardware decoder through MSE. Audio-only files still play directly.
-  const tv = platformTag() === 'tizen' || platformTag() === 'webos';
+  const tv = isTvPlatform(platformTag());
   const base: DeviceProfile = {
     videoCodecs,
     audioCodecs,

@@ -44,7 +44,7 @@ interface ExitHost {
  * Leave the app the way the platform expects:
  *   Samsung Tizen  → tizen.application.getCurrentApplication().exit()
  *   LG webOS       → webOS.platformBack() when webOSTV.js is present, else window.close() (closes a webOS web app)
- *   a browser      → back to the previous page if there is one (it may be outside MediaMax), else window.close()
+ *   a browser      → back to the previous page if there is one (it may be outside Kinora), else window.close()
  *                    (which only works for windows a script opened; otherwise nothing happens)
  * The Android TV app is native and handles Back itself; Android TV / Fire TV browsers take the browser path.
  * Returns which way was used (for tests and logs).

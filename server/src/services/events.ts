@@ -12,6 +12,8 @@ export interface WsClient {
   /** Last reported player state (for remote control UIs). */
   remoteState: RemotePlayerState | null;
   send: (ev: ServerEvent) => void;
+  /** Send an already serialised event (broadcasts serialise once for every recipient). */
+  sendRaw?: (json: string) => void;
 }
 
 const clients = new Set<WsClient>();
@@ -30,10 +32,12 @@ export const events = {
     return [...clients];
   },
   broadcast(ev: ServerEvent, filter?: (c: WsClient) => boolean) {
+    let json: string | null = null;
     for (const c of clients) {
       if (filter && !filter(c)) continue;
       try {
-        c.send(ev);
+        if (c.sendRaw) c.sendRaw((json ??= JSON.stringify(ev)));
+        else c.send(ev);
       } catch {
         /* ignore broken sockets */
       }

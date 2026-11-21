@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import type { CreateLibraryRequest, Library } from '@mediamax/shared';
+import type { CreateLibraryRequest, DateAddedSource, Library } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useToast } from '../state/toast';
 import { FolderBrowser } from './FolderBrowser';
@@ -16,7 +16,17 @@ const TYPES: { value: CreateLibraryRequest['type']; label: string; hint?: string
   { value: 'videos', label: 'Home videos' },
 ];
 
-export function LibraryForm({ initial, onSaved, onCancel, submitLabel }: { initial?: Library; onSaved: (l: Library) => void; onCancel?: () => void; submitLabel?: string }) {
+export const DATE_ADDED_OPTIONS: { value: DateAddedSource; label: string }[] = [
+  { value: 'created', label: 'File creation time' },
+  { value: 'modified', label: 'File modified time' },
+  { value: 'scan', label: 'Scan time' },
+];
+
+export function LibraryForm({ initial, onSaved, onCancel, submitLabel, defaultDateAdded }: {
+  initial?: Library; onSaved: (l: Library) => void; onCancel?: () => void; submitLabel?: string;
+  /** Pre-selected "Date added" for a new library (the server's default). */
+  defaultDateAdded?: DateAddedSource;
+}) {
   const toast = useToast();
   // IPTV and podcast libraries are managed automatically and have no folders.
   const iptv = initial?.type === 'iptv-movies' || initial?.type === 'iptv-shows' || initial?.type === 'podcasts';
@@ -24,6 +34,7 @@ export function LibraryForm({ initial, onSaved, onCancel, submitLabel }: { initi
   const [type, setType] = useState<CreateLibraryRequest['type']>(iptv || !initial ? 'movies' : (initial.type as CreateLibraryRequest['type']));
   const [paths, setPaths] = useState<string[]>(initial?.paths ?? []);
   const [fetchMetadata, setFetchMetadata] = useState(initial?.fetchMetadata ?? true);
+  const [dateAdded, setDateAdded] = useState<DateAddedSource>(initial?.dateAdded ?? defaultDateAdded ?? 'created');
   const [browse, setBrowse] = useState(false);
   const [typedPath, setTypedPath] = useState('');
   const [busy, setBusy] = useState(false);
@@ -38,8 +49,8 @@ export function LibraryForm({ initial, onSaved, onCancel, submitLabel }: { initi
     setBusy(true);
     try {
       const lib = initial
-        ? await api.libraries.update(initial.id, iptv ? { name } : { name, paths: allPaths, fetchMetadata })
-        : await api.libraries.create({ name: name || TYPES.find((t) => t.value === type)!.label, type, paths: allPaths, fetchMetadata });
+        ? await api.libraries.update(initial.id, iptv ? { name } : { name, paths: allPaths, fetchMetadata, dateAdded })
+        : await api.libraries.create({ name: name || TYPES.find((t) => t.value === type)!.label, type, paths: allPaths, fetchMetadata, dateAdded });
       toast.success(initial ? 'Library updated' : 'Library created — scanning started');
       onSaved(lib);
     } catch (err) {
@@ -98,6 +109,13 @@ export function LibraryForm({ initial, onSaved, onCancel, submitLabel }: { initi
             </div>
           </div>
           <Switch checked={fetchMetadata} onChange={setFetchMetadata} label="Fetch online metadata" hint="Posters, backdrops, cast and descriptions from TMDB." />
+          <Field label="Date added" hint={initial && dateAdded !== initial.dateAdded
+            ? 'Applies to newly found items. Use “Recalculate date added” in the library menu to update existing ones.'
+            : 'Used for Recently Added. File times keep a first scan of an existing collection from showing everything as new; creation time falls back to modified time where the disk has none.'}>
+            <select className="select" value={dateAdded} onChange={(e) => setDateAdded(e.target.value as DateAddedSource)}>
+              {DATE_ADDED_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </Field>
         </>
       )}
       <div className="form-actions">

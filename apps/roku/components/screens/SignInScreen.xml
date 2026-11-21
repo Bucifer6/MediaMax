@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sign in. Preferred on TVs: link code (POST /auth/link/request, poll /auth/link/poll every 3 s while someone approves
+  the code at <server>/link). Fallbacks: username + password (on-screen keyboard, TOTP if enabled) and the server's
+  public profile picker (/auth/profiles, PIN pad).
+-->
+<component name="SignInScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Screen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/screens/SignInScreen.brs" />
+  <children>
+    <Poster uri="pkg:/images/logo.png" translation="[160,100]" width="120" height="120" />
+    <Label id="heading" translation="[310,110]" width="1400" text="Sign in" color="0xFFFFFFFF" font="font:LargeBoldSystemFont" />
+    <Label id="server" translation="[310,170]" width="1400" color="0xA9B0D6FF" font="font:SmallSystemFont" />
+
+    <Group id="linkPanel" translation="[160,280]">
+      <Rectangle width="760" height="560" color="0x1E2452FF" />
+      <Label translation="[40,36]" width="680" text="Link this Roku" color="0xFFFFFFFF" font="font:MediumBoldSystemFont" />
+      <Label id="linkHint" translation="[40,90]" width="680" wrap="true" maxLines="4" color="0xA9B0D6FF" font="font:SmallSystemFont" />
+      <Label id="code" translation="[40,250]" width="680" horizAlign="center" color="0x22D3EEFF" font="font:LargeBoldSystemFont" />
+      <Label id="linkStatus" translation="[40,440]" width="680" horizAlign="center" wrap="true" maxLines="2" color="0xA9B0D6FF" font="font:SmallSystemFont" />
+    </Group>
+
+    <Label id="error" translation="[1000,280]" width="760" wrap="true" maxLines="3" color="0xF87171FF" font="font:SmallSystemFont" />
+    <Label id="otherTitle" translation="[1000,390]" width="760" text="Other ways to sign in" color="0xFFFFFFFF" font="font:MediumBoldSystemFont" />
+    <LabelList id="options" translation="[1000,450]" itemSize="[760,72]" numRows="6" vertFocusAnimationStyle="floatingFocus"
+      color="0xFFFFFFFF" focusedColor="0x0B0E26FF" focusBitmapBlendColor="0x22D3EEFF" font="font:MediumSystemFont" focusedFont="font:MediumBoldSystemFont" />
+
+    <Timer id="pollTimer" duration="3" repeat="true" />
+  </children>
+</component>

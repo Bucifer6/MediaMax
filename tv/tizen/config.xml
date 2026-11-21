@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="http://mediamax.tv/tizen" version="0.1.0" viewmodes="maximized">
-  <tizen:application id="MdMaxTV001.MediaMax" package="MdMaxTV001" required_version="4.0"/>
-  <name>MediaMax</name>
-  <description>Your MediaMax server on a Samsung TV.</description>
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="http://burdujeni82.uk/kinora" version="0.1.0" viewmodes="maximized">
+  <tizen:application id="KinoraTV01.Kinora" package="KinoraTV01" required_version="4.0"/>
+  <name>Kinora</name>
+  <description>Your Kinora server on a Samsung TV.</description>
   <icon src="icon.png"/>
   <content src="index.html"/>
   <feature name="http://tizen.org/feature/screen.size.all"/>

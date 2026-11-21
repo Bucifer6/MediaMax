@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import type { Library, SkippedNames } from '@mediamax/shared';
+import type { DateAddedSource, Library, SkippedNames } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync, useServerEvent } from '../hooks';
 import { Badge, Dropdown, EmptyState, ErrorState, Modal, ProgressBar, Skeleton, useConfirm } from '../components/ui';
 import { Icon } from '../components/Icon';
-import { LibraryForm } from '../components/LibraryForm';
+import { DATE_ADDED_OPTIONS, LibraryForm } from '../components/LibraryForm';
 import { isIptvLibrary, libraryIcon } from '../utils/items';
 import { relativeTime } from '../utils/format';
 import { AdminHeader } from './AdminRoutes';
@@ -16,6 +16,8 @@ export function LibrariesAdmin() {
   const toast = useToast();
   const confirm = useConfirm();
   const libs = useAsync(() => api.libraries.list(), []);
+  const settings = useAsync(() => api.admin.settings(), []);
+  const defaultDateAdded: DateAddedSource = settings.data?.defaultDateAdded ?? 'created';
   const [edit, setEdit] = useState<Library | 'new' | null>(null);
   const [scan, setScan] = useState<Record<string, { progress?: number; message?: string }>>({});
 
@@ -50,8 +52,24 @@ export function LibrariesAdmin() {
       toast.error(e);
     }
   };
+  const recalcDateAdded = async (l: Library) => {
+    try {
+      const r = await api.libraries.recalculateDateAdded(l.id);
+      toast.success(l.dateAdded === 'scan' ? `${l.name} uses the scan time — choose a file time under Edit first` : `Date added updated for ${r.changed.toLocaleString()} item${r.changed === 1 ? '' : 's'}`);
+    } catch (e) {
+      toast.error(e);
+    }
+  };
+  const saveDefaultDateAdded = async (v: DateAddedSource) => {
+    try {
+      settings.setData(await api.admin.saveSettingsPatch({ defaultDateAdded: v }));
+      toast.success('Default for new libraries saved');
+    } catch (e) {
+      toast.error(e);
+    }
+  };
   const remove = async (l: Library) => {
-    if (!(await confirm({ title: `Delete library "${l.name}"?`, message: 'Items are removed from MediaMax. Your files are not touched.', confirmLabel: 'Delete library', danger: true }))) return;
+    if (!(await confirm({ title: `Delete library "${l.name}"?`, message: 'Items are removed from Kinora. Your files are not touched.', confirmLabel: 'Delete library', danger: true }))) return;
     try {
       await api.libraries.remove(l.id);
       libs.setData((d) => (d ?? []).filter((x) => x.id !== l.id));
@@ -81,7 +99,7 @@ export function LibrariesAdmin() {
     <div>
       <AdminHeader help="admin-libraries"
         title="Libraries"
-        subtitle="Folders MediaMax watches for media. Xtream VOD & series libraries are created automatically from Live TV sources."
+        subtitle="Folders Kinora watches for media. Xtream VOD & series libraries are created automatically from Live TV sources."
         actions={
           <>
             <button className="btn" onClick={scanAll}><Icon name="refresh" size={16} /> Scan all</button>
@@ -89,6 +107,16 @@ export function LibrariesAdmin() {
           </>
         }
       />
+      {settings.data && (
+        <div className="lib-default-date muted">
+          <label>
+            Date added for new libraries{' '}
+            <select className="select" value={defaultDateAdded} onChange={(e) => void saveDefaultDateAdded(e.target.value as DateAddedSource)}>
+              {DATE_ADDED_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+        </div>
+      )}
       {libs.loading && !libs.data ? <Skeleton h={200} /> : libs.error ? <ErrorState message={libs.error} onRetry={libs.reload} /> : !list.length ? (
         <EmptyState icon="database" title="No libraries yet" message="Add a folder of movies, shows, music or photos." action={<button className="btn btn-primary" onClick={() => setEdit('new')}>Add library</button>} />
       ) : (
@@ -127,6 +155,7 @@ export function LibrariesAdmin() {
                     items={[
                       { label: 'Edit', icon: 'edit', onClick: () => setEdit(l) },
                       { label: 'Refresh all metadata', icon: 'sparkles', onClick: () => doScan(l, true) },
+                      ...(isIptvLibrary(l.type) || l.type === 'podcasts' ? [] : [{ label: 'Recalculate date added', icon: 'calendar' as const, onClick: () => void recalcDateAdded(l) }]),
                       { divider: true, label: '' },
                       { label: 'Delete', icon: 'trash', danger: true, onClick: () => remove(l) },
                     ]}
@@ -141,6 +170,7 @@ export function LibrariesAdmin() {
         {edit && (
           <LibraryForm
             initial={edit === 'new' ? undefined : edit}
+            defaultDateAdded={defaultDateAdded}
             onCancel={() => setEdit(null)}
             onSaved={(l) => {
               libs.setData((d) => {

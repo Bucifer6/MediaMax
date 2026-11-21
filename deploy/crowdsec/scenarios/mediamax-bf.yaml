@@ -1,4 +1,4 @@
-# CrowdSec scenarios for MediaMax sign-in abuse (needs parsers/s01-parse/mediamax-logs.yaml).
+# CrowdSec scenarios for Kinora sign-in abuse (needs parsers/s01-parse/mediamax-logs.yaml).
 #
 # 1. mediamax/mediamax-bf: more than 5 failed sign-ins (password, PIN, 2FA code, API key, Subsonic) or
 #    lockouts from one address, leaking one per minute. Ban for the default profile duration (4h).
@@ -6,7 +6,7 @@
 #    accounts rather than mistyping a password.
 type: leaky
 name: mediamax/mediamax-bf
-description: "Detect MediaMax sign-in brute force"
+description: "Detect Kinora sign-in brute force"
 filter: "evt.Meta.log_type == 'mediamax_failed_auth'"
 groupby: evt.Meta.source_ip
 leakspeed: "1m"
@@ -19,12 +19,12 @@ labels:
   classification:
     - attack.T1110
   behavior: "http:bruteforce"
-  label: "MediaMax sign-in brute force"
+  label: "Kinora sign-in brute force"
   remediation: true
 ---
 type: leaky
 name: mediamax/mediamax-bf_user-enum
-description: "Detect MediaMax user name enumeration"
+description: "Detect Kinora user name enumeration"
 filter: "evt.Meta.log_type == 'mediamax_failed_auth' && evt.Meta.user != ''"
 groupby: evt.Meta.source_ip
 distinct: evt.Meta.user
@@ -39,5 +39,5 @@ labels:
     - attack.T1589
     - attack.T1110
   behavior: "http:bruteforce"
-  label: "MediaMax user enumeration"
+  label: "Kinora user enumeration"
   remediation: true

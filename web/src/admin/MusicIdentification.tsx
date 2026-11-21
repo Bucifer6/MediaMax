@@ -57,7 +57,7 @@ export function MusicIdentificationSettings() {
       <h3 className="md-h">Music identification</h3>
       <p className="muted small">
         MusicBrainz ids in your files (tag them with <a href="https://picard.musicbrainz.org" target="_blank" rel="noopener noreferrer">MusicBrainz Picard</a>) are used directly.
-        For untagged files, MediaMax can identify the music by its sound with <a href="https://acoustid.org" target="_blank" rel="noopener noreferrer">AcoustID</a>. Matches are saved in MediaMax only — files are never modified.
+        For untagged files, Kinora can identify the music by its sound with <a href="https://acoustid.org" target="_blank" rel="noopener noreferrer">AcoustID</a>. Matches are saved in Kinora only — files are never modified.
       </p>
       <div className="md-card">
         <div className="md-card-head">

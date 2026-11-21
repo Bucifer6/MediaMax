@@ -8,7 +8,8 @@ import { getKv, setKv, getSettings } from './settings.js';
 import { events } from './events.js';
 import { logger } from '../util/log.js';
 import { notFound } from '../util/errors.js';
-import { scanLibrary } from './scanner.js';
+import { checkThemeSchedule } from './branding.js';
+import { recalculateDateAdded, scanLibrary } from './scanner.js';
 import { refreshDueSources, refreshSource, pruneOldPrograms } from './livetv/livetv.js';
 import { pruneActivity } from './activity.js';
 import { pruneImageCache, registerImage } from './images.js';
@@ -23,7 +24,11 @@ import { createBackup } from './backup.js';
 import { analyseAll } from './dj/analysis.js';
 import { pruneVoices } from './dj/ai.js';
 import { pruneOrphanStems } from './stems.js';
-import { autoDownload } from './opensubtitles.js';
+import { autoDownload, autoDownloadEnabled } from './subtitleProviders/index.js';
+import { runAutoSubtitles } from './autosubs/queue.js';
+import { buildEmbeddings, embeddingsEnabled } from './ask/embed.js';
+import { pruneRecaps } from './recap.js';
+import { featureEnabled } from './ai/llm.js';
 import { refreshAll as refreshPodcasts } from './podcasts.js';
 import { checkAvailability } from './requests.js';
 import { refreshSchedules } from './calendar.js';
@@ -74,6 +79,15 @@ const DEFS: TaskDef[] = [
         await scanLibrary(libs[i].id);
         progress(Math.round(((i + 1) / libs.length) * 100));
       }
+    },
+  },
+  {
+    id: 'recalculate-date-added', name: 'Recalculate date added',
+    description: 'Re-apply each library\'s "Date added" rule (file creation or modification time) to the items it already has, without a full rescan.',
+    interval: () => null,
+    run: async () => {
+      const n = recalculateDateAdded();
+      log.info(`Recalculate date added changed ${n} item(s)`);
     },
   },
   {
@@ -142,12 +156,29 @@ const DEFS: TaskDef[] = [
     },
   },
   {
-    id: 'subtitles', name: 'Download missing subtitles', description: 'Fetch subtitles from OpenSubtitles in your preferred languages for recent media.',
-    interval: () => (getSettings().openSubtitles.apiKey && getSettings().openSubtitles.autoLanguages.length ? 12 * 60 : null),
+    id: 'subtitles', name: 'Download missing subtitles', description: 'Fetch the best-matching subtitles from your subtitle providers (OpenSubtitles, Subs.ro, plugins) in your preferred languages for recent media.',
+    interval: () => (autoDownloadEnabled() ? 12 * 60 : null),
     diskFilter: true,
     run: async (progress, filter) => {
       const n = await autoDownload(progress, filter);
       log.info(`Downloaded ${n} subtitle file(s)`);
+    },
+  },
+  {
+    id: 'auto-subtitles', name: 'Generate missing subtitles',
+    description: 'Create subtitles with speech-to-text (whisper) for media that still has none in your languages after the download task, translated by the language model when needed. One title at a time, low priority, only inside the night window set in Admin → AI.',
+    interval: () => (featureEnabled('autoSubtitles') ? 30 : null),
+    run: async (progress) => {
+      const n = await runAutoSubtitles(progress);
+      if (n) log.info(`Generated subtitles for ${n} title(s)`);
+    },
+  },
+  {
+    id: 'ask-embeddings', name: 'Build search embeddings',
+    description: 'Compute semantic vectors of plots and taglines so Ask can match descriptions ("that heist film with red jumpsuits"). Enable under Admin → AI → Ask.',
+    interval: () => (embeddingsEnabled() ? 12 * 60 : null),
+    run: async (progress) => {
+      await buildEmbeddings(progress);
     },
   },
   {
@@ -225,6 +256,7 @@ const DEFS: TaskDef[] = [
       pruneVoices();
       pruneOrphanStems((id) => !!db.get('SELECT 1 FROM items WHERE id = ?', id));
       pruneSubtitleCache();
+      pruneRecaps();
       const active = new Set(listSessions().map((s) => s.id));
       for (const d of fs.readdirSync(config.transcodeDir)) {
         const p = path.join(config.transcodeDir, d);
@@ -327,6 +359,9 @@ export function startScheduler() {
   // Fast housekeeping loops.
   timers.push(setInterval(() => void dvrTick().catch((e) => log.error('DVR tick failed', e)), 15000));
   timers.push(setInterval(() => reapSessions(), 30000));
+  // Seasonal themes: tell clients when one starts or ends.
+  checkThemeSchedule();
+  timers.push(setInterval(() => checkThemeSchedule(), 5 * 60000));
   if (process.env.MEDIAMAX_NO_WATCH !== '1') {
     syncWatchers();
     timers.push(setInterval(() => syncWatchers(), 60000));

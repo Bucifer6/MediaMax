@@ -69,12 +69,12 @@ jobs:
           context: .
           push: false
           load: true
-          tags: mediamax:ci
+          tags: kinora:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Smoke test container
         run: |
-          docker run -d --name mm -p 8484:8484 mediamax:ci
+          docker run -d --name mm -p 8484:8484 kinora:ci
           for i in $(seq 1 30); do curl -sf http://localhost:8484/api/v1/system/info && break; sleep 2; done
           curl -sf http://localhost:8484/api/v1/system/info | grep -q setupRequired
           curl -sf http://localhost:8484/ | grep -qi "<html"
@@ -83,7 +83,7 @@ jobs:
       - name: Smoke test PUID/PGID
         run: |
           mkdir -p "$RUNNER_TEMP/config"
-          docker run -d --name mm-puid -p 8485:8484 -e PUID=1234 -e PGID=2345 -v "$RUNNER_TEMP/config:/config" mediamax:ci
+          docker run -d --name mm-puid -p 8485:8484 -e PUID=1234 -e PGID=2345 -v "$RUNNER_TEMP/config:/config" kinora:ci
           for i in $(seq 1 30); do curl -sf http://localhost:8485/api/v1/system/info && break; sleep 2; done
           test "$(stat -c %u:%g "$RUNNER_TEMP/config/mediamax.db")" = "1234:2345"
           test "$(docker exec mm-puid stat -c %u /proc/1)" = "1234"
@@ -102,9 +102,9 @@ jobs:
       - run: node scripts/package.mjs --target linux-x64
       - name: Smoke test
         run: |
-          mkdir -p "$RUNNER_TEMP/smoke" && tar -xzf release/mediamax-*-linux-x64.tar.gz -C "$RUNNER_TEMP/smoke"
-          app=$(echo "$RUNNER_TEMP"/smoke/mediamax-*-linux-x64)
-          MEDIAMAX_DATA="$RUNNER_TEMP/data" "$app/mediamax" &
+          mkdir -p "$RUNNER_TEMP/smoke" && tar -xzf release/kinora-*-linux-x64.tar.gz -C "$RUNNER_TEMP/smoke"
+          app=$(echo "$RUNNER_TEMP"/smoke/kinora-*-linux-x64)
+          MEDIAMAX_DATA="$RUNNER_TEMP/data" "$app/kinora" &
           pid=$!
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8484/api/v1/system/info && break; sleep 1; done
           curl -sf http://127.0.0.1:8484/api/v1/system/info | grep -q setupRequired

@@ -1,4 +1,4 @@
-/** Persistent device identity sent with every request (X-MediaMax-* headers). */
+/** Persistent device identity sent with every request (X-Kinora-* headers). */
 import * as Application from 'expo-application';
 import * as Crypto from 'expo-crypto';
 import * as Device from 'expo-device';
@@ -24,7 +24,7 @@ function defaultDeviceName(): string {
   const name = Device.deviceName ?? Device.modelName;
   if (name) return name;
   const p = currentPlatform();
-  return { tvos: 'Apple TV', androidtv: 'Android TV', ios: 'iPhone', android: 'Android', web: 'Browser', other: 'Device' }[p];
+  return { tvos: 'Apple TV', androidtv: 'Android TV', roku: 'Roku', ios: 'iPhone', android: 'Android', web: 'Browser', other: 'Device' }[p];
 }
 
 export async function getDeviceInfo(): Promise<DeviceInfo> {

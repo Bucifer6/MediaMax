@@ -1,5 +1,5 @@
 /**
- * MediaMax API contract.
+ * Kinora API contract (the npm workspace keeps its original name, @mediamax/shared).
  *
  * This file is the single source of truth for the shapes exchanged between the
  * server and every client (web, iOS, Android, TV). It has no runtime imports so
@@ -15,6 +15,20 @@
  *    (e.g. `/api/v1/images/abc`) and are publicly fetchable.
  *  - Errors: non-2xx with body `ApiError`.
  */
+
+/** The product's default name (servers can be renamed in the Branding Studio). */
+export const PRODUCT_NAME = 'Kinora';
+/** The product's former name: a server still called this is treated as using the stock name. */
+export const LEGACY_PRODUCT_NAME = 'MediaMax';
+/** Primary app URL scheme (deep links, OIDC redirects, pairing). The legacy scheme stays registered and accepted. */
+export const APP_SCHEME = 'kinora';
+export const LEGACY_APP_SCHEME = 'mediamax';
+/**
+ * Client headers are sent as `X-Kinora-*`; the server also accepts the original `X-MediaMax-*` names
+ * (e.g. `X-Kinora-Device-Id` / `X-MediaMax-Device-Id`).
+ */
+export const HEADER_PREFIX = 'X-Kinora-';
+export const LEGACY_HEADER_PREFIX = 'X-MediaMax-';
 
 export interface ApiError {
   error: string;
@@ -118,7 +132,9 @@ export type HomeRowType =
   /** "My List": the viewer's watchlist. */
   | 'watchlist'
   /** "Coming soon": next airing episodes of shows in the viewer's libraries (needs TMDB). */
-  | 'upcoming';
+  | 'upcoming'
+  /** "Random spotlight": random movies/shows from chosen libraries (e.g. "Random Movie", "Kids Spotlight"). Add several. */
+  | 'spotlight';
 
 export interface HomeRowConfig {
   id: string;
@@ -133,6 +149,14 @@ export interface HomeRowConfig {
   /** For genre. */
   genre?: string;
   limit?: number;
+  /** spotlight: libraries to pick from (empty/absent = every library the viewer can see). */
+  libraryIds?: string[];
+  /** spotlight: item types to pick (default both). */
+  itemTypes?: ('movie' | 'show')[];
+  /** spotlight: 'load' = new random picks on every page load (default), 'daily' = the same picks all day (server date). */
+  rotation?: 'load' | 'daily';
+  /** top10: admin-pinned titles (movies/shows), always first in this order; the chart fills the rest. Titles a viewer can't see are skipped. */
+  pinnedItemIds?: string[];
 }
 
 export interface FeatureFlags {
@@ -169,8 +193,17 @@ export interface Branding {
   tvBannerUrl: string | null;
   /** Apple TV top shelf artwork. */
   topShelfUrl: string | null;
-  /** The default theme applied to everyone. */
+  /**
+   * The theme applied to everyone right now: the theme of the active seasonal schedule (`themeSchedules`) while one is
+   * active, else `baseThemeId`. Clients just apply this one (users who picked their own theme keep it).
+   */
   defaultThemeId: string;
+  /** The admin's chosen default theme (outside any seasonal schedule). Send this to change the default. */
+  baseThemeId: string;
+  /** Seasonal themes, e.g. Halloween 10-20 → 11-01, Christmas 12-01 → 01-06. The first active one wins. */
+  themeSchedules: ThemeSchedule[];
+  /** Id of the schedule in effect now (null = none, `defaultThemeId` = `baseThemeId`). */
+  activeThemeScheduleId: string | null;
   /** All themes available (presets + admin-made). */
   themes: Theme[];
   /** Let users pick a theme from `themes` for themselves. */
@@ -181,6 +214,21 @@ export interface Branding {
   customCss: string;
   /** Bumped every time branding changes so clients can cache-bust. */
   revision: number;
+}
+
+/**
+ * A date window (server's local date, every year) during which `themeId` replaces the default theme.
+ * Inclusive; a window whose end is before its start wraps the year end (12-01 → 01-06).
+ */
+export interface ThemeSchedule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  /** "MM-DD". */
+  start: string;
+  /** "MM-DD". */
+  end: string;
+  themeId: string;
 }
 
 export type BrandingAssetKind =
@@ -199,7 +247,7 @@ export type BrandingAssetKind =
 /* Auth & users                                                        */
 /* ------------------------------------------------------------------ */
 
-export type Platform = 'web' | 'ios' | 'android' | 'tvos' | 'androidtv' | 'other';
+export type Platform = 'web' | 'ios' | 'android' | 'tvos' | 'androidtv' | 'roku' | 'other';
 
 export interface DeviceInfo {
   deviceId: string;
@@ -319,6 +367,11 @@ export interface User {
   maxStreams: number | null;
   /** Two-factor authentication enabled. */
   totpEnabled: boolean;
+  /**
+   * Listed on the public sign-in screen ("Who's watching?" before anyone signs in). Default false: nobody's name is
+   * shown to people who are not signed in unless an admin opts them in (see ServerSettings.signInScreen).
+   */
+  showOnSignIn?: boolean;
   preferences: UserPreferences;
   createdAt: string;
   lastSeenAt: string | null;
@@ -339,6 +392,8 @@ export interface CreateUserRequest {
   allowRequest4k?: boolean;
   allowRemote?: boolean;
   maxStreams?: number | null;
+  /** List this user on the public sign-in screen. Default false. */
+  showOnSignIn?: boolean;
 }
 
 export type UpdateUserRequest = Partial<CreateUserRequest> & { disabled?: boolean };
@@ -397,11 +452,28 @@ export interface Library {
   /** Admin-defined sort order for menus. */
   sortOrder: number;
   createdAt: string;
+  /** Where an item's "date added" comes from (Recently Added, sort by date added). */
+  dateAdded: DateAddedSource;
   /**
    * Files (or folders of media files) the last scan skipped because their names aren't valid UTF-8 — usually copied
    * from an old Windows/Samba share in a legacy character set. Renaming them fixes it. Null when nothing was skipped.
    */
   skippedNames?: SkippedNames | null;
+}
+
+/**
+ * Source of an item's "date added": the time the scan found it, or its file's creation / modification time.
+ * `created` falls back to the modification time where the filesystem has no creation time (some Linux filesystems),
+ * and a date in the future is never used. Shows, seasons, albums and artists get the earliest date of their children
+ * (Recently Added still bubbles a show up when a new episode arrives: shows are ordered by their newest episode).
+ */
+export type DateAddedSource = 'scan' | 'created' | 'modified';
+
+export interface SignInScreenSettings {
+  /** Master switch: list opted-in users at all. */
+  showUsers: boolean;
+  /** Only list them to devices on the home network (private / loopback addresses); others see the username form. */
+  homeNetworkOnly: boolean;
 }
 
 export interface SkippedNames {
@@ -443,6 +515,8 @@ export interface CreateLibraryRequest {
   type: Exclude<LibraryType, 'iptv-movies' | 'iptv-shows' | 'podcasts'>;
   paths: string[];
   fetchMetadata?: boolean;
+  /** Default: the server's `defaultDateAdded`. */
+  dateAdded?: DateAddedSource;
 }
 
 export type UpdateLibraryRequest = Partial<CreateLibraryRequest> & { sortOrder?: number };
@@ -671,6 +745,8 @@ export interface ProgressReport {
   durationMs?: number;
   state: 'playing' | 'paused' | 'stopped';
   sessionId?: string;
+  /** Subtitle stream the player is showing (null = off); undefined = not reported. Shown on the admin dashboard. */
+  subtitleIndex?: number | null;
 }
 
 export interface HomeRow {
@@ -765,7 +841,7 @@ export interface PlaybackInfo {
   /** Position (ms) the client should seek to once playback starts. */
   startMs: number;
   /**
-   * Media position (ms) that stream time 0 corresponds to. MediaMax always
+   * Media position (ms) that stream time 0 corresponds to. Kinora always
    * produces full-timeline streams, so this is 0 for VOD; clients should
    * compute `mediaPosition = streamTime + streamStartMs`.
    */
@@ -807,6 +883,64 @@ export interface ActiveSession {
     toneMap?: string | null;
     /** Audio output, e.g. "E-AC-3 5.1 (TrueHD Atmos → E-AC-3 5.1: device can't play TrueHD)". */
     audioDetail?: string | null;
+    /** Output frame height when encoding video. */
+    height?: number | null;
+  } | null;
+  /** Emby-style breakdown of the stream for the admin dashboard (client, stream, video, audio, subtitles). */
+  details?: SessionDetails | null;
+}
+
+/** What happens to one part of a stream on its way to the client. */
+export type StreamAction = 'direct' | 'copy' | 'transcode' | 'burn-in' | 'external' | 'embedded' | 'live';
+
+export interface SessionDetails {
+  client: {
+    /** e.g. "Kinora Web", "Kinora for Android TV". */
+    app: string;
+    version: string | null;
+    /** e.g. "Chrome 131 on Windows" (from the User-Agent). */
+    browser: string | null;
+    /** e.g. "HTTP/1.1", "HTTP/2". */
+    protocol: string | null;
+    secure: boolean;
+    local: boolean;
+  };
+  stream: {
+    /** Source container, e.g. "MKV", "MPEG-TS". */
+    container: string | null;
+    /** Source bitrate, kbps. */
+    bitrate: number | null;
+    /** Delivery, e.g. "Direct Play", "HLS", "HLS (adaptive)". */
+    delivery: string;
+    /** Output bitrate (video + audio), kbps, when re-encoding. */
+    outputBitrate: number | null;
+    /** Why the server remuxes or transcodes, in plain words. */
+    reasons: string[];
+  };
+  video: {
+    /** e.g. "1080p H264", "4K HEVC". */
+    label: string;
+    codec: string | null;
+    width: number | null;
+    height: number | null;
+    /** e.g. "Dolby Vision 8.1", "HDR10". */
+    range: string | null;
+    frameRate: number | null;
+    action: StreamAction;
+    /** Extra lines under the action, e.g. "HDR → SDR tone-mapping (opencl)", "Hardware: QSV". */
+    notes: string[];
+  } | null;
+  audio: {
+    /** e.g. "English EAC3 5.1 (Default)". */
+    label: string;
+    action: StreamAction;
+    /** e.g. "AAC 5.1 (TrueHD → AAC: device can't play TrueHD)". */
+    output: string | null;
+  } | null;
+  subtitle: {
+    /** e.g. "Romanian SRT (External)". */
+    label: string;
+    action: StreamAction;
   } | null;
 }
 
@@ -828,7 +962,7 @@ export interface LiveSource {
   /** One or more XMLTV URLs (newline-separated), highest priority first; the provider's own guide fills gaps. */
   epgUrl: string | null;
   enabled: boolean;
-  /** Restream through MediaMax (hides provider creds, allows remux/transcode). */
+  /** Restream through Kinora (hides provider creds, allows remux/transcode). */
   proxyStreams: boolean;
   /** Import Xtream VOD movies into a virtual library. */
   importVod: boolean;
@@ -1159,7 +1293,7 @@ export interface ArrOptions {
 
 export type ArrKind = 'radarr' | 'sonarr' | 'lidarr' | 'readarr' | 'bazarr';
 
-/** Rewrites a path as the *arr sees it (`remotePath`) into the path MediaMax sees (`localPath`). */
+/** Rewrites a path as the *arr sees it (`remotePath`) into the path Kinora sees (`localPath`). */
 export interface ArrPathMapping {
   remotePath: string;
   localPath: string;
@@ -1535,7 +1669,7 @@ export interface ServerSettings {
     commercialDetection: boolean;
     /** Path to the comskip binary; defaults to `comskip` on PATH. */
     comskipPath: string | null;
-    /** Optional comskip.ini; MediaMax supplies a minimal EDL-only ini otherwise. */
+    /** Optional comskip.ini; Kinora supplies a minimal EDL-only ini otherwise. */
     comskipIni: string | null;
   };
   webhooks: Webhook[];
@@ -1597,7 +1731,7 @@ export interface ServerSettings {
     clientId: string | null;
     clientSecret: string | null;
     buttonLabel: string;
-    /** Create a MediaMax user on first SSO sign-in. */
+    /** Create a Kinora user on first SSO sign-in. */
     autoCreateUsers: boolean;
     /** Claim holding group names (default "groups"). */
     groupsClaim: string;
@@ -1631,6 +1765,13 @@ export interface ServerSettings {
     userId: string | null;
   };
   sessionTimeoutDays: number;
+  /**
+   * Users on the public sign-in screen. Only users with `showOnSignIn` are ever listed, and only while the branding
+   * feature `profilePicker` is on. Default: { showUsers: true, homeNetworkOnly: true }.
+   */
+  signInScreen?: SignInScreenSettings;
+  /** "Date added" rule given to new libraries. Default 'created' (file creation time). */
+  defaultDateAdded?: DateAddedSource;
 }
 
 export type WebhookEvent =
@@ -1715,17 +1856,33 @@ export type ServerEvent =
   | { type: 'branding.updated'; revision: number }
   | { type: 'userdata.updated'; itemId: string; userData: UserItemData }
   | { type: 'task.updated'; task: ScheduledTask }
+  /** Admins: progress of an import from another server (Admin → Import from another server). */
+  | { type: 'import.updated'; job: ImportJob }
+  /** Same, for older clients (Emby imports only). */
+  | { type: 'embyImport.updated'; job: EmbyImportJob }
   | { type: 'recording.updated'; recording: Recording }
   | { type: 'session.terminated'; sessionId: string; reason: string }
+  /** A message from the server administrator, shown over playback. */
+  | { type: 'session.message'; from: string; header: string | null; text: string; timeoutMs: number }
   | { type: 'syncplay.state'; room: SyncPlayRoom }
   | { type: 'syncplay.command'; room: string; action: 'play' | 'pause' | 'seek' | 'load'; positionMs: number; itemId?: string; at: number; by: string }
   | { type: 'error'; message: string }
   /** A command from another of your devices (apply it to the local player). */
-  | { type: 'remote.command'; fromDeviceName: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number }
+  | { type: 'remote.command'; fromDeviceName: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number; trackIndex?: number | null }
   /** Your controllable devices changed (online/offline/now playing). */
   | { type: 'remote.targets'; targets: RemoteTarget[] }
   /** A new in-app notification for you (e.g. a new episode of a show you watch). `unread` is your new unread total. */
-  | { type: 'notification'; notification: AppNotification; unread: number };
+  | { type: 'notification'; notification: AppNotification; unread: number }
+  /** A key press from a paired phone remote (TV web app: fed into spatial navigation). */
+  | { type: 'remote.key'; fromDeviceName: string; key: RemoteKey; text?: string }
+  /** Someone else's phone asks to pair with this TV (accept or decline on screen). */
+  | { type: 'pair.request'; request: PairRequest }
+  /** A pairing involving this device changed (accepted, declined, revoked, expired). */
+  | { type: 'pair.updated'; pairingId: string | null; requestId?: string; status: PairStatus }
+  /** The TVs this (controller) device is paired with, with what they are playing. */
+  | { type: 'pair.targets'; targets: PairedTarget[] }
+  /** Movie Match (group swipe) — see MatchServerEvent. */
+  | MatchServerEvent;
 
 export type ClientEvent =
   | { type: 'ping' }
@@ -1734,11 +1891,18 @@ export type ClientEvent =
   | { type: 'syncplay.leave'; room: string }
   | { type: 'syncplay.command'; room: string; action: 'play' | 'pause' | 'seek' | 'load'; positionMs: number; itemId?: string }
   /** Control another of your own devices ("Play on…"). */
-  | { type: 'remote.command'; targetDeviceId: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number }
+  | { type: 'remote.command'; targetDeviceId: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number; trackIndex?: number | null }
   /** Players report what they're doing so other devices can show and control it. Send on change and every ~10 s while playing. */
-  | { type: 'remote.state'; state: RemotePlayerState | null };
+  | { type: 'remote.state'; state: RemotePlayerState | null }
+  /** D-pad / OK / Back / text from a phone remote to a TV it is paired with (QR pairing). Never routed to unpaired devices. */
+  | { type: 'remote.key'; targetDeviceId: string; key: RemoteKey; text?: string };
 
-export type RemoteAction = 'play' | 'pause' | 'togglePause' | 'stop' | 'seek' | 'next' | 'previous' | 'setVolume' | 'playItem' | 'playChannel';
+export type RemoteAction = 'play' | 'pause' | 'togglePause' | 'stop' | 'seek' | 'next' | 'previous' | 'setVolume' | 'playItem' | 'playChannel'
+  /** Second screen: switch the audio / subtitle track (`trackIndex`, null = subtitles off) or press the visible Skip button. */
+  | 'setAudioTrack' | 'setSubtitleTrack' | 'skipSegment';
+
+/** Keys a phone remote can send to a paired TV. `text` types into the focused text field; `backspace` deletes. */
+export type RemoteKey = 'up' | 'down' | 'left' | 'right' | 'ok' | 'back' | 'home' | 'playPause' | 'rewind' | 'forward' | 'info' | 'text' | 'backspace' | 'submit';
 
 export interface RemotePlayerState {
   itemId: string | null;
@@ -1751,6 +1915,20 @@ export interface RemotePlayerState {
   paused: boolean;
   /** 0-100 */
   volume: number | null;
+  /** Second-screen extras (web/TV player; optional for older clients). */
+  audioTracks?: RemoteTrack[];
+  audioIndex?: number | null;
+  subtitleTracks?: RemoteTrack[];
+  /** null = subtitles off. */
+  subtitleIndex?: number | null;
+  /** The Skip button currently on screen (intro, recap, credits, ad break), if any. */
+  skip?: { type: string; label: string } | null;
+  nextItemId?: string | null;
+}
+
+export interface RemoteTrack {
+  index: number;
+  label: string;
 }
 
 /** One of the user's online devices that can be controlled. `id` is the device row id. */
@@ -1849,9 +2027,12 @@ export interface ServerStats {
 /* ------------------------------------------------------------------ */
 
 export interface RemoteSubtitle {
-  /** Provider file id to pass to the download endpoint. */
+  /** Provider file id to pass to the download endpoint (with `provider`). */
   fileId: string;
-  provider: 'opensubtitles';
+  /** Provider id: 'opensubtitles', 'subsro', or '<plugin id>:<provider id>' for plugin providers. */
+  provider: string;
+  /** Display name of the provider. */
+  providerName?: string;
   language: string;
   release: string | null;
   downloads: number;
@@ -1859,6 +2040,53 @@ export interface RemoteSubtitle {
   forced: boolean;
   aiTranslated: boolean;
   rating: number | null;
+  /** Release match against the media file, 0-100 (100 = OpenSubtitles file-hash match). */
+  score?: number;
+  /** Why it scored that way (e.g. "same group", "same source", "hash match"). */
+  scoreReasons?: string[];
+  hashMatch?: boolean;
+  /** Set when this result can't be downloaded on this server (e.g. RAR archive without unrar/7z). */
+  unavailableReason?: string | null;
+}
+
+/** One subtitle provider as listed in Admin → Server settings → Subtitles. */
+export interface SubtitleProviderInfo {
+  id: string;
+  name: string;
+  /** Built in (OpenSubtitles, Subs.ro) or registered by a plugin. */
+  builtin: boolean;
+  /** Has the credentials it needs. */
+  configured: boolean;
+  enabled: boolean;
+}
+
+/** External tools the subtitle pipeline can use (found on PATH). */
+export interface SubtitleToolsReport {
+  alass: string | null;
+  unrar: string | null;
+  sevenZip: string | null;
+}
+
+export interface SubtitleSettings {
+  /** Providers in priority order (earlier wins ties). Providers missing here are appended in default order. */
+  providers: { id: string; enabled: boolean }[];
+  subsRo: {
+    apiKey: string | null;
+    /** REST base URL (default https://api.subs.ro/v1.0). */
+    baseUrl: string;
+  };
+  /** Languages to fetch automatically for new media (ISO 639-1, e.g. ["ro", "en"]); empty = off. */
+  languages: string[];
+  /** Re-time downloaded subtitles against the video with alass when it is installed. */
+  sync: boolean;
+  /** Minimum release-match score (0-100) for the automatic "Download missing subtitles" task. */
+  minScore: number;
+  /** Where downloads go: the server's data folder (works with read-only libraries) or a sidecar next to the video. */
+  saveMode: 'data' | 'sidecar';
+}
+
+export interface ServerSettings {
+  subtitles?: SubtitleSettings;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1882,7 +2110,7 @@ export interface LastfmStatus {
 }
 
 export interface LastfmAuthStart {
-  /** Open this in a browser to approve MediaMax; then poll GET /lastfm until connected. */
+  /** Open this in a browser to approve Kinora; then poll GET /lastfm until connected. */
   authUrl: string;
 }
 
@@ -2157,13 +2385,13 @@ export interface PluginManifest {
   homepage?: string;
   /** Entry module (ES module) relative to the plugin folder; exports `activate(ctx)`. */
   main: string;
-  /** Minimum MediaMax server version (semver). */
+  /** Minimum Kinora server version (semver). */
   minServerVersion?: string;
   settings?: PluginSetting[];
   /** HTML page (relative path) shown inside the admin dashboard. */
   adminPage?: string;
   /** Capabilities the plugin declares, shown to the admin before install. */
-  capabilities?: ('routes' | 'events' | 'tasks' | 'metadata' | 'adminPage' | 'network')[];
+  capabilities?: ('routes' | 'events' | 'tasks' | 'metadata' | 'subtitles' | 'adminPage' | 'network')[];
 }
 
 export type PluginStatus = 'active' | 'disabled' | 'error' | 'incompatible';
@@ -2609,7 +2837,7 @@ export interface SecurityDashboardSettings {
   /** Public host name to check the HTTPS certificate of. */
   publicHost: string | null;
   crowdsec: { url: string | null; machineId: string | null; password: string | null };
-  /** fail2ban control socket, normally the MediaMax bridge's socket. */
+  /** fail2ban control socket, normally the Kinora bridge's socket. */
   fail2banSocket: string | null;
 }
 
@@ -2672,9 +2900,9 @@ export interface SecurityBanRequest {
 
 export interface NetworkSettings {
   /**
-   * direct  = clients connect straight to MediaMax (LAN, VPN, or port forward to 8484);
+   * direct  = clients connect straight to Kinora (LAN, VPN, or port forward to 8484);
    * proxy   = behind your own reverse proxy (Nginx, Traefik, Caddy, NPM, Cloudflare Tunnel…);
-   * builtin = MediaMax runs Caddy itself for automatic HTTPS (Let's Encrypt). Off unless chosen here.
+   * builtin = Kinora runs Caddy itself for automatic HTTPS (Let's Encrypt). Off unless chosen here.
    */
   mode: 'direct' | 'proxy' | 'builtin';
   /** Addresses/CIDRs whose X-Forwarded-For/-Proto headers are believed. Keywords: loopback, linklocal, uniquelocal. */
@@ -2695,7 +2923,7 @@ export interface NetworkStatus {
   settings: NetworkSettings;
   /** MEDIAMAX_TRUSTED_PROXIES from the environment overrides the saved list when set. */
   envTrustedProxies: string[] | null;
-  /** How this very request reached MediaMax, to verify a proxy setup. */
+  /** How this very request reached Kinora, to verify a proxy setup. */
   you: { ip: string; socketAddress: string; forwardedFor: string | null; forwardedProto: string | null; proxyTrusted: boolean; protocol: string; host: string };
   publicUrl: string | null;
   builtin: {
@@ -2770,7 +2998,7 @@ export interface VideoRangeCapabilities {
 }
 
 export interface DeviceProfile {
-  /** HDR support. Omitted = legacy client: MediaMax keeps its old behaviour (no range-based decisions). */
+  /** HDR support. Omitted = legacy client: Kinora keeps its old behaviour (no range-based decisions). */
   videoRange?: VideoRangeCapabilities;
   maxHeight?: number | null;
   /** Video codecs the client decodes at 10-bit, e.g. ["hevc","av1","vp9"]. */
@@ -3162,7 +3390,7 @@ export interface AppNotification {
 /* Home Assistant / smart home                                         */
 /* ------------------------------------------------------------------ */
 
-/** Payload shape a webhook sends: MediaMax's own (default) or a flat one made for Home Assistant's webhook trigger. */
+/** Payload shape a webhook sends: Kinora's own (default) or a flat one made for Home Assistant's webhook trigger. */
 export type WebhookFormat = 'mediamax' | 'home-assistant';
 
 export interface Webhook {
@@ -3183,7 +3411,7 @@ export interface HomeAssistantMqttSettings {
   tls: boolean;
   /** Accept self-signed broker certificates. */
   tlsInsecure: boolean;
-  /** Root of MediaMax's own topics (default "mediamax"). */
+  /** Root of Kinora's own topics (default "mediamax"). */
   baseTopic: string;
   /** Home Assistant discovery prefix (default "homeassistant"). */
   discoveryPrefix: string;
@@ -3347,7 +3575,7 @@ export interface StorageStatus {
 
 export type RendererKind = 'dlna' | 'sonos' | 'kodi';
 
-/** A device on the local network MediaMax can send media to. */
+/** A device on the local network Kinora can send media to. */
 export interface Renderer {
   /** Stable id (derived from the device UDN or the manual entry). */
   id: string;
@@ -3364,7 +3592,7 @@ export interface Renderer {
   manual: boolean;
   online: boolean;
   lastSeenAt: string | null;
-  /** What it's playing for MediaMax right now, if anything. */
+  /** What it's playing for Kinora right now, if anything. */
   nowPlaying: { title: string; userName: string; state: RendererPlayState } | null;
 }
 
@@ -3387,7 +3615,7 @@ export interface RendererState {
   /** 0–100, null when the device doesn't report it. */
   volume: number | null;
   muted: boolean;
-  /** direct = original file; transcode = MediaMax converts it for the device. */
+  /** direct = original file; transcode = Kinora converts it for the device. */
   method: 'direct' | 'transcode' | null;
   /** Queue position for albums / playlists (1-based), null for a single item. */
   queue: { index: number; total: number } | null;
@@ -4164,7 +4392,7 @@ export interface Lyrics {
   userOffsetMs?: number;
   /** May save edits (administrators). */
   canEdit?: boolean;
-  /** When these lyrics were last edited in MediaMax (source 'user'). */
+  /** When these lyrics were last edited in Kinora (source 'user'). */
   editedAt?: string | null;
 }
 
@@ -4238,7 +4466,7 @@ export interface StemsStatus {
   /** onnxruntime-web's browser files are on the server (served same-origin to the browser worker). */
   ort: boolean;
   ortVersion: string | null;
-  /** onnxruntime-web is downloaded on first use (not installed with MediaMax); progress of that download. */
+  /** onnxruntime-web is downloaded on first use (not installed with Kinora); progress of that download. */
   ortDownload?: { state: 'idle' | 'downloading' | 'ready' | 'error'; received: number; total: number; error: string | null; version: string };
   format: 'flac' | 'wav';
   sampleRate: number;
@@ -4258,4 +4486,830 @@ export interface TrackStems {
   frames?: number;
   sampleRate?: number;
   at?: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Import from another server (Admin → Import from another server: Emby / Jellyfin / Plex) */
+/* ------------------------------------------------------------------ */
+
+export type ImportSource = 'emby' | 'jellyfin' | 'plex';
+
+/** Rewrites a source server's file path prefix to where Kinora sees the same files, e.g. `D:\Movies` → `/mnt/d/Movies`. */
+export interface ImportPathMapping {
+  from: string;
+  to: string;
+}
+
+/**
+ * GET/PUT /admin/import/:source/config. `apiKey` is the Emby/Jellyfin API key or the Plex token (`X-Plex-Token`);
+ * it is write-only: reads return "••••" when one is stored.
+ */
+export interface ImportConfig {
+  url: string;
+  apiKey: string;
+  pathMappings: ImportPathMapping[];
+}
+
+export interface ImportOptions {
+  /** Source user ids to import; null/absent = every user. */
+  userIds?: string[] | null;
+  /** Overwrite the permissions of accounts that already exist (matched by an earlier import or by username). */
+  updateExisting?: boolean;
+  /** Merge watch data into accounts that already exist (never downgrades anything). Default true. */
+  mergeExisting?: boolean;
+  /** Import users that are disabled on the source (they stay disabled). Default true. */
+  includeDisabled?: boolean;
+  importWatched?: boolean;
+  importResume?: boolean;
+  importFavorites?: boolean;
+  importPlaylists?: boolean;
+  importCollections?: boolean;
+  /** Play history rows (Plex history, the Jellyfin/Emby Playback Reporting plugin). Default true. */
+  importHistory?: boolean;
+  /** Days the set-password links stay valid (1-365, default 30). */
+  linkExpiryDays?: number;
+}
+
+export interface ImportMatchCount {
+  total: number;
+  matched: number;
+  /** How matched items were found. */
+  byProviderId: number;
+  byPath: number;
+  byTitle: number;
+}
+
+export interface ImportLibraryMapping {
+  /** The library's id on the source server. */
+  sourceId: string;
+  name: string;
+  locations: string[];
+  libraryId: string | null;
+  libraryName: string | null;
+  method: 'path' | 'name' | null;
+}
+
+export interface ImportPreviewUser {
+  sourceId: string;
+  /** Source login name, made safe for Kinora (see `renamedFrom`). */
+  username: string;
+  renamedFrom: string | null;
+  displayName: string;
+  isAdmin: boolean;
+  disabled: boolean;
+  hidden: boolean;
+  allowRemote: boolean;
+  allowLiveTv: boolean;
+  allowDownloads: boolean;
+  maxStreams: number | null;
+  maxContentRating: string | null;
+  /** Kinora library names this user will see; null = all libraries. */
+  libraries: string[] | null;
+  /** Source libraries the user may see that map to no Kinora library. */
+  unmappedFolders: string[];
+  lastActivity: string | null;
+  /** create: new account; update: existing account, permissions overwritten; merge: existing account, only watch data; skip. */
+  action: 'create' | 'update' | 'merge' | 'skip';
+  existingUserId: string | null;
+  watched: ImportMatchCount;
+  resume: ImportMatchCount;
+  favorites: ImportMatchCount;
+  playlists: number;
+  playlistItems: ImportMatchCount;
+  history: ImportMatchCount;
+  /** Mapping caveats (e.g. "Plex managed user: watched status from play history only"). */
+  notes: string[];
+}
+
+/** GET /admin/import/:source/preview: what an import would do, without changing anything. */
+export interface ImportPreview {
+  source: ImportSource;
+  /**
+   * Quick preview: totals come from count-only requests and no title is matched (`matched`/`by*` are 0). A full
+   * preview reads every title and reports how each would be matched.
+   */
+  quick: boolean;
+  server: { id: string | null; name: string; version: string };
+  libraries: ImportLibraryMapping[];
+  users: ImportPreviewUser[];
+  collections: number;
+  collectionItems: ImportMatchCount;
+  totals: {
+    users: number; create: number; update: number; merge: number; skip: number;
+    watched: ImportMatchCount; resume: ImportMatchCount; favorites: ImportMatchCount; history: ImportMatchCount;
+  };
+  /** A few unmatched titles, to help fix path mappings. */
+  unmatchedSamples: string[];
+  /** Source-wide caveats (e.g. "Playback Reporting plugin not found: play history skipped"). */
+  notes: string[];
+  /** Seconds the preview took. */
+  seconds: number;
+}
+
+export interface ImportUserResult {
+  sourceId: string;
+  username: string;
+  displayName: string;
+  userId: string | null;
+  status: 'created' | 'updated' | 'merged' | 'skipped' | 'error';
+  message: string | null;
+  /** One-time link where the user chooses their Kinora password (source password hashes can't be carried over). */
+  setPasswordUrl: string | null;
+  setPasswordExpiresAt: string | null;
+  watched: number;
+  resume: number;
+  favorites: number;
+  playlists: number;
+  /** Play history rows added. */
+  history: number;
+  unmatched: number;
+}
+
+export interface ImportJob {
+  id: string;
+  source: ImportSource;
+  status: 'running' | 'done' | 'error';
+  phase: string;
+  /** 0-100 */
+  progress: number;
+  startedAt: string;
+  finishedAt: string | null;
+  error: string | null;
+  options: ImportOptions;
+  results: ImportUserResult[];
+  collections: { created: number; updated: number; items: number };
+  notes: string[];
+}
+
+/** POST /admin/import/:source/test. */
+export interface ImportTestResult {
+  ok: boolean;
+  message: string;
+  serverName?: string;
+  version?: string;
+  users?: number;
+}
+
+/* Emby importer names (kept for older clients; same shapes). */
+export type EmbyPathMapping = ImportPathMapping;
+export type EmbyImportConfig = ImportConfig;
+export type EmbyImportOptions = ImportOptions;
+export type EmbyMatchCount = ImportMatchCount;
+export type EmbyLibraryMapping = ImportLibraryMapping;
+export type EmbyPreviewUser = ImportPreviewUser;
+export type EmbyImportPreview = ImportPreview;
+export type EmbyImportUserResult = ImportUserResult;
+export type EmbyImportJob = ImportJob;
+
+/** POST /auth/password-link/:token (public): choose a password and sign in. */
+export interface UsePasswordLinkRequest extends Partial<DeviceInfo> {
+  password: string;
+}
+
+/** GET /auth/password-link/:token (public). */
+export interface PasswordLinkPreview {
+  valid: boolean;
+  serverName: string;
+  username: string | null;
+  displayName: string | null;
+  message: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Phone ↔ TV pairing (QR), phone remote, second screen                */
+/* ------------------------------------------------------------------ */
+
+/** pending: waiting for the TV user to accept; paired: active; declined / revoked / expired: over. */
+export type PairStatus = 'pending' | 'paired' | 'declined' | 'revoked' | 'expired';
+
+/** TV side: what the QR code and the on-screen short code carry. */
+export interface PairStartResponse {
+  /** Short code to type on the phone (6 characters, no look-alike letters). */
+  code: string;
+  /** Long one-time secret carried by the QR code only. */
+  token: string;
+  expiresAt: string;
+  /** Path + query the QR code opens on this server (`/pair?c=…&t=…`); the TV prefixes its own origin. */
+  path: string;
+}
+
+export interface PairClaimRequest {
+  code?: string;
+  token?: string;
+}
+
+export interface PairClaimResponse {
+  status: PairStatus;
+  pairingId: string | null;
+  /** For a pending cross-user request: poll GET /pair/requests/:id or wait for `pair.updated`. */
+  requestId: string | null;
+  /** The TV's device id (the `targetDeviceId` for remote.key / remote.command). */
+  targetDeviceId: string;
+  targetName: string;
+  /** Display name of the TV's signed-in user. */
+  ownerName: string;
+  crossUser: boolean;
+}
+
+/** Shown on the TV when another user's phone asks to pair. */
+export interface PairRequest {
+  id: string;
+  fromUserName: string;
+  fromDeviceName: string;
+  expiresAt: string;
+}
+
+export interface Pairing {
+  id: string;
+  /** This side's role in the pairing. */
+  role: 'tv' | 'controller';
+  tvDeviceId: string;
+  tvDeviceName: string;
+  controllerDeviceId: string;
+  controllerDeviceName: string;
+  /** The other side's user (display name). */
+  otherUserName: string;
+  crossUser: boolean;
+  createdAt: string;
+  expiresAt: string;
+  online: boolean;
+}
+
+/** A TV the phone is paired with (pushed as `pair.targets`, also GET /pair/targets). */
+export interface PairedTarget {
+  pairingId: string;
+  /** Device id of the TV (send remote.key / remote.command to it). */
+  id: string;
+  deviceName: string;
+  platform: Platform;
+  ownerName: string;
+  crossUser: boolean;
+  online: boolean;
+  state: RemotePlayerState | null;
+}
+
+/** Second screen: everything about what the TV is playing, built as the TV's user (their access rules apply). */
+export interface SecondScreenInfo {
+  item: Item;
+  /** The show (for an episode). */
+  show: Item | null;
+  /** Episodes of the current season (for an episode), else empty. */
+  episodes: Item[];
+  next: Item | null;
+  trickplay: TrickplayInfo | null;
+}
+
+/** "What's this song?" */
+export interface SongMatch {
+  title: string;
+  artists: string[];
+  album: string | null;
+  /** Cover art (your library's album art when matched, else the Cover Art Archive). */
+  coverUrl: string | null;
+  recordingMbid: string | null;
+  score: number;
+  /** The same recording in your music library, if you have it. */
+  libraryTrack: { id: string; title: string; albumId: string | null; artistId: string | null; posterUrl: string | null } | null;
+}
+
+export interface SongIdResponse {
+  available: boolean;
+  /** Why identifying isn't possible (no AcoustID key, no Chromaprint, no local file). */
+  reason: string | null;
+  source: 'file' | 'microphone';
+  match: SongMatch | null;
+  /** Position (ms) of the snippet that was fingerprinted (file source). */
+  positionMs: number | null;
+  cached: boolean;
+}
+
+/* ------------------------------------------------------------------ */
+/* Wrapped story                                                       */
+/* ------------------------------------------------------------------ */
+
+export interface WrappedPerson {
+  name: string;
+  kind: Person['kind'];
+  imageUrl: string | null;
+  minutes: number;
+  titles: number;
+}
+
+export interface WrappedPersonality {
+  /** Stable id (for styling), e.g. 'night-owl'. */
+  id: string;
+  title: string;
+  description: string;
+  traits: string[];
+}
+
+export interface WrappedStory {
+  year: number | null;
+  displayName: string;
+  totalMinutes: number;
+  totalPlays: number;
+  activeDays: number;
+  moviesWatched: number;
+  episodesWatched: number;
+  tracksPlayed: number;
+  longestStreakDays: number;
+  /** Movies and shows together, by time. */
+  topTitles: StatsTopEntry[];
+  topGenres: { genre: string; minutes: number }[];
+  /** Actors and directors of what you watched, by time. */
+  topPeople: WrappedPerson[];
+  /** Most episodes of one show in a single day. */
+  binge: { showId: string | null; title: string; posterUrl: string | null; episodes: number; minutes: number; date: string } | null;
+  /** Biggest single day overall. */
+  biggestDay: { date: string; minutes: number } | null;
+  personality: WrappedPersonality;
+  /** Minutes per day: 12 arrays (Jan..Dec) with one number per day of that month (year view; empty for all time). */
+  heatmap: number[][];
+  minutesByMonth: number[];
+  topArtists: StatsTopEntry[];
+  topTracks: StatsTopEntry[];
+  musicMinutes: number;
+  /** Hour of day (0-23) with the most minutes, null when nothing played. */
+  peakHour: number | null;
+}
+
+/* ------------------------- Help us decide ------------------------- */
+/* Movie Match (group swipe), Roulette ("Can't decide? Spin") and Random marathon. */
+
+export type MatchContentKind = 'movies' | 'shows' | 'both';
+export type MatchVote = 'yes' | 'no' | 'super';
+/** 'all': every current member said yes. 'majority': more than half said yes (a super like counts twice). */
+export type MatchRule = 'all' | 'majority';
+
+export interface MatchSettings {
+  kind: MatchContentKind;
+  /** Empty = every library the group can see. */
+  libraryIds: string[];
+  genres: string[];
+  /** Minutes; null = any length. */
+  maxRuntimeMin: number | null;
+  /** Skip anything any member has already watched. */
+  unwatchedByAll: boolean;
+  rule: MatchRule;
+}
+
+/** POST /match */
+export type CreateMatchRequest = Partial<MatchSettings>;
+
+export interface MatchMember {
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  isHost: boolean;
+  /** Has a live connection (WebSocket) right now. */
+  online: boolean;
+  /** Cards voted on. */
+  voted: number;
+  /** Voted on every card in the current deck. */
+  done: boolean;
+}
+
+export interface MatchResult {
+  itemId: string;
+  title: string;
+  year: number | null;
+  posterUrl: string | null;
+  backdropUrl: string | null;
+  yes: number;
+  superLikes: number;
+  no: number;
+  /** yes + 2 × super likes − no; results are ranked by this. */
+  enthusiasm: number;
+  matchedAt: string;
+}
+
+export interface MatchSessionState {
+  id: string;
+  code: string;
+  hostUserId: string;
+  /** The device that started the session ("Play on…" target), when it is still online. */
+  hostDeviceName: string | null;
+  hostDeviceOnline: boolean;
+  settings: MatchSettings;
+  members: MatchMember[];
+  deckSize: number;
+  matches: MatchResult[];
+  ended: boolean;
+  expiresAt: string;
+  /** For the viewer: the first card they have not voted on. */
+  myCursor: number;
+}
+
+/** GET /match/:id/deck */
+export interface MatchDeckResponse {
+  offset: number;
+  total: number;
+  cards: Item[];
+  /** The viewer's votes on these cards (by item id). */
+  myVotes: Record<string, MatchVote>;
+}
+
+export type MatchServerEvent =
+  | { type: 'match.state'; session: MatchSessionState }
+  /** "It's a match!" — every member gets it at the same moment. */
+  | { type: 'match.found'; sessionId: string; match: MatchResult }
+  | { type: 'match.ended'; sessionId: string; reason: 'host' | 'expired' };
+
+export type RouletteKind = 'movie' | 'series';
+export type RouletteMood = 'feel-good' | 'edge' | 'mind-bending' | 'laugh' | 'family' | 'short';
+
+export interface RouletteFilters {
+  kind: RouletteKind;
+  libraryIds?: string[];
+  genres?: string[];
+  /** Movies: runtime; series: typical episode length. Minutes. */
+  maxRuntimeMin?: number | null;
+  /** e.g. 1990 for the 1990s. */
+  decade?: number | null;
+  /** Community rating 0-10. */
+  minRating?: number | null;
+  unwatchedOnly?: boolean;
+  fromMyList?: boolean;
+  mood?: RouletteMood | null;
+  /** Favour higher-rated and recently added titles. */
+  weighted?: boolean;
+  /** Series: a random episode instead of next-up / S1E1 (sitcom-style). */
+  randomEpisode?: boolean;
+}
+
+/** POST /roulette/spin */
+export interface RouletteSpinRequest extends RouletteFilters {
+  /** "Not this one": excluded for this session. */
+  excludeIds?: string[];
+  /** Deterministic picks (tests, shareable spins). */
+  seed?: number;
+}
+
+export interface RouletteDecoy {
+  id: string;
+  title: string;
+  posterUrl: string | null;
+}
+
+export interface RouletteSpinResponse {
+  /** The movie or show picked; null when nothing matches. */
+  pick: Item | null;
+  /** Series: the episode to play (next up if started, else S1E1, or random). */
+  episode: Item | null;
+  /** Posters for the reel (never includes the pick). */
+  decoys: RouletteDecoy[];
+  /** How many titles matched the filters. */
+  poolSize: number;
+}
+
+/** Mood presets (also used by marathons). */
+export interface RouletteMoodPreset {
+  id: RouletteMood;
+  label: string;
+  genres: string[];
+}
+
+/** "Are you still watching?" for marathons and the sleep timer. */
+export interface StillWatchingSettings {
+  enabled: boolean;
+  /** Ask after this many titles in a row with no input. */
+  afterItems: number;
+  /** …or after this long with no input (minutes). */
+  afterMinutes: number;
+}
+
+/** POST /marathon */
+export interface CreateMarathonRequest extends RouletteFilters {
+  /** Series marathon of one show ("random episodes, forever"). */
+  showId?: string | null;
+  stillWatching?: Partial<StillWatchingSettings>;
+}
+
+/** POST /marathon/:id/next */
+export interface MarathonNextRequest {
+  /** The title that just finished (counted as played in this marathon). */
+  finishedItemId?: string | null;
+  /** Skipped by the viewer: excluded, not counted. */
+  skippedItemId?: string | null;
+  /** Milliseconds since the viewer last touched the remote / screen. */
+  msSinceInput?: number;
+  /** Titles finished in a row without any input. */
+  itemsSinceInput?: number;
+}
+
+export interface MarathonState {
+  id: string;
+  filters: RouletteFilters;
+  showId: string | null;
+  stillWatching: StillWatchingSettings;
+  played: string[];
+  startedAt: string;
+}
+
+export interface MarathonNextResponse {
+  marathon: MarathonState;
+  /** The next playable title (movie or episode); null when the pool is exhausted. */
+  item: Item | null;
+  /** Ask "Are you still watching?" before playing `item`. */
+  stillWatchingCheck: boolean;
+}
+
+/* ------------------------------------------------------------------ */
+/* AI (Admin → AI): one language model for every AI feature            */
+/* ------------------------------------------------------------------ */
+
+/** Features that may use the AI settings. Each can be switched off on its own. */
+export type AiFeature = 'dj' | 'ask' | 'recaps' | 'autoSubtitles';
+
+/** The language model shared by every AI feature (moved here from the AI DJ settings; same shape). */
+export type AiLlmSettings = AiDjSettings['llm'];
+
+export type WhisperModelSize = 'tiny' | 'base' | 'small' | 'medium';
+
+/** Automatic subtitles: speech-to-text (whisper.cpp or an OpenAI-compatible API) plus optional LLM translation. */
+export interface AutoSubtitleSettings {
+  /** 'whisper-cpp' = the whisper.cpp program on this server; 'api' = an OpenAI-compatible /audio/transcriptions endpoint. */
+  engine: 'whisper-cpp' | 'api';
+  /** whisper.cpp program (whisper-cli / main). null = the one downloaded from Admin → AI, else PATH. */
+  whisperPath: string | null;
+  /** ggml model size (downloaded on request into the data folder). */
+  model: WhisperModelSize;
+  /** A ggml model file of your own; overrides `model`. */
+  modelPath: string | null;
+  /** CPU threads for whisper.cpp; 0 = half the cores (keeps the server responsive). */
+  threads: number;
+  /** OpenAI-compatible speech-to-text API (e.g. a self-hosted faster-whisper server). `apiKey` is write-only. */
+  apiUrl: string | null;
+  apiModel: string | null;
+  apiKey: string | null;
+  /** Languages to generate (ISO 639-1). Empty = the subtitle languages from Server settings → Subtitles. */
+  languages: string[];
+  /** Night window ("HH:MM", server local time). The task only starts jobs inside it; equal values = any time. */
+  windowStart: string;
+  windowEnd: string;
+  /** Translate with the language model when the film's spoken language differs from the wanted one. */
+  translate: boolean;
+  /** Libraries to cover (empty = every movie and TV library). */
+  libraryIds: string[];
+}
+
+export interface AiSettings {
+  llm: AiLlmSettings;
+  /** Per-feature switches. `dj` = the AI DJ may use the language model (the DJ itself is switched in its own settings). */
+  features: Record<AiFeature, boolean>;
+  autoSubtitles: AutoSubtitleSettings;
+  ask: {
+    /** Semantic matching over plots/taglines (built by the "Build search embeddings" task). */
+    embeddings: boolean;
+    /** 'local' = a small ONNX sentence model on this server (English); 'api' = the language-model server's embeddings endpoint. */
+    embeddingSource: 'local' | 'api';
+    /** Embedding model name for 'api' (e.g. "nomic-embed-text" on Ollama, "text-embedding-3-small"). */
+    embeddingModel: string | null;
+  };
+  recaps: {
+    /** Offer a recap when the last watched episode is at least this many days old (or a new season starts). */
+    minGapDays: number;
+    /** Episodes to recap (1-3). */
+    maxEpisodes: number;
+  };
+}
+
+export interface ServerSettings {
+  ai?: AiSettings;
+}
+
+/** GET /ai/status */
+export interface AiStatus {
+  llmConfigured: boolean;
+  features: Record<AiFeature, boolean>;
+  usage: { day: string; used: number; max: number };
+  embeddings: { enabled: boolean; source: 'local' | 'api'; ready: boolean; count: number; total: number; model: string | null; error: string | null };
+}
+
+export type AutoSubtitleJobStatus = 'queued' | 'running' | 'done' | 'error' | 'skipped';
+
+export interface AutoSubtitleJob {
+  id: string;
+  itemId: string;
+  mediaId: string;
+  title: string;
+  /** Wanted language (ISO 639-1). */
+  language: string;
+  status: AutoSubtitleJobStatus;
+  /** "extracting audio", "transcribing 3/12", "translating 40/900"… */
+  phase: string | null;
+  /** 0-100 */
+  progress: number;
+  etaSeconds: number | null;
+  /** Language whisper detected / was told (ISO 639-1). */
+  spokenLanguage: string | null;
+  translated: boolean;
+  cues: number | null;
+  error: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface WhisperEngineReport {
+  engine: AutoSubtitleSettings['engine'];
+  ready: boolean;
+  binary: string | null;
+  model: string | null;
+  modelPresent: boolean;
+  problems: string[];
+}
+
+/** GET /ai/subtitles */
+export interface AutoSubtitleStatus {
+  enabled: boolean;
+  engine: WhisperEngineReport;
+  inWindow: boolean;
+  running: AutoSubtitleJob | null;
+  queued: AutoSubtitleJob[];
+  recent: AutoSubtitleJob[];
+  download: { state: 'idle' | 'downloading' | 'ready' | 'error'; what: string | null; received: number; total: number; error: string | null };
+}
+
+/* ------------------------------ Ask ------------------------------ */
+
+/** Structured meaning of an "Ask" query. Every field is optional; the server validates and clamps. */
+export interface AskFilter {
+  types?: ('movie' | 'show')[];
+  /** Canonical genre names (English, as stored by TMDB). */
+  genres?: string[];
+  excludeGenres?: string[];
+  minRuntimeMin?: number;
+  maxRuntimeMin?: number;
+  yearFrom?: number;
+  yearTo?: number;
+  unwatched?: boolean;
+  watched?: boolean;
+  favorites?: boolean;
+  /** Community rating 0-10. */
+  minRating?: number;
+  /** Spoken language (ISO 639-1). */
+  language?: string;
+  people?: string[];
+  /** "like <title>": similar to a title in the library. */
+  likeTitle?: string;
+  /** "lighter", "darker": nudges the mood of a "like" search. */
+  tone?: 'lighter' | 'darker';
+  /** Free-text words matched against plots, taglines and titles (and semantically when embeddings are on). */
+  keywords?: string[];
+  /** Titles the query probably refers to (the language model's guesses); boosted when they are in the library. */
+  titles?: string[];
+  sort?: 'relevance' | 'rating' | 'newest' | 'oldest' | 'shortest' | 'longest' | 'random';
+}
+
+/** One "Understood as" chip. `key` names what to drop from the filter when the chip is removed. */
+export interface AskChip {
+  key: string;
+  label: string;
+}
+
+/** POST /ask. Send `filter` (an earlier response's filter, possibly with chips removed) to skip understanding. */
+export interface AskRequest {
+  q: string;
+  filter?: AskFilter;
+  /** Chip keys to drop from `filter` (the "x" on an "Understood as" chip). */
+  remove?: string[];
+  limit?: number;
+}
+
+export interface AskResponse {
+  query: string;
+  filter: AskFilter;
+  chips: AskChip[];
+  items: Item[];
+  /** Who understood the query. */
+  by: 'rules' | 'llm';
+  /** Semantic (embedding) matching contributed to the ranking. */
+  semantic: boolean;
+  likeItem: { id: string; title: string } | null;
+  tookMs: number;
+}
+
+/* ---------------------------- Recaps ---------------------------- */
+
+/** GET /items/:id/recap (an episode about to be played). */
+export interface RecapResponse {
+  available: boolean;
+  /** Why it is offered: a long break, or the first episode of a new season. */
+  reason: 'gap' | 'new-season' | null;
+  showTitle: string | null;
+  /** Episodes summarised: the last ones this user actually watched, oldest first. Never anything later. */
+  episodes: { id: string; title: string; season: number | null; episode: number | null; overview: string | null }[];
+  /** 3-5 sentence summary by the language model, or null. */
+  text: string | null;
+  /** Fallback (or companion) list: one tidy line per episode. */
+  bullets: string[];
+  by: 'llm' | 'list' | null;
+  /** The next episode's own "previously on" segment, when a recap marker exists. */
+  clip: { itemId: string; startMs: number; endMs: number } | null;
+  daysSinceLastWatched: number | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Instant play (POST /playback/:itemId/prepare)                       */
+/* ------------------------------------------------------------------ */
+
+/** Same body as POST /playback/:itemId, plus hints. Send it when the user is about to press Play. */
+export interface PlaybackPrepareRequest extends PlaybackRequest {
+  /** The client is on a metered / cellular connection or in data-saver mode: cache the decision, start no job. */
+  metered?: boolean;
+  /** What triggered the warm-up (diagnostics only). */
+  reason?: 'hover' | 'focus' | 'open' | 'next';
+}
+
+export interface PlaybackPrepareResult {
+  method: PlayMethod;
+  /** 'job': a remux / transcode is producing the first segments; 'decision': only the playback decision is cached. */
+  warm: 'job' | 'decision';
+  /** Why no job was started, when it could have been. */
+  reason?: 'metered' | 'preview' | 'remote_source' | 'stream_limit' | 'busy' | 'capacity' | null;
+  /** How long the warm state is kept unless Play is pressed (or prepare is sent again). */
+  expiresInMs: number;
+  /** Direct play: the stream URL (with token) so the client can preload its first bytes. */
+  preloadUrl?: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Smart downloads                                                     */
+/* ------------------------------------------------------------------ */
+
+/** A per-device, per-show download rule ("keep the next N unwatched episodes on this phone"). */
+export interface DownloadRule {
+  id: string;
+  showId: string;
+  showTitle: string;
+  posterUrl: string | null;
+  /** Client device id (DeviceInfo.deviceId) the rule belongs to. */
+  deviceId: string;
+  deviceName: string;
+  platform: Platform;
+  /** Keep this many next unwatched episodes downloaded (1, 3, 5 or 10). */
+  keepCount: number;
+  /** Delete watched episodes this many hours after they were watched; null = keep them. */
+  deleteWatchedAfterHours: number | null;
+  /** Only fetch on Wi-Fi / only while charging (enforced by the device). */
+  wifiOnly: boolean;
+  chargingOnly: boolean;
+  quality: DownloadQuality;
+  createdAt: string;
+  updatedAt: string;
+  /** Last time the device asked for its plan. */
+  lastSyncAt: string | null;
+  /** The rule belongs to the device making the request. */
+  current?: boolean;
+}
+
+export interface DownloadRuleInput {
+  keepCount: number;
+  deleteWatchedAfterHours?: number | null;
+  wifiOnly?: boolean;
+  chargingOnly?: boolean;
+  quality?: DownloadQuality;
+}
+
+/** POST /downloads/plan: the item ids this device has downloaded. */
+export interface DownloadPlanRequest {
+  have: string[];
+}
+
+export interface DownloadedItemState {
+  itemId: string;
+  played: boolean;
+  lastPlayedAt: string | null;
+  positionMs: number;
+  /** The item no longer exists or this user can no longer see it: delete the download. */
+  gone: boolean;
+}
+
+/** What this device should have: for each rule the next unwatched episodes, and the state of what it already has. */
+export interface DownloadPlan {
+  rules: DownloadRule[];
+  want: { ruleId: string; showId: string; items: Item[] }[];
+  have: DownloadedItemState[];
+  /** Downloads to delete now: episodes of a rule's show watched longer ago than the rule allows, or items that are gone. */
+  remove: { itemId: string; reason: 'watched' | 'gone' }[];
+  generatedAt: string;
+}
+
+/** Progress / watched changes made offline, replayed when the device is back online. */
+export interface OfflineSyncEntry {
+  itemId: string;
+  positionMs?: number;
+  durationMs?: number;
+  /** true = marked watched (or finished), false = marked unwatched. */
+  played?: boolean;
+  /** When the change was made on the device (ISO). Older than the server's last change = skipped. */
+  at: string;
+}
+
+export interface OfflineSyncResult {
+  applied: string[];
+  /** Changed on the server after the offline change: the server state wins and is returned in `state`. */
+  skipped: string[];
+  state: DownloadedItemState[];
 }

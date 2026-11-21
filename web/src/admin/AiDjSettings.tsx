@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { AiDjSettings } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { getToken } from '../api/client';
@@ -6,9 +7,9 @@ import { useToast } from '../state/toast';
 import { Field, Spinner, Switch } from '../components/ui';
 import { Icon } from '../components/Icon';
 
-type LlmPreset = { id: string; label: string; tag: 'free' | 'free tier' | 'cheap'; provider: AiDjSettings['llm']['provider']; url: string | null; model: string | null; key: boolean; note: string };
+export type LlmPreset = { id: string; label: string; tag: 'free' | 'free tier' | 'cheap'; provider: AiDjSettings['llm']['provider']; url: string | null; model: string | null; key: boolean; note: string };
 // Model names change over time; these are sensible starting points, editable below.
-const LLM_PRESETS: LlmPreset[] = [
+export const LLM_PRESETS: LlmPreset[] = [
   { id: 'none', label: 'Built-in (no AI model)', tag: 'free', provider: 'none', url: null, model: null, key: false, note: 'Understands moods, genres, decades, tempo and length with no setup. Host lines come from varied templates.' },
   { id: 'ollama', label: 'Ollama (on your server or PC)', tag: 'free', provider: 'ollama', url: 'http://localhost:11434', model: 'llama3.2:3b', key: false, note: 'Free and private. Install Ollama, run "ollama pull llama3.2:3b". A 3B model runs fine on a CPU for this.' },
   { id: 'lmstudio', label: 'LM Studio / llama.cpp / LocalAI', tag: 'free', provider: 'openai', url: 'http://localhost:1234/v1', model: 'local-model', key: false, note: 'Any self-hosted OpenAI-compatible server. Use the model name it shows.' },
@@ -77,33 +78,11 @@ export function AiDjSettingsPanel({ value, onChange }: { value: AiDjSettings; on
       </div>
 
       <h3 className="section-title">Understanding & chat</h3>
-      <div className="ai-presets" role="radiogroup" aria-label="Language model">
-        {LLM_PRESETS.map((p) => (
-          <button key={p.id} role="radio" aria-checked={llmPreset === p.id} className={`ai-preset ${llmPreset === p.id ? 'active' : ''}`}
-            onClick={() => setLlm({ provider: p.provider, url: p.url, model: p.model, apiKey: p.key ? v.llm.apiKey : null })}>
-            <strong>{p.label}</strong> {tag(p.tag)}
-          </button>
-        ))}
-      </div>
-      {curLlm && <p className="field-hint">{curLlm.note}</p>}
-      {v.llm.provider !== 'none' && (
-        <>
-          <div className="form-row">
-            <Field label="API URL"><input className="input mono" value={v.llm.url ?? ''} onChange={(e) => setLlm({ url: e.target.value || null })} /></Field>
-            <Field label="Model"><input className="input mono" value={v.llm.model ?? ''} onChange={(e) => setLlm({ model: e.target.value || null })} /></Field>
-          </div>
-          <div className="form-row">
-            <Field label="API key" hint="Only needed for hosted services. Stored on the server; never shown again.">
-              <input className="input mono" type="password" autoComplete="off" value={v.llm.apiKey ?? ''} placeholder={curLlm?.key ? 'Paste your key' : 'Not needed'} onChange={(e) => setLlm({ apiKey: e.target.value || null })} />
-            </Field>
-            <Field label="Daily limit (model calls)" hint="Keeps free tiers free. Over the limit the DJ quietly uses its built-in brain. 0 = no limit.">
-              <input className="input" type="number" min={0} value={v.llm.maxRequestsPerDay} onChange={(e) => setLlm({ maxRequestsPerDay: Math.max(0, Number(e.target.value) || 0) })} />
-            </Field>
-          </div>
-          <div><button className="btn" onClick={() => void test('llm')} disabled={!!testing}>{testing === 'llm' ? <Spinner size={16} /> : <Icon name="zap" size={16} />} Test the model (save first)</button></div>
-          {curLlm?.key && <p className="field-hint">Hosted services receive your mix requests plus song titles and artists — nothing else from your library.</p>}
-        </>
-      )}
+      <p className="field-hint">
+        The language model is now shared by every AI feature and set up in <Link to="/admin/ai">Admin → AI</Link>
+        {v.llm.provider !== 'none' ? <> (currently <strong>{v.llm.model ?? v.llm.provider}</strong>)</> : ' (none: the DJ uses its built-in understanding and template lines)'}.
+      </p>
+      {v.llm.provider !== 'none' && <div><button className="btn" onClick={() => void test('llm')} disabled={!!testing}>{testing === 'llm' ? <Spinner size={16} /> : <Icon name="zap" size={16} />} Test the model</button></div>}
 
       <h3 className="section-title">DJ voice</h3>
       <div className="ai-presets" role="radiogroup" aria-label="Voice">

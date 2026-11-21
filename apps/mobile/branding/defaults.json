@@ -1,0 +1,10 @@
+{
+  "_comment": "Stock Kinora build identity: the single source of truth for the app's name and store identifiers (permanent once published). app.config.ts reads it when no MEDIAMAX_BRAND / KINORA_BRAND is selected, and white-label brands (branding/<brand>/brand.json) fall back to it field by field. tvOS and Android TV builds (EXPO_TV=1) use the same ids, so phone, tablet and TV share one App Store record and one Play listing. `legacySchemes` stay registered so mediamax:// OIDC redirects and pairing links keep opening the app.",
+  "appName": "Kinora",
+  "slug": "kinora",
+  "scheme": "kinora",
+  "legacySchemes": ["mediamax"],
+  "bundleId": "uk.burdujeni82.kinora",
+  "androidPackage": "uk.burdujeni82.kinora",
+  "idPrefix": "uk.burdujeni82"
+}

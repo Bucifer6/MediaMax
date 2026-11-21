@@ -284,7 +284,7 @@ function GuideForm({ initial, liveSources, onCancel, onSaved }: { initial?: EpgS
             <div>
               <strong>Schedules Direct is a paid service</strong> (about $35 a year) with accurate listings for the US, Canada and many other countries — the same data Plex, Channels DVR and MythTV users rely on.
               Create an account at <a href="https://www.schedulesdirect.org" target="_blank" rel="noreferrer">schedulesdirect.org</a>, then add your lineups here by country and postcode.
-              MediaMax follows their rules: one login per day, md5 checks so unchanged listings are never downloaded twice, and no more than one refresh every 12 hours.
+              Kinora follows their rules: one login per day, md5 checks so unchanged listings are never downloaded twice, and no more than one refresh every 12 hours.
             </div>
           </div>
           <div className="form-row">
