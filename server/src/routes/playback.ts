@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { DownloadQuality, PlaybackRequest, ProgressReport } from '@mediamax/shared';
 import { db } from '../db.js';
-import { requireAdmin, requireUser, remoteAddr } from '../http.js';
+import { clientHints, requireAdmin, requireUser, remoteAddr } from '../http.js';
 import { assertRemoteAllowed, transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, subtitleVtt, touchSession } from '../services/playback.js';
 import { assertCanSee } from '../services/items.js';
 import { liveJobBySession } from '../services/livetv/livetv.js';
@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process';
 import { config } from '../config.js';
 import { safeFetch } from '../util/net.js';
 import { logActivity } from '../services/activity.js';
+import { events } from '../services/events.js';
 import { renditionRequest } from '../services/abr.js';
 import { doviMasterForJob } from '../services/dovi.js';
 import { serveSubtitle } from './streaming.js';
@@ -121,11 +122,11 @@ function convertedDownload(req: FastifyRequest, reply: FastifyReply, m: Record<s
 }
 
 export default async function playbackRoutes(app: FastifyInstance) {
-  app.post<{ Params: { itemId: string }; Body: PlaybackRequest }>('/playback/:itemId', async (req) => startPlayback(requireUser(req), req.params.itemId, req.body ?? {}, remoteAddr(req)));
+  app.post<{ Params: { itemId: string }; Body: PlaybackRequest }>('/playback/:itemId', async (req) => startPlayback(requireUser(req), req.params.itemId, req.body ?? {}, remoteAddr(req), clientHints(req)));
 
   app.post<{ Params: { sessionId: string }; Body: ProgressReport }>('/playback/sessions/:sessionId/progress', async (req) => {
     const b = req.body ?? ({} as ProgressReport);
-    return sessionProgress(requireUser(req), req.params.sessionId, Number(b.positionMs) || 0, b.state ?? 'playing', b.durationMs);
+    return sessionProgress(requireUser(req), req.params.sessionId, Number(b.positionMs) || 0, b.state ?? 'playing', b.durationMs, b.subtitleIndex);
   });
 
   app.delete<{ Params: { sessionId: string } }>('/playback/sessions/:sessionId', async (req) => {
@@ -148,6 +149,29 @@ export default async function playbackRoutes(app: FastifyInstance) {
     stopSession(req.params.id, req.query.reason || 'Stopped by the server administrator');
     logActivity('session.kill', `Stopped ${s.ctx.user.displayName}'s stream of ${s.title}`, { userId: a.user.id, userName: a.user.displayName, severity: 'warning' });
     return { ok: true };
+  });
+
+  /** Admin remote control of a stream, like Emby's dashboard: pause / resume, or show a message on the device. */
+  app.post<{ Params: { id: string }; Body: { action?: string; text?: string; header?: string; timeoutMs?: number } }>('/sessions/:id/command', async (req) => {
+    const a = requireAdmin(req);
+    const s = getSession(req.params.id);
+    if (!s) throw notFound('Session not found');
+    const b = req.body ?? {};
+    const action = String(b.action ?? '');
+    if (!['pause', 'play', 'togglePause', 'message'].includes(action)) throw badRequest('Unknown action');
+    const targets = events.clients().filter((c) => c.userId === s.ctx.user.id && c.deviceRowId === s.ctx.deviceRowId);
+    if (!targets.length) throw new HttpError(409, 'That device is not connected for remote control (it may be a TV app or renderer without a live connection).', 'device_offline');
+    if (action === 'message') {
+      const text = String(b.text ?? '').trim().slice(0, 500);
+      if (!text) throw badRequest('Message is empty');
+      const header = b.header ? String(b.header).trim().slice(0, 100) || null : null;
+      const timeoutMs = Math.min(60000, Math.max(3000, Number(b.timeoutMs) || 10000));
+      for (const t of targets) t.send({ type: 'session.message', from: a.user.displayName, header, text, timeoutMs });
+      logActivity('session.message', `Sent a message to ${s.ctx.user.displayName} on ${s.ctx.device.deviceName}: ${text}`, { userId: a.user.id, userName: a.user.displayName });
+    } else {
+      for (const t of targets) t.send({ type: 'remote.command', fromDeviceName: 'Server administrator', action: action as 'pause' | 'play' | 'togglePause' });
+    }
+    return { ok: true, delivered: targets.length };
   });
 
   /* ------------------------------ streams --------------------------- */

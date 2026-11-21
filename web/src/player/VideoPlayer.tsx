@@ -24,7 +24,7 @@ import { Img, Spinner } from '../components/ui';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { ChapterList } from './MiniPlayer';
 import { DEFAULT_PREFERENCES } from '../theme/defaults';
-import { isTypingTarget } from '../hooks';
+import { isTypingTarget, useServerEvent } from '../hooks';
 import { formatClock, languageName } from '../utils/format';
 import { isResumable } from '../utils/items';
 import { SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitleStyleOf } from './subtitleStyle';
@@ -174,6 +174,9 @@ export default function VideoPlayer() {
   const [controls, setControls] = useState(true);
   const [menu, setMenu] = useState<Menu>(null);
   const [subtitleIndex, setSubtitleIndex] = useState<number | null>(null);
+  // The admin dashboard shows which subtitle is on (text subtitles are rendered here, so only the player knows).
+  const subtitleIndexRef = useRef<number | null>(null);
+  subtitleIndexRef.current = subtitleIndex;
   const [burned, setBurned] = useState(false);
   const [audioIndex, setAudioIndex] = useState<number | undefined>(undefined);
   const [maxBitrate, setMaxBitrate] = useState<number | null>(prefs.maxBitrate);
@@ -296,7 +299,7 @@ export default function VideoPlayer() {
   const report = useCallback((state: 'playing' | 'paused' | 'stopped', keepalive = false) => {
     const sid = sessionRef.current;
     if (!sid) return;
-    api.playback.progress(sid, { positionMs: Math.round(currentMs()), durationMs: durationMs || undefined, state, sessionId: sid }, keepalive).catch(() => {});
+    api.playback.progress(sid, { positionMs: Math.round(currentMs()), durationMs: durationMs || undefined, state, sessionId: sid, subtitleIndex: subtitleIndexRef.current }, keepalive).catch(() => {});
   }, [currentMs, durationMs]);
 
   const endSession = useCallback((keepalive = false) => {
@@ -912,6 +915,17 @@ export default function VideoPlayer() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMs]);
+
+  // Pause / resume from the admin dashboard (or another of this user's devices).
+  useServerEvent((ev) => {
+    if (ev.type !== 'remote.command' || !videoRef.current) return;
+    const isPaused = castingRef.current ? castRef.current.remote.isPaused : videoRef.current.paused;
+    if (ev.action === 'togglePause' || (ev.action === 'pause' && !isPaused) || (ev.action === 'play' && isPaused)) togglePlay();
+  });
+  useEffect(() => {
+    if (sessionRef.current) report(videoRef.current?.paused ? 'paused' : 'playing');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtitleIndex]);
 
   const sync = useSyncPlay({
     itemId,

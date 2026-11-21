@@ -15,6 +15,8 @@ import { logActivity } from '../activity.js';
 import { homeHooks } from '../items.js';
 import { TranscodeJob } from '../transcoder.js';
 import { assertCanStartSession, registerSession, stopSession, type PlaySession } from '../playback.js';
+import { liveDetails, type ClientHints } from '../sessionDetails.js';
+import { isLocalAddress } from '../dlna.js';
 import type { AuthContext } from '../auth.js';
 import * as xt from './xtream.js';
 import { parseM3u, m3uCatchupUrl } from './m3u.js';
@@ -740,7 +742,7 @@ export function channelUserAgent(r: Row): string {
   return custom.userAgent || src?.user_agent || 'MediaMax/1.0';
 }
 
-export async function playChannel(ctx: AuthContext, channelId: string, req: LivePlayRequest & { deviceProfile?: { containers?: string[] } }, remoteAddr: string | null): Promise<PlaybackInfo> {
+export async function playChannel(ctx: AuthContext, channelId: string, req: LivePlayRequest & { deviceProfile?: { containers?: string[] } }, remoteAddr: string | null, hints?: ClientHints): Promise<PlaybackInfo> {
   const r = accessibleChannelRow(ctx.user, channelId);
   assertCanStartSession(ctx, remoteAddr, !!req.multiview && !req.catchupStart);
   const src = getSourceRow(r.source_id);
@@ -761,6 +763,9 @@ export async function playChannel(ctx: AuthContext, channelId: string, req: Live
     ctx, itemId: null, channelId, mediaId: null, title: channel.name, subtitle: catchup ? `Catch-up · ${catchup.start.toLocaleString()}` : now?.title ?? null,
     posterUrl: channel.logoUrl, durationMs: catchup ? catchup.durationMin * 60000 : null, remoteAddr, multiview: !!req.multiview && !catchup,
   };
+  const local = !!remoteAddr && isLocalAddress(remoteAddr);
+  const srcContainer = isUpstreamHls ? 'HLS' : 'MPEG-TS';
+  const det = (delivery: string, note?: string) => liveDetails(ctx.device.platform, ctx.device.appVersion, hints, local, { container: srcContainer, delivery, note });
   const info = (session: PlaySession, url: string, mimeType: string, isHls: boolean): PlaybackInfo => ({
     sessionId: session.id, itemId: null, channelId, method: 'live', url, mimeType, isHls, startMs: 0, streamStartMs: 0, durationMs: base.durationMs,
     audioStreams: [], subtitles: [], markers: [], nextItemId: null, title: channel.name, subtitle: base.subtitle, posterUrl: channel.logoUrl, backdropUrl: null,
@@ -770,17 +775,17 @@ export async function playChannel(ctx: AuthContext, channelId: string, req: Live
   if (tuners.isTunerType(src.type)) src.proxy_streams = 1;
   // 1) Provider HLS, not proxied: hand the URL straight to the client.
   if (!src.proxy_streams && isUpstreamHls) {
-    const s = registerSession({ ...base, method: 'live', job: null });
+    const s = registerSession({ ...base, method: 'live', job: null, details: det('Direct from provider') });
     return info(s, upstream, 'application/x-mpegURL', true);
   }
   // 2) MPEG-TS for clients that can play it (VLC/ExoPlayer/mpegts.js): proxy or direct.
   if (wantsTs && !isUpstreamHls) {
     if (!src.proxy_streams) {
-      const s = registerSession({ ...base, method: 'live', job: null });
+      const s = registerSession({ ...base, method: 'live', job: null, details: det('Direct from provider') });
       return info(s, upstream, 'video/mp2t', false);
     }
     checkConnectionLimit(src);
-    const s = registerSession({ ...base, method: 'live', job: null });
+    const s = registerSession({ ...base, method: 'live', job: null, details: det('MPEG-TS (proxied)', 'Restreamed through MediaMax') });
     const extra = catchup ? `&catchupStart=${encodeURIComponent(catchup.start.toISOString())}&duration=${catchup.durationMin}` : '';
     return info(s, `/api/v1/livetv/stream/${channelId}${q}&session=${s.id}${extra}`, 'video/mp2t', false);
   }
@@ -807,7 +812,7 @@ export async function playChannel(ctx: AuthContext, channelId: string, req: Live
   shared.refs++;
   const sh = shared;
   const s = registerSession({
-    ...base, method: 'live', job: null,
+    ...base, method: 'live', job: null, details: det('HLS (remux)', 'Remuxed to HLS, shared with other viewers of this channel'),
     onStop: () => {
       sh.refs--;
       if (sh.refs <= 0) {

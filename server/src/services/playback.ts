@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type {
-  ActiveSession, AudioComforts, AudioStream, DeviceProfile, MediaSource, PlayMethod, PlaybackInfo, PlaybackRequest, SubtitleStream, SubtitleTrack, Marker, User,
+  ActiveSession, SessionDetails, AudioComforts, AudioStream, DeviceProfile, MediaSource, PlayMethod, PlaybackInfo, PlaybackRequest, SubtitleStream, SubtitleTrack, Marker, User,
 } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { config } from '../config.js';
@@ -23,6 +23,7 @@ import { doviCodecStyle, doviMuxCapability, doviMuxSupported, doviSignal, type D
 import { refreshVideoRange } from './hdrBackfill.js';
 import { subtitleTrackList } from './subtitles.js';
 import { anyComfort, decisionInfo, masterAudioFor, normalizeComforts, planAudio, refreshAudioStreams, type AudioPlan } from './audio.js';
+import { mediaDetails, withJob, withSubtitle, type ClientHints } from './sessionDetails.js';
 import { bitrateCaps, buildLadder, createRenditionManager, pickStartRendition, streamingSettings, type RenditionManager } from './abr.js';
 
 const log = logger('playback');
@@ -55,6 +56,12 @@ export interface PlaySession {
   multiview?: boolean;
   /** Muted trailer preview (home hero / card hover): runs beside other playback, no history, scrobbles or webhooks. */
   preview?: boolean;
+  /** Dashboard breakdown decided at start (sessionDetails.ts); the encoder's live state is merged in when listing. */
+  details?: SessionDetails | null;
+  /** Subtitle streams of the playing file, to name the one the player reports. */
+  subs?: SubtitleStream[];
+  /** Audio output bitrate when the audio is encoded (kbps), for the stream's total output bitrate. */
+  audioOutKbps?: number | null;
 }
 
 const MAX_MULTIVIEW = 4;
@@ -79,6 +86,7 @@ function toActive(s: PlaySession): ActiveSession {
     itemId: s.itemId, channelId: s.channelId, title: s.title, subtitle: s.subtitle, posterUrl: s.posterUrl, method: s.method, state: s.state,
     positionMs: s.positionMs, durationMs: s.durationMs, startedAt: new Date(s.startedAt).toISOString(), remoteAddress: s.remoteAddr,
     transcodeInfo: s.job?.info && s.method !== 'direct' ? s.job.info : null,
+    details: s.details ? withJob(s.details, s.method !== 'direct' && s.method !== 'live' ? s.job?.info : null, s.audioOutKbps ?? null) : null,
   };
 }
 
@@ -160,11 +168,12 @@ export function stopSession(id: string, reason = 'stopped', notify = true) {
   broadcastSessions();
 }
 
-export function sessionProgress(ctx: AuthContext, id: string, positionMs: number, state: 'playing' | 'paused' | 'stopped', durationMs?: number) {
+export function sessionProgress(ctx: AuthContext, id: string, positionMs: number, state: 'playing' | 'paused' | 'stopped', durationMs?: number, subtitleIndex?: number | null) {
   const s = sessions.get(id);
   if (!s) return { ok: false };
   if (s.ctx.user.id !== ctx.user.id) throw forbidden();
   s.lastActivity = Date.now();
+  if (subtitleIndex !== undefined && s.details && s.subs) s.details = withSubtitle(s.details, s.subs, subtitleIndex == null ? null : Number(subtitleIndex));
   const prev = s.state;
   s.positionMs = Math.max(0, positionMs);
   if (state !== 'stopped') s.state = state;
@@ -361,7 +370,7 @@ export function subtitleTracks(ctx: AuthContext, mediaId: string, subs: Subtitle
   }));
 }
 
-export async function startPlayback(ctx: AuthContext, itemId: string, req: PlaybackRequest, remoteAddr: string | null): Promise<PlaybackInfo> {
+export async function startPlayback(ctx: AuthContext, itemId: string, req: PlaybackRequest, remoteAddr: string | null, hints?: ClientHints): Promise<PlaybackInfo> {
   assertCanSee(ctx.user, itemId);
   assertCanStartSession(ctx, remoteAddr);
   const item = getItem(ctx.user, itemId, true);
@@ -439,9 +448,18 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     ? `${item.grandparentTitle ?? ''} · S${item.parentIndex ?? 0}E${item.index ?? 0}`
     : item.type === 'track' ? [item.grandparentTitle, item.parentTitle].filter(Boolean).join(' — ') : item.year ? String(item.year) : null;
 
+  const adaptiveWanted = decision.method === 'transcode' && !!req.adaptive && streamingSettings().adaptive && !isAudioOnly && !preview && !!media.durationMs;
+  const details = mediaDetails({
+    platform: ctx.device.platform, appVersion: ctx.device.appVersion, hints, local: isLocal, media, isAudioOnly,
+    method: decision.method === 'live' ? 'direct' : decision.method, videoCopy: decision.videoCopy, audioCopy: decision.audioCopy,
+    audio, audioPlan: decision.audio ?? null, reasons: decision.reasons, adaptive: adaptiveWanted,
+    burnSub: effectiveBurn || null, rangeDelivery: decision.range?.delivery ?? null,
+  });
   const base = {
     ctx, itemId, channelId: null, mediaId: media.id, title: item.title, subtitle: subtitleText, posterUrl: item.posterUrl,
     durationMs: media.durationMs || item.durationMs, remoteAddr, positionMs: preview ? 0 : startMs, preview,
+    details, subs: rawSubs.map(({ index, codec, language, title, default: d, forced, external }) => ({ index, codec, language, title, default: d, forced, external })),
+    audioOutKbps: decision.audioCopy ? audio?.bitrate ?? null : decision.audio?.bitrateKbps ?? ((audio?.channels ?? 2) > 2 ? 384 : 192),
   };
   const input = mediaRow.path ?? mediaRow.remote_url;
   const inputArgs = mediaRow.remote_url ? remoteInputArgs(mediaRow) : [];
@@ -461,7 +479,7 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
   } else {
     const p = { ...DEFAULT_PROFILE, ...(req.deviceProfile ?? {}) };
     // Adaptive (multi-rendition) transcodes let the player climb to the hard cap; single-variant streams start at the measured fit.
-    const adaptive = decision.method === 'transcode' && !!req.adaptive && streamingSettings().adaptive && !isAudioOnly && !preview && !!media.durationMs;
+    const adaptive = adaptiveWanted;
     const maxBitrate = adaptive ? caps.capKbps : caps.decisionKbps;
     const target = Math.min(Number.isFinite(maxBitrate) ? maxBitrate : getSettings().transcoding.defaultBitrate, media.bitrate ? Math.max(media.bitrate, 1500) : Infinity, getSettings().transcoding.defaultBitrate * 4);
     const opts: TranscodeOptions = {
@@ -523,6 +541,7 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
       job.start(decision.method === 'transcode' && startMs > 0 ? Math.floor(startMs / 1000 / job.segmentSeconds) : 0);
     }
     job.onInfoChange = broadcastSessions;
+    if (!abr && session.details && decision.method === 'transcode') session.details.stream.delivery = 'HLS';
     if (decision.method === 'remux') {
       try {
         await job.waitForPlaylist();

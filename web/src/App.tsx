@@ -3,6 +3,7 @@ import type React from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from './state/app';
 import { ToastProvider } from './state/toast';
+import { ServerMessages } from './components/ServerMessages';
 import { ConfirmProvider, PageLoader } from './components/ui';
 import { MusicProvider } from './player/music';
 import { KaraokeProvider } from './player/karaoke';
@@ -184,6 +185,7 @@ function Gate() {
       </Routes>
       <ShortcutsHost />
       <WhatsNew />
+      <ServerMessages />
     </Suspense>
   );
 }

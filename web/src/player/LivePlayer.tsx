@@ -13,7 +13,7 @@ import { Icon } from '../components/Icon';
 import { Img, ProgressBar, Spinner } from '../components/ui';
 import { programProgress } from '../components/Cards';
 import { catchupLink } from '../components/ProgramModal';
-import { isTypingTarget, useNow } from '../hooks';
+import { isTypingTarget, useNow, useServerEvent } from '../hooks';
 import { formatClock, formatTime } from '../utils/format';
 import { subtitleStyleOf } from './subtitleStyle';
 import { SubtitleOverlay } from './subtitles/SubtitleOverlay';
@@ -359,6 +359,13 @@ export default function LivePlayer() {
     if (v.paused) void v.play();
     else v.pause();
   };
+
+  // Pause / resume from the admin dashboard (or another of this user's devices).
+  useServerEvent((ev) => {
+    if (ev.type !== 'remote.command' || !videoRef.current) return;
+    const isPaused = castingRef.current ? castRef.current.remote.isPaused : videoRef.current.paused;
+    if (ev.action === 'togglePause' || (ev.action === 'pause' && !isPaused) || (ev.action === 'play' && isPaused)) togglePlay();
+  });
 
   const hideTimer = useRef<number | null>(null);
   const poke = useCallback(() => {

@@ -93,6 +93,8 @@ export interface TranscodeInfo {
   audioCodecString?: string | null;
   /** Audio output and why, for the dashboard (see audio.ts planDetail). */
   audioDetail?: string | null;
+  /** Output frame height when encoding video. */
+  height?: number | null;
 }
 
 export type SegmentType = 'mpegts' | 'fmp4';
@@ -266,6 +268,7 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
     segmentType,
     info: {
       videoCodec: pipeline?.encoder ?? 'copy', audioCodec, bitrate: videoBitrate, hwAccel: hw, toneMap: pipeline?.toneMap ?? null, hwFallback: null,
+      height: pipeline ? h : null,
       // Audio decision details (only with an audio plan, so other callers see the same info as before).
       ...(o.audioPlan && o.hasVideo ? {
         audioCodecString: o.audioCopy && o.audioPlan.codec !== 'copy' ? null : o.audioPlan.codecString,

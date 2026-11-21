@@ -2,7 +2,7 @@ import { Readable } from 'node:stream';
 import type { FastifyInstance } from 'fastify';
 import type { ChannelQuery, CreateLiveSourceRequest, CreateRecordingRequest, CreateRecordingRuleRequest, LivePlayRequest, UpdateLiveSourceRequest } from '@mediamax/shared';
 import { db } from '../db.js';
-import { requireAdmin, requireUser, remoteAddr } from '../http.js';
+import { clientHints, requireAdmin, requireUser, remoteAddr } from '../http.js';
 import * as live from '../services/livetv/livetv.js';
 import * as dvr from '../services/dvr.js';
 import { assertRemoteAllowed, touchSession, getSession } from '../services/playback.js';
@@ -89,7 +89,7 @@ export default async function liveRoutes(app: FastifyInstance) {
     return live.guide(requireUser(req).user, { ...q, offset: toInt(q.offset, 0, 0), limit: toInt(q.limit, 300, 1, 1000) });
   });
 
-  app.post<{ Params: { id: string }; Body: LivePlayRequest & { deviceProfile?: { containers?: string[] } } }>('/livetv/channels/:id/play', async (req) => live.playChannel(requireUser(req), req.params.id, req.body ?? {}, remoteAddr(req)));
+  app.post<{ Params: { id: string }; Body: LivePlayRequest & { deviceProfile?: { containers?: string[] } } }>('/livetv/channels/:id/play', async (req) => live.playChannel(requireUser(req), req.params.id, req.body ?? {}, remoteAddr(req), clientHints(req)));
 
   /** Raw MPEG-TS restream through the server (hides provider credentials). */
   app.get<{ Params: { channelId: string }; Querystring: { session?: string; catchupStart?: string; duration?: string } }>('/livetv/stream/:channelId', async (req, reply) => {

@@ -659,6 +659,8 @@ export interface ProgressReport {
   durationMs?: number;
   state: 'playing' | 'paused' | 'stopped';
   sessionId?: string;
+  /** Subtitle stream the player is showing (null = off); undefined = not reported. Shown on the admin dashboard. */
+  subtitleIndex?: number | null;
 }
 
 export interface HomeRow {
@@ -795,6 +797,64 @@ export interface ActiveSession {
     toneMap?: string | null;
     /** Audio output, e.g. "E-AC-3 5.1 (TrueHD Atmos → E-AC-3 5.1: device can't play TrueHD)". */
     audioDetail?: string | null;
+    /** Output frame height when encoding video. */
+    height?: number | null;
+  } | null;
+  /** Emby-style breakdown of the stream for the admin dashboard (client, stream, video, audio, subtitles). */
+  details?: SessionDetails | null;
+}
+
+/** What happens to one part of a stream on its way to the client. */
+export type StreamAction = 'direct' | 'copy' | 'transcode' | 'burn-in' | 'external' | 'embedded' | 'live';
+
+export interface SessionDetails {
+  client: {
+    /** e.g. "MediaMax Web", "MediaMax for Android TV". */
+    app: string;
+    version: string | null;
+    /** e.g. "Chrome 131 on Windows" (from the User-Agent). */
+    browser: string | null;
+    /** e.g. "HTTP/1.1", "HTTP/2". */
+    protocol: string | null;
+    secure: boolean;
+    local: boolean;
+  };
+  stream: {
+    /** Source container, e.g. "MKV", "MPEG-TS". */
+    container: string | null;
+    /** Source bitrate, kbps. */
+    bitrate: number | null;
+    /** Delivery, e.g. "Direct Play", "HLS", "HLS (adaptive)". */
+    delivery: string;
+    /** Output bitrate (video + audio), kbps, when re-encoding. */
+    outputBitrate: number | null;
+    /** Why the server remuxes or transcodes, in plain words. */
+    reasons: string[];
+  };
+  video: {
+    /** e.g. "1080p H264", "4K HEVC". */
+    label: string;
+    codec: string | null;
+    width: number | null;
+    height: number | null;
+    /** e.g. "Dolby Vision 8.1", "HDR10". */
+    range: string | null;
+    frameRate: number | null;
+    action: StreamAction;
+    /** Extra lines under the action, e.g. "HDR → SDR tone-mapping (opencl)", "Hardware: QSV". */
+    notes: string[];
+  } | null;
+  audio: {
+    /** e.g. "English EAC3 5.1 (Default)". */
+    label: string;
+    action: StreamAction;
+    /** e.g. "AAC 5.1 (TrueHD → AAC: device can't play TrueHD)". */
+    output: string | null;
+  } | null;
+  subtitle: {
+    /** e.g. "Romanian SRT (External)". */
+    label: string;
+    action: StreamAction;
   } | null;
 }
 
@@ -1698,6 +1758,8 @@ export type ServerEvent =
   | { type: 'task.updated'; task: ScheduledTask }
   | { type: 'recording.updated'; recording: Recording }
   | { type: 'session.terminated'; sessionId: string; reason: string }
+  /** A message from the server administrator, shown over playback. */
+  | { type: 'session.message'; from: string; header: string | null; text: string; timeoutMs: number }
   | { type: 'syncplay.state'; room: SyncPlayRoom }
   | { type: 'syncplay.command'; room: string; action: 'play' | 'pause' | 'seek' | 'load'; positionMs: number; itemId?: string; at: number; by: string }
   | { type: 'error'; message: string }

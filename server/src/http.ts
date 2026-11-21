@@ -68,6 +68,13 @@ function guessDevice(ua: string): string {
 /** Client address as resolved by Fastify's trusted-proxy rules (never the raw, spoofable header). */
 export const remoteAddr = (req: FastifyRequest) => req.ip ?? null;
 
+/** What the dashboard shows about a client's connection: User-Agent, HTTP version and whether it came over HTTPS. */
+export const clientHints = (req: FastifyRequest) => ({
+  userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'].slice(0, 400) : null,
+  httpVersion: req.raw.httpVersion ?? null,
+  secure: req.protocol === 'https',
+});
+
 export function noCache(reply: FastifyReply) {
   reply.header('Cache-Control', 'no-store');
 }

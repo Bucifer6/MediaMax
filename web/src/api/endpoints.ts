@@ -227,6 +227,8 @@ export const api = {
       request<Ok>('DELETE', `/playback/sessions/${enc(sessionId)}`, { keepalive, silent401: true }),
     sessions: () => http.get<ActiveSession[]>('/sessions'),
     kill: (id: string, reason?: string) => http.del<Ok>(`/sessions/${enc(id)}`, { reason }),
+    command: (id: string, body: { action: 'pause' | 'play' | 'togglePause' | 'message'; text?: string; header?: string }) =>
+      http.post<Ok & { delivered: number }>(`/sessions/${enc(id)}/command`, body),
     downloadUrl: (itemId: string, quality: DownloadQuality = 'original') =>
       `/api/v1/stream/download/${enc(itemId)}${quality === 'original' ? '' : `?quality=${quality}`}`,
   },
