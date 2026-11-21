@@ -19,5 +19,5 @@ for (const name of fs.readdirSync(path.join(here, 'examples'))) {
   plugins.push({ id: m.id, name: m.name, description: m.description, author: m.author, homepage: m.homepage, versions: [{ version: m.version, url: `${base}/${file}`, sha256, minServerVersion: m.minServerVersion }] });
   console.log(`packed ${file} ${sha256.slice(0, 12)}…`);
 }
-fs.writeFileSync(path.join(out, 'repository.json'), JSON.stringify({ name: 'MediaMax example plugins', plugins }, null, 2));
+fs.writeFileSync(path.join(out, 'repository.json'), JSON.stringify({ name: 'Kinora example plugins', plugins }, null, 2));
 console.log(`wrote ${path.join(out, 'repository.json')}`);

@@ -2,7 +2,7 @@
 
 The in-app Help Centre (`/help` in the web app, **Settings → Help** in the phone and TV apps) is built from Markdown
 files in [`server/help`](../server/help). They ship with the server (Docker image: `server/help`; release archives:
-`help/` next to the binary; `MEDIAMAX_HELP_DIR` overrides the location) and are read and indexed once at startup.
+`help/` next to the binary; `KINORA_HELP_DIR` overrides the location) and are read and indexed once at startup.
 Restart the server after editing them.
 
 ## Layout

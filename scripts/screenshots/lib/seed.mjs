@@ -62,7 +62,7 @@ export function seedLogs(dataDir, now = Date.now()) {
 
 /** Setup, libraries, users, history, DJ analysis and Live TV. Returns ids and tokens the screenshots need. */
 export async function seedServer({ base, media, data, mockBase, avatars, log }) {
-  const setup = await (await fetch(`${base}/api/v1/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ serverName: 'MediaMax Demo', username: USERS.admin.username, password: USERS.admin.password }) })).json();
+  const setup = await (await fetch(`${base}/api/v1/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ serverName: 'Kinora Demo', username: USERS.admin.username, password: USERS.admin.password }) })).json();
   if (!setup.token) throw new Error('Setup failed: ' + JSON.stringify(setup));
   const admin = client(base, setup.token);
   await admin.patch('/auth/me', { displayName: USERS.admin.displayName, preferences: { autoplayPreviews: false } });
@@ -91,7 +91,7 @@ export async function seedServer({ base, media, data, mockBase, avatars, log }) 
   // Users
   const alexUser = await admin.post('/users', { username: USERS.alex.username, displayName: USERS.alex.displayName, password: USERS.alex.password });
   const kidsUser = await admin.post('/users', { username: USERS.kids.username, displayName: USERS.kids.displayName, password: USERS.kids.password, maxContentRating: USERS.kids.maxContentRating, allowLiveTv: true });
-  const login = async (u) => client(base, (await (await fetch(`${base}/api/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json', 'X-MediaMax-Device-Id': `demo-${u.username}`, 'X-MediaMax-Device-Name': u.username === 'kids' ? 'Living Room TV' : 'Alex iPad', 'X-MediaMax-Platform': u.username === 'kids' ? 'tv' : 'ios' }, body: JSON.stringify({ username: u.username, password: u.password }) })).json()).token);
+  const login = async (u) => client(base, (await (await fetch(`${base}/api/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Kinora-Device-Id': `demo-${u.username}`, 'X-Kinora-Device-Name': u.username === 'kids' ? 'Living Room TV' : 'Alex iPad', 'X-Kinora-Platform': u.username === 'kids' ? 'tv' : 'ios' }, body: JSON.stringify({ username: u.username, password: u.password }) })).json()).token);
   const alex = await login(USERS.alex);
   const kids = await login(USERS.kids);
   for (const [id, file] of [[setup.user.id, avatars.sam], [alexUser.id, avatars.alex], [kidsUser.id, avatars.kids]]) await admin.upload(`/users/${id}/avatar`, file).catch((e) => log('  avatar upload skipped: ' + e.message));

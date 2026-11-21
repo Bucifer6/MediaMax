@@ -1,6 +1,6 @@
-# Installing MediaMax
+# Installing Kinora
 
-MediaMax is one server program that serves the web app, the API and the streams on **port 8484**. Install it
+Kinora is one server program that serves the web app, the API and the streams on **port 8484**. Install it
 on the machine that holds (or can reach) your media, open `http://<that machine>:8484` in a browser and the
 setup wizard creates the first administrator.
 
@@ -14,7 +14,7 @@ setup wizard creates the first administrator.
 
 Downloads are on the [Releases page](https://github.com/Bucifer6/MediaMax/releases/latest). The Windows and
 Linux archives include FFmpeg; the Docker image includes FFmpeg with Intel/AMD GPU drivers. The image is
-`ghcr.io/bucifer6/mediamax` for both `linux/amd64` and `linux/arm64`, tagged `latest` and with each version
+`ghcr.io/bucifer6/kinora` for both `linux/amd64` and `linux/arm64`, tagged `latest` and with each version
 (for example `0.2.0`).
 
 Contents: [Docker](#docker) · [Windows](#windows) · [Linux](#linux) · [Synology](#synology) · [QNAP](#qnap) ·
@@ -26,21 +26,21 @@ Contents: [Docker](#docker) · [Windows](#windows) · [Linux](#linux) · [Synolo
 
 ## Docker
 
-> **Exposing MediaMax to the internet?** `deploy/install.sh` sets up all of this plus HTTPS (Caddy or Nginx),
+> **Exposing Kinora to the internet?** `deploy/install.sh` sets up all of this plus HTTPS (Caddy or Nginx),
 > CrowdSec or fail2ban and hardened defaults in one command; see **[DEPLOY.md](DEPLOY.md)**:
 > `curl -fsSL https://raw.githubusercontent.com/Bucifer6/MediaMax/main/deploy/install.sh | sudo bash`
 
 ```yaml
 # docker-compose.yml
 services:
-  mediamax:
-    image: ghcr.io/bucifer6/mediamax:latest
-    container_name: mediamax
+  kinora:
+    image: ghcr.io/bucifer6/kinora:latest
+    container_name: kinora
     restart: unless-stopped
     ports:
       - "8484:8484"
     environment:
-      - PUID=1000            # user and group MediaMax runs as (see below)
+      - PUID=1000            # user and group Kinora runs as (see below)
       - PGID=1000
       - TZ=Europe/London
     volumes:
@@ -62,22 +62,22 @@ docker compose up -d
 Or with plain Docker:
 
 ```bash
-docker run -d --name mediamax --restart unless-stopped -p 8484:8484 \
+docker run -d --name kinora --restart unless-stopped -p 8484:8484 \
   -e PUID=1000 -e PGID=1000 -e TZ=Europe/London \
-  -v /srv/mediamax/config:/config -v /srv/mediamax/recordings:/recordings \
+  -v /srv/kinora/config:/config -v /srv/kinora/recordings:/recordings \
   -v /srv/media:/media:ro \
-  ghcr.io/bucifer6/mediamax:latest
+  ghcr.io/bucifer6/kinora:latest
 ```
 
-When you add a library in MediaMax, use the path **inside** the container (`/media/movies`), not the host path.
+When you add a library in Kinora, use the path **inside** the container (`/media/movies`), not the host path.
 
-**PUID / PGID.** With both set, MediaMax runs as that user and group instead of root, so files it creates on
+**PUID / PGID.** With both set, Kinora runs as that user and group instead of root, so files it creates on
 your shares (database, artwork, DVR recordings) belong to you, and it reads media with that user's rights. Find
 the numbers with `id <username>` on the host. On start, the container gives `/config` to that user (once, when
 the owner differs) and the top folder of `/recordings` and `/transcode`; it never changes the owner of your
 media or existing recordings. It also joins the groups that own `/dev/dri` (and `/dev/nvidia0`) automatically, so
 hardware transcoding keeps working. Add more groups (for example a group that may read a share) with
-`MEDIAMAX_EXTRA_GIDS=1001,1002`. Leave both unset to run as root, as earlier images did. Docker's own
+`KINORA_EXTRA_GIDS=1001,1002`. Leave both unset to run as root, as earlier images did. Docker's own
 `user: "1000:1000"` also works; then `/config` must already be writable by that user.
 
 **DLNA.** Smart TVs find DLNA servers by multicast, which does not cross Docker's bridge network. If you want
@@ -89,10 +89,10 @@ DLNA, replace `ports:` with `network_mode: host`.
 docker compose pull && docker compose up -d
 ```
 
-To stay on a version, use a version tag (`ghcr.io/bucifer6/mediamax:0.2.0`) instead of `latest`.
+To stay on a version, use a version tag (`ghcr.io/bucifer6/kinora:0.2.0`) instead of `latest`.
 
 **Build it yourself** (also for arm64): `docker compose up -d --build` with the `docker-compose.yml` in the
-repository, or `docker buildx build --platform linux/amd64,linux/arm64 -t mediamax .`.
+repository, or `docker buildx build --platform linux/amd64,linux/arm64 -t kinora .`.
 
 ---
 
@@ -100,9 +100,9 @@ repository, or `docker buildx build --platform linux/amd64,linux/arm64 -t mediam
 
 Windows 10/11 or Server 2019+ (x64).
 
-1. Download `mediamax-<version>-windows-x64.zip` from [Releases](https://github.com/Bucifer6/MediaMax/releases/latest)
+1. Download `kinora-<version>-windows-x64.zip` from [Releases](https://github.com/Bucifer6/MediaMax/releases/latest)
    and extract it (right-click → Extract All).
-2. **Try it:** double-click `MediaMax.cmd`. It starts MediaMax in a minimised window and opens your browser.
+2. **Try it:** double-click `Kinora.cmd`. It starts Kinora in a minimised window and opens your browser.
    SmartScreen may warn about an unrecognised app the first time: **More info → Run anyway**.
 3. **Run at boot** (recommended for a home server): open PowerShell **as Administrator** in the extracted folder and run
 
@@ -110,9 +110,9 @@ Windows 10/11 or Server 2019+ (x64).
    powershell -ExecutionPolicy Bypass -File .\install-service.ps1
    ```
 
-   This copies MediaMax to `C:\Program Files\MediaMax` (a folder only administrators can change), registers a
-   **MediaMax** task in Task Scheduler that starts at boot as SYSTEM without anyone signing in, opens TCP 8484 (and
-   UDP 1900 for DLNA) in Windows Firewall for Private/Domain networks, and starts it. If MediaMax ever exits,
+   This copies Kinora to `C:\Program Files\Kinora` (a folder only administrators can change), registers a
+   **Kinora** task in Task Scheduler that starts at boot as SYSTEM without anyone signing in, opens TCP 8484 (and
+   UDP 1900 for DLNA) in Windows Firewall for Private/Domain networks, and starts it. If Kinora ever exits,
    the task starts it again within 5 minutes. Options: `-Port 9000`, `-AllNetworkProfiles` (also open the
    firewall on networks Windows calls Public).
 
@@ -121,17 +121,17 @@ Windows 10/11 or Server 2019+ (x64).
 
    | | |
    |---|---|
-   | Stop | `Disable-ScheduledTask MediaMax; Stop-ScheduledTask MediaMax` |
-   | Start | `Enable-ScheduledTask MediaMax; Start-ScheduledTask MediaMax` |
+   | Stop | `Disable-ScheduledTask Kinora; Stop-ScheduledTask Kinora` |
+   | Start | `Enable-ScheduledTask Kinora; Start-ScheduledTask Kinora` |
    | Uninstall | `.\install-service.ps1 -Uninstall` (keeps your data; add `-RemoveData` to delete it) |
 
-**Network shares.** Running as SYSTEM, MediaMax can't see drive letters a user mapped. Add NAS folders as UNC
+**Network shares.** Running as SYSTEM, Kinora can't see drive letters a user mapped. Add NAS folders as UNC
 paths (`\\nas\media\movies`); the share must allow this computer's account (`DOMAIN\PCNAME$`) or guests to read.
 
 **Upgrade.** Back up (Admin → Backups), extract the new zip and run `install-service.ps1` from it again: it
-stops MediaMax, replaces the program files and starts it. Without the task, close MediaMax and replace the files.
+stops Kinora, replaces the program files and starts it. Without the task, close Kinora and replace the files.
 
-**Data:** `C:\ProgramData\MediaMax` (`%ProgramData%\MediaMax`), whether started by hand or by the task.
+**Data:** `C:\ProgramData\Kinora` (`%ProgramData%\Kinora`), whether started by hand or by the task.
 
 ---
 
@@ -141,40 +141,40 @@ For x64 and arm64 Linux with glibc 2.28 or newer (Debian 10+, Ubuntu 20.04+, RHE
 64-bit). Nothing else to install: Node.js and FFmpeg are in the archive.
 
 ```bash
-tar -xzf mediamax-<version>-linux-x64.tar.gz      # or -linux-arm64
-cd mediamax-<version>-linux-x64
-./mediamax                                         # try it; Ctrl+C stops it
+tar -xzf kinora-<version>-linux-x64.tar.gz      # or -linux-arm64
+cd kinora-<version>-linux-x64
+./kinora                                         # try it; Ctrl+C stops it
 ```
 
-Run on its own like this, data goes to `~/.local/share/mediamax`.
+Run on its own like this, data goes to `~/.local/share/kinora`.
 
 **Run at boot with systemd:**
 
 ```bash
-sudo mkdir -p /opt/mediamax && sudo cp -r ./* /opt/mediamax/
-sudo useradd --system --home-dir /var/lib/mediamax --shell /usr/sbin/nologin mediamax
-sudo cp /opt/mediamax/mediamax.service /etc/systemd/system/
+sudo mkdir -p /opt/kinora && sudo cp -r ./* /opt/kinora/
+sudo useradd --system --home-dir /var/lib/kinora --shell /usr/sbin/nologin kinora
+sudo cp /opt/kinora/kinora.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now mediamax
+sudo systemctl enable --now kinora
 ```
 
-The service runs as the dedicated `mediamax` user, keeps its data in `/var/lib/mediamax` (systemd creates it
-with `StateDirectory=mediamax`) and restarts on failure. Then:
+The service runs as the dedicated `kinora` user, keeps its data in `/var/lib/kinora` (systemd creates it
+with `StateDirectory=kinora`) and restarts on failure. Then:
 
-- the `mediamax` user needs read access to your media (for example `sudo setfacl -R -m u:mediamax:rX /srv/media`,
+- the `kinora` user needs read access to your media (for example `sudo setfacl -R -m u:kinora:rX /srv/media`,
   or add it to the group that owns the files);
-- hardware transcoding: `sudo usermod -aG render,video mediamax && sudo systemctl restart mediamax`;
-- logs: `journalctl -u mediamax -f`;
-- other settings: `sudo systemctl edit mediamax` and add `Environment=MEDIAMAX_PORT=9000` under `[Service]`;
+- hardware transcoding: `sudo usermod -aG render,video kinora && sudo systemctl restart kinora`;
+- logs: `journalctl -u kinora -f`;
+- other settings: `sudo systemctl edit kinora` and add `Environment=KINORA_PORT=9000` under `[Service]`;
 - firewall: `sudo ufw allow 8484/tcp` (or `firewall-cmd --add-port=8484/tcp --permanent && firewall-cmd --reload`).
 
 **Upgrade:**
 
 ```bash
-sudo systemctl stop mediamax
-sudo rm -rf /opt/mediamax/web
-sudo cp -r ./* /opt/mediamax/       # from the new, extracted archive
-sudo systemctl start mediamax
+sudo systemctl stop kinora
+sudo rm -rf /opt/kinora/web
+sudo cp -r ./* /opt/kinora/       # from the new, extracted archive
+sudo systemctl start kinora
 ```
 
 **From source** (any OS with Node.js 22.5+ and FFmpeg on the PATH): `npm install && npm run build && npm start`.
@@ -193,11 +193,11 @@ read-only, and add libraries using the container paths (`/media/...`).
 DSM 7.2 or newer with **Container Manager** (Package Center). Works on Intel and AMD "+" models and arm64
 models that offer Container Manager. Template: [`nas/synology/docker-compose.yml`](../nas/synology/docker-compose.yml).
 
-1. In **File Station**, create `docker/mediamax` on `volume1` with the subfolders `config`, `transcode` and `recordings`.
+1. In **File Station**, create `docker/kinora` on `volume1` with the subfolders `config`, `transcode` and `recordings`.
 2. Find your user's ids: **Control Panel → Terminal & SNMP → Enable SSH**, then `ssh you@nas` and `id you`.
    The first DSM user is usually `uid=1026`, group `users` is `100`. Use them as `PUID`/`PGID`. The user needs
    read permission on your media shared folders (Control Panel → Shared Folder → Edit → Permissions).
-3. **Container Manager → Project → Create**: name `mediamax`, path `/volume1/docker/mediamax`, source
+3. **Container Manager → Project → Create**: name `kinora`, path `/volume1/docker/kinora`, source
    **Create docker-compose.yml**, and paste the template. Change the `/volume1/...` media paths to your shared
    folders (for example `/volume1/video/Movies:/media/movies:ro`).
 4. **Next → Done.** Container Manager pulls the image and starts it. Open `http://<nas>:8484`.
@@ -213,32 +213,32 @@ Firewall: if the DSM firewall is on, allow TCP 8484. Reverse proxy / HTTPS: **Co
 Advanced → Reverse Proxy** to `localhost:8484` (enable WebSocket headers under Custom Header), and set **Public
 URL** in Admin → Settings.
 
-Upgrade: **Container Manager → Project → mediamax → Action → Stop**, then **Image → ghcr.io/bucifer6/mediamax →
+Upgrade: **Container Manager → Project → kinora → Action → Stop**, then **Image → ghcr.io/bucifer6/kinora →
 Update** (or **Action → Build** on the project, which pulls `latest` again), then **Start**.
 
 ### QNAP
 
 QTS 5 / QuTS hero with **Container Station 3**. Template: [`nas/qnap/docker-compose.yml`](../nas/qnap/docker-compose.yml).
 
-1. In **File Station**, create `Container/mediamax` with `config`, `transcode` and `recordings`.
+1. In **File Station**, create `Container/kinora` with `config`, `transcode` and `recordings`.
 2. Find your ids over SSH: `id <username>` (users usually start at `1000`; the `everyone` group is `100`).
-3. **Container Station → Applications → Create**, name `mediamax`, paste the template, adjust the
+3. **Container Station → Applications → Create**, name `kinora`, paste the template, adjust the
    `/share/...` paths, **Validate**, then **Create**.
 4. Open `http://<nas>:8484`.
 
 Hardware transcoding on Intel models: uncomment `devices: - /dev/dri:/dev/dri`. Upgrade: **Applications →
-mediamax → ⋮ → Recreate** with "pull latest image" ticked (or edit the YAML to a new version tag).
+kinora → ⋮ → Recreate** with "pull latest image" ticked (or edit the YAML to a new version tag).
 
 ### Unraid
 
-Template: [`nas/unraid/mediamax.xml`](../nas/unraid/mediamax.xml) (Community Applications format).
+Template: [`nas/unraid/kinora.xml`](../nas/unraid/kinora.xml) (Community Applications format).
 
-1. Until MediaMax is listed in **Apps**, copy the template to the flash drive as
-   `/boot/config/plugins/dockerMan/templates-user/my-MediaMax.xml` (for example with
-   `wget -O /boot/config/plugins/dockerMan/templates-user/my-MediaMax.xml https://raw.githubusercontent.com/Bucifer6/MediaMax/main/nas/unraid/mediamax.xml`).
-2. **Docker → Add Container → Template: MediaMax**.
-3. Check the paths: `/config` → `/mnt/user/appdata/mediamax` (cache pool), `/media` → your media share,
-   `/recordings`, and `/transcode` → `/tmp/mediamax` (RAM). `PUID 99` / `PGID 100` (nobody/users) match Unraid's
+1. Until Kinora is listed in **Apps**, copy the template to the flash drive as
+   `/boot/config/plugins/dockerMan/templates-user/my-Kinora.xml` (for example with
+   `wget -O /boot/config/plugins/dockerMan/templates-user/my-Kinora.xml https://raw.githubusercontent.com/Bucifer6/MediaMax/main/nas/unraid/kinora.xml`).
+2. **Docker → Add Container → Template: Kinora**.
+3. Check the paths: `/config` → `/mnt/user/appdata/kinora` (cache pool), `/media` → your media share,
+   `/recordings`, and `/transcode` → `/tmp/kinora` (RAM). `PUID 99` / `PGID 100` (nobody/users) match Unraid's
    share permissions.
 4. **Apply**, then **WebUI**.
 
@@ -252,16 +252,16 @@ Hardware transcoding: install **Intel GPU TOP** (Intel) or **Radeon TOP** (AMD) 
 TrueNAS SCALE 24.10 (Electric Eel) or newer, which runs apps on Docker. Template:
 [`nas/truenas/docker-compose.yml`](../nas/truenas/docker-compose.yml).
 
-1. **Datasets**: create `apps/mediamax` (preset **Apps**) with child datasets `config` and `recordings`.
+1. **Datasets**: create `apps/kinora` (preset **Apps**) with child datasets `config` and `recordings`.
 2. Ids: the template uses `568:568`, TrueNAS's built-in **apps** user. Give it read access to your media
    datasets (**Datasets → media → Permissions → Edit → Add item: User apps, Read**), or use your own user's ids.
-3. **Apps → Discover Apps → ⋮ → Install via YAML**, name `mediamax`, paste the template with your pool name
+3. **Apps → Discover Apps → ⋮ → Install via YAML**, name `kinora`, paste the template with your pool name
    instead of `tank`, **Save**.
 4. Open `http://<truenas>:8484`.
 
 GPU: Intel/AMD, uncomment `/dev/dri`. NVIDIA: **Apps → Configuration → Settings → Install NVIDIA Drivers**,
-then uncomment the `deploy:` block. Upgrade: **Apps → mediamax → Update** when offered, or **Edit** and pull.
-On TrueNAS SCALE 24.04 and older (Kubernetes apps), use **Custom App** with image `ghcr.io/bucifer6/mediamax`,
+then uncomment the `deploy:` block. Upgrade: **Apps → kinora → Update** when offered, or **Edit** and pull.
+On TrueNAS SCALE 24.04 and older (Kubernetes apps), use **Custom App** with image `ghcr.io/bucifer6/kinora`,
 port 8484, the environment variables and host-path volumes from the template.
 
 ### OpenMediaVault
@@ -272,7 +272,7 @@ OMV 7 with **omv-extras** and the **openmediavault-compose** plugin. Template:
 1. **Storage → Shared Folders**: make sure you have folders for app data and media; note their absolute paths
    (`/srv/dev-disk-by-uuid-…/…`, shown in the shared folder list).
 2. Ids: **Users → Users** shows the uid; `id <username>` in a shell. Typically `1000` and group `users` = `100`.
-3. **Services → Compose → Files → Create**: name `mediamax`, paste the template with your paths, **Save**, then
+3. **Services → Compose → Files → Create**: name `kinora`, paste the template with your paths, **Save**, then
    select it and press **Up**.
 4. Open `http://<omv>:8484`.
 
@@ -282,25 +282,25 @@ Upgrade: select the file and press **Pull**, then **Up**. Hardware transcoding: 
 
 ### NAS & disk spin-down
 
-MediaMax can leave NAS hard drives asleep while nobody is watching. Settings live in **Admin → Storage & disks**.
+Kinora can leave NAS hard drives asleep while nobody is watching. Settings live in **Admin → Storage & disks**.
 
-1. **Put MediaMax's own files on an SSD.** The data folder (database, artwork cache, thumbnails, scrub previews, downloaded subtitles, backups) and the transcode folder are written all the time; keep them off the spinning array.
-   * **Synology:** map `/config` (and `MEDIAMAX_TRANSCODE_DIR`) to a folder on an SSD volume, or at least a different volume from the media.
-   * **Unraid:** use the cache pool — `/mnt/cache/appdata/mediamax`, *not* `/mnt/user/appdata` (the FUSE user share can wake array disks). Set the appdata share to *Use cache pool: Only/Prefer*.
+1. **Put Kinora's own files on an SSD.** The data folder (database, artwork cache, thumbnails, scrub previews, downloaded subtitles, backups) and the transcode folder are written all the time; keep them off the spinning array.
+   * **Synology:** map `/config` (and `KINORA_TRANSCODE_DIR`) to a folder on an SSD volume, or at least a different volume from the media.
+   * **Unraid:** use the cache pool — `/mnt/cache/appdata/kinora`, *not* `/mnt/user/appdata` (the FUSE user share can wake array disks). Set the appdata share to *Use cache pool: Only/Prefer*.
    * **TrueNAS SCALE:** put the app's config/transcode datasets on an SSD pool (or the apps pool), and media on the HDD pool.
    * **QNAP / OMV:** the same idea — config on the system SSD / cache volume.
 2. **Don't poll.** File-change detection uses inotify on directories (no per-file watches, no polling) and never touches a sleeping disk. Only choose *Poll folder timestamps* for NFS/SMB mounts whose changes inotify cannot see, and keep the interval long (minimum 60 minutes). If inotify runs out of watches (very large libraries), raise `fs.inotify.max_user_watches` on the host (e.g. `sysctl fs.inotify.max_user_watches=524288`); the Storage page shows the error.
 3. **Turn on disk-friendly mode** and pick a maintenance window (e.g. 02:00–05:00, server time — set `TZ` on Docker containers). Scheduled library scans, thumbnail and scrub-preview generation, intro detection, DJ analysis, OpenSubtitles matching and HDR detection then only start in the window (one at a time, scan first). Manual *Run now*, playback, the Home Assistant *Scan libraries* button and scans triggered by real file changes are never held back.
-4. **Piggybacking** (on by default): when someone starts playing a file from a disk — or files change on it — MediaMax runs that disk's share of the postponed work while the disk is spinning anyway. With disk-state checks, a disk something else woke up counts too.
-5. **Disk-state awareness (Linux, optional):** MediaMax maps each library folder to its block devices via `/proc/self/mountinfo` and `/sys` (partitions, md/Unraid array devices, LVM/LUKS). If `hdparm` or `smartctl` is installed and allowed (root, or `--device /dev/sdX` + `--cap-add SYS_RAWIO` in Docker), it asks `hdparm -C` / `smartctl -n standby`, which answer **without waking** the drive. Outside disk-friendly mode, scheduled work then skips sleeping disks and catches up when they wake. Without those tools the Storage page shows *Idle* (no I/O for 10 minutes, read from `/sys`) or *Unknown*; nothing breaks. ZFS pools, mergerfs/Unraid user shares and network shares are shown as one "disk" each with unknown state.
+4. **Piggybacking** (on by default): when someone starts playing a file from a disk — or files change on it — Kinora runs that disk's share of the postponed work while the disk is spinning anyway. With disk-state checks, a disk something else woke up counts too.
+5. **Disk-state awareness (Linux, optional):** Kinora maps each library folder to its block devices via `/proc/self/mountinfo` and `/sys` (partitions, md/Unraid array devices, LVM/LUKS). If `hdparm` or `smartctl` is installed and allowed (root, or `--device /dev/sdX` + `--cap-add SYS_RAWIO` in Docker), it asks `hdparm -C` / `smartctl -n standby`, which answer **without waking** the drive. Outside disk-friendly mode, scheduled work then skips sleeping disks and catches up when they wake. Without those tools the Storage page shows *Idle* (no I/O for 10 minutes, read from `/sys`) or *Unknown*; nothing breaks. ZFS pools, mergerfs/Unraid user shares and network shares are shown as one "disk" each with unknown state.
 6. **Artwork next to media** (`poster.jpg`, `folder.jpg`…) is copied into the data folder the first time it is shown, so browsing never reads the media disk; rescans refresh the copy when the original changes.
 
 Limits: a library scan walks the whole library (all of its folders), so on an Unraid user share a scan in the window spins up every disk the share spans — point libraries at `/mnt/user/...` only if you accept that, or use per-disk paths. Background jobs that are already running when the window ends are allowed to finish. Plugin tasks are not held to the window.
 
 ## Hardware transcoding
 
-Software transcoding works everywhere. To use the GPU, give MediaMax the device (see your platform below), then
-open **Admin → Settings → Transcoding** and press **Detect hardware**. MediaMax lists the GPUs it can see and the
+Software transcoding works everywhere. To use the GPU, give Kinora the device (see your platform below), then
+open **Admin → Settings → Transcoding** and press **Detect hardware**. Kinora lists the GPUs it can see and the
 encoders in its FFmpeg build, then runs a 2-second test transcode with every method: H.264, HEVC and AV1 encoding,
 hardware decoding, 10-bit HEVC decoding and HDR → SDR tone mapping. Each card says what works (with the speed in fps)
 or shows FFmpeg's error. Press **Use this** on the recommended card and **Save changes**. Results are kept until the
@@ -327,7 +327,7 @@ Intel Arc, NVIDIA RTX 40 or AMD RX 7000).
 `vpp_qsv` (Quick Sync), `tonemap_cuda` (NVIDIA, jellyfin-ffmpeg builds) or `tonemap_opencl`, when the FFmpeg build
 and driver support it, otherwise on the CPU (`zscale` + `tonemap`). The detect step shows which path works.
 
-**Automatic fallback.** If a hardware transcode fails to start or dies in the first seconds, MediaMax retries once,
+**Automatic fallback.** If a hardware transcode fails to start or dies in the first seconds, Kinora retries once,
 first with CPU tone mapping (if GPU tone mapping was used) and then fully in software, and logs why. The session
 shows "Hardware transcoding failed, used software" on the admin dashboard.
 
@@ -335,7 +335,7 @@ shows "Hardware transcoding failed, used software" on the admin dashboard.
 
 ```yaml
 services:
-  mediamax:
+  kinora:
     devices:
       - /dev/dri:/dev/dri
     group_add:
@@ -356,7 +356,7 @@ on the host, then:
 
 ```yaml
 services:
-  mediamax:
+  kinora:
     deploy:
       resources:
         reservations:
@@ -371,7 +371,7 @@ container for detection to find the GPU; the `video` capability is what enables 
 
 ### Linux service
 
-`sudo usermod -aG render,video mediamax && sudo systemctl restart mediamax`. Install the VA-API driver
+`sudo usermod -aG render,video kinora && sudo systemctl restart kinora`. Install the VA-API driver
 (`intel-media-va-driver-non-free` or `mesa-va-drivers`) and optionally `vainfo` so detection can show the driver
 name. NVIDIA: the proprietary driver (`nvidia-smi` must work).
 
@@ -405,52 +405,57 @@ Pi 4: `v4l2m2m` (H.264 encode, about one 1080p30 stream). In Docker add `--devic
 | Install | Data folder |
 |---|---|
 | Docker / NAS | whatever you mapped to `/config` |
-| Windows | `C:\ProgramData\MediaMax` |
-| Linux service | `/var/lib/mediamax` |
-| Linux, started by hand | `~/.local/share/mediamax` |
+| Windows | `C:\ProgramData\Kinora` |
+| Linux service | `/var/lib/kinora` |
+| Linux, started by hand | `~/.local/share/kinora` |
 | From source | `./data` |
 
-`MEDIAMAX_DATA` overrides all of these. The data folder holds the database (`mediamax.db`), artwork and branding
+`KINORA_DATA` overrides all of these. **Upgrading from MediaMax** (the product's former name): a standalone install
+keeps using its existing folder (`C:\ProgramData\MediaMax`, `~/.local/share/mediamax`, or `/var/lib/mediamax` when
+the Kinora folder holds no database yet) as long as the new Kinora folder doesn't exist, so nothing has to be moved;
+Docker and source installs use the folder you mapped / `./data` as before. The data folder holds the database (`mediamax.db`), artwork and branding
 assets, avatars, subtitles, plugins, logs and `backups/`. Caches (`cache/`), streaming segments (`transcodes/`)
-and your media are not needed for a restore. DVR recordings are wherever `MEDIAMAX_RECORDINGS` / `/recordings` points.
+and your media are not needed for a restore. DVR recordings are wherever `KINORA_RECORDINGS` / `/recordings` points.
 
 **Backups.** **Admin → Backups** creates a backup on demand or on a schedule (keeping the last N). A backup is
 one `.tar.gz` in `<data>/backups/` with a consistent snapshot of the database plus artwork, branding, avatars,
 subtitles and plugins; you can download it from the same page. Copy backups off the machine (Hyper Backup,
 a NAS snapshot task, or any file backup of the `backups/` folder). To restore, upload or pick a backup on the same
-page, then restart MediaMax (`docker restart mediamax`, `sudo systemctl restart mediamax`, or on Windows
-`Stop-ScheduledTask MediaMax; Start-ScheduledTask MediaMax`). The restore is applied as it starts, and a
+page, then restart Kinora (`docker restart kinora`, `sudo systemctl restart kinora`, or on Windows
+`Stop-ScheduledTask Kinora; Start-ScheduledTask Kinora`). The restore is applied as it starts, and a
 "pre-restore" backup of what it replaced is kept.
 
 **Moving to another machine or install type** (for example from Windows to a NAS): create a backup, install
-MediaMax on the new machine, restore the backup there and restart it. If the media lives at different paths
+Kinora on the new machine, restore the backup there and restart it. If the media lives at different paths
 on the new machine, edit the libraries' folders in the admin dashboard.
 
 ## Settings
 
-Environment variables (Docker `environment:`, `systemctl edit mediamax`, or Windows system environment variables):
+Environment variables (Docker `environment:`, `systemctl edit kinora`, or Windows system environment variables):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MEDIAMAX_PORT` | `8484` | HTTP port |
-| `MEDIAMAX_DATA` | see above | Data folder |
-| `MEDIAMAX_TRANSCODE_DIR` | `<data>/transcodes` (`/transcode` in Docker) | Streaming segment scratch space; a RAM disk is ideal |
-| `MEDIAMAX_RECORDINGS` | `<data>/recordings` (`/recordings` in Docker) | DVR output |
-| `MEDIAMAX_FFMPEG` / `MEDIAMAX_FFPROBE` | bundled copy next to the binary, else `ffmpeg` / `ffprobe` on the PATH | Use another FFmpeg (e.g. jellyfin-ffmpeg) |
-| `MEDIAMAX_WEB_DIR` | `web/` next to the binary (`web/dist` from source) | Serve the web app from elsewhere |
-| `MEDIAMAX_HWACCEL` | `none` | Initial hardware accelerator |
-| `PUID` / `PGID` / `MEDIAMAX_EXTRA_GIDS` | unset (root) | Docker only: user, group and extra groups to run as |
+| `KINORA_PORT` | `8484` | HTTP port |
+| `KINORA_DATA` | see above | Data folder |
+| `KINORA_TRANSCODE_DIR` | `<data>/transcodes` (`/transcode` in Docker) | Streaming segment scratch space; a RAM disk is ideal |
+| `KINORA_RECORDINGS` | `<data>/recordings` (`/recordings` in Docker) | DVR output |
+| `KINORA_FFMPEG` / `KINORA_FFPROBE` | bundled copy next to the binary, else `ffmpeg` / `ffprobe` on the PATH | Use another FFmpeg (e.g. jellyfin-ffmpeg) |
+| `KINORA_WEB_DIR` | `web/` next to the binary (`web/dist` from source) | Serve the web app from elsewhere |
+| `KINORA_HWACCEL` | `none` | Initial hardware accelerator |
+| `PUID` / `PGID` / `KINORA_EXTRA_GIDS` | unset (root) | Docker only: user, group and extra groups to run as |
 
-The full list is under "Configuration (environment variables)" in the [README](../README.md#install).
+Each variable also works under its original `MEDIAMAX_*` name (e.g. `MEDIAMAX_PORT`); when both are set, the
+`KINORA_*` one wins. The full list is under "Configuration (environment variables)" in the
+[README](../README.md#install).
 
 ## Play to devices
 
 Every player's cast menu lists Chromecast, AirPlay (Safari / iOS) and the TVs, AV receivers, Sonos speakers and Kodi boxes on your
-network. Pick one and MediaMax streams straight to it: the original file when the device supports it, otherwise a converted
+network. Pick one and Kinora streams straight to it: the original file when the device supports it, otherwise a converted
 stream (H.264/AAC MPEG-TS for video, FLAC or MP3 for music). Your browser or phone becomes a remote (pause, seek, volume, stop),
 and progress is saved as usual. Configure it in **Admin → Play to devices**.
 
-* **Discovery** uses SSDP (UPnP) and mDNS on the local network, so in Docker use `network_mode: host`, like DLNA. If MediaMax has
+* **Discovery** uses SSDP (UPnP) and mDNS on the local network, so in Docker use `network_mode: host`, like DLNA. If Kinora has
   several network cards or runs behind port mapping, set *Stream address for devices* to the URL devices should fetch from.
 * **Kodi**: enable *Settings → Services → Control → Allow remote control via HTTP*. It is found automatically (mDNS) or can be
   added by host, port and the username/password set there.
@@ -479,7 +484,7 @@ Live TV needs a programme guide (EPG). Open **Admin → TV guide**:
 Channels without guide data get a **Missing guide** badge under Admin → Channels. Details: [EPG.md](EPG.md).
 
 ## Requests (replacing Overseerr / Jellyseerr)
-MediaMax has request management built in — you don't need a separate Overseerr or Jellyseerr.
+Kinora has request management built in — you don't need a separate Overseerr or Jellyseerr.
 
 1. **Admin → Server settings → General**: add a TMDB API key (movies/shows). **Media automation (*arr)**: add Radarr/Sonarr
    (and Lidarr/Readarr for music/books), press **Test**, pick quality profile and root folder. Mark a second Radarr/Sonarr as
@@ -488,7 +493,7 @@ MediaMax has request management built in — you don't need a separate Overseerr
    *Auto* — and the default quota (e.g. 5 movies / 7 days, 6 seasons / 14 days). Change existing users individually or select
    several and use **Edit permissions**. Give trusted people **Manage requests** so they can approve without being admins.
 3. **Admin → Server settings → Notifications**: add Discord, Telegram, ntfy, Gotify, Pushover, Slack, email or a JSON webhook,
-   tick the events, press **Test**, then **Save changes**. Set the *Public URL* (General tab) so messages link back to MediaMax.
+   tick the events, press **Test**, then **Save changes**. Set the *Public URL* (General tab) so messages link back to Kinora.
 4. People use **Discover** to request; managers approve on **Requests** (with **Edit** to change the server, profile, folder,
    tags or seasons first). Problems with a title are reported with the flag button on its page and handled under **Issues**.
 
@@ -500,7 +505,7 @@ you edit them; the old weekly limit becomes the default quota.
 ```bash
 npm ci && npm run build
 node scripts/fetch-ffmpeg.mjs --target linux-x64 --out build/ffmpeg     # optional: static FFmpeg
-node scripts/package.mjs --ffmpeg-dir build/ffmpeg                      # -> release/mediamax-<version>-linux-x64.tar.gz
+node scripts/package.mjs --ffmpeg-dir build/ffmpeg                      # -> release/kinora-<version>-linux-x64.tar.gz
 ```
 
 `scripts/package.mjs` bundles the server into one file with esbuild and turns it into a Node.js
@@ -515,7 +520,7 @@ smoke-tests each one, and publishes them with the multi-arch Docker image when a
 The AI DJ works with no extra setup. For richer requests and a more natural voice, run these free, open-source services next to the server. Pick the language model under **Admin → AI** (it is shared with Ask, recaps and subtitle translation) and the voice under **Admin → Server settings → AI DJ**:
 
 ```yaml
-# Add to your docker-compose.yml next to the mediamax service.
+# Add to your docker-compose.yml next to the kinora service.
   ollama:                      # local language model (CPU is fine for small models)
     image: ollama/ollama
     volumes: [ "./ollama:/root/.ollama" ]
@@ -534,7 +539,7 @@ Then:
 
 **No spare CPU?** Use a hosted free tier instead (Groq, Google Gemini, OpenRouter's `:free` models, Mistral or Cerebras). Paste the API key and keep the **Daily limit** on, so you stay inside the free allowance. If you hit the limit, the DJ falls back to its built-in brain for the rest of the day.
 
-**Piper** (another free, offline voice) runs inside the MediaMax container:
+**Piper** (another free, offline voice) runs inside the Kinora container:
 
 1. Download the `piper` release for your CPU and a voice (`.onnx` plus `.onnx.json`) into `/config/voices/`.
 2. Choose **Piper** in the AI DJ settings.

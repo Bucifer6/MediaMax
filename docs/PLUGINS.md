@@ -1,4 +1,4 @@
-# MediaMax plugins
+# Kinora plugins
 
 Plugins extend the server, the same way Jellyfin and Emby plugins do. A plugin can:
 
@@ -70,7 +70,7 @@ export async function activate(ctx) {
     fetch: async (item) => ({ overview: `Fetched for ${item.title}` }),
   });
 
-  // Subtitle source: listed in Server settings → Subtitles; MediaMax scores, unpacks, cleans and saves for you.
+  // Subtitle source: listed in Server settings → Subtitles; Kinora scores, unpacks, cleans and saves for you.
   ctx.subtitles.registerProvider({
     id: 'mysite', name: 'My subtitle site',
     configured: () => !!ctx.settings.get('apiKey'),

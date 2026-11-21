@@ -1,8 +1,8 @@
-# Lumen: the MediaMax design language
+# Lumen: the Kinora design language
 
 > The interface is lit by the films.
 
-Lumen is the look of the MediaMax web app (and the TV app, which is the same app in TV mode). The picture on
+Lumen is the look of the Kinora web app (and the TV app, which is the same app in TV mode). The picture on
 screen supplies the light: the featured title's artwork tints the whole page with a soft glow that drifts behind
 frosted-glass surfaces and cross-fades as the hero or the focused title changes. The active theme stays the base;
 artwork light is layered on top of it and never costs readability.

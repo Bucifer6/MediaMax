@@ -4,7 +4,7 @@
  *
  *   npm run build && node scripts/e2e-journeys.mjs
  *
- * Boots a fresh MediaMax (server/dist + web/dist) on --port (default 18770) with an empty data folder, then walks
+ * Boots a fresh Kinora (server/dist + web/dist) on --port (default 18770) with an empty data folder, then walks
  * through what people actually do, as different personas, in Chromium:
  *
  *   first-run  setup wizard → admin → five libraries → scan → home; Network page in Direct mode
@@ -153,7 +153,7 @@ class Server {
     if (fresh) fs.rmSync(this.data, { recursive: true, force: true });
     this.proc = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/dist/index.js'], {
       cwd: repo,
-      env: { ...process.env, MEDIAMAX_DATA: this.data, MEDIAMAX_PORT: String(PORT), MEDIAMAX_HOST: '127.0.0.1', MEDIAMAX_NO_SCHEDULER: '1', ...this.env },
+      env: { ...process.env, KINORA_DATA: this.data, KINORA_PORT: String(PORT), KINORA_HOST: '127.0.0.1', KINORA_NO_SCHEDULER: '1', ...this.env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     this.proc.stdout.on('data', (d) => (this.log += d));
@@ -346,7 +346,7 @@ async function firstRun() {
   const page = await open({ label: 'setup' });
   await step('wizard appears on a fresh server', async () => {
     await go(page, '/');
-    await page.getByRole('heading', { name: 'Welcome to MediaMax' }).waitFor();
+    await page.getByRole('heading', { name: 'Welcome to Kinora' }).waitFor();
     await shot(page, 'first-run-welcome');
   });
   await step('create the admin account', async () => {
@@ -1482,12 +1482,12 @@ async function main() {
   const mocks = await startServiceMocks();
   S.mocks = mocks;
   S.xtream = xtream;
-  const server = new Server({ MEDIAMAX_ALLOW_PRIVATE_URLS: '1', MEDIAMAX_TMDB_API_BASE: `${mocks.base}/3`, MEDIAMAX_LISTENBRAINZ_API_BASE: `${mocks.base}/lb`, MEDIAMAX_LISTENBRAINZ_LABS_BASE: `${mocks.base}/lb`, MEDIAMAX_NO_WATCH: '1' });
+  const server = new Server({ KINORA_ALLOW_PRIVATE_URLS: '1', KINORA_TMDB_API_BASE: `${mocks.base}/3`, KINORA_LISTENBRAINZ_API_BASE: `${mocks.base}/lb`, KINORA_LISTENBRAINZ_LABS_BASE: `${mocks.base}/lb`, KINORA_NO_WATCH: '1' });
   S.server = server;
   let exit = 0;
   try {
     await server.start({ fresh: true });
-    log(`MediaMax on ${BASE} (data ${server.data})`);
+    log(`Kinora on ${BASE} (data ${server.data})`);
     await journey('first-run', firstRun);
     if (results[0].steps.every((s) => s.ok)) {
       for (const [name, fn] of Object.entries(JOURNEYS)) await journey(name, fn);

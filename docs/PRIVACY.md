@@ -1,14 +1,14 @@
-# MediaMax apps — Privacy policy
+# Kinora apps — Privacy policy
 
 _Last updated: [date of publication]_
 
-MediaMax apps (for iPhone, iPad, Apple TV, Android, Android TV, Fire TV, Samsung, LG, Hisense VIDAA and Roku) are clients for a MediaMax media server that **you or someone you know runs**. This policy explains what the apps do with your information.
+Kinora apps (for iPhone, iPad, Apple TV, Android, Android TV, Fire TV, Samsung, LG, Hisense VIDAA and Roku) are clients for a Kinora media server that **you or someone you know runs**. This policy explains what the apps do with your information.
 
 ## The short version
 
 - The apps do **not** collect, sell or share any personal information with the app's developer or with third parties.
 - There are **no ads, analytics or tracking** in the apps.
-- Everything you do in the app is sent **only to the MediaMax server you connect to**, which is run by its owner, not by us.
+- Everything you do in the app is sent **only to the Kinora server you connect to**, which is run by its owner, not by us.
 
 ## What the apps store on your device
 
@@ -19,7 +19,7 @@ MediaMax apps (for iPhone, iPad, Apple TV, Android, Android TV, Fire TV, Samsung
 
 You can remove all of this by signing out and uninstalling the app.
 
-## What is sent to your MediaMax server
+## What is sent to your Kinora server
 
 To work, the app sends the server you choose: your sign-in details, your device name and type, what you play and your playback position, your ratings, favourites and lists, and the network address your device connects from. The server's owner can see this information (for example on the server's dashboard), as with any self-hosted media server. Their own privacy practices apply to it; contact them with questions about it.
 

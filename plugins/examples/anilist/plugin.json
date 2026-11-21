@@ -3,7 +3,7 @@
   "name": "AniList (anime)",
   "version": "1.0.0",
   "description": "Fills synopses, genres, scores, cover art and banners for anime series and films from AniList. No API key needed.",
-  "author": "MediaMax",
+  "author": "Kinora",
   "homepage": "https://anilist.co/",
   "main": "index.js",
   "minServerVersion": "0.1.0",

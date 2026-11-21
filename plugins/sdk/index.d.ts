@@ -1,5 +1,5 @@
 /**
- * MediaMax plugin SDK — type definitions for plugin authors.
+ * Kinora plugin SDK — type definitions for plugin authors.
  *
  * A plugin is a folder (packaged as .tar.gz) with a `plugin.json` manifest and an ES module entry that
  * exports `activate(ctx)` (and optionally `deactivate()`). Plugins run inside the server process with
@@ -53,7 +53,7 @@ export interface MetadataProvider {
   fetch(item: Pick<Item, 'id' | 'type' | 'title' | 'year' | 'externalIds'> & { parentTitle: string | null; index: number | null; parentIndex: number | null }): Promise<PluginMetadata | null>;
 }
 
-/** What MediaMax knows about the title a subtitle search is for. */
+/** What Kinora knows about the title a subtitle search is for. */
 export interface SubtitleQuery {
   item: { id: string; type: string; title: string; year: number | null };
   media: { id: string; path: string | null; size: number | null } | null;
@@ -71,7 +71,7 @@ export interface SubtitleQuery {
   /** Movie title, or the show title for an episode. */
   title: string;
   year: number | null;
-  /** Media file name, e.g. "Show.S01E02.1080p.WEB-DL.DDP5.1.H.264-NTb.mkv" — MediaMax scores releases against it. */
+  /** Media file name, e.g. "Show.S01E02.1080p.WEB-DL.DDP5.1.H.264-NTb.mkv" — Kinora scores releases against it. */
   releaseName: string | null;
   /** OpenSubtitles-style movie hash of the media file, when available. */
   movieHash: string | null;
@@ -99,7 +99,7 @@ export interface SubtitleSearchResult {
 }
 
 /**
- * A subtitle source. MediaMax fans searches out to every enabled provider (admin-ordered in Server settings →
+ * A subtitle source. Kinora fans searches out to every enabled provider (admin-ordered in Server settings →
  * Subtitles), scores and merges the results, and runs every download through the same pipeline: archives are
  * unpacked (ZIP built in; RAR/7z with unrar/7z), the right episode is picked from season packs, the text is
  * converted to UTF-8 with diacritics and adverts fixed, optionally synced with alass, then saved.

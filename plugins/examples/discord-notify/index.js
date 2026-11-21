@@ -1,4 +1,4 @@
-// Discord Notifications — an example MediaMax plugin (events + routes + admin page + settings).
+// Discord Notifications — an example Kinora plugin (events + routes + admin page + settings).
 /** @type {import('../../sdk/index').ActivateFn} */
 export async function activate(ctx) {
   const sent = () => ctx.storage.get('sent', 0);
@@ -9,7 +9,7 @@ export async function activate(ctx) {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: ctx.settings.get('username') || 'MediaMax', content: String(content).slice(0, 1900) }),
+      body: JSON.stringify({ username: ctx.settings.get('username') || 'Kinora', content: String(content).slice(0, 1900) }),
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) throw new Error(`Discord returned HTTP ${res.status}`);
@@ -33,7 +33,7 @@ export async function activate(ctx) {
   });
 
   ctx.http.route('GET', '/status', () => ({ configured: !!ctx.settings.get('webhookUrl'), sent: sent() }), { auth: 'admin' });
-  ctx.http.route('POST', '/test', async () => ({ ok: await post('✅ MediaMax test message — the Discord plugin is working.') }), { auth: 'admin' });
+  ctx.http.route('POST', '/test', async () => ({ ok: await post('✅ Kinora test message — the Discord plugin is working.') }), { auth: 'admin' });
   ctx.log.info('Discord notifications ready');
 }
 

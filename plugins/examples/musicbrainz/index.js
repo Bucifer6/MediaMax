@@ -3,7 +3,7 @@
 export async function activate(ctx) {
   const api = () => (ctx.settings.get('apiUrl') || 'https://musicbrainz.org/ws/2').replace(/\/+$/, '');
   const caa = () => (ctx.settings.get('coverUrl') || 'https://coverartarchive.org').replace(/\/+$/, '');
-  const ua = () => `MediaMax/${ctx.serverVersion}${ctx.settings.get('contact') ? ` ( ${ctx.settings.get('contact')} )` : ''}`;
+  const ua = () => `Kinora/${ctx.serverVersion}${ctx.settings.get('contact') ? ` ( ${ctx.settings.get('contact')} )` : ''}`;
   const norm = (s) => (s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/^the\s+/, '').replace(/[^a-z0-9]+/g, ' ').trim();
 
   // MusicBrainz allows one request per second per client; queue everything through one gate.

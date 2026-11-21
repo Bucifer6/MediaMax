@@ -1,11 +1,11 @@
 # Audio: Dolby Atmos, DTS:X, passthrough, downmix and listening comforts
 
-This page explains how MediaMax detects the audio in your files, how each player reports what it can play, how the
+This page explains how Kinora detects the audio in your files, how each player reports what it can play, how the
 server picks the audio a device receives, and the listening options (night mode, dialogue boost, volume
 normalisation, lip-sync). For HDR and Dolby Vision see [HDR.md](HDR.md). Subtitles and automatic quality are covered in
 [PLAYBACK.md](PLAYBACK.md).
 
-## What MediaMax detects
+## What Kinora detects
 
 The scanner reads every audio track with ffprobe (`server/src/services/audio.ts`, `parseAudioStream`):
 

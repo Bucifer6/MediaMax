@@ -1,11 +1,11 @@
 # HDR and Dolby Vision
 
-MediaMax identifies the dynamic range of every video. Each device reports what it can show. The server then
+Kinora identifies the dynamic range of every video. Each device reports what it can show. The server then
 direct-plays the HDR stream, plays its HDR10/HLG base layer, or tone-maps it to SDR.
 
-## What MediaMax detects
+## What Kinora detects
 
-When it scans a file, MediaMax reads the video stream with `ffprobe`. For PQ (HDR10) streams it also reads the
+When it scans a file, Kinora reads the video stream with `ffprobe`. For PQ (HDR10) streams it also reads the
 side data of the first frame. Only one frame is decoded. It records:
 
 | Field | Source |
@@ -26,7 +26,7 @@ daily) re-probes only those files. A file is also checked the first time it play
 
 ## Dolby Vision profiles
 
-| Profile | Found in | Base layer | MediaMax with a non-Dolby Vision device |
+| Profile | Found in | Base layer | Kinora with a non-Dolby Vision device |
 |---|---|---|---|
 | **5** | Streaming services (Netflix, Disney+, Apple TV+ downloads), some WEB-DLs | **None.** The picture is in Dolby's IPTPQc2 colour space and looks green and purple without Dolby Vision. | Tone-mapped to SDR by transcoding. libplacebo applies the Dolby Vision reshaping (RPU) where FFmpeg has it; otherwise expect some colour error. |
 | **7** | UHD Blu-ray remuxes (dual layer: MEL/FEL enhancement layer + RPU) | HDR10 | **Stream copy with the Dolby Vision NAL units removed** (`-bsf:v filter_units=remove_types=62\|63`). The video isn't re-encoded, so you get clean HDR10. Devices that list profile 7 get the file as-is. |
@@ -108,7 +108,7 @@ server uses 06 for 4K at 24–30 fps.
 ### FFmpeg requirement
 
 FFmpeg writes the `dvcC`/`dvvC` box only when the copied stream carries Dolby Vision configuration side data **and**
-`-strict unofficial` is set. MediaMax adds `-strict unofficial` (and `-tag:v dvh1` for profiles 5 and 7) to Dolby
+`-strict unofficial` is set. Kinora adds `-strict unofficial` (and `-tag:v dvh1` for profiles 5 and 7) to Dolby
 Vision remuxes only. On first use, the server checks that its FFmpeg build really writes the box. It remuxes a tiny
 embedded HEVC file with an injected `dvvC` box through the HLS/fMP4 muxer, then looks for the box (about 100 ms, once
 per start). FFmpeg 6.1 passes. The Docker image uses Debian bookworm's FFmpeg (5.1). The check decides there, and
@@ -121,9 +121,9 @@ FFmpeg can't write a `dav1` sample entry. Profile 10.0 (AV1 with no compatible b
 
 | Device | Player | HDR10 | HDR10+ | HLG | Dolby Vision | Notes |
 |---|---|:-:|:-:|:-:|:-:|---|
-| **Samsung TV (Tizen)** | MediaMax player (hls.js / MSE) | ✅ | when MSE reports it (static HDR10 otherwise) | ✅ | ❌ (Samsung has no DV) | DV 8.1 plays as its HDR10 base layer. DV 7 is stripped to HDR10. DV 5 is tone-mapped. |
-| **Hisense TV (VIDAA)** | MediaMax player (hls.js / MSE) | ✅ where MSE reports it | when MSE reports it | ✅ where MSE reports it | ❌ by default (override: Yes) | Not yet tested on a set. Dolby Vision is never auto-detected on VIDAA: its browser is reported to hang on DV in MP4 (our remux is fMP4), so DV plays as its base layer unless the user turns the override on. |
-| **LG TV (webOS)** | MediaMax player (hls.js / MSE) | ✅ | ❌ | ✅ | ✅ 5, 8.1, 8.4 where MSE reports `dvh1` | Real Dolby Vision through our own engine (remux with `dvvC` + DV codecs). Detected with `MediaSource.isTypeSupported('video/mp4; codecs="dvh1.08.06"')`. If your model doesn't report it, use the override (below). Otherwise DV 8.x plays as HDR10. |
+| **Samsung TV (Tizen)** | Kinora player (hls.js / MSE) | ✅ | when MSE reports it (static HDR10 otherwise) | ✅ | ❌ (Samsung has no DV) | DV 8.1 plays as its HDR10 base layer. DV 7 is stripped to HDR10. DV 5 is tone-mapped. |
+| **Hisense TV (VIDAA)** | Kinora player (hls.js / MSE) | ✅ where MSE reports it | when MSE reports it | ✅ where MSE reports it | ❌ by default (override: Yes) | Not yet tested on a set. Dolby Vision is never auto-detected on VIDAA: its browser is reported to hang on DV in MP4 (our remux is fMP4), so DV plays as its base layer unless the user turns the override on. |
+| **LG TV (webOS)** | Kinora player (hls.js / MSE) | ✅ | ❌ | ✅ | ✅ 5, 8.1, 8.4 where MSE reports `dvh1` | Real Dolby Vision through our own engine (remux with `dvvC` + DV codecs). Detected with `MediaSource.isTypeSupported('video/mp4; codecs="dvh1.08.06"')`. If your model doesn't report it, use the override (below). Otherwise DV 8.x plays as HDR10. |
 | **Android TV / Google TV / Shield / Fire TV** | Media3 (ExoPlayer) | ✅ | if the display says so | ✅ | ✅ with a DV decoder (5, 7, 8.x, 10 as the decoder lists them) | Uses the display's HDR types and the `video/dolby-vision` decoder profiles from `MediaCodecList`. Direct play for MKV/MP4. Remuxes keep DV, with the DV codec in `CODECS` for Media3. Audio passthrough comes from the HDMI sink. |
 | **Apple TV 4K** | AVPlayer | ✅ | ❌ | ✅ | ✅ 5, 8.1, 8.4 | MKV is remuxed with DV kept (Apple HLS form). With **Match Content** on (tvOS 17+), the TV switches to Dolby Vision (only when real DV is delivered), HDR10 or HLG, and to the content's frame rate. |
 | **iPhone / iPad** | AVPlayer | ✅ | ❌ | ✅ | ✅ 5, 8.1, 8.4 | HDR panels show HDR; others tone-map on the device. |
@@ -151,7 +151,7 @@ this release. So **Settings → Playback → This device → Dolby Vision** has 
 
 - **Auto (detect)**, the default: use what MSE reports.
 - **Yes, this TV supports Dolby Vision**: claim profiles 5, 8.1 and 8.4. For a TV that shows Dolby Vision in its own
-  apps while MediaMax plays HDR10. With a profile 8 file, a wrong "Yes" is harmless: hls.js falls back to the HDR10
+  apps while Kinora plays HDR10. With a profile 8 file, a wrong "Yes" is harmless: hls.js falls back to the HDR10
   base layer when MSE refuses `dvh1`. With a profile 5 file it isn't: the picture won't play or shows wrong colours.
 - **No**: never claim Dolby Vision. DV 8.x plays as its base layer, and DV 5 is tone-mapped.
 
@@ -174,7 +174,7 @@ browser:
 - Capability detection probes MSE (`MediaSource.isTypeSupported`, `MediaCapabilities.decodingInfo` with
   `type: 'media-source'`). It doesn't ask what AVPlay could do. When MSE on that TV can't decode something, the
   server transcodes.
-- Subtitles are drawn by MediaMax's own renderer, never by the TV's `<track>` support.
+- Subtitles are drawn by Kinora's own renderer, never by the TV's `<track>` support.
 
 A Samsung AVPlay backend (Samsung's native player) could be added later as an **opt-in, per-device fallback that
 is off by default**. It isn't included now.

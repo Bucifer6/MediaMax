@@ -2,9 +2,9 @@
 
 ## Lyrics
 
-MediaMax looks for lyrics in this order and uses the first **synced** hit (a plain-text hit keeps looking for a synced one further down):
+Kinora looks for lyrics in this order and uses the first **synced** hit (a plain-text hit keeps looking for a synced one further down):
 
-1. **Edits made in MediaMax** (administrators, full-screen player → *Edit lyrics*).
+1. **Edits made in Kinora** (administrators, full-screen player → *Edit lyrics*).
 2. **Files next to the music**: `Song.lrc`, `Song.LRC`, `Song.mp3.lrc`, then `Song.txt`.
 3. **Tags in the file**: ID3 `SYLT` (synced, with per-syllable timing — read straight from the tag because FFmpeg drops it), ID3 `USLT`, Vorbis/FLAC `LYRICS` / `UNSYNCEDLYRICS`, MP4 `©lyr`. A whole `.lrc` pasted into a tag is recognised and used as synced lyrics.
 4. **LRCLIB** (lrclib.net), if turned on under *Server settings → Metadata*. It is only asked for artist, title, album and duration; hits and misses are cached.
@@ -55,4 +55,4 @@ The full-screen player's *Visualiser* view has five styles: **Cover ring** (cove
 
 ## Licences
 
-onnxruntime-web (MIT, Microsoft) is not installed with MediaMax: the server downloads it from the npm registry the first time AI separation is used (pinned to version 1.23.2 and checked against its SHA-512 hash; only the browser files are kept, under `<data>/stems/ort/`), then serves it to the browser. Air-gapped servers can point `MEDIAMAX_ORT_DIR` at a copy of its `dist/` folder instead; the Demucs model weights (Meta, MIT licence in facebookresearch/demucs) are downloaded only when an administrator enables AI separation — the ONNX export's packager notes they may be meant for personal and research use, so check before commercial use. The LRC parser, SYLT handling, stem DSP and visualiser ring are adapted from OpenDJ (MIT). See [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+onnxruntime-web (MIT, Microsoft) is not installed with Kinora: the server downloads it from the npm registry the first time AI separation is used (pinned to version 1.23.2 and checked against its SHA-512 hash; only the browser files are kept, under `<data>/stems/ort/`), then serves it to the browser. Air-gapped servers can point `KINORA_ORT_DIR` at a copy of its `dist/` folder instead; the Demucs model weights (Meta, MIT licence in facebookresearch/demucs) are downloaded only when an administrator enables AI separation — the ONNX export's packager notes they may be meant for personal and research use, so check before commercial use. The LRC parser, SYLT handling, stem DSP and visualiser ring are adapted from OpenDJ (MIT). See [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).

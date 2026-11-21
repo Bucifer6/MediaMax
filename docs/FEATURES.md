@@ -1,10 +1,10 @@
-# MediaMax feature matrix
+# Kinora feature matrix
 
-How MediaMax compares with the features people use most in Plex, Jellyfin and Emby.
+How Kinora compares with the features people use most in Plex, Jellyfin and Emby.
 ✅ = implemented in this repository · 🟡 = partial · 🗺️ = roadmap
 
 ## Libraries & metadata
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | Movies, TV, music, photos, home videos | ✅ | ✅ | ✅ | ✅ |
 | Scene-style filename parsing (`Show.S01E02`, `1x02`, daily shows, multi-episode) | ✅ | ✅ | ✅ | ✅ |
@@ -48,7 +48,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Podcasts (RSS, iTunes directory search, OPML import, auto-download) | ✅ | Plugin? | Plugin? | ✅ |
 
 ## Playback
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | Direct play / remux / transcode decision per device | ✅ | ✅ | ✅ | ✅ |
 | On-demand HLS segments (instant seek anywhere) | ✅ | ✅ | ✅ | ✅ |
@@ -61,7 +61,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Per-device HDR decisions (direct play when the device supports the range, DV 8.x → HDR10/HLG base layer, tone-map otherwise) | 🟡 | ✅ | 🟡 | ✅ |
 | Dolby Vision profile 7 (dual-layer) → HDR10 base layer by stream copy, no re-encode | ❌ | 🟡 | ❌ | ✅ |
 | Real Dolby Vision through remuxed HLS (fMP4 with `dvcC`/`dvvC`, `dvh1`/`hvc1` sample entry, DV `CODECS` / `SUPPLEMENTAL-CODECS` / `VIDEO-RANGE` in the master playlist): profiles 5, 8.1, 8.4, 10 (AV1), and 7 for devices that list it | 🟡 | ✅ | 🟡 | ✅ |
-| Dolby Vision on LG webOS TVs and DV-capable browsers (MediaMax: through its own hls.js/MSE engine, detected with `MediaSource.isTypeSupported`/`MediaCapabilities`, with an Auto / Yes / No override per device) | ✅ | ✅ | 🟡 | ✅ |
+| Dolby Vision on LG webOS TVs and DV-capable browsers (Kinora: through its own hls.js/MSE engine, detected with `MediaSource.isTypeSupported`/`MediaCapabilities`, with an Auto / Yes / No override per device) | ✅ | ✅ | 🟡 | ✅ |
 | HDR10 / HDR10+ / HLG / Dolby Vision badges in item info and the player's info overlay | ✅ | ✅ | ✅ | ✅ |
 | Audio format detection: Dolby Atmos (TrueHD / E-AC-3 JOC), DTS:X, DTS-HD MA, lossless, channel layout ([docs/AUDIO.md](AUDIO.md)) | 🟡 | 🟡 | 🟡 | ✅ |
 | Dolby Atmos / DTS:X / DTS-HD MA / TrueHD / 7.1 badges in item info, the player's audio menu and stats | ✅ | 🟡 | 🟡 | ✅ |
@@ -113,7 +113,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Converted downloads (device-friendly MP4 at 1080p/720p/480p) | Pass | ✅ | Premiere | ✅ |
 
 ## Live TV & IPTV
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | HDHomeRun tuners | ✅ | ✅ | ✅ | ✅ |
 | HDHomeRun / SAT>IP network discovery (UDP 65001, SSDP) | ✅ | 🟡 | 🟡 | ✅ |
@@ -144,7 +144,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Commercial detection on recordings (comskip) | ✅ (Pass) | Plugin | 🟡 | ✅ |
 
 ## Users & access
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | Multiple users, admin roles | ✅ | ✅ | ✅ | ✅ |
 | Profile picker with PINs (Plex Home style) | Pass | 🟡 | ✅ | ✅ |
@@ -163,9 +163,9 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Media requests (Overseerr-style): movies, shows (all/first/latest/specific seasons), music (Lidarr), books (Readarr), "also in 4K", live download progress | Add-on | Add-on | Add-on | ✅ built in |
 
 ### Requests vs. Overseerr / Jellyseerr
-MediaMax has the request app built in — no separate Overseerr/Jellyseerr container, no second user database.
+Kinora has the request app built in — no separate Overseerr/Jellyseerr container, no second user database.
 
-| Feature | Overseerr | Jellyseerr | MediaMax |
+| Feature | Overseerr | Jellyseerr | Kinora |
 |---|:-:|:-:|:-:|
 | Per-user request permissions per kind (movies, shows, 4K movies, 4K shows) | ✅ | ✅ | ✅ (+ music & books) |
 | Auto-approve per user and kind | ✅ | ✅ | ✅ (`none` / `request` / `auto`) |
@@ -189,18 +189,18 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | Music and book requests (Lidarr/Readarr) | ❌ | 🟡 | ✅ |
 
 ## Clients & devices
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | Web, iOS, Android, Apple TV, Android TV apps | ✅ | ✅ | ✅ | ✅ |
-| Apple CarPlay (music, audiobooks, podcasts) | Plexamp | Third-party | Premiere | ✅ (±15/30 s for audiobooks, podcasts and long mixes alongside next/previous, speed button; Siri "Play … in MediaMax" opt-in) |
+| Apple CarPlay (music, audiobooks, podcasts) | Plexamp | Third-party | Premiere | ✅ (±15/30 s for audiobooks, podcasts and long mixes alongside next/previous, speed button; Siri "Play … in Kinora" opt-in) |
 | Android Auto (music, audiobooks, podcasts) | Plexamp | ✅ (no audiobooks) | Premiere | ✅ (±15/30 s for audiobooks, podcasts and long mixes alongside next/previous, speed button; Google Assistant "play …", seek and speed by voice) |
 | Samsung Tizen, LG webOS, Hisense VIDAA (wrapper apps + web TV mode with D-pad navigation; VIDAA untested on a set) | ✅ | ✅ | ✅ | ✅ |
 | Amazon Fire TV | ✅ | ✅ | ✅ | ✅ (Android TV build) |
 | Roku, Xbox | ✅ | 🟡 | ✅ | 🗺️ |
 | Desktop/HTPC app (mpv-class player) | ✅ | ✅ | ✅ | 🗺️ |
 
-## Customisation (MediaMax's headline feature)
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+## Customisation (Kinora's headline feature)
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | Server name, logo, wide logo, favicon, splash, login background | ❌ | 🟡 (CSS) | 🟡 | ✅ |
 | Full theme engine (13 colour tokens, radius, font, poster shape, card size, hero style) | ❌ | CSS only | ❌ | ✅ |
@@ -219,7 +219,7 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | Custom CSS for the web client | ❌ | ✅ | ✅ | ✅ |
 
 ## Administration
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | Dashboard with live sessions, kill stream | ✅ | ✅ | ✅ | ✅ |
 | Scheduled tasks with progress | ✅ | ✅ | ✅ | ✅ |
@@ -253,7 +253,7 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 One language model (Ollama or any OpenAI-compatible API, write-only key, one daily call cap) shared by every AI feature,
 each with its own switch; with no model everything falls back to built-in behaviour (Help Centre: *AI features*).
 
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | Shared language model for the AI DJ, Ask, recaps and subtitle translation; the DJ's model migrated automatically | ❌ | ❌ | ❌ | ✅ |
 | **Generate missing subtitles** task: picks the dialogue track, 16 kHz mono, silence-split chunks, whisper.cpp (one-click Windows download + tiny/base/small/medium ggml models) or a faster-whisper/OpenAI `/audio/transcriptions` API; night window, one job at a time, low process priority, resumes after dawn or a restart; queue, progress and ETA in Admin → AI; "Generate with AI" per title | ❌ | 🟡 (plugin, no translation) | ❌ | ✅ |
@@ -290,7 +290,7 @@ settings, and one shared engine does the matching, account creation, links and r
   server's history (watched only). **Play history** rows from Plex's `/status/sessions/history/all` or the
   Emby/Jellyfin **Playback Reporting** plugin (best-effort; skipped cleanly when the plugin is missing).
 * **Matching**: TMDB/IMDb/TVDB ids first (Plex `Guid` / legacy agent guids; episodes via the series' ids + season and
-  episode numbers), then file path, then title + year. The MediaMax catalogue is indexed in memory once per run.
+  episode numbers), then file path, then title + year. The Kinora catalogue is indexed in memory once per run.
 * **Speed**: 1000-item pages with a few pages in flight, four users read in parallel, the Plex catalogue read once
   and matched by `ratingKey`, one transaction per user; progress per phase.
 * **Passwords**: source hashes can't be read, so new accounts get a random unusable password and a one-time
@@ -302,7 +302,7 @@ settings, and one shared engine does the matching, account creation, links and r
   duplicated, unclaimed accounts get a fresh link on re-run.
 
 ### Media automation (*arr suite)
-MediaMax can be the hub of a Radarr/Sonarr/Lidarr/Readarr/Bazarr setup (**Admin → Server settings → Media automation (*arr)**):
+Kinora can be the hub of a Radarr/Sonarr/Lidarr/Readarr/Bazarr setup (**Admin → Server settings → Media automation (*arr)**):
 
 * **Any number of instances per app**, each with name, URL, write-only API key, enabled flag, quality profile, root folder,
   metadata profile (Lidarr/Readarr), tags, monitor option, season folders and "search on add". The **Test** button checks
@@ -345,7 +345,7 @@ MediaMax can be the hub of a Radarr/Sonarr/Lidarr/Readarr/Bazarr setup (**Admin 
   with request buttons, and a *Hide what's in the library* toggle. The heart menu on a card adds it to your Discover
   watchlist; with *Auto-request from watchlist* that also requests it.
 * **Webhooks**: add one *Webhook* connection per app (Settings → Connect → Webhook, triggers On Import / Upgrade / Rename /
-  Delete) pointing at the URL shown in the settings tab. MediaMax works out the folder the event touched, maps it through
+  Delete) pointing at the URL shown in the settings tab. Kinora works out the folder the event touched, maps it through
   the instance's path mappings (`/movies` → `/media/Movies`), rescans only the library that contains it, debounces bursts
   (a season pack is one scan within about 10 s) and then marks matching requests as available. Events are logged to
   Activity. The URL carries a random secret, compared in constant time; regenerate it from the settings tab.

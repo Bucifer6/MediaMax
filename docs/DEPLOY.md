@@ -1,6 +1,6 @@
-# Deploying MediaMax securely
+# Deploying Kinora securely
 
-`deploy/install.sh` sets up MediaMax on a Linux server with Docker in one go: HTTPS with a free certificate,
+`deploy/install.sh` sets up Kinora on a Linux server with Docker in one go: HTTPS with a free certificate,
 a hardened reverse proxy, CrowdSec and/or fail2ban against password guessing, your media folders mounted
 read-only, hardware transcoding, and upgrades. This page explains what it does, how to run each piece by hand,
 and how to fix things when they go wrong. For other platforms (NAS units, Windows, Linux without Docker), see
@@ -13,7 +13,7 @@ Contents: [Quick start](#quick-start) · [What gets installed](#what-gets-instal
 [Hardening defaults](#hardening-defaults) · [Upgrades and backups](#upgrades-and-backups) ·
 [Troubleshooting](#troubleshooting) · [Network & HTTPS in the admin](#network--https-admin--network)
 
-> **No reverse proxy by default.** Out of the box MediaMax answers plain HTTP on port 8484 and runs no proxy of
+> **No reverse proxy by default.** Out of the box Kinora answers plain HTTP on port 8484 and runs no proxy of
 > its own, so it drops straight in behind an Nginx, Traefik, NPM, SWAG or Caddy you already run. Turn on HTTPS
 > where it suits you: the installer's `--proxy caddy|nginx`, your own proxy, or **Admin → Network & HTTPS →
 > Built-in HTTPS** (see [below](#network--https-admin--network)).
@@ -38,7 +38,7 @@ sudo bash install.sh
 ```
 
 The installer asks a few questions (each has a sensible default), shows a summary, and then starts everything
-and waits until MediaMax answers. Open the address it prints and **create the administrator account straight
+and waits until Kinora answers. Open the address it prints and **create the administrator account straight
 away**: until then, anyone who reaches the page can claim the server.
 
 Unattended, with flags (or the environment variables listed in `install.sh --help`):
@@ -51,20 +51,20 @@ sudo bash install.sh --yes --domain media.example.com --email you@example.com \
 Afterwards the installer lives in the install folder:
 
 ```bash
-sudo /opt/mediamax/install.sh            # reconfigure (current answers are the defaults)
-sudo /opt/mediamax/install.sh --upgrade  # new images and deploy files, restart
-sudo /opt/mediamax/install.sh --status   # containers, health, bans, recent sign-in failures
-sudo /opt/mediamax/install.sh --uninstall [--purge]
+sudo /opt/kinora/install.sh            # reconfigure (current answers are the defaults)
+sudo /opt/kinora/install.sh --upgrade  # new images and deploy files, restart
+sudo /opt/kinora/install.sh --status   # containers, health, bans, recent sign-in failures
+sudo /opt/kinora/install.sh --uninstall [--purge]
 ```
 
 ## What gets installed
 
 | Component | Why | When |
 |---|---|---|
-| **MediaMax** (`ghcr.io/bucifer6/mediamax`) | the server | always |
+| **Kinora** (`ghcr.io/bucifer6/kinora`) | the server | always |
 | **Caddy** | HTTPS with automatic certificates, HTTP→HTTPS, HTTP/3, compression, security headers, access log | proxy `caddy` (the default is `none`) |
 | **Nginx + Certbot** | the same with Nginx; Certbot gets and renews the certificate | proxy `nginx` |
-| **CrowdSec** | reads the MediaMax security log and the proxy log, bans brute force, scanners and known-bad addresses (community blocklist) | security `crowdsec` (default) or `both` |
+| **CrowdSec** | reads the Kinora security log and the proxy log, bans brute force, scanners and known-bad addresses (community blocklist) | security `crowdsec` (default) or `both` |
 | **CrowdSec bouncer in Caddy** | blocks the addresses CrowdSec decides on, with a 403 | Caddy + CrowdSec |
 | **CrowdSec firewall bouncer** (on the host) | blocks those addresses in iptables | Nginx/none/existing + CrowdSec, if you agree |
 | **fail2ban** | bans addresses with repeated failed sign-ins in the host firewall | security `fail2ban` or `both` |
@@ -73,22 +73,22 @@ sudo /opt/mediamax/install.sh --uninstall [--purge]
 Everything runs as one Docker Compose project called `mediamax`, with the optional services switched on by
 **compose profiles** (`COMPOSE_PROFILES` in `.env`: `caddy`, `nginx`, `crowdsec`, `fail2ban`, `tunnel`).
 
-The install folder (default `/opt/mediamax`):
+The install folder (default `/opt/kinora`):
 
 ```
-/opt/mediamax
+/opt/kinora
 ├── .env                     your answers (mode 600; holds the CrowdSec bouncer key and tunnel token)
 ├── docker-compose.yml       generated from .env; regenerated on every run (previous copy: .bak)
 ├── docker-compose.override.yml   optional, yours: merged automatically, never touched by the installer
-├── mediamax.env             extra MediaMax settings (TMDB_API_KEY=..., MEDIAMAX_EXTRA_GIDS=...), kept
+├── mediamax.env             extra Kinora settings (TMDB_API_KEY=..., MEDIAMAX_EXTRA_GIDS=...), kept
 ├── install.sh               the installer, for --upgrade/--status/--uninstall
-├── config/                  MediaMax data (/config): database, artwork, logs/security.log, backups/
+├── config/                  Kinora data (/config): database, artwork, logs/security.log, backups/
 ├── recordings/              DVR recordings
 ├── logs/caddy, logs/nginx   proxy access logs (read by CrowdSec/fail2ban)
 ├── caddy/                   Caddyfile, conf.d/ (generated snippets), Dockerfile (Caddy + bouncer)
 ├── nginx/                   templates/ (site config), snippets/, maintenance script
 ├── letsencrypt/, certbot-www/   Nginx certificates
-├── crowdsec/                acquis.yaml, MediaMax parser and scenarios
+├── crowdsec/                acquis.yaml, Kinora parser and scenarios
 ├── fail2ban/                jail.d/, filter.d/, ban database
 └── snippets/nginx/          reference configs for an existing Nginx
 ```
@@ -117,14 +117,15 @@ What it asks, and what it does with the answers:
 8. **Weekly auto-upgrade** (optional cron job).
 
 Then it writes `.env` and `docker-compose.yml`, checks them with `docker compose config`, pulls images (and
-builds Caddy with the CrowdSec module when needed), starts everything, waits for MediaMax's `/health`,
+builds Caddy with the CrowdSec module when needed), starts everything, waits for Kinora's `/health`,
 requests the Nginx certificate, registers the CrowdSec bouncer and prints the address and next steps.
 
 Running it again is safe: your answers are the defaults, data in `config/` and `recordings/` is never touched,
 and only services whose configuration changed are restarted.
 
-Environment variables for unattended runs: `MEDIAMAX_INSTALL_DIR`, `MEDIAMAX_DOMAIN`, `ACME_EMAIL`,
-`MEDIAMAX_PROXY`, `MEDIAMAX_SECURITY`, `MEDIAMAX_MEDIA` (comma separated), `MEDIAMAX_PUID`, `MEDIAMAX_PGID`,
+Environment variables for unattended runs (each also accepted under its original `MEDIAMAX_*` name; the `.env` file the
+installer writes keeps the `MEDIAMAX_*` keys, which the compose file and proxy templates read): `KINORA_INSTALL_DIR`, `KINORA_DOMAIN`, `ACME_EMAIL`,
+`KINORA_PROXY`, `KINORA_SECURITY`, `KINORA_MEDIA` (comma separated), `KINORA_PUID`, `KINORA_PGID`,
 `MEDIAMAX_TZ`, `MEDIAMAX_HWACCEL`, `MEDIAMAX_HTTP_PORT`, `CLOUDFLARE_TUNNEL_TOKEN`, `MEDIAMAX_IMAGE`, `MEDIAMAX_REF`.
 
 ---
@@ -136,20 +137,20 @@ a domain name (automatic HTTPS, HTTP→HTTPS redirect, HTTP/3) or `:8484` (plain
 
 - adds `Strict-Transport-Security` on HTTPS, and fills in `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: same-origin`, `X-Frame-Options: SAMEORIGIN` and `Content-Security-Policy: frame-ancestors 'self'`
-  **only when MediaMax didn't send them**. MediaMax sends its own strict CSP (with `sandbox`) on the plugin UI pages
+  **only when Kinora didn't send them**. Kinora sends its own strict CSP (with `sandbox`) on the plugin UI pages
   and uploaded images; the proxy never adds a second one there, so the plugin sandbox keeps working;
 - compresses text responses (zstd/gzip) by content type only: video, audio, HLS playlists and segments, live TV
   MPEG-TS and range responses pass through untouched;
 - streams with `flush_interval -1`, keeps WebSockets (`/api/v1/ws`) open across reloads, and waits up to 30 s for
-  MediaMax during a restart;
-- allows 64 MB request bodies (uploads are 50 MB in MediaMax), and 4 GB for backup restores;
+  Kinora during a restart;
+- allows 64 MB request bodies (uploads are 50 MB in Kinora), and 4 GB for backup restores;
 - writes a JSON access log to `logs/caddy/access.log` (rotated at 50 MB) with tokens, API keys and Subsonic
   passwords in query strings replaced by `REDACTED`.
 
 By hand, without the installer:
 
 ```yaml
-# docker-compose.yml (next to the MediaMax service from INSTALL.md, both on one network)
+# docker-compose.yml (next to the Kinora service from INSTALL.md, both on one network)
 services:
   caddy:
     image: caddy:2
@@ -166,12 +167,12 @@ volumes:
   caddy-data:
 ```
 
-Remove the `ports:` of the MediaMax service (or bind it to `127.0.0.1`) so the only way in is through Caddy, and
-set `MEDIAMAX_TRUSTED_PROXIES` on MediaMax to the Docker network (see [Hardening defaults](#hardening-defaults)).
+Remove the `ports:` of the Kinora service (or bind it to `127.0.0.1`) so the only way in is through Caddy, and
+set `KINORA_TRUSTED_PROXIES` on Kinora to the Docker network (see [Hardening defaults](#hardening-defaults)).
 For the e-mail address, put `email you@example.com` in `caddy/conf.d/acme.global`.
 
 **Behind Cloudflare (orange cloud)?** Uncomment the `servers { trusted_proxies ... }` block in the global options
-so Caddy (and MediaMax, CrowdSec, the logs) see the visitor's address from `CF-Connecting-IP` rather than
+so Caddy (and Kinora, CrowdSec, the logs) see the visitor's address from `CF-Connecting-IP` rather than
 Cloudflare's. Firewall bans don't help in this setup (the packets come from Cloudflare); the CrowdSec bouncer
 inside Caddy does, because it checks the client address.
 
@@ -212,16 +213,16 @@ Without Docker, on a host Nginx 1.25+: copy `mediamax-common.conf` to `/etc/ngin
 
 ## Existing reverse proxy
 
-Choose "I already have one" (`--proxy existing`). MediaMax then listens on `127.0.0.1:8484` only, and the
+Choose "I already have one" (`--proxy existing`). Kinora then listens on `127.0.0.1:8484` only, and the
 installer prints the settings. Whatever the proxy, it must:
 
 - pass WebSockets (`/api/v1/ws`);
 - not buffer responses (streams), with long idle timeouts (an hour);
 - accept 64 MB request bodies;
 - send `X-Forwarded-For`, `X-Forwarded-Proto` and `Host`;
-- connect from an address MediaMax trusts. MediaMax only believes `X-Forwarded-For` from the addresses in
+- connect from an address Kinora trusts. Kinora only believes `X-Forwarded-For` from the addresses in
   `MEDIAMAX_TRUSTED_PROXIES` (in `.env`; the installer sets loopback and the `mediamax` Docker network). If every
-  user shows up with the proxy's address, MediaMax's per-address protections and your bans hit everyone at once.
+  user shows up with the proxy's address, Kinora's per-address protections and your bans hit everyone at once.
 
 **A proxy in Docker** (Nginx Proxy Manager, Traefik, Caddy...) should join the `mediamax` network and use
 `http://mediamax:8484`. Its address is then trusted automatically:
@@ -236,12 +237,12 @@ networks:
     external: true
 ```
 
-**A proxy on another machine**: run the installer with `--proxy existing --proxy-ip <its address>`; MediaMax
+**A proxy on another machine**: run the installer with `--proxy existing --proxy-ip <its address>`; Kinora
 then listens on all interfaces at 8484 and trusts that address.
 
 ### Nginx (already installed)
 
-Use the files in `/opt/mediamax/snippets/nginx/` as described in [Nginx](#nginx), with the upstream set to
+Use the files in `/opt/kinora/snippets/nginx/` as described in [Nginx](#nginx), with the upstream set to
 `127.0.0.1:8484`. The minimum, if you'd rather write your own server block:
 
 ```nginx
@@ -282,7 +283,7 @@ there and `limit_req zone=mediamax_login burst=10 nodelay;` in the location.
 
 ### Traefik
 
-With Traefik on the `mediamax` network, add labels to MediaMax in `/opt/mediamax/docker-compose.override.yml`
+With Traefik on the `mediamax` network, add labels to Kinora in `/opt/kinora/docker-compose.override.yml`
 (kept by the installer, merged automatically):
 
 ```yaml
@@ -330,12 +331,12 @@ No open ports at all: `cloudflared` makes an outbound connection to Cloudflare, 
 2. Add a **public hostname** (e.g. `media.example.com`) with service **HTTP** → `mediamax:8484`.
 3. Run `sudo bash install.sh --proxy tunnel --tunnel-token <token>` (or choose it in the menu).
 
-This adds the `cloudflared` service (profile `tunnel`); MediaMax listens on `127.0.0.1:8484` only. Notes:
+This adds the `cloudflared` service (profile `tunnel`); Kinora listens on `127.0.0.1:8484` only. Notes:
 
 - Firewall bans (fail2ban, CrowdSec firewall bouncer) can't work behind a tunnel: every connection comes from
-  `cloudflared`. Use Cloudflare's WAF and rate limiting rules (e.g. on `/api/v1/auth/login`), and MediaMax's own
+  `cloudflared`. Use Cloudflare's WAF and rate limiting rules (e.g. on `/api/v1/auth/login`), and Kinora's own
   account lockout (5 failures, 15 minutes).
-- Cloudflare limits request bodies to 100 MB on the free plan (MediaMax needs 50 MB), and its terms restrict
+- Cloudflare limits request bodies to 100 MB on the free plan (Kinora needs 50 MB), and its terms restrict
   serving large amounts of video through its network; read them before streaming through a tunnel.
 
 ## Tailscale
@@ -343,12 +344,12 @@ This adds the `cloudflared` service (profile `tunnel`); MediaMax listens on `127
 For private access from your own devices only, without exposing anything to the internet:
 
 ```bash
-sudo bash install.sh --proxy existing          # MediaMax on 127.0.0.1:8484 only
+sudo bash install.sh --proxy existing          # Kinora on 127.0.0.1:8484 only
 curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up
 sudo tailscale serve --bg --https=443 http://127.0.0.1:8484
 ```
 
-MediaMax is then at `https://<machine>.<tailnet>.ts.net` for devices on your tailnet, with a valid certificate.
+Kinora is then at `https://<machine>.<tailnet>.ts.net` for devices on your tailnet, with a valid certificate.
 `tailscale funnel` instead of `serve` would publish it to the internet. The apps work over Tailscale too; enter
 the `ts.net` address as the server.
 
@@ -358,7 +359,7 @@ the `ts.net` address as the server.
 
 [`deploy/crowdsec/`](../deploy/crowdsec):
 
-- `acquis.yaml` reads `/var/log/mediamax/security.log` (the MediaMax log, `type: mediamax`), the Caddy access log
+- `acquis.yaml` reads `/var/log/mediamax/security.log` (the Kinora log, `type: mediamax`), the Caddy access log
   (`type: caddy`) and the Nginx access log (`type: nginx`), all mounted read-only;
 - `parsers/s01-parse/mediamax-logs.yaml` turns each line of the security log into an event with
   `evt.Meta.source_ip`, `log_type` (`mediamax_failed_auth` for `AUTH_FAIL`/`AUTH_LOCKED`, `mediamax_auth_ok`),
@@ -395,7 +396,7 @@ banned (`crowdsecurity/whitelists`). A ban lasts 4 hours (CrowdSec's default pro
   The Lua-based `cs-nginx-bouncer` needs OpenResty or Nginx built with Lua, which the official image isn't;
   the firewall bouncer works with any proxy.
 
-Useful commands (`cd /opt/mediamax` first):
+Useful commands (`cd /opt/kinora` first):
 
 ```bash
 docker compose exec crowdsec cscli metrics                 # what is read, parsed, which scenarios fire
@@ -422,12 +423,12 @@ docker compose exec crowdsec cscli console enroll <key>    # optional: the Crowd
   missing artwork is ignored.
 
 The installer runs [`crazymax/fail2ban`](https://github.com/crazy-max/docker-fail2ban) with `network_mode: host`
-and `NET_ADMIN`/`NET_RAW` so it can change the host's iptables, with the MediaMax and proxy logs mounted
+and `NET_ADMIN`/`NET_RAW` so it can change the host's iptables, with the Kinora and proxy logs mounted
 read-only, and adds `jail.d/mediamax.network.local` so the Docker network itself is never banned. Turn on a proxy
 jail with a file of your own:
 
 ```ini
-# /opt/mediamax/fail2ban/jail.d/zz-custom.local
+# /opt/kinora/fail2ban/jail.d/zz-custom.local
 [mediamax-caddy]
 enabled = true
 ```
@@ -440,20 +441,20 @@ then `docker compose restart fail2ban`.
 sudo cp deploy/fail2ban/filter.d/mediamax*.conf /etc/fail2ban/filter.d/
 sudo cp deploy/fail2ban/jail.d/mediamax.local /etc/fail2ban/jail.d/
 # point logpath at the host file:
-sudo sed -i 's|/var/log/mediamax/security.log|/opt/mediamax/config/logs/security.log|' /etc/fail2ban/jail.d/mediamax.local
-sudo fail2ban-regex /opt/mediamax/config/logs/security.log /etc/fail2ban/filter.d/mediamax.conf
+sudo sed -i 's|/var/log/mediamax/security.log|/opt/kinora/config/logs/security.log|' /etc/fail2ban/jail.d/mediamax.local
+sudo fail2ban-regex /opt/kinora/config/logs/security.log /etc/fail2ban/filter.d/mediamax.conf
 sudo systemctl restart fail2ban && sudo fail2ban-client status mediamax
 ```
 
 Start fail2ban after Docker (the `DOCKER-USER` chain must exist): `systemctl edit fail2ban` and add
-`After=docker.service`. With the Windows or Linux builds of MediaMax (no Docker), remove the `DOCKER-USER`
+`After=docker.service`. With the Windows or Linux builds of Kinora (no Docker), remove the `DOCKER-USER`
 action line and use `/var/lib/mediamax/logs/security.log` (or wherever your data folder is).
 
 ## Unbanning an address
 
 | Tool | Command |
 |---|---|
-| MediaMax account lockout | lifts by itself after 15 minutes (or restart MediaMax: `docker compose restart mediamax`) |
+| Kinora account lockout | lifts by itself after 15 minutes (or restart Kinora: `docker compose restart mediamax`) |
 | CrowdSec | `docker compose exec crowdsec cscli decisions delete --ip 203.0.113.9` |
 | CrowdSec, never ban again | add the address to a whitelist parser: see [CrowdSec whitelists](https://docs.crowdsec.net/u/getting_started/post_installation/whitelists) |
 | fail2ban (container) | `docker compose exec fail2ban fail2ban-client set mediamax unbanip 203.0.113.9` |
@@ -461,7 +462,7 @@ action line and use `/var/lib/mediamax/logs/security.log` (or wherever your data
 | fail2ban, everything | `docker compose exec fail2ban fail2ban-client unban --all` |
 | Nginx rate limit | nothing to undo: it only slows requests down while they come too fast |
 
-Run these from `/opt/mediamax`. `install.sh --status` lists current bans.
+Run these from `/opt/kinora`. `install.sh --status` lists current bans.
 
 ---
 
@@ -469,29 +470,29 @@ Run these from `/opt/mediamax`. `install.sh --status` lists current bans.
 
 The generated `docker-compose.yml`:
 
-- **MediaMax is not reachable from outside when a proxy is used**: it publishes no port, or only
+- **Kinora is not reachable from outside when a proxy is used**: it publishes no port, or only
   `127.0.0.1:8484`. Without a proxy it listens on `0.0.0.0:8484`.
-- **`MEDIAMAX_TRUSTED_PROXIES`** is set to `loopback` plus the fixed `mediamax` network (`172.30.84.0/24`, change
-  `MEDIAMAX_SUBNET` in `.env` if it clashes with your LAN), so only the proxy can tell MediaMax a client address.
+- **`KINORA_TRUSTED_PROXIES`** is set to `loopback` plus the fixed `mediamax` network (`172.30.84.0/24`, change
+  `MEDIAMAX_SUBNET` in `.env` if it clashes with your LAN), so only the proxy can tell Kinora a client address.
   Without a proxy it is `loopback` only: nobody can fake an address with `X-Forwarded-For`.
 - Media folders are mounted **read-only** unless you asked for `:rw`.
-- `no-new-privileges` on every container. MediaMax's entrypoint starts as root only to fix the owner of `/config`
+- `no-new-privileges` on every container. Kinora's entrypoint starts as root only to fix the owner of `/config`
   and then drops to PUID/PGID with `setpriv`, which `no-new-privileges` allows; GPU access works through group
-  membership. A few capabilities MediaMax never needs are dropped (`NET_RAW`, `MKNOD`, `AUDIT_WRITE`,
+  membership. A few capabilities Kinora never needs are dropped (`NET_RAW`, `MKNOD`, `AUDIT_WRITE`,
   `SYS_CHROOT`, `SETFCAP`).
-- `restart: unless-stopped`, health checks on MediaMax, Caddy, Nginx and CrowdSec, and container logs rotated at
+- `restart: unless-stopped`, health checks on Kinora, Caddy, Nginx and CrowdSec, and container logs rotated at
   10 MB × 3 (`logging: max-size`).
 - `/transcode` is a RAM disk (`MEDIAMAX_TRANSCODE_SIZE`, default 4g, only used as needed).
 - Secrets (`.env`, `mediamax.env`) are readable by root only.
 
-Version pinning: add `MEDIAMAX_IMAGE=ghcr.io/bucifer6/mediamax:0.3.0` (and if you like `CADDY_IMAGE`,
+Version pinning: add `MEDIAMAX_IMAGE=ghcr.io/bucifer6/kinora:0.3.0` (and if you like `CADDY_IMAGE`,
 `NGINX_IMAGE`, `CERTBOT_IMAGE`, `CROWDSEC_IMAGE`, `FAIL2BAN_IMAGE`, `CLOUDFLARED_IMAGE`) to `.env`, then
 `docker compose up -d`.
 
 ## Upgrades and backups
 
 ```bash
-sudo /opt/mediamax/install.sh --upgrade
+sudo /opt/kinora/install.sh --upgrade
 ```
 
 pulls new images, refreshes the deploy files from the same branch or tag (`MEDIAMAX_REF`), rebuilds Caddy with the
@@ -499,12 +500,12 @@ CrowdSec module, restarts what changed and waits for `/health`. To do this weekl
 question (or pass `--auto-upgrade`); it writes `/etc/cron.d/mediamax-upgrade`:
 
 ```cron
-17 4 * * 0 root /opt/mediamax/install.sh --dir /opt/mediamax --upgrade --yes >>/opt/mediamax/logs/upgrade.log 2>&1
+17 4 * * 0 root /opt/kinora/install.sh --dir /opt/kinora --upgrade --yes >>/opt/kinora/logs/upgrade.log 2>&1
 ```
 
-**Backups.** MediaMax backs itself up (Admin → Backups: on demand or on a schedule), into `config/backups/`.
+**Backups.** Kinora backs itself up (Admin → Backups: on demand or on a schedule), into `config/backups/`.
 Copy that folder somewhere else regularly (another disk, a NAS, cloud storage). To move to a new server: install
-there, stop MediaMax, copy `config/` (and `recordings/`), start it again.
+there, stop Kinora, copy `config/` (and `recordings/`), start it again.
 
 ---
 
@@ -519,10 +520,10 @@ fibre ISPs) incoming connections can't work: use [Cloudflare Tunnel](#cloudflare
 **"port is already in use".** Something else listens on 80/443 (an Apache or Nginx from the distribution:
 `sudo ss -ltnp 'sport = :80'`). Stop it, or use `--proxy existing` with that server.
 
-**502 / "bad gateway".** MediaMax isn't healthy yet or has crashed: `docker compose ps`, `docker compose logs mediamax`.
+**502 / "bad gateway".** Kinora isn't healthy yet or has crashed: `docker compose ps`, `docker compose logs mediamax`.
 
 **Every user shows the same address** in Admin → Devices or Activity & logs, or one user's mistakes lock everyone out. The proxy
-connects from an address MediaMax doesn't trust. Check `MEDIAMAX_TRUSTED_PROXIES` in `.env`; for a proxy in Docker,
+connects from an address Kinora doesn't trust. Check `MEDIAMAX_TRUSTED_PROXIES` in `.env`; for a proxy in Docker,
 join the `mediamax` network. If the address is the Docker gateway (`172.30.84.1`), the request came through
 Docker's userland proxy, typically an **IPv6** client reaching an IPv4-only container: enable IPv6 on the Docker
 network or put the proxy on the host network. (fail2ban never bans the Docker network; CrowdSec never bans private
@@ -539,7 +540,7 @@ bouncer is installed (`systemctl status crowdsec-firewall-bouncer`). With Caddy,
 `mediamax-caddy` with a recent "last API pull"; if not, re-run the installer.
 
 **fail2ban doesn't ban.** `docker compose exec fail2ban fail2ban-client status mediamax` and
-`fail2ban-regex /opt/mediamax/config/logs/security.log /opt/mediamax/fail2ban/filter.d/mediamax.conf`. Docker's
+`fail2ban-regex /opt/kinora/config/logs/security.log /opt/kinora/fail2ban/filter.d/mediamax.conf`. Docker's
 optional nftables firewall backend has no `DOCKER-USER` chain; keep the iptables backend (the default) or use
 CrowdSec.
 
@@ -555,28 +556,28 @@ install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-
 and run the installer again. Then check Admin → Server settings → Transcoding.
 
 **DLNA.** Smart TVs find DLNA servers by multicast on UDP 1900, which doesn't cross Docker's bridge network. DLNA
-needs `network_mode: host` on MediaMax, which this installer doesn't set up (the proxy reaches MediaMax over the
+needs `network_mode: host` on Kinora, which this installer doesn't set up (the proxy reaches Kinora over the
 Docker network). Use the plain Docker setup in [INSTALL.md](INSTALL.md) if you need DLNA.
 
-**Start over** (keeps your data): `sudo /opt/mediamax/install.sh --uninstall`, then run the installer again.
+**Start over** (keeps your data): `sudo /opt/kinora/install.sh --uninstall`, then run the installer again.
 
 ## Security dashboard (Admin → Security)
 
-When MediaMax is installed with `deploy/install.sh`, the admin area gets a **Security** page that shows everything in one place:
+When Kinora is installed with `deploy/install.sh`, the admin area gets a **Security** page that shows everything in one place:
 
 - **Sign-in attempts:** failed sign-ins per hour, broken down by password, PIN, 2FA code, API key and music-app login. It also lists the top offending addresses (with a **Ban** button), the accounts being targeted, and lockouts.
 - **Reverse proxy:** Caddy or Nginx traffic for the last 24 hours, including requests per hour, status classes, the busiest addresses with their error counts, and the most common errors. This is where scanners probing `/wp-login.php` or `/.env` show up.
 - **HTTPS certificate:** days until expiry, the issuer, and whether the certificate is trusted.
 - **CrowdSec:** active decisions with their scenario and expiry (**Unban** works per address) and recent alerts.
 - **fail2ban:** each jail's failures and banned addresses, with **Unban**.
-- **Ban an address:** through CrowdSec (1 hour to 1 year) or a fail2ban jail. MediaMax refuses to ban the address you're using. Bans and unbans are written to Activity & logs.
+- **Ban an address:** through CrowdSec (1 hour to 1 year) or a fail2ban jail. Kinora refuses to ban the address you're using. Bans and unbans are written to Activity & logs.
 
 **How it connects.** The installer wires everything up for you:
 
-- **CrowdSec:** MediaMax signs in to CrowdSec's Local API as the machine `mediamax-dashboard`. The password is generated into `.env` (`CROWDSEC_DASHBOARD_PASSWORD`) and registered with `cscli machines add`.
-- **fail2ban:** fail2ban's control socket is root-only, so a small relay, the `fail2ban-bridge` service running `deploy/fail2ban/bridge.py`, exposes a socket that only MediaMax's group can open. It allows exactly four commands: ping, status, ban and unban. Requests are decoded with an unpickler that refuses every class, and MediaMax's own decoder refuses anything but plain data.
-- **Proxy logs:** mounted into MediaMax read-only at `/var/log/proxy`.
-- **Settings:** come from `MEDIAMAX_PROXY_KIND`, `MEDIAMAX_PROXY_LOG`, `MEDIAMAX_PUBLIC_HOST`, `MEDIAMAX_CROWDSEC_URL`, `MEDIAMAX_CROWDSEC_MACHINE_ID`, `MEDIAMAX_CROWDSEC_PASSWORD` and `MEDIAMAX_FAIL2BAN_SOCKET`.
+- **CrowdSec:** Kinora signs in to CrowdSec's Local API as the machine `mediamax-dashboard`. The password is generated into `.env` (`CROWDSEC_DASHBOARD_PASSWORD`) and registered with `cscli machines add`.
+- **fail2ban:** fail2ban's control socket is root-only, so a small relay, the `fail2ban-bridge` service running `deploy/fail2ban/bridge.py`, exposes a socket that only Kinora's group can open. It allows exactly four commands: ping, status, ban and unban. Requests are decoded with an unpickler that refuses every class, and Kinora's own decoder refuses anything but plain data.
+- **Proxy logs:** mounted into Kinora read-only at `/var/log/proxy`.
+- **Settings:** come from `KINORA_PROXY_KIND`, `KINORA_PROXY_LOG`, `KINORA_PUBLIC_HOST`, `KINORA_CROWDSEC_URL`, `KINORA_CROWDSEC_MACHINE_ID`, `KINORA_CROWDSEC_PASSWORD` and `KINORA_FAIL2BAN_SOCKET`.
 
 Set up by hand? Enter the same values under **Admin → Security → Connections**. For CrowdSec, register the machine with:
 
@@ -588,19 +589,19 @@ docker exec crowdsec cscli machines add mediamax-dashboard --password '<choose o
 
 Admin → **Network & HTTPS** decides how people reach the server. Changes apply at once, without a restart.
 
-| Mode | When | What MediaMax does |
+| Mode | When | What Kinora does |
 |---|---|---|
 | **Direct** (default) | LAN, VPN, Tailscale, a port forward to 8484 | plain HTTP on 8484; `X-Forwarded-For` is believed from loopback only, so nobody can fake their address |
 | **Behind my reverse proxy** | you run Nginx, Traefik, Caddy, NPM, SWAG, HAProxy, Apache or Cloudflare Tunnel | believes `X-Forwarded-For`/`-Proto` from the **trusted proxies** you list (default: loopback and private networks, Docker networks included); shows copy-ready configs for each proxy |
 | **Built-in HTTPS** | no proxy, but you want a certificate | runs a bundled [Caddy](https://caddyserver.com) as a child process: Let's Encrypt certificate, HTTP→HTTPS, HTTP/2 and 3, HSTS, compression of text only, unbuffered streaming. Off until you choose it |
 
 The page's **Connection check** shows how your own request arrived (socket address, `X-Forwarded-For`, protocol),
-so you can see straight away whether the proxy is trusted. `MEDIAMAX_TRUSTED_PROXIES` in the environment still
+so you can see straight away whether the proxy is trusted. `KINORA_TRUSTED_PROXIES` in the environment still
 overrides the list (the installer sets it for its own Caddy/Nginx; it is left empty with `--proxy none`).
 
 **Built-in HTTPS needs:** a domain whose DNS points at the server, ports 80 and 443 reachable from the internet,
 and nothing else listening on them. Caddy is bundled in the Docker image and the release downloads; elsewhere
-install it or set `MEDIAMAX_CADDY=/path/to/caddy`. Its certificates live in `<data>/caddy`, its access log is
+install it or set `KINORA_CADDY=/path/to/caddy`. Its certificates live in `<data>/caddy`, its access log is
 `<logs>/caddy-access.log` (tokens redacted), and its messages show on the page. Use *Test mode* (Let's Encrypt
 staging) while you get DNS and ports right, to stay clear of rate limits.
 

@@ -1,4 +1,4 @@
-# Publishing the MediaMax apps
+# Publishing the Kinora apps
 
 Publisher: an individual (your legal name shows as the developer). Accounts you already have: **Apple Developer** and **Google Play Console**.
 
@@ -12,24 +12,47 @@ Publisher: an individual (your legal name shows as the developer). Accounts you 
 | Samsung TV (Tizen) | Samsung Apps TV (Seller Office) | **Samsung Seller Office (free) — apply** | free | `tv/dist/tizen` → `.wgt` | Needs account |
 | LG TV (webOS) | LG Content Store (Seller Lounge) | **LG Seller Lounge (free) — apply** | free | `tv/dist/webos` → `.ipk` | Needs account |
 | Hisense (VIDAA) | VIDAA Store | **VIDAA partner programme — apply** | free | `tv/dist/vidaa` | In progress |
-| Roku | Roku Channel Store | **Roku Developer (free) — create** | free | `apps/roku/dist/MediaMax.zip` | In progress |
+| Roku | Roku Channel Store | **Roku Developer (free) — create** | free | `apps/roku/dist/Kinora.zip` | In progress |
 
 ## Decide before submitting
 
-1. **The name.** "MediaMax" alone is risky in stores. *Mediamax: AI Video, Art, Song* (App Store id 6736882275, ~400k users) and *Mediamax Waves* (Mediamax Network Limited, a broadcaster) already exist. Apple lets two apps share a word but rejects names that are confusingly similar, and a company owning the name can file a complaint. Old US registrations for "MEDIAMAX" exist in other fields; check the live register (USPTO TSDR, UK IPO, EUIPO) before you commit. Options:
-   - Keep the brand with a descriptive store name: **"MediaMax Player – Media Server"** (the home-screen name can stay "MediaMax").
-   - Pick a distinctive new name now, before the first release, when renaming is free.
-2. **App identifiers** (permanent once published). The code defaults to `tv.mediamax.app`, which implies you own `mediamax.tv`. Use a domain you control, e.g. **`uk.burdujeni82.mediamax`** (set `bundleId` / `androidPackage` in `apps/mobile/branding/`).
+1. **The name: Kinora** (decided; the product was called MediaMax until the rename, which was done before any store
+   release, while renaming was free). Store listings use **"Kinora"**; if a store reports a clash, use a descriptive
+   store name such as **"Kinora – Home Media Server"** and keep "Kinora" under the icon. Before submitting, search each
+   store for "Kinora" and check the live trade-mark registers (USPTO TSDR, UK IPO, EUIPO) in classes 9 (software) and
+   41 (entertainment).
+2. **App identifiers** (permanent once published), all from one family:
+
+   | Where | Identifier | Set in |
+   |---|---|---|
+   | iOS / iPadOS bundle id, Android package | `uk.burdujeni82.kinora` | `apps/mobile/branding/defaults.json` (single source of truth) |
+   | Apple TV, Android TV / Google TV, Fire TV | `uk.burdujeni82.kinora` (same record / listing as the phone app) | same file (`EXPO_TV=1` builds) |
+   | URL scheme | `kinora://` (primary) and `mediamax://` (still registered) | same file (`scheme`, `legacySchemes`) |
+   | LG webOS app id | `uk.burdujeni82.kinora` | `tv/webos/appinfo.json` |
+   | Samsung Tizen | widget `http://burdujeni82.uk/kinora`, application `KinoraTV01.Kinora` | `tv/tizen/config.xml` |
+   | Hisense VIDAA | `uk.burdujeni82.kinora.vidaa` | `tv/vidaa/app.json` |
+   | Roku | channel "Kinora", package `apps/roku/dist/Kinora.zip` | `apps/roku/manifest` |
+
+   Apple and Google tie the id to the listing for good, so don't change these after the first upload. A white-label
+   build gets its own ids (`npm run brand -- <server> <brand> --bundle-id com.example.media`).
 3. **A privacy policy URL.** Every store requires one. The draft is in `docs/PRIVACY.md`; host it on your own domain (e.g. `https://burdujeni82.uk/privacy`) or GitHub Pages.
 4. **A support URL and contact email** (shown publicly). A dedicated address is better than your personal one.
 
+## Store art
+
+Rendered from the brand sources by `node scripts/brand-export.mjs` into [`branding/kinora/png/store/`](../branding/kinora/png/store/):
+App Store icon (1024, opaque), Play icon (512), Play feature graphic (1024×500), Android TV banner (1280×720), Fire TV
+background (1920×1080), Samsung/LG icon (512) and Roku channel poster (540×405). The in-app icons, Apple TV layers and
+top shelf, Roku focus icons and splash screens are written straight into each app (see
+[`branding/kinora/README.md`](../branding/kinora/README.md)).
+
 ## What every store review needs
 
-MediaMax is a client for a server the user runs, so reviewers can't test it without one. Prepare once, reuse everywhere:
+Kinora is a client for a server the user runs, so reviewers can't test it without one. Prepare once, reuse everywhere:
 
 - **A demo server** reachable from the internet over HTTPS, with **legal, freely redistributable content only** (public-domain films, Creative Commons shorts such as Blender Open Movies) and no IPTV channels. Reviewers reject apps when they see commercial films or live TV they think is unlicensed.
 - **A reviewer account** on it (username + password), no 2FA, plus a link code flow that works.
-- **Review notes** explaining: the app connects to the user's own MediaMax server; enter `https://demo.<your-domain>` and the credentials; content on the demo server is public domain.
+- **Review notes** explaining: the app connects to the user's own Kinora server; enter `https://demo.<your-domain>` and the credentials; content on the demo server is public domain.
 - **Content policy wording**: the app doesn't provide content; users stream their own media. Don't mention IPTV, Xtream or "free channels" anywhere in listings or screenshots — this is the most common reason media-server apps get rejected or pulled.
 - **Screenshots** from the demo server (no copyrighted posters). The screenshot pipeline (`npm run screenshots`) already builds a fictional demo library; it can render store sizes.
 
@@ -60,7 +83,7 @@ MediaMax is a client for a server the user runs, so reviewers can't test it with
    ```bash
    npx eas-cli submit --platform android --latest
    ```
-4. **Android TV**: in Play Console → Advanced settings → Form factors, add Android TV. It needs a TV banner (1280×720, already in `apps/mobile/assets`), TV screenshots, and passes a separate TV quality review (D-pad navigation everywhere, no touch-only screens).
+4. **Android TV**: in Play Console → Advanced settings → Form factors, add Android TV. It needs a TV banner (1280×720: `branding/kinora/png/store/android-tv-banner-1280x720.png`), TV screenshots, and passes a separate TV quality review (D-pad navigation everywhere, no touch-only screens).
 
 ## Amazon Appstore (Fire TV)
 
@@ -80,7 +103,7 @@ VIDAA publishes third-party apps through its partner programme; apply via the VI
 
 ## Roku
 
-Free account at developer.roku.com. Enable developer mode on a Roku, sideload `apps/roku/dist/MediaMax.zip` to test, then package it on the device (Roku signs packages on-device) and publish as a **public** channel, or as a **beta/non-certified** channel shared by access code if you only want your own users (no certification needed, up to 20 testers, expires after 120 days).
+Free account at developer.roku.com. Enable developer mode on a Roku, sideload `apps/roku/dist/Kinora.zip` to test, then package it on the device (Roku signs packages on-device) and publish as a **public** channel, or as a **beta/non-certified** channel shared by access code if you only want your own users (no certification needed, up to 20 testers, expires after 120 days).
 
 ## Suggested order
 

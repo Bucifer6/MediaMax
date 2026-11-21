@@ -1,10 +1,10 @@
-# MediaMax REST API (v1)
+# Kinora REST API (v1)
 
 All types referenced below live in [`shared/src/types.ts`](../shared/src/types.ts).
 
 * Base path: `/api/v1`
 * Auth: `Authorization: Bearer <token>` **or** `?token=<token>` (for `<video>`, HLS segments, WebSocket).
-* Also accepted on every request (optional): headers `X-MediaMax-Device-Id`, `X-MediaMax-Device-Name`, `X-MediaMax-Platform`, `X-MediaMax-Version`. `Platform`: `web`, `ios`, `android`, `tvos`, `androidtv`, `roku`, `other` (unknown values are stored as `other`).
+* Also accepted on every request (optional): headers `X-Kinora-Device-Id`, `X-Kinora-Device-Name`, `X-Kinora-Platform`, `X-Kinora-Version` (the original `X-MediaMax-*` names are accepted too; when both are sent the `X-Kinora-*` value wins; likewise `X-Kinora-Token` / `X-MediaMax-Token` as an alternative to the bearer header). `Platform`: `web`, `ios`, `android`, `tvos`, `androidtv`, `roku`, `other` (unknown values are stored as `other`).
 * JSON in/out. Errors are `ApiError` with an HTTP status.
 * 🔓 = public, 🔑 = any signed-in user, 🛡️ = admin only.
 
@@ -307,7 +307,7 @@ owners carry `profileCount` (> 0 → show the picker after sign-in). A profile's
 ## Extra item endpoints
 * `GET /items?ancestorId=` — children *and* grandchildren (all tracks of an artist, all episodes of a show), grouped by parent when `sort=index`.
 * `Item.lockedFields` on `GET /items/:id`.
-* `GET /stream/download/:itemId?quality=original|1080p|720p|480p` — non-original returns a fragmented H.264/AAC MP4 (no Content-Length; `X-MediaMax-Duration-Ms` header).
+* `GET /stream/download/:itemId?quality=original|1080p|720p|480p` — non-original returns a fragmented H.264/AAC MP4 (no Content-Length; `X-Kinora-Duration-Ms` header, also sent as `X-MediaMax-Duration-Ms`).
 * `GET /dvr/defaults` → `DvrDefaults` (any signed-in user).
 * `POST /items/:id/detect-intros` 🛡️ — re-run intro/credits detection now for an episode's season, a season or every season of a show → `{ ok, updated, item }`.
 
@@ -316,7 +316,7 @@ owners carry `profileCount` (> 0 → show the picker after sign-in). A profile's
 * `GET /admin/diagnostics.zip` 🛡️ — redacted diagnostics bundle (settings, logs, hardware report, counts). See [HELP.md](HELP.md).
 
 ## DLNA media server
-When Settings → DLNA is on, the server announces itself over SSDP and serves UPnP descriptions and SOAP control on its HTTP port (no MediaMax token; LAN clients only): `GET /dlna/description.xml`, `GET /dlna/ContentDirectory.xml`, `GET /dlna/ConnectionManager.xml`, `POST /dlna/control/ContentDirectory`, `POST /dlna/control/ConnectionManager`, `GET /dlna/stream/:file`, `GET /dlna/subtitle/:mediaId/:file`.
+When Settings → DLNA is on, the server announces itself over SSDP and serves UPnP descriptions and SOAP control on its HTTP port (no Kinora token; LAN clients only): `GET /dlna/description.xml`, `GET /dlna/ContentDirectory.xml`, `GET /dlna/ConnectionManager.xml`, `POST /dlna/control/ContentDirectory`, `POST /dlna/control/ConnectionManager`, `GET /dlna/stream/:file`, `GET /dlna/subtitle/:mediaId/:file`.
 
 ## Trickplay (seek-bar previews)
 * `GET /items/:id/trickplay[?mediaId=]` → `TrickplayInfo` (404 until generated). Thumbnail *n* (time = n × intervalMs) is on sheet `floor(n / (columns×rows))` at column `n % columns`, row `floor(n / columns) % rows`.
@@ -337,7 +337,7 @@ When Settings → DLNA is on, the server announces itself over SSDP and serves U
   (`provider` defaults to `opensubtitles`). Archives are unpacked (season packs: the SxxEyy file), the text is converted to
   UTF-8 (Windows-1250 / ISO-8859-2 / ISO-8859-16 detected), Romanian ş/ţ become ș/ț, mojibake and advert cues are removed, and
   with `subtitles.sync` the file is re-timed with alass. Saved in the data folder or as a `Name.ro.srt` sidecar (`subtitles.saveMode`).
-* `DELETE /items/:id/subtitles/:index` 🛡️ removes a downloaded subtitle (data folder 2000+, sidecars MediaMax wrote 3000+).
+* `DELETE /items/:id/subtitles/:index` 🛡️ removes a downloaded subtitle (data folder 2000+, sidecars Kinora wrote 3000+).
 * `GET /admin/subtitles/providers` 🛡️ → `SubtitleProviderInfo[]` (priority order) · `GET /admin/subtitles/tools?refresh=1` 🛡️ →
   `SubtitleToolsReport` (alass / unrar / 7z paths found on PATH).
 * Configure `ServerSettings.openSubtitles` (API key, optional account) and `ServerSettings.subtitles` (provider order, Subs.ro key
@@ -365,7 +365,7 @@ When Settings → DLNA is on, the server announces itself over SSDP and serves U
 
 ## Lyrics
 * `GET /items/:id/lyrics` → `Lyrics`. 404 when none. Sources, first synced hit wins (a plain hit keeps looking for a synced one):
-  1. edits saved in MediaMax (`source: "user"`), 2. `Song.lrc` / `Song.LRC` / `Song.mp3.lrc`, then `Song.txt` (`"lrc"` / `"txt"`),
+  1. edits saved in Kinora (`source: "user"`), 2. `Song.lrc` / `Song.LRC` / `Song.mp3.lrc`, then `Song.txt` (`"lrc"` / `"txt"`),
   3. embedded tags (`"embedded"`): ID3 SYLT (synced, word timing), ID3 USLT / `lyrics-<lang>`, Vorbis `LYRICS` / `UNSYNCEDLYRICS`, MP4 `©lyr`;
   plain text that is really LRC is parsed as synced, 4. LRCLIB when enabled (Server settings → Metadata; `"lrclib"`, cached).
   Lines carry `startMs`, optional `endMs` and `words: [{ startMs, text }]` (enhanced LRC `<mm:ss.xx>` / SYLT syllables).
@@ -445,7 +445,7 @@ Settings are stored separately from `ServerSettings` (settings key `metadata`).
 * `SystemInfo.oidc` is non-null when SSO is configured — show a button labelled `buttonLabel`.
 * Open `GET /api/v1/auth/oidc/start?redirect=<url>&deviceId=&deviceName=&platform=` **in a browser**. After sign-in the
   browser is sent to `<redirect>#token=<token>` (or `#error=<message>`). `redirect` must be on the server's own origin /
-  `publicUrl`, or use the `mediamax://` scheme (native apps: open with an auth session and read the fragment).
+  `publicUrl`, or use the `kinora://` scheme (the legacy `mediamax://` is accepted too) (native apps: open with an auth session and read the fragment).
 * Configure `ServerSettings.oidc` (issuer, client id/secret, auto-create users, admin group, allowed group). Register
   `<publicUrl>/api/v1/auth/oidc/callback` as the redirect URI at your provider.
 
@@ -588,7 +588,7 @@ All 🛡️:
 `POST /arr/webhook/:token` 🔓 — the token is a random secret (stored in the settings table, compared in constant time; a wrong
 token is a 401 and an `AUTH_FAIL reason=arr_webhook` security event). Set it up in each app:
 
-1. **Settings → Connect → + → Webhook**. Name "MediaMax", URL = `GET /arr/webhook`'s `url` (or your server address + `path`),
+1. **Settings → Connect → + → Webhook**. Name "Kinora", URL = `GET /arr/webhook`'s `url` (or your server address + `path`),
    method POST, no username/password.
 2. Triggers — Radarr: On File Import, On File Upgrade, On Rename, On Movie Delete, On Movie File Delete (On Grab optional).
    Sonarr: On File Import, On File Upgrade, On Import Complete, On Rename, On Series Delete, On Episode File Delete.
@@ -650,7 +650,7 @@ Repositories: `ServerSettings.plugins.repositories`. Plugin routes: `/api/v1/plu
 
 ## Subsonic / OpenSubsonic
 `/rest/<method>.view` (GET or form POST, `f=json` or XML). Auth: `u` + `p` (plain or `enc:<hex>`) or OpenSubsonic `apiKey`
-(a MediaMax API key). Salted-token auth (`t`/`s`) returns error 41 (passwords are never stored in plaintext). Implemented:
+(a Kinora API key). Salted-token auth (`t`/`s`) returns error 41 (passwords are never stored in plaintext). Implemented:
 ping, getLicense, getOpenSubsonicExtensions, getUser, getMusicFolders, getGenres, getIndexes, getArtists, getArtist, getAlbum,
 getSong, getMusicDirectory, getAlbumList2, getRandomSongs, getSongsByGenre, search3, getStarred2, star, unstar, scrobble,
 getPlaylists, getPlaylist, createPlaylist, updatePlaylist, deletePlaylist, getLyrics, getLyricsBySongId, getNowPlaying,
@@ -751,7 +751,7 @@ Guides are their own entity, `EpgSource` (all endpoints 🛡️ admin). Kinds: `
 `Marker.type` can also be `preview` ("next time on" scenes) or `commercial` (ad breaks). Players show "Skip ad break" or "Skip preview". When auto-skip is on, intros, recaps and ad breaks are skipped automatically.
 
 - **Sidecar EDL:** a Kodi/MythTV/comskip `.edl` file next to any video (same base name) is imported on every scan. Each line is `start end action`, in seconds. Actions `0` (cut) and `3` (commercial) become `commercial` markers.
-- **DVR:** with `settings.dvr.commercialDetection` on, finished recordings are passed to comskip (`dvr.comskipPath`, default `comskip` on PATH). If `dvr.comskipIni` is not set, MediaMax supplies an EDL-only ini. The resulting `.edl` is imported straight away and deleted along with the recording.
+- **DVR:** with `settings.dvr.commercialDetection` on, finished recordings are passed to comskip (`dvr.comskipPath`, default `comskip` on PATH). If `dvr.comskipIni` is not set, Kinora supplies an EDL-only ini. The resulting `.edl` is imported straight away and deleted along with the recording.
 
 ## IPTV multiview
 
@@ -769,7 +769,7 @@ Music tracks carry `replayGain: { trackGainDb, trackPeak, albumGainDb, albumPeak
 
 ## DJ mode
 
-MediaMax analyses every music track and can build and play continuous, beat-matched mixes.
+Kinora analyses every music track and can build and play continuous, beat-matched mixes.
 
 **Analysis.** The scheduled task "Analyse music for DJ mode" runs every 6 hours. `POST /dj/analyze` (admin) runs it now, and `GET /dj/status` reports `{analyzed, total, running}`. `GET /items/:id/analysis` returns a `TrackAnalysis` and analyses the track on demand (about 0.5 s per track). Each track gets:
 
@@ -831,7 +831,7 @@ The server does not render whole mixes otherwise: the web and mobile apps mix on
 The web app's DJ page (`/dj`) runs two decks on Web Audio. Each deck has a small mixer strip — a Linkwitz-Riley
 200 Hz band split (bass swap), high/low-pass filters (filter fade) and a send into a shared beat-synced echo — and every
 control is automated on the audio clock. Tempo matching keeps the key: the browser's pitch-preserving playback where
-available (Chromium, Firefox, Safari), else MediaMax's WSOLA AudioWorklet (adapted from OpenDJ): the deck plays at the
+available (Chromium, Firefox, Safari), else Kinora's WSOLA AudioWorklet (adapted from OpenDJ): the deck plays at the
 matched rate without pitch preservation and the worklet shifts the pitch back by 1/rate with a fixed 1024-frame latency
 on both decks. Without either (very old TV browsers), tracks play at their own tempo. DJ settings: transition feel,
 key-lock engine, largest tempo change (±8 % default) and "glide back over N bars" or "stay at the matched tempo". It
@@ -870,10 +870,10 @@ The AI DJ is free by default and works offline. Admins can connect free or cheap
 
 ## Security dashboard (admin)
 
-- `GET /admin/security[?refresh=1]` returns a `SecurityOverview`, cached for 15 s. It covers sign-in failures from MediaMax's security log (24 h and 7 d, by reason, top IPs, targeted users, an hourly histogram and recent events), proxy stats from the Caddy JSON or Nginx combined access log (24 h), the HTTPS certificate (expiry, issuer, trust), CrowdSec active decisions and alerts, and fail2ban jails with their banned IPs. Any part that isn't configured is `null`.
-- `GET/PUT /admin/security/settings` reads and writes `SecurityDashboardSettings`. Defaults come from the `MEDIAMAX_PROXY_KIND`, `MEDIAMAX_PROXY_LOG`, `MEDIAMAX_PUBLIC_HOST`, `MEDIAMAX_CROWDSEC_URL`, `MEDIAMAX_CROWDSEC_MACHINE_ID`, `MEDIAMAX_CROWDSEC_PASSWORD` and `MEDIAMAX_FAIL2BAN_SOCKET` environment variables. The CrowdSec password is write-only.
+- `GET /admin/security[?refresh=1]` returns a `SecurityOverview`, cached for 15 s. It covers sign-in failures from Kinora's security log (24 h and 7 d, by reason, top IPs, targeted users, an hourly histogram and recent events), proxy stats from the Caddy JSON or Nginx combined access log (24 h), the HTTPS certificate (expiry, issuer, trust), CrowdSec active decisions and alerts, and fail2ban jails with their banned IPs. Any part that isn't configured is `null`.
+- `GET/PUT /admin/security/settings` reads and writes `SecurityDashboardSettings`. Defaults come from the `KINORA_PROXY_KIND`, `KINORA_PROXY_LOG`, `KINORA_PUBLIC_HOST`, `KINORA_CROWDSEC_URL`, `KINORA_CROWDSEC_MACHINE_ID`, `KINORA_CROWDSEC_PASSWORD` and `KINORA_FAIL2BAN_SOCKET` environment variables. The CrowdSec password is write-only.
 - `POST /admin/security/ban {ip, tool: 'crowdsec'|'fail2ban', jail?, duration?, reason?}` bans an IP or CIDR. Your own address is refused.
-- `GET /admin/network` returns `NetworkStatus`: the saved `NetworkSettings` (mode `direct`|`proxy`|`builtin`, trusted proxies, built-in HTTPS domain/email/ports/staging/HSTS), any `MEDIAMAX_TRUSTED_PROXIES` override, how this request arrived (`you`), and the built-in Caddy status (binary, version, running, last error, recent log, certificate).
+- `GET /admin/network` returns `NetworkStatus`: the saved `NetworkSettings` (mode `direct`|`proxy`|`builtin`, trusted proxies, built-in HTTPS domain/email/ports/staging/HSTS), any `KINORA_TRUSTED_PROXIES` override, how this request arrived (`you`), and the built-in Caddy status (binary, version, running, last error, recent log, certificate).
 - `PUT /admin/network` saves a partial `NetworkSettings`. Trusted-proxy changes apply immediately; choosing `builtin` validates the domain and starts Caddy (400 if no Caddy binary is found).
 - `POST /admin/security/unban {ip, tool?, jail?}` unbans an address. Without `tool` it removes the address from CrowdSec and every fail2ban jail, and returns `removedFrom`.
 

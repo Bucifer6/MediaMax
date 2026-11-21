@@ -1,5 +1,5 @@
 /**
- * MediaMax server benchmark.
+ * Kinora server benchmark.
  *
  *   npm run perf                      # = node scripts/perf/run.mjs
  *   node scripts/perf/run.mjs --label=after --scale=1 [--build] [--only=home,search] [--quick]
@@ -137,7 +137,7 @@ try {
 const etags = new Map();
 let transportErrors = 0;
 function headersFor(sc, i) {
-  const h = { 'X-MediaMax-Device-Id': 'perf' };
+  const h = { 'X-Kinora-Device-Id': 'perf' };
   const tok = sc.who === 'user' ? nextUser().token : sc.who === 'restricted' ? restricted[i % restricted.length].token : sc.who === 'admin' ? admin.token : null;
   if (tok) h.Authorization = `Bearer ${tok}`;
   h['Accept-Encoding'] = 'gzip, deflate, br';

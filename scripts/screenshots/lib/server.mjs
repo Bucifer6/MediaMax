@@ -63,7 +63,7 @@ export function client(base, token) {
   const call = async (p, init = {}) => {
     const res = await fetch(`${base}/api/v1${p}`, {
       ...init,
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init.body && !(init.body instanceof FormData) ? { 'content-type': 'application/json' } : {}), 'X-MediaMax-Device-Id': 'screenshots', 'X-MediaMax-Device-Name': 'Screenshot pipeline', ...(init.headers ?? {}) },
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init.body && !(init.body instanceof FormData) ? { 'content-type': 'application/json' } : {}), 'X-Kinora-Device-Id': 'screenshots', 'X-Kinora-Device-Name': 'Screenshot pipeline', ...(init.headers ?? {}) },
     });
     const text = await res.text();
     if (!res.ok) throw new Error(`${init.method ?? 'GET'} ${p} → ${res.status}: ${text.slice(0, 200)}`);

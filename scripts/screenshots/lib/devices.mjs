@@ -4,7 +4,7 @@ import net from 'node:net';
 /**
  * Local stand-ins for things on a home network, for the smart-home and Play to screenshots. All fictional:
  *   - a tiny MQTT 3.1.1 broker (CONNECT, PUBLISH with retain, SUBSCRIBE, PINGREQ) standing in for Home Assistant's
- *     Mosquitto add-on, counting the discovery configs MediaMax announces;
+ *     Mosquitto add-on, counting the discovery configs Kinora announces;
  *   - Kodi's JSON-RPC API (/jsonrpc) and two UPnP media renderers (a TV and a speaker) with device descriptions
  *     and enough SOAP to answer status polls.
  */
