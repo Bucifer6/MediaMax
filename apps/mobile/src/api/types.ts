@@ -1702,11 +1702,19 @@ export type ServerEvent =
   | { type: 'syncplay.command'; room: string; action: 'play' | 'pause' | 'seek' | 'load'; positionMs: number; itemId?: string; at: number; by: string }
   | { type: 'error'; message: string }
   /** A command from another of your devices (apply it to the local player). */
-  | { type: 'remote.command'; fromDeviceName: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number }
+  | { type: 'remote.command'; fromDeviceName: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number; trackIndex?: number | null }
   /** Your controllable devices changed (online/offline/now playing). */
   | { type: 'remote.targets'; targets: RemoteTarget[] }
   /** A new in-app notification for you (e.g. a new episode of a show you watch). `unread` is your new unread total. */
-  | { type: 'notification'; notification: AppNotification; unread: number };
+  | { type: 'notification'; notification: AppNotification; unread: number }
+  /** A key press from a paired phone remote (TV web app: fed into spatial navigation). */
+  | { type: 'remote.key'; fromDeviceName: string; key: RemoteKey; text?: string }
+  /** Someone else's phone asks to pair with this TV (accept or decline on screen). */
+  | { type: 'pair.request'; request: PairRequest }
+  /** A pairing involving this device changed (accepted, declined, revoked, expired). */
+  | { type: 'pair.updated'; pairingId: string | null; requestId?: string; status: PairStatus }
+  /** The TVs this (controller) device is paired with, with what they are playing. */
+  | { type: 'pair.targets'; targets: PairedTarget[] };
 
 export type ClientEvent =
   | { type: 'ping' }
@@ -1715,11 +1723,18 @@ export type ClientEvent =
   | { type: 'syncplay.leave'; room: string }
   | { type: 'syncplay.command'; room: string; action: 'play' | 'pause' | 'seek' | 'load'; positionMs: number; itemId?: string }
   /** Control another of your own devices ("Play on…"). */
-  | { type: 'remote.command'; targetDeviceId: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number }
+  | { type: 'remote.command'; targetDeviceId: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number; trackIndex?: number | null }
   /** Players report what they're doing so other devices can show and control it. Send on change and every ~10 s while playing. */
-  | { type: 'remote.state'; state: RemotePlayerState | null };
+  | { type: 'remote.state'; state: RemotePlayerState | null }
+  /** D-pad / OK / Back / text from a phone remote to a TV it is paired with (QR pairing). Never routed to unpaired devices. */
+  | { type: 'remote.key'; targetDeviceId: string; key: RemoteKey; text?: string };
 
-export type RemoteAction = 'play' | 'pause' | 'togglePause' | 'stop' | 'seek' | 'next' | 'previous' | 'setVolume' | 'playItem' | 'playChannel';
+export type RemoteAction = 'play' | 'pause' | 'togglePause' | 'stop' | 'seek' | 'next' | 'previous' | 'setVolume' | 'playItem' | 'playChannel'
+  /** Second screen: switch the audio / subtitle track (`trackIndex`, null = subtitles off) or press the visible Skip button. */
+  | 'setAudioTrack' | 'setSubtitleTrack' | 'skipSegment';
+
+/** Keys a phone remote can send to a paired TV. `text` types into the focused text field; `backspace` deletes. */
+export type RemoteKey = 'up' | 'down' | 'left' | 'right' | 'ok' | 'back' | 'home' | 'playPause' | 'rewind' | 'forward' | 'info' | 'text' | 'backspace' | 'submit';
 
 export interface RemotePlayerState {
   itemId: string | null;
@@ -1732,6 +1747,20 @@ export interface RemotePlayerState {
   paused: boolean;
   /** 0-100 */
   volume: number | null;
+  /** Second-screen extras (web/TV player; optional for older clients). */
+  audioTracks?: RemoteTrack[];
+  audioIndex?: number | null;
+  subtitleTracks?: RemoteTrack[];
+  /** null = subtitles off. */
+  subtitleIndex?: number | null;
+  /** The Skip button currently on screen (intro, recap, credits, ad break), if any. */
+  skip?: { type: string; label: string } | null;
+  nextItemId?: string | null;
+}
+
+export interface RemoteTrack {
+  index: number;
+  label: string;
 }
 
 /** One of the user's online devices that can be controlled. `id` is the device row id. */
@@ -4239,4 +4268,162 @@ export interface TrackStems {
   frames?: number;
   sampleRate?: number;
   at?: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Phone ↔ TV pairing (QR), phone remote, second screen                */
+/* ------------------------------------------------------------------ */
+
+/** pending: waiting for the TV user to accept; paired: active; declined / revoked / expired: over. */
+export type PairStatus = 'pending' | 'paired' | 'declined' | 'revoked' | 'expired';
+
+/** TV side: what the QR code and the on-screen short code carry. */
+export interface PairStartResponse {
+  /** Short code to type on the phone (6 characters, no look-alike letters). */
+  code: string;
+  /** Long one-time secret carried by the QR code only. */
+  token: string;
+  expiresAt: string;
+  /** Path + query the QR code opens on this server (`/pair?c=…&t=…`); the TV prefixes its own origin. */
+  path: string;
+}
+
+export interface PairClaimRequest {
+  code?: string;
+  token?: string;
+}
+
+export interface PairClaimResponse {
+  status: PairStatus;
+  pairingId: string | null;
+  /** For a pending cross-user request: poll GET /pair/requests/:id or wait for `pair.updated`. */
+  requestId: string | null;
+  /** The TV's device id (the `targetDeviceId` for remote.key / remote.command). */
+  targetDeviceId: string;
+  targetName: string;
+  /** Display name of the TV's signed-in user. */
+  ownerName: string;
+  crossUser: boolean;
+}
+
+/** Shown on the TV when another user's phone asks to pair. */
+export interface PairRequest {
+  id: string;
+  fromUserName: string;
+  fromDeviceName: string;
+  expiresAt: string;
+}
+
+export interface Pairing {
+  id: string;
+  /** This side's role in the pairing. */
+  role: 'tv' | 'controller';
+  tvDeviceId: string;
+  tvDeviceName: string;
+  controllerDeviceId: string;
+  controllerDeviceName: string;
+  /** The other side's user (display name). */
+  otherUserName: string;
+  crossUser: boolean;
+  createdAt: string;
+  expiresAt: string;
+  online: boolean;
+}
+
+/** A TV the phone is paired with (pushed as `pair.targets`, also GET /pair/targets). */
+export interface PairedTarget {
+  pairingId: string;
+  /** Device id of the TV (send remote.key / remote.command to it). */
+  id: string;
+  deviceName: string;
+  platform: Platform;
+  ownerName: string;
+  crossUser: boolean;
+  online: boolean;
+  state: RemotePlayerState | null;
+}
+
+/** Second screen: everything about what the TV is playing, built as the TV's user (their access rules apply). */
+export interface SecondScreenInfo {
+  item: Item;
+  /** The show (for an episode). */
+  show: Item | null;
+  /** Episodes of the current season (for an episode), else empty. */
+  episodes: Item[];
+  next: Item | null;
+  trickplay: TrickplayInfo | null;
+}
+
+/** "What's this song?" */
+export interface SongMatch {
+  title: string;
+  artists: string[];
+  album: string | null;
+  /** Cover art (your library's album art when matched, else the Cover Art Archive). */
+  coverUrl: string | null;
+  recordingMbid: string | null;
+  score: number;
+  /** The same recording in your music library, if you have it. */
+  libraryTrack: { id: string; title: string; albumId: string | null; artistId: string | null; posterUrl: string | null } | null;
+}
+
+export interface SongIdResponse {
+  available: boolean;
+  /** Why identifying isn't possible (no AcoustID key, no Chromaprint, no local file). */
+  reason: string | null;
+  source: 'file' | 'microphone';
+  match: SongMatch | null;
+  /** Position (ms) of the snippet that was fingerprinted (file source). */
+  positionMs: number | null;
+  cached: boolean;
+}
+
+/* ------------------------------------------------------------------ */
+/* Wrapped story                                                       */
+/* ------------------------------------------------------------------ */
+
+export interface WrappedPerson {
+  name: string;
+  kind: Person['kind'];
+  imageUrl: string | null;
+  minutes: number;
+  titles: number;
+}
+
+export interface WrappedPersonality {
+  /** Stable id (for styling), e.g. 'night-owl'. */
+  id: string;
+  title: string;
+  description: string;
+  traits: string[];
+}
+
+export interface WrappedStory {
+  year: number | null;
+  displayName: string;
+  totalMinutes: number;
+  totalPlays: number;
+  activeDays: number;
+  moviesWatched: number;
+  episodesWatched: number;
+  tracksPlayed: number;
+  longestStreakDays: number;
+  /** Movies and shows together, by time. */
+  topTitles: StatsTopEntry[];
+  topGenres: { genre: string; minutes: number }[];
+  /** Actors and directors of what you watched, by time. */
+  topPeople: WrappedPerson[];
+  /** Most episodes of one show in a single day. */
+  binge: { showId: string | null; title: string; posterUrl: string | null; episodes: number; minutes: number; date: string } | null;
+  /** Biggest single day overall. */
+  biggestDay: { date: string; minutes: number } | null;
+  personality: WrappedPersonality;
+  /** Minutes per day: 12 arrays (Jan..Dec) with one number per day of that month (year view; empty for all time). */
+  heatmap: number[][];
+  minutesByMonth: number[];
+  topArtists: StatsTopEntry[];
+  topTracks: StatsTopEntry[];
+  musicMinutes: number;
+  /** Hour of day (0-23) with the most minutes, null when nothing played. */
+  peakHour: number | null;
 }
