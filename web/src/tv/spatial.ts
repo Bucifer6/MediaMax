@@ -197,6 +197,21 @@ function move(dir: Dir): boolean {
     first.focus({ preventScroll: false });
     return true;
   }
+  // An open peek card (components/Peek.tsx) sits over its poster: Down from the poster enters it, Up leaves it.
+  if (dir === 'down' && cur.dataset.peeking) {
+    const action = document.querySelector<HTMLElement>('.peek button, .peek a[href]');
+    if (action) {
+      action.focus({ preventScroll: true });
+      return true;
+    }
+  }
+  if (dir === 'up' && cur.closest('.peek')) {
+    const card = document.querySelector<HTMLElement>('[data-peeking]');
+    if (card) {
+      card.focus({ preventScroll: true });
+      return true;
+    }
+  }
   const next = best(cur.getBoundingClientRect(), dir, els, cur);
   if (!next) return false;
   next.focus({ preventScroll: true });
@@ -320,6 +335,8 @@ export function installTvMode() {
       // An open dialog/picker, or a player (its menus first, then the player itself), handles it as Escape;
       // otherwise go back a page.
       if (inPlayer && document.fullscreenElement && scope() === document) void document.exitFullscreen().catch(() => undefined);
+      // An open peek card (components/Peek.tsx) closes first and focus returns to its poster.
+      else if (!inPlayer && scope() === document && document.querySelector('.peek')) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       else if (scope() !== document || inPlayer) (target ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       else if (window.history.length > 1) window.history.back();
       return;

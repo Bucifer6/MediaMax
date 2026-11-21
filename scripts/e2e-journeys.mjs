@@ -1292,11 +1292,19 @@ async function phone() {
 
   await step('menu drawer and bottom navigation work', async () => {
     await go(page, '/');
-    await page.getByRole('button', { name: 'Menu', exact: true }).click();
-    await page.locator('.drawer-open .sidebar, .sidebar').getByText('My List').click();
+    // "More" opens the rail as a drawer; its groups (Libraries, Live & IPTV, You) fold open and shut.
+    await page.locator('.bottom-nav').getByRole('button', { name: /More/ }).click();
+    const you = page.locator('.drawer-open .rail .nav-group-head', { hasText: 'You' });
+    if ((await you.getAttribute('aria-expanded')) !== 'true') await you.click();
+    await page.locator('.drawer-open .rail').getByRole('link', { name: 'Calendar' }).click();
+    await page.waitForURL(/\/calendar/);
+    await page.locator('.bottom-nav').getByText('My List').click();
     await page.waitForURL(/\/my-list/);
+    // Search opens the command palette; "Search everything" goes to the search page.
     await page.locator('.bottom-nav').getByText('Search').click();
-    await page.waitForURL(/\/search/);
+    await page.locator('.cmdk-input').fill('the');
+    await page.getByRole('option', { name: /Search everything/ }).click();
+    await page.waitForURL(/\/search\?q=the/);
     await page.locator('.bottom-nav a').first().click();
     await page.waitForURL(BASE + '/');
   });

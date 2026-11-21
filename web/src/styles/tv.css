@@ -12,8 +12,28 @@ html.tv .row-scroller { scroll-snap-type: none; padding-top: 18px; padding-botto
 html.tv .btn, html.tv .btn-icon { min-height: 48px; min-width: 48px; }
 html.tv .chip { height: 44px; padding: 0 20px; }
 html.tv .input { min-height: 52px; font-size: 1rem; }
-/* Overscan safe area (TVs crop ~3–5% at the edges). */
-html.tv .app-shell { padding: 2.5vh 2.5vw; }
+/* Overscan safe area (TVs crop ~3–5% at the edges): the floating rail, command bar and page content all sit
+   inside it; full-bleed art (hero, title backdrops) still runs to the edges. */
+html.tv { --tv-x: 3vw; --tv-y: 3vh; --rail-w: 76px; --rail-open-w: 300px; --rail-gap: 14px; --sidebar-w: calc(var(--tv-x) + var(--rail-w) + var(--rail-gap) * 2); }
+html.tv .rail { left: calc(var(--tv-x) + var(--rail-gap)); top: var(--tv-y); bottom: calc(var(--tv-y) + var(--mini-h)); }
+html.tv .topbar { top: var(--tv-y); right: var(--tv-x); }
+html.tv .main { padding-top: calc(var(--topbar-h) + var(--tv-y)); padding-right: var(--tv-x); padding-bottom: calc(var(--tv-y) + 40px + var(--mini-h)); }
+html.tv .hero { margin-top: calc((var(--topbar-h) + var(--tv-y)) * -1); margin-right: calc(var(--tv-x) * -1); }
+html.tv .hero-reel { right: calc(var(--gutter) + var(--tv-x)); }
+html.tv .detail { margin-top: calc((var(--topbar-h) + var(--tv-y)) * -1); }
+html.tv .detail-backdrop { right: calc(var(--tv-x) * -1); }
+/* Rail items: an inset ring (the rail clips anything outside it) on a lit background. */
+html.tv .nav-item:focus, html.tv .nav-group-head:focus { outline: 3px solid var(--c-primary); outline-offset: -3px; background: var(--c-hover-strong); color: var(--c-text); }
+html.tv .nav-item { height: 52px; font-size: 1rem; }
+html.tv .nav-icon { width: 56px; height: 52px; }
+html.tv { --nav-icon-w: 56px; }
+html.tv .cmd-trigger { height: 52px; }
+html.tv .cmd-trigger:focus { outline-offset: 3px; }
+/* Peek cards and the palette: options are D-pad stops. */
+html.tv .peek-play:focus, html.tv .peek-btn:focus { outline: 4px solid var(--c-primary); outline-offset: 3px; }
+html.tv .cmdk-item:focus { outline: 3px solid var(--c-primary); outline-offset: -3px; }
+html.tv .cmdk-backdrop { padding-top: 10vh; }
+html.tv .episode:focus-within { outline: none; }
 html.tv .player, html.tv .mv-shell { padding: 0; }
 /* Player controls stay visible while something inside them has focus. */
 html.tv .player:focus-within .player-bottom, html.tv .player:focus-within .player-top { opacity: 1; transform: none; pointer-events: auto; }

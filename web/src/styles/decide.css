@@ -159,3 +159,4 @@ html.tv .match-btn { width: 80px; height: 80px; }
   .roulette-reveal, .match-reveal, .match-reveal-title, .match-reveal-poster { animation: decide-fade 150ms both; }
   .roulette-card, .match-card.under, .match-btn { transition: none; }
 }
+.roulette-viewport:has(.roulette-idle) .roulette-pointer { display: none; }

@@ -1,13 +1,9 @@
 /* ------------------------------ login ------------------------------ */
 .login { position: relative; min-height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-.login-bg { position: absolute; inset: 0; background-size: cover; background-position: center; transform: scale(1.04); animation: kenburns 40s ease-out both alternate infinite; }
-.login-aurora { position: absolute; inset: -20%; background:
+/* Static stand-in for the light field (Branding Studio's login preview). */
+.login-aurora { position: absolute; inset: 0; background:
   radial-gradient(40% 50% at 20% 30%, color-mix(in srgb, var(--c-primary) 45%, transparent), transparent 70%),
-  radial-gradient(45% 55% at 80% 20%, color-mix(in srgb, var(--c-accent) 40%, transparent), transparent 70%),
-  radial-gradient(50% 50% at 60% 90%, color-mix(in srgb, var(--c-primary) 22%, var(--c-accent) 18%), transparent 70%), var(--c-bg);
-  filter: blur(40px); animation: aurora 22s ease-in-out infinite alternate; }
-@keyframes aurora { 0% { transform: translate(0, 0) rotate(0); } 50% { transform: translate(3%, -2%) rotate(6deg); } 100% { transform: translate(-3%, 3%) rotate(-4deg); } }
-.login-shade { position: absolute; inset: 0; background: radial-gradient(120% 80% at 50% 40%, color-mix(in srgb, var(--c-overlay) 35%, transparent), color-mix(in srgb, var(--c-overlay) 85%, transparent)); }
+  radial-gradient(45% 55% at 80% 20%, color-mix(in srgb, var(--c-accent) 40%, transparent), transparent 70%), var(--c-bg); }
 .login-inner { position: relative; z-index: 1; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 40px 20px; }
 .login-brand { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .login-brand .brand-text { font-size: 1.8rem; }

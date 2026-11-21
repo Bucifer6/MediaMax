@@ -11,6 +11,7 @@ import { AvatarEditor, Badge, EmptyState, Field, Skeleton, Spinner, Switch, useC
 import { Icon, type IconName } from '../components/Icon';
 import { themeStyle } from '../theme/applyTheme';
 import { DEFAULT_PREFERENCES } from '../theme/defaults';
+import { autoLiteReason, getFxPref, isLite, onFxChange, setFxPref, type FxPref } from '../theme/fx';
 import { QUALITY_OPTIONS } from '../player/deviceProfile';
 import { DEFAULT_SUBTITLE_STYLE, SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitlePreviewStyle, subtitleStyleOf } from '../player/subtitleStyle';
 import { relativeTime } from '../utils/format';
@@ -174,13 +175,53 @@ export function ThemeSwatch({ theme, active, onClick }: { theme: Theme; active?:
   );
 }
 
+/** Lite / full visual effects for this device (theme/fx.ts). */
+function VisualEffects() {
+  const [pref, setPref] = useState<FxPref>(getFxPref);
+  const [, bump] = useState(0);
+  useEffect(() => onFxChange(() => bump((n) => n + 1)), []);
+  const reason = autoLiteReason();
+  const lite = isLite();
+  const opts: { v: FxPref; label: string }[] = [
+    { v: 'auto', label: 'Automatic' },
+    { v: 'full', label: 'Full' },
+    { v: 'lite', label: 'Lite' },
+  ];
+  return (
+    <div className="settings-card">
+      <h2>Visual effects</h2>
+      <p className="muted">
+        Full effects add frosted glass, light from the artwork that drifts behind the page, parallax and card tilt. Lite keeps the look but drops the
+        expensive layers, for TVs and older devices. This setting is saved on this device only.
+      </p>
+      <div className="segmented" role="radiogroup" aria-label="Visual effects">
+        {opts.map((o) => (
+          <button key={o.v} type="button" role="radio" aria-checked={pref === o.v} className={pref === o.v ? 'active' : ''} onClick={() => { setPref(o.v); setFxPref(o.v); }}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <p className="field-hint" aria-live="polite">
+        {pref === 'auto' ? (lite ? `Using lite effects on this device (${reason ?? 'performance'}).` : 'Using full effects on this device.') : pref === 'lite' ? 'Lite effects are on.' : 'Full effects are on.'}
+      </p>
+    </div>
+  );
+}
+
 function Appearance() {
   const { branding } = useApp();
   const { prefs, save } = usePrefs();
   if (!branding.allowUserThemes) {
-    return <div className="settings-card"><EmptyState icon="palette" title="Themes are managed by your admin" message="This server uses one look for everyone." /></div>;
+    return (
+      <>
+        <VisualEffects />
+        <div className="settings-card"><EmptyState icon="palette" title="Themes are managed by your admin" message="This server uses one look for everyone." /></div>
+      </>
+    );
   }
   return (
+    <>
+    <VisualEffects />
     <div className="settings-card">
       <h2>Theme</h2>
       <p className="muted">Pick how {branding.serverName} looks for you on this and every other device.</p>
@@ -192,6 +233,7 @@ function Appearance() {
         {branding.themes.map((t) => <ThemeSwatch key={t.id} theme={t} active={prefs.themeId === t.id} onClick={() => save({ themeId: t.id })} />)}
       </div>
     </div>
+    </>
   );
 }
 
