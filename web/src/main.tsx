@@ -17,11 +17,14 @@ import './styles/karaoke.css';
 import { detectTv, installTvMode } from './tv/spatial';
 import { initCapabilities } from './player/capabilities';
 import { initAudioCaps } from './player/audioCaps';
+import { registerServiceWorker } from './sw/register';
 
 if (detectTv()) installTvMode();
 // Start HDR / codec capability detection early (async MediaCapabilities); the player awaits it briefly.
 void initCapabilities();
 void initAudioCaps();
+// Offline page on reload/fresh open while the server is down (production builds, browsers only).
+registerServiceWorker();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

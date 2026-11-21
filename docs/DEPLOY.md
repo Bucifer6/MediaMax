@@ -222,6 +222,10 @@ installer prints the settings. Whatever the proxy, it must:
 - connect from an address MediaMax trusts. MediaMax only believes `X-Forwarded-For` from the addresses in
   `MEDIAMAX_TRUSTED_PROXIES` (in `.env`; the installer sets loopback and the `mediamax` Docker network). If every
   user shows up with the proxy's address, MediaMax's per-address protections and your bans hit everyone at once.
+- keep MediaMax's `Cache-Control` headers (don't cache `/sw.js` or `/offline.html` at the proxy). The web app's
+  service worker shows a branded "Server offline — retrying…" page when the proxy can't reach MediaMax (a network
+  error or a 502/503/504 from the proxy) and reconnects by itself. It serves the app from the site root; MediaMax
+  doesn't support a sub-path such as `/mediamax/`.
 
 **A proxy in Docker** (Nginx Proxy Manager, Traefik, Caddy...) should join the `mediamax` network and use
 `http://mediamax:8484`. Its address is then trusted automatically:
