@@ -4,7 +4,7 @@
  * with "Play on…" the device that hosts the session.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Easing, Modal, PanResponder, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Alert, Animated, Easing, Modal, PanResponder, ScrollView, View, useWindowDimensions } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import type { Item, MatchResult, MatchSessionState, MatchVote } from '@/api/types';
 import { decide, swipeVote } from '@/api/decide';
@@ -19,6 +19,9 @@ import { EmptyState, Loading } from '@/components/States';
 import { T } from '@/components/Text';
 import { playItem } from '@/utils/nav';
 import { useTheme } from '@/theme';
+
+/** Fills the card slot (StyleSheet.absoluteFillObject is gone from current React Native). */
+const FILL = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
 
 export default function MatchSessionScreen() {
   const t = useTheme();
@@ -190,11 +193,11 @@ function Deck({ cards, onVote }: { cards: Item[]; onVote: (item: Item, v: MatchV
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: t.space.md }}>
       <View style={{ width: cardW, aspectRatio: 2 / 3 }}>
         {next && (
-          <View style={{ ...StyleSheet.absoluteFillObject, transform: [{ scale: 0.95 }, { translateY: 12 }], borderRadius: t.radius * 1.5, overflow: 'hidden', opacity: 0.8 }}>
+          <View style={{ ...FILL, transform: [{ scale: 0.95 }, { translateY: 12 }], borderRadius: t.radius * 1.5, overflow: 'hidden', opacity: 0.8 }}>
             <Img path={next.posterUrl} width={cardW} style={{ width: '100%', height: '100%' }} />
           </View>
         )}
-        <Animated.View {...responder.panHandlers} style={{ ...StyleSheet.absoluteFillObject, borderRadius: t.radius * 1.5, overflow: 'hidden', backgroundColor: t.alpha(t.colors.text, 0.08), transform: [{ translateX: pos.x }, { translateY: pos.y }, { rotate }] }}>
+        <Animated.View {...responder.panHandlers} style={{ ...FILL, borderRadius: t.radius * 1.5, overflow: 'hidden', backgroundColor: t.alpha(t.colors.text, 0.08), transform: [{ translateX: pos.x }, { translateY: pos.y }, { rotate }] }}>
           <Img path={top.posterUrl} width={cardW} style={{ width: '100%', height: '100%' }} />
           <Animated.View style={{ position: 'absolute', top: 24, left: 20, opacity: yes, transform: [{ rotate: '-14deg' }], borderWidth: 4, borderColor: t.colors.success, borderRadius: 10, paddingHorizontal: 10 }}><T variant="title" color={t.colors.success}>YES</T></Animated.View>
           <Animated.View style={{ position: 'absolute', top: 24, right: 20, opacity: no, transform: [{ rotate: '14deg' }], borderWidth: 4, borderColor: t.colors.danger, borderRadius: 10, paddingHorizontal: 10 }}><T variant="title" color={t.colors.danger}>NOPE</T></Animated.View>
