@@ -10,7 +10,7 @@ import { isVideo } from '../utils/items';
 import { Icon, type IconName } from './Icon';
 import { Badge, Modal, Spinner } from './ui';
 
-/** Subtitles fetched from OpenSubtitles are stored with a high index and an "OpenSubtitles…" title. */
+/** Downloaded subtitles are stored with a high index (2000+ data folder, 3000+ sidecars MediaMax wrote). */
 export function isDownloadedSubtitle(s: Pick<SubtitleStream, 'index' | 'title'>): boolean {
   return s.index >= 2000 || !!s.title?.startsWith('OpenSubtitles');
 }
@@ -30,21 +30,34 @@ function describeError(e: unknown, isAdmin: boolean): Problem {
   const msg = errorMessage(e);
   if (e instanceof ApiRequestError) {
     if (e.code === 'quota' || e.status === 429) {
-      return { icon: 'clock', title: 'Download limit reached', message: msg || 'The OpenSubtitles daily download quota is used up. Try again tomorrow.' };
+      return { icon: 'clock', title: 'Download limit reached', message: msg || 'The subtitle provider’s daily download quota is used up. Try again tomorrow.' };
     }
     if (/not configured/i.test(msg)) {
       return {
         icon: 'key',
         title: 'Online subtitles aren’t set up',
-        message: isAdmin ? 'Add an OpenSubtitles API key in Admin → Server settings → OpenSubtitles.' : 'Ask your server admin to connect OpenSubtitles.',
+        message: isAdmin ? 'Add an OpenSubtitles or Subs.ro API key in Admin → Server settings → Subtitles.' : 'Ask your server admin to connect a subtitle provider.',
       };
     }
     if (e.status === 502 || e.code === 'provider_error') {
-      return { icon: 'globe', title: 'OpenSubtitles is having trouble', message: msg };
+      return { icon: 'globe', title: 'The subtitle provider is having trouble', message: msg };
+    }
+    if (e.code === 'unsupported_archive' || e.code === 'no_subtitle_in_archive' || e.code === 'unsupported_subtitle') {
+      return { icon: 'alert', title: 'This subtitle can’t be used', message: msg };
     }
     if (e.code === 'network') return { icon: 'server', title: 'Can’t reach the server', message: msg };
   }
   return { icon: 'alert', title: 'Something went wrong', message: msg };
+}
+
+const resultKey = (s: RemoteSubtitle) => `${s.provider}:${s.fileId}`;
+
+/** Release-match score badge: how well the subtitle's release matches the file (100 = exact file hash). */
+function ScoreBadge({ s }: { s: RemoteSubtitle }) {
+  if (s.score == null) return null;
+  const tone = s.score >= 70 ? 'success' : s.score >= 30 ? 'accent' : 'muted';
+  const why = s.scoreReasons?.length ? s.scoreReasons.join(', ') : 'no release details to compare';
+  return <Badge tone={tone} className="subsearch-score"><span title={`Release match ${s.score}/100: ${why}`}>{s.hashMatch ? 'Exact match' : `Match ${s.score}`}</span></Badge>;
 }
 
 function formatCount(n: number) {
@@ -52,7 +65,7 @@ function formatCount(n: number) {
 }
 
 /**
- * Search OpenSubtitles for an item and download a track onto the server.
+ * Search the server's subtitle providers (OpenSubtitles, Subs.ro, plugins) for an item and download a track.
  * `onUpdated` receives the refreshed Item after a download or delete.
  */
 export function SubtitleSearchModal({
@@ -114,11 +127,13 @@ export function SubtitleSearchModal({
   };
 
   const download = async (s: RemoteSubtitle) => {
-    setBusy(s.fileId);
+    setBusy(resultKey(s));
     setProblem(null);
     try {
-      const updated = await api.subtitles.download(item.id, { fileId: s.fileId, language: s.language, hearingImpaired: s.hearingImpaired, forced: s.forced });
-      setDone((d) => new Set(d).add(s.fileId));
+      const updated = await api.subtitles.download(item.id, {
+        fileId: s.fileId, provider: s.provider, language: s.language, hearingImpaired: s.hearingImpaired, forced: s.forced, release: s.release, score: s.score ?? null,
+      });
+      setDone((d) => new Set(d).add(resultKey(s)));
       toast.success(`${languageName(s.language)} subtitles added`);
       onUpdated(updated);
     } catch (e) {
@@ -163,7 +178,7 @@ export function SubtitleSearchModal({
           {loading ? <Spinner size={16} /> : <Icon name="search" size={16} />} Search
         </button>
       </form>
-      <small id="subsearch-lang-hint" className="field-hint">Two-letter codes, comma separated. Results that match your file exactly are listed first.</small>
+      <small id="subsearch-lang-hint" className="field-hint">Two-letter codes, comma separated. Results are ranked by how well their release matches your file.</small>
 
       {downloaded.length > 0 && (
         <div className="subsearch-downloaded">
@@ -211,28 +226,32 @@ export function SubtitleSearchModal({
       ) : results && results.length > 0 ? (
         <ul className={`subsearch-results ${loading ? 'is-loading' : ''}`} aria-busy={loading}>
           {results.map((s) => {
-            const isDone = done.has(s.fileId);
+            const key = resultKey(s);
+            const isDone = done.has(key);
             return (
-              <li key={s.fileId} className="subsearch-row">
+              <li key={key} className="subsearch-row">
                 <span className="subsearch-lang-tag" title={languageName(s.language)}>{s.language.toUpperCase()}</span>
                 <div className="subsearch-info">
                   <div className="subsearch-release" title={s.release ?? undefined}>{s.release || <span className="muted">Untitled release</span>}</div>
                   <div className="subsearch-meta">
+                    <ScoreBadge s={s} />
+                    <span className="muted">{s.providerName ?? s.provider}</span>
                     <span className="muted">{languageName(s.language)}</span>
-                    <span className="muted"><Icon name="download" size={12} /> {formatCount(s.downloads)}</span>
+                    {s.downloads > 0 && <span className="muted"><Icon name="download" size={12} /> {formatCount(s.downloads)}</span>}
                     {s.rating != null && s.rating > 0 && <span className="muted"><Icon name="star" size={12} /> {s.rating.toFixed(1)}</span>}
                     {s.hearingImpaired && <Badge tone="accent">SDH</Badge>}
                     {s.forced && <Badge tone="warning">Forced</Badge>}
                     {s.aiTranslated && <Badge tone="muted">AI translated</Badge>}
+                    {s.unavailableReason && <span className="muted" title={s.unavailableReason}><Icon name="alert" size={12} /> {s.unavailableReason}</span>}
                   </div>
                 </div>
                 <button
                   className={`btn btn-sm ${isDone ? 'btn-ghost' : ''}`}
                   onClick={() => download(s)}
-                  disabled={!!busy || isDone}
+                  disabled={!!busy || isDone || !!s.unavailableReason}
                   aria-label={`Download ${languageName(s.language)} subtitle${s.release ? ` ${s.release}` : ''}`}
                 >
-                  {busy === s.fileId ? <Spinner size={14} /> : <Icon name={isDone ? 'check' : 'download'} size={14} />}
+                  {busy === key ? <Spinner size={14} /> : <Icon name={isDone ? 'check' : 'download'} size={14} />}
                   {isDone ? 'Added' : 'Download'}
                 </button>
               </li>

@@ -23,7 +23,7 @@ import { createBackup } from './backup.js';
 import { analyseAll } from './dj/analysis.js';
 import { pruneVoices } from './dj/ai.js';
 import { pruneOrphanStems } from './stems.js';
-import { autoDownload } from './opensubtitles.js';
+import { autoDownload, autoDownloadEnabled } from './subtitleProviders/index.js';
 import { refreshAll as refreshPodcasts } from './podcasts.js';
 import { checkAvailability } from './requests.js';
 import { refreshSchedules } from './calendar.js';
@@ -142,8 +142,8 @@ const DEFS: TaskDef[] = [
     },
   },
   {
-    id: 'subtitles', name: 'Download missing subtitles', description: 'Fetch subtitles from OpenSubtitles in your preferred languages for recent media.',
-    interval: () => (getSettings().openSubtitles.apiKey && getSettings().openSubtitles.autoLanguages.length ? 12 * 60 : null),
+    id: 'subtitles', name: 'Download missing subtitles', description: 'Fetch the best-matching subtitles from your subtitle providers (OpenSubtitles, Subs.ro, plugins) in your preferred languages for recent media.',
+    interval: () => (autoDownloadEnabled() ? 12 * 60 : null),
     diskFilter: true,
     run: async (progress, filter) => {
       const n = await autoDownload(progress, filter);

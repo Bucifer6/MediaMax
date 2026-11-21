@@ -20,7 +20,7 @@ const STATUS_TONE: Record<PluginStatus, 'success' | 'muted' | 'danger' | 'warnin
 };
 const SOURCE_LABEL: Record<PluginInfo['source'], string> = { repository: 'Repository', upload: 'Uploaded', local: 'Local folder' };
 const CAP_LABEL: Record<NonNullable<PluginManifest['capabilities']>[number], string> = {
-  routes: 'API routes', events: 'Events', tasks: 'Scheduled tasks', metadata: 'Metadata', adminPage: 'Admin page', network: 'Network access',
+  routes: 'API routes', events: 'Events', tasks: 'Scheduled tasks', metadata: 'Metadata', subtitles: 'Subtitle provider', adminPage: 'Admin page', network: 'Network access',
 };
 
 /** Semver-ish compare: "1.10.0" > "1.9.2". Pre-release suffixes are ignored. */

@@ -7,19 +7,19 @@ import { config } from '../config.js';
 import { stableId } from '../util/ids.js';
 import { nowIso, parseJson, pool, sortTitle } from '../util/misc.js';
 import { logger } from '../util/log.js';
-import { probe, normLang, type ProbeResult } from './probe.js';
+import { probe, type ProbeResult } from './probe.js';
 import { registerImage } from './images.js';
 import { readNfo, type NfoData } from './metadata/nfo.js';
 import { importSidecarEdl } from './edl.js';
 import { parseReplayGain, gainTags } from '../util/replaygain.js';
 import {
-  AUDIO_EXT, IMAGE_EXT, SUB_EXT, VIDEO_EXT, ext, isExtra, parseEpisodeName, parseMovieName, parseSeasonFolder, parseShowFolder,
-  parseSubtitleName, stripExt,
+  AUDIO_EXT, IMAGE_EXT, VIDEO_EXT, ext, isExtra, parseEpisodeName, parseMovieName, parseSeasonFolder, parseShowFolder,
+  stripExt,
 } from './parser.js';
 import { events, bus } from './events.js';
 import { enrichLibrary } from './metadata/index.js';
 import { logActivity } from './activity.js';
-import { downloadedSubs } from './opensubtitles.js';
+import { externalSubs } from './subtitleProviders/storage.js';
 import { applyPluginMetadata } from './plugins.js';
 import { mbTagSubset, parseMbTags, tagsWithId3, type MbTags } from './music/tags.js';
 import { rebuildCredits } from './music/credits.js';
@@ -147,36 +147,11 @@ function nfoFields(n: NfoData | null): Row {
   return f;
 }
 
-function sidecarSubs(videoPath: string): SubtitleStream[] {
-  const dir = path.dirname(videoPath);
-  const base = stripExt(path.basename(videoPath));
-  let files: string[] = [];
-  try {
-    files = fs.readdirSync(dir);
-  } catch {
-    return [];
-  }
-  const subsDirs = ['subs', 'subtitles', 'Subs', 'Subtitles'].map((d) => path.join(dir, d)).filter(safeIsDir);
-  const candidates = [...files.map((f) => path.join(dir, f)), ...subsDirs.flatMap((d) => fs.readdirSync(d).map((f) => path.join(d, f)))];
-  const out: (SubtitleStream & { path: string })[] = [];
-  let n = 0;
-  for (const p of candidates) {
-    const e = ext(p);
-    if (!SUB_EXT.has(e)) continue;
-    const fname = path.basename(p);
-    const inSubDir = path.dirname(p) !== dir;
-    const info = parseSubtitleName(fname, inSubDir ? stripExt(fname).split('.')[0] : base) ?? (inSubDir ? parseSubtitleName(fname, '') : null);
-    if (!info) continue;
-    out.push({ index: 1000 + n++, codec: e === 'srt' ? 'subrip' : e, language: normLang(info.language), title: info.title, default: info.default, forced: info.forced, external: true, path: p });
-  }
-  return out;
-}
-
 /** Upsert the media row for a file, probing when new or changed. Returns probe result (fresh or cached). */
 async function upsertMedia(itemId: string, f: FileEntry, force = false, preProbed?: ProbeResult | null): Promise<{ mediaId: string; probe: ProbeResult | null; changed: boolean }> {
   const existing = db.get('SELECT * FROM media WHERE path = ?', f.path);
   const id = existing?.id ?? stableId('media', f.path);
-  const subsSide = [...sidecarSubs(f.path), ...downloadedSubs(id, 2000)];
+  const subsSide = externalSubs(id, f.path);
   if (existing && existing.mtime === f.mtime && existing.size === f.size && !force && existing.probed_at) {
     // Keep sidecar subtitles fresh even when the file itself is unchanged.
     const embedded = parseJson<SubtitleStream[]>(existing.subs, []).filter((s) => !s.external);

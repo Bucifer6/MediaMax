@@ -1830,9 +1830,12 @@ export interface ServerStats {
 /* ------------------------------------------------------------------ */
 
 export interface RemoteSubtitle {
-  /** Provider file id to pass to the download endpoint. */
+  /** Provider file id to pass to the download endpoint (with `provider`). */
   fileId: string;
-  provider: 'opensubtitles';
+  /** Provider id: 'opensubtitles', 'subsro', or '<plugin id>:<provider id>' for plugin providers. */
+  provider: string;
+  /** Display name of the provider. */
+  providerName?: string;
   language: string;
   release: string | null;
   downloads: number;
@@ -1840,6 +1843,53 @@ export interface RemoteSubtitle {
   forced: boolean;
   aiTranslated: boolean;
   rating: number | null;
+  /** Release match against the media file, 0-100 (100 = OpenSubtitles file-hash match). */
+  score?: number;
+  /** Why it scored that way (e.g. "same group", "same source", "hash match"). */
+  scoreReasons?: string[];
+  hashMatch?: boolean;
+  /** Set when this result can't be downloaded on this server (e.g. RAR archive without unrar/7z). */
+  unavailableReason?: string | null;
+}
+
+/** One subtitle provider as listed in Admin → Server settings → Subtitles. */
+export interface SubtitleProviderInfo {
+  id: string;
+  name: string;
+  /** Built in (OpenSubtitles, Subs.ro) or registered by a plugin. */
+  builtin: boolean;
+  /** Has the credentials it needs. */
+  configured: boolean;
+  enabled: boolean;
+}
+
+/** External tools the subtitle pipeline can use (found on PATH). */
+export interface SubtitleToolsReport {
+  alass: string | null;
+  unrar: string | null;
+  sevenZip: string | null;
+}
+
+export interface SubtitleSettings {
+  /** Providers in priority order (earlier wins ties). Providers missing here are appended in default order. */
+  providers: { id: string; enabled: boolean }[];
+  subsRo: {
+    apiKey: string | null;
+    /** REST base URL (default https://api.subs.ro/v1.0). */
+    baseUrl: string;
+  };
+  /** Languages to fetch automatically for new media (ISO 639-1, e.g. ["ro", "en"]); empty = off. */
+  languages: string[];
+  /** Re-time downloaded subtitles against the video with alass when it is installed. */
+  sync: boolean;
+  /** Minimum release-match score (0-100) for the automatic "Download missing subtitles" task. */
+  minScore: number;
+  /** Where downloads go: the server's data folder (works with read-only libraries) or a sidecar next to the video. */
+  saveMode: 'data' | 'sidecar';
+}
+
+export interface ServerSettings {
+  subtitles?: SubtitleSettings;
 }
 
 /* ------------------------------------------------------------------ */
@@ -2144,7 +2194,7 @@ export interface PluginManifest {
   /** HTML page (relative path) shown inside the admin dashboard. */
   adminPage?: string;
   /** Capabilities the plugin declares, shown to the admin before install. */
-  capabilities?: ('routes' | 'events' | 'tasks' | 'metadata' | 'adminPage' | 'network')[];
+  capabilities?: ('routes' | 'events' | 'tasks' | 'metadata' | 'subtitles' | 'adminPage' | 'network')[];
 }
 
 export type PluginStatus = 'active' | 'disabled' | 'error' | 'incompatible';

@@ -137,7 +137,7 @@ export const api = {
   subtitles: {
     search: (itemId: string, languages: string, signal?: AbortSignal) =>
       http.get<RemoteSubtitle[]>(`/items/${enc(itemId)}/subtitles/search`, { languages }, signal),
-    download: (itemId: string, body: { fileId: string; language: string; hearingImpaired?: boolean; forced?: boolean }) =>
+    download: (itemId: string, body: { fileId: string; language: string; provider?: string; hearingImpaired?: boolean; forced?: boolean; release?: string | null; score?: number | null }) =>
       http.post<Item>(`/items/${enc(itemId)}/subtitles/download`, body),
     remove: (itemId: string, index: number) => http.del<Item>(`/items/${enc(itemId)}/subtitles/${index}`),
   },

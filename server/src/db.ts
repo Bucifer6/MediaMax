@@ -488,6 +488,13 @@ const MIGRATIONS: string[] = [
     offset_ms INTEGER NOT NULL, PRIMARY KEY (user_id, item_id)
   );
   `,
+  /* Subtitle providers: every downloaded subtitle file (data folder or sidecar), so sidecars MediaMax wrote can be listed and deleted */ `
+  CREATE TABLE IF NOT EXISTS subtitle_downloads (
+    path TEXT PRIMARY KEY, media_id TEXT NOT NULL, provider TEXT NOT NULL, provider_file_id TEXT, language TEXT, release TEXT,
+    score INTEGER, synced INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_subtitle_downloads_media ON subtitle_downloads(media_id);
+  `,
 ];
 
 function migrate(db: Database) {
