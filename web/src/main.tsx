@@ -17,11 +17,13 @@ import './styles/karaoke.css';
 import { detectTv, installTvMode } from './tv/spatial';
 import { initCapabilities } from './player/capabilities';
 import { initAudioCaps } from './player/audioCaps';
+import { installPrefetch } from './utils/prefetch';
 
 if (detectTv()) installTvMode();
 // Start HDR / codec capability detection early (async MediaCapabilities); the player awaits it briefly.
 void initCapabilities();
 void initAudioCaps();
+installPrefetch();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
