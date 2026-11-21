@@ -51,14 +51,14 @@ export interface SubtitleOverlayProps {
   onStatus?: (s: SubtitleStatus) => void;
 }
 
-/** Low-power devices (TVs without OffscreenCanvas) default to the light ASS renderer unless the user forces libass. */
-function wantLibass(style: SubtitleStyle, tv: boolean): boolean {
+/**
+ * libass needs OffscreenCanvas, requestVideoFrameCallback, module workers and a recent WebAssembly (see
+ * libassSupported); browsers without them, typically older TVs, use the light ASS renderer whatever the setting.
+ */
+function wantLibass(style: SubtitleStyle, _tv: boolean): boolean {
   const mode = style.assStyles ?? 'auto';
   if (mode === 'user') return false;
-  if (mode === 'file') return libassSupported(true);
-  if (!libassSupported(false)) return false;
-  if (tv && !('transferControlToOffscreen' in HTMLCanvasElement.prototype)) return false;
-  return true;
+  return libassSupported(mode === 'file');
 }
 
 async function fetchTrack(url: string, binary: boolean, signal: AbortSignal): Promise<{ data: string | Uint8Array; complete: boolean; progress: number | null }> {

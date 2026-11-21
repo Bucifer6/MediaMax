@@ -864,6 +864,9 @@ async function viewer() {
       return l && /ass/.test(l.getAttribute('data-renderer') ?? '') && !/SRT line/.test(l.textContent ?? '');
     }, null, { timeout: 15000 });
     await sleep(2500);
+    // Still libass (not the simplified 'ass-fallback' renderer after a load/render failure), with jassub's canvas.
+    const r = await page.evaluate(() => ({ kind: document.querySelector('.mm-subs-layer')?.getAttribute('data-renderer'), canvas: !!document.querySelector('canvas.JASSUB') }));
+    assert(r.kind === 'libass' && r.canvas, `ASS renderer: ${r.kind}, jassub canvas: ${r.canvas}`);
     await shot(page, 'viewer-subs-ass');
   });
 

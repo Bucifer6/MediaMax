@@ -19,7 +19,7 @@ const SLIDE_MS = 9000;
  * Scroll parallax: the backdrop drifts slower than the page and the title block lifts and fades as it scrolls away.
  * Writes one CSS variable (--hero-y, px) per frame; CSS does the transforms. Off in lite mode / reduced motion.
  */
-function useHeroParallax(ref: React.RefObject<HTMLElement>) {
+function useHeroParallax(ref: React.RefObject<HTMLElement | null>) {
   useEffect(() => {
     const el = ref.current;
     if (!el || isCalm()) return;

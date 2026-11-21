@@ -12,7 +12,7 @@
  * Throughput comes from hls.js fragment loads (first → last byte), from the growth of the progressive download's
  * buffer during direct play, and from the bandwidth probe at start.
  */
-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { PlaybackInfo } from '@mediamax/shared';
 import type { Attached } from './engine';
 import { AbrController, BandwidthEstimator, RESTART_ABR, SEGMENT_ABR, formatBps, restartLevels, type AbrLevel } from './abr';
@@ -33,7 +33,7 @@ interface Opts {
   /** Auto quality on (and not casting). */
   enabled: boolean;
   info: PlaybackInfo | null;
-  attached: MutableRefObject<Attached | null>;
+  attached: RefObject<Attached | null>;
   video: () => HTMLVideoElement | null;
   /** Restart the stream for this bandwidth (kbps). */
   onRestart: (measuredKbps: number, direction: 'up' | 'down') => void;
