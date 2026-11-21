@@ -1,4 +1,4 @@
-import type { ArrInstance, ArrKind, ArrService, ServerSettings } from '@mediamax/shared';
+import type { ArrInstance, ArrKind, ArrService, ServerSettings, SignInScreenSettings } from '@mediamax/shared';
 import { db } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
@@ -65,6 +65,7 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   oidc: { enabled: false, issuer: null, clientId: null, clientSecret: null, buttonLabel: 'Sign in with SSO', autoCreateUsers: true, groupsClaim: 'groups', adminGroup: null, allowedGroup: null },
   sessionTimeoutDays: 90,
   defaultDateAdded: 'created',
+  signInScreen: { showUsers: true, homeNetworkOnly: true },
   karaoke: { stemsEnabled: false, stemsModelUrl: null, stemsModelSha256: null, writeLrcSidecars: false },
 };
 
@@ -121,6 +122,12 @@ function normaliseArr(list: unknown, current: ArrInstance[]): ArrInstance[] {
         : [],
     }];
   });
+}
+
+/** Sign-in screen settings with every field a boolean (defaults for anything missing). */
+export function signInScreenOf(v: Partial<SignInScreenSettings> | undefined): SignInScreenSettings {
+  const d = DEFAULT_SETTINGS.signInScreen!;
+  return { showUsers: typeof v?.showUsers === 'boolean' ? v.showUsers : d.showUsers, homeNetworkOnly: typeof v?.homeNetworkOnly === 'boolean' ? v.homeNetworkOnly : d.homeNetworkOnly };
 }
 
 export function getSettings(): ServerSettings {
@@ -215,6 +222,7 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     backups: { ...cur.backups, ...(patch.backups ?? {}) },
     plugins: { repositories: (patch.plugins?.repositories ?? cur.plugins.repositories).map((u) => String(u).trim()).filter(Boolean).slice(0, 20) },
     oidc: { ...cur.oidc, ...(patch.oidc ?? {}) },
+    signInScreen: signInScreenOf({ ...cur.signInScreen, ...(patch.signInScreen ?? {}) }),
     karaoke: { ...DEFAULT_SETTINGS.karaoke!, ...(cur.karaoke ?? {}), ...(patch.karaoke ?? {}) },
     webhooks: (patch.webhooks ?? cur.webhooks).map((w) => ({ ...w, id: w.id || newId() })),
     arr: patch.arr !== undefined ? normaliseArr(patch.arr, cur.arr) : cur.arr,

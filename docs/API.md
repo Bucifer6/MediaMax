@@ -39,8 +39,8 @@ the WebSocket emits `branding.updated`.
 | Method | Path | Body | Returns |
 |---|---|---|---|
 | POST 🔓 | `/auth/login` | `LoginRequest` | `AuthResponse` |
-| GET 🔓 | `/auth/profiles` | | `PublicProfile[]` (empty if `features.profilePicker` is off) |
-| POST 🔓 | `/auth/profile-login` | `PinLoginRequest` | `AuthResponse` |
+| GET 🔓 | `/auth/profiles` | | `PublicProfile[]`: only users with `showOnSignIn` (default off), empty if `features.profilePicker` or `signInScreen.showUsers` is off, and (by default, `signInScreen.homeNetworkOnly`) for clients outside the home network |
+| POST 🔓 | `/auth/profile-login` | `PinLoginRequest` | `AuthResponse` (only for users the sign-in screen lists to this client) |
 | POST 🔓 | `/auth/link/request` | `LinkCodeRequest` | `LinkCodeResponse` (TV shows the code) |
 | GET 🔓 | `/auth/link/poll?pollToken=` | | `LinkPollResponse` (poll every 3s) |
 | POST 🔑 | `/auth/link/approve` | `{ code }` | `{ ok: true, deviceName }` |

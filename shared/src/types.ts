@@ -319,6 +319,11 @@ export interface User {
   maxStreams: number | null;
   /** Two-factor authentication enabled. */
   totpEnabled: boolean;
+  /**
+   * Listed on the public sign-in screen ("Who's watching?" before anyone signs in). Default false: nobody's name is
+   * shown to people who are not signed in unless an admin opts them in (see ServerSettings.signInScreen).
+   */
+  showOnSignIn?: boolean;
   preferences: UserPreferences;
   createdAt: string;
   lastSeenAt: string | null;
@@ -339,6 +344,8 @@ export interface CreateUserRequest {
   allowRequest4k?: boolean;
   allowRemote?: boolean;
   maxStreams?: number | null;
+  /** List this user on the public sign-in screen. Default false. */
+  showOnSignIn?: boolean;
 }
 
 export type UpdateUserRequest = Partial<CreateUserRequest> & { disabled?: boolean };
@@ -408,6 +415,13 @@ export interface Library {
  * (Recently Added still bubbles a show up when a new episode arrives: shows are ordered by their newest episode).
  */
 export type DateAddedSource = 'scan' | 'created' | 'modified';
+
+export interface SignInScreenSettings {
+  /** Master switch: list opted-in users at all. */
+  showUsers: boolean;
+  /** Only list them to devices on the home network (private / loopback addresses); others see the username form. */
+  homeNetworkOnly: boolean;
+}
 
 export interface PodcastSubscription {
   id: string;
@@ -1624,6 +1638,11 @@ export interface ServerSettings {
     userId: string | null;
   };
   sessionTimeoutDays: number;
+  /**
+   * Users on the public sign-in screen. Only users with `showOnSignIn` are ever listed, and only while the branding
+   * feature `profilePicker` is on. Default: { showUsers: true, homeNetworkOnly: true }.
+   */
+  signInScreen?: SignInScreenSettings;
   /** "Date added" rule given to new libraries. Default 'created' (file creation time). */
   defaultDateAdded?: DateAddedSource;
 }

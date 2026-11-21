@@ -9,7 +9,8 @@ import { newId, newToken, sha256, shortCode } from '../util/ids.js';
 import { badRequest, conflict, forbidden, HttpError, notFound, unauthorized } from '../util/errors.js';
 import { newTotpSecret, otpauthUrl, verifyTotp } from '../util/totp.js';
 import { nowIso, parseJson, ratingLevel } from '../util/misc.js';
-import { getSettings } from './settings.js';
+import { getSettings, signInScreenOf } from './settings.js';
+import { isLocalAddress } from '../util/net.js';
 import { getBranding } from './branding.js';
 import { logActivity } from './activity.js';
 import { bus } from './events.js';
@@ -126,6 +127,7 @@ export function toUser(r: Row): User {
     allowRemote: r.allow_remote === undefined ? true : !!r.allow_remote,
     maxStreams: r.max_streams ?? null,
     totpEnabled: !!r.totp_enabled,
+    showOnSignIn: !r.parent_user_id && !!r.show_on_signin,
     preferences: mergePrefs(parseJson<Partial<UserPreferences>>(r.preferences, {})),
     createdAt: r.created_at,
     lastSeenAt: r.last_seen_at ?? null,
@@ -240,6 +242,7 @@ export function createUser(req: CreateUserRequest): User {
     request_quotas: req.requestQuotas ? JSON.stringify(normalizeQuotas(req.requestQuotas, defaultQuotas())) : null,
     allow_remote: req.allowRemote ?? true,
     max_streams: req.maxStreams && req.maxStreams > 0 ? Math.min(100, Math.trunc(req.maxStreams)) : null,
+    show_on_signin: !!req.showOnSignIn,
     preferences: '{}',
     created_at: nowIso(),
   });
@@ -270,7 +273,7 @@ export function updateUser(id: string, req: UpdateUserRequest, actorId: string):
   }
   if (req.maxContentRating !== undefined) patch.max_rating = req.maxContentRating || null;
   if (req.libraryIds !== undefined) patch.library_ids = req.libraryIds ? JSON.stringify(req.libraryIds) : null;
-  for (const [k, col] of [['allowLiveTv', 'allow_live_tv'], ['allowDownloads', 'allow_downloads'], ['allowTranscode', 'allow_transcode'], ['allowDvr', 'allow_dvr'], ['allowRequest4k', 'allow_request_4k'], ['allowRemote', 'allow_remote'], ['disabled', 'disabled']] as const) {
+  for (const [k, col] of [['allowLiveTv', 'allow_live_tv'], ['allowDownloads', 'allow_downloads'], ['allowTranscode', 'allow_transcode'], ['allowDvr', 'allow_dvr'], ['allowRequest4k', 'allow_request_4k'], ['allowRemote', 'allow_remote'], ['disabled', 'disabled'], ['showOnSignIn', 'show_on_signin']] as const) {
     if ((req as any)[k] !== undefined) patch[col] = !!(req as any)[k];
   }
   if (req.maxStreams !== undefined) patch.max_streams = req.maxStreams && req.maxStreams > 0 ? Math.min(100, Math.trunc(req.maxStreams)) : null;
@@ -562,10 +565,21 @@ export function authenticateApiKey(key: string | null | undefined): AuthContext 
   return { user: toUser(row), deviceRowId: `apikey:${row.kid}`, token: key, device: { deviceId: `apikey:${row.kid}`, deviceName: `API: ${row.kname}`, platform: 'other' } };
 }
 
-export function publicProfiles(): PublicProfile[] {
-  if (!getBranding().features.profilePicker) return [];
+/**
+ * Whether the public sign-in screen may list users to this client at all: the profile picker is on, the admin lets
+ * it show users, and (by default) the client is on the home network. Unauthenticated, so it never lists anyone else.
+ */
+export function signInListAllowed(remoteAddr: string | null | undefined): boolean {
+  if (!getBranding().features.profilePicker) return false;
+  const s = signInScreenOf(getSettings().signInScreen);
+  return s.showUsers && (!s.homeNetworkOnly || isLocalAddress(remoteAddr));
+}
+
+/** The public sign-in screen's users: only those an admin opted in ("Show on sign-in screen"). */
+export function publicProfiles(remoteAddr?: string | null): PublicProfile[] {
+  if (!signInListAllowed(remoteAddr)) return [];
   // Account profiles are entered through their owner's account, never from the server-wide picker.
-  return db.all('SELECT * FROM users WHERE disabled = 0 AND parent_user_id IS NULL ORDER BY is_admin DESC, display_name').map((r) => ({
+  return db.all('SELECT * FROM users WHERE disabled = 0 AND parent_user_id IS NULL AND show_on_signin = 1 ORDER BY is_admin DESC, display_name').map((r) => ({
     id: r.id,
     username: r.username,
     displayName: r.display_name,
@@ -581,6 +595,8 @@ export function profileLogin(userId: string, pin: string | undefined, device: Pa
   if (!getBranding().features.profilePicker) throw forbidden('Profile sign-in is disabled');
   const row = getUserRow(userId);
   if (row.parent_user_id) throw unauthorized('Sign in with the account this profile belongs to');
+  // Only users the sign-in screen lists to this client can be entered from it (PIN-only / passwordless sign-in).
+  if (!row.show_on_signin || !signInListAllowed(remoteAddr)) throw unauthorized('Sign in with your username and password');
   const key = `p:${userId}`;
   assertNotLocked(key, remoteAddr);
   if (row.pin_hash) {

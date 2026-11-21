@@ -29,6 +29,13 @@ export function isPrivateAddress(ip: string): boolean {
   return true;
 }
 
+/** Home-network (LAN) client address: loopback, RFC 1918, link-local and IPv6 ULA / link-local. */
+export function isLocalAddress(ip: string | null | undefined): boolean {
+  if (!ip) return false;
+  const v4 = ip.replace(/^::ffff:/, '');
+  return v4 === '127.0.0.1' || ip === '::1' || /^10\./.test(v4) || /^192\.168\./.test(v4) || /^172\.(1[6-9]|2\d|3[01])\./.test(v4) || /^169\.254\./.test(v4) || /^f[cd]/i.test(ip) || /^fe80/i.test(ip);
+}
+
 /** DNS resolution used by the SSRF guard (replaceable in tests to simulate DNS rebinding). */
 type Resolver = (host: string) => Promise<{ address: string; family: number }[]>;
 const systemResolver: Resolver = (host) => dns.promises.lookup(host, { all: true, verbatim: true });

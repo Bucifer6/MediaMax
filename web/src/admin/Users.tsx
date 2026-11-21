@@ -73,6 +73,7 @@ function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged, defa
     allowRemote: initial?.allowRemote ?? true,
     maxStreams: initial?.maxStreams ?? null,
     disabled: initial?.disabled ?? false,
+    showOnSignIn: initial?.showOnSignIn ?? false,
   });
   const [busy, setBusy] = useState(false);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
@@ -179,6 +180,7 @@ function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged, defa
           <Switch checked={!!f.allowTranscode} onChange={(v) => set('allowTranscode', v)} label="Allow transcoding" hint="When off, only direct play is allowed." />
           <Switch checked={!!f.allowDownloads} onChange={(v) => set('allowDownloads', v)} label="Downloads" />
           <Switch checked={!!f.allowRemote} onChange={(v) => set('allowRemote', v)} label="Allow streaming outside the home network" hint="When off, playback only works from the local network." />
+          <Switch checked={!!f.showOnSignIn} onChange={(v) => set('showOnSignIn', v)} label="Show on sign-in screen" hint="List this user on the “Who’s watching?” picker before anyone signs in (home network only by default, see Server settings). Off: they type their username." />
           {initial && <Switch checked={!!f.disabled} onChange={(v) => set('disabled', v)} label="Disabled" hint="Blocks sign-in and revokes access." disabled={isSelf} />}
         </div>
         <RequestAccessSection perms={f.requestPermissions} onPerms={(p) => set('requestPermissions', p)} quotas={f.requestQuotas} onQuotas={(q) => set('requestQuotas', q)} defaults={defaults?.quotas ?? null} isAdmin={!!f.isAdmin} />
@@ -283,6 +285,7 @@ export function UsersAdmin() {
                       {u.totpEnabled && <Badge tone="success"><Icon name="shield" size={10} /> 2FA</Badge>}
                       {u.maxStreams != null && <Badge tone="muted">{u.maxStreams} stream{u.maxStreams === 1 ? '' : 's'}</Badge>}
                       {u.allowRemote === false && <Badge tone="warning">Home only</Badge>}
+                      {u.showOnSignIn && <Badge tone="muted"><Icon name="users" size={10} /> On sign-in screen</Badge>}
                       {!u.hasPassword && <Badge tone="muted">Profile</Badge>}
                       <Badge tone="muted">{u.libraryIds === null ? 'All libraries' : `${u.libraryIds.length} libraries`}</Badge>
                       {u.allowLiveTv && <Badge tone="muted">Live TV</Badge>}

@@ -492,6 +492,9 @@ const MIGRATIONS: string[] = [
   ALTER TABLE libraries ADD COLUMN date_added TEXT NOT NULL DEFAULT 'created';
   UPDATE libraries SET date_added = 'scan';
   `,
+  /* Public sign-in screen: only users an admin opts in are ever listed (default hidden) */ `
+  ALTER TABLE users ADD COLUMN show_on_signin INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 function migrate(db: Database) {
