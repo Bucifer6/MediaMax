@@ -16,6 +16,9 @@ function warm(key: string, load: () => Promise<unknown>) {
 
 export const prefetchPlayer = () => warm('player', () => import('../player/VideoPlayer'));
 
+/** Called by Home once its rows are on screen. */
+export const prefetchCommonPagesWhenIdle = () => idle(prefetchCommonPages);
+
 export function prefetchCommonPages() {
   warm('item', () => import('../pages/ItemDetail'));
   warm('library', () => import('../pages/Library'));
@@ -45,7 +48,9 @@ export function installPrefetch() {
   };
   document.addEventListener('pointerover', onIntent, { passive: true });
   document.addEventListener('focusin', onIntent);
-  // After the first screen has rendered and settled.
-  if (document.readyState === 'complete') idle(prefetchCommonPages);
-  else window.addEventListener('load', () => idle(prefetchCommonPages), { once: true });
+  // Fallback for sessions that don't start on Home: a few seconds after load. (Home asks sooner, once its rows are on
+  // screen. Starting while the first screen still waits for data made the chunks' parse delay that screen.)
+  const later = () => window.setTimeout(() => idle(prefetchCommonPages), 5000);
+  if (document.readyState === 'complete') later();
+  else window.addEventListener('load', later, { once: true });
 }

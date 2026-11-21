@@ -152,15 +152,8 @@
 .grid-square { grid-template-columns: repeat(auto-fill, minmax(calc(var(--card-w) * 1.05), 1fr)); }
 .grid-landscape { grid-template-columns: repeat(auto-fill, minmax(calc(var(--card-w) * 1.6), 1fr)); }
 .grid .card { width: 100%; }
-/*
- * Long library grids: the browser skips layout and paint for cards that are far off screen (they keep a remembered
- * size, so scrolling, D-pad navigation and focus work as before). A hovered or focused card is always fully rendered,
- * because containment would clip its focus zoom and shadow.
- */
-.grid > .card { content-visibility: auto; contain-intrinsic-block-size: auto calc(var(--card-w) * 1.5 + 56px); }
-.grid-square > .card { contain-intrinsic-block-size: auto calc(var(--card-w) * 1.05 + 56px); }
-.grid-landscape > .card { contain-intrinsic-block-size: auto calc(var(--card-w) * 0.9 + 56px); }
-.grid > .card:hover, .grid > .card:focus, .grid > .card:focus-within { content-visibility: visible; }
+/* (No content-visibility on grid cards: measured, it made scrolling slower here: cards coming back into view had to be
+   laid out again every frame. The TV guide rows, which are much heavier, do use it; see pages.css.) */
 .grid-cell { position: relative; }
 .grid-remove { position: absolute; top: -8px; right: -8px; z-index: 3; width: 28px; height: 28px; background: var(--c-danger); color: #fff; box-shadow: var(--shadow); }
 

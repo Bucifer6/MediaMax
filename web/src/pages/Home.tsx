@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import type { HomeResponse, HomeRow, ItemSort } from '@mediamax/shared';
 import { api } from '../api/endpoints';
@@ -8,6 +9,7 @@ import { Row } from '../components/Row';
 import { CardSkeleton, ChannelCard, LandscapeCard, PosterCard, RankedCard, UpcomingCard } from '../components/Cards';
 import { EmptyState, ErrorState } from '../components/ui';
 import { Icon } from '../components/Icon';
+import { prefetchCommonPagesWhenIdle } from '../utils/prefetch';
 
 function rowLink(row: HomeRow): string | undefined {
   const l = row.link;
@@ -80,6 +82,11 @@ export function Home() {
     return data;
   }), []);
   const homeData = home.data ?? (lastHome?.userId === userId ? lastHome.data : undefined);
+  // The likely next pages (title, library, search) load once Home is on screen and the browser is idle.
+  const shown = !!homeData;
+  useEffect(() => {
+    if (shown) prefetchCommonPagesWhenIdle();
+  }, [shown]);
   useServerEvent((ev) => {
     if (ev.type === 'library.updated' || (ev.type === 'library.scan' && ev.status === 'finished')) home.reload();
     if (ev.type === 'userdata.updated') {
