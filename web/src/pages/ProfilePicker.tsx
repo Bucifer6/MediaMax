@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type React from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { AccountProfile } from '@mediamax/shared';
 import { useApp } from '../state/app';
@@ -8,6 +9,8 @@ import { realtime } from '../api/ws';
 import { Spinner } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { BrandLogo } from '../components/BrandLogo';
+import { LightField } from '../components/LightField';
+import { isCalm } from '../theme/fx';
 import { ProfileAvatar } from '../components/ProfileEditor';
 import { PinPad } from './Login';
 import '../styles/profiles.css';
@@ -38,8 +41,16 @@ export default function ProfilePicker() {
     el?.focus();
   }, [list, pinFor]);
 
+  const [chosen, setChosen] = useState<string | null>(null);
   const enter = async (p: AccountProfile, pin?: string) => {
     setError(null);
+    if (!pin) {
+      if (chosen) return;
+      // Selection animation: the chosen profile steps forward while the others fall away.
+      setChosen(p.id);
+      if (!isCalm()) await new Promise((r) => window.setTimeout(r, 360));
+      setChosen(null);
+    }
     if (p.current) return navigate(next, { replace: true });
     if (p.hasPin && !pin) return setPinFor(p);
     setBusy(true);
@@ -60,8 +71,7 @@ export default function ProfilePicker() {
   const bg = branding.loginBackgroundUrl;
   return (
     <div className="login profile-picker">
-      <div className="login-bg" style={bg ? { backgroundImage: `url("${bg}")` } : undefined}>{!bg && <div className="login-aurora" />}</div>
-      <div className="login-shade" />
+      <LightField image={bg} />
       <div className="login-inner">
         <div className="login-brand"><BrandLogo height={44} wide={!branding.logoUrl || !!branding.logoWideUrl} /></div>
         {!list && !error ? (
@@ -79,9 +89,9 @@ export default function ProfilePicker() {
         ) : (
           <div className="profiles pp fade-in">
             <h1>Who's watching?</h1>
-            <div className="profile-grid pp-grid" ref={grid}>
-              {(list ?? []).map((p) => (
-                <button key={p.id} className={`profile pp-tile ${p.current ? 'current' : ''}`} data-nav onClick={() => void enter(p)} disabled={busy} aria-label={`${p.displayName}${p.isKids ? ' (kids)' : ''}${p.hasPin ? ', PIN protected' : ''}`}>
+            <div className={`profile-grid pp-grid ${chosen ? 'choosing' : ''}`} ref={grid}>
+              {(list ?? []).map((p, i) => (
+                <button key={p.id} className={`profile pp-tile ${p.current ? 'current' : ''} ${chosen === p.id ? 'chosen' : ''}`} style={{ '--i': i } as React.CSSProperties} data-nav onClick={() => void enter(p)} disabled={busy} aria-disabled={!!chosen || undefined} aria-label={`${p.displayName}${p.isKids ? ' (kids)' : ''}${p.hasPin ? ', PIN protected' : ''}`}>
                   <ProfileAvatar name={p.displayName} url={p.avatarUrl} color={p.color} size={132} kids={p.isKids} />
                   <span className="profile-name">{p.displayName}</span>
                   {p.hasPin && !p.current && <span className="profile-lock"><Icon name="lock" size={12} /></span>}

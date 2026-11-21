@@ -5,6 +5,7 @@ import { api } from '../api/endpoints';
 import { errorMessage, setToken } from '../api/client';
 import { Icon, type IconName } from '../components/Icon';
 import { BrandMark } from '../components/BrandLogo';
+import { LightField } from '../components/LightField';
 import { Field, Spinner } from '../components/ui';
 import { LibraryForm } from '../components/LibraryForm';
 import { SourceForm } from '../components/SourceForm';
@@ -55,7 +56,7 @@ export function SetupWizard() {
 
   return (
     <div className="setup">
-      <div className="login-aurora" />
+      <LightField />
       <div className="setup-card glass">
         <ol className="setup-steps">
           {STEPS.map((s, i) => (
