@@ -53,6 +53,7 @@ const ROW_TYPES: { value: HomeRowType; label: string; hint: string }[] = [
   { value: 'trending', label: 'Popular right now', hint: 'Recent plays across the server, newest weighted most' },
   { value: 'watchlist', label: 'My List', hint: "The viewer's watchlist" },
   { value: 'upcoming', label: 'Coming soon', hint: 'Next airing episodes of shows in the libraries (needs a TMDB key)' },
+  { value: 'spotlight', label: 'Random spotlight', hint: 'Random movies and/or shows from the libraries you pick. Add several, e.g. “Random Movie”, “Random Series”, “Kids Spotlight”. Viewers only see titles they are allowed to' },
 ];
 
 const FEATURE_LABELS: { key: keyof FeatureFlags; label: string; hint: string; icon: IconName }[] = [
@@ -319,6 +320,59 @@ function ThemeSchedules({ schedules, themes, activeId, onChange }: { schedules: 
 }
 
 /* ---------------- home row builder ---------------- */
+/** Top 10 pins: titles that always lead the row, in this order (viewers who can't see one just skip it). */
+function PinnedTitles({ ids, onChange }: { ids: string[]; onChange: (ids: string[]) => void }) {
+  const [q, setQ] = useState('');
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  const results = useAsync(() => (q.trim().length < 2 ? Promise.resolve([] as Item[]) : api.items.search(q.trim(), 10).then((r) => r.items.filter((i) => i.type === 'movie' || i.type === 'show')).catch(() => [] as Item[])), [q]);
+  useEffect(() => {
+    const missing = ids.filter((id) => !(id in titles));
+    if (!missing.length) return;
+    void Promise.all(missing.map((id) => api.items.get(id).then((it) => [id, it.title] as const).catch(() => [id, 'Unavailable title'] as const)))
+      .then((pairs) => setTitles((t) => ({ ...t, ...Object.fromEntries(pairs) })));
+  }, [ids, titles]);
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= ids.length) return;
+    const next = [...ids];
+    const [x] = next.splice(from, 1);
+    next.splice(to, 0, x!);
+    onChange(next);
+  };
+  return (
+    <div className="rb-pins">
+      <span className="field-label">Pinned titles <small className="muted">always first, in this order; the weekly chart fills the rest</small></span>
+      {ids.length > 0 && (
+        <ol className="rb-pin-list">
+          {ids.map((id, i) => (
+            <li key={id}>
+              <span className="grow">{titles[id] ?? '…'}</span>
+              <button className="btn-icon" onClick={() => move(i, i - 1)} disabled={i === 0} aria-label="Move pin up"><Icon name="chevronUp" size={14} /></button>
+              <button className="btn-icon" onClick={() => move(i, i + 1)} disabled={i === ids.length - 1} aria-label="Move pin down"><Icon name="chevronDown" size={14} /></button>
+              <button className="btn-icon" onClick={() => onChange(ids.filter((x) => x !== id))} aria-label="Unpin"><Icon name="x" size={14} /></button>
+            </li>
+          ))}
+        </ol>
+      )}
+      {ids.length < 10 && (
+        <div className="rb-pin-search">
+          <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a movie or show to pin…" aria-label="Search titles to pin" />
+          {(results.data ?? []).filter((it) => !ids.includes(it.id)).length > 0 && (
+            <ul className="rb-pin-results">
+              {(results.data ?? []).filter((it) => !ids.includes(it.id)).map((it) => (
+                <li key={it.id}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setTitles((t) => ({ ...t, [it.id]: it.title })); onChange([...ids, it.id]); setQ(''); }}>
+                    <Icon name="plus" size={14} /> {it.title}{it.year ? ` (${it.year})` : ''} <small className="muted">{it.type === 'show' ? 'Show' : 'Movie'}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RowBuilder({ rows, onChange }: { rows: HomeRowConfig[]; onChange: (r: HomeRowConfig[]) => void }) {
   const { libraries } = useApp();
   const collections = useAsync(() => api.collections.list().catch(() => [] as Item[]), []);
@@ -374,6 +428,33 @@ function RowBuilder({ rows, onChange }: { rows: HomeRowConfig[]; onChange: (r: H
                     {libraries.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
                 </>
+              )}
+              {r.type === 'top10' && <PinnedTitles ids={r.pinnedItemIds ?? []} onChange={(pinnedItemIds) => update(i, { pinnedItemIds: pinnedItemIds.length ? pinnedItemIds : undefined })} />}
+              {r.type === 'spotlight' && (
+                <div className="rb-spotlight">
+                  <div className="rb-chips" role="group" aria-label="Libraries">
+                    {libraries.filter((l) => ['movies', 'shows', 'iptv-movies', 'iptv-shows'].includes(l.type)).map((l) => (
+                      <label key={l.id} className="check-inline">
+                        <input type="checkbox" checked={!!r.libraryIds?.includes(l.id)}
+                          onChange={(e) => update(i, { libraryIds: e.target.checked ? [...(r.libraryIds ?? []), l.id] : (r.libraryIds ?? []).filter((x) => x !== l.id) })} />
+                        {l.name}
+                      </label>
+                    ))}
+                    {!r.libraryIds?.length && <small className="muted">No library ticked: all of them.</small>}
+                  </div>
+                  <div className="rb-line">
+                    <select className="select" value={r.itemTypes?.length === 1 ? r.itemTypes[0] : 'both'} aria-label="Item types"
+                      onChange={(e) => update(i, { itemTypes: e.target.value === 'both' ? undefined : [e.target.value as 'movie' | 'show'] })}>
+                      <option value="both">Movies and shows</option>
+                      <option value="movie">Movies only</option>
+                      <option value="show">Shows only</option>
+                    </select>
+                    <select className="select" value={r.rotation ?? 'load'} aria-label="Rotation" onChange={(e) => update(i, { rotation: e.target.value as 'load' | 'daily' })}>
+                      <option value="load">New picks every visit</option>
+                      <option value="daily">Same picks all day</option>
+                    </select>
+                  </div>
+                </div>
               )}
               {(r.type === 'collection' || r.type === 'playlist') && (
                 <select className="select" value={r.itemId ?? ''} onChange={(e) => update(i, { itemId: e.target.value || undefined })}>

@@ -457,3 +457,12 @@ a.stat:hover { transform: translateY(-2px); border-color: var(--c-primary); }
 .ts-row .select { width: auto; }
 .ts-row.dim { opacity: 0.6; }
 .ts-date { display: inline-flex; gap: 4px; }
+
+.rb-spotlight { display: flex; flex-direction: column; gap: 6px; }
+.rb-chips { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+
+.rb-pins { display: flex; flex-direction: column; gap: 6px; }
+.rb-pin-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 2px; }
+.rb-pin-list li { display: flex; align-items: center; gap: 4px; }
+.rb-pin-list .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rb-pin-results { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; }

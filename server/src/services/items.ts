@@ -655,8 +655,50 @@ const DEFAULT_TITLES: Record<string, string> = {
   'favorite-channels': 'Favourite Channels', recordings: 'Recordings', collection: 'Collection', genre: 'Genre', playlist: 'Playlist', 'library-recent': 'Recently Added',
   // {title} = the title a "because" row is based on; {server} = the server name.
   recommended: 'Recommended for you', because: 'Because you watched {title}', top10: 'Top 10 on {server} this week', trending: 'Popular right now',
-  watchlist: 'My List', upcoming: 'Coming soon',
+  watchlist: 'My List', upcoming: 'Coming soon', spotlight: 'Spotlight',
 };
+
+/** 32-bit FNV-1a, for seeding the daily spotlight shuffle. */
+function hash32(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  return h >>> 0;
+}
+/** mulberry32: small seeded PRNG (same seed → same sequence). */
+function seededRandom(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * "Random spotlight" row: random movies/shows from the chosen libraries, limited to what the viewer may see (library
+ * access, rating limit). `daily` shuffles with a seed from the server date and the row id, so picks hold all day.
+ */
+export function spotlightItems(user: User, cfg: Pick<HomeRowConfig, 'id' | 'libraryIds' | 'itemTypes' | 'rotation'>, limit: number, now = new Date()): Item[] {
+  const allowed = allowedLibraryIds(user);
+  const chosen = Array.isArray(cfg.libraryIds) && cfg.libraryIds.length ? allowed.filter((id) => cfg.libraryIds!.includes(id)) : allowed;
+  if (!chosen.length) return [];
+  const types = (Array.isArray(cfg.itemTypes) ? cfg.itemTypes : []).filter((t) => t === 'movie' || t === 'show');
+  const typeList = types.length ? [...new Set(types)] : ['movie', 'show'];
+  const where = `i.type IN (${typeList.map(() => '?').join(',')}) AND i.library_id IN (${chosen.map(() => '?').join(',')})`;
+  const params = [...typeList, ...chosen];
+  if (cfg.rotation !== 'daily') return selectItems(user, where, params, `ORDER BY RANDOM() LIMIT ${limit}`);
+  const a = accessClause(user);
+  const ids = db.all<{ id: string }>(`SELECT i.id FROM items i WHERE ${a.sql} AND ${where} ORDER BY i.id`, ...a.params, ...params).map((r) => r.id);
+  const day = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+  const rnd = seededRandom(hash32(`${day}|${cfg.id}`));
+  // Partial Fisher–Yates: only the first `limit` positions are needed.
+  for (let i = 0; i < Math.min(limit, ids.length); i++) {
+    const j = i + Math.floor(rnd() * (ids.length - i));
+    [ids[i], ids[j]] = [ids[j]!, ids[i]!];
+  }
+  return itemsByIds(user, ids.slice(0, limit));
+}
 
 /** Home rows that depend on Live TV/DVR are filled by the live module via this hook. */
 export const homeHooks: {
@@ -735,6 +777,11 @@ export function buildHome(user: User): HomeRow[] {
         case 'recordings': {
           const r = homeHooks.recordingsRow?.(user, { ...cfg, title, limit });
           if (r) rows.push(r);
+          break;
+        }
+        case 'spotlight': {
+          const items = spotlightItems(user, cfg, limit);
+          if (items.length) rows.push({ id: cfg.id, type: cfg.type, title, items });
           break;
         }
         case 'watchlist': {

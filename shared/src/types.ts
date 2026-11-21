@@ -118,7 +118,9 @@ export type HomeRowType =
   /** "My List": the viewer's watchlist. */
   | 'watchlist'
   /** "Coming soon": next airing episodes of shows in the viewer's libraries (needs TMDB). */
-  | 'upcoming';
+  | 'upcoming'
+  /** "Random spotlight": random movies/shows from chosen libraries (e.g. "Random Movie", "Kids Spotlight"). Add several. */
+  | 'spotlight';
 
 export interface HomeRowConfig {
   id: string;
@@ -133,6 +135,14 @@ export interface HomeRowConfig {
   /** For genre. */
   genre?: string;
   limit?: number;
+  /** spotlight: libraries to pick from (empty/absent = every library the viewer can see). */
+  libraryIds?: string[];
+  /** spotlight: item types to pick (default both). */
+  itemTypes?: ('movie' | 'show')[];
+  /** spotlight: 'load' = new random picks on every page load (default), 'daily' = the same picks all day (server date). */
+  rotation?: 'load' | 'daily';
+  /** top10: admin-pinned titles (movies/shows), always first in this order; the chart fills the rest. Titles a viewer can't see are skipped. */
+  pinnedItemIds?: string[];
 }
 
 export interface FeatureFlags {
