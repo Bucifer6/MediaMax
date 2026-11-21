@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark light" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; connect-src 'self'; object-src 'none'; base-uri 'self'" />
+<meta name="robots" content="noindex" />
+<title>Server offline</title>
+<link rel="icon" href="%BASE%favicon.svg" type="image/svg+xml" />
+<style>
+  :root { --bg: #0A0F22; --text: #F2F5FF; --muted: #9AA6CC; --accent: #1FB6F5; --primary: #1FB6F5; --primary-text: #04101F; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { min-height: 100%; box-sizing: border-box; display: grid; place-items: center; align-content: center; gap: 20px; padding: 32px 16px; text-align: center; }
+  .logo { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 48px; }
+  .logo img { max-height: 56px; max-width: min(320px, 80vw); width: auto; }
+  .logo .name { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.01em; }
+  h1 { margin: 0; font-size: 1.5rem; }
+  p { margin: 0; color: var(--muted); max-width: 32em; }
+  .spin { width: 28px; height: 28px; border-radius: 50%; border: 3px solid color-mix(in srgb, var(--text) 15%, transparent); border-top-color: var(--accent); animation: s 0.9s linear infinite; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2.7s; } }
+  button { font: inherit; font-weight: 700; padding: 10px 24px; border-radius: 10px; border: 0; background: var(--primary); color: var(--primary-text); cursor: pointer; }
+  button:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
+  html.tv body { font-size: 28px; }
+  html.tv .logo img { max-height: 96px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="logo" id="logo"><img src="%BASE%brand/wordmark-dark.svg" alt="MediaMax" /></div>
+  <div class="spin" aria-hidden="true"></div>
+  <h1>Server offline — retrying…</h1>
+  <p id="msg"><span id="name">MediaMax</span> can't be reached right now. This page reconnects by itself as soon as the server is back.</p>
+  <p id="status" role="status" aria-live="polite">Checking…</p>
+  <button id="retry" type="button">Try now</button>
+</main>
+<script src="%BASE%offline.js"></script>
+</body>
+</html>

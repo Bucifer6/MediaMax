@@ -5,6 +5,7 @@ import { ApiRequestError, getToken, setToken } from '../api/client';
 import { realtime } from '../api/ws';
 import { DEFAULT_BRANDING, DEFAULT_FEATURES } from '../theme/defaults';
 import { applyBrandingChrome, applyCustomCss, applyTheme, resolveTheme } from '../theme/applyTheme';
+import { rememberOfflineBrand } from '../sw/register';
 
 export type BootStatus = 'loading' | 'ready' | 'offline';
 
@@ -135,6 +136,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => applyTheme(theme), [theme]);
   useEffect(() => applyCustomCss(previewCss ?? branding.customCss), [previewCss, branding.customCss]);
   useEffect(() => applyBrandingChrome(branding), [branding]);
+  // The offline page (service worker) shows this server's name, logo and colours as last seen here.
+  useEffect(() => {
+    if (branding !== DEFAULT_BRANDING && !brandingError && !previewTheme) rememberOfflineBrand(branding, theme);
+  }, [branding, brandingError, previewTheme, theme]);
 
   // Realtime connection while signed in.
   useEffect(() => {

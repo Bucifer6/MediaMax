@@ -1,11 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
+import { serviceWorker } from './sw/plugin';
 
 const target = process.env.MEDIAMAX_SERVER ?? 'http://localhost:8484';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), serviceWorker()],
   resolve: {
     alias: {
       // jassub imports this requestVideoFrameCallback polyfill (GPL-3.0) for a side effect only. jassub works without it

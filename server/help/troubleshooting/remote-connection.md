@@ -3,7 +3,7 @@ title: Can't connect from outside home
 summary: Why the server works at home but not on mobile data or at a friend's, and how to fix it.
 section: troubleshooting
 audience: everyone
-keywords: remote, outside, away, mobile data, 4g, 5g, cannot connect, can't reach the server, offline, port forward, https, certificate, home only, vpn, tailscale
+keywords: remote, outside, away, mobile data, 4g, 5g, cannot connect, can't reach the server, offline, server offline, retrying, port forward, https, certificate, home only, vpn, tailscale
 related: login-problems, admin-network, buffering
 order: 5
 ---
@@ -12,6 +12,7 @@ order: 5
 
 - **Use the right address.** At home you may use an address like `192.168.1.10:8484`, which only works inside your home network. Away from home you need the server's public address (often `https://…`). Ask your admin.
 - **"Can't reach the server"**: check your own internet connection, then try the address in a browser.
+- **"Server offline — retrying…" page**: the browser couldn't reach the server when the page loaded. Leave it open: it checks again every few seconds and opens {{product}} by itself as soon as the server answers. Nothing you were watching is stored on the device.
 - **Your account may be home-only.** If streaming outside the home network isn't allowed for your account, playback fails away from home. Ask your admin.
 - **Certificate warnings**: don't continue past a browser security warning; tell your admin.
 
