@@ -7,6 +7,7 @@ import { handleSyncPlay, leaveAll } from '../services/syncplay.js';
 import { listSessions } from '../services/playback.js';
 import { newId } from '../util/ids.js';
 import { extractToken } from '../http.js';
+import { announcePairedFor, announceTv, commandTargets, keyTargets, remoteStateExtras, REMOTE_KEYS } from '../services/pairing.js';
 
 /** How often an open socket pings and re-checks its session (tests shorten it). */
 let WS_RECHECK_MS = 30000;
@@ -36,8 +37,10 @@ export default async function wsRoutes(app: FastifyInstance) {
     };
     events.add(client);
     events.announceTargets(ctx.user.id);
+    announceTv(client.deviceRowId);
     client.send({ type: 'hello', serverId: serverId(), userId: ctx.user.id });
     if (ctx.user.isAdmin) client.send({ type: 'sessions.updated', sessions: listSessions() });
+    announcePairedFor(client.deviceRowId);
     const token = extractToken(req);
     const ping = setInterval(() => {
       // A signed-out, revoked, disabled or demoted session must not keep receiving events on an old socket.
@@ -70,18 +73,31 @@ export default async function wsRoutes(app: FastifyInstance) {
             posterUrl: typeof s.posterUrl === 'string' && s.posterUrl.startsWith('/api/') ? s.posterUrl : null,
             positionMs: Math.max(0, Number(s.positionMs) || 0), durationMs: s.durationMs ? Number(s.durationMs) : null, paused: !!s.paused,
             volume: s.volume == null ? null : Math.max(0, Math.min(100, Number(s.volume))),
+            ...remoteStateExtras(s as unknown as Record<string, unknown>),
           } : null;
           events.announceTargets(client.userId);
+          announceTv(client.deviceRowId);
         } else if (ev.type === 'remote.command') {
-          // Only your own devices can be controlled.
-          const targets = events.clients().filter((c) => c.userId === client.userId && c.deviceRowId === ev.targetDeviceId && c !== client);
-          if (!targets.length) client.send({ type: 'error', message: 'That device is not online' });
-          const ACTIONS = ['play', 'pause', 'togglePause', 'stop', 'seek', 'next', 'previous', 'setVolume', 'playItem', 'playChannel'];
+          // Your own devices, or a TV you are paired with (another user's TV: transport and allowed titles only).
+          const ACTIONS = ['play', 'pause', 'togglePause', 'stop', 'seek', 'next', 'previous', 'setVolume', 'playItem', 'playChannel', 'setAudioTrack', 'setSubtitleTrack', 'skipSegment'];
           if (!ACTIONS.includes(ev.action)) return;
+          const targets = commandTargets(client, String(ev.targetDeviceId ?? ''), ev.action, typeof ev.itemId === 'string' ? ev.itemId : undefined);
+          if (!targets.length) client.send({ type: 'error', message: 'That device is not online' });
           for (const t of targets) {
             t.send({ type: 'remote.command', fromDeviceName: client.deviceName, action: ev.action, itemId: ev.itemId, channelId: ev.channelId,
-              positionMs: ev.positionMs == null ? undefined : Number(ev.positionMs), volume: ev.volume == null ? undefined : Number(ev.volume) });
+              positionMs: ev.positionMs == null ? undefined : Number(ev.positionMs), volume: ev.volume == null ? undefined : Number(ev.volume),
+              ...(ev.trackIndex !== undefined ? { trackIndex: ev.trackIndex == null ? null : Number(ev.trackIndex) } : {}) });
           }
+        } else if (ev.type === 'remote.key') {
+          // D-pad / text from a phone remote: only along an active pairing (QR), never to unpaired devices.
+          if (!REMOTE_KEYS.has(ev.key)) return;
+          const targets = keyTargets(client, String(ev.targetDeviceId ?? ''));
+          if (!targets.length) {
+            client.send({ type: 'error', message: 'Not paired with that TV' });
+            return;
+          }
+          const text = ev.key === 'text' && typeof ev.text === 'string' ? ev.text.slice(0, 200) : undefined;
+          for (const t of targets) t.send({ type: 'remote.key', fromDeviceName: client.deviceName, key: ev.key, ...(text !== undefined ? { text } : {}) });
         }
       } catch {
         client.send({ type: 'error', message: 'Invalid message' });
@@ -92,6 +108,7 @@ export default async function wsRoutes(app: FastifyInstance) {
       events.remove(client);
       leaveAll(client);
       events.announceTargets(client.userId);
+      announceTv(client.deviceRowId);
     });
   });
 }

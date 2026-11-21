@@ -58,7 +58,9 @@ export function userStats(userId: string, year: number | null): UserStats {
     byWeekday[d.getDay()] += min;
     byHour[d.getHours()] += min;
     days.add(r.started_at.slice(0, 10));
-    for (const g of parseJson<string[]>(r.igenres ?? r.ggenres, []).slice(0, 3)) genres.set(g, (genres.get(g) ?? 0) + min);
+    // Episodes usually have no genres of their own ('[]', not NULL): fall back to the show's.
+    const own = parseJson<string[]>(r.igenres, []);
+    for (const g of (own.length ? own : parseJson<string[]>(r.ggenres, [])).slice(0, 3)) genres.set(g, (genres.get(g) ?? 0) + min);
     if (r.channel_id) {
       live += min;
       bump(channels, r.channel_id, { itemId: null, title: r.cname ?? 'Live TV', subtitle: null, posterUrl: imageUrl(r.clogo) }, min);

@@ -522,6 +522,19 @@ const MIGRATIONS: string[] = [
   DROP TABLE emby_import_map;
   CREATE INDEX import_map_local ON import_map(kind, local_id);
   `,
+  /* Phone ↔ TV pairings (QR pairing: phone remote + second screen). Device rows go away on sign-out, and so do their pairings. */ `
+  CREATE TABLE IF NOT EXISTS remote_pairings (
+    id TEXT PRIMARY KEY,
+    tv_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tv_device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    ctl_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ctl_device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    cross_user INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS remote_pairings_tv ON remote_pairings(tv_device_id);
+  CREATE INDEX IF NOT EXISTS remote_pairings_ctl ON remote_pairings(ctl_device_id);
+  `,
 ];
 
 function migrate(db: Database) {

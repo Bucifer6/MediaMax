@@ -24,8 +24,10 @@ import { Img, Spinner } from '../components/ui';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { ChapterList } from './MiniPlayer';
 import { DEFAULT_PREFERENCES } from '../theme/defaults';
-import { isTypingTarget, useServerEvent } from '../hooks';
+import { isTypingTarget } from '../hooks';
 import { formatClock, languageName } from '../utils/format';
+import { useRemoteTarget } from '../remote/useRemoteTarget';
+import { openPairDialog } from '../remote/api';
 import { isResumable } from '../utils/items';
 import { SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitleStyleOf } from './subtitleStyle';
 import { SubtitleOverlay, type SubtitleStatus } from './subtitles/SubtitleOverlay';
@@ -916,12 +918,7 @@ export default function VideoPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMs]);
 
-  // Pause / resume from the admin dashboard (or another of this user's devices).
-  useServerEvent((ev) => {
-    if (ev.type !== 'remote.command' || !videoRef.current) return;
-    const isPaused = castingRef.current ? castRef.current.remote.isPaused : videoRef.current.paused;
-    if (ev.action === 'togglePause' || (ev.action === 'pause' && !isPaused) || (ev.action === 'play' && isPaused)) togglePlay();
-  });
+  // Pause / resume from the admin dashboard or a paired phone: handled by useRemoteTarget below.
   useEffect(() => {
     if (sessionRef.current) report(videoRef.current?.paused ? 'paused' : 'playing');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1282,6 +1279,21 @@ export default function VideoPlayer() {
 
   const backdrop = useMemo(() => info?.backdropUrl ?? item?.backdropUrl ?? null, [info?.backdropUrl, item?.backdropUrl]);
 
+  /* Remote control target (your other devices, a paired phone remote / second screen). */
+  const remoteSkip = introThen ? { type: 'intro', label: 'Skip to movie' }
+    : activeSkip && !prefs.skipIntros ? { type: activeSkip.type, label: `Skip ${activeSkip.type === 'commercial' ? 'ad break' : activeSkip.type}` }
+      : inCredits ? { type: 'credits', label: info?.nextItemId ? 'Next episode' : 'Skip credits' } : null;
+  useRemoteTarget(item ? {
+    itemId: item.id, title, subtitle: subtitle || null, posterUrl: item.posterUrl ?? null, positionMs, durationMs: durationMs || null, paused, volume: muted ? 0 : volume,
+    audioTracks: audioStreams.map((a) => ({ index: a.index, label: a.title ?? languageName(a.language) })), audioIndex: currentAudio ?? null,
+    subtitleTracks: textSubs.map((t) => ({ index: t.index, label: t.title || languageName(t.language) })), subtitleIndex: subtitleIndex ?? null,
+    skip: remoteSkip, nextItemId: info?.nextItemId ?? null,
+  } : null, {
+    togglePlay, seekTo, setVolume: (v) => { setVolume(v); setMuted(false); }, next: goNext, stop: exit,
+    setAudio: (i) => selectAudio(i), setSubtitle: (i) => selectSubtitle(i),
+    skip: () => (introThen ? skipIntros() : activeSkip ? seekTo(activeSkip.endMs) : inCredits ? (info?.nextItemId ? goNext() : seekTo(inCredits.endMs)) : undefined),
+  });
+
   return (
     <div
       ref={shellRef}
@@ -1358,6 +1370,7 @@ export default function VideoPlayer() {
             <dt>Dropped frames</dt><dd>{stats.dropped}</dd>
             <dt>Speed / sync</dt><dd>{stats.extra}</dd>
           </dl>
+          <button className="btn btn-glass btn-sm player-stats-pair" onClick={() => { setShowStats(false); openPairDialog(); }}><Icon name="device" size={14} /> Use your phone as remote</button>
         </div>
       )}
 

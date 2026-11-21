@@ -256,6 +256,15 @@ the hardware path) and `toneMap`.
 ## WebSocket
 `GET /api/v1/ws?token=` — server sends `ServerEvent` JSON frames, client may send `ClientEvent`.
 SyncPlay (watch together): `syncplay.create` → server replies `syncplay.state` with a `code`; friends send `syncplay.join` with the room id or code; any member's `syncplay.command` is broadcast to everyone in the room.
+Phone remote: `remote.key` (`up`/`down`/`left`/`right`/`ok`/`back`/`home`/`playPause`/`rewind`/`forward`/`info`/`text`/`backspace`/`submit`) is delivered only to a TV the sending device is QR-paired with. `remote.command` also reaches a paired TV of another user, limited to transport/track actions (`setAudioTrack`, `setSubtitleTrack` with `trackIndex`, `skipSegment`) and `playItem` for titles that user may watch. Paired phones receive `pair.targets` (with the TV's `remote.state`); TVs receive `pair.request` for another account's phone; both sides get `pair.updated`.
+
+## Phone ↔ TV pairing, second screen, song ID
+* `POST /pair/start` (TV) → `PairStartResponse` (6-char `code`, one-time QR `token`, `path` = `/pair?c=&t=`, ~5 min). Rate limited per device.
+* `POST /pair/claim {code|token}` (phone) → `PairClaimResponse`: same user → `paired`; another user → `pending` + `requestId` (TV must be online). Wrong codes are rate limited per user and address.
+* `GET /pair/requests` (TV: pending requests) · `POST /pair/requests/:id {accept}` (only the TV the request is for) · `GET /pair/requests/:id` (phone: status).
+* `GET /pair/pairings` · `DELETE /pair/pairings/:id` (either side) · `GET /pair/targets` (TVs this device is paired with).
+* `GET /pair/targets/:deviceId/now` → `SecondScreenInfo` (item, show, season episodes, next, trickplay via `/pair/targets/:deviceId/trickplay/:mediaId/:n.jpg`); `GET /pair/targets/:deviceId/browse?q=&parentId=`. Built as the TV's user; a guest never gets file details, progress or history.
+* `POST /pair/targets/:deviceId/identify-song` · `POST /songid/items/:id {positionMs, audioIndex?}` · `POST /songid/clip` (multipart `file`, microphone recording) → `SongIdResponse`.
 
 ## Profiles, avatars & parental controls
 * `PublicProfile.pinLength` / `User.pinLength` — PIN pads auto-submit at this length (fallback 4).
@@ -316,6 +325,7 @@ When Settings → DLNA is on, the server announces itself over SSDP and serves U
 
 ## Statistics
 * `GET /stats/me?year=2026` → `UserStats` (omit `year` for all time) — powers the "Wrapped" screen.
+* `GET /stats/me/wrapped?year=2026|all` → `WrappedStory` (your own history only) — the animated Wrapped story.
 * `GET /stats/users/:id?year=` 🛡️ → `UserStats` · `GET /stats/server?days=30` 🛡️ → `ServerStats`.
 
 ## Online subtitles (OpenSubtitles, Subs.ro, plugin providers)

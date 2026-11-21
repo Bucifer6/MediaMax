@@ -94,6 +94,9 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Skip recaps, previews and ad breaks (comskip / `.edl` markers) | 🟡 | 🟡 (plugins) | 🟡 | ✅ |
 | Cinema mode (trailers + pre-roll before a movie) | ✅ (Pass) | ✅ (plugin) | ✅ | ✅ |
 | Remote control: "Play on…" another device | ✅ | ✅ | ✅ | ✅ |
+| Phone as TV remote via QR pairing (touch-pad, keyboard into TV search; guests from another account after on-screen approval) | ✅ (app) | 🟡 | 🟡 | ✅ web + app, no install needed |
+| Second screen (scrubber with trickplay, chapters, skip intro, audio/subtitle switching, cast, episodes) | 🟡 | ❌ | ❌ | ✅ |
+| "What's this song?" from the playing title's own audio (AcoustID, mic fallback) | ❌ | ❌ | ❌ | ✅ |
 | Auto-play next episode | ✅ | ✅ | ✅ | ✅ |
 | Downloads for offline | Pass | ✅ | Premiere | ✅ (mobile apps) |
 | Watch together | ✅ | ✅ | Plugin? | ✅ SyncPlay rooms with join codes |
@@ -231,7 +234,7 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | Trakt scrobbling & watched sync | Plugin | Plugin | Plugin | ✅ built in |
 | Last.fm scrobbling | ✅ | Plugin | Plugin | ✅ built in |
 | ListenBrainz scrobbling (MBIDs, offline queue, love/hate feedback) + weekly playlists & recommendations matched to the library | ❌ | Plugin | Plugin | ✅ built in |
-| Viewing statistics & yearly "Wrapped" | Pass | Plugin | Plugin | ✅ |
+| Viewing statistics & yearly "Wrapped" | Pass | Plugin | Plugin | ✅ animated story (binge record, film personality, heatmap) with 1080×1920 PNG export / share |
 | User avatars | ✅ | ✅ | ✅ | ✅ |
 | Hide unrated content from restricted users | ✅ | ✅ | ✅ | ✅ |
 | CI (typecheck, tests, web build, Docker smoke test) | — | ✅ | — | ✅ |

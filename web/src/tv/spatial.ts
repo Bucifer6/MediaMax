@@ -204,6 +204,89 @@ function move(dir: Dir): boolean {
 
 const DIRS: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
 
+/**
+ * A key from a paired phone remote (`remote.key` over the socket). Synthetic keyboard events are ignored by the
+ * TV-mode key handler (it only trusts real key presses), so the phone's keys drive the same logic directly:
+ * D-pad → spatial navigation (or the player's seek/volume keys), OK → click, Back → one step back,
+ * text → typed into the focused (or the page's search) input. Works with or without TV mode installed.
+ */
+export function handleRemoteKey(key: string, text?: string): boolean {
+  const active = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+  const target: Element = active ?? document.body;
+  const inPlayer = !!document.querySelector('video') && !!document.querySelector('.player, .live-player, .mv-shell');
+  const typeInto = (fn: (el: HTMLInputElement | HTMLTextAreaElement) => string) => {
+    let el = isTextInput(active) ? active : null;
+    if (!el) {
+      // No field focused: use the page's search box, else open Search.
+      el = document.querySelector<HTMLInputElement>('input[type="search"], .search-input input, input.search-input, input[name="q"]');
+      if (!el) {
+        goTo(`/search${text ? `?q=${encodeURIComponent(text)}` : ''}`);
+        return false;
+      }
+      el.focus();
+    }
+    // React tracks the value itself: set it through the native setter, then fire `input`.
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, fn(el));
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  };
+  switch (key) {
+    case 'up': case 'down': case 'left': case 'right': {
+      const dir = key as Dir;
+      const arrow = `Arrow${dir[0].toUpperCase()}${dir.slice(1)}`;
+      // In the player (no menu focused), arrows are the player's own seek / volume keys; sliders step themselves.
+      if ((inPlayer && (!active || active.tagName === 'VIDEO') && scope() === document) || active?.getAttribute('role') === 'slider' || (active instanceof HTMLInputElement && active.type === 'range')) {
+        send(target, arrow);
+        return true;
+      }
+      if (isTextInput(active) && (dir === 'left' || dir === 'right')) return false;
+      return move(dir);
+    }
+    case 'ok':
+      if (active instanceof HTMLSelectElement) {
+        try { active.showPicker(); } catch { /* unsupported */ }
+        return true;
+      }
+      if (inPlayer && (!active || active.tagName === 'VIDEO')) {
+        send(target, ' ');
+        return true;
+      }
+      if (active && isTextInput(active)) {
+        send(active, 'Enter');
+        active.form?.requestSubmit?.();
+        return true;
+      }
+      if (active) {
+        active.click();
+        return true;
+      }
+      return move('down');
+    case 'back':
+      if (inPlayer && document.fullscreenElement && scope() === document) void document.exitFullscreen().catch(() => undefined);
+      else if (scope() !== document || inPlayer) target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      else if (window.history.length > 1) window.history.back();
+      return true;
+    case 'home':
+      goTo('/');
+      return true;
+    case 'playPause': return handleRemote('MediaPlayPause', target);
+    case 'rewind': return handleRemote('MediaRewind', target);
+    case 'forward': return handleRemote('MediaFastForward', target);
+    case 'info': return handleRemote('Info', target);
+    case 'text': return text ? typeInto((el) => el.value + text) : false;
+    case 'backspace': return typeInto((el) => el.value.slice(0, -1));
+    case 'submit':
+      if (isTextInput(active)) {
+        send(active, 'Enter');
+        active.form?.requestSubmit?.();
+        return true;
+      }
+      return false;
+  }
+  return false;
+}
+
 export function installTvMode() {
   document.documentElement.classList.add('tv');
   vidaa = isVidaaUa(navigator.userAgent);
