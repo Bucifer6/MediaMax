@@ -5,19 +5,19 @@
 
 
 function regRead(key as string, fallback = "" as string) as string
-    sec = CreateObject("roRegistrySection", "MediaMax")
+    sec = CreateObject("roRegistrySection", "Kinora")
     if sec.Exists(key) then return sec.Read(key)
     return fallback
 end function
 
 sub regWrite(key as string, value as string)
-    sec = CreateObject("roRegistrySection", "MediaMax")
+    sec = CreateObject("roRegistrySection", "Kinora")
     sec.Write(key, value)
     sec.Flush()
 end sub
 
 sub regDelete(key as string)
-    sec = CreateObject("roRegistrySection", "MediaMax")
+    sec = CreateObject("roRegistrySection", "Kinora")
     sec.Delete(key)
     sec.Flush()
 end sub

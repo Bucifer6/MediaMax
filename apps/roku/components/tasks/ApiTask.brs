@@ -10,14 +10,14 @@ sub runRequest()
     m.top.response = res
 end sub
 
-' Device headers the server records for the session list (X-MediaMax-*) plus the bearer token.
+' Device headers the server records for the session list (X-Kinora-*; the server also accepts X-MediaMax-*) plus the bearer token.
 sub addMediaMaxHeaders(xfer as object, token as dynamic)
     g = m.global
     xfer.AddHeader("Accept", "application/json")
-    xfer.AddHeader("X-MediaMax-Device-Id", g.deviceId)
-    xfer.AddHeader("X-MediaMax-Device-Name", g.deviceName)
-    xfer.AddHeader("X-MediaMax-Platform", "roku")
-    xfer.AddHeader("X-MediaMax-Version", g.appVersion)
+    xfer.AddHeader("X-Kinora-Device-Id", g.deviceId)
+    xfer.AddHeader("X-Kinora-Device-Name", g.deviceName)
+    xfer.AddHeader("X-Kinora-Platform", "roku")
+    xfer.AddHeader("X-Kinora-Version", g.appVersion)
     if not isNonEmptyString(token) then token = g.token
     if isNonEmptyString(token) then xfer.AddHeader("Authorization", "Bearer " + token)
 end sub

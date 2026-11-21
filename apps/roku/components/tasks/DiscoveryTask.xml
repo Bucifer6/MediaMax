@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Finds MediaMax servers on the LAN. MediaMax answers SSDP M-SEARCH for UPnP MediaServer:1 when its DLNA server is on
-  (Settings → DLNA); its SERVER header contains "MediaMax/<version>" and LOCATION points at <base>/dlna/description.xml.
+  Finds Kinora servers on the LAN. Kinora answers SSDP M-SEARCH for UPnP MediaServer:1 when its DLNA server is on
+  (Settings → DLNA); its SERVER header contains "Kinora/<version>" and LOCATION points at <base>/dlna/description.xml.
   Each hit is confirmed with GET /api/v1/system/info.
 -->
 <component name="DiscoveryTask" extends="Task">

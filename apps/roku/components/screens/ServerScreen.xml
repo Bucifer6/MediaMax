@@ -7,7 +7,7 @@
   <script type="text/brightscript" uri="pkg:/components/screens/ServerScreen.brs" />
   <children>
     <Poster id="logo" uri="pkg:/images/logo.png" translation="[160,120]" width="160" height="160" />
-    <Label id="heading" translation="[360,140]" width="1400" text="Connect to your MediaMax server" color="0xFFFFFFFF" font="font:LargeBoldSystemFont" />
+    <Label id="heading" translation="[360,140]" width="1400" text="Connect to your Kinora server" color="0xFFFFFFFF" font="font:LargeBoldSystemFont" />
     <Label id="hint" translation="[360,210]" width="1400" wrap="true" maxLines="2" color="0xA9B0D6FF" font="font:SmallSystemFont"
       text="Choose a server found on your network, or enter its address (for example 192.168.1.20:8484 or https://media.example.com)." />
     <Label id="error" translation="[160,330]" width="1600" wrap="true" maxLines="2" color="0xF87171FF" font="font:SmallSystemFont" />

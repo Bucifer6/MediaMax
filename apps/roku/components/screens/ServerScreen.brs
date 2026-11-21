@@ -93,7 +93,7 @@ sub onVerified(event as object)
     end if
     info = res.data
     if info = invalid or info.version = invalid
-        m.error.text = m.candidate + " doesn't look like a MediaMax server."
+        m.error.text = m.candidate + " doesn't look like a Kinora server."
         return
     end if
     if info.setupRequired = true
@@ -106,7 +106,7 @@ sub onVerified(event as object)
         regDelete("token")
     end if
     m.global.serverUrl = m.candidate
-    m.global.serverName = getOr(info, "name", "MediaMax")
+    m.global.serverName = getOr(info, "name", "Kinora")
     m.global.features = getOr(info, "features", {})
     regWrite("serverUrl", m.candidate)
     regWrite("serverName", m.global.serverName)

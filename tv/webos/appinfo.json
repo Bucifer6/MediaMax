@@ -1,14 +1,14 @@
 {
-  "id": "tv.mediamax.app",
+  "id": "uk.burdujeni82.kinora",
   "version": "0.1.0",
-  "vendor": "MediaMax",
+  "vendor": "Kinora",
   "type": "web",
   "main": "index.html",
-  "title": "MediaMax",
+  "title": "Kinora",
   "icon": "icon.png",
   "largeIcon": "largeIcon.png",
   "bgImage": "splash.png",
-  "iconColor": "#0A0F22",
+  "iconColor": "#0D0C1D",
   "resolution": "1920x1080",
   "disableBackHistoryAPI": true,
   "requiredPermissions": ["time.query"]

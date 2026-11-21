@@ -24,7 +24,7 @@ sub initGlobals()
     settings = loadSettings()
     m.global.addFields({
         serverUrl: regRead("serverUrl"),
-        serverName: regRead("serverName", "MediaMax"),
+        serverName: regRead("serverName", "Kinora"),
         token: regRead("token"),
         user: {},
         features: {},
@@ -62,7 +62,7 @@ sub onStartupInfo(event as object)
         return
     end if
     m.global.features = getOr(res.data, "features", {})
-    m.global.serverName = getOr(res.data, "name", "MediaMax")
+    m.global.serverName = getOr(res.data, "name", "Kinora")
     regWrite("serverName", m.global.serverName)
     if not isNonEmptyString(m.global.token)
         m.top.loading = false
@@ -152,7 +152,7 @@ sub showScreen(name as string, params as object, reset as boolean)
     end if
     screen = CreateObject("roSGNode", name)
     if screen = invalid
-        print "MediaMax: unknown screen "; name
+        print "Kinora: unknown screen "; name
         return
     end if
     m.screens.appendChild(screen)

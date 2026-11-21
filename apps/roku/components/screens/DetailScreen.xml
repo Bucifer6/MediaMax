@@ -11,7 +11,7 @@
   <script type="text/brightscript" uri="pkg:/components/screens/DetailScreen.brs" />
   <children>
     <Poster id="backdrop" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.3" />
-    <Rectangle width="1920" height="1080" color="0x13183EAA" />
+    <Rectangle width="1920" height="1080" color="0x0D0C1DAA" />
 
     <!-- Movie / episode layout -->
     <Group id="leafLayout" visible="false">

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- One HTTP request to the MediaMax REST API (/api/v1), run off the render thread. -->
+<!-- One HTTP request to the Kinora REST API (/api/v1), run off the render thread. -->
 <component name="ApiTask" extends="Task">
   <interface>
     <!-- { id, method, path, body, context, timeoutMs?, baseUrl?, followUp? } ; path is relative to /api/v1 unless it starts with http -->

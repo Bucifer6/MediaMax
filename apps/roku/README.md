@@ -1,16 +1,16 @@
-# MediaMax for Roku
+# Kinora for Roku
 
-A native Roku channel (BrightScript + SceneGraph) for MediaMax. Roku can't run the web app, so this channel talks to
+A native Roku channel (BrightScript + SceneGraph) for Kinora. Roku can't run the web app, so this channel talks to
 the REST API (`/api/v1`, see [docs/API.md](../../docs/API.md)) directly and plays media in the Roku `Video` node.
 
-It sends `X-MediaMax-Platform: roku` and `X-MediaMax-Device-Id` (the Roku's channel client id), so the server lists
+It sends `X-Kinora-Platform: roku` and `X-Kinora-Device-Id` (the Roku's channel client id), so the server lists
 its sessions and devices as **Roku**.
 
 ## Features
 
 | Area | What it does |
 |---|---|
-| Server | Finds servers on the LAN with SSDP (needs **Settings → DLNA** on the server: MediaMax only answers M-SEARCH while its DLNA server runs), or takes a typed address (`192.168.1.20` → `http://192.168.1.20:8484`; `https://` URLs work too). Each candidate is checked with `GET /system/info`. |
+| Server | Finds servers on the LAN with SSDP (needs **Settings → DLNA** on the server: Kinora only answers M-SEARCH while its DLNA server runs), or takes a typed address (`192.168.1.20` → `http://192.168.1.20:8484`; `https://` URLs work too). Each candidate is checked with `GET /system/info`. |
 | Sign-in | **Link code** (default): shows a 4-character code and `<server>/link`, polls `/auth/link/poll` every 3 s, gets a new code when it expires. Fallbacks: username + password on the on-screen keyboard (with the two-factor prompt when the account has TOTP), and the server's public profile picker (`features.profilePicker`) with a PIN pad. |
 | Profiles | "Who's watching?" at launch and after sign-in when the account has profiles (`/auth/account/profiles`, `/auth/profiles/:id/switch`, PIN pad). |
 | Home | The server's home rows (`GET /home`): posters, landscape cards for Continue watching / Next up / recordings with progress bars, live-channel rows, a header with the focused title's backdrop and overview. Refreshes when you come back from playback. |
@@ -44,12 +44,12 @@ its sessions and devices as **Roku**.
 
 ### Not supported (compared with the web app)
 
-* **Remote control / server messages**: Roku has no WebSocket client, and MediaMax has no polling endpoint for
+* **Remote control / server messages**: Roku has no WebSocket client, and Kinora has no polling endpoint for
   `remote.command` / `session.message`, so "Play on…" can't target a Roku and server messages aren't shown. A stream
   stopped by an admin is still noticed through the next progress report (within 10 s).
 * Music, photos, audiobooks, podcasts, DVR management, requests (Discover), SyncPlay, karaoke and lyrics.
 * The full EPG grid (`/livetv/guide`): Live TV shows now / next per channel instead. No catch-up.
-* Trickplay thumbnails on the seek bar, the server's theme / branding colours (the channel uses the stock MediaMax look),
+* Trickplay thumbnails on the seek bar, the server's theme / branding colours (the channel uses the stock Kinora look),
   single sign-on (OIDC needs a browser: use a link code instead).
 * Settings are per device (Roku registry); they aren't synced to the account's preferences.
 * H.264 profile / level limits aren't in the device profile (the server's profile format has no field for them). Older
@@ -58,7 +58,7 @@ its sessions and devices as **Roku**.
 ## Requirements
 
 * Roku OS 11 or newer (the channel uses the Standard keyboard, PIN pad and message dialogs).
-* A MediaMax server reachable from the Roku. Link codes need the server's `linkCodes` feature flag (on by default).
+* A Kinora server reachable from the Roku. Link codes need the server's `linkCodes` feature flag (on by default).
 
 ## Build
 
@@ -66,7 +66,7 @@ its sessions and devices as **Roku**.
 cd apps/roku
 npm install            # BrighterScript, for the static check below (this folder is not a root workspace)
 npm run lint           # bsc: parses and validates every BrightScript / XML file
-node build.mjs         # → apps/roku/dist/MediaMax.zip
+node build.mjs         # → apps/roku/dist/Kinora.zip
 node build.mjs --images  # re-render images/ from tv/shared/brand with ffmpeg, then zip
 ```
 
@@ -84,11 +84,11 @@ in `tv/shared/brand/`. Replace them (same names and sizes) for a white-label cha
    ```bash
    node apps/roku/build.mjs --deploy 192.168.1.50 --password <dev-password>
    ```
-   This POSTs the zip to `http://<roku-ip>/plugin_install` (multipart `mysubmit=Install`, `archive=@MediaMax.zip`)
+   This POSTs the zip to `http://<roku-ip>/plugin_install` (multipart `mysubmit=Install`, `archive=@Kinora.zip`)
    with HTTP digest authentication as user `rokudev`. You can also open `http://<roku-ip>` in a browser, sign in as
-   `rokudev` and upload `dist/MediaMax.zip`, or use curl:
+   `rokudev` and upload `dist/Kinora.zip`, or use curl:
    ```bash
-   curl --user rokudev:<dev-password> --digest -F "mysubmit=Install" -F "archive=@apps/roku/dist/MediaMax.zip" http://<roku-ip>/plugin_install
+   curl --user rokudev:<dev-password> --digest -F "mysubmit=Install" -F "archive=@apps/roku/dist/Kinora.zip" http://<roku-ip>/plugin_install
    ```
    The password can also come from `ROKU_DEV_PASSWORD`.
 
@@ -127,7 +127,7 @@ apps/roku/
     MainScene.*             globals, screen stack, startup / sign-in flow, toast, spinner, background requests
     common/                 Utils (registry, URLs, time), Api (task-based requests), Screen (focus, dialogs),
                             Content (API → ContentNode), DeviceProfile (roDeviceInfo → DeviceProfile)
-    tasks/ApiTask.*         one HTTP request per task (roUrlTransfer, X-MediaMax-* headers, bearer token)
+    tasks/ApiTask.*         one HTTP request per task (roUrlTransfer, X-Kinora-* headers, bearer token)
     tasks/DiscoveryTask.*   SSDP M-SEARCH over roDatagramSocket
     screens/                Server, SignIn, Profile, Home, Library, Detail, Search, LiveTv, Settings, Player
     items/                  PosterItem, EpisodeItem, ChannelItem, ProfileItem, NavItem (list / grid cells)
