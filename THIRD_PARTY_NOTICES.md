@@ -87,7 +87,6 @@ their own licences; FFmpeg is run as a separate program (LGPL/GPL).
   - **FreeType** — FreeType Licence (FTL) or GPL-2.0-or-later (used here under the FTL)
   - **HarfBuzz** — MIT ("Old MIT") licence
   - **FriBidi** — LGPL-2.1-or-later
-  - **Fontconfig**-free font handling, **Brotli**/**zlib** decompression — MIT / Zlib
   - jassub's own code — MIT
 - Licence expression declared by the package: `LGPL-2.1-or-later AND (FTL OR GPL-2.0-or-later) AND MIT AND
   MIT-Modern-Variant AND ISC AND NTP AND Zlib AND BSL-1.0`.
