@@ -31,6 +31,8 @@
 <script>
 (function () {
   var KEY = 'mediamax.server';
+  var TRIED = 'mediamax.unverified';
+  var vidaa = /VIDAA/i.test(navigator.userAgent) || (/Hisense/i.test(navigator.userAgent) && !/Mobile|Android/i.test(navigator.userAgent));
   var input = document.getElementById('url');
   var err = document.getElementById('err');
   var go = document.getElementById('go');
@@ -38,6 +40,7 @@
   // Registration belongs to the application, so it stays in force after we navigate to the server's web app
   // (web/src/tv/spatial.ts maps these keys to player shortcuts). Back is 10009 (Tizen) / 461 (webOS); webOS sends
   // its remote keys without registration. Keys are registered one at a time: a key a model lacks would fail a batch.
+  // Hisense VIDAA needs no registration either; its Back is 8 (Backspace) on most firmware, 461 or 27 on some.
   var KEYS = ['MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop', 'MediaFastForward', 'MediaRewind', 'MediaTrackNext', 'MediaTrackPrevious',
     'ChannelUp', 'ChannelDown', 'ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue', 'Info', 'Guide', 'Caption', 'ChannelList',
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -55,6 +58,14 @@
     } catch (e) { return null; }
   }
   function connect(url, quiet) {
+    // Hosted over HTTPS (the VIDAA store app) and the server is plain http: the browser blocks the check request as
+    // mixed content, so go straight there. Remember the attempt: coming Back to this page then shows the form instead
+    // of reconnecting in a loop.
+    if (location.protocol === 'https:' && /^http:/i.test(url)) {
+      try { localStorage.setItem(KEY, url); sessionStorage.setItem(TRIED, '1'); } catch (e) {}
+      window.location.assign(url + '/?tv=1');
+      return;
+    }
     err.textContent = quiet ? '' : 'Connecting…';
     var x = new XMLHttpRequest();
     x.open('GET', url + '/api/v1/system/info');
@@ -79,15 +90,24 @@
   });
   go.addEventListener('keydown', function (e) { if (e.keyCode === 38) { e.preventDefault(); input.focus(); } });
   document.addEventListener('keydown', function (e) {
-    if (e.keyCode === 10009 || e.keyCode === 461) {
+    // VIDAA's Back is Backspace: in the address field it deletes, unless the field is empty.
+    var vidaaBack = vidaa && (e.keyCode === 27 || (e.keyCode === 8 && (document.activeElement !== input || !input.value)));
+    if (e.keyCode === 10009 || e.keyCode === 461 || vidaaBack) {
       e.preventDefault();
-      try { tizen.application.getCurrentApplication().exit(); } catch (x) { try { webOS.platformBack(); } catch (y) { window.close(); } }
+      exit();
     }
   });
-  var saved = null;
-  try { saved = localStorage.getItem(KEY); } catch (e) {}
+  function exit() {
+    // Tizen, webOS, then VIDAA (Hisense_Exit is VIDAA's own call; window.close() is reported to do nothing there).
+    try { tizen.application.getCurrentApplication().exit(); return; } catch (a) {}
+    try { webOS.platformBack(); return; } catch (b) {}
+    try { if (typeof Hisense_Exit === 'function') { Hisense_Exit(); return; } } catch (c) {}
+    window.close();
+  }
+  var saved = null, tried = false;
+  try { saved = localStorage.getItem(KEY); tried = !!sessionStorage.getItem(TRIED); sessionStorage.removeItem(TRIED); } catch (e) {}
   // ?change=1 (or a failed saved address) shows the form instead of reconnecting.
-  if (saved && !/[?&]change=1/.test(location.search)) { input.value = saved; connect(saved, true); }
+  if (saved && !tried && !/[?&]change=1/.test(location.search)) { input.value = saved; connect(saved, true); }
   else if (saved) input.value = saved;
   input.focus();
 })();

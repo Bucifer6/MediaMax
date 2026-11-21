@@ -3,7 +3,7 @@
  *
  * Everything here probes what *our own engine* can feed to the hardware decoder — Media Source Extensions
  * (`MediaSource.isTypeSupported`, `MediaCapabilities.decodingInfo({ type: 'media-source' })`) — never what a TV's
- * built-in player could do. The TV apps (Samsung Tizen, LG webOS) play through hls.js/MSE like every browser, so
+ * built-in player could do. The TV apps (Samsung Tizen, LG webOS, Hisense VIDAA) play through hls.js/MSE like every browser, so
  * the server direct-streams (remuxes to fMP4/HLS) when MSE on that TV decodes HEVC/HDR10/HLG/E-AC3, and transcodes
  * otherwise. See docs/HDR.md.
  *
@@ -17,8 +17,14 @@ export interface VideoCaps {
   tenBitCodecs: string[];
   maxHeight: number | null;
   /** Short platform tag for the profile's `player` field / diagnostics. */
-  platform: 'tizen' | 'webos' | 'safari' | 'browser';
+  platform: 'tizen' | 'webos' | 'vidaa' | 'safari' | 'browser';
 }
+
+/** Hisense VIDAA OS (its browser engine says "VIDAA"; some firmware only says "Hisense"). Not Hisense phones. */
+export const isVidaaUa = (ua: string): boolean => /VIDAA/i.test(ua) || (/Hisense/i.test(ua) && !/Mobile/i.test(ua) && !/Android/i.test(ua));
+
+/** The TV platforms whose wrapper apps load the web app in TV mode (see /tv). */
+export const isTvPlatform = (p: VideoCaps['platform']): boolean => p === 'tizen' || p === 'webos' || p === 'vidaa';
 
 let caps: VideoCaps | null = null;
 let pending: Promise<VideoCaps> | null = null;
@@ -40,6 +46,7 @@ export const platformTag = (): VideoCaps['platform'] => {
   const ua = navigator.userAgent;
   if (/Tizen/i.test(ua)) return 'tizen';
   if (/Web0S|WebOS|NetCast/i.test(ua)) return 'webos';
+  if (isVidaaUa(ua)) return 'vidaa';
   if (/^((?!chrome|android|crios|fxios).)*safari/i.test(ua)) return 'safari';
   return 'browser';
 };
@@ -97,7 +104,7 @@ async function detect(): Promise<VideoCaps> {
   // Decoders accept PQ on SDR screens too. Count it as supported only when the screen is HDR, or the platform
   // tone-maps HDR video itself (Safari/macOS/iOS, Chrome & Edge on Windows/macOS).
   const tonemapsItself = platform === 'safari' || (/Chrome\//.test(navigator.userAgent) && /Windows|Macintosh/.test(navigator.userAgent));
-  const tv = platform === 'tizen' || platform === 'webos';
+  const tv = isTvPlatform(platform);
   const usable = (ok: boolean) => ok && (hdrDisplay || tonemapsItself || tv);
 
   const videoRange: VideoRangeCapabilities = {
@@ -109,7 +116,7 @@ async function detect(): Promise<VideoCaps> {
   };
   // Dolby Vision: the server remuxes DV with its configuration box and announces dvh1/dav1 codecs (server dovi.ts),
   // so any engine whose MSE (or native HLS, Safari) accepts the DV codec strings gets real Dolby Vision.
-  const detected = await detectDolbyVision(platform);
+  const detected = trustedDolbyVision(platform, await detectDolbyVision(platform));
   const profiles = applyDolbyVisionOverride(detected.length && (hdrDisplay || tonemapsItself || tv) ? detected : [], dolbyVisionOverride());
   if (profiles.length) {
     videoRange.dolbyVision = true;
@@ -169,6 +176,16 @@ async function detectDolbyVision(platform: VideoCaps['platform']): Promise<strin
       return true;
     }
   });
+}
+
+/**
+ * Auto-detected Dolby Vision profiles we act on. VIDAA: none. Community reports say its browser hangs or shows a black
+ * picture on Dolby Vision in MP4 (our remux is fMP4 with the DV configuration box), even on panels that play DV MKV
+ * files in the TV's own media player, and MSE answers for dvh1 aren't confirmed there. So VIDAA gets the HDR10/HLG base
+ * layer unless the user sets "This device supports Dolby Vision" to Yes. Exported for tests.
+ */
+export function trustedDolbyVision(platform: VideoCaps['platform'], detected: string[]): string[] {
+  return platform === 'vidaa' ? [] : detected;
 }
 
 /** Settings → Playback → This device: "This device supports Dolby Vision": auto (detect), yes, no. */

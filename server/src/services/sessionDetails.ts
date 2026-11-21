@@ -19,9 +19,14 @@ const APP_NAMES: Record<Platform, string> = {
   androidtv: 'MediaMax for Android TV', other: 'MediaMax',
 };
 
-/** "Chrome 131 on Windows", "Samsung TV (Tizen 6.5)", "Safari 18 on iPhone" … (null when unknown). */
+/** "Chrome 131 on Windows", "Samsung TV (Tizen 6.5)", "Hisense TV (VIDAA)", "Safari 18 on iPhone" … (null when unknown). */
 export function describeUserAgent(ua: string | null | undefined): string | null {
   if (!ua) return null;
+  // Hisense VIDAA OS (also on Toshiba/Sharp sets running VIDAA). Its Chromium/Opera-based engine says "VIDAA", sometimes
+  // with a version ("VIDAA/6.0"); older firmware only says "Hisense". Checked first: these UAs also carry Chrome/HbbTV.
+  const vidaa = ua.match(/VIDAA(?:[/ _]?(\d+(?:\.\d+)*))?/i);
+  if (vidaa) return `Hisense TV (VIDAA${vidaa[1] ? ` ${vidaa[1]}` : ''})`;
+  if (/Hisense/i.test(ua) && !/Mobile|Android/i.test(ua)) return 'Hisense TV';
   const tizen = ua.match(/Tizen\s*([\d.]+)?/i);
   if (tizen) return `Samsung TV${tizen[1] ? ` (Tizen ${tizen[1]})` : ''}`;
   const webos = /Web0S|webOS/i.test(ua);

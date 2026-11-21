@@ -243,7 +243,7 @@ More, including the security dashboard and integration variables, is in [docs/IN
 | Client | Status |
 |---|---|
 | **Web** (any browser) | ✅ Served by the server; responsive down to phones |
-| **Samsung (Tizen) & LG (webOS)** | ✅ Wrapper apps in [`tv/`](tv) that load the web app in TV mode: D-pad navigation, remote keys, and MediaMax's own hls.js/MSE player and subtitle renderer instead of the TV's ([tv/README.md](tv/README.md)) |
+| **Samsung (Tizen), LG (webOS) & Hisense (VIDAA)** | ✅ Wrapper apps in [`tv/`](tv) that load the web app in TV mode (VIDAA: 🧪 hosted web app, not yet tested on a set): D-pad navigation, remote keys, and MediaMax's own hls.js/MSE player and subtitle renderer instead of the TV's ([tv/README.md](tv/README.md)) |
 | **iOS / iPadOS, Android** | 🧪 Built from [`apps/mobile`](apps/mobile) with Expo. Compiled in CI ([Native apps](https://github.com/Bucifer6/MediaMax/actions/workflows/apps.yml)); store release needs your developer accounts |
 | **Apple TV, Android TV, Fire TV** | 🧪 Same codebase, TV builds compiled in CI; installable Android TV/Fire TV APKs are produced on every change |
 | **CarPlay, Android Auto** | 🧪 Native module in the mobile app: browse, search, ±15/30 s for audiobooks, podcasts and long mixes, speed, Assistant voice commands, opt-in Siri "Play … in MediaMax"; CarPlay needs Apple's audio entitlement |
@@ -344,7 +344,7 @@ shared/        API contract (TypeScript types used by every client)
 server/        MediaMax server (Fastify, node:sqlite, FFmpeg)
 web/           Web app and admin dashboard (React + Vite)
 apps/mobile/   iOS, Android, Apple TV, Android TV and Fire TV apps (Expo / React Native) + CarPlay/Android Auto
-tv/            Samsung Tizen and LG webOS wrapper apps
+tv/            Samsung Tizen, LG webOS and Hisense VIDAA wrapper apps
 deploy/        One-command installer, Caddy/Nginx, CrowdSec and fail2ban configs
 nas/           Templates for Synology, QNAP, Unraid, TrueNAS SCALE and OpenMediaVault
 packaging/     Files shipped in the Windows and Linux release archives
