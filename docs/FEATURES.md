@@ -243,6 +243,28 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | NAS disk spin-down friendly: maintenance window for scans, thumbnails, trickplay, intro/DJ/HDR analysis and subtitle matching; piggybacks on disks that are awake (playback, file changes) | ❌ | ❌ | ❌ | ✅ |
 | Per-library disk state (active / idle / standby via hdparm, smartctl or /sys, never wakes a disk), directory-only inotify watching, opt-in long-interval polling for network shares | ❌ | ❌ | ❌ | ✅ (Linux) |
 | Media-folder artwork served from a cached copy in the data dir (browsing never wakes a media disk) | 🟡 | ❌ | ❌ | ✅ |
+| Import from Emby: users, permissions, library access, watched/resume/favourites, playlists, collections; dry-run preview, set-password links, safe re-runs | — | — | — | ✅ |
+
+### Migrating from Emby
+**Admin → Import from Emby** moves an Emby Server 4.x install over (Help Centre: *Moving users over from Emby*):
+
+* **Connect** with the Emby URL and an admin API key (`X-Emby-Token`; write-only, masked like other stored secrets) plus
+  optional **path mappings** (`D:\Movies` → `/mnt/d/Movies`). LAN addresses are allowed, as for the *arr apps.
+* **Preview (dry run)**: users found and whether each would be created, merged into an existing account (same username,
+  or imported before) or updated; Emby library → MediaMax library mapping (by folder overlap after path mappings, then by
+  name); matched vs. unmatched counts for watched items, resume points, favourites, playlists and collections, with
+  unmatched examples.
+* **Users**: username/display name, admin, disabled, hidden from login (→ hidden from the sign-in picker), remote access,
+  Live TV / DVR, downloads, transcoding, stream limit (Emby 0 = unlimited), maximum parental rating and library access
+  (`EnabledFolders` → mapped libraries, `EnableAllFolders` → all).
+* **Matching**: TMDB/IMDb/TVDB ids first (episodes via the series' ids + season/episode numbers), then file path, then
+  title + year.
+* **Passwords**: Emby hashes can't be read over the API, so new accounts get a random unusable password and a one-time
+  **set-password link** (`/set-password/:token`, stored hashed, expiring, single use). Results list the links with copy
+  buttons and a CSV export.
+* **Runs in the background** with live progress, logged to the activity log, and is **idempotent**: existing users are
+  skipped or merged unless "overwrite permissions" is ticked, watched flags are never downgraded and play counts never
+  go down, playlists/collections are topped up instead of duplicated, unclaimed accounts get a fresh link on re-run.
 
 ### Media automation (*arr suite)
 MediaMax can be the hub of a Radarr/Sonarr/Lidarr/Readarr/Bazarr setup (**Admin → Server settings → Media automation (*arr)**):

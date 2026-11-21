@@ -134,6 +134,7 @@ export function toUser(r: Row): User {
     profileColor: r.profile_color ?? null,
     avatarId: r.avatar ? null : r.avatar_builtin ?? null,
     hideUnrated: !!r.hide_unrated,
+    hiddenFromLogin: !!r.hidden_login,
   };
   if (!r.avatar && isBuiltinAvatar(r.avatar_builtin)) u.avatarUrl = builtinAvatarUrl(r.avatar_builtin);
   if (r.parent_user_id) {
@@ -240,6 +241,7 @@ export function createUser(req: CreateUserRequest): User {
     request_quotas: req.requestQuotas ? JSON.stringify(normalizeQuotas(req.requestQuotas, defaultQuotas())) : null,
     allow_remote: req.allowRemote ?? true,
     max_streams: req.maxStreams && req.maxStreams > 0 ? Math.min(100, Math.trunc(req.maxStreams)) : null,
+    hidden_login: !!req.hiddenFromLogin,
     preferences: '{}',
     created_at: nowIso(),
   });
@@ -270,7 +272,7 @@ export function updateUser(id: string, req: UpdateUserRequest, actorId: string):
   }
   if (req.maxContentRating !== undefined) patch.max_rating = req.maxContentRating || null;
   if (req.libraryIds !== undefined) patch.library_ids = req.libraryIds ? JSON.stringify(req.libraryIds) : null;
-  for (const [k, col] of [['allowLiveTv', 'allow_live_tv'], ['allowDownloads', 'allow_downloads'], ['allowTranscode', 'allow_transcode'], ['allowDvr', 'allow_dvr'], ['allowRequest4k', 'allow_request_4k'], ['allowRemote', 'allow_remote'], ['disabled', 'disabled']] as const) {
+  for (const [k, col] of [['allowLiveTv', 'allow_live_tv'], ['allowDownloads', 'allow_downloads'], ['allowTranscode', 'allow_transcode'], ['allowDvr', 'allow_dvr'], ['allowRequest4k', 'allow_request_4k'], ['allowRemote', 'allow_remote'], ['disabled', 'disabled'], ['hiddenFromLogin', 'hidden_login']] as const) {
     if ((req as any)[k] !== undefined) patch[col] = !!(req as any)[k];
   }
   if (req.maxStreams !== undefined) patch.max_streams = req.maxStreams && req.maxStreams > 0 ? Math.min(100, Math.trunc(req.maxStreams)) : null;
@@ -565,7 +567,7 @@ export function authenticateApiKey(key: string | null | undefined): AuthContext 
 export function publicProfiles(): PublicProfile[] {
   if (!getBranding().features.profilePicker) return [];
   // Account profiles are entered through their owner's account, never from the server-wide picker.
-  return db.all('SELECT * FROM users WHERE disabled = 0 AND parent_user_id IS NULL ORDER BY is_admin DESC, display_name').map((r) => ({
+  return db.all('SELECT * FROM users WHERE disabled = 0 AND hidden_login = 0 AND parent_user_id IS NULL ORDER BY is_admin DESC, display_name').map((r) => ({
     id: r.id,
     username: r.username,
     displayName: r.display_name,

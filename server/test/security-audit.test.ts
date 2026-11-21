@@ -55,6 +55,7 @@ const PUBLIC = new Set([
   'GET /api/v1/auth/oidc/start', 'GET /api/v1/auth/oidc/callback',
   'POST /api/v1/auth/link/request', 'GET /api/v1/auth/link/poll', // the poll token is the secret
   'GET /api/v1/invites/:code/preview', 'POST /api/v1/invites/:code/accept', // the invite code is the secret
+  'GET /api/v1/auth/password-link/:token', 'POST /api/v1/auth/password-link/:token', // the random token is the secret
   'GET /api/v1/images/:id', 'GET /api/v1/avatars', 'GET /api/v1/avatars/:file',
   'GET /api/v1/help', 'GET /api/v1/help/search', 'GET /api/v1/help/whats-new', 'GET /api/v1/help/:slug', // admin articles filtered
   'GET /api/v1/ws', // authenticates the socket itself (tested below)

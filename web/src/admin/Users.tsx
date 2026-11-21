@@ -73,6 +73,7 @@ function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged, defa
     allowRemote: initial?.allowRemote ?? true,
     maxStreams: initial?.maxStreams ?? null,
     disabled: initial?.disabled ?? false,
+    hiddenFromLogin: initial?.hiddenFromLogin ?? false,
   });
   const [busy, setBusy] = useState(false);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
@@ -179,6 +180,7 @@ function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged, defa
           <Switch checked={!!f.allowTranscode} onChange={(v) => set('allowTranscode', v)} label="Allow transcoding" hint="When off, only direct play is allowed." />
           <Switch checked={!!f.allowDownloads} onChange={(v) => set('allowDownloads', v)} label="Downloads" />
           <Switch checked={!!f.allowRemote} onChange={(v) => set('allowRemote', v)} label="Allow streaming outside the home network" hint="When off, playback only works from the local network." />
+          <Switch checked={!!f.hiddenFromLogin} onChange={(v) => set('hiddenFromLogin', v)} label="Hide from the sign-in picker" hint="They sign in by typing their username instead of picking it from the list." />
           {initial && <Switch checked={!!f.disabled} onChange={(v) => set('disabled', v)} label="Disabled" hint="Blocks sign-in and revokes access." disabled={isSelf} />}
         </div>
         <RequestAccessSection perms={f.requestPermissions} onPerms={(p) => set('requestPermissions', p)} quotas={f.requestQuotas} onQuotas={(q) => set('requestQuotas', q)} defaults={defaults?.quotas ?? null} isAdmin={!!f.isAdmin} />
@@ -279,6 +281,7 @@ export function UsersAdmin() {
                     <div className="badge-row">
                       {u.isAdmin && <Badge tone="primary">Admin</Badge>}
                       {u.disabled && <Badge tone="danger">Disabled</Badge>}
+                      {u.hiddenFromLogin && <Badge tone="muted">Hidden</Badge>}
                       {u.hasPin && <Badge tone="muted"><Icon name="lock" size={10} /> PIN</Badge>}
                       {u.totpEnabled && <Badge tone="success"><Icon name="shield" size={10} /> 2FA</Badge>}
                       {u.maxStreams != null && <Badge tone="muted">{u.maxStreams} stream{u.maxStreams === 1 ? '' : 's'}</Badge>}

@@ -60,6 +60,7 @@ const DiscoverPersonPage = lazyPage(() => import('./pages/DiscoverPerson'));
 const IssuesPage = lazyPage(() => import('./pages/Issues'));
 const AdminRoutes = lazyPage(() => import('./admin/AdminRoutes'));
 const InvitePage = lazyPage(() => import('./pages/Invite'));
+const SetPasswordPage = lazyPage(() => import('./pages/SetPassword'));
 const MyListPage = lazyPage(() => import('./pages/MyList'));
 const CalendarPage = lazyPage(() => import('./pages/Calendar'));
 const ProfilePickerPage = lazyPage(() => import('./pages/ProfilePicker'));
@@ -148,6 +149,8 @@ function Gate() {
         <Route path="/login" element={<Login />} />
         {/* Public: invite links are opened by people who don't have an account yet. */}
         <Route path="/invite/:code" element={<InvitePage />} />
+        {/* Public: one-time set-password links for accounts moved over from Emby. */}
+        <Route path="/set-password/:token" element={<SetPasswordPage />} />
         <Route path="/profiles" element={<RequireAuth><ProfilePickerPage /></RequireAuth>} />
         <Route path="/play/:itemId" element={<RequireAuth><VideoPlayer /></RequireAuth>} />
         <Route path="/watch/multiview" element={<RequireAuth><Multiview /></RequireAuth>} />
