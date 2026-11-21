@@ -654,7 +654,7 @@ export function ItemPage() {
 
           <div className="detail-actions">
             {playable && (
-              <button className="btn btn-primary btn-lg" onClick={() => (nextEp && !nextIsAudio ? navigate(playLink(nextEp)) : play(item))} data-nav autoFocus title={nextEp ? nextEp.title : undefined} {...warm.bind(warmTarget)}>
+              <button className="btn btn-primary btn-lg" onClick={() => (nextEp && !nextIsAudio ? navigate(playLink(nextEp)) : play(item))} data-nav data-play autoFocus title={nextEp ? nextEp.title : undefined} {...warm.bind(warmTarget)}>
                 <Icon name="play" size={20} /> {playLabel}
               </button>
             )}

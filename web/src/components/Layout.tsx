@@ -1,9 +1,9 @@
-import { djEngine } from '../player/djEngine';
+import { djLive } from '../player/djLive';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../state/app';
 import { Icon, type IconName } from './Icon';
-import { Avatar, Dropdown } from './ui';
+import { Avatar, Dropdown, PageLoader } from './ui';
 import { BrandLogo } from './BrandLogo';
 import { MiniPlayer } from '../player/MiniPlayer';
 import { RendererBar } from '../player/RendererBar';
@@ -161,8 +161,8 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 export function Layout() {
   const { user, libraries, features, branding, wsOpen } = useApp();
   // Live dot on the DJ nav item while a mix plays in the background.
-  const [djLive, setDjLive] = useState(false);
-  useEffect(() => djEngine().subscribe((st) => setDjLive(st.status === 'playing')), []);
+  const [djPlaying, setDjPlaying] = useState(false);
+  useEffect(() => djLive.subscribe(setDjPlaying), []);
   const music = useMusic();
   const loc = useLocation();
   const [drawer, setDrawer] = useState(false);
@@ -274,7 +274,7 @@ export function Layout() {
               <NavItem to="/calendar" icon="calendar" label="Calendar" />
               <NavItem to="/roulette" icon="shuffle" label="Roulette" />
               <NavItem to="/match" icon="together" label="Movie Match" />
-              {features.music && <NavItem to="/dj" icon="music" label="DJ" badge={djLive ? <span className="live-dot" aria-label="Mix playing" /> : undefined} />}
+              {features.music && <NavItem to="/dj" icon="music" label="DJ" badge={djPlaying ? <span className="live-dot" aria-label="Mix playing" /> : undefined} />}
               <NavItem to="/podcasts" icon="podcast" label="Podcasts" />
               <NavItem to="/playlists" icon="playlist" label="Playlists" />
               <NavItem to="/collections" icon="collection" label="Collections" />
@@ -314,7 +314,10 @@ export function Layout() {
           <UserMenu />
         </header>
         <main className="main" id="main" tabIndex={-1}>
-          <Outlet />
+          {/* Route chunks load inside the shell: the nav stays put instead of the whole screen blanking. */}
+          <Suspense fallback={<PageLoader />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
       <PeekLayer />

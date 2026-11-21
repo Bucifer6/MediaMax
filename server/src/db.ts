@@ -8,6 +8,12 @@ const log = logger('db');
 export type Row = Record<string, any>;
 export type Param = SQLInputValue | boolean | undefined;
 
+/**
+ * Perf mode (MEDIAMAX_PERF=1, used by scripts/perf): counts statements (exposed per request as X-MM-Queries)
+ * and logs statements slower than MEDIAMAX_PERF_SLOW_MS (default 20 ms). Off by default: zero overhead.
+ */
+export const dbPerf = { enabled: process.env.MEDIAMAX_PERF === '1', queries: 0, slowMs: Number(process.env.MEDIAMAX_PERF_SLOW_MS ?? 20) };
+
 class Database {
   readonly raw: DatabaseSync;
   private stmtCache = new Map<string, ReturnType<DatabaseSync['prepare']>>();
@@ -15,6 +21,10 @@ class Database {
   constructor(file: string) {
     this.raw = new DatabaseSync(file);
     this.raw.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+    // SQLite's default page cache is 2 MB; a 20k-title library's tables and indexes are a few hundred MB, so browsing
+    // re-read pages from the OS on every query. 64 MB of cache plus memory-mapped reads keep the hot pages in process,
+    // and sorts / temp b-trees stay in memory.
+    this.raw.exec('PRAGMA cache_size = -65536; PRAGMA mmap_size = 268435456; PRAGMA temp_store = MEMORY;');
   }
 
   private stmt(sql: string) {
@@ -30,13 +40,25 @@ class Database {
     return params.map((p) => (p === undefined ? null : typeof p === 'boolean' ? (p ? 1 : 0) : p));
   }
 
+  private timed<R>(sql: string, fn: () => R): R {
+    dbPerf.queries++;
+    const t = performance.now();
+    const r = fn();
+    const ms = performance.now() - t;
+    if (ms >= dbPerf.slowMs) log.warn(`slow query ${ms.toFixed(1)}ms: ${sql.replace(/\s+/g, ' ').slice(0, 400)}`);
+    return r;
+  }
+
   all<T = Row>(sql: string, ...params: Param[]): T[] {
+    if (dbPerf.enabled) return this.timed(sql, () => this.stmt(sql).all(...this.norm(params)) as T[]);
     return this.stmt(sql).all(...this.norm(params)) as T[];
   }
   get<T = Row>(sql: string, ...params: Param[]): T | undefined {
+    if (dbPerf.enabled) return this.timed(sql, () => this.stmt(sql).get(...this.norm(params)) as T | undefined);
     return this.stmt(sql).get(...this.norm(params)) as T | undefined;
   }
   run(sql: string, ...params: Param[]) {
+    if (dbPerf.enabled) return this.timed(sql, () => this.stmt(sql).run(...this.norm(params)));
     return this.stmt(sql).run(...this.norm(params));
   }
   exec(sql: string) {
@@ -566,6 +588,18 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX IF NOT EXISTS download_rules_user ON download_rules(user_id);
   `,
+  /* Performance (scripts/perf): library browsing sorted by title / date added / rating walks an index instead of
+     sorting the whole library; type-wide queries (hero, recently added, calendar, recommendations) no longer scan
+     every row; recommendation candidates walk titles best-rated first; "recently added shows" finds each show's newest
+     episode by index. */ `
+  CREATE INDEX IF NOT EXISTS items_lib_type_sort ON items(library_id, type, sort_title);
+  CREATE INDEX IF NOT EXISTS items_lib_type_added ON items(library_id, type, added_at);
+  CREATE INDEX IF NOT EXISTS items_lib_type_rating ON items(library_id, type, COALESCE(community_rating, 0));
+  CREATE INDEX IF NOT EXISTS items_type_added ON items(type, added_at);
+  CREATE INDEX IF NOT EXISTS items_type_rating ON items(type, COALESCE(community_rating, 0));
+  CREATE INDEX IF NOT EXISTS items_grandparent_added ON items(grandparent_id, added_at);
+  ANALYZE;
+  `,
 ];
 
 function migrate(db: Database) {
@@ -604,3 +638,17 @@ db.raw.function('mm_rating_ok', { deterministic: true }, (r: unknown, max: unkno
   return lvl <= Number(max) ? 1 : 0;
 });
 migrate(db);
+
+/*
+ * A counter bumped by any change to the item rows that list-wide caches depend on (membership, type, library, genres,
+ * ratings). Temp triggers live only on this connection, which is the only one that writes.
+ */
+db.exec(`
+  CREATE TEMP TABLE IF NOT EXISTS mm_items_version (v INTEGER NOT NULL);
+  INSERT INTO mm_items_version SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM mm_items_version);
+  CREATE TEMP TRIGGER IF NOT EXISTS mm_items_v_ins AFTER INSERT ON main.items BEGIN UPDATE mm_items_version SET v = v + 1; END;
+  CREATE TEMP TRIGGER IF NOT EXISTS mm_items_v_del AFTER DELETE ON main.items BEGIN UPDATE mm_items_version SET v = v + 1; END;
+  CREATE TEMP TRIGGER IF NOT EXISTS mm_items_v_upd AFTER UPDATE OF type, library_id, genres, content_rating, parent_id, grandparent_id, owner_id ON main.items
+    BEGIN UPDATE mm_items_version SET v = v + 1; END;
+`);
+export const itemsVersion = (): number => db.get<{ v: number }>('SELECT v FROM temp.mm_items_version')?.v ?? 0;

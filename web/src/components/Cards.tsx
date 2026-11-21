@@ -125,7 +125,7 @@ export const PosterCard = memo(function PosterCard({ item, shape, showProgress =
         <Img src={img} width={s === 'landscape' ? 400 : 260} alt={item.title} fallback={<Fallback title={item.title} icon={fallbackIcon(item)} />} />
         <div className="card-hover">
           {item.type !== 'photo' && (
-            <button className="card-play" onClick={onPlay} aria-label={`Play ${item.title}`} tabIndex={-1}>
+            <button className="card-play" data-play onClick={onPlay} aria-label={`Play ${item.title}`} tabIndex={-1}>
               <Icon name="play" size={22} />
             </button>
           )}
@@ -171,6 +171,7 @@ export const LandscapeCard = memo(function LandscapeCard({ item }: { item: Item 
       data-nav
       aria-label={`${title}${item.type === 'episode' ? `, ${sub}` : ''}${remaining != null && remaining > 60000 && pct > 0 ? `, ${Math.round(remaining / 60000)} minutes left` : ''}`}
       {...peekHandlers(item)}
+      data-play={pct > 0 ? '' : undefined}
       onClick={(e) => {
         if (pct > 0) {
           e.preventDefault();
@@ -181,7 +182,7 @@ export const LandscapeCard = memo(function LandscapeCard({ item }: { item: Item 
       <div className="card-art">
         <Img src={landscapeFor(item)} width={480} alt="" fallback={<Fallback title={title} icon={fallbackIcon(item)} />} />
         <div className="card-hover">
-          <button className="card-play" onClick={(e) => { e.preventDefault(); e.stopPropagation(); play(item); }} aria-label={`Play ${title}`} tabIndex={-1}>
+          <button className="card-play" data-play onClick={(e) => { e.preventDefault(); e.stopPropagation(); play(item); }} aria-label={`Play ${title}`} tabIndex={-1}>
             <Icon name="play" size={22} />
           </button>
         </div>

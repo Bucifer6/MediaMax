@@ -287,6 +287,8 @@ export class TranscodeJob {
   readonly dir: string;
   private proc: ChildProcess | null = null;
   private startNumber = 0;
+  /** Highest complete segment seen in the current run (segments only appear, so later scans resume here). */
+  private latestKnown = -1;
   private paused = false;
   private lastRequested = 0;
   private stderr = '';
@@ -337,6 +339,7 @@ export class TranscodeJob {
     this.startNumber = fromSegment;
     // The player asks for this segment next: don't let the throttle see a far-ahead encoder before it does.
     this.lastRequested = fromSegment;
+    this.latestKnown = fromSegment - 1;
     this.exited = false;
     this.failed = null;
     this.stderr = '';
@@ -425,8 +428,11 @@ export class TranscodeJob {
 
   /** Highest segment number fully written (ffmpeg writes seg N+1 only after N is complete, temp_file renames on completion). */
   latestSegment(): number {
-    let n = this.startNumber - 1;
+    // Resume from the last segment found in this run instead of re-checking every file from the start of it
+    // (late in a film that was thousands of synchronous stat calls per segment request).
+    let n = Math.max(this.startNumber - 1, this.latestKnown);
     while (fs.existsSync(this.segmentPath(n + 1))) n++;
+    this.latestKnown = n;
     return n;
   }
 
@@ -468,9 +474,11 @@ export class TranscodeJob {
     }
     const deadline = Date.now() + timeoutMs;
     const t0 = Date.now();
+    // VOD runs write segments with hls_flags temp_file (renamed into place once complete), so an existing segment is
+    // a finished one; waiting for the next segment as well only added a whole segment of encoding to every start/seek.
+    const ready = (k: number) => this.segmentExists(k) && (this.opts.mode !== 'live' || this.segmentExists(k + 1) || this.exited);
     while (Date.now() < deadline) {
-      // `-hls_flags temp_file`: a segment file only appears (renamed from .tmp) once it is complete.
-      if (this.segmentExists(n)) return this.segmentPath(n);
+      if (ready(n)) return this.segmentPath(n);
       if (this.failed) throw new Error(this.failed);
       if (this.exited && !this.segmentExists(n)) {
         if (this.opts.mode === 'transcode' && !this.failed && !this.killed) {

@@ -21,6 +21,7 @@ import { detectTv, installTvMode } from './tv/spatial';
 import { installFx } from './theme/fx';
 import { initCapabilities } from './player/capabilities';
 import { initAudioCaps } from './player/audioCaps';
+import { installPrefetch } from './utils/prefetch';
 
 if (detectTv()) installTvMode();
 // Lite visual effects on TVs and low-end devices (after TV detection; see theme/fx.ts).
@@ -28,6 +29,7 @@ installFx();
 // Start HDR / codec capability detection early (async MediaCapabilities); the player awaits it briefly.
 void initCapabilities();
 void initAudioCaps();
+installPrefetch();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

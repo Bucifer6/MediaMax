@@ -145,7 +145,7 @@ export function Hero({ items, style = 'carousel' }: { items: Item[]; style?: Her
           {item.tagline && <p className="hero-tagline">{item.tagline}</p>}
           {item.overview && <p className="hero-overview">{item.overview}</p>}
           <div className="hero-actions">
-            <button className="btn btn-primary btn-lg hero-play" onClick={() => play(item)} data-nav>
+            <button className="btn btn-primary btn-lg hero-play" onClick={() => play(item)} data-nav data-play>
               <Icon name="play" size={20} /> {isResumable(item) ? 'Resume' : 'Play'}
             </button>
             <Link className="btn btn-glass btn-lg" to={itemLink(item)} data-nav>

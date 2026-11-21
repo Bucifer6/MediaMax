@@ -11,13 +11,7 @@ import { NowPlayingProvider } from './player/NowPlaying';
 import { Layout } from './components/Layout';
 import { Icon } from './components/Icon';
 import { BrandLogo } from './components/BrandLogo';
-import { Login } from './pages/Login';
-import { SetupWizard } from './pages/SetupWizard';
 import { Home } from './pages/Home';
-import { LibraryPage } from './pages/Library';
-import { ItemPage } from './pages/ItemDetail';
-import { SearchPage } from './pages/Search';
-import { LinkDevicePage } from './pages/LinkDevice';
 import { NotFound } from './pages/NotFound';
 import { ShortcutsHost } from './components/Shortcuts';
 import { WhatsNew } from './components/WhatsNew';
@@ -45,6 +39,14 @@ function lazyPage<T extends { default: React.ComponentType<any> }>(load: () => P
   );
 }
 
+// Home is in the main chunk (it is the first screen); everything else is a route chunk. utils/prefetch.ts warms the
+// likely next ones (detail, library, search, the player) when the browser is idle or a play button is focused.
+const Login = lazyPage(() => import('./pages/Login').then((m) => ({ default: m.Login })));
+const SetupWizard = lazyPage(() => import('./pages/SetupWizard').then((m) => ({ default: m.SetupWizard })));
+const LibraryPage = lazyPage(() => import('./pages/Library').then((m) => ({ default: m.LibraryPage })));
+const ItemPage = lazyPage(() => import('./pages/ItemDetail').then((m) => ({ default: m.ItemPage })));
+const SearchPage = lazyPage(() => import('./pages/Search').then((m) => ({ default: m.SearchPage })));
+const LinkDevicePage = lazyPage(() => import('./pages/LinkDevice').then((m) => ({ default: m.LinkDevicePage })));
 const VideoPlayer = lazyPage(() => import('./player/VideoPlayer'));
 const LivePlayer = lazyPage(() => import('./player/LivePlayer'));
 const Multiview = lazyPage(() => import('./player/Multiview'));
@@ -148,7 +150,7 @@ function Gate() {
   const { status, system } = useApp();
   if (status === 'loading') return <Splash />;
   if (status === 'offline') return <Offline />;
-  if (system?.setupRequired) return <SetupWizard />;
+  if (system?.setupRequired) return <Suspense fallback={<PageLoader />}><SetupWizard /></Suspense>;
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>

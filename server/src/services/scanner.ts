@@ -39,32 +39,36 @@ interface FileEntry {
   birthtime: number;
 }
 
-function walk(root: string, accept: (e: string) => boolean): FileEntry[] {
+/**
+ * Every media file under `root`. Asynchronous (readdir/stat run on libuv's thread pool) so walking ten drives of
+ * media doesn't freeze the server: the old synchronous walk blocked every request for the length of the crawl.
+ */
+async function walk(root: string, accept: (e: string) => boolean): Promise<FileEntry[]> {
   const out: FileEntry[] = [];
   const stack = [root];
   while (stack.length) {
     const dir = stack.pop()!;
     let entries: fs.Dirent[];
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch (e) {
       log.warn(`Cannot read ${dir}: ${(e as Error).message}`);
       continue;
     }
     if (entries.some((e) => e.name === '.mediamaxignore' || e.name === '.plexignore' || e.name === '.ignore')) continue;
+    const files: string[] = [];
     for (const e of entries) {
       if (e.name.startsWith('.') || e.name === '@eaDir' || e.name === '#recycle' || e.name === '$RECYCLE.BIN') continue;
       const p = path.join(dir, e.name);
       if (e.isDirectory() || (e.isSymbolicLink() && safeIsDir(p))) stack.push(p);
-      else if (accept(ext(e.name))) {
-        try {
-          const st = fs.statSync(p);
-          out.push({ path: p, rel: path.relative(root, p), root, size: st.size, mtime: Math.floor(st.mtimeMs), birthtime: Math.floor(st.birthtimeMs || 0) });
-        } catch {
-          /* vanished */
-        }
-      }
+      else if (accept(ext(e.name))) files.push(p);
     }
+    // Keep the order of a synchronous walk (directory listing order) while statting a folder's files in parallel.
+    const stats = await Promise.all(files.map((p) => fs.promises.stat(p).catch(() => null)));
+    files.forEach((p, k) => {
+      const st = stats[k];
+      if (st) out.push({ path: p, rel: path.relative(root, p), root, size: st.size, mtime: Math.floor(st.mtimeMs), birthtime: Math.floor(st.birthtimeMs || 0) });
+    });
   }
   return out;
 }
@@ -747,7 +751,8 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     return true;
   });
   const accept = ACCEPT[type] ?? ((e: string) => VIDEO_EXT.has(e));
-  const allFiles = paths.flatMap((root) => walk(root, accept));
+  const allFiles: FileEntry[] = [];
+  for (const root of paths) allFiles.push(...(await walk(root, accept)));
   const files = allFiles.filter((f) => type === 'photos' || type === 'music' || type === 'audiobooks' || !isExtra(f.rel));
   const extraFiles = type === 'movies' || type === 'shows' ? allFiles.filter((f) => isExtra(f.rel)) : [];
   let lastEmit = 0;
