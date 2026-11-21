@@ -4,7 +4,7 @@ import { safeFetch } from '../../util/net.js';
 import { logger } from '../../util/log.js';
 import {
   type Conn, type Driver, type Entry, type Haul, type HistoryEntry, type MappedUser, type Match, type Matcher, type Progress, type QuickCounts,
-  type Query, type Session, type SourceUser, type SrcFolder, type SrcItem, type SrcList, type SrcSeries, type Want,
+  type Query, type Session, type SourceUser, type SrcFolder, type SrcItem, type SrcList, type SrcMeta, type SrcSeries, type Want,
   allPages, emptyHaul, isoOrNull, libraryAccess, pool, qs, safeUsername, unreachable, UpstreamError,
 } from './common.js';
 
@@ -38,6 +38,11 @@ interface PlexMd {
   Media?: { Part?: { file?: string }[] }[]; Location?: { path?: string }[];
   grandparentRatingKey?: string; grandparentTitle?: string; grandparentGuid?: string; parentIndex?: number; index?: number;
   viewCount?: number; viewOffset?: number; lastViewedAt?: number; viewedAt?: number; accountID?: number; smart?: boolean | string | number;
+  /** Metadata fields (Import → metadata). */
+  summary?: string; tagline?: string; originalTitle?: string; studio?: string; contentRating?: string; audienceRating?: number; rating?: number;
+  originallyAvailableAt?: string; thumb?: string; art?: string; parentRatingKey?: string;
+  Genre?: { tag?: string }[]; Role?: { tag?: string; role?: string }[]; Director?: { tag?: string }[]; Writer?: { tag?: string }[];
+  Image?: { type?: string; url?: string }[];
 }
 interface PlexSection { key: string; title: string; type: string; Location?: { path?: string }[] }
 interface PlexContainer { MediaContainer?: { size?: number; totalSize?: number; Metadata?: PlexMd[]; Directory?: PlexSection[]; machineIdentifier?: string; friendlyName?: string; version?: string } }
@@ -127,6 +132,37 @@ const plexSrc = (md: PlexMd): SrcItem => ({
   year: md.year, providerIds: plexIds(md), path: md.Media?.[0]?.Part?.[0]?.file ?? md.Location?.[0]?.path,
   seriesId: md.grandparentRatingKey, seriesTitle: md.grandparentTitle, season: md.parentIndex, episode: md.index,
 });
+/** A Plex item as neutral metadata. Artwork refs are server paths (`/library/metadata/1/thumb/…`). */
+export function plexMeta(md: PlexMd): SrcMeta | null {
+  const images: SrcMeta['images'] = {};
+  const local = (u: string | undefined) => (u && u.startsWith('/') ? u : undefined);
+  const logo = local(md.Image?.find((x) => x.type === 'clearLogo')?.url);
+  let item: SrcMeta['item'];
+  if (md.type === 'season') {
+    item = { id: String(md.ratingKey ?? ''), kind: 'season', title: md.title, seriesId: md.parentRatingKey, season: md.index };
+    if (local(md.thumb)) images.poster = md.thumb;
+  } else if (md.type === 'episode') {
+    item = plexSrc(md);
+    if (local(md.thumb)) images.thumb = md.thumb;
+  } else if (md.type === 'movie' || md.type === 'show') {
+    item = plexSrc(md);
+    if (local(md.thumb)) images.poster = md.thumb;
+    if (local(md.art)) images.backdrop = md.art;
+    if (logo) images.logo = logo;
+  } else return null;
+  const people = [
+    ...(md.Role ?? []).map((r) => ({ name: String(r.tag ?? ''), role: r.role ? String(r.role) : null, kind: 'actor' })),
+    ...(md.Director ?? []).map((r) => ({ name: String(r.tag ?? ''), role: null, kind: 'director' })),
+    ...(md.Writer ?? []).map((r) => ({ name: String(r.tag ?? ''), role: null, kind: 'writer' })),
+  ].filter((p) => p.name);
+  const rating = typeof md.audienceRating === 'number' ? md.audienceRating : typeof md.rating === 'number' ? md.rating : null;
+  return {
+    item, images, overview: md.summary ?? null, tagline: md.tagline ?? null, originalTitle: md.originalTitle ?? null,
+    genres: (md.Genre ?? []).map((g) => String(g.tag ?? '')).filter(Boolean), studios: md.studio ? [md.studio] : [], people,
+    contentRating: md.contentRating ?? null, communityRating: rating, releaseDate: md.originallyAvailableAt && /^\d{4}-\d{2}-\d{2}/.test(md.originallyAvailableAt) ? md.originallyAvailableAt.slice(0, 10) : null,
+  };
+}
+
 const secs = (n: number | undefined) => (n && n > 0 ? isoOrNull(n * 1000) : null);
 
 const RATINGS = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
@@ -426,6 +462,39 @@ export const plexDriver: Driver = {
         let n = 0;
         for (const s of video) n += await pmsCount(c.url, c.apiKey, `/library/sections/${encodeURIComponent(s.key)}/collections`);
         return n;
+      },
+
+      async metadata(progress: Progress) {
+        const items: SrcMeta[] = [];
+        const series = new Map<string, SrcSeries>();
+        for (let i = 0; i < video.length; i++) {
+          const s = video[i];
+          progress(`Reading Plex metadata: ${s.title} (${i + 1} of ${video.length})`, i / Math.max(1, video.length));
+          const base = `/library/sections/${encodeURIComponent(s.key)}/all`;
+          // List views carry the first few genres and cast members; that is what is imported.
+          for (const type of s.type === 'movie' ? [1] : [2, 3, 4]) {
+            for (const md of await pmsAll(c.url, c.apiKey, base, { type, includeGuids: 1 })) {
+              if (md.type === 'show') series.set(String(md.ratingKey ?? ''), plexSrc(md));
+              const m = plexMeta(md);
+              if (m) items.push(m);
+            }
+          }
+        }
+        return { items, series };
+      },
+
+      async fetchImage(ref: string) {
+        // Refs are server paths from the listing; never follow anything else (the token must stay on this server).
+        if (!ref.startsWith('/') || ref.startsWith('//')) return null;
+        let res: Response;
+        try {
+          res = await fetch(`${c.url}${ref}`, { headers: { ...CLIENT, 'X-Plex-Token': c.apiKey, Accept: 'image/*' }, signal: AbortSignal.timeout(60000) });
+        } catch (e) {
+          throw unreachable(e, 'Plex', 'plex_unreachable');
+        }
+        if (res.status === 404) return null;
+        if (!res.ok) throw new UpstreamError(`Plex answered HTTP ${res.status} for an image`, 'plex_error', res.status);
+        return { data: Buffer.from(await res.arrayBuffer()), type: res.headers.get('content-type') ?? '' };
       },
     };
   },

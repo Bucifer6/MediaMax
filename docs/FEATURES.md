@@ -290,6 +290,11 @@ settings, and one shared engine does the matching, account creation, links and r
   user's own `viewCount`/`viewOffset` via their share token; managed Home users without a token fall back to the
   server's history (watched only). **Play history** rows from Plex's `/status/sessions/history/all` or the
   Emby/Jellyfin **Playback Reporting** plugin (best-effort; skipped cleanly when the plugin is missing).
+* **Metadata and artwork** (optional): overview, tagline, original title, genres, studios, cast and crew, content and
+  community rating, release date, posters, backgrounds, logos, season posters and episode stills of matched titles.
+  Only missing values are filled unless *Replace metadata Kinora already has* is on; locked fields are never changed.
+  Artwork is copied into `<data>/artwork/import/`, so it keeps working after the old server is switched off. Untick
+  every user to import metadata on its own. Plex list views carry only the first few genres and cast members.
 * **Matching**: TMDB/IMDb/TVDB ids first (Plex `Guid` / legacy agent guids; episodes via the series' ids + season and
   episode numbers), then file path, then title + year. The Kinora catalogue is indexed in memory once per run.
 * **Speed**: 1000-item pages with a few pages in flight, four users read in parallel, the Plex catalogue read once

@@ -2,7 +2,7 @@ import type { ImportLibraryMapping, ImportTestResult } from '@mediamax/shared';
 import { logger } from '../../util/log.js';
 import {
   type Conn, type Driver, type Entry, type Haul, type HistoryEntry, type MappedUser, type Matcher, type QuickCounts, type Query, type Session,
-  type SourceUser, type SrcFolder, type SrcItem, type SrcList, type SrcSeries, type UserData, type Want,
+  type SourceUser, type SrcFolder, type SrcItem, type SrcList, type SrcMeta, type SrcSeries, type UserData, type Want, type Progress,
   allPages, emptyHaul, folderKey, isoOrNull, libraryAccess, qs, ratingForAge, safeUsername, SOURCE_LABEL, unreachable, UpstreamError,
 } from './common.js';
 
@@ -28,6 +28,10 @@ interface EmbyUserData { Played?: boolean; PlaybackPositionTicks?: number; PlayC
 export interface EmbyItem {
   Id: string; Name?: string; Type?: string; ProductionYear?: number; ProviderIds?: Record<string, string>; Path?: string;
   SeriesId?: string; SeriesName?: string; ParentIndexNumber?: number; IndexNumber?: number; UserData?: EmbyUserData;
+  /** Metadata fields (Import → metadata). */
+  Overview?: string; Taglines?: string[]; OriginalTitle?: string; Genres?: string[]; Studios?: { Name?: string }[];
+  People?: { Name?: string; Role?: string; Type?: string }[]; OfficialRating?: string; CommunityRating?: number; PremiereDate?: string;
+  ImageTags?: Record<string, string>; BackdropImageTags?: string[];
 }
 export interface EmbyPolicy {
   IsAdministrator?: boolean; IsHidden?: boolean; IsDisabled?: boolean; EnableRemoteAccess?: boolean; EnableLiveTvAccess?: boolean;
@@ -81,6 +85,19 @@ export class EmbyClient {
 
   get<T>(path: string, query: Query = {}): Promise<T> {
     return this.request<T>('GET', path, query);
+  }
+
+  /** One image (`/Items/{id}/Images/{type}…`); null when the server has none. */
+  async image(pathAndQuery: string): Promise<{ data: Buffer; type: string } | null> {
+    let res: Response;
+    try {
+      res = await fetch(`${this.c.url}${pathAndQuery}`, { headers: { ...this.headers(), Accept: 'image/*' }, signal: AbortSignal.timeout(60000) });
+    } catch (e) {
+      throw unreachable(e, this.label, `${this.flavor}_unreachable`);
+    }
+    if (res.status === 404) return null;
+    if (!res.ok) throw new UpstreamError(`${this.label} answered HTTP ${res.status} for an image`, `${this.flavor}_error`, res.status);
+    return { data: Buffer.from(await res.arrayBuffer()), type: res.headers.get('content-type') ?? '' };
   }
 
   /** Every page of a list (1000 per request, a few requests in flight). */
@@ -176,6 +193,37 @@ const toSrc = (i: EmbyItem): SrcItem => ({
 const toUd = (u: EmbyUserData | undefined): UserData => ({
   played: u?.Played, playCount: u?.PlayCount, positionMs: Math.max(0, Math.round((u?.PlaybackPositionTicks ?? 0) / 10000)), lastPlayed: u?.LastPlayedDate ?? null, favorite: u?.IsFavorite,
 });
+
+const PERSON_KIND: Record<string, string> = { actor: 'actor', gueststar: 'actor', director: 'director', writer: 'writer', producer: 'producer', composer: 'composer' };
+const dateOnly = (s: string | undefined) => (s && /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : null);
+
+/** An Emby/Jellyfin item as neutral metadata with artwork refs (sized like Kinora's own artwork). */
+export function embyMeta(i: EmbyItem): SrcMeta | null {
+  const img = (type: string, w: number) => `/Items/${encodeURIComponent(i.Id)}/Images/${type}?maxWidth=${w}&quality=90`;
+  const tags = i.ImageTags ?? {};
+  const images: SrcMeta['images'] = {};
+  let item: SrcMeta['item'];
+  if (i.Type === 'Season') {
+    item = { id: i.Id, kind: 'season', title: i.Name, seriesId: i.SeriesId, season: i.IndexNumber };
+    if (tags.Primary) images.poster = img('Primary', 1000);
+  } else if (i.Type === 'Episode') {
+    item = toSrc(i);
+    if (tags.Primary) images.thumb = img('Primary', 960);
+  } else if (i.Type === 'Movie' || i.Type === 'Series') {
+    item = toSrc(i);
+    if (tags.Primary) images.poster = img('Primary', 1000);
+    if (i.BackdropImageTags?.length) images.backdrop = img('Backdrop/0', 1920);
+    if (tags.Logo) images.logo = img('Logo', 800);
+    if (tags.Thumb) images.thumb = img('Thumb', 960);
+  } else return null;
+  const people = (i.People ?? []).filter((p) => p.Name).slice(0, 60)
+    .map((p) => ({ name: String(p.Name), role: p.Role ? String(p.Role) : null, kind: PERSON_KIND[String(p.Type ?? '').toLowerCase()] ?? 'crew' }));
+  return {
+    item, images, overview: i.Overview ?? null, tagline: i.Taglines?.[0] ?? null, originalTitle: i.OriginalTitle ?? null,
+    genres: i.Genres ?? [], studios: (i.Studios ?? []).map((s) => String(s.Name ?? '')).filter(Boolean), people,
+    contentRating: i.OfficialRating ?? null, communityRating: typeof i.CommunityRating === 'number' ? i.CommunityRating : null, releaseDate: dateOnly(i.PremiereDate),
+  };
+}
 
 /* ------------------------ Playback Reporting ------------------------ */
 
@@ -356,6 +404,24 @@ export function embyDriver(flavor: Flavor): Driver {
           const viewer = rawUsers.find((u) => u.Policy?.IsAdministrator && !u.Policy?.IsDisabled) ?? rawUsers[0];
           return viewer ? client.userCount(viewer.Id, { Recursive: true, IncludeItemTypes: 'BoxSet' }) : 0;
         },
+
+        async metadata(progress: Progress) {
+          // Read as an administrator, who sees every library.
+          const viewer = rawUsers.find((u) => u.Policy?.IsAdministrator && !u.Policy?.IsDisabled) ?? rawUsers[0];
+          if (!viewer) return { items: [], series: new Map() };
+          const metaFields = 'Overview,Genres,Studios,People,Taglines,OfficialRating,CommunityRating,PremiereDate,OriginalTitle,ProviderIds,Path,ProductionYear';
+          const raw: EmbyItem[] = [];
+          const kinds = ['Movie', 'Series', 'Season', 'Episode'];
+          for (let k = 0; k < kinds.length; k++) {
+            progress(`Reading ${kinds[k].toLowerCase()} metadata from ${client.label}`, k / kinds.length);
+            raw.push(...await client.userItems(viewer.Id, { Recursive: true, IncludeItemTypes: kinds[k], Fields: metaFields, EnableImageTypes: 'Primary,Backdrop,Logo,Thumb' }));
+          }
+          const seriesMap = new Map<string, SrcSeries>();
+          for (const x of raw) if (x.Type === 'Series') seriesMap.set(x.Id, toSrc(x));
+          return { items: raw.map(embyMeta).filter((m): m is SrcMeta => !!m), series: seriesMap };
+        },
+
+        fetchImage: (ref: string) => client.image(ref),
       };
     },
   };

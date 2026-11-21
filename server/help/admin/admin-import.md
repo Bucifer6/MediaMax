@@ -73,9 +73,16 @@ The preview shows:
 | Play history | Playback Reporting plugin | Playback Reporting plugin | Server viewing history |
 | Playlists | ✓ | ✓ | Video playlists (users with a share token) |
 | Collections | ✓ | ✓ | ✓ |
+| Metadata and artwork (optional) | ✓ | ✓ | ✓ (first few genres and cast) |
 
 Watched titles are never un-watched here, play counts only go up, and a resume point is skipped when the title is
 already watched in {{product}} or has a newer position. Jellyfin *blocked tags* can't be copied; the results say so.
+
+**Metadata and artwork** copies descriptions, genres, cast, ratings, release dates, posters, backgrounds, logos, season
+posters and episode images for the titles that match. It only fills in what {{product}} is missing unless you turn on
+*Replace metadata {{product}} already has*, and it never changes a field you locked on a title. The artwork is copied
+to this server, so it keeps working after you switch the old server off. To bring over only metadata, untick every
+user before you start.
 
 ### Plex users
 

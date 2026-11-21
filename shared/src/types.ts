@@ -4526,8 +4526,29 @@ export interface ImportOptions {
   importCollections?: boolean;
   /** Play history rows (Plex history, the Jellyfin/Emby Playback Reporting plugin). Default true. */
   importHistory?: boolean;
+  /**
+   * Metadata and artwork of matched titles (overview, tagline, genres, studios, cast, ratings, release date, posters,
+   * backgrounds, logos, season posters, episode stills). Fields the user locked are never touched. Default false.
+   */
+  importMetadata?: boolean;
+  /** With importMetadata: replace values Kinora already has (default false = only fill what is missing). */
+  overwriteMetadata?: boolean;
   /** Days the set-password links stay valid (1-365, default 30). */
   linkExpiryDays?: number;
+}
+
+/** What the metadata step of an import did. */
+export interface ImportMetadataResult {
+  /** Source titles read (movies, shows, seasons, episodes). */
+  read: number;
+  /** Matched to a Kinora title. */
+  matched: number;
+  /** Kinora titles that changed. */
+  updated: number;
+  /** Artwork files downloaded. */
+  images: number;
+  /** Artwork downloads that failed. */
+  imageErrors: number;
 }
 
 export interface ImportMatchCount {
@@ -4638,6 +4659,8 @@ export interface ImportJob {
   options: ImportOptions;
   results: ImportUserResult[];
   collections: { created: number; updated: number; items: number };
+  /** null when metadata was not imported. */
+  metadata?: ImportMetadataResult | null;
   notes: string[];
 }
 

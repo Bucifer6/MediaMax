@@ -76,6 +76,30 @@ function useRailGroups(): [Record<string, boolean>, (id: string) => void] {
   return [groups, toggle];
 }
 
+const RAIL_PINNED_KEY = 'mm.rail.pinned';
+
+/** Pinned: the rail stays open with labels and the page makes room for it. Remembered per device. */
+function useRailPinned(): [boolean, () => void] {
+  const [pinned, setPinned] = useState(() => {
+    try {
+      return localStorage.getItem(RAIL_PINNED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggle = useCallback(() => {
+    setPinned((p) => {
+      try {
+        localStorage.setItem(RAIL_PINNED_KEY, p ? '0' : '1');
+      } catch {
+        /* storage blocked */
+      }
+      return !p;
+    });
+  }, []);
+  return [pinned, toggle];
+}
+
 export function UserMenu() {
   const { user, logout, features } = useApp();
   const navigate = useNavigate();
@@ -169,6 +193,7 @@ export function Layout() {
   const [scrolled, setScrolled] = useState(false);
   const [palette, setPalette] = useState<{ open: boolean; loaded: boolean }>({ open: false, loaded: false });
   const [groups, toggleGroup] = useRailGroups();
+  const [pinned, togglePinned] = useRailPinned();
   useSpatialNav();
   useCardLight();
 
@@ -218,7 +243,7 @@ export function Layout() {
   const paletteCtx: PaletteContext = { local, iptv, liveTv, dvr, manager, showRequests, showIssues, discover: features.requests && !kidsNoRequests, hasProfiles };
 
   return (
-    <div className={`app-shell ${drawer ? 'drawer-open' : ''} ${music.current ? 'has-mini' : ''}`}>
+    <div className={`app-shell ${drawer ? 'drawer-open' : ''} ${pinned ? 'rail-pinned' : ''} ${music.current ? 'has-mini' : ''}`}>
       <AmbientLight />
       <a href="#main" className="skip-link">Skip to content</a>
       <aside className="rail sidebar" aria-label="Main navigation">
@@ -236,14 +261,6 @@ export function Layout() {
                 icon="inbox"
                 label={manager ? 'Requests' : 'My requests'}
                 badge={pending > 0 ? <span className="nav-count" aria-label={`${pending} pending`}>{pending > 99 ? '99+' : pending}</span> : undefined}
-              />
-            )}
-            {showIssues && (
-              <NavItem
-                to="/issues"
-                icon="flag"
-                label={manager ? 'Issues' : 'My issues'}
-                badge={manager && openIssues > 0 ? <span className="nav-count" aria-label={`${openIssues} open`}>{openIssues > 99 ? '99+' : openIssues}</span> : undefined}
               />
             )}
             {local.length > 0 && (
@@ -278,12 +295,25 @@ export function Layout() {
               <NavItem to="/podcasts" icon="podcast" label="Podcasts" />
               <NavItem to="/playlists" icon="playlist" label="Playlists" />
               <NavItem to="/collections" icon="collection" label="Collections" />
+              {/* Issues live here rather than in the main list; the count still shows for managers. */}
+              {showIssues && (
+                <NavItem
+                  to="/issues"
+                  icon="flag"
+                  label={manager ? 'Issues' : 'My issues'}
+                  badge={manager && openIssues > 0 ? <span className="nav-count" aria-label={`${openIssues} open`}>{openIssues > 99 ? '99+' : openIssues}</span> : undefined}
+                />
+              )}
               <NavItem to="/help" icon="help" label="Help" />
             </NavGroup>
           </nav>
           <div className="rail-foot">
             {user?.isAdmin && <NavItem to="/admin" icon="shield" label="Admin" />}
             <NavItem to="/settings" icon="settings" label="Settings" />
+            <button type="button" className="nav-item rail-pin" onClick={togglePinned} aria-pressed={pinned} title={pinned ? 'Let the menu hide' : 'Keep the menu open'} data-nav>
+              <span className="nav-icon"><Icon name={pinned ? 'lock' : 'menu'} size={20} /></span>
+              <span className="nav-label">{pinned ? 'Unpin menu' : 'Pin menu'}</span>
+            </button>
             <div className="rail-meta">
               {branding.footerText && <p className="footer-text">{branding.footerText}</p>}
               {branding.supportUrl && (

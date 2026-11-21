@@ -112,9 +112,12 @@ export function parseShowFolder(name: string): { title: string; year: number | n
   return { title: cleanTitle(cleaned), year: null, tvdbId: tvdb, tmdbId: tmdb };
 }
 
-/** Extras / samples that should not become library items. */
+/**
+ * Extras / samples that should not become library items. Also theme media: Emby/Kodi "backdrops" folders hold
+ * theme videos (Movie/backdrops/theme.mp4) and "theme-music" folders hold theme songs; neither is a title.
+ */
 export function isExtra(relPath: string): boolean {
-  return /(^|[\\/])(extras?|featurettes?|behind the scenes|deleted scenes|interviews?|scenes|shorts|trailers?|samples?|other|@eaDir|\.[^\\/]+)([\\/]|$)/i.test(relPath)
+  return /(^|[\\/])(extras?|featurettes?|behind the scenes|deleted scenes|interviews?|scenes|shorts|trailers?|samples?|backdrops|theme-music|other|@eaDir|\.[^\\/]+)([\\/]|$)/i.test(relPath)
     || /[-._ ](sample|trailer)$/i.test(stripExt(relPath.split(/[\\/]/).pop() ?? ''))
     || /-(featurette|behindthescenes|deleted|interview|scene|short|other)$/i.test(stripExt(relPath.split(/[\\/]/).pop() ?? ''));
 }
