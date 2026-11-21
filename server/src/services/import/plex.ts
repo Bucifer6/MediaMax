@@ -172,7 +172,7 @@ export function mapPlexUser(name: string, u: PlexRawUser, folders: SrcFolder[], 
     };
   }
   const { libraryIds, unmappedFolders } = libraryAccess(u.sections, folders, libs);
-  if (!u.sectionsKnown) notes.push('Library sharing unknown: all libraries (check after the import)');
+  if (!u.sectionsKnown) notes.push('Library sharing unknown: no libraries given (choose them under Users after the import)');
   const f = plexFilterRating(u.filters);
   let rating = f.rating;
   if (f.deny) notes.push('A Plex "exclude rating" filter could not be copied');
@@ -222,12 +222,12 @@ async function readUsers(token: string, machineId: string): Promise<PlexUserRow[
     const ss = sharedBy.get(id);
     const home = flag(u.home);
     if (!server && !ss && !home) continue; // A friend of another of the owner's servers.
-    let sections: string[] | null = null;
+    let sections: string[] | null = [];
     let known = true;
     if (ss) sections = flag(ss.allLibraries) ? null : arr<any>(ss.Section).filter((x) => flag(x.shared)).map((x) => String(x.key));
     else if (server && arr<any>(server.Section).length) sections = arr<any>(server.Section).filter((x) => x.shared === undefined || flag(x.shared)).map((x) => String(x.key ?? x.id));
     else if (server && flag(server.allLibraries)) sections = null;
-    else known = false;
+    else known = false; // Unknown: give no libraries rather than too many.
     out.push({
       id, name: String(u.username || u.title || `plex_${id}`),
       raw: {

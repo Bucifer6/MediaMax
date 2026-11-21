@@ -271,6 +271,8 @@ test('plex full preview: users, permissions, libraries and matches by guid / pat
   assert.equal(by.Kiddo.maxContentRating, 'PG');
   assert.equal(by.Kiddo.hidden, false);
   assert.match(by.Kiddo.notes.join(), /play history only/);
+  assert.deepEqual(by.Kiddo.libraries, [], 'library sharing unknown: none rather than all');
+  assert.match(by.Kiddo.notes.join(), /Library sharing unknown/);
   // Owner: Matrix by guid; resume on S01E02 via the show's TVDB id + numbers.
   assert.deepEqual(by.ownerx.watched, { total: 1, matched: 1, byProviderId: 1, byPath: 0, byTitle: 0 });
   assert.deepEqual([by.ownerx.resume.matched, by.ownerx.resume.byProviderId], [1, 1]);

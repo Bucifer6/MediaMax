@@ -66,7 +66,7 @@ The preview shows:
 | Live TV / DVR | ✓ | ✓ | *Allow Live TV* |
 | Downloads | ✓ | ✓ | *Allow downloads (sync)* |
 | Maximum content rating | Parental rating | Parental rating | Rating filter of the share; restricted users without one get PG |
-| Library access | ✓ | ✓ | Shared libraries |
+| Library access | ✓ | ✓ | Shared libraries (none when plex.tv doesn't say which) |
 | Watched, play count, last played | ✓ | ✓ | ✓ (each user's own) |
 | Resume position | ✓ | ✓ | ✓ (users with a share token) |
 | Favourites | ✓ | ✓ | Plex has none |
