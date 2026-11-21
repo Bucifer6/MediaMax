@@ -219,7 +219,7 @@ export function Layout() {
       <a href="#main" className="skip-link">Skip to content</a>
       <aside className="rail sidebar" aria-label="Main navigation">
         <div className="rail-panel">
-          <Link to="/" className="rail-brand" aria-label={`${branding.serverName || 'MediaMax'} home`}>
+          <Link to="/" className="rail-brand sidebar-brand" aria-label={`${branding.serverName || 'MediaMax'} home`}>
             <BrandLogo height={30} />
           </Link>
           <nav className="rail-nav">
