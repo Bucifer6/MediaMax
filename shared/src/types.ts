@@ -4240,3 +4240,105 @@ export interface TrackStems {
   sampleRate?: number;
   at?: number;
 }
+
+/* ------------------------------------------------------------------ */
+/* Instant play (POST /playback/:itemId/prepare)                       */
+/* ------------------------------------------------------------------ */
+
+/** Same body as POST /playback/:itemId, plus hints. Send it when the user is about to press Play. */
+export interface PlaybackPrepareRequest extends PlaybackRequest {
+  /** The client is on a metered / cellular connection or in data-saver mode: cache the decision, start no job. */
+  metered?: boolean;
+  /** What triggered the warm-up (diagnostics only). */
+  reason?: 'hover' | 'focus' | 'open' | 'next';
+}
+
+export interface PlaybackPrepareResult {
+  method: PlayMethod;
+  /** 'job': a remux / transcode is producing the first segments; 'decision': only the playback decision is cached. */
+  warm: 'job' | 'decision';
+  /** Why no job was started, when it could have been. */
+  reason?: 'metered' | 'preview' | 'remote_source' | 'stream_limit' | 'busy' | 'capacity' | null;
+  /** How long the warm state is kept unless Play is pressed (or prepare is sent again). */
+  expiresInMs: number;
+  /** Direct play: the stream URL (with token) so the client can preload its first bytes. */
+  preloadUrl?: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Smart downloads                                                     */
+/* ------------------------------------------------------------------ */
+
+/** A per-device, per-show download rule ("keep the next N unwatched episodes on this phone"). */
+export interface DownloadRule {
+  id: string;
+  showId: string;
+  showTitle: string;
+  posterUrl: string | null;
+  /** Client device id (DeviceInfo.deviceId) the rule belongs to. */
+  deviceId: string;
+  deviceName: string;
+  platform: Platform;
+  /** Keep this many next unwatched episodes downloaded (1, 3, 5 or 10). */
+  keepCount: number;
+  /** Delete watched episodes this many hours after they were watched; null = keep them. */
+  deleteWatchedAfterHours: number | null;
+  /** Only fetch on Wi-Fi / only while charging (enforced by the device). */
+  wifiOnly: boolean;
+  chargingOnly: boolean;
+  quality: DownloadQuality;
+  createdAt: string;
+  updatedAt: string;
+  /** Last time the device asked for its plan. */
+  lastSyncAt: string | null;
+  /** The rule belongs to the device making the request. */
+  current?: boolean;
+}
+
+export interface DownloadRuleInput {
+  keepCount: number;
+  deleteWatchedAfterHours?: number | null;
+  wifiOnly?: boolean;
+  chargingOnly?: boolean;
+  quality?: DownloadQuality;
+}
+
+/** POST /downloads/plan: the item ids this device has downloaded. */
+export interface DownloadPlanRequest {
+  have: string[];
+}
+
+export interface DownloadedItemState {
+  itemId: string;
+  played: boolean;
+  lastPlayedAt: string | null;
+  positionMs: number;
+  /** The item no longer exists or this user can no longer see it: delete the download. */
+  gone: boolean;
+}
+
+/** What this device should have: for each rule the next unwatched episodes, and the state of what it already has. */
+export interface DownloadPlan {
+  rules: DownloadRule[];
+  want: { ruleId: string; showId: string; items: Item[] }[];
+  have: DownloadedItemState[];
+  generatedAt: string;
+}
+
+/** Progress / watched changes made offline, replayed when the device is back online. */
+export interface OfflineSyncEntry {
+  itemId: string;
+  positionMs?: number;
+  durationMs?: number;
+  /** true = marked watched (or finished), false = marked unwatched. */
+  played?: boolean;
+  /** When the change was made on the device (ISO). Older than the server's last change = skipped. */
+  at: string;
+}
+
+export interface OfflineSyncResult {
+  applied: string[];
+  /** Changed on the server after the offline change: the server state wins and is returned in `state`. */
+  skipped: string[];
+  state: DownloadedItemState[];
+}
