@@ -3,7 +3,7 @@ import type {
   ChannelQuery, CreateCollectionRequest, CreateLibraryRequest, CreateLiveSourceRequest, CreatePlaylistRequest,
   CreateRecordingRequest, CreateRecordingRuleRequest, CreateUserRequest, DashboardStats, Device, DirectoryEntry, DownloadQuality, DvrDefaults,
   GuideResponse, HomeResponse, Item, LastfmAuthStart, LastfmStatus, Lyrics, PodcastSearchResult, PodcastSubscription, SubscribePodcastRequest, ItemQuery, ItemSort, Library, LivePlayRequest, LiveSource, LoginRequest,
-  Paged, PinLoginRequest, PlaybackInfo, PlaybackPrepareRequest, PlaybackPrepareResult, PlaybackRequest, Program, ProgressReport, PublicProfile, Recording,
+  Paged, PinLoginRequest, DownloadRule, PlaybackInfo, PlaybackPrepareRequest, PlaybackPrepareResult, PlaybackRequest, Program, ProgressReport, PublicProfile, Recording,
   RecordingRule, RecordingStatus, RemoteSubtitle, ScheduledTask, SearchResponse, ServerSettings, ServerStats, SetupRequest, SystemInfo,
   TestSourceResponse, Theme, TraktDeviceCode, TraktStatus, TrickplayInfo, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
   UpdateUserRequest, User, UserItemData, UserStats,
@@ -217,6 +217,12 @@ export const api = {
     preview: (filter: SmartFilter, limit = 24) => http.post<Paged<Item>>('/smart/preview', { filter, limit }),
     create: (body: CreateSmartListRequest) => http.post<Item>('/smart', body),
     update: (id: string, body: { title?: string; overview?: string; filter?: SmartFilter }) => http.put<Item>(`/smart/${enc(id)}`, body),
+  },
+
+  downloads: {
+    /** Smart download rules of all the user's devices. */
+    rules: () => http.get<DownloadRule[]>('/downloads/rules'),
+    removeRule: (id: string) => http.del<Ok>(`/downloads/rules/${enc(id)}`),
   },
 
   playback: {
