@@ -216,10 +216,14 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.version }}
+          # Manual runs: tag the commit that was built (GitHub would otherwise tag the default branch).
+          target_commitish: ${{ github.sha }}
           name: Kinora ${{ needs.version.outputs.version }}
           prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
           generate_release_notes: true
           body: |
+            ${{ startsWith(needs.version.outputs.version, '0.') && '> **Early preview (0.x).** The server and web app are tested end to end; the phone, TV and Roku apps have not yet been tested on real devices. Please report problems in Issues.' || '' }}
+
             ## Downloads
             | Platform | File |
             |---|---|
