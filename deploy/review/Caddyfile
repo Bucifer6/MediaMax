@@ -1,0 +1,28 @@
+# Used by `docker compose --profile https up -d` (Caddy in this stack gets the certificate itself).
+#
+# Already running Caddy on the host? Don't use the profile; add this site block to your own Caddyfile instead and
+# reload (KINORA_REVIEW_PORT from .env, 8495 by default):
+#
+#   kinora-review.example.com {
+#   	reverse_proxy 127.0.0.1:8495 {
+#   		flush_interval -1
+#   	}
+#   	request_body {
+#   		max_size 64MB
+#   	}
+#   	header X-Robots-Tag "noindex, nofollow"
+#   }
+{$REVIEW_HOST} {
+	reverse_proxy {$REVIEW_UPSTREAM} {
+		flush_interval -1
+	}
+	request_body {
+		max_size 64MB
+	}
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		# Keep the review server out of search engines.
+		X-Robots-Tag "noindex, nofollow"
+	}
+}

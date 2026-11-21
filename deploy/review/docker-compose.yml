@@ -1,0 +1,106 @@
+# Kinora review server: a separate, throwaway Kinora for app-store reviewers, seeded with the rights-free review pack.
+#
+# Lives in the unzipped review pack (dist/kinora-review-pack-<version>.zip), next to library/, fixtures/ and tools/:
+#   cp .env.example .env    # fill in the host name and two passwords
+#   docker compose up -d                       # behind the Caddy you already run (see Caddyfile for the site block)
+#   docker compose --profile https up -d       # or let this file's own Caddy get the certificate (ports 80/443 free)
+#
+# Full instructions: APP_REVIEW.md. Nothing here touches your own Kinora server or media.
+name: kinora-review
+
+x-kinora-image: &kinora-image ${KINORA_IMAGE:-ghcr.io/bucifer6/kinora:latest}
+
+services:
+  kinora:
+    image: *kinora-image
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+      # Kinora refuses feeds on private addresses by default; the demo podcast and test channels come from the
+      # "fixtures" service on this compose network, which is private. Run this stack on a VPS or an isolated host,
+      # not on your home LAN (see APP_REVIEW.md, "Security").
+      MEDIAMAX_ALLOW_PRIVATE_URLS: "1"
+      KINORA_TRUSTED_PROXIES: ${KINORA_TRUSTED_PROXIES:-loopback,172.16.0.0/12}
+    volumes:
+      - review-config:/config
+      - ./library:/media:ro
+    tmpfs:
+      - /transcode:size=2g
+    ports:
+      # Only on loopback: your Caddy (or the optional one below) is the way in.
+      - "127.0.0.1:${KINORA_REVIEW_PORT:-8495}:8484"
+    security_opt: ["no-new-privileges:true"]
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+
+  # Static files Kinora reads over HTTP: the podcast feed and episodes, the Live TV playlist, guide and logos.
+  fixtures:
+    image: ${CADDY_IMAGE:-caddy:2}
+    restart: unless-stopped
+    command: ["caddy", "file-server", "--root", "/srv", "--listen", ":80"]
+    volumes:
+      - ./fixtures:/srv/pack:ro
+      - fixtures-gen:/srv/gen:ro
+      - fixtures-live:/srv/live:ro
+    security_opt: ["no-new-privileges:true"]
+
+  # Loops each generated test-channel file into a live HLS stream (stream copy: next to no CPU).
+  testcard:
+    image: *kinora-image
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        for f in /in/*.ts; do
+          id=$$(basename "$$f" .ts)
+          mkdir -p "/live/$$id"
+          ffmpeg -hide_banner -loglevel warning -re -stream_loop -1 -i "$$f" -c copy -f hls -hls_time 4 -hls_list_size 6 \
+            -hls_flags delete_segments+omit_endlist+temp_file "/live/$$id/index.m3u8" &
+        done
+        wait -n
+        exit 1
+    volumes:
+      - ./fixtures/livetv:/in:ro
+      - fixtures-live:/live
+    security_opt: ["no-new-privileges:true"]
+
+  # Sets the server up on first start, then every REVIEW_RESET_HOURS puts the reviewer account, libraries,
+  # podcast, channels and guide back as they should be.
+  seed:
+    image: *kinora-image
+    restart: unless-stopped
+    entrypoint: ["node", "/pack/tools/seed-review-server.mjs"]
+    env_file: .env
+    environment:
+      KINORA_URL: http://kinora:8484
+      REVIEW_PACK_DIR: /pack
+      REVIEW_MEDIA_ROOT: /media
+      REVIEW_FIXTURES_DIR: /fixtures/gen
+      REVIEW_FIXTURES_URL: http://fixtures
+      REVIEW_RESET_HOURS: ${REVIEW_RESET_HOURS:-6}
+    volumes:
+      - ./:/pack:ro
+      - fixtures-gen:/fixtures/gen
+    depends_on:
+      kinora: { condition: service_healthy }
+      fixtures: { condition: service_started }
+    security_opt: ["no-new-privileges:true"]
+
+  # Optional: HTTPS from this stack (only if nothing else uses ports 80/443 on the host).
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2}
+    profiles: ["https"]
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      REVIEW_HOST: ${REVIEW_HOST:-}
+      REVIEW_UPSTREAM: kinora:8484
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [kinora]
+
+volumes:
+  review-config:
+  fixtures-gen:
+  fixtures-live:
+  caddy-data:
