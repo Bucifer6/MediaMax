@@ -226,6 +226,8 @@ export function installTvMode() {
       // An open dialog/picker, or a player (its menus first, then the player itself), handles it as Escape;
       // otherwise go back a page.
       if (inPlayer && document.fullscreenElement && scope() === document) void document.exitFullscreen().catch(() => undefined);
+      // An open peek card (components/Peek.tsx) closes first and focus returns to its poster.
+      else if (!inPlayer && scope() === document && document.querySelector('.peek')) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       else if (scope() !== document || inPlayer) (target ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       else if (window.history.length > 1) window.history.back();
       return;

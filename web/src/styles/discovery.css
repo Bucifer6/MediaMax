@@ -9,9 +9,6 @@
 .hero-previewing .hero-bg .img { animation-play-state: paused; }
 .hero-previewing .hero-overview { -webkit-line-clamp: 2; }
 .hero-mute { position: absolute; right: var(--gutter); bottom: 168px; z-index: 3; background: color-mix(in srgb, var(--c-bg) 45%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: fadeIn 0.3s both; }
-.card-trailer { z-index: 0; }
-.card:hover .card-art:has(.card-trailer.playing) .card-hover { background: linear-gradient(to top, rgb(0 0 0 / 0.55), transparent 45%); }
-.card:hover .card-art:has(.card-trailer.playing) .card-play { opacity: 0; transform: scale(0.7); }
 
 /* ---------- card hover actions ---------- */
 .card-actions { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 6px; }
