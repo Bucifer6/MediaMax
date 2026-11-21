@@ -906,7 +906,10 @@ async function viewer() {
   });
 
   await step('resume position is saved', async () => {
-    await sleep(2000);
+    // The test film is only 90 s long and keeps playing through the steps above; pause it so a slow run can't
+    // carry it past 90 % (which correctly counts as watched) before we leave the player.
+    await page.evaluate(() => document.querySelectorAll('video').forEach((v) => v.pause()));
+    await sleep(1500);
     await showControls(page);
     await page.getByRole('button', { name: 'Back' }).first().click();
     await page.waitForURL((u) => !u.pathname.startsWith('/play'), { timeout: 10000 });
