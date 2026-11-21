@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import type React from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { Item, MediaSource, UserItemData } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { ApiRequestError, withToken } from '../api/client';
@@ -23,7 +24,9 @@ import { ArtistDiscography, RelatedArtists } from '../components/ArtistMusic';
 import { ReportIssueButton } from '../components/ReportIssue';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
-import { episodeCode, hasAudioResume, isAudio, isResumable, isVideo, itemLink, playLink, progressPct } from '../utils/items';
+import { episodeCode, hasAudioResume, isAudio, isResumable, isVideo, itemLink, playLink, posterFor, progressPct } from '../utils/items';
+import { useAmbientFrom } from '../theme/ambient';
+import { POSTER_VT, previewFromState } from '../utils/viewTransition';
 
 /* ---------------- Media info ---------------- */
 export function MediaBadges({ media }: { media?: MediaSource[] }) {
@@ -399,6 +402,11 @@ export function ItemPage() {
   }), [itemId]);
   const [modal, setModal] = useState<null | 'edit' | 'art' | 'playlist' | 'collection' | 'trailer' | 'photo' | 'subs' | 'smart'>(null);
   const item = res.data;
+  // The card that opened this page handed its item over (utils/viewTransition.ts): draw poster + backdrop at once.
+  const preview = previewFromState(useLocation().state, itemId);
+  const lit = item ?? preview;
+  // The title's artwork lights the page (theme/ambient.ts).
+  useAmbientFrom(lit ? lit.backdropUrl ?? lit.posterUrl ?? lit.thumbUrl : null);
   const isSeries = item?.id === itemId && (item.type === 'show' || item.type === 'season' || item.type === 'audiobook' || item.type === 'podcast');
   // Next-up episode of a show/season (server: in progress → next unwatched → first).
   const nextUp = useAsync(
@@ -412,12 +420,22 @@ export function ItemPage() {
 
   if (res.loading && !item) {
     return (
-      <div className="detail">
-        <div className="detail-backdrop skeleton" />
+      <div className="detail detail-loading">
+        {preview?.backdropUrl ? (
+          <div className="detail-backdrop"><Img src={preview.backdropUrl} width={1920} /><div className="detail-shade" /></div>
+        ) : (
+          <div className="detail-backdrop skeleton" />
+        )}
         <div className="detail-main">
-          <Skeleton className="detail-poster" />
+          {preview && posterFor(preview) ? (
+            <div className="detail-poster" style={{ viewTransitionName: POSTER_VT } as React.CSSProperties}>
+              <Img src={posterFor(preview)} width={260} alt={preview.title} />
+            </div>
+          ) : (
+            <Skeleton className="detail-poster" />
+          )}
           <div className="detail-info">
-            <Skeleton h={48} w="60%" />
+            {preview ? <h1 className="detail-title">{preview.title}</h1> : <Skeleton h={48} w="60%" />}
             <Skeleton h={18} w="40%" style={{ marginTop: 16 }} />
             <Skeleton h={80} w="90%" style={{ marginTop: 24 }} />
           </div>
@@ -558,14 +576,15 @@ export function ItemPage() {
   const narrators = item.people.filter((p) => /^narrator$/i.test(p.role ?? '')).map((p) => p.name);
 
   return (
-    <div className={`detail detail-${item.type}`}>
+    <div className={`detail detail-${item.type} ${preview ? 'from-card' : ''}`}>
       <div className="detail-backdrop">
         <Img src={item.backdropUrl ?? (item.type === 'episode' ? item.thumbUrl : null) ?? item.posterUrl} width={1920} className={item.backdropUrl ? '' : 'blurred'} />
         <div className="detail-shade" />
       </div>
       <div className="detail-main">
-        <div className={`detail-poster ${square ? 'square' : item.type === 'episode' || item.type === 'video' ? 'landscape' : ''}`}>
-          <Img src={item.type === 'episode' || item.type === 'video' ? item.thumbUrl ?? item.posterUrl : item.posterUrl ?? item.thumbUrl} width={400} alt={item.title} fallback={<Icon name={item.type === 'audiobook' || item.type === 'bookpart' ? 'book' : item.type === 'podcast' || item.type === 'podcastepisode' ? 'podcast' : square ? 'music' : item.type === 'show' || item.type === 'season' || item.type === 'episode' ? 'shows' : 'film'} size={40} />} />
+        <div className={`detail-poster ${square ? 'square' : item.type === 'episode' || item.type === 'video' ? 'landscape' : ''}`} style={{ viewTransitionName: POSTER_VT } as React.CSSProperties}>
+          {/* 260 px: the same image the poster cards load, so it is already decoded when the page opens. */}
+          <Img src={item.type === 'episode' || item.type === 'video' ? item.thumbUrl ?? item.posterUrl : item.posterUrl ?? item.thumbUrl} width={item.type === 'episode' || item.type === 'video' ? 400 : 260} alt={item.title} fallback={<Icon name={item.type === 'audiobook' || item.type === 'bookpart' ? 'book' : item.type === 'podcast' || item.type === 'podcastepisode' ? 'podcast' : square ? 'music' : item.type === 'show' || item.type === 'season' || item.type === 'episode' ? 'shows' : 'film'} size={40} />} />
           {item.type === 'photo' && <button className="detail-poster-zoom" onClick={() => setModal('photo')} aria-label="View full size"><Icon name="fullscreen" /></button>}
         </div>
         <div className="detail-info">
