@@ -76,6 +76,9 @@ export function registerRemoteImage(url: string | null | undefined, opts: { untr
   return id;
 }
 
+/** Async existence check: the image route runs for every card on screen, so it never blocks on the disk. */
+const exists = (p: string) => fs.promises.access(p).then(() => true, () => false);
+
 export const imageUrl = (id: string | null | undefined): string | null => (id ? `/api/v1/images/${id}` : null);
 
 const inflight = new Map<string, Promise<string>>();
@@ -122,7 +125,7 @@ export async function resolveImage(id: string, width?: number): Promise<{ path: 
   if (!row) throw notFound('Image not found');
   let file: string;
   if (/^https?:\/\//.test(row.source)) {
-    if (row.cached && fs.existsSync(row.cached)) file = row.cached;
+    if (row.cached && (await exists(row.cached))) file = row.cached;
     else {
       let p = inflight.get(id);
       if (!p) {
@@ -136,7 +139,7 @@ export async function resolveImage(id: string, width?: number): Promise<{ path: 
         throw notFound('Image unavailable');
       }
     }
-  } else if (row.cached && fs.existsSync(row.cached)) {
+  } else if (row.cached && (await exists(row.cached))) {
     // Artwork next to the media (poster.jpg, folder.jpg…) is served from its copy in the data dir, so browsing
     // never wakes a sleeping NAS disk. The scanner refreshes the copy when the original changes.
     file = row.cached;
@@ -152,7 +155,7 @@ export async function resolveImage(id: string, width?: number): Promise<{ path: 
     // Keep transparency: PNG/WebP sources (clear logos, channel logos) are resized to PNG, everything else to JPEG.
     const alpha = ext === '.png' || ext === '.webp';
     const dest = path.join(config.imageCacheDir, 'w', `${id}_${w}.${alpha ? 'png' : 'jpg'}`);
-    if (!fs.existsSync(dest)) {
+    if (!(await exists(dest))) {
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       const key = dest;
       let p = inflight.get(key) as Promise<any> | undefined;

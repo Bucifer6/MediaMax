@@ -197,7 +197,14 @@ export default async function libraryRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string }; Querystring: { w?: string } }>('/images/:id', async (req, reply) => {
     const img = await resolveImage(req.params.id, req.query.w ? toInt(req.query.w, 0, 0, 4000) : undefined);
-    reply.header('Cache-Control', 'public, max-age=604800').header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox").type(img.mime);
+    // Artwork ids are stable while the file behind them can be refreshed: cache for a week, then revalidate by ETag.
+    const st = await fs.promises.stat(img.path);
+    const etag = `W/"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+    reply.header('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400').header('ETag', etag).header('Last-Modified', st.mtime.toUTCString())
+      .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox").type(img.mime);
+    const inm = req.headers['if-none-match'];
+    if (inm && inm.split(',').some((t) => t.trim() === etag)) return reply.code(304).send();
+    reply.header('Content-Length', String(st.size));
     return fs.createReadStream(img.path);
   });
 
