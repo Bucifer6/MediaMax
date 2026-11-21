@@ -204,3 +204,13 @@ test('speed: p95 well under 300 ms on 20,000 movies without a language model', a
   console.log(`# Ask p95 on 20k movies: ${p95.toFixed(1)} ms (median ${times[15].toFixed(1)} ms)`);
   assert.ok(p95 < 300, `p95 ${p95} ms`);
 });
+
+test('local embeddings: BERT WordPiece tokenisation and mean pooling', async () => {
+  const { WordPiece, meanPool } = await import('../src/services/ask/embed.ts');
+  const vocab = ['[PAD]', '[UNK]', '[CLS]', '[SEP]', 'the', 'heist', 'film', 'red', 'jump', '##suit', '##s', ',', 'cafe'].join('\n');
+  const wp = new WordPiece(vocab, 16);
+  // Lower-cased, accents stripped ("Café" → "cafe"), punctuation split, sub-words with ##, unknown words → [UNK].
+  assert.deepEqual(wp.encode('The HEIST film, red jumpsuits Café zzz'), [2, 4, 5, 6, 11, 7, 8, 9, 10, 12, 1, 3]);
+  assert.equal(wp.encode('the '.repeat(40)).length, 16, 'truncated to the model length with [SEP] last');
+  assert.deepEqual(Array.from(meanPool(Float32Array.from([1, 2, 3, 4]), 2, 2)), [2, 3]);
+});
