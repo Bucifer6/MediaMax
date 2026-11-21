@@ -9,7 +9,7 @@
  * release branch (not master), whose Linux builds link everything statically except glibc (2.28+).
  *
  * Pinning (scripts/ffmpeg.json):
- *   branch   FFmpeg release branch, e.g. "7.1". Selects ffmpeg-n<branch>…-<platform>-gpl-<branch> assets.
+ *   branch   FFmpeg release branch, e.g. "8.1". Selects ffmpeg-n<branch>…-<platform>-gpl-<branch> assets.
  *   tag      BtbN release tag. "latest" follows that branch's newest point release; set an
  *            "autobuild-YYYY-MM-DD-HH-MM" tag to freeze it (BtbN prunes old autobuilds, so a frozen tag
  *            must be bumped before it disappears).
