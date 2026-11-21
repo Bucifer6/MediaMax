@@ -4,7 +4,7 @@ All types referenced below live in [`shared/src/types.ts`](../shared/src/types.t
 
 * Base path: `/api/v1`
 * Auth: `Authorization: Bearer <token>` **or** `?token=<token>` (for `<video>`, HLS segments, WebSocket).
-* Also accepted on every request (optional): headers `X-MediaMax-Device-Id`, `X-MediaMax-Device-Name`, `X-MediaMax-Platform`, `X-MediaMax-Version`.
+* Also accepted on every request (optional): headers `X-MediaMax-Device-Id`, `X-MediaMax-Device-Name`, `X-MediaMax-Platform`, `X-MediaMax-Version`. `Platform`: `web`, `ios`, `android`, `tvos`, `androidtv`, `roku`, `other` (unknown values are stored as `other`).
 * JSON in/out. Errors are `ApiError` with an HTTP status.
 * 🔓 = public, 🔑 = any signed-in user, 🛡️ = admin only.
 

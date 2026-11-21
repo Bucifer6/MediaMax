@@ -1,0 +1,15 @@
+{
+  "rootDir": ".",
+  "files": [
+    "manifest",
+    "source/**/*",
+    "components/**/*",
+    "images/**/*"
+  ],
+  "createPackage": false,
+  "retainStagingDir": false,
+  "emitDefinitions": false,
+  "diagnosticLevel": "hint",
+  "autoImportComponentScript": false,
+  "copyToStaging": false
+}

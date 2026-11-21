@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Search as you type (GET /search, debounced): titles and live channels. -->
+<component name="SearchScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Screen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Content.brs" />
+  <script type="text/brightscript" uri="pkg:/components/screens/SearchScreen.brs" />
+  <children>
+    <Label translation="[96,50]" width="600" text="Search" color="0xFFFFFFFF" font="font:LargeBoldSystemFont" />
+    <MiniKeyboard id="keyboard" translation="[96,150]" />
+    <Label id="status" translation="[760,64]" width="1100" color="0xA9B0D6FF" font="font:SmallSystemFont"
+      text="Type a title, person or channel" />
+    <MarkupGrid id="results" translation="[760,140]" itemComponentName="PosterItem" itemSize="[200,376]" itemSpacing="[24,36]"
+      numColumns="5" numRows="3" drawFocusFeedback="false" vertFocusAnimationStyle="fixedFocusWrap" />
+    <Timer id="debounce" duration="0.6" repeat="false" />
+  </children>
+</component>

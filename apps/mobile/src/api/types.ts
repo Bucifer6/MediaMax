@@ -233,7 +233,7 @@ export type BrandingAssetKind =
 /* Auth & users                                                        */
 /* ------------------------------------------------------------------ */
 
-export type Platform = 'web' | 'ios' | 'android' | 'tvos' | 'androidtv' | 'other';
+export type Platform = 'web' | 'ios' | 'android' | 'tvos' | 'androidtv' | 'roku' | 'other';
 
 export interface DeviceInfo {
   deviceId: string;

@@ -246,6 +246,7 @@ More, including the security dashboard and integration variables, is in [docs/IN
 | **Samsung (Tizen), LG (webOS) & Hisense (VIDAA)** | ✅ Wrapper apps in [`tv/`](tv) that load the web app in TV mode (VIDAA: 🧪 hosted web app, not yet tested on a set): D-pad navigation, remote keys, and MediaMax's own hls.js/MSE player and subtitle renderer instead of the TV's ([tv/README.md](tv/README.md)) |
 | **iOS / iPadOS, Android** | 🧪 Built from [`apps/mobile`](apps/mobile) with Expo. Compiled in CI ([Native apps](https://github.com/Bucifer6/MediaMax/actions/workflows/apps.yml)); store release needs your developer accounts |
 | **Apple TV, Android TV, Fire TV** | 🧪 Same codebase, TV builds compiled in CI; installable Android TV/Fire TV APKs are produced on every change |
+| **Roku** | 🧪 Native BrightScript/SceneGraph channel in [`apps/roku`](apps/roku): link-code sign-in, profiles, home rows, libraries, search, Live TV, direct play / HLS with a device profile read from the Roku at runtime. Passes BrighterScript's static checks; not yet run on a Roku ([apps/roku/README.md](apps/roku/README.md)) |
 | **CarPlay, Android Auto** | 🧪 Native module in the mobile app: browse, search, ±15/30 s for audiobooks, podcasts and long mixes, speed, Assistant voice commands, opt-in Siri "Play … in MediaMax"; CarPlay needs Apple's audio entitlement |
 | **Subsonic apps, DLNA players** | ✅ Through the built-in Subsonic API and DLNA server |
 
@@ -272,6 +273,7 @@ More, including the security dashboard and integration variables, is in [docs/IN
 | [docs/ROADMAP.md](docs/ROADMAP.md) | What's next |
 | [apps/mobile/README.md](apps/mobile/README.md) | Building the phone, tablet, TV and car apps |
 | [tv/README.md](tv/README.md) | The Samsung and LG TV apps |
+| [apps/roku/README.md](apps/roku/README.md) | The Roku channel: build, sideload, debug, package |
 | [branding/mediamax/README.md](branding/mediamax/README.md) | The MediaMax brand kit: logo, colours, app icons and store art |
 
 <details>
@@ -344,6 +346,7 @@ shared/        API contract (TypeScript types used by every client)
 server/        MediaMax server (Fastify, node:sqlite, FFmpeg)
 web/           Web app and admin dashboard (React + Vite)
 apps/mobile/   iOS, Android, Apple TV, Android TV and Fire TV apps (Expo / React Native) + CarPlay/Android Auto
+apps/roku/     Roku channel (BrightScript + SceneGraph)
 tv/            Samsung Tizen, LG webOS and Hisense VIDAA wrapper apps
 deploy/        One-command installer, Caddy/Nginx, CrowdSec and fail2ban configs
 nas/           Templates for Synology, QNAP, Unraid, TrueNAS SCALE and OpenMediaVault

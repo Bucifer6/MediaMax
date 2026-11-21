@@ -43,7 +43,7 @@ function SessionDetailsView({ s, d }: { s: ActiveSession; d: SessionDetails }) {
   return (
     <>
       <div className="session-client">
-        <Icon name={s.platform === 'web' ? 'monitor' : s.platform === 'androidtv' || s.platform === 'tvos' ? 'tv' : 'device'} size={22} />
+        <Icon name={s.platform === 'web' ? 'monitor' : s.platform === 'androidtv' || s.platform === 'tvos' || s.platform === 'roku' ? 'tv' : 'device'} size={22} />
         <div>
           <div>{d.client.app}{d.client.version ? ` ${d.client.version}` : ''}{d.client.browser ? <span className="muted"> · {d.client.browser}</span> : null}</div>
           <div className="muted">{s.deviceName}</div>

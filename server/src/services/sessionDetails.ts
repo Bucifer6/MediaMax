@@ -16,7 +16,7 @@ export interface ClientHints {
 
 const APP_NAMES: Record<Platform, string> = {
   web: 'MediaMax Web', ios: 'MediaMax for iOS', android: 'MediaMax for Android', tvos: 'MediaMax for Apple TV',
-  androidtv: 'MediaMax for Android TV', other: 'MediaMax',
+  androidtv: 'MediaMax for Android TV', roku: 'MediaMax for Roku', other: 'MediaMax',
 };
 
 /** "Chrome 131 on Windows", "Samsung TV (Tizen 6.5)", "Hisense TV (VIDAA)", "Safari 18 on iPhone" … (null when unknown). */
