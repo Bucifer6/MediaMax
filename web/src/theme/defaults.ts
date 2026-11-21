@@ -1,5 +1,9 @@
 import type { Branding, FeatureFlags, Theme, UserPreferences } from '@mediamax/shared';
 
+/** The Lumen type pairing, self-hosted in styles/fonts.css (server/src/services/themes.ts LUMEN_FONT). */
+export const LUMEN_TEXT = "'Figtree Variable', 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+export const LUMEN_DISPLAY = "'Bricolage Grotesque Variable', 'Figtree Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+
 /** Used until the server's branding arrives: the MediaMax brand theme (server/src/services/themes.ts). */
 export const DEFAULT_THEME: Theme = {
   id: 'mediamax',
@@ -21,8 +25,8 @@ export const DEFAULT_THEME: Theme = {
     overlay: '#0A0F22',
   },
   radius: 14,
-  fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
-  fontUrl: 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap',
+  fontFamily: LUMEN_TEXT,
+  fontUrl: null,
   posterShape: 'rounded',
   cardSize: 'medium',
   heroStyle: 'carousel',

@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { Branding, Theme, ThemeColors } from '@mediamax/shared';
-import { DEFAULT_THEME } from './defaults';
+import { DEFAULT_THEME, LUMEN_DISPLAY } from './defaults';
 
 const CARD_WIDTHS = { small: 128, medium: 164, large: 212 } as const;
 
@@ -33,6 +33,14 @@ export function posterRadius(theme: Theme): string {
   }
 }
 
+/**
+ * Headings use the Lumen display face (Bricolage Grotesque) when the theme uses the Lumen text face (Figtree) or the
+ * old generic defaults; a theme with a font of its own (Playfair for Film Noir, Baloo for kids…) keeps it for headings.
+ */
+export function displayFont(font: string): string {
+  return /^\s*'?(Figtree|Inter|Plus Jakarta Sans)\b/i.test(font) ? LUMEN_DISPLAY : font;
+}
+
 /** Compute the CSS custom properties for a theme. */
 export function themeVars(theme: Theme): Record<string, string> {
   const t = { ...DEFAULT_THEME, ...theme, colors: { ...DEFAULT_THEME.colors, ...theme.colors } };
@@ -44,6 +52,7 @@ export function themeVars(theme: Theme): Record<string, string> {
   vars['--poster-radius'] = posterRadius(t);
   vars['--card-w'] = `${CARD_WIDTHS[t.cardSize] ?? CARD_WIDTHS.medium}px`;
   vars['--font'] = t.fontFamily || DEFAULT_THEME.fontFamily;
+  vars['--font-display'] = displayFont(vars['--font']);
   return vars;
 }
 
