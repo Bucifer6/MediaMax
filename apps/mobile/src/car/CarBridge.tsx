@@ -6,7 +6,7 @@
  *  - plays what is picked in the car through the existing queue (`useMusic().playQueue`), so the
  *    phone's mini player, lock screen, Chromecast hand-off and progress reporting stay in charge,
  *  - applies transport commands from the car (play/pause, skip, ±15/30 s, speed, voice seeks),
- *  - plays voice requests (Google Assistant / Android Auto "play …", Siri "Play … in MediaMax"),
+ *  - plays voice requests (Google Assistant / Android Auto "play …", Siri "Play … in Kinora"),
  *    waiting for the session to be restored when the app was cold-started by the request,
  *  - mirrors the player state to the car (`updateNowPlaying`; Android Auto shows it as its Now
  *    Playing screen, CarPlay uses it for the Up Next, speed and long-track ±15/30 s buttons).
@@ -124,7 +124,7 @@ function CarBridgeInner({ car }: { car: MediaMaxCarNativeModule }) {
       const query = e.query ?? '';
       const hints: VoiceSearchHints = { type: e.type ?? null, artist: e.artist ?? null, album: e.album ?? null };
       const empty = !query.trim() && !hints.artist && !hints.album;
-      // "Play MediaMax" with something already queued: just resume it.
+      // "Play Kinora" with something already queued: just resume it.
       if (empty && m.current) {
         if (!m.playing) m.toggle();
         return;

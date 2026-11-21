@@ -1,4 +1,4 @@
-# MediaMax apps: iOS, Android, Apple TV and Android TV
+# Kinora apps: iOS, Android, Apple TV and Android TV
 
 One Expo codebase (SDK 58, TypeScript, expo-router) builds four apps: the phone/tablet apps for iOS and Android, and the 10-foot TV apps for tvOS and Android TV.
 
@@ -98,7 +98,7 @@ Caveats on TV: there are no downloads, haptics or PiP. expo-secure-store is repl
 ## Features
 
 * **Servers:** add several servers and switch between them. Each server keeps its own token (in SecureStore), cached branding and cached user. The last branding is cached, so the next cold start shows the right brand immediately (the "dynamic splash"). The app also works **offline** with downloads when the server is unreachable.
-* **Login:** branded background, logo and message. Sign in with a profile picker plus PIN pad (`/auth/profile-login`), with username and password, or with a TV link code. Every request sends `X-MediaMax-Device-Id/Name/Platform/Version` from a generated, persistent device id. The platform is `ios`, `android`, `tvos` or `androidtv`.
+* **Login:** branded background, logo and message. Sign in with a profile picker plus PIN pad (`/auth/profile-login`), with username and password, or with a TV link code. Every request sends `X-Kinora-Device-Id/Name/Platform/Version` from a generated, persistent device id. The platform is `ios`, `android`, `tvos` or `androidtv`.
 * **Home:** rows come from the server via `/home`: hero, continue watching (with progress), next up, recently added, favourites, collections, genres, live-now and favourite-channel cards, recordings and playlists. Each row honours the theme's `cardSize`, `posterShape` and `heroStyle`.
 * **Libraries:** a grid with infinite scroll, sort and order, a genre picker, and watched/unwatched/favourites filters. Music libraries have Albums, Artists and Songs tabs.
 * **Detail pages:**
@@ -173,11 +173,11 @@ The phone apps show up in **Apple CarPlay** and **Android Auto** as audio apps. 
   | **Long music** (over 10 min: DJ mixes, live sets, concerts, long classical tracks) | −15 s / +30 s **and** prev / next (shuffle and repeat move to the chips row) | iOS: prev / next. Android: −15 s / +30 s | prev / next, plus −15 s / +30 s buttons under the controls | prev / next, plus −15 s / +30 s custom actions |
   | Audiobook / podcast | −15 s / +30 s, prev / next, speed | −15 s / +30 s | −15 s / +30 s, speed button | −15 s / +30 s, **speed button** (its icon shows the current speed) |
 
-  The long-track threshold is one constant, `LONG_TRACK_MS` in `src/car/policy.ts`. On iOS the lock screen, Control Centre and AirPods/steering-wheel buttons keep previous/next for long tracks on purpose: iOS shows interval skip *instead of* track skip whenever both are enabled. MediaMax DJ mode plays its own crossfading players and short tracks, so it does not get these buttons.
+  The long-track threshold is one constant, `LONG_TRACK_MS` in `src/car/policy.ts`. On iOS the lock screen, Control Centre and AirPods/steering-wheel buttons keep previous/next for long tracks on purpose: iOS shows interval skip *instead of* track skip whenever both are enabled. Kinora DJ mode plays its own crossfading players and short tracks, so it does not get these buttons.
 * **Search and voice:**
-  * Android Auto supports in-car search (`onSearch`), and Assistant requests such as "play *X* on MediaMax" (`onPlayFromSearch`). Both use `GET /search?q=`. Voice plays the best audio match: a track, an album, a playlist, an artist (shuffled), a book (resumed), or a show (its in-progress or newest episode). When Assistant sends structured extras (focus = artist / album / song / playlist, artist name, album name), they steer the pick ("play the album *Discovery* by Daft Punk" plays the album, not a same-named track). "Play MediaMax" with an empty query resumes the queue, or else continue listening, or else shuffles the music library. A request that cold-starts the app waits until the saved session has been restored.
+  * Android Auto supports in-car search (`onSearch`), and Assistant requests such as "play *X* on Kinora" (`onPlayFromSearch`). Both use `GET /search?q=`. Voice plays the best audio match: a track, an album, a playlist, an artist (shuffled), a book (resumed), or a show (its in-progress or newest episode). When Assistant sends structured extras (focus = artist / album / song / playlist, artist name, album name), they steer the pick ("play the album *Discovery* by Daft Punk" plays the album, not a same-named track). "Play Kinora" with an empty query resumes the queue, or else continue listening, or else shuffles the music library. A request that cold-starts the app waits until the saved session has been restored.
   * **Assistant transport commands** reach the Android Auto session player: "pause", "next song", "skip forward 2 minutes" / "go back 30 seconds" (absolute seeks computed from the reported position, which is extrapolated natively while playing and clamped to the duration), "jump to 10 minutes", and, for audiobooks and podcasts, "play at 1.5x speed" (`setPlaybackParameters`, forwarded to JS as a `rate` command with the value, snapped to the app's speeds).
-  * **Siri:** transport commands ("pause", "next", "skip ahead 30 seconds") go through `MPRemoteCommandCenter` as before; relative seeks on music use `changePlaybackPositionCommand`, which expo-audio keeps enabled. **"Play *X* in MediaMax"** (SiriKit `INPlayMediaIntent`, handled in the app) is implemented but **off by default**, because it needs the Siri capability; see [Siri](#siri-play--in-mediamax).
+  * **Siri:** transport commands ("pause", "next", "skip ahead 30 seconds") go through `MPRemoteCommandCenter` as before; relative seeks on music use `changePlaybackPositionCommand`, which expo-audio keeps enabled. **"Play *X* in Kinora"** (SiriKit `INPlayMediaIntent`, handled in the app) is implemented but **off by default**, because it needs the Siri capability; see [Siri](#siri-play--in-mediamax).
   * CarPlay shows a Search row on the Home tab on **iOS 27 and later**, because Apple only lets audio apps use the search template from iOS 27.
 * Live TV and radio are not in the car. The shared player only queues library items, and channels would need their own playback path through `POST /livetv/channels/:id/play`.
 
@@ -204,8 +204,8 @@ The phone apps show up in **Apple CarPlay** and **Android Auto** as audio apps. 
 * **Artwork on Android Auto** is served through `content://<package>.mediamax.artwork/…` (`ArtworkProvider`), because the car host does not load http(s) artwork. Only URLs the app handed out are fetched, and they are cached in `cacheDir/car-artwork`.
 * **Cold starts.**
   * *CarPlay:* CarPlay may launch the app with only the CarPlay scene (iPhone locked). `MediaMaxCarSceneDelegate` then starts React Native into a placeholder window, so the whole app (session, player, bridge) runs. When the phone UI opens later, `MediaMaxPhoneSceneDelegate`, an `ExpoAppSceneDelegate` subclass that replaces the template's `SceneDelegate`, adopts that window instead of starting a second React root.
-  * *Android Auto:* if Android Auto binds while the React Native runtime is not running (the process was started just for the car), the service reports "Open MediaMax on your phone to start listening" with an **Open MediaMax** action. As soon as the app is opened, the tree loads. See Limitations.
-  * *Siri:* if Siri launches the app in the background for "Play … in MediaMax", the module starts React Native the same way as a CarPlay-first launch and holds the request until the JS bridge is ready.
+  * *Android Auto:* if Android Auto binds while the React Native runtime is not running (the process was started just for the car), the service reports "Open Kinora on your phone to start listening" with an **Open Kinora** action. As soon as the app is opened, the tree loads. See Limitations.
+  * *Siri:* if Siri launches the app in the background for "Play … in Kinora", the module starts React Native the same way as a CarPlay-first launch and holds the request until the JS bridge is ready.
 
 ### Files
 
@@ -220,7 +220,7 @@ The phone apps show up in **Apple CarPlay** and **Android Auto** as audio apps. 
 
 ### What the config plugin changes
 
-`app.config.ts` adds `['./plugins/withMediaMaxCar', { isTV, siri }]` (`siri` from `MEDIAMAX_SIRI=1` or `"siri": true` in the brand's `brand.json`).
+`app.config.ts` adds `['./plugins/withMediaMaxCar', { isTV, siri }]` (`siri` from `KINORA_SIRI=1` or `"siri": true` in the brand's `brand.json`).
 
 * **iOS:**
   * the `com.apple.developer.carplay-audio` entitlement
@@ -252,7 +252,7 @@ npx expo run:ios          # or: npx expo run:android
 **CarPlay (Simulator):**
 
 1. Run the development build on an iPhone simulator.
-2. Choose **Simulator › I/O › External Displays › CarPlay**. The MediaMax icon appears on the CarPlay home screen.
+2. Choose **Simulator › I/O › External Displays › CarPlay**. The Kinora icon appears on the CarPlay home screen.
 3. Test both launch orders: open the app on the phone first, and also launch it from the CarPlay window with the app killed (CarPlay-first). Then check that playback, the lock screen and the phone's mini player stay in sync.
 
 The simulator works with the entitlement in a development build. Real cars need Apple's approval (see below). The CarPlay-first cold launch is best verified with a Release build. CarPlay-first launch of an `expo-dev-client` build has not been verified, because dev-launcher sets up its window differently.
@@ -268,21 +268,21 @@ The simulator works with the entitlement in a development build. Real cars need 
    $ANDROID_SDK_ROOT/extras/google/auto/desktop-head-unit
    ```
 
-4. Open MediaMax on the phone once, so that React Native is running, and then pick MediaMax in the DHU launcher. For voice, type `mic begin` in the DHU console and speak, for example "play Daft Punk on MediaMax".
+4. Open Kinora on the phone once, so that React Native is running, and then pick Kinora in the DHU launcher. For voice, type `mic begin` in the DHU console and speak, for example "play Daft Punk on Kinora".
 5. `adb logcat | grep -i -E "MediaSession|MediaMaxCar"` shows the session traffic. Google's **Media Controller Test** app (github.com/googlesamples/android-media-controller) can also browse the service and send play-from-search requests without a car.
 
 Side-loaded builds only appear in Android Auto with **Unknown sources** on. Builds from the Play Store (including internal testing) show up normally.
 
-### Siri: "Play … in MediaMax"
+### Siri: "Play … in Kinora"
 
-Off by default. When on, Siri hands requests such as "Play *Discovery* by Daft Punk in MediaMax", "Play the audiobook *Dune* in MediaMax" or "Play MediaMax" to the app (in-app intent handling, no Intents extension). `SiriIntents.swift` resolves the request to a placeholder item and passes the `INMediaSearch` (title, artist, album, media type) to JS as `onPlayFromSearch`, which searches the server and plays the best match exactly like Android Auto voice requests. "Play MediaMax" resumes the queue (or continues listening).
+Off by default. When on, Siri hands requests such as "Play *Discovery* by Daft Punk in Kinora", "Play the audiobook *Dune* in Kinora" or "Play Kinora" to the app (in-app intent handling, no Intents extension). `SiriIntents.swift` resolves the request to a placeholder item and passes the `INMediaSearch` (title, artist, album, media type) to JS as `onPlayFromSearch`, which searches the server and plays the best match exactly like Android Auto voice requests. "Play Kinora" resumes the queue (or continues listening).
 
 To turn it on for a build:
 
 1. In Certificates, IDs & Profiles, enable the **SiriKit** capability on the App ID (needs a paid Apple developer account) and regenerate the provisioning profiles, for example with `eas credentials`. EAS-managed credentials usually sync the capability by themselves from the entitlement.
-2. Build with `MEDIAMAX_SIRI=1` (or `"siri": true` in `branding/<brand>/brand.json`), then `npx expo prebuild --clean`.
-3. Check: `MEDIAMAX_SIRI=1 npx expo config --type introspect | grep -n -E "INPlayMediaIntent|developer.siri"`.
-4. On the phone, ask Siri "Play *something* in MediaMax". The first time, iOS may ask whether MediaMax may use Siri.
+2. Build with `KINORA_SIRI=1` (or `"siri": true` in `branding/<brand>/brand.json`), then `npx expo prebuild --clean`.
+3. Check: `KINORA_SIRI=1 npx expo config --type introspect | grep -n -E "INPlayMediaIntent|developer.siri"`.
+4. On the phone, ask Siri "Play *something* in Kinora". The first time, iOS may ask whether Kinora may use Siri.
 
 Unsigned simulator builds (CI) compile either way, because the entitlement is only applied when signing. Siri media requests only work on a real device. Without the capability on the App ID, signed builds with the flag fail to sign, so leave it off for brands that don't have it. tvOS builds never get it.
 
@@ -293,9 +293,9 @@ Unsigned simulator builds (CI) compile either way, because the entitlement is on
 
 ### Limitations
 
-* **Android Auto cold start:** the browse tree and the player live in the React Native app. If Android Auto starts the process without the app (for example after a reboot), the car shows "Open MediaMax on your phone to start listening" until the app has been opened once. After that it works in the background, also with the screen off. Removing this limit would mean starting a headless React Native surface from the service, or moving the queue into native code.
+* **Android Auto cold start:** the browse tree and the player live in the React Native app. If Android Auto starts the process without the app (for example after a reboot), the car shows "Open Kinora on your phone to start listening" until the app has been opened once. After that it works in the background, also with the screen off. Removing this limit would mean starting a headless React Native surface from the service, or moving the queue into native code.
 * There is no queue editing from the car, and Android Auto does not show its queue. Live TV and radio are not included.
-* Siri "Play … in MediaMax" is behind the `siri` flag (see [Siri](#siri-play--in-mediamax)) and has not been tried on a device. Siri may ask the user to authorize MediaMax the first time; the app does not call `INPreferences.requestSiriAuthorization` itself.
+* Siri "Play … in Kinora" is behind the `siri` flag (see [Siri](#siri-play--in-mediamax)) and has not been tried on a device. Siri may ask the user to authorize Kinora the first time; the app does not call `INPreferences.requestSiriAuthorization` itself.
 * Long-music ±15/30 s on iOS: not on the lock screen or AirPods (by design, see above). Siri "skip ahead 30 seconds" during long music relies on iOS mapping it to `changePlaybackPositionCommand`.
 * Android Auto's placement of custom actions (how many show next to previous/next before going to the overflow) is decided by the car host and varies between versions.
 * Downloads are not used offline in the car browse tree. It needs the server, although a downloaded item that is already queued still plays offline.
@@ -341,7 +341,7 @@ apps/mobile
 ├── tests/                    `npm test`: Node unit tests for pure JS logic (src/car/policy.ts)
 ├── scripts/brand.mjs         produce a white-label brand folder from a server
 ├── scripts/tv-deps.mjs       react-native <-> react-native-tvos alias switch
-├── app.config.ts             dynamic config (EXPO_TV, MEDIAMAX_BRAND)
+├── app.config.ts             dynamic config (EXPO_TV, KINORA_BRAND)
 └── eas.json                  ios / android / tvos / androidtv profiles
 ```
 
@@ -378,21 +378,21 @@ npm run brand -- https://media.acme.com acme --bundle-id com.acme.media [--lock]
 #    If resizing fails (e.g. the server serves WebP/SVG), the script lists the files to add by hand.
 
 # 3. Build with the brand selected
-MEDIAMAX_BRAND=acme eas build --profile ios
-MEDIAMAX_BRAND=acme eas build --profile androidtv
+KINORA_BRAND=acme eas build --profile ios
+KINORA_BRAND=acme eas build --profile androidtv
 ```
 
-`app.config.ts` reads `branding/<brand>/brand.json` and the brand's images, and falls back to the stock MediaMax assets for anything missing. On EAS, set `MEDIAMAX_BRAND` in the profile's `env` (or as an EAS environment variable) and commit the brand folder, or upload it with your CI.
+`app.config.ts` reads `branding/<brand>/brand.json` and the brand's images, and falls back to the stock Kinora assets for anything missing. On EAS, set `KINORA_BRAND` in the profile's `env` (or as an EAS environment variable) and commit the brand folder, or upload it with your CI.
 
 * `--lock` bakes in the server URL and hides "switch server". The connect screen is skipped and the app always talks to that server.
 * Without `--lock`, the URL only pre-fills the first server.
-* You can also set `MEDIAMAX_SERVER_URL` / `MEDIAMAX_LOCK_SERVER=1` directly.
+* You can also set `KINORA_SERVER_URL` / `KINORA_LOCK_SERVER=1` directly.
 
 The icon must be a 1024×1024 PNG (iOS rejects transparency); prebuild resizes it for every density. If the server serves SVG or WebP, convert it first.
 
-### Stock MediaMax artwork
+### Stock Kinora artwork
 
-Without `MEDIAMAX_BRAND` the build uses the MediaMax brand ([`branding/mediamax/`](../../branding/mediamax/README.md)), rendered into `assets/` by `node scripts/brand-export.mjs` (repo root):
+Without `KINORA_BRAND` the build uses the Kinora brand ([`branding/kinora/`](../../branding/kinora/README.md)), rendered into `assets/` by `node scripts/brand-export.mjs` (repo root):
 
 | File | Used for |
 |---|---|
@@ -400,10 +400,10 @@ Without `MEDIAMAX_BRAND` the build uses the MediaMax brand ([`branding/mediamax/
 | `assets/android-icon-foreground.png`, `-background.png`, `-monochrome.png` | Android adaptive icon (mark inside the 66 dp safe circle) and Android 13 themed icon |
 | `assets/splash-icon.png` | native splash (square, mark inside the Android 12 splash circle); light background `#F5F7FF`, dark `#0A0F22` |
 | `assets/notification-icon.png` | white silhouette for an Android notification small icon |
-| `assets/brand/` | wordmark / mark shown on login, connect, the in-app splash and the TV top bar when the server is still called "MediaMax" |
+| `assets/brand/` | wordmark / mark shown on login, connect, the in-app splash and the TV top bar when the server is still called "Kinora" |
 | `assets/tv/` | Android TV banner and icon, Apple TV layered icons (front mark + back), top shelf and wide top shelf |
 
-A white-label build never falls back to the MediaMax TV artwork in `assets/tv/` or the MediaMax mark on the connect screen: a brand gets its own files from `branding/<brand>/` or the platform defaults. In the apps, the stock wordmark only appears while the server's name is "MediaMax"; a renamed server shows its name (or its uploaded logo).
+A white-label build never falls back to the Kinora TV artwork in `assets/tv/` or the Kinora mark on the connect screen: a brand gets its own files from `branding/<brand>/` or the platform defaults. In the apps, the stock wordmark only appears while the server's name is "Kinora"; a renamed server shows its name (or its uploaded logo).
 
 ## Assumptions and notes
 
@@ -412,5 +412,5 @@ A white-label build never falls back to the MediaMax TV artwork in `assets/tv/` 
 * **Subtitles:** server sidecar subtitles (`SubtitleTrack.url`, WebVTT) are rendered by the app, so they work on every platform. The app always requests `subtitleStreamIndex: null`, so nothing is burned in. In-manifest HLS subtitle tracks are offered too.
 * **Fonts:** native apps can only load `Theme.fontUrl` when it points at a real `.ttf` or `.otf` file. Google-Fonts CSS URLs fall back to the system font.
 * **PIN length:** the PIN pad auto-submits at the profile's `pinLength` (4 if the server doesn't say).
-* **Downloads** fetch the original file unless a converted quality is chosen; on iOS, containers it can't play (for example MKV) are fetched as 1080p. The app does not read `X-MediaMax-Duration-Ms` (expo-file-system's download task doesn't expose response headers); it uses the item's `durationMs`.
+* **Downloads** fetch the original file unless a converted quality is chosen; on iOS, containers it can't play (for example MKV) are fetched as 1080p. The app does not read `X-Kinora-Duration-Ms` (expo-file-system's download task doesn't expose response headers); it uses the item's `durationMs`.
 * **Artist play-all** loads every track with one `GET /items?ancestorId=<artist>&type=track&sort=index&limit=500` call.

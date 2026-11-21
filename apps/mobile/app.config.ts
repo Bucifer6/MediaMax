@@ -1,6 +1,6 @@
 /// <reference types="node" />
 /**
- * Dynamic Expo config for the MediaMax white-label apps.
+ * Dynamic Expo config for the Kinora white-label apps.
  *
  * Everything visual inside the app (name shown on screens, logos, colours, fonts,
  * layout, home rows, feature toggles) is fetched from the server at runtime.
@@ -12,8 +12,11 @@
  *   branding/<brand>/icon.png     (1024x1024)
  *   branding/<brand>/splash.png
  *
- * Select a brand with MEDIAMAX_BRAND=<brand>. TV builds are selected with
+ * Select a brand with KINORA_BRAND=<brand> (or the original MEDIAMAX_BRAND). TV builds are selected with
  * EXPO_TV=1 (read by @react-native-tvos/config-tv).
+ *
+ * The stock app's name, URL scheme and store identifiers live in branding/defaults.json (the single source of
+ * truth); a brand's brand.json overrides them field by field.
  */
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 import fs from 'node:fs';
@@ -33,26 +36,39 @@ interface BrandFile {
   version?: string;
   easProjectId?: string;
   /**
-   * iOS: Siri "Play … in MediaMax" (INPlayMediaIntent + com.apple.developer.siri entitlement).
-   * Needs the Siri capability on the App ID; also enabled by MEDIAMAX_SIRI=1. See README › Siri.
+   * iOS: Siri "Play … in Kinora" (INPlayMediaIntent + com.apple.developer.siri entitlement).
+   * Needs the Siri capability on the App ID; also enabled by KINORA_SIRI=1 (or MEDIAMAX_SIRI=1). See README › Siri.
    */
   siri?: boolean;
 }
 
+interface Defaults {
+  appName: string;
+  slug: string;
+  scheme: string;
+  legacySchemes: string[];
+  bundleId: string;
+  androidPackage: string;
+}
+const DEFAULTS = JSON.parse(fs.readFileSync(path.join(__dirname, 'branding', 'defaults.json'), 'utf8')) as Defaults;
+
+/** KINORA_<name> wins over the original MEDIAMAX_<name>. */
+const env = (name: string): string | undefined => process.env[`KINORA_${name}`] ?? process.env[`MEDIAMAX_${name}`];
+
 const isTV = process.env.EXPO_TV === '1' || process.env.EXPO_TV === 'true';
-const brandName = process.env.MEDIAMAX_BRAND;
+const brandName = env('BRAND');
 const brandDir = brandName ? path.join(__dirname, 'branding', brandName) : null;
 
 function readBrand(): BrandFile {
   if (!brandDir) return {};
   const file = path.join(brandDir, 'brand.json');
   if (!fs.existsSync(file)) {
-    throw new Error(`MEDIAMAX_BRAND=${brandName} but ${file} does not exist. Run: npm run brand -- <serverUrl> ${brandName}`);
+    throw new Error(`KINORA_BRAND=${brandName} but ${file} does not exist. Run: npm run brand -- <serverUrl> ${brandName}`);
   }
   return JSON.parse(fs.readFileSync(file, 'utf8')) as BrandFile;
 }
 
-/** Use the brand's asset if present, else the stock MediaMax asset. */
+/** Use the brand's asset if present, else the stock Kinora asset. */
 function asset(name: string, fallback: string): string {
   if (brandDir) {
     const p = path.join(brandDir, name);
@@ -62,8 +78,8 @@ function asset(name: string, fallback: string): string {
 }
 
 /**
- * TV artwork: the brand folder's file, else (stock MediaMax builds only) the MediaMax artwork in
- * assets/tv, rendered by scripts/brand-export.mjs. A white-label build never falls back to MediaMax
+ * TV artwork: the brand folder's file, else (stock Kinora builds only) the Kinora artwork in
+ * assets/tv, rendered by scripts/brand-export.mjs. A white-label build never falls back to Kinora
  * TV artwork; without its own it gets the platform defaults derived from its icon.
  */
 function optionalAsset(name: string): string | undefined {
@@ -82,12 +98,15 @@ function appleTVLayers(size: string): { front: string; back: string } | undefine
 
 export default ({ config }: ConfigContext): ExpoConfig => {
   const brand = readBrand();
-  const appName = brand.appName ?? 'MediaMax';
-  const bundleId = brand.bundleId ?? 'tv.mediamax.app';
-  const androidPackage = brand.androidPackage ?? bundleId;
-  // Stock MediaMax: dark ground #0A0F22 (light-mode splash #F5F7FF). A brand's splash colour is used for both.
-  const splashBg = brand.splashBackgroundColor ?? '#0A0F22';
-  const splashBgLight = brand.splashBackgroundColor ?? '#F5F7FF';
+  const appName = brand.appName ?? DEFAULTS.appName;
+  const bundleId = brand.bundleId ?? DEFAULTS.bundleId;
+  const androidPackage = brand.androidPackage ?? (brand.bundleId ? bundleId : DEFAULTS.androidPackage);
+  // Every build registers the stock schemes: kinora:// (primary: OIDC redirects, pairing links) and the legacy
+  // mediamax://, so links made by older servers or web clients still open the app. A brand's own scheme comes first.
+  const schemes = [...new Set([brand.scheme, DEFAULTS.scheme, ...DEFAULTS.legacySchemes].filter((x): x is string => !!x))];
+  // Stock Kinora: dark ground #0D0C1D (light-mode splash #F7F6FF). A brand's splash colour is used for both.
+  const splashBg = brand.splashBackgroundColor ?? '#0D0C1D';
+  const splashBgLight = brand.splashBackgroundColor ?? '#F7F6FF';
   const icon = asset('icon.png', './assets/icon.png');
   const splash = asset('splash.png', './assets/splash-icon.png');
 
@@ -112,9 +131,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   return {
     ...config,
     name: appName,
-    slug: brand.slug ?? 'mediamax',
-    // `mediamax://` must always be registered: the SSO (OIDC) sign-in redirects back to mediamax://oidc.
-    scheme: brand.scheme && brand.scheme !== 'mediamax' ? [brand.scheme, 'mediamax'] : 'mediamax',
+    slug: brand.slug ?? DEFAULTS.slug,
+    scheme: schemes,
     version: brand.version ?? '0.1.0',
     orientation: isTV ? 'landscape' : 'default',
     icon,
@@ -174,9 +192,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // CarPlay (audio entitlement + CarPlay scene) and Android Auto (Media3 MediaLibraryService), backed
       // by the local module in modules/mediamax-car. On TV builds the plugin only removes the module
       // from Android autolinking; the iOS pod is iOS-only, so tvOS skips it. See README › CarPlay & Android Auto.
-      // Siri media intents are opt-in (`siri` in brand.json or MEDIAMAX_SIRI=1): the entitlement needs
+      // Siri media intents are opt-in (`siri` in brand.json or KINORA_SIRI=1): the entitlement needs
       // the Siri capability on the App ID. Simulator CI builds are unsigned, so either way compiles.
-      ['./plugins/withMediaMaxCar', { isTV, siri: !isTV && (brand.siri === true || process.env.MEDIAMAX_SIRI === '1') }],
+      ['./plugins/withMediaMaxCar', { isTV, siri: !isTV && (brand.siri === true || env('SIRI') === '1') }],
       [
         '@react-native-tvos/config-tv',
         {
@@ -192,9 +210,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     extra: {
       isTVBuild: isTV,
       brand: brandName ?? null,
-      defaultServerUrl: brand.serverUrl ?? process.env.MEDIAMAX_SERVER_URL ?? null,
-      lockServer: brand.lockServer ?? process.env.MEDIAMAX_LOCK_SERVER === '1',
-      fallbackPrimaryColor: brand.primaryColor ?? '#1FB6F5',
+      defaultServerUrl: brand.serverUrl ?? env('SERVER_URL') ?? null,
+      lockServer: brand.lockServer ?? env('LOCK_SERVER') === '1',
+      fallbackPrimaryColor: brand.primaryColor ?? '#9198FF',
       ...(brand.easProjectId ? { eas: { projectId: brand.easProjectId } } : {}),
     },
   };

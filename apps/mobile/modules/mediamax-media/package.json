@@ -2,7 +2,7 @@
   "name": "mediamax-media",
   "version": "1.0.0",
   "private": true,
-  "description": "Playback capability detection (HDR10/HDR10+/HLG/Dolby Vision, 10-bit codecs, audio passthrough), TV remote keys and Apple TV display matching for the MediaMax app",
+  "description": "Playback capability detection (HDR10/HDR10+/HLG/Dolby Vision, 10-bit codecs, audio passthrough), TV remote keys and Apple TV display matching for the Kinora app",
   "main": "index.ts",
   "types": "index.ts",
   "license": "MIT"

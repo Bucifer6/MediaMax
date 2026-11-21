@@ -1,5 +1,5 @@
 /**
- * Typed MediaMax REST client. One instance per (server, token) pair.
+ * Typed Kinora REST client. One instance per (server, token) pair.
  * All shapes come from ./types (synced verbatim from shared/src/types.ts).
  */
 import type {
@@ -134,7 +134,7 @@ export async function probeServer(input: string): Promise<{ baseUrl: string; inf
       const res = await fetchWithTimeout(`${base}${API_PREFIX}/system/info`, { headers: { Accept: 'application/json' } }, 7000);
       if (!res.ok) throw new ApiError(res.status, 'http', `Server answered ${res.status}`);
       const info = (await res.json()) as SystemInfo;
-      if (!info || typeof info.id !== 'string' || !info.features) throw new ApiError(0, 'not_mediamax', 'That address is not a MediaMax server');
+      if (!info || typeof info.id !== 'string' || !info.features) throw new ApiError(0, 'not_mediamax', 'That address is not a Kinora server');
       return { baseUrl: base, info };
     } catch (e) {
       lastErr = e;
@@ -181,10 +181,10 @@ export class MediaMaxClient {
   headers(json = true): Record<string, string> {
     const h: Record<string, string> = {
       Accept: 'application/json',
-      'X-MediaMax-Device-Id': this.device.deviceId,
-      'X-MediaMax-Device-Name': this.device.deviceName,
-      'X-MediaMax-Platform': this.device.platform,
-      'X-MediaMax-Version': this.device.appVersion ?? '0',
+      'X-Kinora-Device-Id': this.device.deviceId,
+      'X-Kinora-Device-Name': this.device.deviceName,
+      'X-Kinora-Platform': this.device.platform,
+      'X-Kinora-Version': this.device.appVersion ?? '0',
     };
     if (json) h['Content-Type'] = 'application/json';
     if (this.token) h.Authorization = `Bearer ${this.token}`;

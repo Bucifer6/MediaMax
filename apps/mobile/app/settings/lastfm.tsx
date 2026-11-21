@@ -140,7 +140,7 @@ export default function LastfmScreen() {
           {t.isTV ? (
             <>
               <T tone="muted" center>
-                On your phone or computer, open this address and approve MediaMax:
+                On your phone or computer, open this address and approve Kinora:
               </T>
               <T variant="heading" tone="primary" center selectable style={{ maxWidth: t.s(900) }}>
                 {authUrl}
@@ -148,7 +148,7 @@ export default function LastfmScreen() {
             </>
           ) : (
             <T tone="muted" center>
-              Approve MediaMax on Last.fm in the browser, then come back here.
+              Approve Kinora on Last.fm in the browser, then come back here.
             </T>
           )}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.sm }}>

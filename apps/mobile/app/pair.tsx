@@ -11,7 +11,7 @@ import { useApi, useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 
 /**
- * Phone side of QR pairing. Opened by the deep link `mediamax://pair?c=CODE&t=SECRET&s=SERVER` (the "Open in the app"
+ * Phone side of QR pairing. Opened by the deep link `kinora://pair?c=CODE&t=SECRET&s=SERVER` (or the legacy `mediamax://pair?…`) (the "Open in the app"
  * button on the web pairing page) or from Link a TV → "Use this phone as a remote", where the code is typed.
  * Pairing waits for one tap; a TV signed in with another account must accept on screen.
  */

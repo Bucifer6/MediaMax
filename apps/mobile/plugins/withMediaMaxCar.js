@@ -10,9 +10,9 @@
  *     React Native window after a CarPlay-first launch)
  *   - AppDelegate.swift: `application(_:handlerFor:)` handing Siri's INPlayMediaIntent to the module
  *     (always added, so CI compiles it; inert until the Info.plist lists the intent)
- *   - `siri: true` only (MEDIAMAX_SIRI=1): INIntentsSupported / INSupportedMediaCategories /
+ *   - `siri: true` only (KINORA_SIRI=1): INIntentsSupported / INSupportedMediaCategories /
  *     NSSiriUsageDescription and the com.apple.developer.siri entitlement, which turn on
- *     "Play … in MediaMax". Off by default: the entitlement needs the Siri capability on the App ID
+ *     "Play … in Kinora". Off by default: the entitlement needs the Siri capability on the App ID
  *     (a paid Apple developer account), see README › Siri.
  *
  * Android (phones only):
@@ -104,7 +104,7 @@ const withCarPlay = (config) => {
 
 const SIRI_TAG = 'mediamax-siri';
 const SIRI_METHOD = [
-  `  // @generated begin ${SIRI_TAG}: Siri "Play … in MediaMax" (modules/mediamax-car/ios/SiriIntents.swift)`,
+  `  // @generated begin ${SIRI_TAG}: Siri "Play … in Kinora" (modules/mediamax-car/ios/SiriIntents.swift)`,
   '  @objc(application:handlerForIntent:)',
   '  public func application(_ application: UIApplication, handlerFor intent: INIntent) -> Any? {',
   '    MediaMaxSiri.handler(for: intent)',
@@ -136,12 +136,12 @@ function addSiriHandler(src) {
 const withSiri = (config, { enabled }) => {
   config = withAppDelegate(config, (cfg) => {
     if (cfg.modResults.language !== 'swift') {
-      WarningAggregator.addWarningIOS('withMediaMaxCar', 'AppDelegate is not Swift; Siri "Play … in MediaMax" is not wired up.');
+      WarningAggregator.addWarningIOS('withMediaMaxCar', 'AppDelegate is not Swift; Siri "Play … in Kinora" is not wired up.');
       return cfg;
     }
     const next = addSiriHandler(cfg.modResults.contents);
     if (next === cfg.modResults.contents && !next.includes(`@generated begin ${SIRI_TAG}`)) {
-      WarningAggregator.addWarningIOS('withMediaMaxCar', 'Could not find `class AppDelegate` in AppDelegate.swift; Siri "Play … in MediaMax" is not wired up.');
+      WarningAggregator.addWarningIOS('withMediaMaxCar', 'Could not find `class AppDelegate` in AppDelegate.swift; Siri "Play … in Kinora" is not wired up.');
     }
     cfg.modResults.contents = next;
     return cfg;
@@ -152,7 +152,7 @@ const withSiri = (config, { enabled }) => {
     return cfg;
   });
   config = withInfoPlist(config, (cfg) => {
-    cfg.modResults = applySiriInfoPlist(cfg.modResults, cfg.name ?? 'MediaMax');
+    cfg.modResults = applySiriInfoPlist(cfg.modResults, cfg.name ?? 'Kinora');
     return cfg;
   });
   return config;
@@ -187,7 +187,7 @@ function upsertByName(list, name, entry) {
 const withAndroidAuto = (config) => {
   config = withAndroidManifest(config, (cfg) => {
     const app = AndroidConfig.Manifest.getMainApplicationOrThrow(cfg.modResults);
-    const pkg = cfg.android?.package ?? cfg.modResults.manifest.$.package ?? 'tv.mediamax.app';
+    const pkg = cfg.android?.package ?? cfg.modResults.manifest.$.package ?? 'uk.burdujeni82.kinora';
 
     app.service = upsertByName(app.service, SERVICE_CLASS, {
       $: {

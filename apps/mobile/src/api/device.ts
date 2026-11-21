@@ -1,4 +1,4 @@
-/** Persistent device identity sent with every request (X-MediaMax-* headers). */
+/** Persistent device identity sent with every request (X-Kinora-* headers). */
 import * as Application from 'expo-application';
 import * as Crypto from 'expo-crypto';
 import * as Device from 'expo-device';
