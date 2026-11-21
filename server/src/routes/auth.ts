@@ -53,9 +53,9 @@ export default async function authRoutes(app: FastifyInstance) {
     }
   });
 
-  app.get('/auth/profiles', async (_req, reply) => {
+  app.get('/auth/profiles', async (req, reply) => {
     noCache(reply);
-    return auth.publicProfiles();
+    return auth.publicProfiles(remoteAddr(req));
   });
 
   app.post<{ Body: PinLoginRequest }>('/auth/profile-login', async (req) => {

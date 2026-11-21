@@ -8,7 +8,8 @@ import { getKv, setKv, getSettings } from './settings.js';
 import { events } from './events.js';
 import { logger } from '../util/log.js';
 import { notFound } from '../util/errors.js';
-import { scanLibrary } from './scanner.js';
+import { checkThemeSchedule } from './branding.js';
+import { recalculateDateAdded, scanLibrary } from './scanner.js';
 import { refreshDueSources, refreshSource, pruneOldPrograms } from './livetv/livetv.js';
 import { pruneActivity } from './activity.js';
 import { pruneImageCache, registerImage } from './images.js';
@@ -74,6 +75,15 @@ const DEFS: TaskDef[] = [
         await scanLibrary(libs[i].id);
         progress(Math.round(((i + 1) / libs.length) * 100));
       }
+    },
+  },
+  {
+    id: 'recalculate-date-added', name: 'Recalculate date added',
+    description: 'Re-apply each library\'s "Date added" rule (file creation or modification time) to the items it already has, without a full rescan.',
+    interval: () => null,
+    run: async () => {
+      const n = recalculateDateAdded();
+      log.info(`Recalculate date added changed ${n} item(s)`);
     },
   },
   {
@@ -327,6 +337,9 @@ export function startScheduler() {
   // Fast housekeeping loops.
   timers.push(setInterval(() => void dvrTick().catch((e) => log.error('DVR tick failed', e)), 15000));
   timers.push(setInterval(() => reapSessions(), 30000));
+  // Seasonal themes: tell clients when one starts or ends.
+  checkThemeSchedule();
+  timers.push(setInterval(() => checkThemeSchedule(), 5 * 60000));
   if (process.env.MEDIAMAX_NO_WATCH !== '1') {
     syncWatchers();
     timers.push(setInterval(() => syncWatchers(), 60000));

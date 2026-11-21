@@ -49,11 +49,7 @@ export function dlnaUser(): User | null {
 }
 
 /** DLNA streams are unauthenticated, so only serve the local network. */
-export function isLocalAddress(ip: string | null | undefined): boolean {
-  if (!ip) return false;
-  const v4 = ip.replace(/^::ffff:/, '');
-  return v4 === '127.0.0.1' || ip === '::1' || /^10\./.test(v4) || /^192\.168\./.test(v4) || /^172\.(1[6-9]|2\d|3[01])\./.test(v4) || /^169\.254\./.test(v4) || /^f[cd]/i.test(ip) || /^fe80/i.test(ip);
-}
+export { isLocalAddress } from '../util/net.js';
 
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 

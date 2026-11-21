@@ -192,6 +192,8 @@ export function ServerSettingsAdmin() {
               <Field label="EPG refresh (hours)"><input className="input" type="number" min={1} value={s.epgRefreshHours} onChange={(e) => set({ epgRefreshHours: Number(e.target.value) })} /></Field>
               <Field label="Session timeout (days)"><input className="input" type="number" min={1} value={s.sessionTimeoutDays} onChange={(e) => set({ sessionTimeoutDays: Number(e.target.value) })} /></Field>
             </div>
+            <Switch checked={s.signInScreen?.showUsers ?? true} onChange={(v) => set({ signInScreen: { showUsers: v, homeNetworkOnly: s.signInScreen?.homeNetworkOnly ?? true } })} label="List users on the sign-in screen" hint="Only users with “Show on sign-in screen” (Users → Edit) are ever listed; everyone else signs in with their username." />
+            <Switch checked={s.signInScreen?.homeNetworkOnly ?? true} disabled={!(s.signInScreen?.showUsers ?? true)} onChange={(v) => set({ signInScreen: { showUsers: s.signInScreen?.showUsers ?? true, homeNetworkOnly: v } })} label="Only on the home network" hint="Devices outside your local network never see user names before signing in." />
             <Switch checked={s.allowPasswordlessProfiles} onChange={(v) => set({ allowPasswordlessProfiles: v })} label="Allow passwordless profiles" hint="Profiles without a password can be entered from the profile picker (optionally with a PIN)." />
             <Switch checked={!!s.blockUnratedForRestricted} onChange={(v) => set({ blockUnratedForRestricted: v })} label="Hide unrated titles from users with a rating limit" hint="Parental controls: titles with no content rating are hidden from anyone who has a maximum content rating set." />
           </div>

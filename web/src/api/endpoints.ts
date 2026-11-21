@@ -91,6 +91,7 @@ export const api = {
     remove: (id: string) => http.del<Ok>(`/libraries/${enc(id)}`),
     scan: (id: string, refreshMetadata = false) => http.post<Ok>(`/libraries/${enc(id)}/scan`, { refreshMetadata }),
     scanAll: () => http.post<Ok>('/libraries/scan'),
+    recalculateDateAdded: (id: string) => http.post<Ok & { changed: number }>(`/libraries/${enc(id)}/recalculate-date-added`),
   },
 
   items: {

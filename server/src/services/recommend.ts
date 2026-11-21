@@ -455,6 +455,18 @@ export function popularIds(user: User, kind: 'top10' | 'trending'): string[] {
   return ids.filter((id) => vis.has(id) && !hidden.has(id));
 }
 
+/**
+ * Top 10: the admin's pinned titles first (in their order, skipping any the viewer can't see — library access and
+ * rating limits apply as everywhere, via itemsByIds), then the chart without duplicates.
+ */
+export function top10Items(user: User, pinnedIds: string[] | undefined, limit = 10): { item: Item; pinned: boolean }[] {
+  const pins = [...new Set((Array.isArray(pinnedIds) ? pinnedIds : []).filter((id) => typeof id === 'string'))].slice(0, 50);
+  const pinned = itemsByIds(user, pins).filter((i) => i.type === 'movie' || i.type === 'show').slice(0, limit);
+  const taken = new Set(pinned.map((i) => i.id));
+  const rest = itemsByIds(user, popularIds(user, 'top10').filter((id) => !taken.has(id)).slice(0, limit - pinned.length));
+  return [...pinned.map((item) => ({ item, pinned: true })), ...rest.map((item) => ({ item, pinned: false }))];
+}
+
 /* ------------------------------ home rows ---------------------------- */
 
 const fill = (title: string, vars: Record<string, string>) => title.replace(/\{(\w+)\}/g, (m, k: string) => vars[k] ?? m);
@@ -475,8 +487,8 @@ export function discoveryRow(user: User, cfg: HomeRowConfig): HomeRow | null {
       return items.length >= 3 ? { id: cfg.id, type: cfg.type, title: fill(title, { title: seed.title, server }), items, seedItemId: seed.id, link: { itemId: seed.id } } : null;
     }
     case 'top10': {
-      const items = itemsByIds(user, popularIds(user, 'top10').slice(0, Math.min(10, limit)));
-      return items.length >= 3 ? { id: cfg.id, type: cfg.type, title: fill(title, { server }), items } : null;
+      const items = top10Items(user, cfg.pinnedItemIds, Math.min(10, limit));
+      return items.length >= 3 || items.some((i) => i.pinned) ? { id: cfg.id, type: cfg.type, title: fill(title, { server }), items: items.map((i) => i.item) } : null;
     }
     case 'trending': {
       const items = itemsByIds(user, popularIds(user, 'trending').slice(0, limit));
