@@ -17,6 +17,10 @@ import { parseJson } from '../../util/misc.js';
 import { normLang } from '../probe.js';
 import { ext, parseSubtitleName, stripExt, SUB_EXT } from '../parser.js';
 import { logger } from '../../util/log.js';
+import { isValidUtf8Name } from '../../util/fsnames.js';
+
+/** Entry names usable as paths: names that aren't valid UTF-8 (legacy character sets) are left out, as in the scanner. */
+const usableNames = (dir: string) => fs.readdirSync(dir, { encoding: 'buffer' }).filter(isValidUtf8Name).map((b) => b.toString('utf8'));
 
 const log = logger('subtitles');
 
@@ -74,12 +78,12 @@ export function sidecarSubs(videoPath: string, mediaId?: string): SubtitleStream
   const base = stripExt(path.basename(videoPath));
   let files: string[] = [];
   try {
-    files = fs.readdirSync(dir);
+    files = usableNames(dir);
   } catch {
     return [];
   }
   const subsDirs = ['subs', 'subtitles', 'Subs', 'Subtitles'].map((d) => path.join(dir, d)).filter(safeIsDir);
-  const candidates = [...files.map((f) => path.join(dir, f)), ...subsDirs.flatMap((d) => fs.readdirSync(d).map((f) => path.join(d, f)))];
+  const candidates = [...files.map((f) => path.join(dir, f)), ...subsDirs.flatMap((d) => usableNames(d).map((f) => path.join(d, f)))];
   const rec = mediaId ? recorded(mediaId) : new Map<string, { provider: string }>();
   const out: StoredSub[] = [];
   let n = 0;
