@@ -5,6 +5,7 @@ import type { Item, UserItemData } from '@/api/types';
 import { useQuery } from '@/api/useQuery';
 import { Button } from '@/components/Button';
 import { ItemRow } from '@/components/Row';
+import { RecapCard } from '@/components/RecapCard';
 import { useTheme } from '@/theme';
 import { progressFraction } from '@/utils/format';
 import { playItem } from '@/utils/nav';
@@ -63,6 +64,7 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
             <ResumeInfo item={item} />
             {versionPicker}
             {actions}
+            {item.type === 'episode' ? <RecapCard itemId={item.id} /> : null}
           </View>
           {below}
         </ScrollView>
@@ -78,6 +80,7 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
         <ResumeInfo item={item} />
         {versionPicker}
         {actions}
+        {item.type === 'episode' ? <RecapCard itemId={item.id} /> : null}
         <Overview text={item.overview} />
       </View>
       {below}

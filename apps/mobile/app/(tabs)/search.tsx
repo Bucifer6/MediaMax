@@ -15,6 +15,8 @@ import { useMusic } from '@/state/music';
 import { useApi, useCapabilities } from '@/state/session';
 import { useTheme } from '@/theme';
 import { formatDay, formatTime } from '@/utils/format';
+import { aiFeatures } from '@/api/ai';
+import { AskResults } from '@/components/AskResults';
 
 const RECENT_KEY = 'mediamax.recentSearches';
 
@@ -40,6 +42,18 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(false);
   const [recent, setRecent] = useState<string[]>([]);
   const [program, setProgram] = useState<{ p: Program; c: Channel | null } | null>(null);
+  // "Ask": natural-language search (the server understands English and Romanian; an AI model makes it smarter).
+  const [askOn, setAskOn] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [askQ, setAskQ] = useState('');
+  useEffect(() => {
+    aiFeatures(api).then((f) => setAskOn(f.ask)).catch(() => setAskOn(false));
+  }, [api]);
+  useEffect(() => {
+    if (!asking) return;
+    const timer = setTimeout(() => setAskQ(q.trim()), 800);
+    return () => clearTimeout(timer);
+  }, [q, asking]);
 
   useEffect(() => {
     getJSON<string[]>(RECENT_KEY, []).then(setRecent);
@@ -47,7 +61,7 @@ export default function SearchScreen() {
 
   useEffect(() => {
     const term = q.trim();
-    if (term.length < 2) {
+    if (term.length < 2 || asking) {
       setResults(null);
       return;
     }
@@ -70,7 +84,7 @@ export default function SearchScreen() {
       ctrl.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, api]);
+  }, [q, api, asking]);
 
   const groups = useMemo(() => {
     if (!results) return [];
@@ -88,8 +102,29 @@ export default function SearchScreen() {
     <Screen padTop={!t.isTV}>
       <View style={{ paddingHorizontal: t.space.gutter, paddingVertical: t.space.sm, gap: t.space.sm }}>
         {!t.isTV ? <T variant="title">Search</T> : null}
-        <Input value={q} onChangeText={setQ} placeholder="Movies, shows, music, channels…" icon="search" autoCorrect={false} autoCapitalize="none" returnKeyType="search" onSubmitEditing={() => Keyboard.dismiss()} clearButtonMode="while-editing" hasTVPreferredFocus />
+        <Input value={q} onChangeText={setQ} placeholder={asking ? 'Ask: “a funny film under 90 minutes”…' : 'Movies, shows, music, channels…'} icon={asking ? 'sparkles-outline' : 'search'} autoCorrect={asking} autoCapitalize={asking ? 'sentences' : 'none'} returnKeyType="search" onSubmitEditing={() => {
+          Keyboard.dismiss();
+          if (asking) setAskQ(q.trim());
+        }} clearButtonMode="while-editing" hasTVPreferredFocus />
+        {askOn ? (
+          <View style={{ flexDirection: 'row', gap: t.space.sm }}>
+            <Chip label="Search" icon="search" selected={!asking} onPress={() => setAsking(false)} />
+            <Chip label="Ask" icon="sparkles-outline" selected={asking} onPress={() => {
+              setAsking(true);
+              setAskQ(q.trim());
+            }} />
+          </View>
+        ) : null}
       </View>
+      {asking ? (
+        <ScrollView contentContainerStyle={{ paddingBottom: bottom, paddingTop: t.space.sm }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+          <AskResults q={askQ} onPick={(e) => {
+            setQ(e);
+            setAskQ(e);
+          }} />
+        </ScrollView>
+      ) : (
+      <>
       <ScrollView contentContainerStyle={{ paddingBottom: bottom, paddingTop: t.space.sm }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         {loading && !results ? <ActivityIndicator color={t.colors.primary} style={{ marginTop: t.space.xl }} /> : null}
         {!q && recent.length ? (
@@ -145,6 +180,8 @@ export default function SearchScreen() {
           </View>
         ) : null}
       </ScrollView>
+      </>
+      )}
       <ProgramSheet program={program?.p ?? null} channel={program?.c} onClose={() => setProgram(null)} />
     </Screen>
   );
