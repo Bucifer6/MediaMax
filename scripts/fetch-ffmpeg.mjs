@@ -124,7 +124,7 @@ async function main() {
     const nl = platform === 'win64' ? '\r\n' : '\n';
     fs.writeFileSync(path.join(out, 'FFMPEG-SOURCE.txt'), [
       'The ffmpeg and ffprobe programs in this folder are unmodified builds of FFmpeg (https://ffmpeg.org),',
-      'licensed under the GNU GPL version 3 (see FFMPEG-LICENSE.txt). MediaMax runs them as separate programs.',
+      'licensed under the GNU GPL version 3 (see FFMPEG-LICENSE.txt). Kinora runs them as separate programs.',
       '',
       `Build:     ${asset.name}`,
       `From:      ${asset.browser_download_url}`,

@@ -1,5 +1,5 @@
-# MediaMax on OpenMediaVault 7 with the openmediavault-compose plugin
-# (Services -> Compose -> Files -> Create, name "mediamax", paste this file, Save, then Up).
+# Kinora on OpenMediaVault 7 with the openmediavault-compose plugin
+# (Services -> Compose -> Files -> Create, name "kinora", paste this file, Save, then Up).
 # Guide: docs/INSTALL.md#openmediavault
 #
 # Before you start:
@@ -7,9 +7,9 @@
 #      Copy their absolute paths (they look like /srv/dev-disk-by-uuid-xxxx/media) into the volumes below.
 #   2. PUID/PGID: the OMV user that owns your media. `id <username>` in a shell; usually 1000 / 100 (users).
 services:
-  mediamax:
-    image: ghcr.io/bucifer6/mediamax:latest
-    container_name: mediamax
+  kinora:
+    image: ghcr.io/bucifer6/kinora:latest
+    container_name: kinora
     restart: unless-stopped
     ports:
       - "8484:8484"
@@ -18,8 +18,8 @@ services:
       - PGID=100
       - TZ=Europe/London
     volumes:
-      - /srv/dev-disk-by-uuid-CHANGE-ME/appdata/mediamax/config:/config
-      - /srv/dev-disk-by-uuid-CHANGE-ME/appdata/mediamax/recordings:/recordings
+      - /srv/dev-disk-by-uuid-CHANGE-ME/appdata/kinora/config:/config
+      - /srv/dev-disk-by-uuid-CHANGE-ME/appdata/kinora/recordings:/recordings
       - /srv/dev-disk-by-uuid-CHANGE-ME/media/movies:/media/movies:ro
       - /srv/dev-disk-by-uuid-CHANGE-ME/media/tv:/media/tv:ro
       - /srv/dev-disk-by-uuid-CHANGE-ME/media/music:/media/music:ro

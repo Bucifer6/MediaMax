@@ -57,7 +57,7 @@ jobs:
         run: ls -la android/app/build/outputs/apk/release/
       - uses: actions/upload-artifact@v4
         with:
-          name: mediamax-android-${{ matrix.tv && 'tv' || 'phone' }}-apk
+          name: kinora-android-${{ matrix.tv && 'tv' || 'phone' }}-apk
           path: apps/mobile/android/app/build/outputs/apk/release/*.apk
           retention-days: 14
 
@@ -104,9 +104,9 @@ jobs:
         run: |
           app=$(find build/Build/Products -maxdepth 2 -name '*.app' | head -1)
           echo "Built $app"
-          ditto -c -k --keepParent "$app" mediamax-simulator.zip
+          ditto -c -k --keepParent "$app" kinora-simulator.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: mediamax-${{ matrix.tv && 'tvos' || 'ios' }}-simulator-app
-          path: apps/mobile/mediamax-simulator.zip
+          name: kinora-${{ matrix.tv && 'tvos' || 'ios' }}-simulator-app
+          path: apps/mobile/kinora-simulator.zip
           retention-days: 14
