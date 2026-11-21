@@ -8,6 +8,12 @@ const log = logger('db');
 export type Row = Record<string, any>;
 export type Param = SQLInputValue | boolean | undefined;
 
+/**
+ * Perf mode (MEDIAMAX_PERF=1, used by scripts/perf): counts statements (exposed per request as X-MM-Queries)
+ * and logs statements slower than MEDIAMAX_PERF_SLOW_MS (default 20 ms). Off by default: zero overhead.
+ */
+export const dbPerf = { enabled: process.env.MEDIAMAX_PERF === '1', queries: 0, slowMs: Number(process.env.MEDIAMAX_PERF_SLOW_MS ?? 20) };
+
 class Database {
   readonly raw: DatabaseSync;
   private stmtCache = new Map<string, ReturnType<DatabaseSync['prepare']>>();
@@ -30,13 +36,25 @@ class Database {
     return params.map((p) => (p === undefined ? null : typeof p === 'boolean' ? (p ? 1 : 0) : p));
   }
 
+  private timed<R>(sql: string, fn: () => R): R {
+    dbPerf.queries++;
+    const t = performance.now();
+    const r = fn();
+    const ms = performance.now() - t;
+    if (ms >= dbPerf.slowMs) log.warn(`slow query ${ms.toFixed(1)}ms: ${sql.replace(/\s+/g, ' ').slice(0, 400)}`);
+    return r;
+  }
+
   all<T = Row>(sql: string, ...params: Param[]): T[] {
+    if (dbPerf.enabled) return this.timed(sql, () => this.stmt(sql).all(...this.norm(params)) as T[]);
     return this.stmt(sql).all(...this.norm(params)) as T[];
   }
   get<T = Row>(sql: string, ...params: Param[]): T | undefined {
+    if (dbPerf.enabled) return this.timed(sql, () => this.stmt(sql).get(...this.norm(params)) as T | undefined);
     return this.stmt(sql).get(...this.norm(params)) as T | undefined;
   }
   run(sql: string, ...params: Param[]) {
+    if (dbPerf.enabled) return this.timed(sql, () => this.stmt(sql).run(...this.norm(params)));
     return this.stmt(sql).run(...this.norm(params));
   }
   exec(sql: string) {

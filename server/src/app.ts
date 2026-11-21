@@ -9,6 +9,7 @@ import { config } from './config.js';
 import { HttpError } from './util/errors.js';
 import { logger } from './util/log.js';
 import { authHook } from './http.js';
+import { dbPerf } from './db.js';
 import systemRoutes from './routes/system.js';
 import brandingRoutes from './routes/branding.js';
 import authRoutes from './routes/auth.js';
@@ -85,6 +86,17 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
   app.decorateRequest('auth', null);
+  if (dbPerf.enabled) {
+    // scripts/perf: statements run per request (exact when requests don't overlap) and handler time.
+    app.addHook('onRequest', async (req) => {
+      (req as any).perfQ = dbPerf.queries;
+      (req as any).perfT = performance.now();
+    });
+    app.addHook('onSend', async (req, reply) => {
+      reply.header('X-MM-Queries', String(dbPerf.queries - ((req as any).perfQ ?? 0)));
+      reply.header('X-MM-Time', ((performance.now() - ((req as any).perfT ?? 0))).toFixed(2));
+    });
+  }
   app.addHook('onRequest', authHook);
   app.addHook('onSend', async (_req, reply) => {
     reply.header('X-Content-Type-Options', 'nosniff');
