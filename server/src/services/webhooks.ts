@@ -11,7 +11,7 @@ const log = logger('webhooks');
 
 export async function sendWebhook(url: string, payload: unknown): Promise<{ ok: boolean; status: number | null; error?: string }> {
   try {
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'User-Agent': `MediaMax/${config.version}` }, body: JSON.stringify(payload), signal: AbortSignal.timeout(10000) });
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'User-Agent': `Kinora/${config.version}` }, body: JSON.stringify(payload), signal: AbortSignal.timeout(10000) });
     return { ok: res.ok, status: res.status };
   } catch (e) {
     return { ok: false, status: null, error: (e as Error).message };

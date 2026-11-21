@@ -100,7 +100,7 @@ function friendly(e: unknown, url: string): TunerHttpError {
   if (code === 'ECONNREFUSED') return new TunerHttpError(`Connection refused by ${host} — is the service running and the port right?`);
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return new TunerHttpError(`Host ${host} not found`);
   if (code === 'ETIMEDOUT' || code === 'UND_ERR_CONNECT_TIMEOUT' || err.name === 'TimeoutError' || err.name === 'AbortError') return new TunerHttpError(`No answer from ${host} (timed out)`);
-  if (code === 'EHOSTUNREACH' || code === 'ENETUNREACH') return new TunerHttpError(`${host} is unreachable from the MediaMax server`);
+  if (code === 'EHOSTUNREACH' || code === 'ENETUNREACH') return new TunerHttpError(`${host} is unreachable from the Kinora server`);
   return new TunerHttpError(`${host}: ${err.message}`);
 }
 
@@ -113,7 +113,7 @@ export class TunerHttp {
   private scheme: 'none' | 'basic' | 'digest' | null = null;
   requests = 0;
 
-  constructor(readonly creds: TunerCreds = {}, readonly userAgent = 'MediaMax/1.0') {}
+  constructor(readonly creds: TunerCreds = {}, readonly userAgent = 'Kinora/1.0') {}
 
   get hasCreds() {
     return !!this.creds.username;

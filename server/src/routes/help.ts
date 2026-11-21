@@ -16,7 +16,7 @@ import { HttpError, notFound } from '../util/errors.js';
  * articles exist only for administrators: anyone else gets 404 for them and never sees them in the index or search.
  */
 export default async function helpRoutes(app: FastifyInstance) {
-  const ctx = (req: FastifyRequest) => ({ isAdmin: !!req.auth?.user.isAdmin, product: getBranding().serverName || 'MediaMax' });
+  const ctx = (req: FastifyRequest) => ({ isAdmin: !!req.auth?.user.isAdmin, product: getBranding().serverName || 'Kinora' });
 
   /** Articles only change with the server version and the product name: cache per audience with an ETag. */
   function cached<T>(req: FastifyRequest, reply: FastifyReply, key: string, body: () => T): T | FastifyReply {

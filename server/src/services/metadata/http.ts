@@ -77,7 +77,7 @@ export function setProviderHttpOptions(id: string, o: { base?: string; minInterv
 export const baseUrl = (id: string): string => (overrides[id]?.base ?? process.env[ENV[id]] ?? DEFAULT_BASE[id]).replace(/\/+$/, '');
 
 /** MusicBrainz and Open Library ask clients to identify themselves; no user data goes in here. */
-export const userAgent = () => `MediaMax/${config.version} ( self-hosted media server )`;
+export const userAgent = () => `Kinora/${config.version} ( self-hosted media server )`;
 
 const gates = new Map<string, Promise<unknown>>();
 const lastAt = new Map<string, number>();

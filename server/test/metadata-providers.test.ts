@@ -258,7 +258,7 @@ before(async () => {
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       hits.push({ path: req.url!, at: Date.now(), auth: req.headers.authorization, body: body || undefined });
-      assert.match(String(req.headers['user-agent']), /^MediaMax\//, 'every provider request carries the MediaMax User-Agent');
+      assert.match(String(req.headers['user-agent']), /^Kinora\//, 'every provider request carries the Kinora User-Agent');
       const r = route(req, body);
       res.writeHead(r.status, { 'Content-Type': 'application/json', ...(r.headers ?? {}) });
       res.end(r.json === undefined ? '' : JSON.stringify(r.json));

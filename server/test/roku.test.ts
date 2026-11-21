@@ -11,10 +11,10 @@ const app = await buildApp();
 after(() => app.close());
 
 const ROKU_HEADERS = {
-  'x-mediamax-device-id': 'roku-client-id-1',
-  'x-mediamax-device-name': 'Living Room Roku',
-  'x-mediamax-platform': 'roku',
-  'x-mediamax-version': '1.0.1',
+  'x-kinora-device-id': 'roku-client-id-1',
+  'x-kinora-device-name': 'Living Room Roku',
+  'x-kinora-platform': 'roku',
+  'x-kinora-version': '1.0.1',
 };
 
 test('Roku link-code sign-in keeps platform "roku" on the issued session', async () => {

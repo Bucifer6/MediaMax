@@ -14,14 +14,15 @@ export const DEFAULT_THEME_ID = 'mediamax';
 
 /** Built-in theme presets. Admins can duplicate and edit them in the Branding Studio. */
 export const BUILTIN_THEMES: Theme[] = [
-  // The MediaMax brand themes (default for new installs): colours from the logo, the Lumen type pairing.
+  // The Kinora brand themes (default for new installs): primary from the logo's stem, accent from its beams, the
+  // Lumen type pairing. The ids stay 'mediamax' / 'mediamax-light' so existing settings and preferences keep working.
   {
-    ...base, id: 'mediamax', name: 'MediaMax', mode: 'dark', radius: 14,
-    colors: { primary: '#1FB6F5', primaryText: '#04101F', background: '#0A0F22', surface: '#121936', surfaceAlt: '#1A2247', text: '#F2F5FF', textMuted: '#9AA6CC', accent: '#E040F0', border: '#27315C', success: '#2FD07F', warning: '#F5B014', danger: '#FF5C7A', overlay: '#0A0F22' },
+    ...base, id: 'mediamax', name: 'Kinora', mode: 'dark', radius: 14,
+    colors: { primary: '#9198FF', primaryText: '#0B0A1F', background: '#0D0C1D', surface: '#17152E', surfaceAlt: '#211E3D', text: '#F4F3FF', textMuted: '#A6A3CC', accent: '#FFA45C', border: '#2E2A52', success: '#2FD07F', warning: '#F5B014', danger: '#FF5C7A', overlay: '#0D0C1D' },
   },
   {
-    ...base, id: 'mediamax-light', name: 'MediaMax Light', mode: 'light', radius: 14,
-    colors: { primary: '#1D63E8', primaryText: '#FFFFFF', background: '#F5F7FF', surface: '#FFFFFF', surfaceAlt: '#EAEFFC', text: '#0B1026', textMuted: '#4F5A7E', accent: '#B523C7', border: '#DCE3F5', success: '#15803D', warning: '#B45309', danger: '#D12A4A', overlay: '#F5F7FF' },
+    ...base, id: 'mediamax-light', name: 'Kinora Light', mode: 'light', radius: 14,
+    colors: { primary: '#4F3FE0', primaryText: '#FFFFFF', background: '#F7F6FF', surface: '#FFFFFF', surfaceAlt: '#EEECFB', text: '#14122B', textMuted: '#55527A', accent: '#C2410C', border: '#E0DDF3', success: '#15803D', warning: '#B45309', danger: '#D12A4A', overlay: '#F7F6FF' },
   },
   {
     ...base, id: 'midnight', name: 'Midnight', mode: 'dark',

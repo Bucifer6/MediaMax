@@ -79,7 +79,7 @@ export function redactValue(v: unknown, key = '', depth = 0): unknown {
 /** Free text (log lines, error messages): URLs, credentials in query strings, headers, IPTV paths, long tokens. */
 export function redactText(text: string): string {
   return text
-    .replace(/(authorization|x-api-key|x-mediamax-token|x-plex-token|cookie)(["']?\s*[:=]\s*["']?)(bearer\s+|basic\s+)?[^\s"',;}]+/gi, `$1$2${REDACTED}`)
+    .replace(/(authorization|x-api-key|x-kinora-token|x-mediamax-token|x-plex-token|cookie)(["']?\s*[:=]\s*["']?)(bearer\s+|basic\s+)?[^\s"',;}]+/gi, `$1$2${REDACTED}`)
     .replace(/\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, `$1 ${REDACTED}`)
     .replace(/([?&;](?:token|access_token|refresh_token|api_key|apikey|key|password|pass|pwd|passwd|secret|sig|signature|auth|u|p|t|s|username|user|code|state)=)[^&\s"'#]*/gi, `$1${REDACTED}`)
     .replace(/(["']?(?:password|passwd|secret|token|api[_-]?key|apikey|client[_-]?secret|shared[_-]?secret)["']?\s*[:=]\s*["']?)[^"'\s,;}&]+/gi, `$1${REDACTED}`)
@@ -138,7 +138,7 @@ function systemInfo() {
   const cpus = os.cpus();
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (!/^(MEDIAMAX_|NODE_ENV$|TZ$|PUID$|PGID$|NVIDIA_)/.test(k) || v === undefined) continue;
+    if (!/^(KINORA_|MEDIAMAX_|NODE_ENV$|TZ$|PUID$|PGID$|NVIDIA_)/.test(k) || v === undefined) continue;
     env[k] = SECRET_KEY.test(k) ? REDACTED : redactText(redactUrl(v));
   }
   return {
@@ -247,7 +247,7 @@ export function diagnosticsZip(): Buffer {
       data: [
         `${getBranding().serverName} diagnostics, ${new Date().toISOString()}`,
         '',
-        'system.json     version, OS, CPU, memory, disks, MEDIAMAX_* environment (secrets removed)',
+        'system.json     version, OS, CPU, memory, disks, KINORA_* / MEDIAMAX_* environment (secrets removed)',
         'ffmpeg.txt      ffmpeg / ffprobe versions',
         'hardware.json   the last "Detect hardware" report (Admin > Server settings > Transcoding), if it ran',
         'network.json    connection mode (Admin > Network & HTTPS)',

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Branding, BrandingAssetKind, HomeRowConfig, Theme, ThemeSchedule } from '@mediamax/shared';
+import { productName } from '../util/product.js';
 import { getKv, setKv, getSettings } from './settings.js';
 import { BUILTIN_THEMES, DEFAULT_THEME_ID } from './themes.js';
 import { db } from '../db.js';
@@ -32,7 +33,7 @@ interface StoredBranding extends Omit<Branding, 'themes' | 'features' | 'revisio
 }
 
 const DEFAULTS: StoredBranding = {
-  serverName: 'MediaMax',
+  serverName: 'Kinora',
   tagline: 'Your movies, shows, music and live TV. Everywhere.',
   logoUrl: null,
   logoWideUrl: null,
@@ -42,7 +43,7 @@ const DEFAULTS: StoredBranding = {
   loginMessage: '',
   footerText: '',
   supportUrl: null,
-  splash: { backgroundColor: '#0A0F22', logoUrl: null },
+  splash: { backgroundColor: '#0D0C1D', logoUrl: null },
   tvBannerUrl: null,
   topShelfUrl: null,
   defaultThemeId: DEFAULT_THEME_ID,
@@ -60,8 +61,8 @@ const DEFAULT_FEATURES: Branding['features'] = {
 };
 
 /**
- * The MediaMax theme became the default in branding v2. Installs that were already set up keep the
- * theme they had (Midnight, the old default) unless an admin had picked one; new installs get MediaMax.
+ * The Kinora theme became the default in branding v2. Installs that were already set up keep the
+ * theme they had (Midnight, the old default) unless an admin had picked one; new installs get Kinora.
  * Runs once per database: the marker is written on the first look.
  */
 let defaultsChecked = false;
@@ -103,7 +104,7 @@ export function getBranding(now = new Date()): Branding {
   const active = activeThemeSchedule(s.themeSchedules ?? [], themes, now);
   return {
     ...rest,
-    serverName: s.serverName || getSettings().serverName,
+    serverName: productName(s.serverName || getSettings().serverName),
     themes,
     defaultThemeId: active?.themeId ?? baseThemeId,
     baseThemeId,
@@ -260,7 +261,7 @@ export function brandingCss(): string {
 
 /**
  * PWA manifest that follows the branding: the server's name and theme colours, and the uploaded app
- * icon when there is one (else the stock MediaMax icons in the web client, including a maskable one).
+ * icon when there is one (else the stock Kinora icons in the web client, including a maskable one).
  */
 export function webManifest() {
   const b = getBranding();
@@ -274,8 +275,8 @@ export function webManifest() {
         { src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
       ];
   return {
-    name: b.serverName || 'MediaMax',
-    short_name: (b.serverName || 'MediaMax').slice(0, 12),
+    name: productName(b.serverName),
+    short_name: productName(b.serverName).slice(0, 12),
     description: b.tagline,
     start_url: '/',
     scope: '/',

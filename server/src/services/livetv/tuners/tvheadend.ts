@@ -34,7 +34,7 @@ export interface TvhRecording {
   start?: number; stop?: number; start_real?: number; stop_real?: number; filesize?: number; url?: string; status?: string;
 }
 
-export const client = (s: TvhSourceLike) => new TunerHttp({ username: s.username, password: s.password, authType: s.options.authType ?? 'auto' }, s.userAgent || 'MediaMax/1.0');
+export const client = (s: TvhSourceLike) => new TunerHttp({ username: s.username, password: s.password, authType: s.options.authType ?? 'auto' }, s.userAgent || 'Kinora/1.0');
 const api = (s: TvhSourceLike, path: string) => `${baseUrl(s.url)}${path}`;
 
 /** DVB content descriptor (ETSI EN 300 468) top-level nibble → genre. */

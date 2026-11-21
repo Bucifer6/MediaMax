@@ -55,7 +55,7 @@ export function haWebhookPayload(event: WebhookEvent | 'test', data: Record<stri
   }
   if (event === 'test') {
     return {
-      ...common, action: 'test', state: 'playing', user: 'MediaMax', device: 'Test', platform: 'web', media_type: 'movie', is_video: true,
+      ...common, action: 'test', state: 'playing', user: 'Kinora', device: 'Test', platform: 'web', media_type: 'movie', is_video: true,
       title: 'Webhook test', series: null, season: null, episode: null, year: null, poster_url: null, position_seconds: 0, duration_seconds: 0,
       progress_percent: 0, transcode: false, hdr: false, session_id: null, item_id: null,
     };

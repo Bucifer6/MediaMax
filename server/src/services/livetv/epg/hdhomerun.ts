@@ -48,7 +48,7 @@ export async function fetchHdhrGuide(auth: string, hours = 24): Promise<HdhrGuid
   let start: number | null = null;
   for (let i = 0; i < 48; i++) {
     const url = `${hdhrGuideUrl()}?DeviceAuth=${encodeURIComponent(auth)}${start ? `&Start=${start}` : ''}`;
-    const res = await fetch(url, { headers: { 'User-Agent': 'MediaMax/1.0' }, signal: AbortSignal.timeout(60000) });
+    const res = await fetch(url, { headers: { 'User-Agent': 'Kinora/1.0' }, signal: AbortSignal.timeout(60000) });
     if (!res.ok) throw new Error(`HDHomeRun guide returned HTTP ${res.status}`);
     const page = (await res.json()) as HdhrGuideChannel[] | null;
     if (!Array.isArray(page) || !page.length) break;

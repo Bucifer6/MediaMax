@@ -38,7 +38,7 @@ const SERIES = { Id: 'ser1', Name: 'Breaking Bad', Type: 'Series', ProductionYea
 const MATRIX = { Id: 'em1', Name: 'The Matrix', Type: 'Movie', ProductionYear: 1999, ProviderIds: { Tmdb: '603', Imdb: 'tt0133093' }, Path: 'D:\\Movies\\The Matrix (1999)\\The Matrix.mkv' };
 const HEAT = { Id: 'em2', Name: 'Heat', Type: 'Movie', ProductionYear: 1995, ProviderIds: {}, Path: 'D:\\Movies\\Heat (1995)\\Heat.mkv' };
 const ALIEN = { Id: 'em3', Name: 'Alien', Type: 'Movie', ProductionYear: 1979, ProviderIds: {}, Path: 'D:\\Elsewhere\\alien.mkv' };
-const NOPE = { Id: 'em4', Name: 'Not On MediaMax', Type: 'Movie', ProductionYear: 2001, ProviderIds: { Tmdb: '999999' }, Path: 'D:\\Movies\\Nope\\nope.mkv' };
+const NOPE = { Id: 'em4', Name: 'Not On Kinora', Type: 'Movie', ProductionYear: 2001, ProviderIds: { Tmdb: '999999' }, Path: 'D:\\Movies\\Nope\\nope.mkv' };
 const EP1 = { Id: 'ee1', Name: 'Pilot', Type: 'Episode', SeriesId: 'ser1', SeriesName: 'Breaking Bad', ParentIndexNumber: 1, IndexNumber: 1, ProviderIds: {}, Path: '/srv/other/bb-s01e01.mkv' };
 const EP2 = { Id: 'ee2', Name: 'Cat in the Bag', Type: 'Episode', SeriesId: 'ser1', SeriesName: 'Breaking Bad', ParentIndexNumber: 1, IndexNumber: 2, ProviderIds: {}, Path: '/srv/other/bb-s01e02.mkv' };
 const ud = (o: Record<string, unknown>) => ({ Played: false, PlaybackPositionTicks: 0, PlayCount: 0, IsFavorite: false, ...o });
@@ -60,7 +60,7 @@ const DATA: Record<string, { played: any[]; resumable: any[]; favorites: any[]; 
   'u-carol': { played: [{ ...HEAT, UserData: ud({ Played: true, PlayCount: 1 }) }], resumable: [], favorites: [], playlists: [] },
   'u-dave': {
     played: [{ ...MATRIX, UserData: ud({ Played: true, PlayCount: 1 }) }],
-    // Watched on MediaMax already (play count 5): an older Emby resume point must not un-watch it.
+    // Watched on Kinora already (play count 5): an older Emby resume point must not un-watch it.
     resumable: [{ ...HEAT, UserData: ud({ PlaybackPositionTicks: ticks(120000), LastPlayedDate: '2020-01-01T00:00:00.0000000Z' }) }],
     favorites: [], playlists: [],
   },
@@ -105,7 +105,7 @@ await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 const EMBY_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
 /* ------------------------------------------------------------------ */
-/* MediaMax fixtures                                                   */
+/* Kinora fixtures                                                   */
 /* ------------------------------------------------------------------ */
 
 const { db } = await import('../src/db.ts');
@@ -259,7 +259,7 @@ test('preview: users, library mapping and match counts, without changing anythin
   assert.deepEqual([by.bob.playlistItems.total, by.bob.playlistItems.matched], [3, 2]);
   assert.equal(p.collections, 1);
   assert.deepEqual([p.collectionItems.total, p.collectionItems.matched], [2, 1]);
-  assert.ok(p.unmatchedSamples.includes('Movie: Not On MediaMax (2001)'));
+  assert.ok(p.unmatchedSamples.includes('Movie: Not On Kinora (2001)'));
   assert.deepEqual([p.totals.create, p.totals.merge], [3, 1]);
   assert.equal(db.get<{ n: number }>('SELECT COUNT(*) n FROM users')!.n, before, 'a preview creates nobody');
   assert.equal(udRow(dave.id, 'm-matrix'), undefined, 'a preview writes no watch data');
@@ -384,7 +384,7 @@ test('re-run is idempotent: no duplicate users, playlists or play counts; fresh 
 
 test('update existing: permissions are re-applied from Emby; the acting admin is never demoted', async () => {
   USERS[1].Policy.SimultaneousStreamLimit = 3;
-  // An Emby non-admin with the same username as the MediaMax admin running the import.
+  // An Emby non-admin with the same username as the Kinora admin running the import.
   USERS.push({ Id: 'u-mmadmin', Name: 'mmadmin', Policy: policy() });
   DATA['u-mmadmin'] = { played: [{ ...ALIEN, UserData: ud({ Played: true, PlayCount: 1 }) }], resumable: [], favorites: [], playlists: [] };
   const job = await runToEnd({ updateExisting: true, userIds: ['u-bob', 'u-mmadmin'] });

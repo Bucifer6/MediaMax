@@ -242,7 +242,7 @@ function upsertAccount(c: Conn, u: SourceUser, action: ImportPreviewUser['action
   }
   res.userId = userId;
   setMap(s, 'user', u.id, userId);
-  if (unmappedFolders.length) notes.push(`No MediaMax library for: ${unmappedFolders.join(', ')}`);
+  if (unmappedFolders.length) notes.push(`No Kinora library for: ${unmappedFolders.join(', ')}`);
   if (action !== 'merge') notes.push(...(mapNotes ?? []));
 
   // A link for accounts this importer created whose owner hasn't chosen a password yet (also on re-runs).

@@ -54,7 +54,7 @@ export class EmbyClient {
 
   private headers(): Record<string, string> {
     const h: Record<string, string> = { 'X-Emby-Token': this.c.apiKey, Accept: 'application/json' };
-    if (this.flavor === 'jellyfin') h.Authorization = `MediaBrowser Client="MediaMax", Device="MediaMax importer", DeviceId="mediamax-import", Version="1", Token="${this.c.apiKey}"`;
+    if (this.flavor === 'jellyfin') h.Authorization = `MediaBrowser Client="Kinora", Device="Kinora importer", DeviceId="mediamax-import", Version="1", Token="${this.c.apiKey}"`;
     return h;
   }
 
@@ -120,7 +120,7 @@ export class EmbyClient {
 
 /* ---------------------------- mapping ---------------------------- */
 
-/** Emby's parental rating number → a rating MediaMax understands (US scale; values above 10 are ages). */
+/** Emby's parental rating number → a rating Kinora understands (US scale; values above 10 are ages). */
 export function embyRating(v: number | null | undefined): string | null {
   if (v == null || !Number.isFinite(v)) return null;
   if (v <= 1) return 'G';

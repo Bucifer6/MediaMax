@@ -273,7 +273,7 @@ function templateLine(host: string, prev: TrackFacts | null, next: TrackFacts, r
   else if (next.year && next.year < 2000 && Math.random() < 0.3) extras.push(`A bit of ${Math.floor(next.year / 10) * 10}s magic.`);
   if (extras.length) lines.push(pick(extras));
   lines.push(pick([`Here's ${by(next)}.`, `Coming up: ${by(next)}.`, `Next, ${by(next)}.`, `This is ${by(next)}.`]));
-  if (req.position > 0 && req.position % 8 === 0) lines.push(pick([`You're listening to ${host} on MediaMax.`, `${host} on MediaMax — stay with me.`]));
+  if (req.position > 0 && req.position % 8 === 0) lines.push(pick([`You're listening to ${host} on Kinora.`, `${host} on Kinora — stay with me.`]));
   return lines.join(' ');
 }
 

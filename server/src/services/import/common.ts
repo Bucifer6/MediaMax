@@ -179,7 +179,7 @@ export function mapFolders(folders: SrcFolder[], mappings: ImportPathMapping[]):
   });
 }
 
-/** Source library ids a user may see → MediaMax library ids (null = every library). */
+/** Source library ids a user may see → Kinora library ids (null = every library). */
 export function libraryAccess(enabled: string[] | null, folders: SrcFolder[], libs: ImportLibraryMapping[]): { libraryIds: string[] | null; unmappedFolders: string[] } {
   if (enabled === null) return { libraryIds: null, unmappedFolders: [] };
   const byKey = new Map<string, ImportLibraryMapping>();
@@ -200,7 +200,7 @@ export function libraryAccess(enabled: string[] | null, folders: SrcFolder[], li
 
 export const safeUsername = (name: string, sourceId: string) => String(name ?? '').trim().replace(/[^\w.@ -]/g, '_').slice(0, 64) || `user_${String(sourceId).slice(0, 8)}`;
 
-/** A source user turned into MediaMax account settings. */
+/** A source user turned into Kinora account settings. */
 export interface MappedUser extends CreateUserRequest { disabled: boolean; hiddenFromLogin: boolean; unmappedFolders: string[]; notes?: string[] }
 
 /** A source user ready to preview/import. `raw` is whatever the driver needs later. */
@@ -211,7 +211,7 @@ export const setMap = (s: ImportSource, kind: string, sourceId: string, localId:
 export const getMap = (s: ImportSource, kind: string, sourceId: string) =>
   db.get<{ local_id: string }>('SELECT local_id FROM import_map WHERE source = ? AND kind = ? AND source_id = ?', s, kind, sourceId)?.local_id ?? null;
 
-/** The MediaMax account a source user corresponds to: an earlier import's mapping first, then the username. */
+/** The Kinora account a source user corresponds to: an earlier import's mapping first, then the username. */
 export function existingUserId(s: ImportSource, u: SourceUser): string | null {
   const mapped = db.get<{ local_id: string }>("SELECT m.local_id FROM import_map m JOIN users u ON u.id = m.local_id WHERE m.source = ? AND m.kind = 'user' AND m.source_id = ?", s, u.id);
   if (mapped) return mapped.local_id;
@@ -271,7 +271,7 @@ export interface SrcList { id: string; name: string; items: Entry[] }
 
 const normTitle = (t: string | null | undefined) => String(t ?? '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/^(the|a|an)\s+/, '').replace(/[^a-z0-9]+/g, '');
 
-/** Provider id keys (`tmdb:603`, `imdb:tt0133093`, `tvdb:121361`) from a source's ids or MediaMax's external_ids. */
+/** Provider id keys (`tmdb:603`, `imdb:tt0133093`, `tvdb:121361`) from a source's ids or Kinora's external_ids. */
 export function providerKeys(ids: Record<string, unknown> | null | undefined): string[] {
   const out: string[] = [];
   for (const [k, v] of Object.entries(ids ?? {})) {
@@ -282,7 +282,7 @@ export function providerKeys(ids: Record<string, unknown> | null | undefined): s
 }
 
 /**
- * In-memory index of the MediaMax catalogue, built once per preview/run (two queries), so matching tens of thousands
+ * In-memory index of the Kinora catalogue, built once per preview/run (two queries), so matching tens of thousands
  * of source titles costs map lookups, not SQL. Order: provider ids → file path (after path mappings) → title + year.
  */
 export class Matcher {
@@ -317,7 +317,7 @@ export class Matcher {
     for (const m of db.all<{ item_id: string; path: string }>('SELECT item_id, path FROM media WHERE path IS NOT NULL')) this.byPath.set(pathKey(m.path), m.item_id);
   }
 
-  /** Runtime of a MediaMax item (for history rows whose source has no duration). */
+  /** Runtime of a Kinora item (for history rows whose source has no duration). */
   durationOf(id: string): number | null {
     return this.duration.get(id) ?? null;
   }
@@ -329,7 +329,7 @@ export class Matcher {
   private byTitle(m: Map<string, string | null>, name: string | undefined, year: number | undefined): string | null {
     const t = normTitle(name);
     if (!t) return null;
-    // Exact title + year; without a year only a title that is unique in MediaMax.
+    // Exact title + year; without a year only a title that is unique in Kinora.
     return (year ? m.get(`${t}|${year}`) : m.get(`${t}|*`)) ?? null;
   }
 
@@ -460,7 +460,7 @@ export function applyHistory(s: ImportSource, userId: string, itemId: string, at
 
 export const uniqIds = (list: { m: Match | null }[]) => [...new Set(list.filter((x) => x.m).map((x) => x.m!.id))];
 
-/** Find (or make) the MediaMax playlist/collection for a source one, then add the matched items it doesn't have yet. */
+/** Find (or make) the Kinora playlist/collection for a source one, then add the matched items it doesn't have yet. */
 export function upsertContainer(s: ImportSource, kind: 'playlist' | 'collection', src: { id: string; name: string }, ownerId: string | null, items: { m: Match | null }[]): { id: string; created: boolean } {
   const title = (src.name || (kind === 'playlist' ? 'Playlist' : 'Collection')).slice(0, 200);
   const mapKey = kind === 'playlist' ? `${ownerId}:${src.id}` : src.id;

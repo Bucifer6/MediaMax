@@ -24,7 +24,7 @@ Backups are stored in the `backups` folder inside the data folder. Copy that fol
 | Install | Data folder |
 |---|---|
 | Docker / NAS | whatever you mapped to `/config` |
-| Windows | `C:\ProgramData\MediaMax` |
+| Windows | `C:\ProgramData\Kinora` |
 | Linux service | `/var/lib/mediamax` |
 
 ## Restoring

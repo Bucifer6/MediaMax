@@ -144,7 +144,7 @@ const sdUrl = await serve((req, body, url) => {
   const p = url.pathname.replace(/^\/20141201/, '');
   sd.calls.push(`${req.method} ${p}`);
   const json = (o: unknown, status = 200) => ({ status, body: JSON.stringify(o) });
-  if (!String(req.headers['user-agent'] ?? '').startsWith('MediaMax/')) return json({ code: 1004, message: 'Missing user agent' }, 400);
+  if (!String(req.headers['user-agent'] ?? '').startsWith('Kinora/')) return json({ code: 1004, message: 'Missing user agent' }, 400);
   if (p === '/token' && req.method === 'POST') {
     const b = JSON.parse(body);
     if (b.username !== 'sduser' || b.password !== crypto.createHash('sha1').update(SD_PASSWORD).digest('hex')) return json({ code: 4003, message: 'Invalid username or token has expired.' }, 400);

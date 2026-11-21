@@ -3,7 +3,7 @@ import { decode, encodeCommand, type PyValue } from './pickle.js';
 
 const END = Buffer.from('<F2B_END_COMMAND>');
 
-/** Send one command to fail2ban's control socket (or the MediaMax bridge) and return its reply. */
+/** Send one command to fail2ban's control socket (or the Kinora bridge) and return its reply. */
 export function f2bCommand(socketPath: string, args: string[], timeoutMs = 5000): Promise<PyValue> {
   return new Promise((resolve, reject) => {
     const sock = net.createConnection(socketPath);

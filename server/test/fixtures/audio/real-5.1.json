@@ -1,5 +1,5 @@
 {
-  "_comment": "ffprobe -show_streams of real files made with ffmpeg 6.1 (sine tone, 5.1(side)): ac3, eac3, dca (-strict -2), truehd (-strict -2). Trimmed to the fields MediaMax reads.",
+  "_comment": "ffprobe -show_streams of real files made with ffmpeg 6.1 (sine tone, 5.1(side)): ac3, eac3, dca (-strict -2), truehd (-strict -2). Trimmed to the fields Kinora reads.",
   "ac3": {
     "index": 0,
     "codec_name": "ac3",

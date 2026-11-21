@@ -156,7 +156,7 @@ export function doviProfileSupported(caps: VideoRangeCapabilities, dv: DolbyVisi
 
 /**
  * Decide how a source's dynamic range reaches a client. `caps` undefined = legacy client: every range is "ok"
- * (MediaMax's previous behaviour), and tone-mapping is left to the admin setting.
+ * (Kinora's previous behaviour), and tone-mapping is left to the admin setting.
  */
 export function rangeDecision(range: VideoRangeInfo | null | undefined, hdrFlag: boolean, caps: VideoRangeCapabilities | undefined): RangeDecision & { legacy: boolean } {
   const fmt: HdrFormat = range?.hdrFormat ?? (hdrFlag ? 'hdr10' : 'sdr');

@@ -18,7 +18,7 @@ let token: { value: string; base: string; at: number } | null = null;
 function headers(auth = false): Record<string, string> {
   const key = getSettings().openSubtitles.apiKey;
   if (!key) throw badRequest('OpenSubtitles is not configured. Add an API key in Admin → Settings.');
-  const h: Record<string, string> = { 'Api-Key': key, 'User-Agent': `MediaMax v${config.version}`, 'Content-Type': 'application/json', Accept: 'application/json' };
+  const h: Record<string, string> = { 'Api-Key': key, 'User-Agent': `Kinora v${config.version}`, 'Content-Type': 'application/json', Accept: 'application/json' };
   if (auth && token) h.Authorization = `Bearer ${token.value}`;
   return h;
 }

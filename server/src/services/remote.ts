@@ -74,7 +74,7 @@ export async function refreshMapping(): Promise<RemoteAccessStatus['upnp']> {
   try {
     if (!control) {
       const loc = await discoverGateway();
-      if (!loc) throw new Error('No UPnP router found on the network (UPnP may be disabled on the router, or MediaMax runs in an isolated Docker network — use host networking).');
+      if (!loc) throw new Error('No UPnP router found on the network (UPnP may be disabled on the router, or Kinora runs in an isolated Docker network — use host networking).');
       const c = await findControl(loc);
       if (!c) throw new Error('The router does not offer port forwarding over UPnP');
       control = c;
@@ -82,7 +82,7 @@ export async function refreshMapping(): Promise<RemoteAccessStatus['upnp']> {
     }
     await soap('AddPortMapping', {
       NewRemoteHost: '', NewExternalPort: port, NewProtocol: 'TCP', NewInternalPort: config.port, NewInternalClient: lanAddress(),
-      NewEnabled: 1, NewPortMappingDescription: 'MediaMax', NewLeaseDuration: 3600,
+      NewEnabled: 1, NewPortMappingDescription: 'Kinora', NewLeaseDuration: 3600,
     });
     const ipXml = await soap('GetExternalIPAddress', {});
     status.externalIp = ipXml.match(/<NewExternalIPAddress>([^<]*)</)?.[1] || null;

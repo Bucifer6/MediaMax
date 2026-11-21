@@ -4,8 +4,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-if (!process.env.MEDIAMAX_DATA) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `mediamax-test-${process.pid}-`));
+if (!process.env.KINORA_DATA && !process.env.MEDIAMAX_DATA) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `kinora-test-${process.pid}-`));
   process.env.MEDIAMAX_DATA = dir;
   process.on('exit', () => {
     try {

@@ -55,7 +55,7 @@ export function detectFingerprinter(force = false): Promise<Fingerprinter> {
     }
     const m = await run(config.ffmpeg, ['-hide_banner', '-muxers'], 10000);
     if (m.code === 0 && /\bchromaprint\b/.test(m.out)) return { available: true, tool: 'ffmpeg', detail: 'ffmpeg chromaprint muxer', path: config.ffmpeg } as Fingerprinter;
-    return { available: false, tool: null, detail: 'Install Chromaprint (fpcalc: Debian/Ubuntu package libchromaprint-tools) or set MEDIAMAX_FPCALC', path: null } as Fingerprinter;
+    return { available: false, tool: null, detail: 'Install Chromaprint (fpcalc: Debian/Ubuntu package libchromaprint-tools) or set KINORA_FPCALC', path: null } as Fingerprinter;
   })();
   return detected;
 }

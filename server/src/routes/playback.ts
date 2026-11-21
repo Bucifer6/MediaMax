@@ -119,7 +119,7 @@ function convertedDownload(req: FastifyRequest, reply: FastifyReply, m: Record<s
   reply.header('Content-Type', isAudio ? 'audio/mp4' : 'video/mp4')
     .header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`${baseName} - ${quality}.${isAudio ? 'm4a' : 'mp4'}`)}`)
     .header('Cache-Control', 'no-store');
-  if (m.duration_ms) reply.header('X-MediaMax-Duration-Ms', String(m.duration_ms));
+  if (m.duration_ms) reply.header('X-Kinora-Duration-Ms', String(m.duration_ms)).header('X-MediaMax-Duration-Ms', String(m.duration_ms));
   return reply.send(p.stdout);
 }
 
@@ -192,7 +192,7 @@ export default async function playbackRoutes(app: FastifyInstance) {
       return sendFileRange(req, reply, m.path, mime);
     }
     const ua = db.get<{ user_agent: string | null }>('SELECT s.user_agent FROM live_sources s JOIN libraries l ON l.source_id = s.id JOIN items i ON i.library_id = l.id WHERE i.id = ?', m.item_id)?.user_agent;
-    return proxyRemote(req, reply, m.remote_url, ua || 'MediaMax/1.0', mime, isUntrustedMedia(m.item_id));
+    return proxyRemote(req, reply, m.remote_url, ua || 'Kinora/1.0', mime, isUntrustedMedia(m.item_id));
   });
 
   const hlsHandler = async (req: FastifyRequest<{ Params: { sessionId: string; file: string } }>, reply: FastifyReply) => {
@@ -285,6 +285,6 @@ export default async function playbackRoutes(app: FastifyInstance) {
     const name = `${item.title}${item.year ? ` (${item.year})` : ''}.${ext}`.replace(/[\\/:*?"<>|]/g, '');
     if (m.path) return sendFileRange(req, reply, m.path, mime, name);
     reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);
-    return proxyRemote(req, reply, m.remote_url, 'MediaMax/1.0', mime, isUntrustedMedia(item.id));
+    return proxyRemote(req, reply, m.remote_url, 'Kinora/1.0', mime, isUntrustedMedia(item.id));
   });
 }

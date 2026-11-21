@@ -26,7 +26,7 @@ const MATRIX = { ratingKey: '11', type: 'movie', title: 'The Matrix', year: 1999
 const HEAT = { ratingKey: '12', type: 'movie', title: 'Heat', year: 1995, guid: 'plex://movie/5d777', Guid: [], Media: part('/plexdata/movies/Heat (1995)/Heat.mkv') };
 // Legacy agent: the IMDb id is only in `guid`.
 const ALIEN = { ratingKey: '13', type: 'movie', title: 'Alien', year: 1979, guid: 'com.plexapp.agents.imdb://tt0078748?lang=en', Media: part('/elsewhere/alien.mkv') };
-const NOPE = { ratingKey: '14', type: 'movie', title: 'Not On MediaMax', year: 2001, Guid: [{ id: 'tmdb://999999' }], Media: part('/plexdata/movies/nope.mkv') };
+const NOPE = { ratingKey: '14', type: 'movie', title: 'Not On Kinora', year: 2001, Guid: [{ id: 'tmdb://999999' }], Media: part('/plexdata/movies/nope.mkv') };
 const BB = { ratingKey: '20', type: 'show', title: 'Breaking Bad', year: 2008, Guid: [{ id: 'tvdb://81189' }] };
 const ep = (rk: string, i: number, title: string) => ({
   ratingKey: rk, type: 'episode', title, grandparentRatingKey: '20', grandparentTitle: 'Breaking Bad', grandparentGuid: 'plex://show/abc', parentIndex: 1, index: i, Guid: [], Media: part(`/plexdata/tv/bb/s01e0${i}.mkv`),
@@ -149,7 +149,7 @@ process.env.MEDIAMAX_PLEX_TV_URL = `http://127.0.0.1:${(plexTv.address() as Addr
 process.env.MEDIAMAX_ALLOW_PRIVATE_URLS = '1';
 
 /* ------------------------------------------------------------------ */
-/* MediaMax fixtures                                                   */
+/* Kinora fixtures                                                   */
 /* ------------------------------------------------------------------ */
 
 const { db } = await import('../src/db.ts');
@@ -276,14 +276,14 @@ test('plex full preview: users, permissions, libraries and matches by guid / pat
   // Owner: Matrix by guid; resume on S01E02 via the show's TVDB id + numbers.
   assert.deepEqual(by.ownerx.watched, { total: 1, matched: 1, byProviderId: 1, byPath: 0, byTitle: 0 });
   assert.deepEqual([by.ownerx.resume.matched, by.ownerx.resume.byProviderId], [1, 1]);
-  // Bob (his own token): Heat by path, Not On MediaMax unmatched; Alien resume by the legacy IMDb guid.
+  // Bob (his own token): Heat by path, Not On Kinora unmatched; Alien resume by the legacy IMDb guid.
   assert.deepEqual(by.bob.watched, { total: 2, matched: 1, byProviderId: 0, byPath: 1, byTitle: 0 });
   assert.deepEqual([by.bob.resume.matched, by.bob.resume.byProviderId], [1, 1]);
   assert.deepEqual([by.bob.playlistItems.total, by.bob.playlistItems.matched], [2, 1]);
   // Kid (no token): watched from history: Matrix, Pilot, a deleted film (tracks ignored).
   assert.deepEqual([by.Kiddo.watched.total, by.Kiddo.watched.matched], [3, 2]);
   assert.equal(by.Kiddo.resume.total, 0);
-  assert.ok(p.unmatchedSamples.includes('Movie: Not On MediaMax (2001)'));
+  assert.ok(p.unmatchedSamples.includes('Movie: Not On Kinora (2001)'));
   assert.deepEqual([p.collections, p.collectionItems.matched], [1, 1]);
   assert.match(p.notes.join(), /no favourites/);
   assert.ok(pmsTokens.has(BOB_TOKEN), "bob's own token read his state");
@@ -314,7 +314,7 @@ test('plex import: accounts, shared-user tokens, managed-user history fallback, 
   assert.equal(kid.max_rating, 'PG');
   assert.equal(kid.show_on_signin, 1);
   assert.equal(kid.allow_downloads, 0);
-  assert.ok(!('email' in owner), 'MediaMax stores no e-mail address');
+  assert.ok(!('email' in owner), 'Kinora stores no e-mail address');
 
   // Owner (owner token): watched + resume + history from accountID 1.
   assert.equal(udRow(owner.id, 'm-matrix').played, 1);

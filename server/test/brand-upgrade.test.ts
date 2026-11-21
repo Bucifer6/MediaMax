@@ -1,4 +1,4 @@
-/** An install set up before the MediaMax theme existed keeps its old default (Midnight). */
+/** An install set up before the Kinora theme existed keeps its old default (Midnight). */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 

@@ -18,8 +18,8 @@ import { logger } from '../util/log.js';
 
 /**
  * Subsonic / OpenSubsonic API (music) at /rest/*.view — lets Symfonium, Feishin, play:Sub, Amperfy, Substreamer,
- * Sonos bridges etc. use the MediaMax music library. Auth: OpenSubsonic `apiKey` (MediaMax API key) or `u`+`p`
- * (password, plain or `enc:` hex). Salted-token auth (`t`+`s`) needs plaintext passwords, which MediaMax never stores.
+ * Sonos bridges etc. use the Kinora music library. Auth: OpenSubsonic `apiKey` (Kinora API key) or `u`+`p`
+ * (password, plain or `enc:` hex). Salted-token auth (`t`+`s`) needs plaintext passwords, which Kinora never stores.
  */
 const log = logger('subsonic');
 const API_VERSION = '1.16.1';
@@ -407,7 +407,7 @@ export default async function subsonicRoutes(app: FastifyInstance) {
       if (method === 'stream' || method === 'download') return await stream(req, reply, u);
       if (method === 'getCoverArt') return await coverArt(req, reply, u);
       const h = handlers[method];
-      if (!h) throw new SubsonicError(0, `Method "${method}" is not supported by MediaMax`);
+      if (!h) throw new SubsonicError(0, `Method "${method}" is not supported by Kinora`);
       return send(req, reply, (await h(req, reply, u)) as Obj);
     } catch (e) {
       const code = e instanceof SubsonicError ? e.code : 0;

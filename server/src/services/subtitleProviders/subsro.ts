@@ -77,7 +77,7 @@ export function createSubsRoProvider(cfg: () => SubsRoConfig = () => getSettings
   const headers = (): Record<string, string> => {
     const key = cfg().apiKey;
     if (!key) throw badRequest('Subs.ro is not configured. Add an API key in Admin → Settings → Subtitles.');
-    return { 'X-Subs-Api-Key': key, Accept: 'application/json', 'User-Agent': `MediaMax v${config.version}` };
+    return { 'X-Subs-Api-Key': key, Accept: 'application/json', 'User-Agent': `Kinora v${config.version}` };
   };
   const base = () => (cfg().baseUrl || 'https://api.subs.ro/v1.0').replace(/\/+$/, '');
   const fail = (res: Response, what: string): never => {
@@ -128,7 +128,7 @@ export function createSubsRoProvider(cfg: () => SubsRoConfig = () => getSettings
         const j: any = await res.json();
         const link = str(j?.link ?? j?.url ?? j?.downloadLink ?? j?.data?.link ?? j?.data?.url);
         if (!link || !/^https?:\/\//i.test(link)) throw new HttpError(502, 'Subs.ro download returned no file', 'provider_error');
-        const f = await fetch(link, { headers: { 'User-Agent': `MediaMax v${config.version}` }, signal: AbortSignal.timeout(30000) });
+        const f = await fetch(link, { headers: { 'User-Agent': `Kinora v${config.version}` }, signal: AbortSignal.timeout(30000) });
         if (!f.ok) fail(f, 'download');
         return { data: Buffer.from(await f.arrayBuffer()), fileName: fileNameFrom(f, `subsro-${result.id}`) };
       }

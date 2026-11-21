@@ -13,7 +13,7 @@ import { once } from 'node:events';
 
 // A web build to serve (index.html), so the CSP header can be checked.
 const webDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-web-'));
-fs.writeFileSync(path.join(webDir, 'index.html'), '<!doctype html><title>MediaMax</title>');
+fs.writeFileSync(path.join(webDir, 'index.html'), '<!doctype html><title>Kinora</title>');
 process.env.MEDIAMAX_WEB_DIR = webDir;
 
 const { createUser, issueToken, updateUser, authenticate, _resetLinks, LINK_LIMITS } = await import('../src/services/auth.ts');
@@ -46,7 +46,7 @@ void adminTok;
 
 /* ------------------------------------------------------------------ route table ------------------------------------------------------------------ */
 
-/** Routes that answer without a MediaMax session, on purpose (each has its own protection where it needs one). */
+/** Routes that answer without a Kinora session, on purpose (each has its own protection where it needs one). */
 const PUBLIC = new Set([
   'GET /health', 'GET /manifest.webmanifest', 'GET /*', 'HEAD /*',
   'GET /api/v1/system/info', 'POST /api/v1/setup', // setup refuses once a user exists

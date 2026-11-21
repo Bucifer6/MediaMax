@@ -2,6 +2,7 @@ import type { ArrInstance, ArrKind, ArrService, ServerSettings, SignInScreenSett
 import { db } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
+import { productName } from '../util/product.js';
 import { maskAgents, mergeAgents } from './notify/kinds.js';
 import { aiFromStored, mergeAi, DEFAULT_AI } from './ai/settings.js';
 
@@ -20,7 +21,7 @@ export function setKv(key: string, value: unknown) {
 }
 
 export const DEFAULT_SETTINGS: ServerSettings = {
-  serverName: 'MediaMax',
+  serverName: 'Kinora',
   publicUrl: null,
   tmdbApiKey: process.env.TMDB_API_KEY ?? null,
   metadataLanguage: 'en-US',
@@ -176,6 +177,8 @@ export function getSettings(): ServerSettings {
     ai: aiFromStored(stored),
   };
   cache.aiDj = { ...cache.aiDj, llm: { ...cache.ai!.llm } };
+  // A server still carrying the former stock name shows the current one (a renamed server keeps its own name).
+  cache.serverName = productName(cache.serverName);
   return cache;
 }
 

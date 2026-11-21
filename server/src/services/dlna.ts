@@ -34,7 +34,7 @@ export function lanAddress(): string {
 }
 
 const baseUrl = () => `http://${lanAddress()}:${config.port}`;
-const friendlyName = () => getSettings().dlna.friendlyName || getBranding().serverName || 'MediaMax';
+const friendlyName = () => getSettings().dlna.friendlyName || getBranding().serverName || 'Kinora';
 
 /** The account DLNA browses as. Must be chosen explicitly by an admin — there is no admin fallback. */
 export function dlnaUser(): User | null {
@@ -62,8 +62,8 @@ export function deviceDescription(): string {
   <device>
     <deviceType>${DEVICE}</deviceType>
     <friendlyName>${esc(friendlyName())}</friendlyName>
-    <manufacturer>MediaMax</manufacturer>
-    <modelName>MediaMax Server</modelName>
+    <manufacturer>Kinora</manufacturer>
+    <modelName>Kinora Server</modelName>
     <modelNumber>${config.version}</modelNumber>
     <UDN>${dlnaUuid()}</UDN>
     <dlna:X_DLNADOC>DMS-1.50</dlna:X_DLNADOC>
@@ -206,7 +206,7 @@ function ssdpTargets(): [string, string][] {
 }
 
 const location = () => `${baseUrl()}/dlna/description.xml`;
-const SERVER_HDR = `${os.type()}/${os.release()} UPnP/1.0 MediaMax/${config.version}`;
+const SERVER_HDR = `${os.type()}/${os.release()} UPnP/1.0 Kinora/${config.version}`;
 
 function notify(type: 'ssdp:alive' | 'ssdp:byebye') {
   if (!socket) return;

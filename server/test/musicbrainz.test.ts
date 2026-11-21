@@ -495,7 +495,7 @@ test('ListenBrainz rules: half the track or 4 minutes', () => {
 });
 
 let duetId = '';
-test('listen payload: track_metadata + additional_info with MBIDs, MediaMax as player/client, no music_service', () => {
+test('listen payload: track_metadata + additional_info with MBIDs, Kinora as player/client, no music_service', () => {
   duetId = db.get("SELECT id FROM items WHERE library_id = 'lib-scan' AND title = 'Duet'")!.id;
   const t = scrobble.trackForScrobble(duetId)!;
   const l = lb.buildListen(t, 1700000000) as any;
@@ -506,8 +506,8 @@ test('listen payload: track_metadata + additional_info with MBIDs, MediaMax as p
   const ai = l.track_metadata.additional_info;
   assert.equal(ai.recording_mbid, ID.recA);
   assert.deepEqual(ai.artist_mbids, [ID.artA, ID.artB]);
-  assert.equal(ai.media_player, 'MediaMax');
-  assert.equal(ai.submission_client, 'MediaMax');
+  assert.equal(ai.media_player, 'Kinora');
+  assert.equal(ai.submission_client, 'Kinora');
   assert.ok(ai.submission_client_version);
   assert.ok(ai.duration_ms > 0);
   assert.equal('music_service' in ai, false);
@@ -521,7 +521,7 @@ test('listen payload: track_metadata + additional_info with MBIDs, MediaMax as p
 
 test('ListenBrainz connect (token validated, write-only), listens, offline queue, rate limits, import batches', async () => {
   await assert.rejects(lb.lbConnect(listener, { token: 'bad-token' }), /not valid|401|Invalid/);
-  // Non-admins can't point MediaMax at a LAN address.
+  // Non-admins can't point Kinora at a LAN address.
   await assert.rejects(lb.lbConnect(listener, { token: 'good-token', serverUrl: 'http://127.0.0.1:9/lb' }), /not allowed|private/);
   const st = await lb.lbConnect(listener, { token: 'good-token' });
   assert.equal(st.connected, true);

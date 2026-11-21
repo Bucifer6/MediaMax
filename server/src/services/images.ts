@@ -97,7 +97,7 @@ async function fetchRemote(id: string, url: string, untrusted: boolean): Promise
   const dest = path.join(config.imageCacheDir, id.slice(0, 2), id + ext);
   if (fs.existsSync(dest)) return dest;
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  const init = { signal: AbortSignal.timeout(20000), headers: { 'User-Agent': 'MediaMax/1.0' } };
+  const init = { signal: AbortSignal.timeout(20000), headers: { 'User-Agent': 'Kinora/1.0' } };
   // Tuner boxes (TVHeadend imagecache, OpenWebif picons) may need the device login: Basic or Digest, kept out of fetch's URL.
   const res = !untrusted && /^https?:\/\/[^/@]+@/i.test(url) ? await fetchWithUserInfo(url) : untrusted ? await safeFetch(url, init) : await fetch(url, init);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

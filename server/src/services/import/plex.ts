@@ -28,7 +28,7 @@ const log = logger('server-import');
 const PAGE = 1000;
 /** plex.tv's address; tests point it at a stub. */
 export const plexTvBase = () => (process.env.MEDIAMAX_PLEX_TV_URL || 'https://plex.tv').replace(/\/+$/, '');
-const CLIENT = { 'X-Plex-Product': 'MediaMax', 'X-Plex-Client-Identifier': 'mediamax-importer', 'X-Plex-Version': '1' };
+const CLIENT = { 'X-Plex-Product': 'Kinora', 'X-Plex-Client-Identifier': 'mediamax-importer', 'X-Plex-Version': '1' };
 const OWNER_ACCOUNT = 1; // The owner's accountID in the server's own history.
 
 /* ------------------------------ DTOs ------------------------------ */
@@ -98,7 +98,7 @@ async function plexTv(path: string, token: string, format: 'xml' | 'json'): Prom
   try {
     return format === 'json' ? JSON.parse(text) : xml.parse(text);
   } catch {
-    throw new UpstreamError('plex.tv sent an answer MediaMax could not read', 'plex_tv_error', res.status);
+    throw new UpstreamError('plex.tv sent an answer Kinora could not read', 'plex_tv_error', res.status);
   }
 }
 
@@ -135,7 +135,7 @@ const RATING_OF: Record<string, string> = {
 };
 
 /**
- * A MediaMax rating limit from Plex sharing filters (`filterMovies="contentRating=G%2CPG"`): the highest allowed
+ * A Kinora rating limit from Plex sharing filters (`filterMovies="contentRating=G%2CPG"`): the highest allowed
  * rating of each filter, the strictest across filters. `deny` when a filter excludes ratings instead (not mappable).
  */
 export function plexFilterRating(filters: string[]): { rating: string | null; deny: boolean } {

@@ -132,7 +132,7 @@ await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 const JF_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
 /* ------------------------------------------------------------------ */
-/* MediaMax fixtures                                                   */
+/* Kinora fixtures                                                   */
 /* ------------------------------------------------------------------ */
 
 const { db } = await import('../src/db.ts');
