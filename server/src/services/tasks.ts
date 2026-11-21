@@ -8,6 +8,7 @@ import { getKv, setKv, getSettings } from './settings.js';
 import { events } from './events.js';
 import { logger } from '../util/log.js';
 import { notFound } from '../util/errors.js';
+import { checkThemeSchedule } from './branding.js';
 import { recalculateDateAdded, scanLibrary } from './scanner.js';
 import { refreshDueSources, refreshSource, pruneOldPrograms } from './livetv/livetv.js';
 import { pruneActivity } from './activity.js';
@@ -336,6 +337,9 @@ export function startScheduler() {
   // Fast housekeeping loops.
   timers.push(setInterval(() => void dvrTick().catch((e) => log.error('DVR tick failed', e)), 15000));
   timers.push(setInterval(() => reapSessions(), 30000));
+  // Seasonal themes: tell clients when one starts or ends.
+  checkThemeSchedule();
+  timers.push(setInterval(() => checkThemeSchedule(), 5 * 60000));
   if (process.env.MEDIAMAX_NO_WATCH !== '1') {
     syncWatchers();
     timers.push(setInterval(() => syncWatchers(), 60000));

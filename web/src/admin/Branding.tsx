@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { Branding, BrandingAssetKind, FeatureFlags, HomeRowConfig, HomeRowType, Item, StarterLook, Theme, ThemeColors } from '@mediamax/shared';
+import type { Branding, BrandingAssetKind, FeatureFlags, HomeRowConfig, HomeRowType, Item, StarterLook, Theme, ThemeColors, ThemeSchedule } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
@@ -265,6 +265,59 @@ function ThemeEditor({ theme, onChange }: { theme: Theme; onChange: (t: Theme) =
   );
 }
 
+/* ---------------- seasonal themes ---------------- */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+function MonthDay({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
+  const [m, d] = value.split('-').map(Number) as [number, number];
+  return (
+    <span className="ts-date">
+      <select className="select" value={d} onChange={(e) => onChange(`${pad2(m)}-${pad2(Number(e.target.value))}`)} aria-label={`${label} day`}>
+        {Array.from({ length: 31 }, (_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}
+      </select>
+      <select className="select" value={m} onChange={(e) => onChange(`${pad2(Number(e.target.value))}-${pad2(d)}`)} aria-label={`${label} month`}>
+        {MONTHS.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}
+      </select>
+    </span>
+  );
+}
+
+/** Date windows that swap the default theme every year (Halloween, Christmas…). Resolved by the server for every client. */
+function ThemeSchedules({ schedules, themes, activeId, onChange }: { schedules: ThemeSchedule[]; themes: Theme[]; activeId: string | null; onChange: (s: ThemeSchedule[]) => void }) {
+  const update = (i: number, p: Partial<ThemeSchedule>) => onChange(schedules.map((s, j) => (j === i ? { ...s, ...p } : s)));
+  const add = (preset?: Partial<ThemeSchedule>) => onChange([...schedules, { id: rid(), name: 'Seasonal theme', enabled: true, start: '12-01', end: '01-06', themeId: themes.find((t) => t.id === 'festive')?.id ?? themes[0]?.id ?? '', ...preset }]);
+  return (
+    <div className="theme-schedules">
+      <h3>Seasonal themes</h3>
+      <p className="muted small">Replace the default theme on these dates every year, on every app. A window may cross the new year (1 Dec – 6 Jan). The first matching one wins; users who chose their own theme keep it.</p>
+      {schedules.map((s, i) => (
+        <div key={s.id} className={`ts-row ${s.enabled ? '' : 'dim'}`}>
+          <input className="input" value={s.name} onChange={(e) => update(i, { name: e.target.value })} aria-label="Name" placeholder="Name" />
+          <MonthDay label="From" value={s.start} onChange={(start) => update(i, { start })} />
+          <span className="muted">to</span>
+          <MonthDay label="To" value={s.end} onChange={(end) => update(i, { end })} />
+          <select className="select" value={s.themeId} onChange={(e) => update(i, { themeId: e.target.value })} aria-label="Theme">
+            {themes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          {s.id === activeId && <Badge tone="accent">Active now</Badge>}
+          <input type="checkbox" className="switch" checked={s.enabled} onChange={(e) => update(i, { enabled: e.target.checked })} aria-label="Enabled" />
+          <button className="btn-icon" onClick={() => onChange(schedules.filter((_, j) => j !== i))} aria-label="Remove seasonal theme"><Icon name="trash" size={16} /></button>
+        </div>
+      ))}
+      <div className="toolbar">
+        <button className="btn btn-sm" onClick={() => add()}><Icon name="plus" size={14} /> Add seasonal theme</button>
+        {!schedules.some((s) => s.name === 'Christmas') && themes.some((t) => t.id === 'festive') && (
+          <button className="btn btn-sm btn-ghost" onClick={() => add({ name: 'Christmas', start: '12-01', end: '01-06', themeId: 'festive' })}>+ Christmas (Festive)</button>
+        )}
+        {!schedules.some((s) => s.name === 'Halloween') && (
+          <button className="btn btn-sm btn-ghost" onClick={() => add({ name: 'Halloween', start: '10-20', end: '11-01' })}>+ Halloween</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- home row builder ---------------- */
 function RowBuilder({ rows, onChange }: { rows: HomeRowConfig[]; onChange: (r: HomeRowConfig[]) => void }) {
   const { libraries } = useApp();
@@ -453,7 +506,8 @@ export function BrandingStudio() {
           footerText: draft.footerText,
           supportUrl: draft.supportUrl || null,
           splash: draft.splash,
-          defaultThemeId: draft.defaultThemeId,
+          baseThemeId: draft.baseThemeId,
+          themeSchedules: draft.themeSchedules,
           allowUserThemes: draft.allowUserThemes,
           homeRows: draft.homeRows,
           features: draft.features,
@@ -565,7 +619,7 @@ export function BrandingStudio() {
           {tab === 'looks' && (
             <StarterLooks
               themes={draft.themes}
-              current={draft.defaultThemeId}
+              current={draft.baseThemeId}
               onApply={async (look) => {
                 if (!(await confirm({ title: `Apply “${look.name}”?`, message: 'This sets the default theme, replaces the home screen rows and turns on the features it needs. Logos, text and your own themes are kept. You can fine-tune everything afterwards.', confirmLabel: 'Apply look' }))) return;
                 try {
@@ -597,7 +651,8 @@ export function BrandingStudio() {
                       </span>
                       <span className="preset-name">{t.name}{dirtyThemes.has(t.id) ? ' •' : ''}</span>
                       <span className="preset-badges">
-                        {t.id === draft.defaultThemeId && <Badge tone="primary">Default</Badge>}
+                        {t.id === draft.baseThemeId && <Badge tone="primary">Default</Badge>}
+                        {draft.activeThemeScheduleId && t.id === draft.defaultThemeId && t.id !== draft.baseThemeId && <Badge tone="accent">Seasonal now</Badge>}
                         {t.builtIn && <Badge tone="muted">Built-in</Badge>}
                       </span>
                     </button>
@@ -607,13 +662,14 @@ export function BrandingStudio() {
               </div>
               <div className="toolbar">
                 <button className="btn btn-sm" onClick={() => newTheme(theme, `${theme.name} copy`)}><Icon name="copy" size={14} /> Duplicate</button>
-                <button className="btn btn-sm" disabled={draft.defaultThemeId === theme.id} onClick={() => patch({ defaultThemeId: theme.id })}><Icon name="check" size={14} /> Make default</button>
+                <button className="btn btn-sm" disabled={draft.baseThemeId === theme.id} onClick={() => patch({ baseThemeId: theme.id })}><Icon name="check" size={14} /> Make default</button>
                 <button className="btn btn-sm btn-ghost" disabled={!!theme.builtIn} onClick={() => deleteTheme(theme)}><Icon name="trash" size={14} /> Delete</button>
                 <span className="spacer" />
                 <Switch checked={draft.allowUserThemes} onChange={(v) => patch({ allowUserThemes: v })} label="Let users choose a theme" />
               </div>
               {theme.builtIn && <p className="muted small">Built-in presets can be tweaked but not deleted. Duplicate one to start your own.</p>}
               <ThemeEditor theme={theme} onChange={editTheme} />
+              <ThemeSchedules schedules={draft.themeSchedules ?? []} themes={draft.themes} activeId={draft.activeThemeScheduleId ?? null} onChange={(themeSchedules) => patch({ themeSchedules })} />
             </div>
           )}
 

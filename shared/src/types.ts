@@ -169,8 +169,17 @@ export interface Branding {
   tvBannerUrl: string | null;
   /** Apple TV top shelf artwork. */
   topShelfUrl: string | null;
-  /** The default theme applied to everyone. */
+  /**
+   * The theme applied to everyone right now: the theme of the active seasonal schedule (`themeSchedules`) while one is
+   * active, else `baseThemeId`. Clients just apply this one (users who picked their own theme keep it).
+   */
   defaultThemeId: string;
+  /** The admin's chosen default theme (outside any seasonal schedule). Send this to change the default. */
+  baseThemeId: string;
+  /** Seasonal themes, e.g. Halloween 10-20 → 11-01, Christmas 12-01 → 01-06. The first active one wins. */
+  themeSchedules: ThemeSchedule[];
+  /** Id of the schedule in effect now (null = none, `defaultThemeId` = `baseThemeId`). */
+  activeThemeScheduleId: string | null;
   /** All themes available (presets + admin-made). */
   themes: Theme[];
   /** Let users pick a theme from `themes` for themselves. */
@@ -181,6 +190,21 @@ export interface Branding {
   customCss: string;
   /** Bumped every time branding changes so clients can cache-bust. */
   revision: number;
+}
+
+/**
+ * A date window (server's local date, every year) during which `themeId` replaces the default theme.
+ * Inclusive; a window whose end is before its start wraps the year end (12-01 → 01-06).
+ */
+export interface ThemeSchedule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  /** "MM-DD". */
+  start: string;
+  /** "MM-DD". */
+  end: string;
+  themeId: string;
 }
 
 export type BrandingAssetKind =

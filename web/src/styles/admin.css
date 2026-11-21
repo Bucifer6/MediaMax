@@ -448,3 +448,12 @@ a.stat:hover { transform: translateY(-2px); border-color: var(--c-primary); }
 .renderer-admin-list li { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--c-surface-alt); }
 .renderer-admin-text { display: flex; flex-direction: column; flex: 1; min-width: 160px; }
 .settings-card li code { overflow-wrap: anywhere; }
+
+/* Seasonal themes (Branding studio) */
+.theme-schedules { margin-top: 24px; display: flex; flex-direction: column; gap: 10px; }
+.theme-schedules h3 { margin: 0; font-size: 1rem; }
+.ts-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ts-row > .input { flex: 1 1 140px; min-width: 120px; }
+.ts-row .select { width: auto; }
+.ts-row.dim { opacity: 0.6; }
+.ts-date { display: inline-flex; gap: 4px; }
