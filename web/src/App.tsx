@@ -64,6 +64,8 @@ const MyListPage = lazyPage(() => import('./pages/MyList'));
 const CalendarPage = lazyPage(() => import('./pages/Calendar'));
 const ProfilePickerPage = lazyPage(() => import('./pages/ProfilePicker'));
 const HelpPage = lazyPage(() => import('./pages/Help'));
+const RoulettePage = lazyPage(() => import('./pages/Roulette'));
+const MatchPage = lazyPage(() => import('./pages/Match'));
 const PublicHelpShell = lazyPage(() => import('./pages/Help').then((m) => ({ default: m.PublicHelpShell })));
 
 /** The Help Centre is readable signed out too (login screen, phone and TV apps open it in a browser). */
@@ -177,6 +179,10 @@ function Gate() {
           <Route path="issues/:issueId" element={<IssuesPage />} />
           <Route path="my-list" element={<MyListPage />} />
           <Route path="calendar" element={<CalendarPage />} />
+          <Route path="roulette" element={<RoulettePage />} />
+          <Route path="match" element={<MatchPage />} />
+          <Route path="match/join/:code" element={<MatchPage />} />
+          <Route path="match/:id" element={<MatchPage />} />
           <Route path="settings/*" element={<SettingsPage />} />
           <Route path="admin/*" element={<RequireAdmin><AdminRoutes /></RequireAdmin>} />
           <Route path="*" element={<NotFound />} />

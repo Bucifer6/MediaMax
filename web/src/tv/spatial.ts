@@ -43,7 +43,7 @@ export const REMOTE_HELP: { keys: string; action: string }[] = [
   { keys: 'Info', action: 'Show the info overlay (playback details, HDR format)' },
   { keys: 'Guide', action: 'Open the TV guide' },
   { keys: 'Red', action: 'Subtitles on / next language' },
-  { keys: 'Green', action: 'Next audio track' },
+  { keys: 'Green', action: 'Next audio track · outside the player: Roulette ("Can\'t decide? Spin")' },
   { keys: 'Yellow', action: 'Skip intro / credits / ad break' },
   { keys: 'Blue', action: 'Info overlay (Live TV: channel list)' },
   { keys: 'Back', action: 'Close a menu, leave the player, or go back' },
@@ -92,6 +92,8 @@ function handleRemote(key: string, target: Element | null): boolean {
       return false;
     case 'ColorF1Green':
       if (player && !live) { send(target, 'a'); return true; }
+      // Outside the players: "Can't decide? Spin" (Roulette).
+      if (!player) { goTo('/roulette'); return true; }
       return false;
     case 'ColorF2Yellow':
       return player ? clickSkip() : false;
@@ -250,7 +252,7 @@ export function installTvMode() {
     // A focused seek bar (role=slider) steps the position itself, with a trickplay preview.
     if ((dir === 'left' || dir === 'right') && target?.getAttribute?.('role') === 'slider') return;
     // Elements that use the arrows themselves (e.g. the music visualiser stage: left/right switch styles).
-    if (target instanceof HTMLElement && target.dataset.ownArrows !== undefined && (dir === 'left' || dir === 'right')) return;
+    if (target instanceof HTMLElement && target.dataset.ownArrows !== undefined && (dir === 'left' || dir === 'right' || (dir === 'up' && target.dataset.ownArrows === 'all'))) return;
     if (inPlayer && (!target || target === document.body || target.tagName === 'VIDEO')) return;
     if (move(dir)) e.preventDefault();
   }, true);
