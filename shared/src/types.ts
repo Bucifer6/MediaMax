@@ -1706,7 +1706,9 @@ export type ServerEvent =
   /** Your controllable devices changed (online/offline/now playing). */
   | { type: 'remote.targets'; targets: RemoteTarget[] }
   /** A new in-app notification for you (e.g. a new episode of a show you watch). `unread` is your new unread total. */
-  | { type: 'notification'; notification: AppNotification; unread: number };
+  | { type: 'notification'; notification: AppNotification; unread: number }
+  /** Movie Match (group swipe) — see MatchServerEvent. */
+  | MatchServerEvent;
 
 export type ClientEvent =
   | { type: 'ping' }
@@ -4239,4 +4241,185 @@ export interface TrackStems {
   frames?: number;
   sampleRate?: number;
   at?: number;
+}
+
+/* ------------------------- Help us decide ------------------------- */
+/* Movie Match (group swipe), Roulette ("Can't decide? Spin") and Random marathon. */
+
+export type MatchContentKind = 'movies' | 'shows' | 'both';
+export type MatchVote = 'yes' | 'no' | 'super';
+/** 'all': every current member said yes. 'majority': more than half said yes (a super like counts twice). */
+export type MatchRule = 'all' | 'majority';
+
+export interface MatchSettings {
+  kind: MatchContentKind;
+  /** Empty = every library the group can see. */
+  libraryIds: string[];
+  genres: string[];
+  /** Minutes; null = any length. */
+  maxRuntimeMin: number | null;
+  /** Skip anything any member has already watched. */
+  unwatchedByAll: boolean;
+  rule: MatchRule;
+}
+
+/** POST /match */
+export type CreateMatchRequest = Partial<MatchSettings>;
+
+export interface MatchMember {
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  isHost: boolean;
+  /** Has a live connection (WebSocket) right now. */
+  online: boolean;
+  /** Cards voted on. */
+  voted: number;
+  /** Voted on every card in the current deck. */
+  done: boolean;
+}
+
+export interface MatchResult {
+  itemId: string;
+  title: string;
+  year: number | null;
+  posterUrl: string | null;
+  backdropUrl: string | null;
+  yes: number;
+  superLikes: number;
+  no: number;
+  /** yes + 2 × super likes − no; results are ranked by this. */
+  enthusiasm: number;
+  matchedAt: string;
+}
+
+export interface MatchSessionState {
+  id: string;
+  code: string;
+  hostUserId: string;
+  /** The device that started the session ("Play on…" target), when it is still online. */
+  hostDeviceName: string | null;
+  hostDeviceOnline: boolean;
+  settings: MatchSettings;
+  members: MatchMember[];
+  deckSize: number;
+  matches: MatchResult[];
+  ended: boolean;
+  expiresAt: string;
+  /** For the viewer: the first card they have not voted on. */
+  myCursor: number;
+}
+
+/** GET /match/:id/deck */
+export interface MatchDeckResponse {
+  offset: number;
+  total: number;
+  cards: Item[];
+  /** The viewer's votes on these cards (by item id). */
+  myVotes: Record<string, MatchVote>;
+}
+
+export type MatchServerEvent =
+  | { type: 'match.state'; session: MatchSessionState }
+  /** "It's a match!" — every member gets it at the same moment. */
+  | { type: 'match.found'; sessionId: string; match: MatchResult }
+  | { type: 'match.ended'; sessionId: string; reason: 'host' | 'expired' };
+
+export type RouletteKind = 'movie' | 'series';
+export type RouletteMood = 'feel-good' | 'edge' | 'mind-bending' | 'laugh' | 'family' | 'short';
+
+export interface RouletteFilters {
+  kind: RouletteKind;
+  libraryIds?: string[];
+  genres?: string[];
+  /** Movies: runtime; series: typical episode length. Minutes. */
+  maxRuntimeMin?: number | null;
+  /** e.g. 1990 for the 1990s. */
+  decade?: number | null;
+  /** Community rating 0-10. */
+  minRating?: number | null;
+  unwatchedOnly?: boolean;
+  fromMyList?: boolean;
+  mood?: RouletteMood | null;
+  /** Favour higher-rated and recently added titles. */
+  weighted?: boolean;
+  /** Series: a random episode instead of next-up / S1E1 (sitcom-style). */
+  randomEpisode?: boolean;
+}
+
+/** POST /roulette/spin */
+export interface RouletteSpinRequest extends RouletteFilters {
+  /** "Not this one": excluded for this session. */
+  excludeIds?: string[];
+  /** Deterministic picks (tests, shareable spins). */
+  seed?: number;
+}
+
+export interface RouletteDecoy {
+  id: string;
+  title: string;
+  posterUrl: string | null;
+}
+
+export interface RouletteSpinResponse {
+  /** The movie or show picked; null when nothing matches. */
+  pick: Item | null;
+  /** Series: the episode to play (next up if started, else S1E1, or random). */
+  episode: Item | null;
+  /** Posters for the reel (never includes the pick). */
+  decoys: RouletteDecoy[];
+  /** How many titles matched the filters. */
+  poolSize: number;
+}
+
+/** Mood presets (also used by marathons). */
+export interface RouletteMoodPreset {
+  id: RouletteMood;
+  label: string;
+  genres: string[];
+}
+
+/** "Are you still watching?" for marathons and the sleep timer. */
+export interface StillWatchingSettings {
+  enabled: boolean;
+  /** Ask after this many titles in a row with no input. */
+  afterItems: number;
+  /** …or after this long with no input (minutes). */
+  afterMinutes: number;
+}
+
+/** POST /marathon */
+export interface CreateMarathonRequest extends RouletteFilters {
+  /** Series marathon of one show ("random episodes, forever"). */
+  showId?: string | null;
+  stillWatching?: Partial<StillWatchingSettings>;
+}
+
+/** POST /marathon/:id/next */
+export interface MarathonNextRequest {
+  /** The title that just finished (counted as played in this marathon). */
+  finishedItemId?: string | null;
+  /** Skipped by the viewer: excluded, not counted. */
+  skippedItemId?: string | null;
+  /** Milliseconds since the viewer last touched the remote / screen. */
+  msSinceInput?: number;
+  /** Titles finished in a row without any input. */
+  itemsSinceInput?: number;
+}
+
+export interface MarathonState {
+  id: string;
+  filters: RouletteFilters;
+  showId: string | null;
+  stillWatching: StillWatchingSettings;
+  played: string[];
+  startedAt: string;
+}
+
+export interface MarathonNextResponse {
+  marathon: MarathonState;
+  /** The next playable title (movie or episode); null when the pool is exhausted. */
+  item: Item | null;
+  /** Ask "Are you still watching?" before playing `item`. */
+  stillWatchingCheck: boolean;
 }
