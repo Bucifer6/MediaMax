@@ -20,6 +20,7 @@ import { LinkDevicePage } from './pages/LinkDevice';
 import { NotFound } from './pages/NotFound';
 import { ShortcutsHost } from './components/Shortcuts';
 import { WhatsNew } from './components/WhatsNew';
+import { RemoteHost } from './remote/RemoteHost';
 
 /** Lazy-load a route chunk; after a server upgrade old chunk names 404, so reload once. */
 function lazyPage<T extends { default: React.ComponentType<any> }>(load: () => Promise<T>) {
@@ -64,6 +65,8 @@ const MyListPage = lazyPage(() => import('./pages/MyList'));
 const CalendarPage = lazyPage(() => import('./pages/Calendar'));
 const ProfilePickerPage = lazyPage(() => import('./pages/ProfilePicker'));
 const HelpPage = lazyPage(() => import('./pages/Help'));
+const PairPage = lazyPage(() => import('./pages/Pair'));
+const PhoneRemotePage = lazyPage(() => import('./pages/PhoneRemote'));
 const PublicHelpShell = lazyPage(() => import('./pages/Help').then((m) => ({ default: m.PublicHelpShell })));
 
 /** The Help Centre is readable signed out too (login screen, phone and TV apps open it in a browser). */
@@ -152,6 +155,10 @@ function Gate() {
         <Route path="/play/:itemId" element={<RequireAuth><VideoPlayer /></RequireAuth>} />
         <Route path="/watch/multiview" element={<RequireAuth><Multiview /></RequireAuth>} />
         <Route path="/watch/live/:channelId" element={<RequireAuth><LivePlayer /></RequireAuth>} />
+        {/* Phone remote: QR pairing landing page and the full-screen remote / second screen. */}
+        <Route path="/pair" element={<RequireAuth><PairPage /></RequireAuth>} />
+        <Route path="/remote" element={<RequireAuth><PhoneRemotePage /></RequireAuth>} />
+        <Route path="/remote/:deviceId" element={<RequireAuth><PhoneRemotePage /></RequireAuth>} />
         <Route path="/help" element={<HelpShell />}>
           <Route index element={<HelpPage />} />
           <Route path=":slug" element={<HelpPage />} />
@@ -184,6 +191,7 @@ function Gate() {
       </Routes>
       <ShortcutsHost />
       <WhatsNew />
+      <RemoteHost />
     </Suspense>
   );
 }

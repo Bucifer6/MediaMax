@@ -11,6 +11,7 @@ import { useMusic } from '../player/music';
 import { isTypingTarget } from '../hooks';
 import { useSpatialNav } from '../hooks/spatialNav';
 import { isIptvLibrary, libraryIcon } from '../utils/items';
+import { openPairDialog } from '../remote/api';
 import { api } from '../api/endpoints';
 import { canManageRequests, ISSUES_CHANGED, REQUESTS_CHANGED } from '../utils/requests';
 import { seerrApi } from '../api/seerr';
@@ -47,6 +48,9 @@ export function UserMenu() {
         ...(hasProfiles ? [{ label: 'Switch profile', icon: 'users' as const, onClick: () => navigate('/profiles') }] : []),
         { divider: true, label: '' },
         { label: 'Your year', icon: 'sparkles', onClick: () => navigate('/wrapped') },
+        // Phone remote (QR pairing): the TV shows a code; a phone opens the remote.
+        { label: document.documentElement.classList.contains('tv') ? 'Use your phone as remote' : 'Pair a phone as remote', icon: 'device', onClick: openPairDialog },
+        { label: 'Remote control', icon: 'tv', onClick: () => navigate('/remote') },
         { label: 'Settings', icon: 'settings', onClick: () => navigate('/settings') },
         ...(features.linkCodes && !user.parentUserId ? [{ label: 'Link a device', icon: 'link' as const, onClick: () => navigate('/link') }] : []),
         ...(user.isAdmin ? [{ label: 'Admin dashboard', icon: 'shield' as const, onClick: () => navigate('/admin') }] : []),
