@@ -14,7 +14,7 @@ On a TV, {{product}} switches to **TV mode**: bigger text, large buttons and a c
 
 - **Arrow keys (D-pad)** move the highlight to the nearest item in that direction.
 - **OK** (Enter) opens or presses the highlighted item.
-- **Back** closes a menu or dialog, leaves the player, or goes back a page.
+- **Back** closes a menu or dialog, leaves the player, or goes back a page. On the home screen, Back shows **Press Back again to exit**: press it again within 2 seconds to close the app.
 
 Rows of posters scroll by themselves as you move along them. When a dialog is open, the highlight stays inside it until you close it.
 

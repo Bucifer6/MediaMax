@@ -194,7 +194,8 @@ Kinora has the request app built in — no separate Overseerr/Jellyseerr contain
 | Web, iOS, Android, Apple TV, Android TV apps | ✅ | ✅ | ✅ | ✅ |
 | Apple CarPlay (music, audiobooks, podcasts) | Plexamp | Third-party | Premiere | ✅ (±15/30 s for audiobooks, podcasts and long mixes alongside next/previous, speed button; Siri "Play … in Kinora" opt-in) |
 | Android Auto (music, audiobooks, podcasts) | Plexamp | ✅ (no audiobooks) | Premiere | ✅ (±15/30 s for audiobooks, podcasts and long mixes alongside next/previous, speed button; Google Assistant "play …", seek and speed by voice) |
-| Samsung Tizen, LG webOS, Hisense VIDAA (wrapper apps + web TV mode with D-pad navigation; VIDAA untested on a set) | ✅ | ✅ | ✅ | ✅ |
+| Samsung Tizen, LG webOS, Hisense VIDAA (wrapper apps + web TV mode with D-pad navigation; Back on Home asks "Press Back again to exit"; VIDAA untested on a set) | ✅ | ✅ | ✅ | ✅ |
+| Web app offline page: a reload while the server is down shows a branded "Server offline — retrying…" page that reconnects by itself (small service worker caching only the app shell; never API responses or media) | 🟡 | 🟡 | 🟡 | ✅ |
 | Amazon Fire TV | ✅ | ✅ | ✅ | ✅ (Android TV build) |
 | Roku, Xbox | ✅ | 🟡 | ✅ | 🗺️ |
 | Desktop/HTPC app (mpv-class player) | ✅ | ✅ | ✅ | 🗺️ |

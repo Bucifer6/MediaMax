@@ -18,7 +18,7 @@ These work with the TV's own remote, a soundbar or receiver remote over HDMI-CEC
 | **Stop** | Leave the player |
 | **Fast-forward / Rewind** | Skip 10 seconds forward / back |
 | **Next / Previous** | Next episode / back 30 seconds. In Live TV: next / previous channel |
-| **Back** | Close a menu, leave the player, or go back |
+| **Back** | Close a menu, leave the player, or go back. On Home, press it twice to exit |
 
 ## Colour buttons
 

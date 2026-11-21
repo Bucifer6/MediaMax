@@ -22,6 +22,7 @@ import { installFx } from './theme/fx';
 import { initCapabilities } from './player/capabilities';
 import { initAudioCaps } from './player/audioCaps';
 import { installPrefetch } from './utils/prefetch';
+import { registerServiceWorker } from './sw/register';
 
 if (detectTv()) installTvMode();
 // Lite visual effects on TVs and low-end devices (after TV detection; see theme/fx.ts).
@@ -30,6 +31,8 @@ installFx();
 void initCapabilities();
 void initAudioCaps();
 installPrefetch();
+// Offline page on reload/fresh open while the server is down (production builds, browsers only).
+registerServiceWorker();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

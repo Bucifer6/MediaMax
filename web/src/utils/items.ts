@@ -28,9 +28,10 @@ export function progressPct(item: Item): number {
   return Math.min(100, (item.userData.positionMs / d) * 100);
 }
 
+/** A saved position offers Resume even on a watched title (a re-watch stopped part-way), as the mobile apps do. */
 export function isResumable(item: Item): boolean {
   const p = progressPct(item);
-  return p > 1 && p < 95 && !item.userData.played;
+  return p > 1 && p < 95;
 }
 
 export function episodeCode(item: Item): string {

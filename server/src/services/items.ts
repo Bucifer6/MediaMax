@@ -694,7 +694,7 @@ export function listContainers(user: User, type: 'collection' | 'playlist'): Ite
 /* ------------------------------- home ------------------------------ */
 
 export function continueWatching(user: User, limit = 20): Item[] {
-  return selectItems(user, "ud.position_ms > 0 AND COALESCE(ud.played,0) = 0 AND i.type IN ('movie','episode','video','bookpart','podcastepisode')", [], `ORDER BY ud.last_played_at DESC LIMIT ${toInt(limit, 20, 1, 100)}`);
+  return selectItems(user, "ud.position_ms > 0 AND i.type IN ('movie','episode','video','bookpart','podcastepisode')", [], `ORDER BY ud.last_played_at DESC LIMIT ${toInt(limit, 20, 1, 100)}`);
 }
 
 export function nextUp(user: User, limit = 20): Item[] {

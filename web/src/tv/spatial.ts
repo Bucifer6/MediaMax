@@ -3,12 +3,14 @@
  *
  * Turned on by `?tv=1` (remembered), a TV user agent, or the Tizen/webOS/VIDAA wrapper apps in /tv.
  * - Arrow keys move focus to the nearest focusable element in that direction (spatial navigation).
- * - Enter/OK clicks; the remote's Back key goes back (or closes a dialog).
+ * - Enter/OK clicks; the remote's Back key goes back (or closes a dialog). On the home screen the first Back shows
+ *   "Press Back again to exit" and a second Back within 2 s leaves the app (web/src/tv/backExit.ts).
  * - Media keys (play/pause/stop/ff/rew) are forwarded as the keyboard shortcuts the players already understand.
  * - `html.tv` enables the 10-foot CSS (bigger focus rings, larger hit targets, no hover-only controls).
  */
 
 import { isVidaaUa } from '../player/capabilities';
+import { createBackToExit, EXIT_MESSAGE, EXIT_WINDOW_MS, exitApp, isHomeScreen } from './backExit';
 
 const KEY = 'mm.tv';
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), video[controls]';
@@ -54,7 +56,7 @@ export const REMOTE_HELP: { keys: string; action: string }[] = [
   { keys: 'Green', action: 'Next audio track · outside the player: Roulette ("Can\'t decide? Spin")' },
   { keys: 'Yellow', action: 'Skip intro / credits / ad break' },
   { keys: 'Blue', action: 'Info overlay (Live TV: channel list)' },
-  { keys: 'Back', action: 'Close a menu, leave the player, or go back' },
+  { keys: 'Back', action: 'Close a menu, leave the player, or go back (on Home: press twice to exit)' },
 ];
 
 const send = (target: Element | null, key: string, shiftKey = false) =>
@@ -322,6 +324,7 @@ export function installTvMode() {
     /* not on Tizen */
   }
 
+  const backToExit = createBackToExit();
   window.addEventListener('keydown', (e) => {
     const target = e.target as Element | null;
     const inPlayer = !!document.querySelector('video') && !!document.querySelector('.player, .live-player, .mv-shell');
@@ -338,7 +341,11 @@ export function installTvMode() {
       // An open peek card (components/Peek.tsx) closes first and focus returns to its poster.
       else if (!inPlayer && scope() === document && document.querySelector('.peek')) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       else if (scope() !== document || inPlayer) (target ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-      else if (window.history.length > 1) window.history.back();
+      else if (isHomeScreen(window.location.pathname, import.meta.env.BASE_URL)) {
+        // Home is the root: Back has nowhere left to go in the app, so it asks before leaving it.
+        if (backToExit.press() === 'exit') exitApp(window as unknown as Parameters<typeof exitApp>[0]);
+        else window.dispatchEvent(new CustomEvent('mm:toast', { detail: { message: EXIT_MESSAGE, kind: 'info', ms: EXIT_WINDOW_MS } }));
+      } else if (window.history.length > 1) window.history.back();
       return;
     }
     // Remote keys (media, channel, colour, info/guide) → the shortcuts the players use.

@@ -600,6 +600,13 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS items_grandparent_added ON items(grandparent_id, added_at);
   ANALYZE;
   `,
+  /* Files a library scan skipped because their names aren't valid UTF-8; recordings resumed after a restart:
+     parts recorded so far, the time lost between them, and parts kept separately when joining them failed */ `
+  ALTER TABLE libraries ADD COLUMN skipped_names TEXT;
+  ALTER TABLE recordings ADD COLUMN parts TEXT;
+  ALTER TABLE recordings ADD COLUMN gap_seconds INTEGER;
+  ALTER TABLE recordings ADD COLUMN leftover_parts TEXT;
+  `,
 ];
 
 function migrate(db: Database) {

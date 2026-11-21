@@ -31,11 +31,12 @@ function precompress(): Plugin {
     },
   };
 }
+import { serviceWorker } from './sw/plugin';
 
 const target = process.env.MEDIAMAX_SERVER ?? 'http://localhost:8484';
 
 export default defineConfig({
-  plugins: [react(), precompress()],
+  plugins: [react(), precompress(), serviceWorker()],
   resolve: {
     alias: {
       // jassub imports this requestVideoFrameCallback polyfill (GPL-3.0) for a side effect only. jassub works without it
