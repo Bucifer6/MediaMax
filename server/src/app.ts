@@ -197,6 +197,9 @@ export async function buildApp(): Promise<FastifyInstance> {
     // Hashed assets are immutable; index.html is never cached.
     await app.register(fastifyStatic, {
       root: config.webDir, wildcard: false, serve: false, preCompressed: true,
+      // We set Cache-Control per file below; @fastify/static's own default (max-age=0) used to overwrite it, so the
+      // hashed, immutable assets were revalidated on every page load.
+      cacheControl: false,
     });
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith('/api/')) return reply.status(404).send({ error: 'not_found', message: 'Not found', statusCode: 404 });
