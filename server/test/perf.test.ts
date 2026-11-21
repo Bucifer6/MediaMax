@@ -96,7 +96,8 @@ test('JSON responses are compressed for clients that accept it, never for stream
   assert.equal(gz.headers['content-encoding'], 'gzip');
   assert.deepEqual(JSON.parse(zlib.gunzipSync(gz.rawPayload).toString()), plain.json());
   // Small bodies are left alone.
-  const small = await app.inject({ method: 'GET', url: '/api/v1/system/info', headers: { 'accept-encoding': 'br' } });
+  const small = await app.inject({ method: 'GET', url: '/api/v1/items/pm1', headers: { authorization: `Bearer ${token}`, 'accept-encoding': 'br' } });
+  assert.equal(small.statusCode, 200);
   assert.equal(small.headers['content-encoding'], undefined);
 });
 

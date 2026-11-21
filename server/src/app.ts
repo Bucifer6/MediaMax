@@ -47,7 +47,8 @@ export async function compressPayload(req: { method: string; headers: Record<str
   if (req.method === 'HEAD' || reply.statusCode < 200 || reply.statusCode === 204 || reply.statusCode === 206 || reply.statusCode === 304) return payload;
   if (reply.getHeader('content-encoding')) return payload;
   const len = typeof payload === 'string' ? Buffer.byteLength(payload) : payload.length;
-  if (len < 1400) return payload;
+  // Below ~8 KB the saving is a fraction of a millisecond on any network, less than the compression costs.
+  if (len < 8 * 1024) return payload;
   if (!COMPRESSIBLE.test(String(reply.getHeader('content-type') ?? ''))) return payload;
   const ae = String(req.headers['accept-encoding'] ?? '');
   const enc = /\bbr\b/.test(ae) ? 'br' : /\bgzip\b/.test(ae) ? 'gzip' : null;

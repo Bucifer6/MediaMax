@@ -476,7 +476,9 @@ const genreCache = new Map<string, { v: number; list: string[] }>();
 
 export function genres(user: User, libraryId?: string): string[] {
   const a = accessClause(user);
-  const key = `${libraryId ?? ''}|${a.sql}|${JSON.stringify(a.params)}`;
+  // The viewer's id is only bound for their own playlists, which genre lists never include: viewers with the same
+  // libraries and rating limit share an entry.
+  const key = `${libraryId ?? ''}|${a.sql}|${JSON.stringify(a.params.filter((p) => p !== user.id))}`;
   const v = itemsVersion();
   const hit = genreCache.get(key);
   if (hit && hit.v === v) return [...hit.list];
