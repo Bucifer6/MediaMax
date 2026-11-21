@@ -590,6 +590,9 @@ function spawnJob(plan: PlaybackPlan, startMs: number, id = newId()): SpawnedJob
 export const WARM_TTL_MS = 40_000;
 /** Warm jobs server-wide (each device holds at most one). */
 export const WARM_MAX_JOBS = 2;
+/** Minimum time between two new warm jobs of one device (tests lower it). */
+export const warmTuning = { minIntervalMs: 1000 };
+const lastWarmSpawn = new Map<string, number>();
 /** Segments a warm job encodes ahead of the start position before it is paused (SIGSTOP) until adopted. */
 const WARM_AHEAD_SEGMENTS = 2;
 
@@ -683,6 +686,11 @@ export async function preparePlayback(ctx: AuthContext, itemId: string, req: Pla
     maxConcurrent: getSettings().transcoding.maxConcurrent, slotFree: warmSlots.hasRoom(device),
   });
   if (!room.ok) return decisionOnly(room.reason);
+  // A client flicking through items (TV focus) must not churn encoders: one new warm job per device per second.
+  const last = lastWarmSpawn.get(device) ?? 0;
+  if (Date.now() - last < warmTuning.minIntervalMs) return decisionOnly('capacity');
+  lastWarmSpawn.set(device, Date.now());
+  if (lastWarmSpawn.size > 1000) for (const [k, t] of lastWarmSpawn) if (t < Date.now() - 60_000) lastWarmSpawn.delete(k);
   // Stop the device's previous warm job before the new encoder starts.
   warmSlots.drop(device, 'replaced');
   const pos = db.get<{ position_ms: number }>('SELECT position_ms FROM user_data WHERE user_id = ? AND item_id = ?', ctx.user.id, itemId)?.position_ms ?? 0;

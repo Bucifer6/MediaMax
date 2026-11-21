@@ -226,6 +226,8 @@ export default async function playbackRoutes(app: FastifyInstance) {
     let segPath: string;
     if (job.opts.mode === 'transcode') segPath = await job.waitForSegment(n);
     else {
+      // Remux: without this the throttle measured "ahead" from segment 0 and could pause ffmpeg for good.
+      if (job.opts.mode === 'remux') job.requested(n);
       segPath = job.segmentPath(n);
       const t0 = Date.now();
       const deadline = t0 + 20000;

@@ -511,6 +511,12 @@ export class TranscodeJob {
     this.throttle();
   }
 
+  /** The player fetched segment `n` (remux / live: served straight from disk), for the throttle. */
+  requested(n: number) {
+    this.lastRequested = n;
+    this.throttle();
+  }
+
   /**
    * Instant play (playback.ts warm jobs): encode up to segment `segment`, then pause until `release()` — the first
    * segments are ready when the user presses Play, without encoding a film nobody may watch. Polled through tick().

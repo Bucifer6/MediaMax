@@ -154,11 +154,12 @@ const { db } = await import('../src/db.ts');
 const { config } = await import('../src/config.ts');
 const { createUser, issueToken } = await import('../src/services/auth.ts');
 const { scanLibrary } = await import('../src/services/scanner.ts');
-const { listSessions, getSession, warmSlots, planCache, stopAllSessions } = await import('../src/services/playback.ts');
+const { listSessions, getSession, warmSlots, planCache, stopAllSessions, warmTuning } = await import('../src/services/playback.ts');
 const { getSettings, updateSettings } = await import('../src/services/settings.ts');
 const { buildApp } = await import('../src/app.ts');
 
 const user = createUser({ username: 'warmuser', password: 'pw-123456' });
+warmTuning.minIntervalMs = 0;
 const tokA = issueToken(user.id, { deviceId: 'warm-a', deviceName: 'A', platform: 'web' }).token;
 const tokB = issueToken(user.id, { deviceId: 'warm-b', deviceName: 'B', platform: 'web' }).token;
 const app = await buildApp();
@@ -290,4 +291,20 @@ test('decision cache: reused by start, invalidated by settings changes and a res
   await prepare(tokB, id);
   assert.equal(planCache.size, 2);
   assert.equal(listSessions().length, 0);
+});
+
+test('a device flicking through items does not churn encoders (one new warm job per second)', async () => {
+  warmTuning.minIntervalMs = 1000;
+  await new Promise((r) => setTimeout(r, 1100)); // past earlier tests' warm jobs on this device
+  try {
+    assert.equal((await prepare(tokA, idOf('Remux One'), { startMs: 0 })).json().warm, 'job');
+    const r = await prepare(tokA, idOf('Transcode One'), { startMs: 0 });
+    assert.equal(r.json().warm, 'decision');
+    assert.equal(r.json().reason, 'capacity');
+    // The same item again only refreshes the warm job (no new encoder): allowed.
+    assert.equal((await prepare(tokA, idOf('Remux One'), { startMs: 0 })).json().warm, 'job');
+  } finally {
+    warmTuning.minIntervalMs = 0;
+    warmSlots.clear();
+  }
 });
