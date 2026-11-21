@@ -307,3 +307,16 @@ test('the task queues only what is still missing, after the download task had it
   // Brand-new media waits only if a download provider could still find something; none is configured here.
   assert.equal(enqueueMissing(), 2);
 });
+
+test('a real download in the same language is listed before the auto-generated one', async () => {
+  const { refreshMediaSubs, subtitlesDir } = await import('../src/services/subtitleProviders/storage.ts');
+  const file = path.join(subtitlesDir('as-media'), 'ro.std.subsro_42.srt');
+  fs.writeFileSync(file, '1\n00:00:01,000 --> 00:00:02,000\nSalut\n');
+  db.upsert('subtitle_downloads', { path: file, media_id: 'as-media', provider: 'subsro', provider_file_id: '42', language: 'ro', created_at: now }, 'path');
+  db.run("UPDATE media SET subs = '[]' WHERE id = ?", 'as-media');
+  refreshMediaSubs('as-media');
+  const subs = JSON.parse(db.get<{ subs: string }>('SELECT subs FROM media WHERE id = ?', 'as-media')!.subs) as { index: number; title: string; language: string }[];
+  const ro = subs.filter((s) => s.language === 'rum');
+  assert.equal(ro[0].title, 'Subs.ro');
+  assert.equal(ro.at(-1)!.title, AI_LABEL);
+});

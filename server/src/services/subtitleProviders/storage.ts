@@ -45,7 +45,10 @@ export function downloadedSubs(mediaId: string, startIndex: number): StoredSub[]
   const dir = subtitlesDir(mediaId);
   if (!fs.existsSync(dir)) return [];
   const rec = recorded(mediaId);
-  return fs.readdirSync(dir).filter((f) => /\.(srt|vtt|ass)$/i.test(f)).sort().map((f, i) => {
+  // Auto-generated (AI) subtitles sort after every downloaded one, so players that pick "the first subtitle in my
+  // language" prefer a real download.
+  const isAi = (f: string) => rec.get(path.join(dir, f))?.provider === 'ai-whisper';
+  return fs.readdirSync(dir).filter((f) => /\.(srt|vtt|ass)$/i.test(f)).sort((a, b) => Number(isAi(a)) - Number(isAi(b)) || (a < b ? -1 : a > b ? 1 : 0)).map((f, i) => {
     const [lang, flag] = f.split('.');
     const p = path.join(dir, f);
     // Files from before providers existed have no record: they all came from OpenSubtitles.

@@ -330,6 +330,21 @@ When Settings → DLNA is on, the server announces itself over SSDP and serves U
   and base URL, automatic languages, `minScore` for the automatic task, `sync`, `saveMode`). Plugins add providers with
   `ctx.subtitles.registerProvider` (see PLUGINS.md).
 
+## AI: language model, automatic subtitles, Ask, recaps
+* `ServerSettings.ai` (`AiSettings`, via `GET`/`PUT /settings` 🛡️): `llm` (shared model; `apiKey` write-only, mirrored to
+  `aiDj.llm` for older clients), `features` (`dj`, `ask`, `recaps`, `autoSubtitles`), `autoSubtitles`, `ask`, `recaps`.
+* `GET /ai/features` → `{ ask, recaps, askUsesModel, recapsUseModel }` (what apps should show).
+* `POST /ask` `AskRequest { q, filter?, remove?, limit? }` → `AskResponse { filter, chips, items, by, semantic, likeItem, tookMs }`.
+  Send an earlier `filter` with chip keys in `remove` to drop parts without re-asking the model. 403 when Ask is switched off.
+* `GET /items/:id/recap?force=1` → `RecapResponse` for an episode about to play (`available`, `reason`, `episodes`, `text`,
+  `bullets`, `by`, `clip`). Only episodes this user watched before it are used.
+* 🛡️ `GET /ai/status` → `AiStatus` · `POST /ai/test` · `GET /ai/subtitles` → `AutoSubtitleStatus` + `models` ·
+  `POST /ai/subtitles/queue { itemId, language }` → `AutoSubtitleJob` · `POST /ai/subtitles/run` (ignores the night window) ·
+  `POST /ai/subtitles/stop` · `DELETE /ai/subtitles/jobs/:id` · `POST /ai/subtitles/clear { status }` ·
+  `POST /ai/whisper/download { what: 'binary' | 'model', model? }` · `POST /ai/embeddings/build`.
+* Scheduled tasks: `auto-subtitles` (Generate missing subtitles, every 30 min while switched on, works only inside the
+  window) and `ask-embeddings` (Build search embeddings).
+
 ## Trakt
 * `GET /trakt` → `TraktStatus` · `POST /trakt/connect` → `TraktDeviceCode` (show `userCode` + `verificationUrl`; poll `GET /trakt` until `connected`) · `PATCH /trakt` `{ scrobble }` · `DELETE /trakt`.
 * Admin sets `ServerSettings.trakt.clientId/clientSecret` (create an app at trakt.tv/oauth/applications). Playback start/pause/stop and "mark watched" are scrobbled automatically.
@@ -822,12 +837,12 @@ The AI DJ is free by default and works offline. Admins can connect free or cheap
   - "like/start with \<artist, album or song\>"
 
   The response adds `summary`, `understoodBy` (`llm`/`rules`), `continuous` and the resolved `request`; reuse that request for continuous top-ups. If the filters match nothing, they are relaxed instead of failing.
-- **Language model (optional):** `aiDj.llm.provider` is `ollama`, or `openai` for any OpenAI-compatible API:
+- **Language model (optional):** configured once for every AI feature in `ai.llm` (**Admin → AI**); `aiDj.llm` mirrors it for older clients. `provider` is `ollama`, or `openai` for any OpenAI-compatible API:
   - **Self-hosted, free:** LM Studio, llama.cpp, LocalAI, vLLM.
   - **Hosted free tiers:** Groq, Google Gemini (`…/v1beta/openai`), OpenRouter `:free` models, Mistral, Cerebras.
   - **Very cheap hosted:** DeepSeek, OpenAI mini models.
 
-  Model replies are validated (genres must exist in your library) and merged with the parser's results. `maxRequestsPerDay` (default 300) caps calls so free tiers stay free. Over the cap, the built-in DJ takes over silently. API keys are write-only: settings reads return `••••`.
+  Model replies are validated (genres must exist in your library) and merged with the parser's results. `maxRequestsPerDay` (default 300) caps calls from all AI features together so free tiers stay free; `ai.features.dj = false` keeps the DJ on its built-in brain. Over the cap, the built-in DJ takes over silently. API keys are write-only: settings reads return `••••`.
 - **The host:** `POST /dj/host {previousItemId?, nextItemId, position, prompt?, hour}` returns `{text, audioUrl, by}`. Text comes from varied templates or the model. The model is told to use only the facts it is given: title, artist, year, BPM, key, energy, your play count and favourite status.
 - **Voice:** `aiDj.tts.provider` is one of:
   - `device`: the browser, phone or TV speaks it, free
