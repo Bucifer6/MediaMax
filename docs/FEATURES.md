@@ -243,28 +243,47 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | NAS disk spin-down friendly: maintenance window for scans, thumbnails, trickplay, intro/DJ/HDR analysis and subtitle matching; piggybacks on disks that are awake (playback, file changes) | ❌ | ❌ | ❌ | ✅ |
 | Per-library disk state (active / idle / standby via hdparm, smartctl or /sys, never wakes a disk), directory-only inotify watching, opt-in long-interval polling for network shares | ❌ | ❌ | ❌ | ✅ (Linux) |
 | Media-folder artwork served from a cached copy in the data dir (browsing never wakes a media disk) | 🟡 | ❌ | ❌ | ✅ |
-| Import from Emby: users, permissions, library access, watched/resume/favourites, playlists, collections; dry-run preview, set-password links, safe re-runs | — | — | — | ✅ |
+| Import from Emby, Jellyfin or Plex: users, permissions, library access, watched/resume/favourites, play history, playlists, collections; quick and full dry-run previews, set-password links, safe re-runs | — | — | — | ✅ |
 
-### Migrating from Emby
-**Admin → Import from Emby** moves an Emby Server 4.x install over (Help Centre: *Moving users over from Emby*):
+### Migrating from Emby, Jellyfin or Plex
+**Admin → Import from another server** moves an Emby Server 4.x, Jellyfin 10.8+ or Plex Media Server install over
+(Help Centre: *Moving over from Emby, Jellyfin or Plex*). One page with a source picker; each source keeps its own
+settings, and one shared engine does the matching, account creation, links and re-runs.
 
-* **Connect** with the Emby URL and an admin API key (`X-Emby-Token`; write-only, masked like other stored secrets) plus
-  optional **path mappings** (`D:\Movies` → `/mnt/d/Movies`). LAN addresses are allowed, as for the *arr apps.
-* **Preview (dry run)**: users found and whether each would be created, merged into an existing account (same username,
-  or imported before) or updated; Emby library → MediaMax library mapping (by folder overlap after path mappings, then by
-  name); matched vs. unmatched counts for watched items, resume points, favourites, playlists and collections, with
-  unmatched examples.
-* **Users**: username/display name, admin, disabled, hidden from login (hidden users stay off the sign-in screen; the others get "Show on sign-in screen"), remote access,
-  Live TV / DVR, downloads, transcoding, stream limit (Emby 0 = unlimited), maximum parental rating and library access
-  (`EnabledFolders` → mapped libraries, `EnableAllFolders` → all).
-* **Matching**: TMDB/IMDb/TVDB ids first (episodes via the series' ids + season/episode numbers), then file path, then
-  title + year.
-* **Passwords**: Emby hashes can't be read over the API, so new accounts get a random unusable password and a one-time
+* **Connect** with the server URL and a write-only secret (masked like other stored secrets) plus optional **path
+  mappings** (`D:\Movies` → `/mnt/d/Movies`). LAN addresses are allowed for the server, as for the *arr apps.
+  * Emby: admin API key (`X-Emby-Token`).
+  * Jellyfin: admin API key (`Authorization: MediaBrowser Token="…"`, `X-Emby-Token` also sent); handles 10.9+'s
+    move from `/Users/{id}/Items` to `/Items?userId=`.
+  * Plex: the owner's `X-Plex-Token`. The server gives libraries (`/library/sections`), the catalogue with GUIDs,
+    collections, playlists and the viewing history; plex.tv (through the SSRF-guarded fetch) gives the owner, the users
+    the server is shared with and a per-share access token (`/api/servers/{machineId}/shared_servers`).
+* **Preview (dry run)**: *quick* (count-only requests: `Limit=0` / `X-Plex-Container-Size=0`) or *full* (every title
+  read and matched). Users found and whether each would be created, merged into an existing account (same username, or
+  imported before) or updated; library mapping (by folder overlap after path mappings, then by name); matched vs.
+  unmatched counts for watched items, resume points, favourites, play history, playlists and collections, with
+  unmatched examples and per-user notes.
+* **Users**: username/display name, admin, disabled, sign-in screen visibility (hidden users stay off it; Plex Home
+  members are shown), remote access, Live TV / DVR, downloads, transcoding, stream limit (Emby
+  `SimultaneousStreamLimit`, Jellyfin `MaxActiveSessions`; 0 = unlimited), maximum parental rating (Emby's scale,
+  Jellyfin's age score, Plex share rating filters; restricted Plex users without a filter get PG) and library access
+  (`EnabledFolders` / Plex shared sections → mapped libraries). Plex: the owner becomes an admin; friends and managed
+  users get no remote/stream limits (Plex has none); no e-mail is stored. Jellyfin blocked tags are reported, not copied.
+* **Watch data**: watched + play count + last played, resume points, favourites (Emby/Jellyfin). Plex: each shared
+  user's own `viewCount`/`viewOffset` via their share token; managed Home users without a token fall back to the
+  server's history (watched only). **Play history** rows from Plex's `/status/sessions/history/all` or the
+  Emby/Jellyfin **Playback Reporting** plugin (best-effort; skipped cleanly when the plugin is missing).
+* **Matching**: TMDB/IMDb/TVDB ids first (Plex `Guid` / legacy agent guids; episodes via the series' ids + season and
+  episode numbers), then file path, then title + year. The MediaMax catalogue is indexed in memory once per run.
+* **Speed**: 1000-item pages with a few pages in flight, four users read in parallel, the Plex catalogue read once
+  and matched by `ratingKey`, one transaction per user; progress per phase.
+* **Passwords**: source hashes can't be read, so new accounts get a random unusable password and a one-time
   **set-password link** (`/set-password/:token`, stored hashed, expiring, single use). Results list the links with copy
   buttons and a CSV export.
-* **Runs in the background** with live progress, logged to the activity log, and is **idempotent**: existing users are
-  skipped or merged unless "overwrite permissions" is ticked, watched flags are never downgraded and play counts never
-  go down, playlists/collections are topped up instead of duplicated, unclaimed accounts get a fresh link on re-run.
+* **Runs in the background** with live progress, logged to the activity log, and is **idempotent** (id map per source):
+  existing users are skipped or merged unless "overwrite permissions" is ticked, watched flags are never downgraded,
+  play counts never go down, history rows are never added twice, playlists/collections are topped up instead of
+  duplicated, unclaimed accounts get a fresh link on re-run.
 
 ### Media automation (*arr suite)
 MediaMax can be the hub of a Radarr/Sonarr/Lidarr/Readarr/Bazarr setup (**Admin → Server settings → Media automation (*arr)**):

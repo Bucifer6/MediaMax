@@ -150,7 +150,7 @@ function Gate() {
         <Route path="/login" element={<Login />} />
         {/* Public: invite links are opened by people who don't have an account yet. */}
         <Route path="/invite/:code" element={<InvitePage />} />
-        {/* Public: one-time set-password links for accounts moved over from Emby. */}
+        {/* Public: one-time set-password links for accounts moved over from Emby, Jellyfin or Plex. */}
         <Route path="/set-password/:token" element={<SetPasswordPage />} />
         <Route path="/profiles" element={<RequireAuth><ProfilePickerPage /></RequireAuth>} />
         <Route path="/play/:itemId" element={<RequireAuth><VideoPlayer /></RequireAuth>} />

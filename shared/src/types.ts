@@ -1823,7 +1823,9 @@ export type ServerEvent =
   | { type: 'branding.updated'; revision: number }
   | { type: 'userdata.updated'; itemId: string; userData: UserItemData }
   | { type: 'task.updated'; task: ScheduledTask }
-  /** Admins: progress of an Emby import (Admin → Import from Emby). */
+  /** Admins: progress of an import from another server (Admin → Import from another server). */
+  | { type: 'import.updated'; job: ImportJob }
+  /** Same, for older clients (Emby imports only). */
   | { type: 'embyImport.updated'; job: EmbyImportJob }
   | { type: 'recording.updated'; recording: Recording }
   | { type: 'session.terminated'; sessionId: string; reason: string }
@@ -4423,41 +4425,48 @@ export interface TrackStems {
 }
 
 /* ------------------------------------------------------------------ */
-/* Emby migration (Admin → Import from Emby)                           */
+/* Import from another server (Admin → Import from another server: Emby / Jellyfin / Plex) */
 /* ------------------------------------------------------------------ */
 
-/** Rewrites an Emby file path prefix to where MediaMax sees the same files, e.g. `D:\Movies` → `/mnt/d/Movies`. */
-export interface EmbyPathMapping {
+export type ImportSource = 'emby' | 'jellyfin' | 'plex';
+
+/** Rewrites a source server's file path prefix to where MediaMax sees the same files, e.g. `D:\Movies` → `/mnt/d/Movies`. */
+export interface ImportPathMapping {
   from: string;
   to: string;
 }
 
-/** GET/PUT /admin/emby-import/config. The API key is write-only: reads return "••••" when one is stored. */
-export interface EmbyImportConfig {
+/**
+ * GET/PUT /admin/import/:source/config. `apiKey` is the Emby/Jellyfin API key or the Plex token (`X-Plex-Token`);
+ * it is write-only: reads return "••••" when one is stored.
+ */
+export interface ImportConfig {
   url: string;
   apiKey: string;
-  pathMappings: EmbyPathMapping[];
+  pathMappings: ImportPathMapping[];
 }
 
-export interface EmbyImportOptions {
-  /** Emby user ids to import; null/absent = every user. */
+export interface ImportOptions {
+  /** Source user ids to import; null/absent = every user. */
   userIds?: string[] | null;
   /** Overwrite the permissions of accounts that already exist (matched by an earlier import or by username). */
   updateExisting?: boolean;
   /** Merge watch data into accounts that already exist (never downgrades anything). Default true. */
   mergeExisting?: boolean;
-  /** Import Emby users that are disabled there (they stay disabled). Default true. */
+  /** Import users that are disabled on the source (they stay disabled). Default true. */
   includeDisabled?: boolean;
   importWatched?: boolean;
   importResume?: boolean;
   importFavorites?: boolean;
   importPlaylists?: boolean;
   importCollections?: boolean;
+  /** Play history rows (Plex history, the Jellyfin/Emby Playback Reporting plugin). Default true. */
+  importHistory?: boolean;
   /** Days the set-password links stay valid (1-365, default 30). */
   linkExpiryDays?: number;
 }
 
-export interface EmbyMatchCount {
+export interface ImportMatchCount {
   total: number;
   matched: number;
   /** How matched items were found. */
@@ -4466,8 +4475,9 @@ export interface EmbyMatchCount {
   byTitle: number;
 }
 
-export interface EmbyLibraryMapping {
-  embyId: string;
+export interface ImportLibraryMapping {
+  /** The library's id on the source server. */
+  sourceId: string;
   name: string;
   locations: string[];
   libraryId: string | null;
@@ -4475,9 +4485,9 @@ export interface EmbyLibraryMapping {
   method: 'path' | 'name' | null;
 }
 
-export interface EmbyPreviewUser {
-  embyId: string;
-  /** Emby login name, made safe for MediaMax (see `renamedFrom`). */
+export interface ImportPreviewUser {
+  sourceId: string;
+  /** Source login name, made safe for MediaMax (see `renamedFrom`). */
   username: string;
   renamedFrom: string | null;
   displayName: string;
@@ -4491,50 +4501,69 @@ export interface EmbyPreviewUser {
   maxContentRating: string | null;
   /** MediaMax library names this user will see; null = all libraries. */
   libraries: string[] | null;
-  /** Emby folders the user may see that map to no MediaMax library. */
+  /** Source libraries the user may see that map to no MediaMax library. */
   unmappedFolders: string[];
   lastActivity: string | null;
   /** create: new account; update: existing account, permissions overwritten; merge: existing account, only watch data; skip. */
   action: 'create' | 'update' | 'merge' | 'skip';
   existingUserId: string | null;
-  watched: EmbyMatchCount;
-  resume: EmbyMatchCount;
-  favorites: EmbyMatchCount;
+  watched: ImportMatchCount;
+  resume: ImportMatchCount;
+  favorites: ImportMatchCount;
   playlists: number;
-  playlistItems: EmbyMatchCount;
+  playlistItems: ImportMatchCount;
+  history: ImportMatchCount;
+  /** Mapping caveats (e.g. "Plex managed user: watched status from play history only"). */
+  notes: string[];
 }
 
-/** GET /admin/emby-import/preview: what an import would do, without changing anything. */
-export interface EmbyImportPreview {
+/** GET /admin/import/:source/preview: what an import would do, without changing anything. */
+export interface ImportPreview {
+  source: ImportSource;
+  /**
+   * Quick preview: totals come from count-only requests and no title is matched (`matched`/`by*` are 0). A full
+   * preview reads every title and reports how each would be matched.
+   */
+  quick: boolean;
   server: { id: string | null; name: string; version: string };
-  libraries: EmbyLibraryMapping[];
-  users: EmbyPreviewUser[];
+  libraries: ImportLibraryMapping[];
+  users: ImportPreviewUser[];
   collections: number;
-  collectionItems: EmbyMatchCount;
-  totals: { users: number; create: number; update: number; merge: number; skip: number; watched: EmbyMatchCount; resume: EmbyMatchCount; favorites: EmbyMatchCount };
+  collectionItems: ImportMatchCount;
+  totals: {
+    users: number; create: number; update: number; merge: number; skip: number;
+    watched: ImportMatchCount; resume: ImportMatchCount; favorites: ImportMatchCount; history: ImportMatchCount;
+  };
   /** A few unmatched titles, to help fix path mappings. */
   unmatchedSamples: string[];
+  /** Source-wide caveats (e.g. "Playback Reporting plugin not found: play history skipped"). */
+  notes: string[];
+  /** Seconds the preview took. */
+  seconds: number;
 }
 
-export interface EmbyImportUserResult {
-  embyId: string;
+export interface ImportUserResult {
+  sourceId: string;
   username: string;
   displayName: string;
   userId: string | null;
   status: 'created' | 'updated' | 'merged' | 'skipped' | 'error';
   message: string | null;
-  /** One-time link where the user chooses their MediaMax password (Emby password hashes can't be carried over). */
+  /** One-time link where the user chooses their MediaMax password (source password hashes can't be carried over). */
   setPasswordUrl: string | null;
   setPasswordExpiresAt: string | null;
   watched: number;
   resume: number;
   favorites: number;
   playlists: number;
+  /** Play history rows added. */
+  history: number;
   unmatched: number;
 }
 
-export interface EmbyImportJob {
+export interface ImportJob {
   id: string;
+  source: ImportSource;
   status: 'running' | 'done' | 'error';
   phase: string;
   /** 0-100 */
@@ -4542,10 +4571,31 @@ export interface EmbyImportJob {
   startedAt: string;
   finishedAt: string | null;
   error: string | null;
-  options: EmbyImportOptions;
-  results: EmbyImportUserResult[];
+  options: ImportOptions;
+  results: ImportUserResult[];
   collections: { created: number; updated: number; items: number };
+  notes: string[];
 }
+
+/** POST /admin/import/:source/test. */
+export interface ImportTestResult {
+  ok: boolean;
+  message: string;
+  serverName?: string;
+  version?: string;
+  users?: number;
+}
+
+/* Emby importer names (kept for older clients; same shapes). */
+export type EmbyPathMapping = ImportPathMapping;
+export type EmbyImportConfig = ImportConfig;
+export type EmbyImportOptions = ImportOptions;
+export type EmbyMatchCount = ImportMatchCount;
+export type EmbyLibraryMapping = ImportLibraryMapping;
+export type EmbyPreviewUser = ImportPreviewUser;
+export type EmbyImportPreview = ImportPreview;
+export type EmbyImportUserResult = ImportUserResult;
+export type EmbyImportJob = ImportJob;
 
 /** POST /auth/password-link/:token (public): choose a password and sign in. */
 export interface UsePasswordLinkRequest extends Partial<DeviceInfo> {

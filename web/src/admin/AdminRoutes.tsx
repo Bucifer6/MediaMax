@@ -1,5 +1,5 @@
 import type React from 'react';
-import { NavLink, Route, Routes } from 'react-router-dom';
+import { Navigate, NavLink, Route, Routes } from 'react-router-dom';
 import { Icon, type IconName } from '../components/Icon';
 import { Overview } from './Overview';
 import { LibrariesAdmin } from './Libraries';
@@ -17,7 +17,7 @@ import { DevicesAdmin } from './Devices';
 import { StatsAdmin } from './Stats';
 import { PluginsAdmin } from './Plugins';
 import { InvitesAdmin } from './Invites';
-import { EmbyImportAdmin } from './EmbyImport';
+import { ServerImportAdmin } from './ServerImport';
 import { BackupsAdmin } from './Backups';
 import { RemoteAccessAdmin } from './RemoteAccess';
 import { DownloadsAdmin } from './Downloads';
@@ -33,7 +33,7 @@ const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/admin/stats', label: 'Statistics', icon: 'gauge' },
   { to: '/admin/users', label: 'Users', icon: 'users' },
   { to: '/admin/invites', label: 'Invites', icon: 'link' },
-  { to: '/admin/import-emby', label: 'Import from Emby', icon: 'inbox' },
+  { to: '/admin/import', label: 'Import from another server', icon: 'inbox' },
   { to: '/admin/livetv', label: 'Live TV sources', icon: 'antenna' },
   { to: '/admin/channels', label: 'Channels', icon: 'tv' },
   { to: '/admin/guide', label: 'TV guide', icon: 'guide' },
@@ -79,7 +79,8 @@ export default function AdminRoutes() {
             <Route path="settings" element={<ServerSettingsAdmin />} />
             <Route path="downloads" element={<DownloadsAdmin />} />
             <Route path="invites" element={<InvitesAdmin />} />
-            <Route path="import-emby" element={<EmbyImportAdmin />} />
+            <Route path="import" element={<ServerImportAdmin />} />
+            <Route path="import-emby" element={<Navigate to="/admin/import?source=emby" replace />} />
             <Route path="storage" element={<StorageAdmin />} />
             <Route path="smarthome" element={<SmartHomeAdmin />} />
             <Route path="renderers" element={<RenderersAdmin />} />

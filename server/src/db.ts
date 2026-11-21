@@ -513,6 +513,15 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX IF NOT EXISTS idx_subtitle_downloads_media ON subtitle_downloads(media_id);
   `,
+  /* Import from another server (Emby / Jellyfin / Plex): the id map gains a source; existing rows are Emby's */ `
+  CREATE TABLE import_map (
+    source TEXT NOT NULL, kind TEXT NOT NULL, source_id TEXT NOT NULL, local_id TEXT NOT NULL, imported_at TEXT NOT NULL,
+    PRIMARY KEY (source, kind, source_id)
+  );
+  INSERT INTO import_map (source, kind, source_id, local_id, imported_at) SELECT 'emby', kind, emby_id, local_id, imported_at FROM emby_import_map;
+  DROP TABLE emby_import_map;
+  CREATE INDEX import_map_local ON import_map(kind, local_id);
+  `,
 ];
 
 function migrate(db: Database) {
