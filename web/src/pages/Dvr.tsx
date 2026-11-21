@@ -22,6 +22,12 @@ function ruleSummary(r: RecordingRule) {
   return parts.join(' · ');
 }
 
+function formatGap(sec: number) {
+  if (sec < 90) return `${Math.max(1, Math.round(sec))}s`;
+  const m = Math.round(sec / 60);
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
 function RecordingRow({ r, onDelete, onPriority }: { r: Recording; onDelete: (r: Recording) => void; onPriority: (r: Recording, p: number) => void }) {
   const tone = r.status === 'recording' ? 'danger' : r.status === 'completed' ? 'success' : r.status === 'failed' ? 'warning' : r.status === 'cancelled' ? 'muted' : 'accent';
   return (
@@ -47,6 +53,15 @@ function RecordingRow({ r, onDelete, onPriority }: { r: Recording; onDelete: (r:
           </div>
         )}
         {r.error && <div className="form-error">{r.error}</div>}
+        {!!r.gapSeconds && r.gapSeconds > 0 && (
+          <div className="muted rec-note"><Icon name="alert" size={12} /> Recording was interrupted for ~{formatGap(r.gapSeconds)} (server restart); the parts were joined.</div>
+        )}
+        {!!r.leftoverParts?.length && (
+          <div className="muted rec-note">
+            {r.leftoverParts.length === 1 ? 'A part recorded before the interruption' : `${r.leftoverParts.length} parts recorded before the interruption`} could not be joined and {r.leftoverParts.length === 1 ? 'is' : 'are'} kept separately (deleted with this recording):{' '}
+            {r.leftoverParts.map((p) => <code key={p.name}>{p.name}{p.sizeBytes ? ` (${formatBytes(p.sizeBytes)})` : ''}</code>)}
+          </div>
+        )}
         {r.description && <p className="rec-desc">{r.description}</p>}
       </div>
       <Badge tone={r.conflict && r.status === 'scheduled' ? 'warning' : tone}>{r.conflict && r.status === 'scheduled' ? 'conflict' : r.status}</Badge>

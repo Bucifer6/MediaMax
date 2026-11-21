@@ -52,4 +52,8 @@ TV Shows/Breaking Bad (2008)/Specials/Breaking Bad - S00E01.mkv
 - A full scan runs every **Library scan interval** (**Admin → Server settings → General**, default 360 minutes).
 - Press **Scan** to scan now.
 
+### "Files skipped: unsupported character set"
+
+Files whose names are not valid UTF-8 are skipped, because they would break playback links and subtitle matching. This usually happens with files copied from an old Windows PC or Samba share that used a legacy character set (such as Windows-1252 or Shift-JIS). The library shows how many were skipped and lists them (unreadable characters appear as `\xNN`); the server log has a warning for each. Rename them, for example with `convmv -f cp1252 -t utf8 -r --notest <folder>`, then press **Scan**.
+
 Something missing or matched wrongly? See [Missing titles or wrong matches](help:missing-items).

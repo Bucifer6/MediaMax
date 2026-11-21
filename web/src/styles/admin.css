@@ -75,6 +75,11 @@ a.stat:hover { transform: translateY(-2px); border-color: var(--c-primary); }
 .lib-sub { font-size: 0.85rem; }
 .lib-paths { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; min-width: 0; }
 .lib-paths code { max-width: 100%; overflow-wrap: anywhere; }
+.lib-skipped { margin-top: 6px; font-size: 0.85rem; min-width: 0; }
+.lib-skipped summary { cursor: pointer; color: var(--c-warning); }
+.lib-skipped p { margin: 6px 0; }
+.lib-skipped ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; max-height: 240px; overflow-y: auto; }
+.lib-skipped code { overflow-wrap: anywhere; }
 .lib-scan { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; max-width: 420px; }
 .lib-actions { display: flex; align-items: center; gap: 6px; }
 .lib-access { display: flex; flex-wrap: wrap; gap: 8px; }

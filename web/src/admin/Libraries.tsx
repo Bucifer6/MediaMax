@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Library } from '@mediamax/shared';
+import type { Library, SkippedNames } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
@@ -110,6 +110,7 @@ export function LibrariesAdmin() {
                     {l.itemCount.toLocaleString()} item{l.itemCount === 1 ? '' : 's'} · {l.type} · last scan {relativeTime(l.lastScanAt)}
                   </div>
                   {l.paths.length > 0 && <div className="lib-paths">{l.paths.map((p) => <code key={p}>{p}</code>)}</div>}
+                  {l.skippedNames && l.skippedNames.count > 0 && <SkippedNamesNote skipped={l.skippedNames} />}
                   {scanning && (
                     <div className="lib-scan">
                       <ProgressBar value={pct ?? 0} className={pct == null ? 'indeterminate' : ''} />
@@ -153,5 +154,30 @@ export function LibrariesAdmin() {
         )}
       </Modal>
     </div>
+  );
+}
+
+/** Files the last scan left out because their names use a legacy character set (not UTF-8). */
+function SkippedNamesNote({ skipped }: { skipped: SkippedNames }) {
+  const SHOW = 50;
+  const n = skipped.count;
+  return (
+    <details className="lib-skipped">
+      <summary>
+        <Icon name="alert" size={14} /> {n} file{n === 1 ? '' : 's'} skipped: {n === 1 ? 'its name uses' : 'their names use'} an unsupported character set — rename {n === 1 ? 'it' : 'them'} to fix
+      </summary>
+      <p className="muted">
+        Usually copied from an old Windows or Samba share. Renaming (for example with <code>convmv</code>) and scanning again imports them. Unreadable characters are shown as <code>\xNN</code>.
+      </p>
+      <ul>
+        {skipped.paths.slice(0, SHOW).map((p) => (
+          <li key={p.path}>
+            <code>{p.path}</code>
+            {p.files ? <span className="muted"> (folder, {p.files} file{p.files === 1 ? '' : 's'})</span> : null}
+          </li>
+        ))}
+      </ul>
+      {n > Math.min(SHOW, skipped.paths.length) && <p className="muted">…and {n - Math.min(SHOW, skipped.paths.length)} more (see the server log).</p>}
+    </details>
   );
 }

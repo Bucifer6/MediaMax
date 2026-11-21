@@ -397,6 +397,18 @@ export interface Library {
   /** Admin-defined sort order for menus. */
   sortOrder: number;
   createdAt: string;
+  /**
+   * Files (or folders of media files) the last scan skipped because their names aren't valid UTF-8 — usually copied
+   * from an old Windows/Samba share in a legacy character set. Renaming them fixes it. Null when nothing was skipped.
+   */
+  skippedNames?: SkippedNames | null;
+}
+
+export interface SkippedNames {
+  /** Exact number skipped. */
+  count: number;
+  /** The first ones (capped); invalid bytes are shown as \xNN. `files` is set for a skipped folder. */
+  paths: { path: string; files?: number }[];
 }
 
 export interface PodcastSubscription {
@@ -1358,6 +1370,13 @@ export interface Recording {
   priority: number;
   /** Scheduled but would exceed the source's tuner/connection limit; won't record unless something else is cancelled. */
   conflict: boolean;
+  /** Seconds missing because the recording was interrupted (server restart) and resumed; null when uninterrupted. */
+  gapSeconds?: number | null;
+  /**
+   * Parts recorded before an interruption that could not be joined into the recording. They are kept on disk (and in
+   * the library) and deleted together with the recording.
+   */
+  leftoverParts?: { name: string; sizeBytes: number | null }[];
 }
 
 export interface CreateRecordingRequest {

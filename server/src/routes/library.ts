@@ -24,7 +24,9 @@ export default async function libraryRoutes(app: FastifyInstance) {
   app.get('/libraries', async (req) => {
     const { user } = requireUser(req);
     const allowed = new Set(allowedLibraryIds(user));
-    return db.all('SELECT * FROM libraries ORDER BY sort_order, name').filter((l) => allowed.has(l.id)).map(toLibrary);
+    // File names the scan skipped are an admin matter (they'd also reveal paths).
+    return db.all('SELECT * FROM libraries ORDER BY sort_order, name').filter((l) => allowed.has(l.id)).map(toLibrary)
+      .map((l) => (user.isAdmin ? l : { ...l, skippedNames: undefined }));
   });
 
   app.post<{ Body: CreateLibraryRequest }>('/libraries', async (req) => {
