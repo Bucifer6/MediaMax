@@ -20,6 +20,11 @@ test('user agents are named like Emby does', () => {
   assert.equal(sd.describeUserAgent('Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0'), 'Edge 131 on Windows');
   assert.equal(sd.describeUserAgent('Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.5) AppleWebKit/537.36 (KHTML, like Gecko) Version/6.5 TV Safari/537.36'), 'Samsung TV (Tizen 6.5)');
   assert.equal(sd.describeUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'), 'Safari 18 on iPhone');
+  // Hisense VIDAA. Illustrative strings, not captured from a set: the token layout varies by firmware, so only the
+  // "VIDAA" / "Hisense" tokens are relied on.
+  assert.equal(sd.describeUserAgent('Mozilla/5.0 (Linux; VIDAA/6.0(Hisense;SmartTV;55U7K;MTK9618/V0000.06.00T.N0628)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36 HbbTV/1.5.1 (+DRM;Hisense;SmartTV;2023;MT9618;55U7K;) Vidaa/6.0'), 'Hisense TV (VIDAA 6.0)');
+  assert.equal(sd.describeUserAgent('Mozilla/5.0 (X11; Linux armv7l) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.105 Safari/537.36 VIDAA'), 'Hisense TV (VIDAA)');
+  assert.equal(sd.describeUserAgent('Opera/9.80 (Linux mips; U; HbbTV/1.1.1 (; Hisense; SmartTV; 3.0; ;) ; ce-html/1.0; en) Presto/2.12.362 Version/12.11'), 'Hisense TV');
   assert.equal(sd.describeUserAgent('okhttp/4.12.0'), null);
   assert.equal(sd.describeUserAgent(null), null);
 });

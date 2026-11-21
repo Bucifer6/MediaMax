@@ -190,7 +190,7 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | Web, iOS, Android, Apple TV, Android TV apps | ✅ | ✅ | ✅ | ✅ |
 | Apple CarPlay (music, audiobooks, podcasts) | Plexamp | Third-party | Premiere | ✅ (±15/30 s for audiobooks, podcasts and long mixes alongside next/previous, speed button; Siri "Play … in MediaMax" opt-in) |
 | Android Auto (music, audiobooks, podcasts) | Plexamp | ✅ (no audiobooks) | Premiere | ✅ (±15/30 s for audiobooks, podcasts and long mixes alongside next/previous, speed button; Google Assistant "play …", seek and speed by voice) |
-| Samsung Tizen, LG webOS (wrapper apps + web TV mode with D-pad navigation) | ✅ | ✅ | ✅ | ✅ |
+| Samsung Tizen, LG webOS, Hisense VIDAA (wrapper apps + web TV mode with D-pad navigation; VIDAA untested on a set) | ✅ | ✅ | ✅ | ✅ |
 | Amazon Fire TV | ✅ | ✅ | ✅ | ✅ (Android TV build) |
 | Roku, Xbox | ✅ | 🟡 | ✅ | 🗺️ |
 | Desktop/HTPC app (mpv-class player) | ✅ | ✅ | ✅ | 🗺️ |

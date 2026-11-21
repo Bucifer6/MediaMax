@@ -57,7 +57,7 @@ export function DeviceCapabilitiesCard() {
           <dt>Video codecs</dt><dd>{profile?.videoCodecs?.join(', ').toUpperCase() || '—'}{caps.tenBitCodecs.length ? ` · 10-bit: ${caps.tenBitCodecs.join(', ').toUpperCase()}` : ''}</dd>
           <dt>Audio codecs</dt><dd>{profile?.audioCodecs?.join(', ').toUpperCase() || '—'}</dd>
           <dt>Max resolution</dt><dd>{caps.maxHeight ? `${caps.maxHeight}p` : profile?.maxWidth ? `${profile.maxWidth} px wide` : '—'}</dd>
-          <dt>Player</dt><dd>{profile?.player === 'html5' ? 'MediaMax player (hls.js / Media Source Extensions)' : `MediaMax player on ${caps.platform === 'tizen' ? 'Samsung Tizen' : caps.platform === 'webos' ? 'LG webOS' : caps.platform} (hls.js / MSE)`}</dd>
+          <dt>Player</dt><dd>{profile?.player === 'html5' ? 'MediaMax player (hls.js / Media Source Extensions)' : `MediaMax player on ${caps.platform === 'tizen' ? 'Samsung Tizen' : caps.platform === 'webos' ? 'LG webOS' : caps.platform === 'vidaa' ? 'Hisense VIDAA' : caps.platform} (hls.js / MSE)`}</dd>
         </dl>
       )}
       {tv && (

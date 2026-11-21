@@ -1,22 +1,30 @@
 /**
- * TV mode for the web app (Samsung Tizen, LG webOS, Fire TV/Android TV browsers, set-top boxes).
+ * TV mode for the web app (Samsung Tizen, LG webOS, Hisense VIDAA, Fire TV/Android TV browsers, set-top boxes).
  *
- * Turned on by `?tv=1` (remembered), a TV user agent, or the Tizen/webOS wrapper apps in /tv.
+ * Turned on by `?tv=1` (remembered), a TV user agent, or the Tizen/webOS/VIDAA wrapper apps in /tv.
  * - Arrow keys move focus to the nearest focusable element in that direction (spatial navigation).
  * - Enter/OK clicks; the remote's Back key goes back (or closes a dialog).
  * - Media keys (play/pause/stop/ff/rew) are forwarded as the keyboard shortcuts the players already understand.
  * - `html.tv` enables the 10-foot CSS (bigger focus rings, larger hit targets, no hover-only controls).
  */
 
+import { isVidaaUa } from '../player/capabilities';
+
 const KEY = 'mm.tv';
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), video[controls]';
 
-// Remote key codes: Tizen (10009 back, 10182 exit), webOS (461 back), plus Backspace.
+// Remote key codes: Tizen (10009 back, 10182 exit), webOS (461 back), plus Backspace (VIDAA's Back on most firmware;
+// some VIDAA versions send 461 like webOS). A few VIDAA firmwares are reported to send Escape (27) for Back, so on
+// VIDAA, Escape counts as Back too (dialogs and players treat it as Escape either way; on a page it goes back).
 const BACK = new Set([10009, 461, 8]);
+let vidaa = false;
+const isBack = (code: number) => BACK.has(code) || (code === 27 && vidaa);
 
 /**
  * TV remote / HDMI-CEC / Bluetooth remote keys, normalised to KeyboardEvent.key names. Browsers on Android TV and
- * Fire TV already send the standard `key` values; Tizen and webOS send vendor key codes.
+ * Fire TV already send the standard `key` values; Tizen and webOS send vendor key codes. VIDAA uses the same
+ * DTV/HbbTV codes as webOS (415 play, 19 pause, 413 stop, 417/412 ff/rew, 403–406 colours, 457 info, 427/428
+ * channel) and 48–57 for the digits, without any key registration.
  */
 const REMOTE: Record<number, string> = {
   10252: 'MediaPlayPause', 179: 'MediaPlayPause', 415: 'MediaPlay', 19: 'MediaPause', 413: 'MediaStop', 178: 'MediaStop',
@@ -108,7 +116,7 @@ export function detectTv(): boolean {
   } catch {
     /* storage blocked */
   }
-  return /SMART-TV|Tizen|Web0S|WebOS|NetCast|AFT[A-Z]|BRAVIA|HbbTV|CrKey|GoogleTV|Android TV/i.test(navigator.userAgent);
+  return /SMART-TV|Tizen|Web0S|WebOS|NetCast|AFT[A-Z]|BRAVIA|HbbTV|CrKey|GoogleTV|Android TV/i.test(navigator.userAgent) || isVidaaUa(navigator.userAgent);
 }
 
 type Dir = 'up' | 'down' | 'left' | 'right';
@@ -198,6 +206,7 @@ const DIRS: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft:
 
 export function installTvMode() {
   document.documentElement.classList.add('tv');
+  vidaa = isVidaaUa(navigator.userAgent);
   // Ask the platforms for the media keys (they're swallowed by the system otherwise).
   const w = window as unknown as { tizen?: { tvinputdevice?: { registerKey?: (k: string) => void } } };
   try {
@@ -218,7 +227,7 @@ export function installTvMode() {
     const inPlayer = !!document.querySelector('video') && !!document.querySelector('.player, .live-player, .mv-shell');
 
     // Back key.
-    if (BACK.has(e.keyCode) && !(e.keyCode === 8 && isTextInput(target))) {
+    if (isBack(e.keyCode) && !(e.keyCode === 8 && isTextInput(target)) && !(e.keyCode === 27 && !e.isTrusted)) {
       e.preventDefault();
       // One press is one step back: the players also listen for Backspace, and both handling it went back twice
       // (player → home instead of player → title page).
