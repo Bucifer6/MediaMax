@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Channel, Program } from '@mediamax/shared';
 import { api } from '../api/endpoints';
@@ -16,6 +16,55 @@ const HALF = 30 * 60000;
 function floorHalfHour(t: number) {
   return Math.floor(t / HALF) * HALF;
 }
+
+const EMPTY: Program[] = [];
+
+/**
+ * One channel's row. Memoised: opening a programme, loading the next page of channels or any other page state change
+ * no longer re-renders every row and programme of the grid (thousands of buttons with 500 channels loaded).
+ */
+const GuideRow = memo(function GuideRow({ channel: c, list, start, end, now, px: PX, width, onSelect }: {
+  channel: Channel; list: Program[]; start: number; end: number; now: number; px: number; width: number; onSelect: (p: Program, c: Channel) => void;
+}) {
+  const navigate = useNavigate();
+  return (
+    <div className="guide-row">
+      <button className="guide-channel" onClick={() => navigate(`/watch/live/${c.id}`)} title={`Watch ${c.name}`}>
+        <span className="gc-num">{c.number ?? ''}</span>
+        <span className="gc-logo"><Img src={c.logoUrl} width={120} alt={c.name} fallback={<span className="ch-logo-text">{c.name.slice(0, 4)}</span>} /></span>
+        <span className="gc-name">{c.name}</span>
+        {c.favorite && <Icon name="starFill" size={12} className="gc-fav" />}
+      </button>
+      <div className="guide-programs" style={{ width }}>
+        {list.length === 0 && <div className="guide-empty">No information</div>}
+        {list.map((p) => {
+          const s = Date.parse(p.start);
+          const e = Date.parse(p.end);
+          if (e <= start || s >= end) return null;
+          const left = ((Math.max(s, start) - start) / 60000) * PX;
+          const w = ((Math.min(e, end) - Math.max(s, start)) / 60000) * PX;
+          const live = s <= now && e > now;
+          const past = e <= now;
+          return (
+            <button
+              key={p.id}
+              className={`guide-prog ${live ? 'live' : ''} ${past ? 'past' : ''} ${p.recordingId ? 'rec' : ''} ${w < 60 ? 'tiny' : ''}`}
+              style={{ left, width: Math.max(2, w - 3) }}
+              onClick={() => onSelect(p, c)}
+              title={`${p.title} · ${formatTime(p.start)}–${formatTime(p.end)}`}
+            >
+              <span className="gp-title">
+                {p.recordingId && <Icon name="record" size={10} className="text-danger" />} {p.isNew && <span className="gp-new">NEW</span>} {p.title}
+              </span>
+              <span className="gp-time">{formatTime(p.start)} – {formatTime(p.end)}</span>
+              {live && <span className="gp-progress" style={{ width: `${((now - s) / (e - s)) * 100}%` }} />}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
 
 export default function GuidePage() {
   const [params] = useSearchParams();
@@ -52,12 +101,16 @@ export default function GuidePage() {
         setChannels((c) => (offset ? [...c, ...g.channels] : g.channels));
         setPrograms((prev) => {
           const m = offset ? new Map(prev) : new Map<string, Program[]>();
+          // Only the channels in this page get new lists (and are sorted); earlier rows keep theirs, so they don't re-render.
+          const touched = new Set<string>();
           for (const p of g.programs) {
-            const list = m.get(p.channelId) ?? [];
-            list.push(p);
-            m.set(p.channelId, list);
+            if (!touched.has(p.channelId)) {
+              touched.add(p.channelId);
+              m.set(p.channelId, [...(m.get(p.channelId) ?? [])]);
+            }
+            m.get(p.channelId)!.push(p);
           }
-          for (const list of m.values()) list.sort((a, b) => a.start.localeCompare(b.start));
+          for (const id of touched) m.get(id)!.sort((a, b) => a.start.localeCompare(b.start));
           return m;
         });
         setHasMore(g.channels.length >= PAGE);
@@ -121,6 +174,8 @@ export default function GuidePage() {
   const width = HOURS * 60 * PX;
   const nowX = (now - start) / 60000 * PX;
 
+  const onSelect = useCallback((p: Program, c: Channel) => setSelected({ p, c }), []);
+
   const replaceProgram = (p: Program) => {
     setPrograms((m) => {
       const n = new Map(m);
@@ -177,46 +232,9 @@ export default function GuidePage() {
             </div>
             <div className="guide-body">
               {nowX >= 0 && nowX <= width && <div className="guide-now-line" style={{ left: CH_W + nowX }} />}
-              {channels.map((c) => {
-                const list = programs.get(c.id) ?? [];
-                return (
-                  <div className="guide-row" key={c.id}>
-                    <button className="guide-channel" onClick={() => navigate(`/watch/live/${c.id}`)} title={`Watch ${c.name}`}>
-                      <span className="gc-num">{c.number ?? ''}</span>
-                      <span className="gc-logo"><Img src={c.logoUrl} width={120} alt={c.name} fallback={<span className="ch-logo-text">{c.name.slice(0, 4)}</span>} /></span>
-                      <span className="gc-name">{c.name}</span>
-                      {c.favorite && <Icon name="starFill" size={12} className="gc-fav" />}
-                    </button>
-                    <div className="guide-programs" style={{ width }}>
-                      {list.length === 0 && <div className="guide-empty">No information</div>}
-                      {list.map((p) => {
-                        const s = new Date(p.start).getTime();
-                        const e = new Date(p.end).getTime();
-                        if (e <= start || s >= end) return null;
-                        const left = ((Math.max(s, start) - start) / 60000) * PX;
-                        const w = ((Math.min(e, end) - Math.max(s, start)) / 60000) * PX;
-                        const live = s <= now && e > now;
-                        const past = e <= now;
-                        return (
-                          <button
-                            key={p.id}
-                            className={`guide-prog ${live ? 'live' : ''} ${past ? 'past' : ''} ${p.recordingId ? 'rec' : ''} ${w < 60 ? 'tiny' : ''}`}
-                            style={{ left, width: Math.max(2, w - 3) }}
-                            onClick={() => setSelected({ p, c })}
-                            title={`${p.title} · ${formatTime(p.start)}–${formatTime(p.end)}`}
-                          >
-                            <span className="gp-title">
-                              {p.recordingId && <Icon name="record" size={10} className="text-danger" />} {p.isNew && <span className="gp-new">NEW</span>} {p.title}
-                            </span>
-                            <span className="gp-time">{formatTime(p.start)} – {formatTime(p.end)}</span>
-                            {live && <span className="gp-progress" style={{ width: `${((now - s) / (e - s)) * 100}%` }} />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+              {channels.map((c) => (
+                <GuideRow key={c.id} channel={c} list={programs.get(c.id) ?? EMPTY} start={start} end={end} now={now} px={PX} width={width} onSelect={onSelect} />
+              ))}
               {loading && <div className="guide-loading"><Spinner /></div>}
             </div>
           </div>

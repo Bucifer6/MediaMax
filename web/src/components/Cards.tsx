@@ -136,7 +136,7 @@ export const PosterCard = memo(function PosterCard({ item, shape, showProgress =
         {hover.active && <TrailerPreview itemId={item.id} active className="card-trailer" maxBitrate={2000} />}
         <div className="card-hover">
           {item.type !== 'photo' && (
-            <button className="card-play" onClick={onPlay} aria-label={`Play ${item.title}`} tabIndex={-1}>
+            <button className="card-play" data-play onClick={onPlay} aria-label={`Play ${item.title}`} tabIndex={-1}>
               <Icon name="play" size={22} />
             </button>
           )}
@@ -179,6 +179,7 @@ export const LandscapeCard = memo(function LandscapeCard({ item }: { item: Item 
       to={itemLink(item)}
       className="card card-landscape card-continue"
       data-nav
+      data-play={pct > 0 ? '' : undefined}
       onClick={(e) => {
         if (pct > 0) {
           e.preventDefault();
@@ -189,7 +190,7 @@ export const LandscapeCard = memo(function LandscapeCard({ item }: { item: Item 
       <div className="card-art">
         <Img src={landscapeFor(item)} width={480} alt={title} fallback={<Fallback title={title} icon={fallbackIcon(item)} />} />
         <div className="card-hover">
-          <button className="card-play" onClick={(e) => { e.preventDefault(); e.stopPropagation(); play(item); }} aria-label={`Play ${title}`} tabIndex={-1}>
+          <button className="card-play" data-play onClick={(e) => { e.preventDefault(); e.stopPropagation(); play(item); }} aria-label={`Play ${title}`} tabIndex={-1}>
             <Icon name="play" size={22} />
           </button>
         </div>

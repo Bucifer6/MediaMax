@@ -265,6 +265,9 @@
 .guide-now-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--c-primary); z-index: 5; box-shadow: 0 0 12px var(--c-primary-glow); pointer-events: none; }
 .guide-now-line::before { content: ''; position: absolute; top: -4px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--c-primary); }
 .guide-row { display: flex; height: var(--row-h); border-bottom: 1px solid var(--c-line); }
+/* Rows scrolled out of view skip layout and paint (fixed height, so the scroll size is exact); the focused row renders fully. */
+.guide-row { content-visibility: auto; contain-intrinsic-block-size: auto var(--row-h); }
+.guide-row:focus-within, .guide-row:hover { content-visibility: visible; }
 .guide-channel { position: sticky; left: 0; z-index: 4; width: var(--ch-w); flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: var(--c-surface); border-right: 1px solid var(--c-line); text-align: left; transition: background 0.15s; }
 .guide-channel:hover { background: color-mix(in srgb, var(--c-surface) 70%, var(--c-surface-alt)); }
 .gc-num { width: 30px; flex: none; font-weight: 800; font-size: 0.8rem; color: var(--c-text-muted); text-align: right; font-variant-numeric: tabular-nums; }
