@@ -18,6 +18,8 @@
     "sync-types": "node scripts/sync-types.mjs",
     "test:e2e": "node scripts/e2e-smoke.cjs",
     "screenshots": "node scripts/screenshots/run.mjs",
+    "review-pack": "node scripts/review-pack/build-review-pack.mjs",
+    "review-pack:shots": "node scripts/review-pack/store-shots.mjs",
     "perf": "node scripts/perf/run.mjs"
   },
   "engines": {

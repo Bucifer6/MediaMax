@@ -1,0 +1,68 @@
+{
+  "$comment": "Third-party files the review pack downloads. Every core file is CC0 1.0: the licence was read on the track page on 2026-11-21 (each page says 'licensed under a CC0 1.0 Universal License'), and the SHA-256 is of the file as downloaded then. The build refuses a file whose hash differs. Optional extras are CC BY and are only fetched with --with-open-movies.",
+  "core": [
+    {
+      "id": "holizna-washed-up",
+      "kind": "music",
+      "title": "Washed Up",
+      "artist": "HoliznaCC0",
+      "album": "Ocean Memory (Lo-fi Chill)",
+      "page": "https://freemusicarchive.org/music/holiznacc0/ocean-memory-lo-fi-chill/washed-up/",
+      "url": "https://files.freemusicarchive.org/storage-freemusicarchive-org/tracks/nOI7iSZu1JomcCiZGL8R8hwVQEQjcDv49AUyCLnz.mp3",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "verified": "2026-11-21",
+      "bytes": 9655010,
+      "sha256": "d75e34dea40ec7d7cbdcda3a66624eb5e72a829d58cac98d056aa941d9b747f7",
+      "dest": "library/Music/HoliznaCC0/Ocean Memory/01 - Washed Up.mp3",
+      "track": 1
+    },
+    {
+      "id": "holizna-roof-tops",
+      "kind": "music",
+      "title": "Roof Tops",
+      "artist": "HoliznaCC0",
+      "album": "Summer Air (Lo-fi)",
+      "page": "https://freemusicarchive.org/music/holiznacc0/summer-air-lo-fi/roof-tops/",
+      "url": "https://files.freemusicarchive.org/storage-freemusicarchive-org/tracks/2hFTiuqYI7onbLzpi9ldoBP8AYeuStsCUxTqm6vd.mp3",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "verified": "2026-11-21",
+      "bytes": 8902309,
+      "sha256": "f6e619fbfdc0898c409494d5c810d34d9cd29be2b75bb2d8c197e1edb37155b5",
+      "dest": "library/Music/HoliznaCC0/Summer Air/01 - Roof Tops.mp3",
+      "track": 1
+    },
+    {
+      "id": "loyalty-freak-snow-cakes",
+      "kind": "music",
+      "title": "Snow Cakes with friends",
+      "artist": "Loyalty Freak Music",
+      "album": "Holiday Season Songs",
+      "page": "https://freemusicarchive.org/music/Loyalty_Freak_Music/single/snow-cakes-with-friends/",
+      "url": "https://files.freemusicarchive.org/storage-freemusicarchive-org/tracks/JaTieyxqiFqnjWxvzMWVKUhBKf6bwxi7AZ6KN5Cp.mp3",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "verified": "2026-11-21",
+      "bytes": 4138223,
+      "sha256": "2c51dfce2cea560f372206fc2b3104027eda1a9b0e8766c1ce74e462f53ab779",
+      "dest": "library/Music/Loyalty Freak Music/Holiday Season Songs/03 - Snow Cakes with friends.mp3",
+      "track": 3
+    }
+  ],
+  "optional": [
+    {
+      "id": "big-buck-bunny",
+      "kind": "movie",
+      "title": "Big Buck Bunny",
+      "year": 2008,
+      "credit": "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org",
+      "page": "https://peach.blender.org/about/",
+      "url": "https://download.blender.org/peach/bigbuckbunny_movies/big_buck_bunny_720p_h264.mov",
+      "licence": "CC-BY-3.0",
+      "licenceUrl": "https://creativecommons.org/licenses/by/3.0/",
+      "sha256": null,
+      "dest": "library/Movies (CC BY)/Big Buck Bunny (2008)/Big Buck Bunny (2008).mov"
+    }
+  ]
+}

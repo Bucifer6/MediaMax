@@ -12,6 +12,8 @@ Packages installed from npm carry their own licence files in `node_modules`.
   `web/src/player/djMixer.ts`.
 - Source: Adapted from OpenDJ (MIT, github.com/Bucifer6/OpenDJ) — `public/js/audio/analysis-core.js`,
   `public/js/automix.js`, `public/js/audio/worklets.js`.
+- Also: the demo-music synthesiser in `scripts/review-pack/lib/opendj-synth.mjs` (build tool for the app-review pack,
+  not shipped in the server or apps), copied from OpenDJ `scripts/demo/make-demo-library.mjs` (commit 1d85fa1).
 - Licence: MIT License
 
   Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
