@@ -261,10 +261,14 @@ function candidatesByFeatures(user: User, types: string[], genres: string[], peo
   const typeSql = `i.type IN (${types.map(() => '?').join(',')})`;
   const out: string[] = [];
   if (genres.length) {
-    out.push(...db.all<{ id: string }>(
-      `SELECT i.id FROM items i WHERE ${typeSql} AND ${a.sql}
+    // One query per type: each walks the (type, rating) index best-first and stops after `perSource` matches, instead
+    // of testing the genres of every title and sorting them all. Merged by rating, it is the same top list.
+    const byType = types.flatMap((t) => db.all<{ id: string; r: number }>(
+      `SELECT i.id, COALESCE(i.community_rating, 0) r FROM items i WHERE i.type = ? AND ${a.sql}
          AND EXISTS (SELECT 1 FROM json_each(i.genres) j WHERE lower(j.value) IN (${genres.map(() => '?').join(',')}))
-       ORDER BY COALESCE(i.community_rating, 0) DESC LIMIT ${perSource}`, ...types, ...a.params, ...genres).map((r) => r.id));
+       ORDER BY COALESCE(i.community_rating, 0) DESC LIMIT ${perSource}`, t, ...a.params, ...genres));
+    if (types.length > 1) byType.sort((x, y) => y.r - x.r);
+    out.push(...byType.slice(0, perSource).map((r) => r.id));
   }
   if (people.length) {
     // item_people is an indexed copy of each title's cast & crew (see migration 13).
