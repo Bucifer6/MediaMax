@@ -43,6 +43,14 @@ test('extras and subtitles', () => {
   assert.ok(isExtra('Movie (2010)/Extras/behind.mkv'));
   assert.ok(isExtra('Movie (2010)/movie-sample.mkv'));
   assert.ok(!isExtra('Movie (2010)/Movie (2010).mkv'));
+  // Emby/Kodi theme videos and theme music are not titles.
+  assert.ok(isExtra('Oppenheimer (2023)/backdrops/theme.mp4'));
+  assert.ok(isExtra('Before (2024)/Season 1/backdrops/theme.mkv'));
+  assert.ok(isExtra('backdrops/theme.mp4'));
+  assert.ok(isExtra('Show/theme-music/theme.mp3'));
+  assert.ok(isExtra('Movie (2010)/Sample/movie.mkv'));
+  assert.ok(!isExtra('SpongeBob/Season 8/SpongeBob.S08E18.Free.Samples.mkv'));
+  assert.ok(!isExtra('Backdrop (2019)/Backdrop (2019).mkv'));
   assert.deepEqual(parseSubtitleName('Movie.en.forced.srt', 'Movie'), { language: 'en', forced: true, default: false, title: null });
   assert.equal(parseSubtitleName('Other.en.srt', 'Movie'), null);
 });
