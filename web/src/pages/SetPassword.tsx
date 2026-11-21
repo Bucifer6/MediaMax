@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { passwordLinkApi } from '../api/embyImport';
+import { passwordLinkApi } from '../api/serverImport';
 import { errorMessage, mediaUrl } from '../api/client';
 import { useApp } from '../state/app';
 import { useAsync } from '../hooks';
@@ -8,7 +8,7 @@ import { Spinner } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { BrandLogo } from '../components/BrandLogo';
 
-/** Public page for a one-time set-password link: /set-password/:token (accounts moved over from Emby). Works while signed out. */
+/** Public page for a one-time set-password link: /set-password/:token (accounts moved over from Emby, Jellyfin or Plex). Works while signed out. */
 export default function SetPasswordPage() {
   const { token = '' } = useParams();
   const { branding, login } = useApp();
