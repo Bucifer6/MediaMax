@@ -397,7 +397,17 @@ export interface Library {
   /** Admin-defined sort order for menus. */
   sortOrder: number;
   createdAt: string;
+  /** Where an item's "date added" comes from (Recently Added, sort by date added). */
+  dateAdded: DateAddedSource;
 }
+
+/**
+ * Source of an item's "date added": the time the scan found it, or its file's creation / modification time.
+ * `created` falls back to the modification time where the filesystem has no creation time (some Linux filesystems),
+ * and a date in the future is never used. Shows, seasons, albums and artists get the earliest date of their children
+ * (Recently Added still bubbles a show up when a new episode arrives: shows are ordered by their newest episode).
+ */
+export type DateAddedSource = 'scan' | 'created' | 'modified';
 
 export interface PodcastSubscription {
   id: string;
@@ -431,6 +441,8 @@ export interface CreateLibraryRequest {
   type: Exclude<LibraryType, 'iptv-movies' | 'iptv-shows' | 'podcasts'>;
   paths: string[];
   fetchMetadata?: boolean;
+  /** Default: the server's `defaultDateAdded`. */
+  dateAdded?: DateAddedSource;
 }
 
 export type UpdateLibraryRequest = Partial<CreateLibraryRequest> & { sortOrder?: number };
@@ -1612,6 +1624,8 @@ export interface ServerSettings {
     userId: string | null;
   };
   sessionTimeoutDays: number;
+  /** "Date added" rule given to new libraries. Default 'created' (file creation time). */
+  defaultDateAdded?: DateAddedSource;
 }
 
 export type WebhookEvent =

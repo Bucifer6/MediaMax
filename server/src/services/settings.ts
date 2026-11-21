@@ -64,6 +64,7 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   notificationAgents: [],
   oidc: { enabled: false, issuer: null, clientId: null, clientSecret: null, buttonLabel: 'Sign in with SSO', autoCreateUsers: true, groupsClaim: 'groups', adminGroup: null, allowedGroup: null },
   sessionTimeoutDays: 90,
+  defaultDateAdded: 'created',
   karaoke: { stemsEnabled: false, stemsModelUrl: null, stemsModelSha256: null, writeLrcSidecars: false },
 };
 
@@ -247,6 +248,7 @@ function normaliseNumbers(s: ServerSettings) {
   t.segmentSeconds = clampInt(t.segmentSeconds, 1, 10, d.transcoding.segmentSeconds);
   t.threads = clampInt(t.threads, 0, 128, d.transcoding.threads);
   if (!['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium'].includes(t.preset)) t.preset = d.transcoding.preset;
+  if (!['scan', 'created', 'modified'].includes(s.defaultDateAdded as string)) s.defaultDateAdded = d.defaultDateAdded;
   s.trickplay.intervalSeconds = clampInt(s.trickplay.intervalSeconds, 2, 60, d.trickplay.intervalSeconds);
   s.trickplay.width = clampInt(s.trickplay.width, 80, 640, d.trickplay.width);
   s.cinema.trailers = clampInt(s.cinema.trailers, 0, 5, d.cinema.trailers);

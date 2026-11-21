@@ -488,6 +488,10 @@ const MIGRATIONS: string[] = [
     offset_ms INTEGER NOT NULL, PRIMARY KEY (user_id, item_id)
   );
   `,
+  /* "Date added" per library: scan | created | modified. Existing libraries keep the scan time they always used. */ `
+  ALTER TABLE libraries ADD COLUMN date_added TEXT NOT NULL DEFAULT 'created';
+  UPDATE libraries SET date_added = 'scan';
+  `,
 ];
 
 function migrate(db: Database) {

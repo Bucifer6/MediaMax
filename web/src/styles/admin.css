@@ -66,6 +66,8 @@ a.stat:hover { transform: translateY(-2px); border-color: var(--c-primary); }
 
 /* Libraries admin */
 .lib-admin-list { display: flex; flex-direction: column; gap: 10px; }
+.lib-default-date { margin: 0 0 12px; font-size: 0.9rem; }
+.lib-default-date .select { margin-left: 6px; width: auto; display: inline-block; }
 .lib-admin-card { display: flex; align-items: flex-start; gap: 14px; padding: 16px; border-radius: var(--radius-lg); background: var(--c-surface); border: 1px solid var(--c-line); }
 .lib-order { display: flex; flex-direction: column; }
 .lib-order .btn-icon { width: 26px; height: 22px; border-radius: 6px; }

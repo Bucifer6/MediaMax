@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import type { ExtraType, Library, LibraryType, SubtitleStream } from '@mediamax/shared';
+import type { DateAddedSource, ExtraType, Library, LibraryType, SubtitleStream } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { config } from '../config.js';
 import { stableId } from '../util/ids.js';
@@ -35,6 +35,8 @@ interface FileEntry {
   root: string;
   size: number;
   mtime: number;
+  /** Creation time in ms; 0 where the filesystem does not record one. */
+  birthtime: number;
 }
 
 function walk(root: string, accept: (e: string) => boolean): FileEntry[] {
@@ -57,7 +59,7 @@ function walk(root: string, accept: (e: string) => boolean): FileEntry[] {
       else if (accept(ext(e.name))) {
         try {
           const st = fs.statSync(p);
-          out.push({ path: p, rel: path.relative(root, p), root, size: st.size, mtime: Math.floor(st.mtimeMs) });
+          out.push({ path: p, rel: path.relative(root, p), root, size: st.size, mtime: Math.floor(st.mtimeMs), birthtime: Math.floor(st.birthtimeMs || 0) });
         } catch {
           /* vanished */
         }
@@ -640,6 +642,89 @@ async function scanFlat(ctx: ScanCtx, files: FileEntry[], type: 'photo' | 'video
   });
 }
 
+/* ---------------------------- date added --------------------------- */
+
+const DATE_ADDED: DateAddedSource[] = ['scan', 'created', 'modified'];
+export const isDateAddedSource = (v: unknown): v is DateAddedSource => DATE_ADDED.includes(v as DateAddedSource);
+export const libraryDateAdded = (v: unknown): DateAddedSource => (isDateAddedSource(v) ? v : 'scan');
+
+/**
+ * The date added a file gets under a rule, in ms (null = keep the scan time). `created` falls back to the modification
+ * time when the filesystem records no creation time (birthtime 0, as on some Linux filesystems); never in the future.
+ */
+export function fileAddedMs(rule: DateAddedSource, f: { birthtime: number; mtime: number }, now = Date.now()): number | null {
+  if (rule === 'scan') return null;
+  const t = rule === 'created' && f.birthtime > 0 ? f.birthtime : f.mtime;
+  if (!Number.isFinite(t) || t <= 0) return null;
+  return Math.min(t, now);
+}
+
+const LEAF_TYPES = "('movie','episode','track','photo','video','bookpart')";
+/** Parents take the earliest date of these children; inner levels first, so shows see their seasons' new dates. */
+const PARENT_LEVELS: [string, string][] = [['season', 'episode'], ['album', 'track'], ['audiobook', 'bookpart'], ['show', 'season'], ['artist', 'album']];
+
+/**
+ * Apply a library's "date added" rule. `since` = only items added at or after it (the ones a scan just created),
+ * null = every item (Recalculate date added). `files` saves a stat per file during a scan. Returns items changed.
+ */
+export function applyDateAdded(libId: string, since: string | null, files?: Map<string, { birthtime: number; mtime: number }>): number {
+  const lib = db.get<{ type: string; date_added: string }>('SELECT type, date_added FROM libraries WHERE id = ?', libId);
+  if (!lib || lib.type.startsWith('iptv-') || lib.type === 'podcasts') return 0;
+  const rule = libraryDateAdded(lib.date_added);
+  if (rule === 'scan') return 0;
+  const now = Date.now();
+  const sinceSql = since ? ' AND i.added_at >= ?' : '';
+  const sinceParams = since ? [since] : [];
+  const rows = db.all<{ id: string; path: string; added_at: string }>(
+    `SELECT i.id, m.path, i.added_at FROM items i JOIN media m ON m.item_id = i.id WHERE i.library_id = ? AND i.type IN ${LEAF_TYPES} AND m.path IS NOT NULL${sinceSql}`,
+    libId, ...sinceParams);
+  // Items with several files (movie versions) take the earliest file.
+  const best = new Map<string, { ms: number; cur: string }>();
+  for (const r of rows) {
+    let st = files?.get(r.path) ?? null;
+    if (!st) {
+      try {
+        const s = fs.statSync(r.path);
+        st = { birthtime: Math.floor(s.birthtimeMs || 0), mtime: Math.floor(s.mtimeMs) };
+      } catch {
+        continue;
+      }
+    }
+    const ms = fileAddedMs(rule, st, now);
+    if (ms === null) continue;
+    const b = best.get(r.id);
+    if (!b || ms < b.ms) best.set(r.id, { ms, cur: r.added_at });
+  }
+  let changed = 0;
+  db.tx(() => {
+    for (const [id, b] of best) {
+      const iso = new Date(b.ms).toISOString();
+      if (iso === b.cur) continue;
+      db.run('UPDATE items SET added_at = ? WHERE id = ?', iso, id);
+      changed++;
+    }
+    for (const [parent, child] of PARENT_LEVELS) {
+      const r = db.run(
+        `UPDATE items SET added_at = (SELECT MIN(c.added_at) FROM items c WHERE c.parent_id = items.id AND c.type = '${child}')
+         WHERE library_id = ? AND type = '${parent}'${since ? ' AND added_at >= ?' : ''}
+           AND EXISTS (SELECT 1 FROM items c WHERE c.parent_id = items.id AND c.type = '${child}')
+           AND added_at IS NOT (SELECT MIN(c.added_at) FROM items c WHERE c.parent_id = items.id AND c.type = '${child}')`,
+        libId, ...sinceParams);
+      changed += Number(r.changes);
+    }
+  });
+  return changed;
+}
+
+/** Re-apply the "date added" rule to every item of one library (or all libraries) without rescanning. */
+export function recalculateDateAdded(libId?: string): number {
+  const ids = libId ? [libId] : db.all<{ id: string }>('SELECT id FROM libraries').map((l) => l.id);
+  let n = 0;
+  for (const id of ids) n += applyDateAdded(id, null);
+  if (n) for (const id of ids) events.broadcast({ type: 'library.updated', libraryId: id });
+  return n;
+}
+
 /* ------------------------------ public ----------------------------- */
 
 const scanning = new Map<string, Promise<void>>();
@@ -676,6 +761,7 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     return;
   }
   const started = Date.now();
+  const startedIso = new Date(started).toISOString();
   log.info(`Scanning library "${lib.name}" (${type})`);
   events.toAdmins({ type: 'library.scan', libraryId: libId, status: 'started', progress: 0 });
   const paths = parseJson<string[]>(lib.paths, []).filter((p) => {
@@ -736,6 +822,8 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
         db.run(`DELETE FROM items WHERE library_id = ? AND type IN ('show','artist') AND NOT EXISTS (SELECT 1 FROM items c WHERE c.parent_id = items.id)`, libId);
       });
     }
+    // Items found by this scan take their date added from their files (per the library's rule).
+    applyDateAdded(libId, startedIso, new Map(allFiles.map((f) => [f.path, f])));
     events.toAdmins({ type: 'library.scan', libraryId: libId, status: 'progress', progress: 85, message: 'Fetching metadata' });
     if (lib.fetch_metadata) {
       await enrichLibrary(libId, { refresh: !!opts.refreshMetadata, onProgress: (d, t) => events.toAdmins({ type: 'library.scan', libraryId: libId, status: 'progress', progress: 85 + Math.round((d / Math.max(t, 1)) * 15), message: `Metadata ${d}/${t}` }) });
@@ -773,5 +861,6 @@ export function toLibrary(r: Row): Library {
   return {
     id: r.id, name: r.name, type: r.type, paths: parseJson(r.paths, []), sourceId: r.source_id ?? null, itemCount: count,
     lastScanAt: r.last_scan_at ?? null, scanning: isScanning(r.id), fetchMetadata: !!r.fetch_metadata, sortOrder: r.sort_order, createdAt: r.created_at,
+    dateAdded: libraryDateAdded(r.date_added),
   };
 }
