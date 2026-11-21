@@ -35,8 +35,13 @@ export default function PeekCard({ peek }: { peek: NonNullable<Peek> }) {
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => setShown(true));
-    return () => cancelAnimationFrame(raf);
-  }, []);
+    // Marks the poster for TV spatial navigation (Down enters the peek, Up comes back).
+    el.dataset.peeking = '1';
+    return () => {
+      cancelAnimationFrame(raf);
+      delete el.dataset.peeking;
+    };
+  }, [el]);
 
   // The focused title lights the page while its peek is open; the previous light comes back afterwards.
   useEffect(() => {

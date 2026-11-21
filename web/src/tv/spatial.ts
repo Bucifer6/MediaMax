@@ -187,6 +187,21 @@ function move(dir: Dir): boolean {
     first.focus({ preventScroll: false });
     return true;
   }
+  // An open peek card (components/Peek.tsx) sits over its poster: Down from the poster enters it, Up leaves it.
+  if (dir === 'down' && cur.dataset.peeking) {
+    const action = document.querySelector<HTMLElement>('.peek button, .peek a[href]');
+    if (action) {
+      action.focus({ preventScroll: true });
+      return true;
+    }
+  }
+  if (dir === 'up' && cur.closest('.peek')) {
+    const card = document.querySelector<HTMLElement>('[data-peeking]');
+    if (card) {
+      card.focus({ preventScroll: true });
+      return true;
+    }
+  }
   const next = best(cur.getBoundingClientRect(), dir, els, cur);
   if (!next) return false;
   next.focus({ preventScroll: true });
