@@ -55,25 +55,6 @@ function wasmFeaturesSupported(): boolean {
   return wasmFeatures;
 }
 
-let moduleWorkers: boolean | null = null;
-function moduleWorkersSupported(): boolean {
-  if (moduleWorkers != null) return moduleWorkers;
-  moduleWorkers = false;
-  // Browsers without module workers never read `type` from the options (the usual feature test).
-  const probe = {
-    get type() {
-      moduleWorkers = true;
-      return 'module' as const;
-    },
-  };
-  try {
-    new Worker('data:,', probe).terminate();
-  } catch {
-    /* the probe has run either way */
-  }
-  return moduleWorkers;
-}
-
 /**
  * Can libass run here? `force` (the user chose "the file's own styles") skips the low-power heuristics in the caller;
  * it can't make up for a missing platform feature, since jassub 2 has no fallback path for any of them.
@@ -81,9 +62,11 @@ function moduleWorkersSupported(): boolean {
 export function libassSupported(_force = false): boolean {
   if (typeof Worker === 'undefined' || typeof document === 'undefined') return false;
   if (typeof OffscreenCanvas === 'undefined' || typeof HTMLCanvasElement === 'undefined' || !('transferControlToOffscreen' in HTMLCanvasElement.prototype)) return false;
+  // requestVideoFrameCallback (Chrome 83, Safari 15.4, Firefox 132) also implies module workers (Chrome 80, Safari 15,
+  // Firefox 114), which jassub's worker is; probing for those would need a throwaway worker (and a CSP exception).
   if (typeof HTMLVideoElement === 'undefined' || !('requestVideoFrameCallback' in HTMLVideoElement.prototype)) return false;
   if (typeof ResizeObserver === 'undefined') return false;
-  return wasmSupported() && wasmFeaturesSupported() && moduleWorkersSupported();
+  return wasmSupported() && wasmFeaturesSupported();
 }
 
 export class LibassRenderer {
