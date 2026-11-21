@@ -77,3 +77,20 @@ their own licences; FFmpeg is run as a separate program (LGPL/GPL).
 
 - Optional online lyrics source (<https://lrclib.net>), off unless enabled under Server settings → Metadata. Lyrics
   retrieved from it remain subject to their rights holders' terms.
+
+## ASS subtitle renderer (`jassub` 2.5.38, bundled in the web app)
+
+- What: renders styled ASS/SSA subtitles in the web player (a Web Worker running libass compiled to WebAssembly).
+- Where: served from the web build as jassub's worker and `.wasm` files; used by `web/src/player/subtitles/assRenderer.ts`.
+- Source: jassub (github.com/ThaUnknown/jassub), which bundles:
+  - **libass** — ISC licence
+  - **FreeType** — FreeType Licence (FTL) or GPL-2.0-or-later (used here under the FTL)
+  - **HarfBuzz** — MIT ("Old MIT") licence
+  - **FriBidi** — LGPL-2.1-or-later
+  - **Fontconfig**-free font handling, **Brotli**/**zlib** decompression — MIT / Zlib
+  - jassub's own code — MIT
+- Licence expression declared by the package: `LGPL-2.1-or-later AND (FTL OR GPL-2.0-or-later) AND MIT AND
+  MIT-Modern-Variant AND ISC AND NTP AND Zlib AND BSL-1.0`.
+- LGPL note: FriBidi is used unmodified and runs inside a separately loaded WebAssembly module, so it can be replaced
+  with a modified build; its source is available from github.com/fribidi/fribidi. jassub's licence files are served
+  next to the worker in the web build.

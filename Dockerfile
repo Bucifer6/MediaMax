@@ -6,7 +6,7 @@
 # Runs on the build machine's own architecture: the output (JavaScript, the web app and pure-JS
 # dependencies; Kinora uses no native addons) is the same for every target, so arm64 images don't
 # need to run npm and Vite under emulation.
-FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS build
+FROM --platform=$BUILDPLATFORM node:26-bookworm-slim AS build
 WORKDIR /src
 COPY package.json package-lock.json* ./
 COPY shared/package.json shared/
@@ -19,7 +19,7 @@ COPY web web
 RUN npm run build && npm prune --omit=dev --workspaces --include-workspace-root
 
 # ---- runtime ----
-FROM node:22-bookworm-slim
+FROM node:26-bookworm-slim
 ARG TARGETARCH
 # ffmpeg with VA-API drivers for hardware transcoding: Mesa (AMD, and Intel through Gallium) on every arch,
 # plus Intel's iHD (QSV/VA-API on Broadwell and newer, incl. Synology/QNAP Celerons) and i965 on amd64.
