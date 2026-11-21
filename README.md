@@ -227,7 +227,7 @@ The server listens on port **8484** and serves the web app and API. For developm
 | `MEDIAMAX_HWACCEL` | `none` | Initial hardware accelerator |
 | `MEDIAMAX_TRUSTED_PROXIES` | loopback + private ranges | Proxies whose `X-Forwarded-*` headers are trusted |
 | `TMDB_API_KEY` | | Online metadata (also settable in the admin UI) |
-| `OPENSUBTITLES_API_KEY`, `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET`, `LASTFM_API_KEY` / `LASTFM_SECRET`, `ACOUSTID_API_KEY` | | Initial integration keys (the admin UI can set them too) |
+| `OPENSUBTITLES_API_KEY`, `SUBSRO_API_KEY`, `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET`, `LASTFM_API_KEY` / `LASTFM_SECRET`, `ACOUSTID_API_KEY` | | Initial integration keys (the admin UI can set them too) |
 | `MEDIAMAX_WEB_DIR` / `MEDIAMAX_HELP_DIR` | bundled | Serve the web app / Help Centre articles from another folder |
 | `MEDIAMAX_ALLOW_PRIVATE_URLS` | unset | `1` lets podcast feeds and other user-supplied URLs point at LAN addresses |
 | `MEDIAMAX_CADDY` | bundled in Docker and release archives | Caddy binary for **built-in HTTPS** (Admin → Network) |

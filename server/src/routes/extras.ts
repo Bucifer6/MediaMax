@@ -5,7 +5,8 @@ import { requireAdmin, requireUser } from '../http.js';
 import { assertCanSee, getItem, queryItems } from '../services/items.js';
 import { sheetPath, trickplayInfo } from '../services/trickplay.js';
 import { serverStats, userStats } from '../services/stats.js';
-import { deleteDownloadedSubtitle, downloadSubtitle, searchSubtitles } from '../services/opensubtitles.js';
+import { deleteDownloadedSubtitle, downloadSubtitle, providerInfos, searchSubtitles } from '../services/subtitleProviders/index.js';
+import { subtitleTools } from '../services/subtitleProviders/tools.js';
 import { disconnect, setScrobble, startDeviceAuth, traktStatus } from '../services/trakt.js';
 import { notFound, badRequest, forbidden } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
@@ -259,12 +260,26 @@ export default async function extraRoutes(app: FastifyInstance) {
     const langs = (req.query.languages ?? user.preferences.subtitleLanguage ?? 'en').split(',').map((s) => s.trim()).filter(Boolean);
     return searchSubtitles(req.params.id, langs);
   });
-  app.post<{ Params: { id: string }; Body: { fileId: string; language: string; hearingImpaired?: boolean; forced?: boolean } }>('/items/:id/subtitles/download', async (req) => {
+  app.post<{ Params: { id: string }; Body: { fileId: string; language: string; provider?: string; hearingImpaired?: boolean; forced?: boolean; release?: string | null; score?: number | null } }>('/items/:id/subtitles/download', async (req) => {
     const { user } = requireUser(req);
     assertCanSee(user, req.params.id);
     if (!req.body?.fileId) throw badRequest('fileId required');
-    await downloadSubtitle(req.params.id, String(req.body.fileId), req.body.language, req.body);
+    const b = req.body;
+    await downloadSubtitle(req.params.id, {
+      provider: typeof b.provider === 'string' ? b.provider : undefined, fileId: String(b.fileId), language: String(b.language ?? ''),
+      hearingImpaired: !!b.hearingImpaired, forced: !!b.forced, release: typeof b.release === 'string' ? b.release.slice(0, 500) : null,
+      score: typeof b.score === 'number' && Number.isFinite(b.score) ? Math.max(0, Math.min(100, Math.round(b.score))) : null,
+    });
     return getItem(user, req.params.id, true);
+  });
+  /** Admin → Server settings → Subtitles: providers (built-in + plugins) in priority order, and external tools. */
+  app.get('/admin/subtitles/providers', async (req) => {
+    requireAdmin(req);
+    return providerInfos();
+  });
+  app.get<{ Querystring: { refresh?: string } }>('/admin/subtitles/tools', async (req) => {
+    requireAdmin(req);
+    return subtitleTools(req.query.refresh === '1');
   });
   app.delete<{ Params: { id: string; index: string } }>('/items/:id/subtitles/:index', async (req) => {
     const a = requireAdmin(req);

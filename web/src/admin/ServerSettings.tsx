@@ -2,6 +2,7 @@ import { KaraokeSettingsPanel } from './KaraokeSettings';
 import { AiDjSettingsPanel } from './AiDjSettings';
 import { HardwareDetect } from './HardwareDetect';
 import { MetadataSettingsPanel } from './MetadataSettings';
+import { SubtitleSettingsPanel } from './SubtitleSettings';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { HwAccel, ServerSettings, StreamingSettings, TranscodeVideoCodec, User, Webhook, WebhookEvent } from '@mediamax/shared';
@@ -48,11 +49,6 @@ const OIDC_DEFAULTS: ServerSettings['oidc'] = {
 const DLNA_DEFAULTS: ServerSettings['dlna'] = { enabled: false, friendlyName: null, userId: null };
 const REQUESTS_DEFAULTS: ServerSettings['requests'] = { enabled: true, autoApproveUserIds: [], weeklyLimit: 10, radarr: null, sonarr: null };
 
-/** "en, fr ,de" → ["en","fr","de"] */
-function parseLanguages(text: string): string[] {
-  return Array.from(new Set(text.split(/[,\s]+/).map((x) => x.trim().toLowerCase()).filter(Boolean)));
-}
-
 /** External link that opens in a new tab. */
 function Ext({ href, children }: { href: string; children: ReactNode }) {
   return <a href={href} target="_blank" rel="noreferrer" className="link-strong">{children} <Icon name="external" size={12} /></a>;
@@ -76,7 +72,6 @@ export function ServerSettingsAdmin() {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
-  const [langText, setLangText] = useState<string | null>(null);
   const [runningTp, setRunningTp] = useState(false);
   const needUsers = tab === 'dlna' || tab === 'requests';
   const users = useAsync(async () => (needUsers ? api.users.list() : ([] as User[])), [needUsers]);
@@ -118,7 +113,6 @@ export function ServerSettingsAdmin() {
     try {
       setS(await api.admin.saveSettings(s));
       setDirty(false);
-      setLangText(null);
       if (!quiet) toast.success('Settings saved');
       void refreshSystem();
       return true;
@@ -170,7 +164,7 @@ export function ServerSettingsAdmin() {
         { value: 'arr', label: 'Media automation (*arr)' },
         { value: 'sso', label: 'SSO' },
         { value: 'trickplay', label: 'Trickplay' },
-        { value: 'subtitles', label: 'OpenSubtitles' },
+        { value: 'subtitles', label: 'Subtitles' },
         { value: 'trakt', label: 'Trakt' },
         { value: 'lastfm', label: 'Last.fm' },
         { value: 'dlna', label: 'DLNA' },
@@ -377,7 +371,11 @@ export function ServerSettingsAdmin() {
         {tab === 'subtitles' && (
           <div className="form-grid">
             <p className="muted">
-              Lets everyone search and download subtitles from OpenSubtitles.com from the player and the item page.
+              Lets everyone search and download subtitles from the player and the item page. OpenSubtitles, Subs.ro and subtitle plugins
+              are searched together; set them up below.
+            </p>
+            <h3 className="section-title">OpenSubtitles</h3>
+            <p className="muted">
               Create a free API consumer at <Ext href="https://www.opensubtitles.com/consumers">opensubtitles.com/consumers</Ext> and paste its key below.
             </p>
             <Field label="API key">
@@ -391,16 +389,7 @@ export function ServerSettingsAdmin() {
                 <input className="input" type="password" value={os.password ?? ''} onChange={(e) => setOs({ password: e.target.value || null })} autoComplete="new-password" />
               </Field>
             </div>
-            <Field label="Download automatically" hint="Two-letter language codes, comma separated (e.g. en, es). New media without a matching subtitle gets one automatically. Leave empty to turn off.">
-              <input
-                className="input"
-                value={langText ?? os.autoLanguages.join(', ')}
-                onChange={(e) => { setLangText(e.target.value); setOs({ autoLanguages: parseLanguages(e.target.value) }); }}
-                onBlur={() => setLangText(null)}
-                placeholder="en, es"
-                spellCheck={false}
-              />
-            </Field>
+            <SubtitleSettingsPanel value={s.subtitles} onChange={(v) => set({ subtitles: v })} />
           </div>
         )}
         {tab === 'trakt' && (

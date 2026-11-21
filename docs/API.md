@@ -314,11 +314,21 @@ When Settings → DLNA is on, the server announces itself over SSDP and serves U
 * `GET /stats/me?year=2026` → `UserStats` (omit `year` for all time) — powers the "Wrapped" screen.
 * `GET /stats/users/:id?year=` 🛡️ → `UserStats` · `GET /stats/server?days=30` 🛡️ → `ServerStats`.
 
-## Online subtitles (OpenSubtitles)
-* `GET /items/:id/subtitles/search?languages=en,fr` → `RemoteSubtitle[]` (hash matches first).
-* `POST /items/:id/subtitles/download` `{ fileId, language, hearingImpaired?, forced? }` → `Item` (new track appears in `media[].subtitleStreams`).
-* `DELETE /items/:id/subtitles/:index` 🛡️ removes a downloaded subtitle.
-* Configure `ServerSettings.openSubtitles` (API key, optional account, auto-download languages).
+## Online subtitles (OpenSubtitles, Subs.ro, plugin providers)
+* `GET /items/:id/subtitles/search?languages=ro,en` → `RemoteSubtitle[]` from every enabled provider, merged. Each result has
+  `provider`/`providerName`, a release-match `score` (0-100; 100 = OpenSubtitles file-hash match, ~70-80 same group + source,
+  30-40 same source) with `scoreReasons`, and `unavailableReason` when it can't be downloaded here (e.g. RAR without unrar/7z).
+  Sorted by score, then provider priority, then downloads.
+* `POST /items/:id/subtitles/download` `{ fileId, provider?, language, hearingImpaired?, forced?, release?, score? }` → `Item`
+  (`provider` defaults to `opensubtitles`). Archives are unpacked (season packs: the SxxEyy file), the text is converted to
+  UTF-8 (Windows-1250 / ISO-8859-2 / ISO-8859-16 detected), Romanian ş/ţ become ș/ț, mojibake and advert cues are removed, and
+  with `subtitles.sync` the file is re-timed with alass. Saved in the data folder or as a `Name.ro.srt` sidecar (`subtitles.saveMode`).
+* `DELETE /items/:id/subtitles/:index` 🛡️ removes a downloaded subtitle (data folder 2000+, sidecars MediaMax wrote 3000+).
+* `GET /admin/subtitles/providers` 🛡️ → `SubtitleProviderInfo[]` (priority order) · `GET /admin/subtitles/tools?refresh=1` 🛡️ →
+  `SubtitleToolsReport` (alass / unrar / 7z paths found on PATH).
+* Configure `ServerSettings.openSubtitles` (API key, optional account) and `ServerSettings.subtitles` (provider order, Subs.ro key
+  and base URL, automatic languages, `minScore` for the automatic task, `sync`, `saveMode`). Plugins add providers with
+  `ctx.subtitles.registerProvider` (see PLUGINS.md).
 
 ## Trakt
 * `GET /trakt` → `TraktStatus` · `POST /trakt/connect` → `TraktDeviceCode` (show `userCode` + `verificationUrl`; poll `GET /trakt` until `connected`) · `PATCH /trakt` `{ scrobble }` · `DELETE /trakt`.

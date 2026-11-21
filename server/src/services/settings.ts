@@ -1,4 +1,4 @@
-import type { ArrInstance, ArrKind, ArrService, ServerSettings, SignInScreenSettings } from '@mediamax/shared';
+import type { ArrInstance, ArrKind, ArrService, ServerSettings, SignInScreenSettings, SubtitleSettings } from '@mediamax/shared';
 import { db } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
@@ -53,6 +53,14 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   blockUnratedForRestricted: false,
   trickplay: { enabled: false, intervalSeconds: 10, width: 320 },
   openSubtitles: { apiKey: process.env.OPENSUBTITLES_API_KEY ?? null, username: null, password: null, autoLanguages: [] },
+  subtitles: {
+    providers: [{ id: 'opensubtitles', enabled: true }, { id: 'subsro', enabled: true }],
+    subsRo: { apiKey: process.env.SUBSRO_API_KEY ?? null, baseUrl: 'https://api.subs.ro/v1.0' },
+    languages: [],
+    sync: false,
+    minScore: 0,
+    saveMode: 'data',
+  },
   trakt: { clientId: process.env.TRAKT_CLIENT_ID ?? null, clientSecret: process.env.TRAKT_CLIENT_SECRET ?? null },
   dlna: { enabled: false, friendlyName: null, userId: null },
   lastfm: { apiKey: process.env.LASTFM_API_KEY ?? null, sharedSecret: process.env.LASTFM_SECRET ?? null },
@@ -148,6 +156,8 @@ export function getSettings(): ServerSettings {
     aiDj: { ...DEFAULT_SETTINGS.aiDj, ...(stored.aiDj ?? {}), llm: { ...DEFAULT_SETTINGS.aiDj.llm, ...(stored.aiDj?.llm ?? {}) }, tts: { ...DEFAULT_SETTINGS.aiDj.tts, ...(stored.aiDj?.tts ?? {}) } },
     trickplay: { ...DEFAULT_SETTINGS.trickplay, ...(stored.trickplay ?? {}) },
     openSubtitles: { ...DEFAULT_SETTINGS.openSubtitles, ...(stored.openSubtitles ?? {}) },
+    // Before subtitle providers existed, the automatic languages lived under openSubtitles.
+    subtitles: normaliseSubtitles({ ...DEFAULT_SETTINGS.subtitles!, languages: stored.openSubtitles?.autoLanguages ?? [] }, stored.subtitles),
     trakt: { ...DEFAULT_SETTINGS.trakt, ...(stored.trakt ?? {}) },
     dlna: { ...DEFAULT_SETTINGS.dlna, ...(stored.dlna ?? {}) },
     lastfm: { ...DEFAULT_SETTINGS.lastfm, ...(stored.lastfm ?? {}) },
@@ -185,6 +195,7 @@ export function publicSettings(s: ServerSettings = getSettings()): ServerSetting
     arr: s.arr.map((a) => ({ ...a, apiKey: a.apiKey ? SECRET_MASK : '' })),
     notificationAgents: maskAgents(s.notificationAgents),
     aiDj: { ...s.aiDj, llm: { ...s.aiDj.llm, apiKey: s.aiDj.llm.apiKey ? SECRET_MASK : null }, tts: { ...s.aiDj.tts, apiKey: s.aiDj.tts.apiKey ? SECRET_MASK : null } },
+    ...(s.subtitles ? { subtitles: { ...s.subtitles, subsRo: { ...s.subtitles.subsRo, apiKey: s.subtitles.subsRo.apiKey ? SECRET_MASK : null } } } : {}),
   };
 }
 
@@ -214,6 +225,7 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     aiDj: { ...cur.aiDj, ...(patch.aiDj ?? {}), llm: { ...cur.aiDj.llm, ...(patch.aiDj?.llm ?? {}) }, tts: { ...cur.aiDj.tts, ...(patch.aiDj?.tts ?? {}) } },
     trickplay: { ...cur.trickplay, ...(patch.trickplay ?? {}) },
     openSubtitles: { ...cur.openSubtitles, ...(patch.openSubtitles ?? {}) },
+    subtitles: normaliseSubtitles(cur.subtitles ?? DEFAULT_SETTINGS.subtitles!, patch.subtitles),
     trakt: { ...cur.trakt, ...(patch.trakt ?? {}) },
     dlna: { ...cur.dlna, ...(patch.dlna ?? {}) },
     lastfm: { ...cur.lastfm, ...(patch.lastfm ?? {}) },
@@ -228,6 +240,9 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     arr: patch.arr !== undefined ? normaliseArr(patch.arr, cur.arr) : cur.arr,
     notificationAgents: patch.notificationAgents !== undefined ? mergeAgents(patch.notificationAgents, cur.notificationAgents, newId) : cur.notificationAgents ?? [],
   };
+  // Keep the legacy field in step so older code paths and backups see the same automatic languages.
+  if (patch.subtitles?.languages) next.openSubtitles = { ...next.openSubtitles, autoLanguages: next.subtitles!.languages };
+  else if (patch.openSubtitles?.autoLanguages && !patch.subtitles) next.subtitles = { ...next.subtitles!, languages: next.openSubtitles.autoLanguages };
   normaliseNumbers(next);
   setKv('server', next);
   cache = next;
@@ -264,6 +279,32 @@ function normaliseNumbers(s: ServerSettings) {
   s.dvr.paddingAfterMin = clampInt(s.dvr.paddingAfterMin, 0, 240, d.dvr.paddingAfterMin);
   s.backups.intervalDays = clampInt(s.backups.intervalDays, 0, 365, d.backups.intervalDays);
   s.backups.keep = clampInt(s.backups.keep, 1, 100, d.backups.keep);
+}
+
+/**
+ * Merge a (partial) subtitle settings patch onto `cur`: "••••" keeps the stored Subs.ro key, the provider list is
+ * de-duplicated, numbers are clamped and languages lower-cased.
+ */
+export function normaliseSubtitles(cur: SubtitleSettings, patch: Partial<SubtitleSettings> | undefined | null): SubtitleSettings {
+  const p = (patch ?? {}) as Partial<SubtitleSettings>;
+  const subsRoPatch = (p.subsRo ?? {}) as Partial<SubtitleSettings['subsRo']>;
+  const apiKey = subsRoPatch.apiKey === SECRET_MASK ? cur.subsRo.apiKey : subsRoPatch.apiKey !== undefined ? (typeof subsRoPatch.apiKey === 'string' && subsRoPatch.apiKey.trim() ? subsRoPatch.apiKey.trim().slice(0, 200) : null) : cur.subsRo.apiKey;
+  const baseUrl = typeof subsRoPatch.baseUrl === 'string' && /^https?:\/\/\S+$/i.test(subsRoPatch.baseUrl.trim()) ? subsRoPatch.baseUrl.trim().replace(/\/+$/, '') : cur.subsRo.baseUrl || DEFAULT_SETTINGS.subtitles!.subsRo.baseUrl;
+  const seen = new Set<string>();
+  const providers = (Array.isArray(p.providers) ? p.providers : cur.providers ?? [])
+    .filter((x) => x && typeof x.id === 'string' && /^[\w.:-]{1,200}$/.test(x.id) && !seen.has(x.id) && !!seen.add(x.id))
+    .slice(0, 50)
+    .map((x) => ({ id: x.id, enabled: x.enabled !== false }));
+  for (const d of DEFAULT_SETTINGS.subtitles!.providers) if (!seen.has(d.id)) providers.push({ ...d });
+  const languages = Array.isArray(p.languages) ? p.languages : cur.languages ?? [];
+  return {
+    providers,
+    subsRo: { apiKey, baseUrl },
+    languages: [...new Set(languages.map((l) => String(l).trim().toLowerCase()).filter((l) => /^[a-z]{2,3}(-[a-z]{2})?$/.test(l)))].slice(0, 20),
+    sync: p.sync !== undefined ? !!p.sync : !!cur.sync,
+    minScore: clampInt(p.minScore !== undefined ? p.minScore : cur.minScore, 0, 100, cur.minScore ?? 0),
+    saveMode: (p.saveMode ?? cur.saveMode) === 'sidecar' ? 'sidecar' : 'data',
+  };
 }
 
 const HW_ACCELS = ['none', 'vaapi', 'nvenc', 'qsv', 'videotoolbox', 'v4l2m2m', 'amf', 'rkmpp'];

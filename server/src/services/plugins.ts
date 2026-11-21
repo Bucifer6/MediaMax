@@ -11,6 +11,7 @@ import { logger } from '../util/log.js';
 import { badRequest, conflict, HttpError, notFound } from '../util/errors.js';
 import { extractTarGz, flattenSingleRoot } from '../util/tar.js';
 import { logActivity } from './activity.js';
+import type { SubtitleProvider } from './subtitleProviders/types.js';
 
 const log = logger('plugins');
 export const pluginsDir = () => {
@@ -59,6 +60,9 @@ export interface MetadataProvider {
   fetch: (item: Pick<Item, 'id' | 'type' | 'title' | 'year' | 'externalIds'> & { parentTitle: string | null; index: number | null; parentIndex: number | null }) => Promise<PluginMetadata | null>;
 }
 
+/** A subtitle source (see services/subtitleProviders/types.ts for the full contract). */
+export type PluginSubtitleProvider = SubtitleProvider;
+
 export interface PluginContext {
   id: string;
   version: string;
@@ -71,6 +75,7 @@ export interface PluginContext {
   http: { route(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', routePath: string, handler: PluginRouteHandler, opts?: { auth?: PluginRouteAuth }): void };
   tasks: { register(task: PluginTask): void };
   metadata: { registerProvider(p: MetadataProvider): void };
+  subtitles: { registerProvider(p: PluginSubtitleProvider): void };
   library: {
     getItem(id: string): Item | null;
     search(query: string, limit?: number): Item[];
@@ -84,6 +89,7 @@ interface Loaded {
   listeners: { event: string; fn: (p: any) => void }[];
   tasks: PluginTask[];
   providers: MetadataProvider[];
+  subtitleProviders: SubtitleProvider[];
   settingsCbs: ((all: Record<string, unknown>) => void)[];
   deactivate?: () => unknown;
 }
@@ -184,6 +190,24 @@ function makeContext(m: PluginManifest, dir: string, l: Loaded): PluginContext {
     },
     tasks: { register: (t) => l.tasks.push({ ...t, id: `${m.id}:${t.id}` }) },
     metadata: { registerProvider: (p) => l.providers.push(p) },
+    subtitles: {
+      registerProvider: (p) => {
+        if (!p || typeof p.search !== 'function' || typeof p.download !== 'function') throw new Error('A subtitle provider needs search() and download()');
+        const localId = String(p.id ?? '').trim();
+        if (!/^[\w.-]{1,60}$/.test(localId)) throw new Error('Subtitle provider id must be 1-60 letters, digits, dots, dashes or underscores');
+        // Namespaced by plugin id so two plugins can't collide (or shadow a built-in provider).
+        l.subtitleProviders.push({
+          id: `${m.id}:${localId}`,
+          name: String(p.name || localId).slice(0, 80),
+          configured: () => (typeof p.configured === 'function' ? !!p.configured() : true),
+          search: (q) => Promise.resolve(p.search(q)),
+          download: (r) => Promise.resolve(p.download(r)).then((f) => {
+            if (!f || !Buffer.isBuffer(f.data) && !((f.data as unknown) instanceof Uint8Array)) throw new Error(`${p.name} download() must return { data: Buffer, fileName }`);
+            return { data: Buffer.from(f.data), fileName: String(f.fileName ?? `${r.id}.srt`) };
+          }),
+        });
+      },
+    },
     library: {
       getItem: (id) => {
         const u = systemUser();
@@ -228,7 +252,7 @@ async function activate(id: string): Promise<void> {
   }
   itemsApi ??= await import('./items.js');
   authApi ??= await import('./auth.js');
-  const l: Loaded = { manifest, dir, routes: [], listeners: [], tasks: [], providers: [], settingsCbs: [] };
+  const l: Loaded = { manifest, dir, routes: [], listeners: [], tasks: [], providers: [], subtitleProviders: [], settingsCbs: [] };
   try {
     // Cache-bust so updates/re-enables load fresh code.
     const mod = await import(`${pathToFileURL(path.resolve(dir, manifest.main)).href}?v=${Date.now()}`);
@@ -440,6 +464,7 @@ function withInstalled(entries: PluginCatalogEntry[]): PluginCatalogEntry[] {
 
 export const pluginTasks = (): PluginTask[] => [...loaded.values()].flatMap((l) => l.tasks);
 export const metadataProviders = (): MetadataProvider[] => [...loaded.values()].flatMap((l) => l.providers);
+export const pluginSubtitleProviders = (): SubtitleProvider[] => [...loaded.values()].flatMap((l) => l.subtitleProviders);
 
 export function findRoute(id: string, method: string, subPath: string): { handler: PluginRouteHandler; auth: PluginRouteAuth; params: Record<string, string> } | null {
   const l = loaded.get(id);

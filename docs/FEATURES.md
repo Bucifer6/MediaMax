@@ -105,7 +105,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Seek-bar preview thumbnails (trickplay) | ✅ | ✅ | ✅ | ✅ |
 | Trickplay in the native apps (phone drag, Android TV / Apple TV D-pad and Siri Remote seek) with chapter names, offline with downloads, data-saver mode | ✅ | 🟡 | ✅ | ✅ |
 | Trickplay on Samsung/LG TV (web TV mode) while seeking with the remote | ✅ | 🟡 | 🟡 | ✅ |
-| Online subtitle search & auto-download (OpenSubtitles, hash matching) | ✅ | Plugin | ✅ | ✅ |
+| Online subtitle search & auto-download (OpenSubtitles + Subs.ro + plugin providers, release scoring, hash matching, archive unpacking, encoding/diacritics fixes, alass sync) | ✅ | Plugin | ✅ | ✅ |
 | Converted downloads (device-friendly MP4 at 1080p/720p/480p) | Pass | ✅ | Premiere | ✅ |
 
 ## Live TV & IPTV
