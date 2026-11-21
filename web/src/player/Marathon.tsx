@@ -12,17 +12,16 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Item, StillWatchingSettings } from '@mediamax/shared';
+import type { Item } from '@mediamax/shared';
 import { decideApi } from '../api/decide';
 import { Icon } from '../components/Icon';
 import { Img } from '../components/ui';
 import { OptionList, Popover } from './controls';
-import { DEFAULT_STILL_WATCHING, fadeFactor, marathonPlayLink, sleepMsLeft, stillWatchingDue, type SleepChoice } from '../utils/decide';
+import { fadeFactor, marathonPlayLink, setStillWatchingPrefs, sleepMsLeft, stillWatchingDue, stillWatchingPrefs, type SleepChoice } from '../utils/decide';
 import '../styles/decide.css';
 
 const SLEEP_KEY = 'mm.sleepTimer';
 const MARATHON_KEY = (id: string) => `mm.marathon.${id}`;
-const SW_PREFS_KEY = 'mm.stillWatching';
 const COUNTDOWN_S = 10;
 const ANSWER_S = 60;
 
@@ -47,9 +46,6 @@ const writeJson = (store: 'local' | 'session', key: string, v: unknown) => {
   }
 };
 
-/** The viewer's "Are you still watching?" preference (Settings → Playback, and the sleep menu). */
-export const stillWatchingPrefs = (): StillWatchingSettings => readJson('local', SW_PREFS_KEY, DEFAULT_STILL_WATCHING);
-export const setStillWatchingPrefs = (s: StillWatchingSettings) => writeJson('local', SW_PREFS_KEY, s);
 
 interface Opts {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -78,6 +74,7 @@ export function useMarathon({ videoRef, item, marathonId, ended, positionMs, dur
   const baseVolume = useRef<number | null>(null);
   const handledEnd = useRef<string | null>(null);
   const sw = useRef(stillWatchingPrefs());
+  const [swOn, setSwOn] = useState(sw.current.enabled);
 
   const setSleep = (s: SleepState | null) => {
     setSleepState(s);
@@ -167,7 +164,7 @@ export function useMarathon({ videoRef, item, marathonId, ended, positionMs, dur
       .then((r) => {
         if (!r.item) return stop('That’s everything that matches — marathon complete.');
         setNext(r.item);
-        if (r.stillWatchingCheck) setAsking({ reason: 'boundary', left: ANSWER_S });
+        if (r.stillWatchingCheck && sw.current.enabled) setAsking({ reason: 'boundary', left: ANSWER_S });
         else setCountdown(COUNTDOWN_S);
       })
       .catch(() => stop('Marathon ended.'));
@@ -232,6 +229,10 @@ export function useMarathon({ videoRef, item, marathonId, ended, positionMs, dur
           ]}
         />
         <p className="sleep-note muted">Sound fades out over the last 30 seconds.</p>
+        <button className="option option-action" onClick={() => { const next = { ...sw.current, enabled: !swOn }; sw.current = next; setStillWatchingPrefs(next); setSwOn(next.enabled); }}>
+          <span className="option-check">{swOn && <Icon name="check" size={16} />}</span>
+          <span className="option-label">Ask "Are you still watching?"<small className="muted"> after {sw.current.afterItems} titles or {Math.round(sw.current.afterMinutes / 60)} h without input</small></span>
+        </button>
       </Popover>
     </div>
   );

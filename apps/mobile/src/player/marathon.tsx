@@ -20,7 +20,8 @@ import { Button } from '@/components/Button';
 import { T } from '@/components/Text';
 import { useTheme } from '@/theme';
 
-const STILL = { enabled: true, afterItems: 2, afterMinutes: 240 };
+/** "Are you still watching?" settings for this app session (toggled from the sleep sheet). */
+export const STILL = { enabled: true, afterItems: 2, afterMinutes: 240 };
 const FADE_MS = 30_000;
 const ANSWER_S = 60;
 
@@ -136,7 +137,7 @@ export function useMarathon(opts: {
       .then((r) => {
         if (!r.item) return exit();
         setCard({ item: r.item, seconds: 10 });
-        if (r.stillWatchingCheck) setAsking({ left: ANSWER_S, boundary: true });
+        if (r.stillWatchingCheck && STILL.enabled) setAsking({ left: ANSWER_S, boundary: true });
       })
       .catch(() => exit());
     return true;
@@ -148,8 +149,13 @@ export function useMarathon(opts: {
     ...[30, 60, 90].map((m) => ({ key: `m${m}`, label: `${m} minutes`, selected: sleep?.kind === 'minutes' && sleep.minutes === m })),
     { key: 'end', label: opts.itemType === 'episode' ? 'End of this episode' : 'End of this film', selected: sleep?.kind === 'end' },
     ...(marathonId ? [2, 3].map((n) => ({ key: `i${n}`, label: `After ${n} titles`, selected: sleep?.kind === 'items' && sleep.left === n })) : []),
+    { key: 'sw', label: 'Ask "Are you still watching?"', description: `After ${STILL.afterItems} titles or ${STILL.afterMinutes / 60} h without input`, selected: STILL.enabled },
   ];
   const selectSleep = (k: string) => {
+    if (k === 'sw') {
+      STILL.enabled = !STILL.enabled;
+      return setSleepS((s) => s);
+    }
     if (k === 'off') return setSleep(null);
     if (k === 'end') return setSleep({ kind: 'end' });
     if (k[0] === 'm') return setSleep({ kind: 'minutes', until: Date.now() + Number(k.slice(1)) * 60_000, minutes: Number(k.slice(1)) });

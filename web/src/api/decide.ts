@@ -4,6 +4,7 @@ import type {
   MatchVote, RouletteMoodPreset, RouletteSpinRequest, RouletteSpinResponse,
 } from '@mediamax/shared';
 import { http } from './client';
+import { stillWatchingPrefs } from '../utils/decide';
 
 const enc = encodeURIComponent;
 
@@ -11,7 +12,7 @@ export const decideApi = {
   moods: () => http.get<RouletteMoodPreset[]>('/roulette/moods'),
   spin: (body: RouletteSpinRequest) => http.post<RouletteSpinResponse>('/roulette/spin', body),
 
-  startMarathon: (body: CreateMarathonRequest) => http.post<MarathonNextResponse>('/marathon', body),
+  startMarathon: (body: CreateMarathonRequest) => http.post<MarathonNextResponse>('/marathon', { stillWatching: stillWatchingPrefs(), ...body }),
   marathon: (id: string) => http.get<MarathonState>(`/marathon/${enc(id)}`),
   marathonNext: (id: string, body: MarathonNextRequest) => http.post<MarathonNextResponse>(`/marathon/${enc(id)}/next`, body),
   endMarathon: (id: string) => http.del<{ ok: true }>(`/marathon/${enc(id)}`),

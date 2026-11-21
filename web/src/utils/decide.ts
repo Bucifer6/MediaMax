@@ -106,6 +106,25 @@ export function reelEase(t: number): number {
 
 export const DEFAULT_STILL_WATCHING: StillWatchingSettings = { enabled: true, afterItems: 2, afterMinutes: 240 };
 
+const SW_PREFS_KEY = 'mm.stillWatching';
+
+/** The viewer's "Are you still watching?" preference (per browser; toggled from the player's sleep timer menu). */
+export function stillWatchingPrefs(): StillWatchingSettings {
+  try {
+    const s = localStorage.getItem(SW_PREFS_KEY);
+    return s ? { ...DEFAULT_STILL_WATCHING, ...JSON.parse(s) } : DEFAULT_STILL_WATCHING;
+  } catch {
+    return DEFAULT_STILL_WATCHING;
+  }
+}
+export function setStillWatchingPrefs(s: StillWatchingSettings) {
+  try {
+    localStorage.setItem(SW_PREFS_KEY, JSON.stringify(s));
+  } catch {
+    /* storage blocked */
+  }
+}
+
 /** Mirror of the server rule (services/decide/marathon.ts): ask after N titles or N minutes with no input. */
 export function stillWatchingDue(s: StillWatchingSettings, itemsSinceInput: number, msSinceInput: number): boolean {
   if (!s.enabled) return false;

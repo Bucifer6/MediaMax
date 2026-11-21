@@ -9,6 +9,7 @@ const enc = encodeURIComponent;
 
 export const decide = (api: MediaMaxClient) => ({
   spin: (body: RouletteSpinRequest) => api.request<RouletteSpinResponse>('POST', '/roulette/spin', { body }),
+  /** Pass `stillWatching` from player/marathon.tsx STILL to honour the viewer's choice. */
   startMarathon: (body: CreateMarathonRequest) => api.request<MarathonNextResponse>('POST', '/marathon', { body }),
   marathonNext: (id: string, body: MarathonNextRequest) => api.request<MarathonNextResponse>('POST', `/marathon/${enc(id)}/next`, { body }),
   endMarathon: (id: string) => api.request<{ ok: true }>('DELETE', `/marathon/${enc(id)}`),

@@ -16,6 +16,7 @@ import { Screen, ScreenHeader } from '@/components/Screen';
 import { T } from '@/components/Text';
 import { playItem } from '@/utils/nav';
 import { useTheme } from '@/theme';
+import { STILL } from '@/player/marathon';
 
 const MOODS: { id: RouletteMood; label: string }[] = [
   { id: 'feel-good', label: 'Feel-good' }, { id: 'edge', label: 'Edge of your seat' }, { id: 'mind-bending', label: 'Mind-bending' },
@@ -83,7 +84,7 @@ export default function RouletteScreen() {
 
   const marathon = async (firstId?: string) => {
     try {
-      const r = await d.startMarathon({ ...filters, randomEpisode: filters.kind === 'series' ? true : filters.randomEpisode });
+      const r = await d.startMarathon({ ...filters, randomEpisode: filters.kind === 'series' ? true : filters.randomEpisode, stillWatching: { ...STILL } });
       const id = firstId ?? r.item?.id;
       if (!id) return Alert.alert('Roulette', 'Nothing matches these filters');
       router.push(`/player/${id}?start=0&marathon=${encodeURIComponent(r.marathon.id)}` as never);

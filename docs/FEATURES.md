@@ -299,6 +299,65 @@ MediaMax can be the hub of a Radarr/Sonarr/Lidarr/Readarr/Bazarr setup (**Admin 
 * For item pages there is a ready-made admin component (`web/src/components/ArrItemActions.tsx`): "Open in Radarr/Sonarr/Lidarr",
   "Search for upgrade" and "Find subtitles with Bazarr", backed by `GET /arr/item/:id` and `POST /arr/item/:id/subtitles`.
 
+## Help us decide: Movie Match, Roulette, Random marathon
+Server: `server/src/services/decide/` (in memory, no database tables), routes in `server/src/routes/decide.ts`.
+Web/TV: `web/src/pages/Match.tsx`, `web/src/pages/Roulette.tsx`, `web/src/player/Marathon.tsx`. Mobile:
+`apps/mobile/app/match/`, `apps/mobile/app/roulette.tsx`, `apps/mobile/src/player/marathon.tsx`. Help Centre:
+*Movie Match*, *Roulette*, *Random marathon and the sleep timer*.
+
+All three use the same access rules as the rest of the app (`items.accessClause`): library access, the parental
+rating cap, "hide unrated" and kids profiles. Titles a viewer gave a thumbs down (≤ 4/10) or marked *Not interested*
+are never suggested.
+
+### Movie Match (group swipe)
+* One person starts a session from the web, TV or phone app: movies / shows / both, libraries, genres, max runtime,
+  "only things nobody in the group has seen" and the match rule (**everyone** says yes, or **majority**: yes + 2 × super
+  likes > half the group, from at least two people). A group of one never matches.
+* Six-letter join code, QR code (rendered client-side, `components/QrCode.tsx`) and a link (`/match/join/<code>`).
+  Other signed-in users or profiles join on their phones (mobile web or the app).
+* **Same deck, same order for everyone.** ~60 cards built server-side from a smart mix: highly rated, recently added,
+  related to the genres the group has watched, plus random picks; extended by 30 when anyone nears the end (max 300).
+* **Strictest member wins**: the deck only contains titles every *current* member can see (each member's
+  `accessClause`, ANDed). When someone joins, cards they can't see (or, with "unwatched", have seen) are removed for
+  everyone.
+* Swipe right = yes, left = no, up = super like (touch drag with spring physics; buttons; keyboard / TV D-pad ← → ↑ —
+  the deck uses `data-own-arrows="all"` so TV spatial navigation leaves left/right/up to it).
+* "It's a match!" is broadcast over the WebSocket (`match.found`) to every member at once, with a canvas confetti
+  burst (no dependencies, off with reduced motion). **Play on…** sends `remote.command playItem` to the device that
+  started the session (only for matched titles, only while that device is online); **Play here**; **Keep swiping**.
+* Live lobby (`match.state`): member avatars with online / "swiping… n/60" / done; results ranked by enthusiasm
+  (yes + 2 × super − no). Sessions live in memory for 2 h after the last activity, survive reconnects (votes are kept
+  per user), and end when the host ends them (`match.ended`). Limits: 200 sessions, 3 per host, 12 members.
+
+### Roulette ("Can't decide? Spin")
+* Movie roulette and series roulette (series: the show plus the right episode — next up if started, else S1E1, or
+  **random episode** for sitcom-style shows; specials only when a show has nothing else).
+* Filters: library, genres, runtime (episode length for series), decade, rating ≥, unwatched only, from My List, and
+  mood presets (*Feel-good*, *Edge of your seat*, *Mind-bending*, *Laugh*, *Family night* (≤ PG), *Short & sweet*)
+  mapped to genres + overview keywords (`decide/common.ts` `MOODS`).
+* Weighting (default on): higher community rating and recently added titles are more likely (`pickWeight`); seeded
+  RNG for deterministic picks (`seed`).
+* One request returns the pick plus ~20 decoy posters for the reel: a single capped (1,500) slim candidate query, then
+  one query for the pick and one or two for the episode — no N+1.
+* Web: horizontal poster reel that accelerates and decelerates onto the pick (transform-only rAF animation;
+  `prefers-reduced-motion` = fade), then a reveal card with backdrop, synopsis, **Play**, **Trailer**, **Spin again**,
+  **Not this one** (excluded for the visit) and **Marathon**. Filters live in the URL.
+* Entry points: Home (above the rows), movie/TV library pages (keeps the genre), Search (empty state), the TV remote's
+  **Green** key outside the player, and the phone/TV app Home.
+
+### Random marathon, sleep timer, "Are you still watching?"
+* `POST /marathon` with roulette filters (or a `showId` for "random episodes, forever") creates a server-side queue;
+  `POST /marathon/:id/next` returns the next pick, never repeating anything played or skipped in that marathon and
+  never a disliked title. Works for any client (web/TV, phone, future Roku) — the player only passes the marathon id.
+* Web/TV and native players reuse their Up-next card: a 10 s countdown the viewer can cancel; the regular next-episode
+  autoplay is suppressed during a marathon.
+* **Still watching**: asked after 2 titles in a row or 4 h with no input (configurable via `stillWatching`, off-able
+  from the sleep menu). The server decides at title boundaries (`stillWatchingDue`), the player checks mid-title.
+  Unanswered for 60 s → pause (progress is reported with the current position, so the title is *not* marked watched),
+  the marathon ends and the player closes.
+* **Sleep timer** in the player: 30 / 60 / 90 min, end of this title, after N titles; audio fades out over the last
+  30 s, then playback stops (position saved).
+
 ## Roadmap
 See the ranked [ROADMAP](ROADMAP.md) (gap analysis against Plex, Jellyfin, Emby, Channels DVR, TiviMate, Audiobookshelf, Navidrome/Plexamp, Infuse and Kodi).
 
