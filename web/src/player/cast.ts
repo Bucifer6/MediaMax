@@ -20,14 +20,23 @@ declare global {
 
 const SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
 
-/** Chrome / Edge (desktop or Android) on a secure origin, not an automated test browser. */
+/**
+ * Chrome / Edge (desktop or Android) by user agent. TV browsers are left out even when their user agent says Chrome
+ * (LG webOS does): casting from a TV makes no sense, and it keeps the TV apps from loading Google's SDK.
+ */
+export function castUserAgent(ua: string): boolean {
+  if (/HeadlessChrome|OPR\/|Opera|SamsungBrowser|YaBrowser|Electron/i.test(ua)) return false;
+  if (/Web0S|webOS|NetCast|Tizen|SMART-TV|SmartTV|VIDAA|Hisense|CrKey|AFT[A-Z]|BRAVIA|Android TV|GoogleTV/i.test(ua)) return false;
+  return /\b(Chrome|Chromium|Edg)\/\d+/.test(ua);
+}
+
+/** Chrome / Edge (desktop or Android) on a secure origin, not an automated test browser or a TV. */
 export function castSupported(): boolean {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
   if (!window.isSecureContext) return false;
   if ((navigator as Navigator & { webdriver?: boolean }).webdriver) return false;
-  const ua = navigator.userAgent;
-  if (/HeadlessChrome|OPR\/|Opera|SamsungBrowser|YaBrowser|Electron/i.test(ua)) return false;
-  return /\b(Chrome|Chromium|Edg)\/\d+/.test(ua);
+  if (document.documentElement.classList.contains('tv')) return false;
+  return castUserAgent(navigator.userAgent);
 }
 
 let sdkPromise: Promise<boolean> | null = null;
