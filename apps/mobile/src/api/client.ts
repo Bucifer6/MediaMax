@@ -4,6 +4,14 @@
  */
 import type {
   ApiError as ApiErrorBody,
+  DownloadPlan,
+  DownloadPlanRequest,
+  DownloadRule,
+  DownloadRuleInput,
+  OfflineSyncEntry,
+  OfflineSyncResult,
+  PlaybackPrepareRequest,
+  PlaybackPrepareResult,
   AuthResponse,
   Bookmark,
   Branding,
@@ -249,6 +257,9 @@ export class MediaMaxClient {
   }
   del<T>(path: string, query?: Query) {
     return this.request<T>('DELETE', path, { query });
+  }
+  put<T>(path: string, body?: unknown) {
+    return this.request<T>('PUT', path, { body: body ?? {} });
   }
 
   /* ----------------------------- System ----------------------------- */
@@ -567,11 +578,33 @@ export class MediaMaxClient {
   playback(itemId: string, body: PlaybackRequest) {
     return this.post<PlaybackInfo>(`/playback/${encodeURIComponent(itemId)}`, body, { timeoutMs: 45000 });
   }
+  /** Instant play: decide now and warm up the stream (no session is created). */
+  preparePlayback(itemId: string, body: PlaybackPrepareRequest) {
+    return this.post<PlaybackPrepareResult>(`/playback/${encodeURIComponent(itemId)}/prepare`, body, { timeoutMs: 15000 });
+  }
   sessionProgress(sessionId: string, report: ProgressReport) {
     return this.post<{ ok: true }>(`/playback/sessions/${encodeURIComponent(sessionId)}/progress`, report);
   }
   stopSession(sessionId: string) {
     return this.del<{ ok: true }>(`/playback/sessions/${encodeURIComponent(sessionId)}`);
+  }
+  /* ------------------------- Smart downloads ------------------------ */
+  downloadRules(scope: 'device' | 'all' = 'device') {
+    return this.get<DownloadRule[]>('/downloads/rules', { scope });
+  }
+  putDownloadRule(showId: string, rule: DownloadRuleInput) {
+    return this.put<DownloadRule>(`/downloads/rules/${encodeURIComponent(showId)}`, rule);
+  }
+  deleteDownloadRule(id: string) {
+    return this.del<{ ok: true }>(`/downloads/rules/${encodeURIComponent(id)}`);
+  }
+  /** What this device should have for its rules, and the server state of the downloads it has. */
+  downloadPlan(have: string[]) {
+    return this.post<DownloadPlan>('/downloads/plan', { have } satisfies DownloadPlanRequest);
+  }
+  /** Replay offline progress / watched changes (newest change wins). */
+  offlineSync(entries: OfflineSyncEntry[]) {
+    return this.post<OfflineSyncResult>('/downloads/sync', { entries });
   }
   /** Download URL. Non-original qualities are converted on the fly (fragmented MP4 / .m4a, no Content-Length). */
   downloadUrl(itemId: string, quality: DownloadQuality = 'original') {
