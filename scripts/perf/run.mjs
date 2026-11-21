@@ -22,11 +22,15 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const arg = (k, d) => process.argv.find((a) => a.startsWith(`--${k}=`))?.split('=').slice(1).join('=') ?? d;
 const flag = (k) => process.argv.includes(`--${k}`);
 const label = arg('label', 'run');
+/** Checkout whose built server is measured (default: this one). Lets you benchmark an older build side by side. */
+const serverRepo = path.resolve(arg('repo', repo));
 const scale = Number(arg('scale', '1'));
 const only = arg('only', '')?.split(',').filter(Boolean);
 const quick = flag('quick');
 const LEVELS = (arg('levels', quick ? '1,10' : '1,10,50')).split(',').map(Number);
 const PER_LEVEL = Number(arg('requests', quick ? '60' : '200'));
+/** A level stops early after this long (slow endpoints would otherwise take minutes per level). */
+const LEVEL_BUDGET_MS = Number(arg('budget', quick ? '5000' : '15000'));
 
 if (flag('build') || !fs.existsSync(path.join(repo, 'server/dist/index.js'))) {
   execFileSync('npm', ['run', 'build', '-w', 'shared'], { cwd: repo, stdio: 'inherit' });
@@ -54,10 +58,28 @@ const manifest = JSON.parse(fs.readFileSync(path.join(work, 'perf-manifest.json'
 
 /* ------------------------------ boot ------------------------------- */
 const bootT = Date.now();
-const server = await bootServer({ repo, data: work, env: { MEDIAMAX_PERF: '1', MEDIAMAX_PERF_SLOW_MS: '15', MEDIAMAX_LOG_LEVEL: 'info' } });
+const server = await bootServer({ repo: serverRepo, data: work, env: { MEDIAMAX_PERF: '1', MEDIAMAX_PERF_SLOW_MS: '15', MEDIAMAX_LOG_LEVEL: 'info' } });
 const bootMs = Date.now() - bootT;
 const base = server.base;
-const users = manifest.tokens.filter((t) => !t.admin);
+// Never leave a server behind (it would keep loading the machine and skew the next run).
+const killServer = () => {
+  try {
+    server.proc.kill('SIGKILL');
+  } catch { /* gone */ }
+};
+process.on('exit', killServer);
+process.on('SIGINT', () => process.exit(130));
+process.on('SIGTERM', () => process.exit(143));
+process.on('uncaughtException', (e) => {
+  console.error(e);
+  process.exit(1);
+});
+process.on('unhandledRejection', (e) => {
+  console.error(e);
+  process.exit(1);
+});
+const users = manifest.tokens.filter((t) => !t.admin && !t.restricted);
+const restricted = manifest.tokens.filter((t) => t.restricted);
 const admin = manifest.tokens.find((t) => t.admin);
 let rr = 0;
 const nextUser = () => users[rr++ % users.length];
@@ -113,9 +135,10 @@ try {
 } catch { /* web not built */ }
 
 const etags = new Map();
+let transportErrors = 0;
 function headersFor(sc, i) {
   const h = { 'X-MediaMax-Device-Id': 'perf' };
-  const tok = sc.who === 'user' ? nextUser().token : sc.who === 'restricted' ? users.filter((u) => u.restricted)[i % users.filter((u) => u.restricted).length].token : sc.who === 'admin' ? admin.token : null;
+  const tok = sc.who === 'user' ? nextUser().token : sc.who === 'restricted' ? restricted[i % restricted.length].token : sc.who === 'admin' ? admin.token : null;
   if (tok) h.Authorization = `Bearer ${tok}`;
   h['Accept-Encoding'] = 'gzip, deflate, br';
   if (sc.revalidate) {
@@ -129,7 +152,14 @@ function headersFor(sc, i) {
 async function one(sc, i) {
   const url = sc.url(i);
   const t = performance.now();
-  const res = await fetch(base + url, { headers: headersFor(sc, i) });
+  let res;
+  try {
+    res = await fetch(base + url, { headers: headersFor(sc, i) });
+  } catch (e) {
+    // A kept-alive socket the server closed while idle (long waits under load): count it and retry once.
+    transportErrors++;
+    res = await fetch(base + url, { headers: headersFor(sc, i) });
+  }
   const body = Buffer.from(await res.arrayBuffer());
   const ms = performance.now() - t;
   if (res.status >= 400) throw new Error(`${sc.name}: ${url} → ${res.status} ${body.toString().slice(0, 200)}`);
@@ -173,13 +203,13 @@ for (const sc of SCENARIOS) {
     let next = 0;
     const t0 = performance.now();
     await Promise.all(Array.from({ length: c }, async () => {
-      while (next < n) {
+      while (next < n && !(performance.now() - t0 > LEVEL_BUDGET_MS && next >= c * 2)) {
         const i = next++;
         lat.push((await one(sc, i)).ms);
       }
     }));
     const wall = performance.now() - t0;
-    row.levels[c] = { p50: r1(pct(lat, 50)), p95: r1(pct(lat, 95)), rps: Math.round((n / wall) * 1000) };
+    row.levels[c] = { p50: r1(pct(lat, 50)), p95: r1(pct(lat, 95)), rps: Math.round((lat.length / wall) * 1000), n: lat.length };
   }
   results.push(row);
   const lv = LEVELS.map((c) => `c${c} p50 ${row.levels[c].p50} p95 ${row.levels[c].p95} (${row.levels[c].rps}/s)`).join(' | ');
@@ -197,7 +227,7 @@ for (const m of server.log.matchAll(/slow query ([\d.]+)ms: (.*)/g)) {
 const slowTop = Object.entries(slow).sort((a, b) => b[1].total - a[1].total).slice(0, 15).map(([sql, v]) => ({ sql, ...v, total: Math.round(v.total) }));
 await server.stop();
 
-const out = { label, date: new Date().toISOString(), node: process.version, cpus: os.cpus().length, cpu: os.cpus()[0]?.model, scale, counts: manifest.counts, bootMs, levels: LEVELS, results, slowTop };
+const out = { label, transportErrors, date: new Date().toISOString(), node: process.version, cpus: os.cpus().length, cpu: os.cpus()[0]?.model, scale, counts: manifest.counts, bootMs, levels: LEVELS, results, slowTop };
 const dir = path.join(repo, 'scripts/perf/results');
 fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(path.join(dir, `${label}.json`), JSON.stringify(out, null, 1));
