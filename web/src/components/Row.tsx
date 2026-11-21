@@ -7,7 +7,7 @@ import { Icon } from './Icon';
  * Mouse drag-to-scroll with momentum for a horizontal row (touch and trackpads already have native momentum).
  * A drag past a few pixels swallows the click that ends it, so dragging over a poster doesn't open it.
  */
-function useDragScroll(ref: React.RefObject<HTMLDivElement>) {
+function useDragScroll(ref: React.RefObject<HTMLDivElement | null>) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;

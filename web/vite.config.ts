@@ -55,15 +55,27 @@ export default defineConfig({
       '/api': { target, changeOrigin: true, ws: true },
     },
   },
+  // jassub's renderer worker uses dynamic import() (it loads the Emscripten module at run time) and is created as a
+  // module worker, so workers are bundled as ES modules (Vite's default is IIFE).
+  worker: { format: 'es' },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: false,
     chunkSizeWarningLimit: 900,
-    rollupOptions: {
+    // Vite 7+ defaults to 'baseline-widely-available' (Chrome/Edge 107, Safari 16, Firefox 104). TV browsers are often
+    // older Chromium (webOS / Tizen / VIDAA), so keep Vite 5's 'modules' target that the TV app has always shipped with.
+    target: ['es2020', 'edge88', 'firefox78', 'chrome87', 'safari14'],
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          react: ['react', 'react-dom', 'react-router-dom'],
+        codeSplitting: {
+          groups: [
+            // One long-cached chunk for React + the router (everything else changes more often).
+            { name: 'react', priority: 2, test: /[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|@remix-run[\\/]router|scheduler)[\\/]/ },
+            // Everything else the first page load needs, in one chunk. Without this, Rolldown splits each module that
+            // a lazy route shares with the shell into its own small chunk (16 startup requests instead of 4).
+            { name: 'app', priority: 1, tags: ['$initial'] },
+          ],
         },
       },
     },
