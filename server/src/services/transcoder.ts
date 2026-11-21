@@ -182,6 +182,9 @@ export function shouldToneMap(o: Pick<TranscodeOptions, 'hdr' | 'toneMap' | 'vid
   return o.hdr && toneMapHdrSetting;
 }
 
+/** Wait loops poll quickly while a stream is starting (the first segment is what the viewer is waiting for), then back off. */
+export const pollDelay = (startedAt: number): number => (Date.now() - startedAt < 4000 ? 40 : 150);
+
 export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: number, hwOrCtx: HwAccel | BuildContext): { args: string[]; info: TranscodeInfo; segmentType: SegmentType } {
   const ctx: BuildContext = typeof hwOrCtx === 'string' ? { hw: hwOrCtx } : hwOrCtx;
   const platform = ctx.platform ?? process.platform;
@@ -281,6 +284,8 @@ export class TranscodeJob {
   readonly dir: string;
   private proc: ChildProcess | null = null;
   private startNumber = 0;
+  /** Highest complete segment seen in the current run (segments only appear, so later scans resume here). */
+  private latestKnown = -1;
   private paused = false;
   private lastRequested = 0;
   private stderr = '';
@@ -327,6 +332,7 @@ export class TranscodeJob {
   start(fromSegment = 0) {
     this.stopProcess();
     this.startNumber = fromSegment;
+    this.latestKnown = fromSegment - 1;
     this.exited = false;
     this.failed = null;
     this.stderr = '';
@@ -415,8 +421,11 @@ export class TranscodeJob {
 
   /** Highest segment number fully written (ffmpeg writes seg N+1 only after N is complete, temp_file renames on completion). */
   latestSegment(): number {
-    let n = this.startNumber - 1;
+    // Resume from the last segment found in this run instead of re-checking every file from the start of it
+    // (late in a film that was thousands of synchronous stat calls per segment request).
+    let n = Math.max(this.startNumber - 1, this.latestKnown);
     while (fs.existsSync(this.segmentPath(n + 1))) n++;
+    this.latestKnown = n;
     return n;
   }
 
@@ -440,7 +449,7 @@ export class TranscodeJob {
       }
       if (this.failed) throw new Error(this.failed);
       if (this.exited && !this.killed && this.opts.mode === 'transcode' && !fs.existsSync(raw)) this.start(this.startNumber);
-      await sleep(150);
+      await sleep(pollDelay(deadline - timeoutMs));
     }
     throw new Error('Timed out waiting for stream to start');
   }
@@ -456,15 +465,18 @@ export class TranscodeJob {
       this.start(n);
     }
     const deadline = Date.now() + timeoutMs;
+    // VOD runs write segments with hls_flags temp_file (renamed into place once complete), so an existing segment is
+    // a finished one; waiting for the next segment as well only added a whole segment of encoding to every start/seek.
+    const ready = (k: number) => this.segmentExists(k) && (this.opts.mode !== 'live' || this.segmentExists(k + 1) || this.exited);
     while (Date.now() < deadline) {
-      if (this.segmentExists(n) && (this.segmentExists(n + 1) || this.exited)) return this.segmentPath(n);
+      if (ready(n)) return this.segmentPath(n);
       if (this.failed) throw new Error(this.failed);
       if (this.exited && !this.segmentExists(n)) {
         if (this.opts.mode === 'transcode' && !this.failed && !this.killed) {
           this.start(n);
         } else throw new Error('Transcoder stopped');
       }
-      await sleep(150);
+      await sleep(pollDelay(deadline - timeoutMs));
     }
     throw new Error('Timed out waiting for segment');
   }
@@ -497,7 +509,7 @@ export class TranscodeJob {
       if (fs.existsSync(p) && fs.readFileSync(p, 'utf8').includes('#EXTINF')) return p;
       if (this.failed) throw new Error(this.failed);
       if (this.exited && !fs.existsSync(p)) throw new Error('Transcoder stopped before producing output');
-      await sleep(200);
+      await sleep(pollDelay(deadline - timeoutMs));
     }
     throw new Error('Timed out waiting for stream to start');
   }

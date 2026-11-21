@@ -17,6 +17,7 @@ import { logActivity } from '../services/activity.js';
 import { renditionRequest } from '../services/abr.js';
 import { doviMasterForJob } from '../services/dovi.js';
 import { serveSubtitle } from './streaming.js';
+import { pollDelay } from '../services/transcoder.js';
 
 const MIME: Record<string, string> = {
   mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska', ts: 'video/mp2t', m2ts: 'video/mp2t', avi: 'video/x-msvideo',
@@ -223,8 +224,8 @@ export default async function playbackRoutes(app: FastifyInstance) {
     if (job.opts.mode === 'transcode') segPath = await job.waitForSegment(n);
     else {
       segPath = job.segmentPath(n);
-      const deadline = Date.now() + 20000;
-      while (!fs.existsSync(segPath) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 150));
+      const started = Date.now();
+      while (!fs.existsSync(segPath) && Date.now() < started + 20000) await new Promise((r) => setTimeout(r, pollDelay(started)));
       if (!fs.existsSync(segPath)) throw notFound('Segment not available');
     }
     reply.type(job.segmentType === 'fmp4' ? 'video/mp4' : 'video/mp2t').header('Cache-Control', 'private, max-age=600');
