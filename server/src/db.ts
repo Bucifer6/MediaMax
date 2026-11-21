@@ -495,6 +495,17 @@ const MIGRATIONS: string[] = [
   /* Public sign-in screen: only users an admin opts in are ever listed (default hidden) */ `
   ALTER TABLE users ADD COLUMN show_on_signin INTEGER NOT NULL DEFAULT 0;
   `,
+  /* Emby migration: one-time set-password links, Emby id → MediaMax id map (re-runs) */ `
+  CREATE TABLE password_links (
+    token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, purpose TEXT NOT NULL,
+    created_by TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT
+  );
+  CREATE INDEX password_links_user ON password_links(user_id);
+  CREATE TABLE emby_import_map (
+    kind TEXT NOT NULL, emby_id TEXT NOT NULL, local_id TEXT NOT NULL, imported_at TEXT NOT NULL,
+    PRIMARY KEY (kind, emby_id)
+  );
+  `,
 ];
 
 function migrate(db: Database) {

@@ -281,6 +281,7 @@ export function UsersAdmin() {
                     <div className="badge-row">
                       {u.isAdmin && <Badge tone="primary">Admin</Badge>}
                       {u.disabled && <Badge tone="danger">Disabled</Badge>}
+                      {u.showOnSignIn && <Badge tone="muted">On sign-in screen</Badge>}
                       {u.hasPin && <Badge tone="muted"><Icon name="lock" size={10} /> PIN</Badge>}
                       {u.totpEnabled && <Badge tone="success"><Icon name="shield" size={10} /> 2FA</Badge>}
                       {u.maxStreams != null && <Badge tone="muted">{u.maxStreams} stream{u.maxStreams === 1 ? '' : 's'}</Badge>}

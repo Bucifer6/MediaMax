@@ -49,9 +49,24 @@ the WebSocket emits `branding.updated`.
 | PATCH 🔑 | `/auth/me` | `UpdateMeRequest` | `User` |
 | GET 🔑 | `/auth/devices` | | `Device[]` (own; admin sees all with `?all=true`) |
 | DELETE 🔑 | `/auth/devices/:id` | | `{ ok: true }` (revokes token) |
+| GET 🔓 | `/auth/password-link/:token` | | `PasswordLinkPreview` (one-time set-password links, e.g. from the Emby import) |
+| POST 🔓 | `/auth/password-link/:token` | `UsePasswordLinkRequest` | `AuthResponse` (sets the password, signs other sessions out; single use) |
 
 ## Users 🛡️
 `GET /users` → `User[]` · `POST /users` `CreateUserRequest` → `User` · `PATCH /users/:id` `UpdateUserRequest` → `User` · `DELETE /users/:id`
+`showOnSignIn` lists an account on the public sign-in picker (`GET /auth/profiles`); off by default.
+
+### Import from Emby 🛡️
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| GET | `/admin/emby-import/config` | | `EmbyImportConfig` (API key masked as `••••`) |
+| PUT | `/admin/emby-import/config` | `Partial<EmbyImportConfig>` (`••••` keeps the stored key) | `EmbyImportConfig` |
+| POST | `/admin/emby-import/test` | `{ url?, apiKey? }` (unsaved form values) | `{ ok, message, serverName?, version?, users? }` |
+| GET | `/admin/emby-import/preview?updateExisting=&mergeExisting=&includeDisabled=&importWatched=…` | | `EmbyImportPreview` (dry run, changes nothing) |
+| POST | `/admin/emby-import/run` | `EmbyImportOptions` | `EmbyImportJob` (runs in the background; 409 if one is running) |
+| GET | `/admin/emby-import/job` | | `EmbyImportJob \| null` (running or last finished, with set-password links) |
+
+Progress is pushed to admins as the WebSocket event `{ type: 'embyImport.updated', job }`.
 `allowRequest4k` (default false) lets a non-admin tick "Also request in 4K" when a 4K Radarr/Sonarr exists.
 
 ## Libraries
