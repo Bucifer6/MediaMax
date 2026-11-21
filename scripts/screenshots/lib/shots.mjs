@@ -62,11 +62,16 @@ export class Shooter {
     this.log(`  ✓ ${name} (${Math.round(fs.statSync(file).size / 1024)} KB)`);
   }
 
-  async context({ width = 1440, height = 900, dsf = 2, token = this.state.token, mobile = false, extraCss = '' } = {}) {
+  /**
+   * `fx`: visual effects level stored for the page (web/src/theme/fx.ts). Desktop shots force 'full' so they don't
+   * depend on the capture machine's core count; TV shots leave it on 'auto' (TV mode turns lite on, as on a real TV).
+   */
+  async context({ width = 1440, height = 900, dsf = 2, token = this.state.token, mobile = false, extraCss = '', fx = 'full' } = {}) {
     const ctx = await this.browser.newContext({ viewport: { width, height }, deviceScaleFactor: dsf, isMobile: mobile, hasTouch: mobile, locale: 'en-GB', timezoneId: 'Europe/London', colorScheme: 'dark' });
-    await ctx.addInitScript(({ token, css }) => {
+    await ctx.addInitScript(({ token, css, fx }) => {
       try {
         if (token) localStorage.setItem('mm.token', token);
+        if (fx && fx !== 'auto') localStorage.setItem('mm.fx', fx);
       } catch {}
       const add = () => {
         const s = document.createElement('style');
@@ -75,7 +80,7 @@ export class Shooter {
       };
       if (document.head) add();
       else document.addEventListener('DOMContentLoaded', add);
-    }, { token, css: SHOT_CSS + extraCss });
+    }, { token, css: SHOT_CSS + extraCss, fx });
     // Put the featured title first in the hero so the home shots are deterministic.
     await ctx.route('**/api/v1/home*', async (route) => {
       const res = await route.fetch();
@@ -351,6 +356,59 @@ export const SHOTS = {
     await ctx.close();
   },
 
+  // Lumen: a poster's peek card (hover dwell) and the ⌘K command palette.
+  async peek(s) {
+    const { ctx, page } = await s.context();
+    await s.goto(page, '/', 2000);
+    const card = page.locator('.row:not(.row-wide):not(.row-top10) a.card-poster').nth(1);
+    await card.scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollBy(0, 160));
+    await sleep(500);
+    const box = await card.boundingBox();
+    await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.4);
+    await page.locator('.peek.in').waitFor({ timeout: 8000 }).catch(() => s.problems.push('peek: no peek card'));
+    await s.settle(page, 900);
+    await s.capture(page, 'peek.jpg', 1440, { mouseX: box.x + box.width * 0.6, mouseY: box.y + box.height * 0.4, keepPointer: true });
+    await ctx.close();
+  },
+
+  async 'command-palette'(s) {
+    const { ctx, page } = await s.context();
+    await s.goto(page, '/', 2000);
+    await page.keyboard.press('Control+k');
+    await page.locator('.cmdk-input').fill('neon');
+    await page.locator('.cmdk-item').nth(1).waitFor({ timeout: 8000 }).catch(() => s.problems.push('command palette: no results'));
+    await s.settle(page, 1600);
+    await s.capture(page, 'command-palette.jpg');
+    await ctx.close();
+  },
+
+  async login(s) {
+    const { ctx, page } = await s.context({ token: null });
+    await s.goto(page, '/login', 1200);
+    // The public profile picker may be on: show the sign-in card.
+    const user = page.getByRole('button', { name: /Sign in with a username/ });
+    if (await user.isVisible().catch(() => false)) await user.click();
+    await sleep(900);
+    await s.capture(page, 'login.jpg');
+    await ctx.close();
+  },
+
+  // A light theme (MediaMax Light) on the home page and a title page.
+  async 'home-light'(s) {
+    await s.state.admin.patch('/auth/me', { preferences: { themeId: 'mediamax-light' } });
+    try {
+      const { ctx, page } = await s.context();
+      await s.goto(page, '/', 2500);
+      await s.capture(page, 'home-light.jpg');
+      await s.goto(page, `/item/${s.state.M['paper-kites'] ?? s.state.M['neon-meridian']}`, 1500);
+      await s.capture(page, 'item-light.jpg');
+      await ctx.close();
+    } finally {
+      await s.state.admin.patch('/auth/me', { preferences: { themeId: null } });
+    }
+  },
+
   /* ---------------------------- feature shots ---------------------------- */
 
   async profiles(s) {
@@ -515,7 +573,7 @@ export const SHOTS = {
   },
 
   async 'tv-mode'(s) {
-    const { ctx, page } = await s.context({ width: 1920, height: 1080, dsf: 1 });
+    const { ctx, page } = await s.context({ width: 1920, height: 1080, dsf: 1, fx: 'auto' });
     await s.goto(page, '/?tv=1', 2000);
     // D-pad down until a poster card in a row has focus, then one step right.
     for (let i = 0; i < 8; i++) {
