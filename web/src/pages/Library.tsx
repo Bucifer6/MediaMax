@@ -10,6 +10,7 @@ import { EmptyState, ErrorState, Badge } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { isIptvLibrary, libraryIcon, libraryItemTypes } from '../utils/items';
 import { ListenBrainzRow } from '../components/ListenBrainz';
+import { LibraryDecideButtons } from '../components/decide/DecideBar';
 
 const PAGE = 60;
 const LETTERS = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
@@ -145,6 +146,7 @@ export function LibraryPage() {
             <p className="muted">{loading && !items.length ? 'Loading…' : `${total.toLocaleString()} ${total === 1 ? 'item' : 'items'}`}{scanProgress != null || library?.scanning ? ' · scanning…' : ''}</p>
           </div>
         </div>
+        <LibraryDecideButtons library={library} genre={genre} />
         {user?.isAdmin && (
           <button className="btn btn-ghost" onClick={scan} disabled={scanProgress != null}>
             <Icon name="refresh" size={16} className={scanProgress != null ? 'spin' : ''} /> {scanProgress != null ? `Scanning ${Math.round(scanProgress)}%` : 'Scan'}

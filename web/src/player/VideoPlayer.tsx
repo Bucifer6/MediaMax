@@ -36,6 +36,7 @@ import { initialBandwidth } from './bandwidth';
 import { formatBps } from './abr';
 import { VideoPair, whenPlayable } from './videoPair';
 import { helpForReason, helpPath } from '../utils/helpLinks';
+import { useMarathon } from './Marathon';
 
 /** Subtitle formats our own renderer draws (SubtitleOverlay). VobSub/DVB still need server burn-in. */
 const SUBTITLE_FORMATS: SubtitleFormat[] = ['srt', 'vtt', 'ass', 'pgs'];
@@ -971,6 +972,10 @@ export default function VideoPlayer() {
     else navigate(item ? `/item/${item.id}` : '/');
   }, [navigate, item]);
 
+  /* Random marathon (?marathon=…) and the sleep timer. */
+  const marathonId = sp.get('marathon');
+  const marathon = useMarathon({ videoRef, item, marathonId, ended, positionMs, durationMs, exit });
+
   /* "Play to" a network renderer (DLNA TV, Kodi): the server takes over, this page becomes a remote. */
   const rendererRemote = useRendererRemote();
   const getVideoEl = useCallback(() => videoRef.current, []);
@@ -1252,7 +1257,7 @@ export default function VideoPlayer() {
     if (remaining < 90000 || inCredits) api.items.get(info.nextItemId).then(setNextItem).catch(() => {});
   }, [info?.nextItemId, remaining < 90000, !!inCredits]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const showUpNext = (nearEnd || ended) && !!nextItem && !upNextDismissed;
+  const showUpNext = (nearEnd || ended) && !!nextItem && !upNextDismissed && !marathon.blockAutoplay;
   useEffect(() => {
     if (!showUpNext || !prefs.autoplayNext || paused && !ended) {
       setCountdown(null);
@@ -1398,7 +1403,10 @@ export default function VideoPlayer() {
         </div>
         {info && <span className={`badge player-method method-${info.method}`} title="Playback method">{info.method === 'direct' ? 'Direct play' : info.method === 'remux' ? 'Direct stream' : info.method === 'transcode' ? 'Transcoding' : 'Live'}</span>}
         {sync.room && <span className="badge badge-accent"><Icon name="together" size={12} /> {sync.room.members.length} watching</span>}
+        {marathonId && <span className="badge badge-accent"><Icon name="shuffle" size={12} /> Marathon</span>}
+        {marathon.sleepButton}
       </div>
+      {marathon.overlay}
 
       {introThen && (
         <button className="skip-btn" onClick={skipIntros}>
@@ -1442,7 +1450,7 @@ export default function VideoPlayer() {
         </div>
       )}
 
-      {ended && !showUpNext && (
+      {ended && !showUpNext && !marathonId && (
         <div className="player-center ended">
           <button className="btn btn-primary btn-lg" onClick={() => seekTo(0)}><Icon name="refresh" size={18} /> Watch again</button>
           <button className="btn btn-glass btn-lg" onClick={exit}>Back</button>

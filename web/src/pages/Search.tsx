@@ -7,6 +7,7 @@ import { CardSkeleton, ChannelCard, PosterCard } from '../components/Cards';
 import { EmptyState, Img } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { formatTime } from '../utils/format';
+import { DecideBar } from '../components/decide/DecideBar';
 
 const GROUPS: { label: string; types: string[] }[] = [
   { label: 'Movies', types: ['movie'] },
@@ -75,7 +76,7 @@ export function SearchPage() {
       </div>
 
       {!debounced ? (
-        <EmptyState icon="search" title="Find anything" message={<>Search across every library, live channel and the TV guide. Press <kbd>/</kbd> anywhere to jump here.</>} />
+        <EmptyState icon="search" title="Find anything" message={<>Search across every library, live channel and the TV guide. Press <kbd>/</kbd> anywhere to jump here.</>} action={<DecideBar />} />
       ) : loading && !res ? (
         <div className="grid grid-poster">{Array.from({ length: 12 }).map((_, i) => <CardSkeleton key={i} />)}</div>
       ) : error ? (

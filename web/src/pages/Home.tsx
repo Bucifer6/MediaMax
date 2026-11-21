@@ -8,6 +8,7 @@ import { Row } from '../components/Row';
 import { CardSkeleton, ChannelCard, LandscapeCard, PosterCard, RankedCard, UpcomingCard } from '../components/Cards';
 import { EmptyState, ErrorState } from '../components/ui';
 import { Icon } from '../components/Icon';
+import { DecideBar } from '../components/decide/DecideBar';
 
 function rowLink(row: HomeRow): string | undefined {
   const l = row.link;
@@ -135,6 +136,7 @@ export function Home() {
     <div className={`home ${heroRow && theme.heroStyle !== 'none' && heroRow.items.length ? 'has-hero' : 'no-hero'}`}>
       {heroRow && theme.heroStyle !== 'none' && heroRow.items.length > 0 && <Hero items={heroRow.items} style={theme.heroStyle} />}
       <div className="home-rows">
+        <DecideBar className="home-decide" />
         {rest.map((r) => (
           <HomeRowView key={r.id} row={r} />
         ))}
