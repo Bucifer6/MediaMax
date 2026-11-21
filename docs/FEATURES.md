@@ -109,6 +109,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Trickplay in the native apps (phone drag, Android TV / Apple TV D-pad and Siri Remote seek) with chapter names, offline with downloads, data-saver mode | ✅ | 🟡 | ✅ | ✅ |
 | Trickplay on Samsung/LG TV (web TV mode) while seeking with the remote | ✅ | 🟡 | 🟡 | ✅ |
 | Online subtitle search & auto-download (OpenSubtitles + Subs.ro + plugin providers, release scoring, hash matching, archive unpacking, encoding/diacritics fixes, alass sync) | ✅ | Plugin | ✅ | ✅ |
+| Automatic subtitles as a last resort: speech-to-text (whisper.cpp or an OpenAI-compatible API) at night, low priority, resumable; LLM translation cue by cue (Romanian diacritics), labelled "Auto-generated (AI)" | ❌ | ❌ | ❌ | ✅ |
 | Converted downloads (device-friendly MP4 at 1080p/720p/480p) | Pass | ✅ | Premiere | ✅ |
 
 ## Live TV & IPTV
@@ -247,6 +248,18 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | Per-library disk state (active / idle / standby via hdparm, smartctl or /sys, never wakes a disk), directory-only inotify watching, opt-in long-interval polling for network shares | ❌ | ❌ | ❌ | ✅ (Linux) |
 | Media-folder artwork served from a cached copy in the data dir (browsing never wakes a media disk) | 🟡 | ❌ | ❌ | ✅ |
 | Import from Emby, Jellyfin or Plex: users, permissions, library access, watched/resume/favourites, play history, playlists, collections; quick and full dry-run previews, set-password links, safe re-runs | — | — | — | ✅ |
+
+### AI (Admin → AI)
+One language model (Ollama or any OpenAI-compatible API, write-only key, one daily call cap) shared by every AI feature,
+each with its own switch; with no model everything falls back to built-in behaviour (Help Centre: *AI features*).
+
+| Feature | Plex | Jellyfin | Emby | MediaMax |
+|---|:-:|:-:|:-:|:-:|
+| Shared language model for the AI DJ, Ask, recaps and subtitle translation; the DJ's model migrated automatically | ❌ | ❌ | ❌ | ✅ |
+| **Generate missing subtitles** task: picks the dialogue track, 16 kHz mono, silence-split chunks, whisper.cpp (one-click Windows download + tiny/base/small/medium ggml models) or a faster-whisper/OpenAI `/audio/transcriptions` API; night window, one job at a time, low process priority, resumes after dawn or a restart; queue, progress and ETA in Admin → AI; "Generate with AI" per title | ❌ | 🟡 (plugin, no translation) | ❌ | ✅ |
+| Subtitle translation with the language model in batches (same cues and timing, line breaks kept, ș ț comma-below), or whisper's own translation to English; then the normal subtitle clean-up | ❌ | ❌ | ❌ | ✅ |
+| **Ask**: natural-language search in English and Romanian (runtime, decades, genres/moods, unwatched, rating, spoken language, people, "like ⟨title⟩ but lighter") with removable "Understood as" chips on web, TV mode and phone; optional LLM understanding (strict JSON schema, validated) and semantic plot matching (local ONNX MiniLM or an embeddings API, float32 vectors in SQLite, cosine search in a worker thread); per-user access and ratings always applied; p95 ≈ 100 ms on 20k movies without a model | 🟡 | ❌ | ❌ | ✅ |
+| **"Previously on…"** recaps after a break (default 7 days) or at a new season: only episodes the viewer watched before the one about to play, condensed to 3-5 sentences by the model (spoiler checks) or a tidy list; recap-marker clip; cached per user | ❌ | ❌ | ❌ | ✅ |
 
 ### Migrating from Emby, Jellyfin or Plex
 **Admin → Import from another server** moves an Emby Server 4.x, Jellyfin 10.8+ or Plex Media Server install over

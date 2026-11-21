@@ -4980,3 +4980,199 @@ export interface MarathonNextResponse {
   /** Ask "Are you still watching?" before playing `item`. */
   stillWatchingCheck: boolean;
 }
+
+/* ------------------------------------------------------------------ */
+/* AI (Admin → AI): one language model for every AI feature            */
+/* ------------------------------------------------------------------ */
+
+/** Features that may use the AI settings. Each can be switched off on its own. */
+export type AiFeature = 'dj' | 'ask' | 'recaps' | 'autoSubtitles';
+
+/** The language model shared by every AI feature (moved here from the AI DJ settings; same shape). */
+export type AiLlmSettings = AiDjSettings['llm'];
+
+export type WhisperModelSize = 'tiny' | 'base' | 'small' | 'medium';
+
+/** Automatic subtitles: speech-to-text (whisper.cpp or an OpenAI-compatible API) plus optional LLM translation. */
+export interface AutoSubtitleSettings {
+  /** 'whisper-cpp' = the whisper.cpp program on this server; 'api' = an OpenAI-compatible /audio/transcriptions endpoint. */
+  engine: 'whisper-cpp' | 'api';
+  /** whisper.cpp program (whisper-cli / main). null = the one downloaded from Admin → AI, else PATH. */
+  whisperPath: string | null;
+  /** ggml model size (downloaded on request into the data folder). */
+  model: WhisperModelSize;
+  /** A ggml model file of your own; overrides `model`. */
+  modelPath: string | null;
+  /** CPU threads for whisper.cpp; 0 = half the cores (keeps the server responsive). */
+  threads: number;
+  /** OpenAI-compatible speech-to-text API (e.g. a self-hosted faster-whisper server). `apiKey` is write-only. */
+  apiUrl: string | null;
+  apiModel: string | null;
+  apiKey: string | null;
+  /** Languages to generate (ISO 639-1). Empty = the subtitle languages from Server settings → Subtitles. */
+  languages: string[];
+  /** Night window ("HH:MM", server local time). The task only starts jobs inside it; equal values = any time. */
+  windowStart: string;
+  windowEnd: string;
+  /** Translate with the language model when the film's spoken language differs from the wanted one. */
+  translate: boolean;
+  /** Libraries to cover (empty = every movie and TV library). */
+  libraryIds: string[];
+}
+
+export interface AiSettings {
+  llm: AiLlmSettings;
+  /** Per-feature switches. `dj` = the AI DJ may use the language model (the DJ itself is switched in its own settings). */
+  features: Record<AiFeature, boolean>;
+  autoSubtitles: AutoSubtitleSettings;
+  ask: {
+    /** Semantic matching over plots/taglines (built by the "Build search embeddings" task). */
+    embeddings: boolean;
+    /** 'local' = a small ONNX sentence model on this server (English); 'api' = the language-model server's embeddings endpoint. */
+    embeddingSource: 'local' | 'api';
+    /** Embedding model name for 'api' (e.g. "nomic-embed-text" on Ollama, "text-embedding-3-small"). */
+    embeddingModel: string | null;
+  };
+  recaps: {
+    /** Offer a recap when the last watched episode is at least this many days old (or a new season starts). */
+    minGapDays: number;
+    /** Episodes to recap (1-3). */
+    maxEpisodes: number;
+  };
+}
+
+export interface ServerSettings {
+  ai?: AiSettings;
+}
+
+/** GET /ai/status */
+export interface AiStatus {
+  llmConfigured: boolean;
+  features: Record<AiFeature, boolean>;
+  usage: { day: string; used: number; max: number };
+  embeddings: { enabled: boolean; source: 'local' | 'api'; ready: boolean; count: number; total: number; model: string | null; error: string | null };
+}
+
+export type AutoSubtitleJobStatus = 'queued' | 'running' | 'done' | 'error' | 'skipped';
+
+export interface AutoSubtitleJob {
+  id: string;
+  itemId: string;
+  mediaId: string;
+  title: string;
+  /** Wanted language (ISO 639-1). */
+  language: string;
+  status: AutoSubtitleJobStatus;
+  /** "extracting audio", "transcribing 3/12", "translating 40/900"… */
+  phase: string | null;
+  /** 0-100 */
+  progress: number;
+  etaSeconds: number | null;
+  /** Language whisper detected / was told (ISO 639-1). */
+  spokenLanguage: string | null;
+  translated: boolean;
+  cues: number | null;
+  error: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface WhisperEngineReport {
+  engine: AutoSubtitleSettings['engine'];
+  ready: boolean;
+  binary: string | null;
+  model: string | null;
+  modelPresent: boolean;
+  problems: string[];
+}
+
+/** GET /ai/subtitles */
+export interface AutoSubtitleStatus {
+  enabled: boolean;
+  engine: WhisperEngineReport;
+  inWindow: boolean;
+  running: AutoSubtitleJob | null;
+  queued: AutoSubtitleJob[];
+  recent: AutoSubtitleJob[];
+  download: { state: 'idle' | 'downloading' | 'ready' | 'error'; what: string | null; received: number; total: number; error: string | null };
+}
+
+/* ------------------------------ Ask ------------------------------ */
+
+/** Structured meaning of an "Ask" query. Every field is optional; the server validates and clamps. */
+export interface AskFilter {
+  types?: ('movie' | 'show')[];
+  /** Canonical genre names (English, as stored by TMDB). */
+  genres?: string[];
+  excludeGenres?: string[];
+  minRuntimeMin?: number;
+  maxRuntimeMin?: number;
+  yearFrom?: number;
+  yearTo?: number;
+  unwatched?: boolean;
+  watched?: boolean;
+  favorites?: boolean;
+  /** Community rating 0-10. */
+  minRating?: number;
+  /** Spoken language (ISO 639-1). */
+  language?: string;
+  people?: string[];
+  /** "like <title>": similar to a title in the library. */
+  likeTitle?: string;
+  /** "lighter", "darker": nudges the mood of a "like" search. */
+  tone?: 'lighter' | 'darker';
+  /** Free-text words matched against plots, taglines and titles (and semantically when embeddings are on). */
+  keywords?: string[];
+  /** Titles the query probably refers to (the language model's guesses); boosted when they are in the library. */
+  titles?: string[];
+  sort?: 'relevance' | 'rating' | 'newest' | 'oldest' | 'shortest' | 'longest' | 'random';
+}
+
+/** One "Understood as" chip. `key` names what to drop from the filter when the chip is removed. */
+export interface AskChip {
+  key: string;
+  label: string;
+}
+
+/** POST /ask. Send `filter` (an earlier response's filter, possibly with chips removed) to skip understanding. */
+export interface AskRequest {
+  q: string;
+  filter?: AskFilter;
+  /** Chip keys to drop from `filter` (the "x" on an "Understood as" chip). */
+  remove?: string[];
+  limit?: number;
+}
+
+export interface AskResponse {
+  query: string;
+  filter: AskFilter;
+  chips: AskChip[];
+  items: Item[];
+  /** Who understood the query. */
+  by: 'rules' | 'llm';
+  /** Semantic (embedding) matching contributed to the ranking. */
+  semantic: boolean;
+  likeItem: { id: string; title: string } | null;
+  tookMs: number;
+}
+
+/* ---------------------------- Recaps ---------------------------- */
+
+/** GET /items/:id/recap (an episode about to be played). */
+export interface RecapResponse {
+  available: boolean;
+  /** Why it is offered: a long break, or the first episode of a new season. */
+  reason: 'gap' | 'new-season' | null;
+  showTitle: string | null;
+  /** Episodes summarised: the last ones this user actually watched, oldest first. Never anything later. */
+  episodes: { id: string; title: string; season: number | null; episode: number | null; overview: string | null }[];
+  /** 3-5 sentence summary by the language model, or null. */
+  text: string | null;
+  /** Fallback (or companion) list: one tidy line per episode. */
+  bullets: string[];
+  by: 'llm' | 'list' | null;
+  /** The next episode's own "previously on" segment, when a recap marker exists. */
+  clip: { itemId: string; startMs: number; endMs: number } | null;
+  daysSinceLastWatched: number | null;
+}

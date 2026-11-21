@@ -8,6 +8,17 @@ import { EmptyState, Img } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { formatTime } from '../utils/format';
 import { DecideBar } from '../components/decide/DecideBar';
+import { AskResults } from '../components/AskResults';
+import { aiApi } from '../api/ai';
+
+const MODE_KEY = 'mm.search.mode';
+const readMode = (): 'search' | 'ask' => {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'ask' ? 'ask' : 'search';
+  } catch {
+    return 'search';
+  }
+};
 
 const GROUPS: { label: string; types: string[] }[] = [
   { label: 'Movies', types: ['movie'] },
@@ -28,14 +39,36 @@ export function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  // "Ask": natural-language search (rules on the server, plus the AI model when an admin set one up).
+  const [askOn, setAskOn] = useState(false);
+  const [mode, setModeState] = useState<'search' | 'ask'>(() => (params.get('ask') === '1' ? 'ask' : readMode()));
+  const [askQ, setAskQ] = useState(mode === 'ask' ? q.trim() : '');
+  const askDebounced = useDebounced(q.trim(), 700);
+  const setMode = (m: 'search' | 'ask') => {
+    setModeState(m);
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {
+      /* private mode */
+    }
+    if (m === 'ask') setAskQ(q.trim());
+    input.current?.focus();
+  };
+  useEffect(() => {
+    aiApi.features().then((f) => setAskOn(f.ask)).catch(() => setAskOn(false));
+  }, []);
+  useEffect(() => {
+    if (mode === 'ask') setAskQ(askDebounced);
+  }, [askDebounced, mode]);
+  const asking = askOn && mode === 'ask';
 
   useEffect(() => {
     input.current?.focus();
   }, []);
 
   useEffect(() => {
-    setParams(debounced ? { q: debounced } : {}, { replace: true });
-    if (!debounced) {
+    setParams(debounced ? { q: debounced, ...(asking ? { ask: '1' } : {}) } : asking ? { ask: '1' } : {}, { replace: true });
+    if (!debounced || asking) {
       setRes(null);
       return;
     }
@@ -49,7 +82,7 @@ export function SearchPage() {
       .finally(() => !ctrl.signal.aborted && setLoading(false));
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debounced]);
+  }, [debounced, asking]);
 
   const total = res ? res.items.length + res.channels.length + res.programs.length : 0;
   const grouped = GROUPS.map((g) => ({ ...g, items: (res?.items ?? []).filter((i) => g.types.includes(i.type)) })).filter((g) => g.items.length);
@@ -64,25 +97,40 @@ export function SearchPage() {
           className="search-input"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search movies, shows, music, channels and programmes…"
-          aria-label="Search"
-          onKeyDown={(e) => e.key === 'Escape' && setQ('')}
+          placeholder={asking ? 'Ask: “something funny under 90 minutes we haven’t seen”…' : 'Search movies, shows, music, channels and programmes…'}
+          aria-label={asking ? 'Ask' : 'Search'}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setQ('');
+            if (e.key === 'Enter' && asking) setAskQ(q.trim());
+          }}
         />
         {q && (
           <button className="btn-icon" onClick={() => { setQ(''); input.current?.focus(); }} aria-label="Clear">
             <Icon name="x" />
           </button>
         )}
+        {askOn && (
+          <div className="search-mode" role="radiogroup" aria-label="Search mode">
+            <button role="radio" aria-checked={!asking} className={`search-mode-btn ${!asking ? 'active' : ''}`} onClick={() => setMode('search')} data-nav>Search</button>
+            <button role="radio" aria-checked={asking} className={`search-mode-btn ${asking ? 'active' : ''}`} onClick={() => setMode('ask')} data-nav><Icon name="sparkles" size={14} /> Ask</button>
+          </div>
+        )}
       </div>
 
-      {!debounced ? (
+      {asking ? (
+        <AskResults q={askQ} onPick={(e) => {
+          setQ(e);
+          setAskQ(e);
+        }} />
+      ) : !debounced ? (
         <EmptyState icon="search" title="Find anything" message={<>Search across every library, live channel and the TV guide. Press <kbd>/</kbd> anywhere to jump here.</>} action={<DecideBar />} />
       ) : loading && !res ? (
         <div className="grid grid-poster">{Array.from({ length: 12 }).map((_, i) => <CardSkeleton key={i} />)}</div>
       ) : error ? (
         <EmptyState icon="alert" title="Search failed" message={error} />
       ) : total === 0 ? (
-        <EmptyState icon="search" title={`No results for "${debounced}"`} message="Check the spelling or try a different term." />
+        <EmptyState icon="search" title={`No results for "${debounced}"`} message="Check the spelling or try a different term."
+          action={askOn && debounced.split(/\s+/).length >= 3 ? <button className="btn" onClick={() => setMode('ask')}><Icon name="sparkles" size={16} /> Ask instead</button> : undefined} />
       ) : (
         <div className={`search-results ${loading ? 'dim' : ''}`}>
           {grouped.map((g) => (

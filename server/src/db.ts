@@ -535,6 +535,25 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS remote_pairings_tv ON remote_pairings(tv_device_id);
   CREATE INDEX IF NOT EXISTS remote_pairings_ctl ON remote_pairings(ctl_device_id);
   `,
+  /* AI: automatic subtitle jobs (resumable), Ask search embeddings (float32 blobs), per-user series recaps */ `
+  CREATE TABLE IF NOT EXISTS ai_subtitle_jobs (
+    id TEXT PRIMARY KEY, item_id TEXT NOT NULL, media_id TEXT NOT NULL, language TEXT NOT NULL, status TEXT NOT NULL,
+    phase TEXT, progress INTEGER NOT NULL DEFAULT 0, eta_s INTEGER, spoken_language TEXT, translated INTEGER NOT NULL DEFAULT 0,
+    cues INTEGER, error TEXT, source TEXT NOT NULL DEFAULT 'task', priority INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_subtitle_jobs_media_lang ON ai_subtitle_jobs(media_id, language);
+  CREATE INDEX IF NOT EXISTS idx_ai_subtitle_jobs_queue ON ai_subtitle_jobs(status, priority, created_at);
+  CREATE TABLE IF NOT EXISTS item_embeddings (
+    item_id TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE, model TEXT NOT NULL, hash TEXT NOT NULL,
+    dims INTEGER NOT NULL, vec BLOB NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS recap_cache (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, show_id TEXT NOT NULL, last_episode_id TEXT NOT NULL,
+    source TEXT NOT NULL, text TEXT, bullets TEXT NOT NULL DEFAULT '[]', episodes TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, show_id, last_episode_id)
+  );
+  `,
 ];
 
 function migrate(db: Database) {

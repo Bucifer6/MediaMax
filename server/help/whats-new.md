@@ -12,5 +12,8 @@ version: 0.1.0
 - **Live TV**: catch-up, multiview with up to four channels, and better guide matching.
 - **DJ mode and AI DJ**: describe a mix in plain words and let the DJ do the rest.
 - **Requests**: ask for movies, shows, music and books, with quotas and status updates.
+- **Ask**: search in your own words, in English or Romanian ("something funny under 90 minutes we haven't seen"), and remove what doesn't fit. See [Ask and recaps](help:ask-and-recaps).
+- **Previously on…**: a spoiler-free recap when you come back to a series.
+- **Auto-generated subtitles**: when no subtitle can be found online, your server can make one from the dialogue.
 
 See [What is {{product}}?](help:welcome) for a tour.

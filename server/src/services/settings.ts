@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
 import { maskAgents, mergeAgents } from './notify/kinds.js';
+import { aiFromStored, mergeAi, DEFAULT_AI } from './ai/settings.js';
 
 export function getKv<T>(key: string, fallback: T): T {
   const row = db.get<{ value: string }>('SELECT value FROM settings WHERE key = ?', key);
@@ -75,6 +76,7 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   defaultDateAdded: 'created',
   signInScreen: { showUsers: true, homeNetworkOnly: true },
   karaoke: { stemsEnabled: false, stemsModelUrl: null, stemsModelSha256: null, writeLrcSidecars: false },
+  ai: DEFAULT_AI,
 };
 
 let cache: ServerSettings | null = null;
@@ -170,7 +172,10 @@ export function getSettings(): ServerSettings {
     webhooks: stored.webhooks ?? [],
     arr: Array.isArray(stored.arr) ? stored.arr : legacyArrInstances(stored.requests),
     notificationAgents: Array.isArray(stored.notificationAgents) ? stored.notificationAgents : [],
+    // Admin → AI; built from the DJ's language model the first time (aiDj.llm then mirrors ai.llm).
+    ai: aiFromStored(stored),
   };
+  cache.aiDj = { ...cache.aiDj, llm: { ...cache.ai!.llm } };
   return cache;
 }
 
@@ -196,6 +201,7 @@ export function publicSettings(s: ServerSettings = getSettings()): ServerSetting
     notificationAgents: maskAgents(s.notificationAgents),
     aiDj: { ...s.aiDj, llm: { ...s.aiDj.llm, apiKey: s.aiDj.llm.apiKey ? SECRET_MASK : null }, tts: { ...s.aiDj.tts, apiKey: s.aiDj.tts.apiKey ? SECRET_MASK : null } },
     ...(s.subtitles ? { subtitles: { ...s.subtitles, subsRo: { ...s.subtitles.subsRo, apiKey: s.subtitles.subsRo.apiKey ? SECRET_MASK : null } } } : {}),
+    ...(s.ai ? { ai: { ...s.ai, llm: { ...s.ai.llm, apiKey: s.ai.llm.apiKey ? SECRET_MASK : null }, autoSubtitles: { ...s.ai.autoSubtitles, apiKey: s.ai.autoSubtitles.apiKey ? SECRET_MASK : null } } } : {}),
   };
 }
 
@@ -204,6 +210,8 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
   // The masked placeholder means "keep the stored key".
   if (patch.aiDj?.llm?.apiKey === SECRET_MASK) patch = { ...patch, aiDj: { ...patch.aiDj, llm: { ...patch.aiDj.llm, apiKey: cur.aiDj.llm.apiKey } } };
   if (patch.aiDj?.tts?.apiKey === SECRET_MASK) patch = { ...patch, aiDj: { ...patch.aiDj!, tts: { ...patch.aiDj!.tts!, apiKey: cur.aiDj.tts.apiKey } } };
+  if (patch.ai?.llm?.apiKey === SECRET_MASK) patch = { ...patch, ai: { ...patch.ai, llm: { ...patch.ai.llm, apiKey: cur.ai!.llm.apiKey } } };
+  if (patch.ai?.autoSubtitles?.apiKey === SECRET_MASK) patch = { ...patch, ai: { ...patch.ai!, autoSubtitles: { ...patch.ai!.autoSubtitles, apiKey: cur.ai!.autoSubtitles.apiKey } } };
   for (const [sec, key] of SECRET_FIELDS) {
     const p = patch as Record<string, any>;
     if (sec === null) {
@@ -239,7 +247,10 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     webhooks: (patch.webhooks ?? cur.webhooks).map((w) => ({ ...w, id: w.id || newId() })),
     arr: patch.arr !== undefined ? normaliseArr(patch.arr, cur.arr) : cur.arr,
     notificationAgents: patch.notificationAgents !== undefined ? mergeAgents(patch.notificationAgents, cur.notificationAgents, newId) : cur.notificationAgents ?? [],
+    ai: mergeAi(cur.ai ?? DEFAULT_AI, patch, cur.aiDj.llm),
   };
+  // The DJ's language model is the shared one (kept in step for older apps and backups).
+  next.aiDj = { ...next.aiDj, llm: { ...next.ai!.llm } };
   // Keep the legacy field in step so older code paths and backups see the same automatic languages.
   if (patch.subtitles?.languages) next.openSubtitles = { ...next.openSubtitles, autoLanguages: next.subtitles!.languages };
   else if (patch.openSubtitles?.autoLanguages && !patch.subtitles) next.subtitles = { ...next.subtitles!, languages: next.openSubtitles.autoLanguages };

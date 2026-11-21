@@ -512,7 +512,7 @@ smoke-tests each one, and publishes them with the multi-arch Docker image when a
 
 ## Optional: AI DJ add-ons (free)
 
-The AI DJ works with no extra setup. For richer requests and a more natural voice, run these free, open-source services next to MediaMax and pick them under **Admin → Server settings → AI DJ**:
+The AI DJ works with no extra setup. For richer requests and a more natural voice, run these free, open-source services next to the server. Pick the language model under **Admin → AI** (it is shared with Ask, recaps and subtitle translation) and the voice under **Admin → Server settings → AI DJ**:
 
 ```yaml
 # Add to your docker-compose.yml next to the mediamax service.
@@ -527,7 +527,7 @@ The AI DJ works with no extra setup. For richer requests and a more natural voic
 
 Then:
 
-1. Run `docker compose exec ollama ollama pull llama3.2:3b`. A 3B model is enough for the DJ.
+1. Run `docker compose exec ollama ollama pull llama3.2:3b`. A 3B model is enough for the DJ and Ask; for translating subtitles into Romanian use a larger model (e.g. `qwen2.5:7b` or `gemma2:9b`) or a hosted service.
 2. In the AI DJ settings, choose **Ollama** and set the URL to `http://ollama:11434`.
 3. Choose **Kokoro-FastAPI** and set the URL to `http://kokoro:8880/v1`.
 4. Press **Test** on each.
