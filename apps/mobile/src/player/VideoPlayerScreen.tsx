@@ -49,6 +49,7 @@ import { WatchTogetherSheet } from './WatchTogether';
 import { createNumberEntry, matchDisplayFor, useNativeRemoteKeys } from './remoteKeys';
 import { activeCues, parseVtt, type Cue } from './vtt';
 import { measureBandwidth } from './bandwidth';
+import { useMarathon } from './marathon';
 
 export type PlayerTarget =
   | { kind: 'vod'; itemId: string; startMs?: number; mediaId?: string }
@@ -56,7 +57,7 @@ export type PlayerTarget =
 
 /** Server tracks are drawn by our own overlay; `embedded` (the platform renderer) is only offered offline / for live captions; `burn` = bitmap subtitles burned in by the server. */
 type SubChoice = { kind: 'off' } | { kind: 'server'; track: SubtitleTrack } | { kind: 'embedded'; track: NativeSubtitleTrack } | { kind: 'burn'; index: number };
-type SheetKind = 'audio' | 'subs' | 'online' | 'quality' | 'channels' | 'together' | 'playon' | null;
+type SheetKind = 'audio' | 'subs' | 'online' | 'quality' | 'channels' | 'together' | 'playon' | 'sleep' | null;
 
 const langMatch = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.slice(0, 2).toLowerCase() === b.slice(0, 2).toLowerCase();
 
@@ -68,7 +69,7 @@ export interface IntroChain {
   skip: () => void;
 }
 
-export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; intro?: IntroChain }) {
+export function VideoPlayerScreen({ target, intro, marathonId = null }: { target: PlayerTarget; intro?: IntroChain; /** Random marathon id (see player/marathon.tsx). */ marathonId?: string | null }) {
   const t = useTheme();
   const api = useApi();
   const insets = useSafeAreaInsets();
@@ -416,6 +417,7 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
   const onEnded = () => {
     if (intro) return intro.next();
     if (isLive && !catchup) return;
+    if (marathon.onEnded()) return;
     const next = infoRef.current?.nextItemId;
     if (next && prefs?.autoplayNext !== false) goNext(next);
     else exit();
@@ -579,6 +581,13 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
     router.replace(`/player/${nextId}` as never);
   }, [report, inRoom, sync]);
 
+  // ----- random marathon, sleep timer, "are you still watching?" -----
+  const marathon = useMarathon({ api, marathonId, itemId: vodItemId, itemType: offlineItem?.type ?? null, pos, dur, playing, player, report, exit });
+  useEffect(() => {
+    if (controls) marathon.noteInput();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controls]);
+
   const canSeek = !isLive || !!catchup;
   const seekTo = useCallback(
     (ms: number) => {
@@ -706,7 +715,7 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
   }, [activeMarker, prefs?.skipIntros, seekTo, flash]);
 
   useEffect(() => {
-    if (isLive || !nextId || upNext || upNextDismissed || prefs?.autoplayNext === false || dur <= 0) return;
+    if (isLive || !nextId || upNext || upNextDismissed || prefs?.autoplayNext === false || dur <= 0 || marathon.active || marathon.sleepOn) return;
     const inCredits = credits ? pos >= credits.startMs : dur > 120000 && dur - pos < 25000;
     if (!inCredits) return;
     setUpNext({ item: null, secondsLeft: 10 });
@@ -1228,6 +1237,7 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
               {isLive ? <CtrlButton icon="grid-outline" label={t.isTV || t.wide ? 'Guide' : undefined} onPress={() => router.push('/live/guide' as never)} size={iconSize} /> : null}
               {isLive && caps.dvr && channel?.nowPlaying && !catchup ? <CtrlButton icon="radio-button-on" label={t.isTV || t.wide ? 'Record' : undefined} onPress={recordNow} size={iconSize} color={t.colors.danger} /> : null}
               {syncOn ? <CtrlButton icon={inRoom ? 'people' : 'people-outline'} label={t.isTV || t.wide ? (inRoom ? `Together · ${sync.room!.members.length}` : 'Watch together') : undefined} onPress={() => setSheet('together')} size={iconSize} color={inRoom ? t.colors.primary : undefined} /> : null}
+              {!isLive ? <CtrlButton icon={marathon.sleepOn ? 'moon' : 'moon-outline'} label={t.isTV || t.wide ? 'Sleep' : undefined} onPress={() => setSheet('sleep')} size={iconSize} color={marathon.sleepOn ? t.colors.primary : undefined} /> : null}
               {nextId && !isLive ? <CtrlButton icon="play-skip-forward" label={t.isTV || t.wide ? 'Next' : undefined} onPress={() => goNext(nextId)} size={iconSize} /> : null}
               {canPlayOn && t.isTV ? <CtrlButton icon="phone-portrait-outline" label="Play on…" onPress={() => setSheet('playon')} size={iconSize} /> : null}
             </View>
@@ -1298,6 +1308,9 @@ export function VideoPlayerScreen({ target, intro }: { target: PlayerTarget; int
         />
       ) : null}
       {syncOn && vodItemId ? <WatchTogetherSheet visible={sheet === 'together'} itemId={vodItemId} onClose={() => setSheet(null)} /> : null}
+      <OptionSheet visible={sheet === 'sleep'} title="Sleep timer" options={marathon.sleepOptions} onSelect={(k) => { setSheet(null); marathon.selectSleep(k); }} onClose={() => setSheet(null)} />
+      {marathon.card && !error ? <UpNextCard item={marathon.card.item} seconds={marathon.card.seconds} onPlay={marathon.play} onCancel={marathon.cancel} /> : null}
+      {marathon.stillWatching}
       <OptionSheet visible={sheet === 'quality'} title="Quality" options={qualityOptions} onSelect={selectQuality} onClose={() => setSheet(null)} />
       <OptionSheet
         visible={sheet === 'channels'}

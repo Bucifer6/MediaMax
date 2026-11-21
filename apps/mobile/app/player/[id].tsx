@@ -4,14 +4,14 @@ import { VideoPlayerScreen, type IntroChain } from '@/player/VideoPlayerScreen';
 import { Loading } from '@/components/States';
 import { useApi, useSession } from '@/state/session';
 
-type Params = { id: string; start?: string; then?: string; intros?: string; nointro?: string; media?: string; thenMedia?: string };
+type Params = { id: string; start?: string; then?: string; intros?: string; nointro?: string; media?: string; thenMedia?: string; marathon?: string };
 
 /**
  * Video player route. Cinema mode: a movie started from the beginning first plays the server's intros
  * (trailers, then a pre-roll), chained as /player/<intro>?then=<movie>&intros=<rest>.
  */
 export default function PlayerRoute() {
-  const { id, start, then, intros, nointro, media, thenMedia } = useLocalSearchParams<Params>();
+  const { id, start, then, intros, nointro, media, thenMedia, marathon } = useLocalSearchParams<Params>();
   const api = useApi();
   const { user } = useSession();
   const wantsIntros = !then && !nointro && start == null && user?.preferences.cinemaMode !== false;
@@ -57,5 +57,5 @@ export default function PlayerRoute() {
       },
     };
   }
-  return <VideoPlayerScreen key={id} target={{ kind: 'vod', itemId: id, startMs: start ? Number(start) : then ? 0 : undefined, mediaId: then ? undefined : media }} intro={chain} />;
+  return <VideoPlayerScreen key={id} target={{ kind: 'vod', itemId: id, startMs: start ? Number(start) : then ? 0 : undefined, mediaId: then ? undefined : media }} intro={chain} marathonId={marathon ?? null} />;
 }
