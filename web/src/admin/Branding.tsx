@@ -369,7 +369,7 @@ function CssEditor({ value, onChange }: { value: string; onChange: (v: string) =
       </div>
       <details className="css-snippets">
         <summary>Useful selectors</summary>
-        <code>.sidebar .topbar .hero .hero-title .row-title .card .card-art .detail .player .login .login-card .miniplayer</code>
+        <code>.rail .topbar .hero .hero-title .row-title .card .card-art .detail .player .login .login-card .miniplayer</code>
       </details>
     </div>
   );
