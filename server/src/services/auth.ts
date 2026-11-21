@@ -375,7 +375,7 @@ export interface AuthContext {
   token: string;
 }
 
-const PLATFORMS: Platform[] = ['web', 'ios', 'android', 'tvos', 'androidtv', 'other'];
+const PLATFORMS: Platform[] = ['web', 'ios', 'android', 'tvos', 'androidtv', 'roku', 'other'];
 
 function normDevice(d: Partial<DeviceInfo>): DeviceInfo {
   return {

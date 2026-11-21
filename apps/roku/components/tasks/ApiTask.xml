@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One HTTP request to the MediaMax REST API (/api/v1), run off the render thread. -->
+<component name="ApiTask" extends="Task">
+  <interface>
+    <!-- { id, method, path, body, context, timeoutMs?, baseUrl?, followUp? } ; path is relative to /api/v1 unless it starts with http -->
+    <field id="request" type="assocarray" />
+    <!-- { id, ok, status, data, error, errorCode, context } -->
+    <field id="response" type="assocarray" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/tasks/ApiTask.brs" />
+</component>

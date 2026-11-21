@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Top menu entry (one-row MarkupGrid). -->
+<component name="NavItem" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContent" />
+    <field id="width" type="float" onChange="onSize" />
+    <field id="height" type="float" onChange="onSize" />
+    <field id="focusPercent" type="float" onChange="onFocus" />
+    <field id="gridHasFocus" type="boolean" onChange="onFocus" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/items/NavItem.brs" />
+  <children>
+    <Rectangle id="bg" color="0x22D3EEFF" opacity="0" />
+    <Label id="label" horizAlign="center" vertAlign="center" color="0xFFFFFFFF" font="font:MediumSystemFont" />
+  </children>
+</component>

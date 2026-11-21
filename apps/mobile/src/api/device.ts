@@ -24,7 +24,7 @@ function defaultDeviceName(): string {
   const name = Device.deviceName ?? Device.modelName;
   if (name) return name;
   const p = currentPlatform();
-  return { tvos: 'Apple TV', androidtv: 'Android TV', ios: 'iPhone', android: 'Android', web: 'Browser', other: 'Device' }[p];
+  return { tvos: 'Apple TV', androidtv: 'Android TV', roku: 'Roku', ios: 'iPhone', android: 'Android', web: 'Browser', other: 'Device' }[p];
 }
 
 export async function getDeviceInfo(): Promise<DeviceInfo> {

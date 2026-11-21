@@ -13,7 +13,7 @@ import { Icon } from './Icon';
 import { Sheet } from './Sheet';
 import { T } from './Text';
 
-const ICONS = { ios: 'phone-portrait-outline', android: 'phone-portrait-outline', tvos: 'tv-outline', androidtv: 'tv-outline', web: 'desktop-outline', other: 'hardware-chip-outline' } as const;
+const ICONS = { ios: 'phone-portrait-outline', android: 'phone-portrait-outline', tvos: 'tv-outline', androidtv: 'tv-outline', roku: 'tv-outline', web: 'desktop-outline', other: 'hardware-chip-outline' } as const;
 
 export interface PlayOnWhat {
   itemId?: string;

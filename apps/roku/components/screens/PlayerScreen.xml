@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Playback through the Video node.
+  VOD: POST /playback/:itemId with the runtime Roku DeviceProfile → direct play / remux / (adaptive) HLS transcode,
+  WebVTT subtitles side-loaded as subtitleTracks, progress every 10 s and on pause/stop, skip intro/recap/credits from
+  `markers`, up-next / autoplay of `nextItemId`, a single transcode retry when the player fails.
+  Live TV: POST /livetv/channels/:id/play with forceHls.
+-->
+<component name="PlayerScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Screen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/screens/PlayerScreen.brs" />
+  <children>
+    <Rectangle width="1920" height="1080" color="0x000000FF" />
+    <Video id="video" width="1920" height="1080" enableUI="true" />
+
+    <Group id="skipGroup" visible="false" translation="[1460,860]">
+      <Button id="skipButton" minWidth="360" height="80" showFocusFootprint="true" />
+    </Group>
+
+    <Group id="upNext" visible="false" translation="[1180,700]">
+      <Rectangle width="660" height="250" color="0x0B0E26E6" />
+      <Label translation="[30,24]" width="600" text="UP NEXT" color="0x22D3EEFF" font="font:SmallestBoldSystemFont" />
+      <Label id="upNextTitle" translation="[30,56]" width="600" wrap="true" maxLines="2" color="0xFFFFFFFF" font="font:MediumBoldSystemFont" />
+      <Label id="upNextCountdown" translation="[30,130]" width="600" color="0xA9B0D6FF" font="font:SmallSystemFont" />
+      <Button id="upNextButton" translation="[30,170]" minWidth="300" height="64" text="Play now" />
+    </Group>
+
+    <Group id="messageGroup" visible="false" translation="[360,440]">
+      <Rectangle width="1200" height="200" color="0x0B0E26E6" />
+      <Label id="message" translation="[40,0]" width="1120" height="200" horizAlign="center" vertAlign="center" wrap="true" color="0xFFFFFFFF" font="font:MediumSystemFont" />
+    </Group>
+
+    <Timer id="progressTimer" duration="10" repeat="true" />
+    <Timer id="countdownTimer" duration="1" repeat="true" />
+  </children>
+</component>

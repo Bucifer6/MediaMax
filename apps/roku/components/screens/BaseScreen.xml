@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Interface every screen shares; MainScene sets these while managing its stack. Helpers live in common/Screen.brs. -->
+<component name="BaseScreen" extends="Group">
+  <interface>
+    <!-- Navigation parameters, set once right after the screen is created. -->
+    <field id="params" type="assocarray" />
+    <!-- The screen is on top again after the one above it was closed. -->
+    <field id="resumed" type="boolean" alwaysNotify="true" />
+    <!-- The screen is being removed from the stack (stop timers / playback). -->
+    <field id="closing" type="boolean" />
+  </interface>
+</component>
