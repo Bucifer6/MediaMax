@@ -1,0 +1,13 @@
+# Changes to these paths always ask for the owner's review: they run on CI, publish releases, or end up on other
+# people's machines (installers, packaging, dependencies).
+/.github/                 @Bucifer6
+/deploy/                  @Bucifer6
+/packaging/               @Bucifer6
+/scripts/                 @Bucifer6
+/Dockerfile               @Bucifer6
+/docker/                  @Bucifer6
+/package.json             @Bucifer6
+/package-lock.json        @Bucifer6
+/*/package.json           @Bucifer6
+/apps/*/package.json      @Bucifer6
+/apps/*/package-lock.json @Bucifer6

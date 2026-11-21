@@ -11,6 +11,10 @@ on:
   pull_request:
     paths: ['apps/mobile/**', '.github/workflows/apps.yml']
 
+# Least privilege: the token only reads the repo (pull requests from forks never get write access or secrets).
+permissions:
+  contents: read
+
 concurrency:
   group: apps-${{ github.ref }}
   cancel-in-progress: false
