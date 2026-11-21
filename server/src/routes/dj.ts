@@ -12,6 +12,7 @@ import { buildTransitionGraph, ffmpegHasFilter, renderTransition } from '../serv
 import { parseJson } from '../util/misc.js';
 import { findSeed, hostLine, llmChat, llmUsage, parsePrompt, recordFeedback, serverVoiceConfigured, speak, voiceFile } from '../services/dj/ai.js';
 import { getSettings } from '../services/settings.js';
+import { llmAvailable } from '../services/ai/llm.js';
 import { runTask } from '../services/tasks.js';
 import { badRequest, forbidden, notFound } from '../util/errors.js';
 
@@ -29,7 +30,7 @@ export default async function djRoutes(app: FastifyInstance) {
     return {
       ...analysisStatus(),
       ai: {
-        enabled: ai.enabled, llm: ai.llm.provider !== 'none' && !!ai.llm.url && !!ai.llm.model,
+        enabled: ai.enabled, llm: llmAvailable('dj'),
         serverVoice: serverVoiceConfigured(), hostName: ai.hostName, chattiness: ai.chattiness,
       },
     };

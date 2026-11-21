@@ -25,6 +25,10 @@ import { analyseAll } from './dj/analysis.js';
 import { pruneVoices } from './dj/ai.js';
 import { pruneOrphanStems } from './stems.js';
 import { autoDownload, autoDownloadEnabled } from './subtitleProviders/index.js';
+import { runAutoSubtitles } from './autosubs/queue.js';
+import { buildEmbeddings, embeddingsEnabled } from './ask/embed.js';
+import { pruneRecaps } from './recap.js';
+import { featureEnabled } from './ai/llm.js';
 import { refreshAll as refreshPodcasts } from './podcasts.js';
 import { checkAvailability } from './requests.js';
 import { refreshSchedules } from './calendar.js';
@@ -161,6 +165,23 @@ const DEFS: TaskDef[] = [
     },
   },
   {
+    id: 'auto-subtitles', name: 'Generate missing subtitles',
+    description: 'Create subtitles with speech-to-text (whisper) for media that still has none in your languages after the download task, translated by the language model when needed. One title at a time, low priority, only inside the night window set in Admin → AI.',
+    interval: () => (featureEnabled('autoSubtitles') ? 30 : null),
+    run: async (progress) => {
+      const n = await runAutoSubtitles(progress);
+      if (n) log.info(`Generated subtitles for ${n} title(s)`);
+    },
+  },
+  {
+    id: 'ask-embeddings', name: 'Build search embeddings',
+    description: 'Compute semantic vectors of plots and taglines so Ask can match descriptions ("that heist film with red jumpsuits"). Enable under Admin → AI → Ask.',
+    interval: () => (embeddingsEnabled() ? 12 * 60 : null),
+    run: async (progress) => {
+      await buildEmbeddings(progress);
+    },
+  },
+  {
     id: 'podcasts', name: 'Refresh podcasts', description: 'Check subscribed podcast feeds for new episodes (and download them when auto-download is on).',
     interval: () => 60,
     run: async (progress) => {
@@ -235,6 +256,7 @@ const DEFS: TaskDef[] = [
       pruneVoices();
       pruneOrphanStems((id) => !!db.get('SELECT 1 FROM items WHERE id = ?', id));
       pruneSubtitleCache();
+      pruneRecaps();
       const active = new Set(listSessions().map((s) => s.id));
       for (const d of fs.readdirSync(config.transcodeDir)) {
         const p = path.join(config.transcodeDir, d);

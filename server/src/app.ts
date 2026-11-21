@@ -126,6 +126,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register((await import('./routes/music.js')).default);
     await api.register((await import('./routes/karaoke.js')).default);
     await api.register((await import('./routes/embyImport.js')).default);
+    await api.register((await import('./routes/ai.js')).default);
   }, { prefix: '/api/v1' });
 
   await app.register(dlnaRoutes);
