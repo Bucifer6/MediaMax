@@ -39,9 +39,9 @@
 .nav-tag { font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em; padding: 2px 5px; border-radius: 4px; background: color-mix(in srgb, var(--c-accent) 20%, transparent); color: var(--c-accent); }
 /* Collapsed rail: links shrink to the icon column so their boxes match what is visible (TV spatial navigation
    measures boxes; a full-width clipped link would "overlap" the page and steal D-pad moves). */
-.app-shell:not(.drawer-open) .rail:not(:hover):not(:focus-within) :is(.nav-item, .nav-group-head, .rail-brand) { width: var(--nav-icon-w, 48px); overflow: hidden; }
+.app-shell:not(.drawer-open):not(.rail-pinned) .rail:not(:hover):not(:focus-within) :is(.nav-item, .nav-group-head, .rail-brand) { width: var(--nav-icon-w, 48px); overflow: hidden; }
 /* The K mark is narrower than the rail; hide the name while collapsed so it does not peek out beside the mark. */
-.app-shell:not(.drawer-open) .rail:not(:hover):not(:focus-within) .rail-brand :is(.brand-name, .brand-text) { opacity: 0; }
+.app-shell:not(.drawer-open):not(.rail-pinned) .rail:not(:hover):not(:focus-within) .rail-brand :is(.brand-name, .brand-text) { opacity: 0; }
 /* Collapsed rail: badges ride on the icon. */
 .rail:not(:hover):not(:focus-within) .nav-count { position: absolute; left: 30px; top: 4px; min-width: 18px; height: 18px; font-size: 0.62rem; padding: 0 4px; box-shadow: 0 0 0 2px var(--c-surface); }
 .rail:not(:hover):not(:focus-within) .nav-dot, .rail:not(:hover):not(:focus-within) .nav-item .live-dot { position: absolute; left: 34px; top: 9px; }
@@ -155,6 +155,19 @@
 .queue-text span { font-weight: 600; font-size: 0.88rem; }
 .queue-text small, .queue-dur { color: var(--c-text-muted); font-size: 0.78rem; }
 
+/* Pinned rail (desktop): stays open with labels, and the page shifts over instead of being covered. */
+.rail-pin { width: 100%; text-align: left; }
+@media (min-width: 901px) {
+  html:not(.tv) .app-shell.rail-pinned { --sidebar-w: calc(var(--rail-open-w) + var(--rail-gap) * 2); }
+  html:not(.tv) .rail-pinned .rail-panel { clip-path: inset(0 0 0 0 round calc(var(--radius-lg) + 6px)); }
+  html:not(.tv) .rail-pinned .rail :is(.nav-label, .nav-group-label, .nav-group-chev, .rail-meta) { opacity: 1; transform: none; }
+  html:not(.tv) .rail-pinned .rail .nav-group-line { opacity: 0; }
+  html:not(.tv) .rail-pinned .rail :is(.nav-count, .nav-dot, .nav-item .live-dot) { position: static !important; }
+  html:not(.tv) .rail-pinned .rail .nav-tag { display: inline-block !important; }
+}
+/* Phones use the drawer and TVs the remote; pinning only makes sense with a mouse. */
+html.tv .rail-pin { display: none; }
+
 /* ------------------------------ responsive shell ------------------------------ */
 @media (max-width: 900px) {
   :root { --sidebar-w: 0px; --topbar-h: 58px; }
@@ -167,6 +180,7 @@
   .nav-group-line { opacity: 0; }
   .rail .nav-count, .rail .nav-dot, .rail .nav-item .live-dot { position: static !important; }
   .rail .nav-tag { display: inline-block !important; }
+  .rail-pin { display: none; }
   .drawer-scrim { display: block; position: fixed; inset: 0; z-index: 85; background: rgb(0 0 0 / 0.5); opacity: 0; pointer-events: none; transition: opacity var(--dur-3); }
   .drawer-open .drawer-scrim { opacity: 1; pointer-events: auto; }
   .topbar-brand { display: inline-flex; align-items: center; }
