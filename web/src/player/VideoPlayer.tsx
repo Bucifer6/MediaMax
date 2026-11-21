@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { RecapCard } from '../components/RecapCard';
 import type { AudioComforts, Item, Marker, PlaybackInfo, PlaybackRequest, Renderer, SubtitleFormat, SubtitleStyle, TrickplayInfo } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
@@ -214,6 +215,9 @@ export default function VideoPlayer() {
 
   const durationMs = info?.durationMs ?? item?.durationMs ?? 0;
   const markers: Marker[] = info?.markers?.length ? info.markers : item?.markers ?? [];
+  // "Previously on…" card at the start of an episode (dismissed by the viewer or when it scrolls past 2 minutes).
+  const [showRecap, setShowRecap] = useState(true);
+  useEffect(() => setShowRecap(true), [itemId]);
 
   /* ---------------- adaptive quality (Auto) ---------------- */
   const restartRef = useRef<(kbps: number) => void>(() => {});
@@ -1240,6 +1244,8 @@ export default function VideoPlayer() {
 
   useEffect(() => {
     if (!activeSkip || !prefs.skipIntros) return;
+    // The viewer asked to watch the recap segment ("Play the recap clip").
+    if (activeSkip.type === 'recap' && sp.get('keeprecap')) return;
     const key = `${activeSkip.type}-${activeSkip.startMs}`;
     if (skippedMarkers.current.has(key)) return;
     skippedMarkers.current.add(key);
@@ -1394,6 +1400,15 @@ export default function VideoPlayer() {
       )}
 
       {/* Skip intro / credits */}
+      {item?.type === 'episode' && showRecap && !sp.get('keeprecap') && positionMs < 120000 && (
+        <div className="player-recap">
+          <RecapCard itemId={item.id} variant="player" onClose={() => setShowRecap(false)} onPlayClip={(c) => {
+            skippedMarkers.current.add(`recap-${c.startMs}`);
+            setShowRecap(false);
+            seekTo(c.startMs);
+          }} />
+        </div>
+      )}
       {activeSkip && !prefs.skipIntros && (
         <button className="skip-btn" onClick={() => seekTo(activeSkip.endMs)}>
           Skip {activeSkip.type === 'commercial' ? 'ad break' : activeSkip.type} <Icon name="skipFwd" size={16} />

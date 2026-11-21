@@ -9,6 +9,7 @@ import { languageName } from '../utils/format';
 import { isVideo } from '../utils/items';
 import { Icon, type IconName } from './Icon';
 import { Badge, Modal, Spinner } from './ui';
+import { AiSubtitleOffer } from './AiSubtitleOffer';
 
 /** Downloaded subtitles are stored with a high index (2000+ data folder, 3000+ sidecars MediaMax wrote). */
 export function isDownloadedSubtitle(s: Pick<SubtitleStream, 'index' | 'title'>): boolean {
@@ -259,6 +260,7 @@ export function SubtitleSearchModal({
           })}
         </ul>
       ) : null}
+      {isAdmin && (results != null || problem) && <AiSubtitleOffer itemId={item.id} languages={languages} />}
     </Modal>
   );
 }

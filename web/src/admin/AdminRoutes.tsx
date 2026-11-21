@@ -24,6 +24,7 @@ import { DownloadsAdmin } from './Downloads';
 import { RenderersAdmin } from './Renderers';
 import { SmartHomeAdmin } from './SmartHome';
 import { StorageAdmin } from './Storage';
+import { AiSettingsAdmin } from './AiSettings';
 import WrappedPage from '../pages/Wrapped';
 import { HelpLink } from '../components/HelpLink';
 
@@ -40,6 +41,7 @@ const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/admin/downloads', label: 'Downloads', icon: 'download' },
   { to: '/admin/branding', label: 'Branding studio', icon: 'palette' },
   { to: '/admin/settings', label: 'Server settings', icon: 'server' },
+  { to: '/admin/ai', label: 'AI', icon: 'sparkles' },
   { to: '/admin/storage', label: 'Storage & disks', icon: 'folder' },
   { to: '/admin/smarthome', label: 'Smart home', icon: 'zap' },
   { to: '/admin/renderers', label: 'Play to devices', icon: 'cast' },
@@ -81,6 +83,7 @@ export default function AdminRoutes() {
             <Route path="invites" element={<InvitesAdmin />} />
             <Route path="import-emby" element={<EmbyImportAdmin />} />
             <Route path="storage" element={<StorageAdmin />} />
+            <Route path="ai" element={<AiSettingsAdmin />} />
             <Route path="smarthome" element={<SmartHomeAdmin />} />
             <Route path="renderers" element={<RenderersAdmin />} />
             <Route path="remote" element={<RemoteAccessAdmin />} />

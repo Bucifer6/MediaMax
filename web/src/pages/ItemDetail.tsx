@@ -24,6 +24,7 @@ import { ReportIssueButton } from '../components/ReportIssue';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
 import { episodeCode, hasAudioResume, isAudio, isResumable, isVideo, itemLink, playLink, progressPct } from '../utils/items';
+import { RecapCard } from '../components/RecapCard';
 
 /* ---------------- Media info ---------------- */
 export function MediaBadges({ media }: { media?: MediaSource[] }) {
@@ -618,6 +619,11 @@ export function ItemPage() {
           )}
 
           {(item.type === 'artist' || item.type === 'album' || item.type === 'track') && <MusicBrainzLinks item={item} />}
+
+          {/* "Previously on…" for the episode about to play (this one, or a show's next-up episode). */}
+          {(item.type === 'episode' || (nextEp?.type === 'episode' && !nextIsAudio)) && (
+            <RecapCard itemId={item.type === 'episode' ? item.id : nextEp!.id} onPlayClip={(c) => navigate(`/play/${encodeURIComponent(c.itemId)}?start=${c.startMs}&keeprecap=1`)} />
+          )}
 
           <div className="detail-actions">
             {playable && (
