@@ -64,6 +64,8 @@ export default function LinkTvScreen() {
             </View>
           ) : null}
           {result?.ok ? <Button label="Done" variant="ghost" onPress={() => router.back()} style={{ alignSelf: 'center' }} /> : null}
+          {/* QR pairing (web app in TV mode): this phone becomes a touch-pad remote and second screen. */}
+          <Button label="Use this phone as a remote" icon="phone-portrait-outline" variant="secondary" onPress={() => router.push('/pair')} style={{ alignSelf: 'center' }} />
         </View>
       </KeyboardAvoidingView>
     </Screen>
