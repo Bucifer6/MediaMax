@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Render every MediaMax brand PNG (and favicon.ico) from the master SVGs in branding/mediamax/,
- * and copy them to where the web app, the Expo apps and the Samsung/LG TV wrappers pick them up.
+ * Render every Kinora brand PNG (and favicon.ico) from the master SVGs in branding/kinora/,
+ * and copy them to where the web app, the Expo apps, the Samsung/LG/VIDAA TV wrappers and the Roku channel pick them up.
  *
  *   node scripts/brand-export.mjs            rebuild masters (scripts/brand/build-masters.mjs), then export
  *   node scripts/brand-export.mjs --no-masters   export from the SVGs as they are (e.g. after hand-editing one)
@@ -18,7 +18,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..');
-const B = path.join(repo, 'branding/mediamax');
+const B = path.join(repo, 'branding/kinora');
 
 if (!process.argv.includes('--no-masters')) execFileSync(process.execPath, [path.join(here, 'brand/build-masters.mjs')], { stdio: 'inherit' });
 
@@ -26,28 +26,36 @@ if (!process.argv.includes('--no-masters')) execFileSync(process.execPath, [path
 const MOBILE = 'apps/mobile/assets';
 const JOBS = [
   // brand folder exports
-  ['mark.svg', 'branding/mediamax/png/mark-512.png', 512],
-  ['mark.svg', 'branding/mediamax/png/mark-1024.png', 1024],
-  ['mark-simple.svg', 'branding/mediamax/png/mark-simple-16.png', 16],
-  ['mark-simple.svg', 'branding/mediamax/png/mark-simple-32.png', 32],
-  ['mark-simple.svg', 'branding/mediamax/png/mark-simple-48.png', 48],
-  ['mark-mono-black.svg', 'branding/mediamax/png/mark-mono-black-512.png', 512],
-  ['mark-mono-white.svg', 'branding/mediamax/png/mark-mono-white-512.png', 512],
-  ['wordmark-dark.svg', 'branding/mediamax/png/wordmark-dark-1200.png', 1200],
-  ['wordmark-light.svg', 'branding/mediamax/png/wordmark-light-1200.png', 1200],
-  ['wordmark-tagline-dark.svg', 'branding/mediamax/png/wordmark-tagline-dark-1200.png', 1200],
-  ['wordmark-tagline-light.svg', 'branding/mediamax/png/wordmark-tagline-light-1200.png', 1200],
-  ['wordmark-mono-black.svg', 'branding/mediamax/png/wordmark-mono-black-1200.png', 1200],
-  ['wordmark-mono-white.svg', 'branding/mediamax/png/wordmark-mono-white-1200.png', 1200],
-  ['lockup-stacked-dark.svg', 'branding/mediamax/png/lockup-stacked-dark-1000.png', 1000],
-  ['lockup-stacked-light.svg', 'branding/mediamax/png/lockup-stacked-light-1000.png', 1000],
-  ['lockup-stacked-mono-black.svg', 'branding/mediamax/png/lockup-stacked-mono-black-1000.png', 1000],
-  ['lockup-stacked-mono-white.svg', 'branding/mediamax/png/lockup-stacked-mono-white-1000.png', 1000],
-  ['app-icon-dark.svg', 'branding/mediamax/png/app-icon-dark-1024.png', 1024],
-  ['app-icon-light.svg', 'branding/mediamax/png/app-icon-light-1024.png', 1024],
-  ['splash-dark.svg', 'branding/mediamax/png/splash-dark-1920x1080.png', 1920, 1080],
-  ['splash-light.svg', 'branding/mediamax/png/splash-light-1920x1080.png', 1920, 1080],
-  ['og-image.svg', 'branding/mediamax/png/og-image-1200x630.png', 1200, 630],
+  ['mark.svg', 'branding/kinora/png/mark-512.png', 512],
+  ['mark.svg', 'branding/kinora/png/mark-1024.png', 1024],
+  ['mark-simple.svg', 'branding/kinora/png/mark-simple-16.png', 16],
+  ['mark-simple.svg', 'branding/kinora/png/mark-simple-32.png', 32],
+  ['mark-simple.svg', 'branding/kinora/png/mark-simple-48.png', 48],
+  ['mark-mono-black.svg', 'branding/kinora/png/mark-mono-black-512.png', 512],
+  ['mark-mono-white.svg', 'branding/kinora/png/mark-mono-white-512.png', 512],
+  ['wordmark-dark.svg', 'branding/kinora/png/wordmark-dark-1200.png', 1200],
+  ['wordmark-light.svg', 'branding/kinora/png/wordmark-light-1200.png', 1200],
+  ['wordmark-tagline-dark.svg', 'branding/kinora/png/wordmark-tagline-dark-1200.png', 1200],
+  ['wordmark-tagline-light.svg', 'branding/kinora/png/wordmark-tagline-light-1200.png', 1200],
+  ['wordmark-mono-black.svg', 'branding/kinora/png/wordmark-mono-black-1200.png', 1200],
+  ['wordmark-mono-white.svg', 'branding/kinora/png/wordmark-mono-white-1200.png', 1200],
+  ['lockup-stacked-dark.svg', 'branding/kinora/png/lockup-stacked-dark-1000.png', 1000],
+  ['lockup-stacked-light.svg', 'branding/kinora/png/lockup-stacked-light-1000.png', 1000],
+  ['lockup-stacked-mono-black.svg', 'branding/kinora/png/lockup-stacked-mono-black-1000.png', 1000],
+  ['lockup-stacked-mono-white.svg', 'branding/kinora/png/lockup-stacked-mono-white-1000.png', 1000],
+  ['app-icon-dark.svg', 'branding/kinora/png/app-icon-dark-1024.png', 1024],
+  ['app-icon-light.svg', 'branding/kinora/png/app-icon-light-1024.png', 1024],
+  ['splash-dark.svg', 'branding/kinora/png/splash-dark-1920x1080.png', 1920, 1080],
+  ['splash-light.svg', 'branding/kinora/png/splash-light-1920x1080.png', 1920, 1080],
+  ['og-image.svg', 'branding/kinora/png/og-image-1200x630.png', 1200, 630],
+  // store listing art
+  ['app-icon-dark.svg', 'branding/kinora/png/store/app-store-icon-1024.png', 1024],
+  ['app-icon-dark.svg', 'branding/kinora/png/store/play-icon-512.png', 512],
+  ['play-feature-graphic.svg', 'branding/kinora/png/store/play-feature-graphic-1024x500.png', 1024, 500],
+  ['tv-banner.svg', 'branding/kinora/png/store/android-tv-banner-1280x720.png', 1280, 720],
+  ['splash-dark.svg', 'branding/kinora/png/store/fire-tv-background-1920x1080.png', 1920, 1080],
+  ['app-icon-dark.svg', 'branding/kinora/png/store/samsung-lg-icon-512.png', 512],
+  ['roku-poster.svg', 'branding/kinora/png/store/roku-channel-poster-540x405.png', 540, 405],
 
   // web app (web/public)
   ['favicon.svg', 'web/public/favicon-16.png', 16],
@@ -92,10 +100,18 @@ const JOBS = [
   ['app-icon-dark.svg', 'tv/shared/brand/icon-130.png', 130],
   ['app-icon-dark.svg', 'tv/shared/brand/icon-80.png', 80],
   ['splash-dark.svg', 'tv/shared/brand/splash-1920x1080.png', 1920, 1080],
+
+  // Roku channel (apps/roku/manifest, the sign-in/home logo and the loading spinner)
+  ['roku-icon-fhd.svg', 'apps/roku/images/icon_focus_fhd.png', 336, 210],
+  ['roku-icon-hd.svg', 'apps/roku/images/icon_focus_hd.png', 290, 218],
+  ['splash-dark.svg', 'apps/roku/images/splash_fhd.png', 1920, 1080],
+  ['splash-dark.svg', 'apps/roku/images/splash_hd.png', 1280, 720],
+  ['app-icon-dark.svg', 'apps/roku/images/logo.png', 256],
+  ['spinner.svg', 'apps/roku/images/spinner.png', 96],
 ];
 
 // Opaque outputs (app-store icons must not have an alpha channel).
-const OPAQUE = /app-icon|android-background|appletv-icon-back|appletv-icon\.svg|appletv-top|splash|og-image|tv-banner|icon-maskable/;
+const OPAQUE = /app-icon|android-background|appletv-icon-back|appletv-icon\.svg|appletv-top|splash|og-image|tv-banner|icon-maskable|roku-|feature-graphic/;
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
