@@ -35,12 +35,27 @@ export function sleep(ms: number) {
 }
 
 /** Run async tasks with limited concurrency. */
+/**
+ * Give the event loop a turn when the caller has been running for a while. `await` on work that finishes
+ * synchronously (e.g. a rescan of unchanged files) only queues microtasks, which starve HTTP requests until the whole
+ * loop ends; a macrotask break every ~15 ms keeps the server responsive during scans and metadata jobs.
+ */
+let lastYield = Date.now();
+export function yieldToEventLoop(budgetMs = 15): Promise<void> | void {
+  if (Date.now() - lastYield < budgetMs) return;
+  return new Promise((r) => setImmediate(() => {
+    lastYield = Date.now();
+    r();
+  }));
+}
+
 export async function pool<T>(items: T[], concurrency: number, fn: (item: T, i: number) => Promise<void>) {
   let i = 0;
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
     while (i < items.length) {
       const idx = i++;
       await fn(items[idx], idx);
+      await yieldToEventLoop();
     }
   });
   await Promise.all(workers);

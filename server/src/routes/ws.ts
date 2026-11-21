@@ -33,6 +33,9 @@ export default async function wsRoutes(app: FastifyInstance) {
       send: (ev) => {
         if (socket.readyState === 1) socket.send(JSON.stringify(ev));
       },
+      sendRaw: (json) => {
+        if (socket.readyState === 1) socket.send(json);
+      },
     };
     events.add(client);
     events.announceTargets(ctx.user.id);
