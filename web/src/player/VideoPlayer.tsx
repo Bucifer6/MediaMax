@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { RecapCard } from '../components/RecapCard';
-import type { AudioComforts, Item, Marker, PlaybackInfo, PlaybackRequest, Renderer, SubtitleFormat, SubtitleStyle, TrickplayInfo } from '@mediamax/shared';
+import type { AudioComforts, Item, Marker, PlaybackInfo, PlaybackRequest, Renderer, SubtitleStyle, TrickplayInfo } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import { useApp } from '../state/app';
@@ -38,9 +38,10 @@ import { formatBps } from './abr';
 import { VideoPair, whenPlayable } from './videoPair';
 import { helpForReason, helpPath } from '../utils/helpLinks';
 import { useMarathon } from './Marathon';
+import { buildPlaybackRequest } from './warmupCore';
+import { prepareItem } from './warmup';
 
 /** Subtitle formats our own renderer draws (SubtitleOverlay). VobSub/DVB still need server burn-in. */
-const SUBTITLE_FORMATS: SubtitleFormat[] = ['srt', 'vtt', 'ass', 'pgs'];
 /** Seamless switches start the new stream this far ahead of the playhead, so it is ready when the old one gets there. */
 const SWITCH_LEAD_MS = 4000;
 const isTvMode = () => typeof document !== 'undefined' && document.documentElement.classList.contains('tv');
@@ -252,16 +253,11 @@ export default function VideoPlayer() {
         kbps = bw.bps ? Math.round(bw.bps / 1000) : null;
       }
     }
-    return {
-      startMs: Math.round(opts.startMs),
-      audioStreamIndex: opts.audioIndex,
-      subtitleStreamIndex: opts.burn ? opts.subtitleIndex : undefined,
-      burnSubtitles: opts.burn || undefined,
-      deviceProfile: profileWithBitrate(opts.auto ? null : opts.maxBitrate),
-      subtitleFormats: SUBTITLE_FORMATS,
-      ...comfortRequest(comfortsRef.current, audioCaps()?.webAudioFx ?? false),
-      ...(opts.auto ? { adaptive: true, measuredBandwidth: kbps } : {}),
-    };
+    // Same builder as the instant-play warm-up (warmup.ts), so a prepared stream is adopted.
+    return buildPlaybackRequest({
+      startMs: opts.startMs, audioIndex: opts.audioIndex, subtitleIndex: opts.subtitleIndex, burn: opts.burn, maxBitrate: opts.maxBitrate ?? null,
+      auto: !!opts.auto, kbps, profile: profileWithBitrate, comforts: comfortRequest(comfortsRef.current, audioCaps()?.webAudioFx ?? false),
+    });
   };
   const abrAttachOptions = (opts: StartOpts) => ({
     manualLevels: !!opts.auto,
@@ -413,8 +409,11 @@ export default function VideoPlayer() {
       setInfo(pi);
       setBurned(opts.burn);
       let me: Attached | null = null;
+      const seekTo = pendingSeek.current != null ? (pendingSeek.current - (pi.streamStartMs ?? 0)) / 1000 : 0;
       me = attached.current = await attachStream(v, pi, {
         ...abrAttachOptions(opts),
+        // hls.js fetches the resume fragment first instead of segment 0 (a transcode would encode both).
+        startPosition: seekTo > 0.5 ? seekTo : undefined,
         onFatal: (kind, msg) => {
           // A stream that was already replaced (seamless switch) may fail as its session ends: not an error.
           if (me && (attached.current !== me || retiringRef.current === me)) return;
@@ -756,7 +755,7 @@ export default function VideoPlayer() {
       offsetRef.current = info.streamStartMs ?? 0;
       if (target != null) {
         const local = (target - offsetRef.current) / 1000;
-        if (local > 0.5) v.currentTime = local;
+        if (local > 0.5 && Math.abs(v.currentTime - local) > 0.5) v.currentTime = local;
       }
     };
     const onTime = () => {
@@ -1264,6 +1263,13 @@ export default function VideoPlayer() {
   }, [info?.nextItemId, remaining < 90000, !!inCredits]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showUpNext = (nearEnd || ended) && !!nextItem && !upNextDismissed && !marathon.blockAutoplay;
+  // Instant play: warm up the next episode while "Up next" is on screen (re-sent so long credits don't outlast it).
+  useEffect(() => {
+    if (!showUpNext || !nextItem) return;
+    void prepareItem(nextItem, user, 'next');
+    const t = window.setInterval(() => void prepareItem(nextItem, user, 'next'), 25000);
+    return () => window.clearInterval(t);
+  }, [showUpNext, nextItem?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!showUpNext || !prefs.autoplayNext || paused && !ended) {
       setCountdown(null);

@@ -7,6 +7,7 @@ import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync, useServerEvent } from '../hooks';
 import { usePlayItem, useMusic } from '../player/music';
+import { usePlayWarmup } from '../player/warmup';
 import { Icon } from '../components/Icon';
 import { Badge, Dropdown, EmptyState, ErrorState, Img, Modal, ProgressBar, Skeleton, StarRating, Tabs, useConfirm, type MenuItem } from '../components/ui';
 import { Row } from '../components/Row';
@@ -150,6 +151,7 @@ function SeriesRow({ item }: { item: Item }) {
 /* ---------------- Episode list ---------------- */
 function EpisodeList({ seasonId }: { seasonId: string }) {
   const play = usePlayItem();
+  const warm = usePlayWarmup(useApp().user ?? null);
   const eps = useAsync(() => api.items.children(seasonId, { sort: 'index', order: 'asc', limit: 500 }), [seasonId]);
   useServerEvent((ev) => {
     if (ev.type === 'userdata.updated') eps.setData((d) => d && { ...d, items: d.items.map((i) => (i.id === ev.itemId ? { ...i, userData: ev.userData } : i)) });
@@ -165,7 +167,7 @@ function EpisodeList({ seasonId }: { seasonId: string }) {
         const pct = progressPct(ep);
         return (
           <div key={ep.id} className={`episode ${ep.userData.played ? 'played' : ''}`}>
-            <button className="episode-thumb" onClick={() => play(ep)} aria-label={`Play ${ep.title}`} data-nav>
+            <button className="episode-thumb" onClick={() => play(ep)} aria-label={`Play ${ep.title}`} data-nav {...warm.bind(ep)}>
               <Img src={ep.thumbUrl ?? ep.backdropUrl} width={360} fallback={<Icon name="shows" size={24} />} />
               <span className="episode-play"><Icon name="play" size={22} /></span>
               {pct > 0 && !ep.userData.played && <ProgressBar value={pct} className="card-progress" />}
@@ -410,6 +412,12 @@ export function ItemPage() {
   useServerEvent((ev) => {
     if (ev.type === 'userdata.updated' && ev.itemId === itemId) res.setData((d) => d && { ...d, userData: ev.userData });
   });
+  // Instant play: warm up what the Play button plays as soon as the page is open (and again on hover / focus).
+  const warm = usePlayWarmup(user ?? null);
+  const warmTarget = item?.id === itemId && isVideo(item) ? item : nextUp.data?.forId === itemId && nextUp.data.ep && isVideo(nextUp.data.ep) ? nextUp.data.ep : null;
+  useEffect(() => {
+    if (warmTarget) warm.now(warmTarget, 'open');
+  }, [warmTarget?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (res.loading && !item) {
     return (
@@ -627,7 +635,7 @@ export function ItemPage() {
 
           <div className="detail-actions">
             {playable && (
-              <button className="btn btn-primary btn-lg" onClick={() => (nextEp && !nextIsAudio ? navigate(playLink(nextEp)) : play(item))} data-nav autoFocus title={nextEp ? nextEp.title : undefined}>
+              <button className="btn btn-primary btn-lg" onClick={() => (nextEp && !nextIsAudio ? navigate(playLink(nextEp)) : play(item))} data-nav autoFocus title={nextEp ? nextEp.title : undefined} {...warm.bind(warmTarget)}>
                 <Icon name="play" size={20} /> {playLabel}
               </button>
             )}

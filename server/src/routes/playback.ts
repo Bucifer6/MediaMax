@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { DownloadQuality, PlaybackRequest, ProgressReport } from '@mediamax/shared';
+import type { DownloadQuality, PlaybackPrepareRequest, PlaybackRequest, ProgressReport } from '@mediamax/shared';
 import { db } from '../db.js';
 import { clientHints, requireAdmin, requireUser, remoteAddr } from '../http.js';
-import { assertRemoteAllowed, transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, subtitleVtt, touchSession } from '../services/playback.js';
+import { assertRemoteAllowed, preparePlayback, reclaimWarmTranscodes, transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, subtitleVtt, touchSession } from '../services/playback.js';
 import { assertCanSee } from '../services/items.js';
 import { liveJobBySession } from '../services/livetv/livetv.js';
 import { badRequest, forbidden, notFound, HttpError } from '../util/errors.js';
@@ -16,6 +16,7 @@ import { safeFetch } from '../util/net.js';
 import { logActivity } from '../services/activity.js';
 import { events } from '../services/events.js';
 import { renditionRequest } from '../services/abr.js';
+import { pollDelay } from '../services/transcoder.js';
 import { doviMasterForJob } from '../services/dovi.js';
 import { serveSubtitle } from './streaming.js';
 
@@ -87,6 +88,7 @@ const conversionTotal = () => [...activeConversions.values()].reduce((a, b) => a
 function convertedDownload(req: FastifyRequest, reply: FastifyReply, m: Record<string, any>, baseName: string, quality: string, userId: string) {
   const q = QUALITY[quality];
   const max = getSettings().transcoding.maxConcurrent;
+  reclaimWarmTranscodes(transcodeCount() + conversionTotal() + 1);
   if (transcodeCount() + conversionTotal() >= max) throw new HttpError(503, 'The server is busy converting other media. Try again shortly or download the original file.', 'transcoder_busy');
   if ((activeConversions.get(userId) ?? 0) >= 2) throw new HttpError(429, 'You already have 2 converted downloads in progress.', 'too_many');
   activeConversions.set(userId, (activeConversions.get(userId) ?? 0) + 1);
@@ -123,6 +125,8 @@ function convertedDownload(req: FastifyRequest, reply: FastifyReply, m: Record<s
 
 export default async function playbackRoutes(app: FastifyInstance) {
   app.post<{ Params: { itemId: string }; Body: PlaybackRequest }>('/playback/:itemId', async (req) => startPlayback(requireUser(req), req.params.itemId, req.body ?? {}, remoteAddr(req), clientHints(req)));
+  // Instant play: decide now and start remux / transcode jobs early (no session, history or stream-limit use).
+  app.post<{ Params: { itemId: string }; Body: PlaybackPrepareRequest }>('/playback/:itemId/prepare', async (req) => preparePlayback(requireUser(req), req.params.itemId, req.body ?? {}, remoteAddr(req)));
 
   app.post<{ Params: { sessionId: string }; Body: ProgressReport }>('/playback/sessions/:sessionId/progress', async (req) => {
     const b = req.body ?? ({} as ProgressReport);
@@ -246,9 +250,12 @@ export default async function playbackRoutes(app: FastifyInstance) {
     let segPath: string;
     if (job.opts.mode === 'transcode') segPath = await job.waitForSegment(n);
     else {
+      // Remux: without this the throttle measured "ahead" from segment 0 and could pause ffmpeg for good.
+      if (job.opts.mode === 'remux') job.requested(n);
       segPath = job.segmentPath(n);
-      const deadline = Date.now() + 20000;
-      while (!fs.existsSync(segPath) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 150));
+      const t0 = Date.now();
+      const deadline = t0 + 20000;
+      while (!fs.existsSync(segPath) && Date.now() < deadline) await new Promise((r) => setTimeout(r, pollDelay(Date.now() - t0)));
       if (!fs.existsSync(segPath)) throw notFound('Segment not available');
     }
     reply.type(job.segmentType === 'fmp4' ? 'video/mp4' : 'video/mp2t').header('Cache-Control', 'private, max-age=600');

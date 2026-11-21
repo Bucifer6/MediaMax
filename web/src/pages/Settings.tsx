@@ -16,6 +16,7 @@ import { DEFAULT_SUBTITLE_STYLE, SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtit
 import { relativeTime } from '../utils/format';
 import { LinkDeviceForm } from './LinkDevice';
 import { ApiKeysCard, SubsonicCard, TwoFactorCard } from './SecuritySettings';
+import { DownloadRulesSettings } from './DownloadRules';
 import { BrowsingSettings } from './BrowsingSettings';
 import ProfilesSettings from './ProfilesSettings';
 import { HelpLink } from '../components/HelpLink';
@@ -654,6 +655,7 @@ export default function SettingsPage() {
     { to: 'playback', label: 'Playback', icon: 'play' },
     { to: 'browsing', label: 'Browsing', icon: 'compass' },
     { to: 'devices', label: 'Devices', icon: 'device' },
+    ...(features.downloads && (user?.allowDownloads || user?.isAdmin) ? [{ to: 'downloads', label: 'Downloads', icon: 'download' as IconName }] : []),
     { to: 'services', label: 'Connected services', icon: 'globe' },
     { to: '/wrapped', label: 'Your year', icon: 'sparkles' },
     ...(features.linkCodes && !profileSession ? [{ to: 'link', label: 'Link device', icon: 'link' as IconName }] : []),
@@ -681,6 +683,7 @@ export default function SettingsPage() {
             <Route path="browsing" element={<BrowsingSettings />} />
             <Route path="playback" element={<><Playback /><SubtitleSettings /><AudioSettingsCard /><MusicSettings /><DeviceCapabilitiesCard /></>} />
             <Route path="devices" element={<Devices />} />
+            <Route path="downloads" element={<DownloadRulesSettings />} />
             <Route path="services" element={<Services />} />
             <Route path="link" element={<LinkTab />} />
           </Routes>

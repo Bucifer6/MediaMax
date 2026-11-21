@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type {
-  ActiveSession, SessionDetails, AudioComforts, AudioStream, DeviceProfile, MediaSource, PlayMethod, PlaybackInfo, PlaybackRequest, SubtitleStream, SubtitleTrack, Marker, User,
+  ActiveSession, SessionDetails, AudioComforts, AudioStream, DeviceProfile, HlsRendition, MediaSource, PlayMethod, PlaybackInfo, PlaybackPrepareRequest, PlaybackPrepareResult, PlaybackRequest,
+  SubtitleStream, SubtitleTrack, Marker, User,
 } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { config } from '../config.js';
@@ -25,6 +26,7 @@ import { subtitleTrackList } from './subtitles.js';
 import { anyComfort, decisionInfo, masterAudioFor, normalizeComforts, planAudio, refreshAudioStreams, type AudioPlan } from './audio.js';
 import { mediaDetails, withJob, withSubtitle, type ClientHints } from './sessionDetails.js';
 import { bitrateCaps, buildLadder, createRenditionManager, pickStartRendition, streamingSettings, type RenditionManager } from './abr.js';
+import { PlanCache, WarmSlots, bandwidthBucket, canWarm, stableJson, type WarmJobHandle } from './warmup.js';
 
 const log = logger('playback');
 
@@ -191,6 +193,7 @@ export function sessionProgress(ctx: AuthContext, id: string, positionMs: number
 /** Server shutdown: stop every session so no ffmpeg transcode outlives the server. */
 export function stopAllSessions() {
   for (const id of [...sessions.keys()]) stopSession(id, 'shutdown', false);
+  warmSlots.clear();
 }
 
 /** End every session of an account and its profiles (the account or profile is being deleted). */
@@ -198,6 +201,7 @@ export function stopUserSessions(userId: string, reason = 'user_deleted') {
   for (const s of [...sessions.values()]) {
     if (s.ctx.user.id === userId || s.ctx.user.parentUserId === userId) stopSession(s.id, reason, false);
   }
+  warmSlots.clear((e) => e.userId === userId || e.ownerId === userId);
 }
 
 /** Reap idle sessions (no progress / segment requests). */
@@ -370,9 +374,62 @@ export function subtitleTracks(ctx: AuthContext, mediaId: string, subs: Subtitle
   }));
 }
 
-export async function startPlayback(ctx: AuthContext, itemId: string, req: PlaybackRequest, remoteAddr: string | null, hints?: ClientHints): Promise<PlaybackInfo> {
-  assertCanSee(ctx.user, itemId);
-  assertCanStartSession(ctx, remoteAddr);
+/* ------------------------------ planning ---------------------------- */
+
+/**
+ * Everything startPlayback decides before it creates a session: the media, audio/subtitle choice, the playback
+ * decision and the job options. Cached briefly (instant play, warmup.ts) so a prepare → start pair decides once.
+ */
+export interface PlaybackPlan {
+  key: string;
+  itemId: string;
+  preview: boolean;
+  mediaRow: Row;
+  media: MediaSource;
+  rawSubs: (SubtitleStream & { path?: string })[];
+  audio: AudioStream | null;
+  effectiveBurn: (SubtitleStream & { path?: string }) | null;
+  isAudioOnly: boolean;
+  isLocal: boolean;
+  caps: ReturnType<typeof bitrateCaps>;
+  decision: Decision;
+  bandwidthLimited: boolean;
+  /** Remux / transcode job options (null for direct play). */
+  opts: TranscodeOptions | null;
+  /** Adaptive rendition ladder (more than one rung = multi-variant master playlist). */
+  ladder: HlsRendition[];
+  startRendition: number | null;
+  /** For cache validation: the settings object the plan was made with, and the media row's signature. */
+  settings: ReturnType<typeof getSettings>;
+  mediaSig: string;
+}
+
+/** Cache key: the same user, device, item and (decision-relevant parts of the) request decide the same way. */
+export function playbackPlanKey(ctx: AuthContext, itemId: string, req: PlaybackRequest, isLocal: boolean): string {
+  const u = ctx.user;
+  return stableJson({
+    u: u.id, d: ctx.deviceRowId, i: itemId, m: req.mediaId ?? null, a: req.audioStreamIndex ?? null, s: req.subtitleStreamIndex ?? null,
+    b: !!req.burnSubtitles, f: !!req.forceTranscode, p: req.deviceProfile ?? null, bw: bandwidthBucket(req.measuredBandwidth), ad: !!req.adaptive,
+    ap: req.audioProcessing ?? null, fap: !!req.forceAudioProcessing, sf: req.subtitleFormats ?? null, pv: !!req.preview, l: isLocal,
+    // User-level inputs of the decision: a changed preference or permission must not reuse an old plan.
+    ut: u.allowTranscode, ub: u.preferences.maxBitrate ?? null, ul: u.preferences.audioLanguage ?? null,
+  });
+}
+
+const mediaSignature = (r: Row | undefined) =>
+  r ? `${r.mtime ?? ''}|${r.size ?? ''}|${r.probed_at ?? ''}|${r.video_range ?? ''}|${r.audio ?? ''}|${r.subs ?? ''}` : '';
+
+export const PLAN_TTL_MS = 60_000;
+/** Decisions cached by prepare / start. Invalid once the settings change or the file is rescanned (new probe data). */
+export const planCache = new PlanCache<PlaybackPlan>({
+  ttlMs: PLAN_TTL_MS,
+  maxEntries: 500,
+  validate: (p) => p.settings === getSettings()
+    && mediaSignature(db.get('SELECT mtime, size, probed_at, video_range, audio, subs FROM media WHERE id = ?', p.media.id)) === p.mediaSig,
+});
+
+/** Run the playback decision for a request (lazy probes included). No session, job or history: see startPlayback. */
+export async function planPlayback(ctx: AuthContext, itemId: string, req: PlaybackRequest, remoteAddr: string | null, key?: string): Promise<PlaybackPlan> {
   const item = getItem(ctx.user, itemId, true);
   const preview = !!req.preview;
   if (preview && !(item.type === 'video' && item.parentId && item.extraType === 'trailer')) throw badRequest('Previews are only available for trailers');
@@ -397,8 +454,11 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     try {
       const vr = await refreshVideoRange(mediaRow.id);
       if (vr) mediaRow.video_range = JSON.stringify(vr);
+      else throw new Error('no video stream');
     } catch {
-      /* keep the plain HDR flag */
+      // Keep the plain HDR flag, and mark the file as probed (as the backfill task does) so it isn't probed on every play.
+      db.run("UPDATE media SET video_range = 'null' WHERE id = ? AND video_range IS NULL", mediaRow.id);
+      mediaRow.video_range = 'null';
     }
   }
   // Files scanned before audio-format detection: read profiles / layouts / Atmos flags now (one quick ffprobe, stored).
@@ -422,8 +482,8 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
 
   const burnSub = req.burnSubtitles && req.subtitleStreamIndex != null ? rawSubs.find((s) => s.index === req.subtitleStreamIndex) ?? null : null;
   // Image-based subtitles can only be shown by burning them in.
-  const imageSubSelected = req.subtitleStreamIndex != null && rawSubs.find((s) => s.index === req.subtitleStreamIndex && !TEXT_SUB_CODECS.has(s.codec));
-  const effectiveBurn = burnSub ?? (imageSubSelected || null);
+  const imageSubSelected = req.subtitleStreamIndex != null ? rawSubs.find((s) => s.index === req.subtitleStreamIndex && !TEXT_SUB_CODECS.has(s.codec)) ?? null : null;
+  const effectiveBurn = burnSub ?? imageSubSelected;
 
   const isAudioOnly = item.type === 'track' || !media.videoCodec;
   // Bitrate limits: device profile, user preference, the remote cap (non-LAN clients) and — for the direct-play
@@ -434,58 +494,28 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
   // Real Dolby Vision through a remux depends on this FFmpeg build (checked once, ~100 ms; dovi.ts).
   if (media.videoRange?.dolbyVision && req.deviceProfile?.videoRange?.dolbyVision) await doviMuxSupported().catch(() => false);
   const audioProcessing = req.audioProcessing ? normalizeComforts(req.audioProcessing) : null;
-  const decision = decide(media, decideProfile, {
+  const decideOpts = {
     audio, burnSubs: !!effectiveBurn, forceTranscode: !!req.forceTranscode, allowTranscode: ctx.user.allowTranscode,
     userMaxBitrate: prefs.maxBitrate, isAudioOnly, audioProcessing, forceAudioProcessing: !!req.forceAudioProcessing,
-  });
-  if (decision.method !== 'direct' && transcodeCount() >= getSettings().transcoding.maxConcurrent && decision.method === 'transcode') {
-    throw new HttpError(503, 'The server is busy transcoding other streams. Try again shortly or choose original quality.', 'transcoder_busy');
-  }
-  const startMs = Math.max(0, req.startMs ?? item.userData.positionMs ?? 0);
-  const next = item.type === 'episode' || item.type === 'track' ? nextItem(ctx.user, itemId) : null;
-  const markers: Marker[] = item.markers ?? [];
-  const subtitleText = item.type === 'episode'
-    ? `${item.grandparentTitle ?? ''} · S${item.parentIndex ?? 0}E${item.index ?? 0}`
-    : item.type === 'track' ? [item.grandparentTitle, item.parentTitle].filter(Boolean).join(' — ') : item.year ? String(item.year) : null;
-
-  const adaptiveWanted = decision.method === 'transcode' && !!req.adaptive && streamingSettings().adaptive && !isAudioOnly && !preview && !!media.durationMs;
-  const details = mediaDetails({
-    platform: ctx.device.platform, appVersion: ctx.device.appVersion, hints, local: isLocal, media, isAudioOnly,
-    method: decision.method === 'live' ? 'direct' : decision.method, videoCopy: decision.videoCopy, audioCopy: decision.audioCopy,
-    audio, audioPlan: decision.audio ?? null, reasons: decision.reasons, adaptive: adaptiveWanted,
-    burnSub: effectiveBurn || null, rangeDelivery: decision.range?.delivery ?? null,
-  });
-  const base = {
-    ctx, itemId, channelId: null, mediaId: media.id, title: item.title, subtitle: subtitleText, posterUrl: item.posterUrl,
-    durationMs: media.durationMs || item.durationMs, remoteAddr, positionMs: preview ? 0 : startMs, preview,
-    details, subs: rawSubs.map(({ index, codec, language, title, default: d, forced, external }) => ({ index, codec, language, title, default: d, forced, external })),
-    audioOutKbps: decision.audioCopy ? audio?.bitrate ?? null : decision.audio?.bitrateKbps ?? ((audio?.channels ?? 2) > 2 ? 384 : 192),
   };
-  const input = mediaRow.path ?? mediaRow.remote_url;
-  const inputArgs = mediaRow.remote_url ? remoteInputArgs(mediaRow) : [];
+  const decision = decide(media, decideProfile, decideOpts);
+  // Transcoding only because of measured bandwidth (without it: direct play or remux)? Then the client may go back up.
+  const bandwidthLimited = decision.method === 'transcode' && caps.bandwidthLimited && !!media.bitrate && media.bitrate > caps.decisionKbps
+    && decide(media, Number.isFinite(caps.capKbps) ? { ...(req.deviceProfile ?? {}), maxBitrate: caps.capKbps } : req.deviceProfile, decideOpts).method !== 'transcode';
 
-  let session: PlaySession;
-  let url: string;
-  let mimeType: string;
-  let isHls = false;
-  let responseStart = startMs;
-  let abr: RenditionManager | null = null;
-  let renditions: ReturnType<typeof buildLadder> | undefined;
+  let opts: TranscodeOptions | null = null;
+  let ladder: HlsRendition[] = [];
   let startRendition: number | null = null;
-  if (decision.method === 'direct') {
-    session = registerSession({ ...base, method: 'direct', job: null });
-    url = `/api/v1/stream/direct/${media.id}${tokenQuery(ctx, session.id)}`;
-    mimeType = MIME_BY_CONTAINER[media.container ?? ''] ?? (isAudioOnly ? 'audio/mpeg' : 'video/mp4');
-  } else {
+  if (decision.method !== 'direct') {
     const p = { ...DEFAULT_PROFILE, ...(req.deviceProfile ?? {}) };
     // Adaptive (multi-rendition) transcodes let the player climb to the hard cap; single-variant streams start at the measured fit.
-    const adaptive = adaptiveWanted;
+    const adaptive = decision.method === 'transcode' && !!req.adaptive && streamingSettings().adaptive && !isAudioOnly && !preview && !!media.durationMs;
     const maxBitrate = adaptive ? caps.capKbps : caps.decisionKbps;
     const target = Math.min(Number.isFinite(maxBitrate) ? maxBitrate : getSettings().transcoding.defaultBitrate, media.bitrate ? Math.max(media.bitrate, 1500) : Infinity, getSettings().transcoding.defaultBitrate * 4);
-    const opts: TranscodeOptions = {
+    opts = {
       // Always encode against the full timeline (segments are produced on demand),
       // the client seeks to startMs. This keeps PTS == playlist time for every player.
-      input, inputArgs, startSec: 0, durationSec: media.durationMs ? media.durationMs / 1000 : null,
+      input: mediaRow.path ?? mediaRow.remote_url, inputArgs: mediaRow.remote_url ? remoteInputArgs(mediaRow) : [], startSec: 0, durationSec: media.durationMs ? media.durationMs / 1000 : null,
       mode: decision.method === 'remux' ? 'remux' : 'transcode',
       audioIndex: audio?.index ?? null, audioCopy: decision.audioCopy, videoCopy: decision.videoCopy,
       bitrate: Math.round(target), maxHeight: outputMaxHeight(p, media.width, media.height), sourceHeight: media.height,
@@ -509,39 +539,250 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
       };
     }
     if (decision.audio) opts.audioPlan = decision.audio;
-    const ladder = adaptive
+    ladder = adaptive
       ? buildLadder({ sourceWidth: media.width, sourceHeight: media.height, sourceKbps: media.bitrate, capKbps: caps.capKbps, maxHeight: opts.maxHeight, audioKbps: decision.audio?.bitrateKbps ?? (opts.audioCopy ? 320 : (audio?.channels ?? 2) > 2 ? 384 : 192) })
       : [];
-    let job: TranscodeJob;
-    if (ladder.length > 1) {
-      const startSegment = startMs > 0 ? Math.floor(startMs / 1000 / getSettings().transcoding.segmentSeconds) : 0;
-      startRendition = pickStartRendition(ladder, req.measuredBandwidth);
-      const holder: { s: PlaySession | null } = { s: null };
-      abr = createRenditionManager(newId(), opts, ladder, startRendition, startSegment, {
-        otherEncoders: () => [...sessions.values()].filter((x) => x.job && !x.abr && x.method !== 'direct' && !x.job.exited).length,
-        masterAudio: masterAudioFor(decision.audio, audio),
-        onActiveChange: (j) => {
-          if (!holder.s) return;
-          holder.s.job = j as TranscodeJob;
-          broadcastSessions();
-        },
-      });
-      renditions = ladder;
-      job = abr.activeJob as TranscodeJob;
-      try {
-        session = registerSession({ ...base, method: decision.method, job, abr });
-      } catch (e) {
-        abr.stop();
-        throw e;
-      }
-      holder.s = session;
-    } else {
-      job = new TranscodeJob(newId(), opts);
-      session = registerSession({ ...base, method: decision.method, job });
-      job.start(decision.method === 'transcode' && startMs > 0 ? Math.floor(startMs / 1000 / job.segmentSeconds) : 0);
+    if (ladder.length > 1) startRendition = pickStartRendition(ladder, req.measuredBandwidth);
+  }
+  return {
+    key: key ?? playbackPlanKey(ctx, itemId, req, isLocal), itemId, preview, mediaRow, media, rawSubs, audio, effectiveBurn, isAudioOnly, isLocal, caps,
+    decision, bandwidthLimited, opts, ladder, startRendition, settings: getSettings(), mediaSig: mediaSignature(mediaRow),
+  };
+}
+
+/** The cached plan for this request, or a fresh one (then cached). */
+async function resolvePlan(ctx: AuthContext, itemId: string, req: PlaybackRequest, remoteAddr: string | null): Promise<{ plan: PlaybackPlan; cached: boolean }> {
+  const isLocal = !!remoteAddr && isLocalAddress(remoteAddr);
+  const key = playbackPlanKey(ctx, itemId, req, isLocal);
+  const hit = planCache.get(key);
+  if (hit) return { plan: hit, cached: true };
+  const plan = await planPlayback(ctx, itemId, req, remoteAddr, key);
+  planCache.set(key, plan);
+  return { plan, cached: false };
+}
+
+/* ---------------------------- job spawning --------------------------- */
+
+interface SpawnedJob {
+  job: TranscodeJob;
+  abr: RenditionManager | null;
+  /** Session the adaptive manager reports rendition switches to (set once the session exists). */
+  holder: { s: PlaySession | null };
+  startSegment: number;
+}
+
+function spawnJob(plan: PlaybackPlan, startMs: number, id = newId()): SpawnedJob {
+  const opts = plan.opts!;
+  const holder: { s: PlaySession | null } = { s: null };
+  if (plan.ladder.length > 1) {
+    const startSegment = startMs > 0 ? Math.floor(startMs / 1000 / getSettings().transcoding.segmentSeconds) : 0;
+    const abr = createRenditionManager(id, opts, plan.ladder, plan.startRendition ?? plan.ladder[0].id, startSegment, {
+      otherEncoders: () => [...sessions.values()].filter((x) => x.job && !x.abr && x.method !== 'direct' && !x.job.exited).length + warmSlots.entries().filter((e) => !e.job.spawned.abr).length,
+      masterAudio: masterAudioFor(plan.decision.audio, plan.audio),
+      onActiveChange: (j) => {
+        if (!holder.s) return;
+        holder.s.job = j as TranscodeJob;
+        broadcastSessions();
+      },
+    });
+    return { job: abr.activeJob as TranscodeJob, abr, holder, startSegment };
+  }
+  const job = new TranscodeJob(id, opts);
+  const startSegment = plan.decision.method === 'transcode' && startMs > 0 ? Math.floor(startMs / 1000 / job.segmentSeconds) : 0;
+  job.start(startSegment);
+  return { job, abr: null, holder, startSegment };
+}
+
+/* ------------------------------ warm-up ----------------------------- */
+
+/** Unused warm jobs are stopped after this. */
+export const WARM_TTL_MS = 40_000;
+/** Warm jobs server-wide (each device holds at most one). */
+export const WARM_MAX_JOBS = 2;
+/** Minimum time between two new warm jobs of one device (tests lower it). */
+export const warmTuning = { minIntervalMs: 1000 };
+const lastWarmSpawn = new Map<string, number>();
+/** Segments a warm job encodes ahead of the start position before it is paused (SIGSTOP) until adopted. */
+const WARM_AHEAD_SEGMENTS = 2;
+
+interface WarmHandle extends WarmJobHandle { spawned: SpawnedJob; release(): void }
+
+function warmHandle(sp: SpawnedJob): WarmHandle {
+  const job = () => (sp.abr ? (sp.abr.activeJob as TranscodeJob | null) : sp.job);
+  job()?.hold(sp.startSegment + WARM_AHEAD_SEGMENTS);
+  // The encoder only pauses itself when polled.
+  const timer = setInterval(() => job()?.tick(), 250);
+  timer.unref?.();
+  return {
+    spawned: sp,
+    stop: () => {
+      clearInterval(timer);
+      if (sp.abr) sp.abr.stop();
+      else sp.job.stop();
+    },
+    dead: () => !!job()?.failed,
+    release: () => {
+      clearInterval(timer);
+      job()?.release();
+    },
+  };
+}
+
+export const warmSlots = new WarmSlots<WarmHandle>({
+  maxJobs: WARM_MAX_JOBS,
+  ttlMs: WARM_TTL_MS,
+  onEvent: (ev, e) => log.debug(`warm ${e.kind} for item ${e.itemId}: ${ev}`),
+});
+
+/** Free transcoder capacity held by warm jobs (other devices first) before a real transcode or conversion starts. */
+export function reclaimWarmTranscodes(busyAfterStart: number, exceptDevice?: string) {
+  return warmSlots.reclaim(busyAfterStart, getSettings().transcoding.maxConcurrent, exceptDevice);
+}
+
+const preread = new Map<string, number>();
+/** Pull the start and end of a file (headers, MP4 moov at either end) into the OS cache / spin the disk up. */
+async function prereadFile(file: string | null | undefined) {
+  if (!file || !path.isAbsolute(file)) return;
+  const now = Date.now();
+  if ((preread.get(file) ?? 0) > now - 30_000) return;
+  preread.set(file, now);
+  if (preread.size > 200) for (const [k, t] of preread) if (t < now - 30_000) preread.delete(k);
+  let fh: fs.promises.FileHandle | null = null;
+  try {
+    fh = await fs.promises.open(file, 'r');
+    const { size } = await fh.stat();
+    const chunk = Math.min(1 << 20, size);
+    const buf = Buffer.allocUnsafe(chunk);
+    await fh.read(buf, 0, chunk, 0);
+    if (size > chunk) await fh.read(buf, 0, chunk, Math.max(chunk, size - chunk));
+  } catch {
+    /* best effort */
+  } finally {
+    await fh?.close().catch(() => {});
+  }
+}
+
+/**
+ * POST /playback/:itemId/prepare — the user is about to press Play. Decide now (cached for startPlayback), read the
+ * file's headers, and for remux / transcode start the job in a warm slot: no session, no history, no stream-limit use.
+ */
+export async function preparePlayback(ctx: AuthContext, itemId: string, req: PlaybackPrepareRequest, remoteAddr: string | null): Promise<PlaybackPrepareResult> {
+  assertCanSee(ctx.user, itemId);
+  assertRemoteAllowed(ctx.user, remoteAddr);
+  const { plan } = await resolvePlan(ctx, itemId, req, remoteAddr);
+  const method = plan.decision.method;
+  const decisionOnly = (reason: PlaybackPrepareResult['reason'] = null): PlaybackPrepareResult => ({ method, warm: 'decision', reason, expiresInMs: PLAN_TTL_MS });
+  if (method === 'direct') {
+    void prereadFile(plan.mediaRow.path);
+    return { ...decisionOnly(), preloadUrl: plan.mediaRow.path ? `/api/v1/stream/direct/${plan.media.id}${tokenQuery(ctx)}` : null };
+  }
+  void prereadFile(plan.mediaRow.path);
+  // IPTV / remote files: a warm job would hold one of the provider's (few) connections.
+  if (req.metered) return decisionOnly('metered');
+  if (plan.preview) return decisionOnly('preview');
+  if (plan.mediaRow.remote_url || !plan.opts) return decisionOnly('remote_source');
+  try {
+    assertCanStartSession(ctx, remoteAddr);
+  } catch {
+    return decisionOnly('stream_limit');
+  }
+  const device = ctx.deviceRowId;
+  if (warmSlots.refresh(device, plan.key)) return { method, warm: 'job', reason: null, expiresInMs: WARM_TTL_MS };
+  const kind = method === 'transcode' ? 'transcode' : 'remux';
+  const own = warmSlots.entries().find((e) => e.device === device);
+  const room = canWarm(kind, {
+    runningTranscodes: transcodeCount(), warmTranscodes: warmSlots.transcodeCount() - (own?.kind === 'transcode' ? 1 : 0),
+    maxConcurrent: getSettings().transcoding.maxConcurrent, slotFree: warmSlots.hasRoom(device),
+  });
+  if (!room.ok) return decisionOnly(room.reason);
+  // A client flicking through items (TV focus) must not churn encoders: one new warm job per device per second.
+  const last = lastWarmSpawn.get(device) ?? 0;
+  if (Date.now() - last < warmTuning.minIntervalMs) return decisionOnly('capacity');
+  lastWarmSpawn.set(device, Date.now());
+  if (lastWarmSpawn.size > 1000) for (const [k, t] of lastWarmSpawn) if (t < Date.now() - 60_000) lastWarmSpawn.delete(k);
+  // Stop the device's previous warm job before the new encoder starts.
+  warmSlots.drop(device, 'replaced');
+  const pos = db.get<{ position_ms: number }>('SELECT position_ms FROM user_data WHERE user_id = ? AND item_id = ?', ctx.user.id, itemId)?.position_ms ?? 0;
+  const startMs = Math.max(0, req.startMs ?? pos);
+  const sp = spawnJob(plan, startMs);
+  const entry = warmSlots.put({ key: plan.key, device, userId: ctx.user.id, ownerId: ctx.user.parentUserId || ctx.user.id, itemId, kind, job: warmHandle(sp), startSegment: sp.startSegment });
+  if (!entry) {
+    sp.abr ? sp.abr.stop() : sp.job.stop();
+    return decisionOnly('capacity');
+  }
+  return { method, warm: 'job', reason: null, expiresInMs: WARM_TTL_MS };
+}
+
+/* -------------------------------- start ----------------------------- */
+
+export async function startPlayback(ctx: AuthContext, itemId: string, req: PlaybackRequest, remoteAddr: string | null, hints?: ClientHints): Promise<PlaybackInfo> {
+  assertCanSee(ctx.user, itemId);
+  assertCanStartSession(ctx, remoteAddr);
+  const { plan } = await resolvePlan(ctx, itemId, req, remoteAddr);
+  // Fresh item (resume position, next up) even when the decision came from the cache.
+  const item = getItem(ctx.user, itemId, true);
+  const { media, decision, rawSubs, effectiveBurn, isAudioOnly, isLocal, caps, preview } = plan;
+  // A warm job prepared for exactly this request is adopted; any other warm job of this device is no longer wanted.
+  // (Muted trailer previews run beside playback and leave the device's warm job alone.)
+  const warm = preview ? null : decision.method === 'direct' ? (warmSlots.drop(ctx.deviceRowId), null) : warmSlots.take(ctx.deviceRowId, plan.key);
+  if (decision.method === 'transcode') {
+    if (!warm) reclaimWarmTranscodes(transcodeCount() + 1, ctx.deviceRowId);
+    if (transcodeCount() >= getSettings().transcoding.maxConcurrent) {
+      warm?.job.stop();
+      throw new HttpError(503, 'The server is busy transcoding other streams. Try again shortly or choose original quality.', 'transcoder_busy');
+    }
+  }
+  const startMs = Math.max(0, req.startMs ?? item.userData.positionMs ?? 0);
+  const next = item.type === 'episode' || item.type === 'track' ? nextItem(ctx.user, itemId) : null;
+  const markers: Marker[] = item.markers ?? [];
+  const subtitleText = item.type === 'episode'
+    ? `${item.grandparentTitle ?? ''} · S${item.parentIndex ?? 0}E${item.index ?? 0}`
+    : item.type === 'track' ? [item.grandparentTitle, item.parentTitle].filter(Boolean).join(' — ') : item.year ? String(item.year) : null;
+
+  const audio = plan.audio;
+  const details = mediaDetails({
+    platform: ctx.device.platform, appVersion: ctx.device.appVersion, hints, local: isLocal, media, isAudioOnly,
+    method: decision.method === 'live' ? 'direct' : decision.method, videoCopy: decision.videoCopy, audioCopy: decision.audioCopy,
+    audio, audioPlan: decision.audio ?? null, reasons: decision.reasons, adaptive: plan.ladder.length > 1,
+    burnSub: effectiveBurn || null, rangeDelivery: decision.range?.delivery ?? null,
+  });
+  const base = {
+    ctx, itemId, channelId: null, mediaId: media.id, title: item.title, subtitle: subtitleText, posterUrl: item.posterUrl,
+    durationMs: media.durationMs || item.durationMs, remoteAddr, positionMs: preview ? 0 : startMs, preview,
+    details, subs: rawSubs.map(({ index, codec, language, title, default: d, forced, external }) => ({ index, codec, language, title, default: d, forced, external })),
+    audioOutKbps: decision.audioCopy ? audio?.bitrate ?? null : decision.audio?.bitrateKbps ?? ((audio?.channels ?? 2) > 2 ? 384 : 192),
+  };
+
+  let session: PlaySession;
+  let url: string;
+  let mimeType: string;
+  let isHls = false;
+  const responseStart = startMs;
+  let abr: RenditionManager | null = null;
+  let renditions: HlsRendition[] | undefined;
+  let startRendition: number | null = null;
+  if (decision.method === 'direct') {
+    session = registerSession({ ...base, method: 'direct', job: null });
+    url = `/api/v1/stream/direct/${media.id}${tokenQuery(ctx, session.id)}`;
+    mimeType = MIME_BY_CONTAINER[media.container ?? ''] ?? (isAudioOnly ? 'audio/mpeg' : 'video/mp4');
+  } else {
+    const sp = warm ? warm.job.spawned : spawnJob(plan, startMs);
+    warm?.job.release();
+    const job = sp.job;
+    abr = sp.abr;
+    try {
+      session = registerSession({ ...base, method: decision.method, job, ...(abr ? { abr } : {}) });
+    } catch (e) {
+      if (abr) abr.stop();
+      else job.stop();
+      throw e;
+    }
+    sp.holder.s = session;
+    if (abr) {
+      renditions = plan.ladder;
+      startRendition = plan.startRendition;
     }
     job.onInfoChange = broadcastSessions;
-    if (!abr && session.details && decision.method === 'transcode') session.details.stream.delivery = 'HLS';
     if (decision.method === 'remux') {
       try {
         await job.waitForPlaylist();
@@ -553,7 +794,7 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     url = `/api/v1/stream/hls/${session.id}/master.m3u8${tokenQuery(ctx)}`;
     mimeType = 'application/x-mpegURL';
     isHls = true;
-    log.info(`${ctx.user.displayName} → ${decision.method} "${item.title}": ${decision.reasons.join('; ')}`);
+    log.info(`${ctx.user.displayName} → ${decision.method}${warm ? ' (warm)' : ''} "${item.title}": ${decision.reasons.join('; ')}`);
   }
   const subs = subtitleTrackList(tokenQuery(ctx), media.id, rawSubs, req.subtitleFormats);
   return {
@@ -576,12 +817,7 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     maxBitrate: Number.isFinite(caps.capKbps) ? caps.capKbps : null,
     sourceBitrate: media.bitrate,
     isLocal,
-    // Transcoding only because of measured bandwidth (without it: direct play or remux)? Then the client may go back up.
-    bandwidthLimited: decision.method === 'transcode' && caps.bandwidthLimited && !!media.bitrate && media.bitrate > caps.decisionKbps
-      && decide(media, Number.isFinite(caps.capKbps) ? { ...(req.deviceProfile ?? {}), maxBitrate: caps.capKbps } : req.deviceProfile, {
-        audio, burnSubs: !!effectiveBurn, forceTranscode: !!req.forceTranscode, allowTranscode: ctx.user.allowTranscode, userMaxBitrate: prefs.maxBitrate, isAudioOnly,
-        audioProcessing, forceAudioProcessing: !!req.forceAudioProcessing,
-      }).method !== 'transcode',
+    bandwidthLimited: plan.bandwidthLimited,
     markers,
     nextItemId: next?.id ?? null,
     title: item.title,

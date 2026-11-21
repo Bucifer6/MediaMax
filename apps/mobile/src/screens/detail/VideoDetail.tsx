@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import type { Item, UserItemData } from '@/api/types';
 import { useQuery } from '@/api/useQuery';
@@ -9,6 +9,8 @@ import { RecapCard } from '@/components/RecapCard';
 import { useTheme } from '@/theme';
 import { progressFraction } from '@/utils/format';
 import { playItem } from '@/utils/nav';
+import { prepareVideo } from '@/player/warmup';
+import { useApi, useSession } from '@/state/session';
 import { ActionBar, CastRow, DetailBackdrop, Overview, ResumeInfo, TVDetailBackground, TitleBlock, useUserDataActions } from './common';
 
 export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud: UserItemData) => void }) {
@@ -21,6 +23,12 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
   const [mediaId, setMediaId] = useState<string | undefined>(undefined);
   const versionLabel = (m: (typeof versions)[number]) => [m.edition, m.resolutionLabel, m.hdr ? 'HDR' : null].filter(Boolean).join(' · ') || m.container?.toUpperCase() || 'Version';
   const { togglePlayed, toggleFavorite, setRating } = useUserDataActions(item, onUserData);
+  // Instant play: the server decides and starts the stream while the user reads the page.
+  const api = useApi();
+  const { user } = useSession();
+  useEffect(() => {
+    void prepareVideo(api, item, user?.preferences, mediaId);
+  }, [api, item.id, mediaId]); // eslint-disable-line react-hooks/exhaustive-deps
   const p = progressFraction(item);
   const resumable = p > 0.01 && p < 0.95;
   const play = () => playItem(item.id, { startMs: resumable ? item.userData.positionMs : 0, mediaId });

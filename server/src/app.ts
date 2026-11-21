@@ -130,6 +130,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register((await import('./routes/wrapped.js')).default);
     await api.register((await import('./routes/decide.js')).default);
     await api.register((await import('./routes/ai.js')).default);
+    await api.register((await import('./routes/downloads.js')).default);
   }, { prefix: '/api/v1' });
 
   await app.register(dlnaRoutes);

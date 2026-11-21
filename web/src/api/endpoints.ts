@@ -3,7 +3,7 @@ import type {
   ChannelQuery, CreateCollectionRequest, CreateLibraryRequest, CreateLiveSourceRequest, CreatePlaylistRequest,
   CreateRecordingRequest, CreateRecordingRuleRequest, CreateUserRequest, DashboardStats, Device, DirectoryEntry, DownloadQuality, DvrDefaults,
   GuideResponse, HomeResponse, Item, LastfmAuthStart, LastfmStatus, Lyrics, PodcastSearchResult, PodcastSubscription, SubscribePodcastRequest, ItemQuery, ItemSort, Library, LivePlayRequest, LiveSource, LoginRequest,
-  Paged, PinLoginRequest, PlaybackInfo, PlaybackRequest, Program, ProgressReport, PublicProfile, Recording,
+  Paged, PinLoginRequest, DownloadRule, PlaybackInfo, PlaybackPrepareRequest, PlaybackPrepareResult, PlaybackRequest, Program, ProgressReport, PublicProfile, Recording,
   RecordingRule, RecordingStatus, RemoteSubtitle, ScheduledTask, SearchResponse, ServerSettings, ServerStats, SetupRequest, SystemInfo,
   TestSourceResponse, Theme, TraktDeviceCode, TraktStatus, TrickplayInfo, UpdateItemRequest, UpdateLibraryRequest, UpdateLiveSourceRequest, UpdateMeRequest,
   UpdateUserRequest, User, UserItemData, UserStats,
@@ -220,8 +220,16 @@ export const api = {
     update: (id: string, body: { title?: string; overview?: string; filter?: SmartFilter }) => http.put<Item>(`/smart/${enc(id)}`, body),
   },
 
+  downloads: {
+    /** Smart download rules of all the user's devices. */
+    rules: () => http.get<DownloadRule[]>('/downloads/rules'),
+    removeRule: (id: string) => http.del<Ok>(`/downloads/rules/${enc(id)}`),
+  },
+
   playback: {
     start: (itemId: string, body: PlaybackRequest) => http.post<PlaybackInfo>(`/playback/${enc(itemId)}`, body),
+    /** Instant play: decide now and warm up the stream (no session is created). */
+    prepare: (itemId: string, body: PlaybackPrepareRequest) => request<PlaybackPrepareResult>('POST', `/playback/${enc(itemId)}/prepare`, { body, silent401: true }),
     progress: (sessionId: string, body: ProgressReport, keepalive = false) =>
       request<Ok>('POST', `/playback/sessions/${enc(sessionId)}/progress`, { body, keepalive, silent401: true }),
     stop: (sessionId: string, keepalive = false) =>

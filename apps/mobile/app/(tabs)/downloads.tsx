@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/States';
 import { useTabBarSpace } from '@/components/TabBar';
 import { T } from '@/components/Text';
 import { qualityLabel, useDownloads, type DownloadRecord } from '@/state/downloads';
+import { waitingLabel } from '@/state/smartDownloads';
 import { useMusic } from '@/state/music';
 import { useCapabilities, useSession } from '@/state/session';
 import { useTheme } from '@/theme';
@@ -46,7 +47,29 @@ export default function DownloadsScreen() {
 
   return (
     <Screen>
-      <ScreenHeader title="Downloads" back={false} subtitle={downloads.totalBytes ? `${formatBytes(downloads.totalBytes)} on this device` : undefined} />
+      <ScreenHeader
+        title="Downloads"
+        back={false}
+        subtitle={downloads.totalBytes ? `${formatBytes(downloads.totalBytes)} on this device${downloads.smart.storageLimitGb ? ` of ${downloads.smart.storageLimitGb} GB` : ''}` : undefined}
+        right={
+          downloads.supported ? (
+            <View style={{ flexDirection: 'row', gap: t.space.xs }}>
+              {list.some((r) => r.state === 'queued' || r.state === 'downloading') || downloads.smart.paused ? (
+                <Button icon={downloads.smart.paused ? 'play' : 'pause'} variant="secondary" size="sm" onPress={downloads.smart.paused ? downloads.resumeAll : downloads.pauseAll} accessibilityLabel={downloads.smart.paused ? 'Resume all' : 'Pause all'} />
+              ) : null}
+              <Button icon="settings-outline" variant="secondary" size="sm" onPress={() => router.push('/settings/downloads' as never)} accessibilityLabel="Download settings" />
+            </View>
+          ) : undefined
+        }
+      />
+      {downloads.waitingFor && list.some((r) => r.state === 'queued') ? (
+        <View style={{ marginHorizontal: t.space.gutter, marginBottom: t.space.md, padding: t.space.sm, borderRadius: t.radius, backgroundColor: t.colors.surface, flexDirection: 'row', alignItems: 'center', gap: t.space.sm }}>
+          <Icon name={downloads.waitingFor === 'wifi' ? 'wifi-outline' : downloads.waitingFor === 'paused' ? 'pause-circle-outline' : downloads.waitingFor === 'charging' ? 'battery-charging-outline' : 'time-outline'} color={t.colors.textMuted} />
+          <T variant="small" tone="muted" style={{ flex: 1 }}>
+            {waitingLabel[downloads.waitingFor]}
+          </T>
+        </View>
+      ) : null}
       {caps.offline ? (
         <View style={{ marginHorizontal: t.space.gutter, marginBottom: t.space.md, padding: t.space.md, borderRadius: t.radius, backgroundColor: t.alpha(t.colors.warning, 0.15), flexDirection: 'row', alignItems: 'center', gap: t.space.sm }}>
           <Icon name="cloud-offline-outline" color={t.colors.warning} />
@@ -85,6 +108,11 @@ export default function DownloadsScreen() {
                     <T variant="small" tone="muted" numberOfLines={1}>
                       {r.item.type === 'episode' ? `${itemSubtitle(r.item).split(' · ').slice(1).join(' · ')} · ${r.item.title}` : itemSubtitle(r.item)}
                     </T>
+                    {r.ruleId || r.watched ? (
+                      <T variant="caption" tone="muted" numberOfLines={1}>
+                        {[r.ruleId ? 'Smart download' : null, r.watched ? 'Watched' : null].filter(Boolean).join(' · ')}
+                      </T>
+                    ) : null}
                     {r.state === 'downloading' || r.state === 'queued' ? (
                       <>
                         <ProgressBar value={r.progress} indeterminate={r.state === 'downloading' && !r.total} track={t.alpha(t.colors.text, 0.12)} />

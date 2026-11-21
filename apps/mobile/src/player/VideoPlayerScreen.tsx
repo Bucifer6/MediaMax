@@ -21,8 +21,7 @@ import { VideoAirPlayButton, VideoView, isPictureInPictureSupported, useVideoPla
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { QUALITY_OPTIONS, castDeviceProfile, videoDeviceProfile } from '@/api/profiles';
-import { comfortRequest, deviceComforts } from '@/api/audio';
+import { QUALITY_OPTIONS, castDeviceProfile } from '@/api/profiles';
 import type { Channel, Chapter, Item, Marker, PlaybackInfo, ProgressReport, RemoteSubtitle, SubtitleTrack } from '@/api/types';
 import { CastButton, castMediaInfo, isOurMedia, useCast } from '@/cast';
 import { Button } from '@/components/Button';
@@ -50,6 +49,7 @@ import { createNumberEntry, matchDisplayFor, useNativeRemoteKeys } from './remot
 import { activeCues, parseVtt, type Cue } from './vtt';
 import { measureBandwidth } from './bandwidth';
 import { useMarathon } from './marathon';
+import { videoPlaybackRequest } from './warmup';
 
 export type PlayerTarget =
   | { kind: 'vod'; itemId: string; startMs?: number; mediaId?: string }
@@ -311,19 +311,11 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
           const auto = opts.auto ?? autoRef.current;
           const burn = opts.burn !== undefined ? opts.burn : burnRef.current;
           const measured = auto ? await measureBandwidth(api) : null;
-          pi = await api.playback(target.itemId, {
-            mediaId: target.mediaId,
-            startMs: Math.round(startMs),
-            audioStreamIndex: opts.audio,
-            // Text subtitles are fetched and drawn by our overlay; only bitmap tracks are burned in, on request.
-            subtitleStreamIndex: burn ?? null,
-            ...(burn != null ? { burnSubtitles: true } : {}),
-            subtitleFormats: ['srt', 'vtt', 'ass'],
-            deviceProfile: videoDeviceProfile(auto ? null : opts.bitrate === undefined ? maxBitrate : opts.bitrate),
-            // Night mode / dialogue boost / normalise / lip-sync: applied by the server (audio-only re-encode).
-            ...comfortRequest(deviceComforts(prefsRef.current)),
-            ...(auto ? { adaptive: true, measuredBandwidth: measured ? Math.round(measured / 1000) : null } : {}),
-          });
+          // Same builder as the instant-play warm-up (warmup.ts), so a prepared stream is adopted.
+          pi = await api.playback(target.itemId, videoPlaybackRequest({
+            mediaId: target.mediaId, startMs, audio: opts.audio, burn: burn ?? null, auto,
+            bitrate: opts.bitrate === undefined ? maxBitrate : opts.bitrate, measuredBps: measured, prefs: prefsRef.current,
+          }));
           uri = api.absolute(pi.url);
         }
         infoRef.current = pi;
