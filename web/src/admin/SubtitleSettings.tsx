@@ -139,7 +139,7 @@ export function SubtitleSettingsPanel({ value, onChange }: { value: SubtitleSett
       <Switch checked={v.sync} onChange={(sync) => set({ sync })} label="Sync downloaded subtitles" hint="Re-time each download against the video with alass (needs alass on the server, see below). The original is kept if syncing fails." />
       <Field label="Save to">
         <select className="input" value={v.saveMode} onChange={(e) => set({ saveMode: e.target.value === 'sidecar' ? 'sidecar' : 'data' })}>
-          <option value="data">MediaMax’s data folder (works with read-only libraries)</option>
+          <option value="data">Kinora’s data folder (works with read-only libraries)</option>
           <option value="sidecar">Next to the video, e.g. Movie.ro.srt (falls back to the data folder if read-only)</option>
         </select>
       </Field>

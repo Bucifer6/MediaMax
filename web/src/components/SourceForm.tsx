@@ -310,7 +310,7 @@ export function SourceForm({ initial, onSaved, onCancel, compact }: { initial?: 
       <div className="switch-group">
         {f.type === 'xtream' && <Switch checked={!!f.importVod} onChange={(v) => set('importVod', v)} label="Import VOD movies" hint="Creates a browsable movie library." />}
         {f.type === 'xtream' && <Switch checked={!!f.importSeries} onChange={(v) => set('importSeries', v)} label="Import series" hint="Creates a browsable TV library." />}
-        {!tuner && <Switch checked={!!f.proxyStreams} onChange={(v) => set('proxyStreams', v)} label="Restream through MediaMax" hint="Hides provider credentials; enables remux & transcode." />}
+        {!tuner && <Switch checked={!!f.proxyStreams} onChange={(v) => set('proxyStreams', v)} label="Restream through Kinora" hint="Hides provider credentials; enables remux & transcode." />}
         {!compact && <Switch checked={!!f.enabled} onChange={(v) => set('enabled', v)} label="Enabled" />}
       </div>
       {test && (

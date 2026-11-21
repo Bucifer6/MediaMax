@@ -9,7 +9,7 @@ import { relativeTime } from '../utils/format';
 import { RENDERER_KIND_LABEL } from '../player/renderers';
 import { AdminHeader } from './AdminRoutes';
 
-/** Admin → Play to devices: DLNA / Sonos / Kodi renderers MediaMax can send media to. */
+/** Admin → Play to devices: DLNA / Sonos / Kodi renderers Kinora can send media to. */
 export function RenderersAdmin() {
   const toast = useToast();
   const view = useAsync(() => api.renderers.admin(), []);
@@ -81,7 +81,7 @@ export function RenderersAdmin() {
     <div>
       <AdminHeader help="play-to-devices"
         title="Play to devices"
-        subtitle="Send movies, shows and music from MediaMax to TVs, speakers and Kodi boxes on your network."
+        subtitle="Send movies, shows and music from Kinora to TVs, speakers and Kodi boxes on your network."
         actions={
           <>
             <button className="btn" onClick={search} disabled={searching || !s?.enabled}><Icon name="refresh" size={16} className={searching ? 'spin' : ''} /> Search network</button>
@@ -96,7 +96,7 @@ export function RenderersAdmin() {
             <div className="form-grid">
               <Switch checked={s.enabled} onChange={(x) => setS({ ...s, enabled: x })} label="Enable Play to devices" hint="Find DLNA / UPnP TVs and receivers, Sonos speakers and Kodi on the local network and list them in every player’s cast menu." />
               <Switch checked={s.mdns} onChange={(x) => setS({ ...s, mdns: x })} disabled={!s.enabled} label="Find Kodi automatically (mDNS)" hint="Kodi announces its remote-control interface over Bonjour/mDNS. Turn off if you only use manually added Kodi boxes." />
-              <Field label="Stream address for devices" hint="Devices fetch streams from this address. Leave empty to use this server’s LAN address. Set it if MediaMax runs in Docker with port mapping or has several network cards.">
+              <Field label="Stream address for devices" hint="Devices fetch streams from this address. Leave empty to use this server’s LAN address. Set it if Kinora runs in Docker with port mapping or has several network cards.">
                 <input className="input" value={s.streamBaseUrl ?? ''} onChange={(e) => setS({ ...s, streamBaseUrl: e.target.value })} placeholder="http://192.168.1.10:8484" spellCheck={false} autoCapitalize="none" disabled={!s.enabled} />
               </Field>
               <Switch checked={s.allowPublicHosts} onChange={(x) => setS({ ...s, allowPublicHosts: x })} disabled={!s.enabled} label="Allow devices outside private address ranges" hint="Off (recommended): manually added devices must be on 10.x, 172.16–31.x, 192.168.x or similar private addresses." />
@@ -105,7 +105,7 @@ export function RenderersAdmin() {
 
           <div className="settings-card">
             <h2>Devices</h2>
-            <p className="muted">{v.lastDiscoveryAt ? `Last searched ${relativeTime(v.lastDiscoveryAt)}.` : 'Not searched yet.'} Discovery uses SSDP{s.mdns ? ' and mDNS' : ''} and only works when MediaMax shares the devices’ network (in Docker: host networking).</p>
+            <p className="muted">{v.lastDiscoveryAt ? `Last searched ${relativeTime(v.lastDiscoveryAt)}.` : 'Not searched yet.'} Discovery uses SSDP{s.mdns ? ' and mDNS' : ''} and only works when Kinora shares the devices’ network (in Docker: host networking).</p>
             {v.renderers.length ? (
               <ul className="renderer-admin-list">
                 {v.renderers.map((r) => (

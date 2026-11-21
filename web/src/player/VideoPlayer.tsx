@@ -1654,7 +1654,7 @@ export default function VideoPlayer() {
                 <div className="option-title">Watch together</div>
                 {sync.room ? (
                   <div className="together-room">
-                    <p className="muted">Share this code with friends on any MediaMax device:</p>
+                    <p className="muted">Share this code with friends on any Kinora device:</p>
                     <div className="room-code">
                       {sync.room.code}
                       <button className="btn-icon" onClick={() => { void navigator.clipboard?.writeText(sync.room!.code); toast.success('Code copied'); }} aria-label="Copy code"><Icon name="copy" size={16} /></button>

@@ -138,7 +138,7 @@ export function Home() {
           title={libraries.length ? 'Your libraries are filling up' : 'Nothing here yet'}
           message={
             libraries.length
-              ? 'MediaMax is scanning your media. New movies and shows will appear here as soon as they are found.'
+              ? 'Kinora is scanning your media. New movies and shows will appear here as soon as they are found.'
               : user?.isAdmin
                 ? 'Add a library or an IPTV source to start building your collection.'
                 : 'Ask your server admin to add some media.'

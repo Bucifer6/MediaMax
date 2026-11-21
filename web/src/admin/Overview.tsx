@@ -204,7 +204,7 @@ export function Overview() {
   const st = stats.data;
   return (
     <div>
-      <AdminHeader help="admin-setup" title="Overview" subtitle={st ? `MediaMax ${st.version} · up ${formatUptime(st.uptimeSeconds)}` : undefined} />
+      <AdminHeader help="admin-setup" title="Overview" subtitle={st ? `Kinora ${st.version} · up ${formatUptime(st.uptimeSeconds)}` : undefined} />
       <div className="stat-grid">
         {!st ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} h={104} />) : (
           <>

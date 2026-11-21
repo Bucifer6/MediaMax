@@ -670,7 +670,7 @@ export function BrandingStudio() {
     <div className="studio">
       <AdminHeader help="admin-branding"
         title="Branding studio"
-        subtitle="Everything here is served to every MediaMax client — web, iOS, Android and TV — and updates live."
+        subtitle="Everything here is served to every Kinora client — web, iOS, Android and TV — and updates live."
         actions={
           <>
             <label className="check-inline"><input type="checkbox" checked={livePreview} onChange={(e) => setLivePreview(e.target.checked)} /> Preview on whole app</label>

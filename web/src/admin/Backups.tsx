@@ -71,8 +71,8 @@ export function RestartPanel({ message }: { message: string }) {
       <Icon name={phase === 'stuck' ? 'alert' : 'refresh'} size={20} className={phase === 'restarting' ? 'spin' : ''} />
       <div className="restart-text">
         {phase === 'idle' && <><strong>Restart required.</strong> <span>{message}</span></>}
-        {phase === 'restarting' && <><strong>Restarting…</strong> <span>This page reloads once MediaMax is back.</span></>}
-        {phase === 'stuck' && <><strong>The server hasn’t come back yet.</strong> <span>MediaMax restarts itself only under Docker (with a restart policy) or systemd — start it manually if needed.</span></>}
+        {phase === 'restarting' && <><strong>Restarting…</strong> <span>This page reloads once Kinora is back.</span></>}
+        {phase === 'stuck' && <><strong>The server hasn’t come back yet.</strong> <span>Kinora restarts itself only under Docker (with a restart policy) or systemd — start it manually if needed.</span></>}
       </div>
       {phase === 'idle' && <button className="btn btn-primary" onClick={restart}><Icon name="refresh" size={16} /> Restart now</button>}
       {phase === 'restarting' && <Spinner size={20} />}
@@ -192,7 +192,7 @@ export function BackupsAdmin() {
     try {
       const r = t.kind === 'backup' ? await api.admin.restoreBackup(t.backup.id) : await api.admin.restoreUpload(t.file);
       if (r.restartRequired) setRestartNeeded(true);
-      toast.success('Restore staged — restart MediaMax to apply it');
+      toast.success('Restore staged — restart Kinora to apply it');
       backups.reload();
     } catch (e) {
       toast.error(e);
@@ -224,7 +224,7 @@ export function BackupsAdmin() {
           if (f) setRestoreTarget({ kind: 'file', file: f });
         }}
       />
-      {restartNeeded && <RestartPanel message="The restore is applied when MediaMax next starts." />}
+      {restartNeeded && <RestartPanel message="The restore is applied when Kinora next starts." />}
       {restoring && <div className="restart-banner"><Spinner size={18} /> <span>Uploading and checking the backup…</span></div>}
       {backups.loading && !backups.data ? <Skeleton h={200} /> : backups.error ? <ErrorState message={backups.error} onRetry={backups.reload} /> : !backups.data?.length ? (
         <EmptyState icon="database" title="No backups yet" message="Create one now, or turn on automatic backups below." />

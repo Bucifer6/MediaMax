@@ -67,7 +67,7 @@ export default function PairPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, claim?.requestId]);
 
-  const deepLink = secret.token ? `mediamax://pair?${new URLSearchParams({ c: secret.code, t: secret.token, s: location.origin }).toString()}` : null;
+  const deepLink = secret.token ? `kinora://pair?${new URLSearchParams({ c: secret.code, t: secret.token, s: location.origin }).toString()}` : null;
 
   return (
     <div className="phone-shell pair-page">

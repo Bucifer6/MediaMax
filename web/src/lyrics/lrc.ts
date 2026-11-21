@@ -2,7 +2,7 @@
  * LRC lyrics: parser / writer and timing lookups. Pure TypeScript, no imports, no DOM.
  *
  * Adapted from OpenDJ (MIT, github.com/Bucifer6/OpenDJ) — public/js/lyrics/lrc.js — with times in milliseconds
- * (MediaMax convention) instead of seconds.
+ * (Kinora convention) instead of seconds.
  *
  * The canonical copy lives in shared/src/lrc.ts; `node scripts/sync-types.mjs` copies it verbatim to
  * server/src/services/lrc.ts, web/src/lyrics/lrc.ts and apps/mobile/src/player/lrc.ts (a server test checks they match).
@@ -143,7 +143,7 @@ export function formatLrcTime(ms: number): string {
 }
 
 /** Lines → LRC text (enhanced word stamps when words are present). Times are written without [offset:]. */
-export function buildLrc(lines: LrcLine[], meta: Record<string, string> = {}, tool = 'MediaMax'): string {
+export function buildLrc(lines: LrcLine[], meta: Record<string, string> = {}, tool = 'Kinora'): string {
   const out: string[] = [];
   for (const k of ['ti', 'ar', 'al', 'au', 'length', 'by']) if (meta[k]) out.push(`[${k}:${meta[k]}]`);
   out.push(`[re:${tool}]`);

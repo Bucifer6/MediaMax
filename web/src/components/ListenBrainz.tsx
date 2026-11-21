@@ -37,7 +37,7 @@ export function ListenBrainzCard() {
     void save({ token: token.trim() || undefined, serverUrl: server ?? st?.serverUrl ?? null }, 'Connected to ListenBrainz');
   };
   const disconnect = async () => {
-    if (!(await confirm({ title: 'Disconnect ListenBrainz?', message: 'MediaMax forgets your token and stops sending listens. Listens waiting to be sent are dropped.', confirmLabel: 'Disconnect', danger: true }))) return;
+    if (!(await confirm({ title: 'Disconnect ListenBrainz?', message: 'Kinora forgets your token and stops sending listens. Listens waiting to be sent are dropped.', confirmLabel: 'Disconnect', danger: true }))) return;
     try {
       status.setData(await api.listenbrainz.disconnect());
       toast.success('ListenBrainz disconnected');
@@ -52,7 +52,7 @@ export function ListenBrainzCard() {
         <span className="service-logo lb-logo" aria-hidden="true">LB</span>
         <div>
           <h2>ListenBrainz</h2>
-          <p className="muted">Open-source listen history from the MetaBrainz Foundation. MediaMax sends what you play (with MusicBrainz ids) and shows your weekly playlists.</p>
+          <p className="muted">Open-source listen history from the MetaBrainz Foundation. Kinora sends what you play (with MusicBrainz ids) and shows your weekly playlists.</p>
         </div>
       </div>
       {status.loading && !st ? <Spinner size={18} /> : st?.connected ? (

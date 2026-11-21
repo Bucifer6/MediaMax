@@ -124,7 +124,7 @@ function Offline() {
         <BrandLogo height={40} />
         <div className="empty-icon" style={{ marginTop: 24 }}><Icon name="server" size={34} /></div>
         <h3>Can't reach the server</h3>
-        <p className="muted">MediaMax isn't responding right now. Check that the server is running and you're on the right network.</p>
+        <p className="muted">Kinora isn't responding right now. Check that the server is running and you're on the right network.</p>
         <button className="btn btn-primary" onClick={retryBoot}>
           <Icon name="refresh" size={16} /> Retry
         </button>

@@ -58,9 +58,9 @@ export function deviceInfo(): DeviceInfo {
 
 export function deviceHeaders(): Record<string, string> {
   return {
-    'X-MediaMax-Device-Id': getDeviceId(),
-    'X-MediaMax-Device-Name': getDeviceName(),
-    'X-MediaMax-Platform': PLATFORM,
-    'X-MediaMax-Version': APP_VERSION,
+    'X-Kinora-Device-Id': getDeviceId(),
+    'X-Kinora-Device-Name': getDeviceName(),
+    'X-Kinora-Platform': PLATFORM,
+    'X-Kinora-Version': APP_VERSION,
   };
 }

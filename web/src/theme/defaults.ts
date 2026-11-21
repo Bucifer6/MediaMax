@@ -4,25 +4,25 @@ import type { Branding, FeatureFlags, Theme, UserPreferences } from '@mediamax/s
 export const LUMEN_TEXT = "'Figtree Variable', 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 export const LUMEN_DISPLAY = "'Bricolage Grotesque Variable', 'Figtree Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
-/** Used until the server's branding arrives: the MediaMax brand theme (server/src/services/themes.ts). */
+/** Used until the server's branding arrives: the Kinora brand theme (server/src/services/themes.ts). */
 export const DEFAULT_THEME: Theme = {
   id: 'mediamax',
-  name: 'MediaMax',
+  name: 'Kinora',
   mode: 'dark',
   colors: {
-    primary: '#1FB6F5',
-    primaryText: '#04101F',
-    background: '#0A0F22',
-    surface: '#121936',
-    surfaceAlt: '#1A2247',
-    text: '#F2F5FF',
-    textMuted: '#9AA6CC',
-    accent: '#E040F0',
-    border: '#27315C',
+    primary: '#9198FF',
+    primaryText: '#0B0A1F',
+    background: '#0D0C1D',
+    surface: '#17152E',
+    surfaceAlt: '#211E3D',
+    text: '#F4F3FF',
+    textMuted: '#A6A3CC',
+    accent: '#FFA45C',
+    border: '#2E2A52',
     success: '#2FD07F',
     warning: '#F5B014',
     danger: '#FF5C7A',
-    overlay: '#0A0F22',
+    overlay: '#0D0C1D',
   },
   radius: 14,
   fontFamily: LUMEN_TEXT,
@@ -47,7 +47,7 @@ export const DEFAULT_FEATURES: FeatureFlags = {
 };
 
 export const DEFAULT_BRANDING: Branding = {
-  serverName: 'MediaMax',
+  serverName: 'Kinora',
   tagline: 'Your media. Everywhere.',
   logoUrl: null,
   logoWideUrl: null,
@@ -57,7 +57,7 @@ export const DEFAULT_BRANDING: Branding = {
   loginMessage: '',
   footerText: '',
   supportUrl: null,
-  splash: { backgroundColor: '#0A0F22', logoUrl: null },
+  splash: { backgroundColor: '#0D0C1D', logoUrl: null },
   tvBannerUrl: null,
   topShelfUrl: null,
   defaultThemeId: DEFAULT_THEME.id,

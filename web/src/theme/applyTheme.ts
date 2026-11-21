@@ -103,7 +103,7 @@ export function applyCustomCss(css: string) {
 }
 
 export function applyBrandingChrome(b: Branding) {
-  document.title = b.serverName || 'MediaMax';
+  document.title = b.serverName || 'Kinora';
   const href = b.faviconUrl || b.appIconUrl || b.logoUrl;
   let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (!link) {

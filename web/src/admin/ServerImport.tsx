@@ -26,12 +26,12 @@ const SOURCES: Record<ImportSource, {
 }> = {
   emby: {
     name: 'Emby', product: 'Emby Server 4.x', urlHint: 'For example http://192.168.1.20:8096 (add /emby if your server needs it).', placeholder: 'http://emby.local:8096',
-    keyLabel: 'API key', keyHelp: <>In Emby open <strong>Settings → Advanced → API Keys</strong> and create a key for MediaMax.</>,
+    keyLabel: 'API key', keyHelp: <>In Emby open <strong>Settings → Advanced → API Keys</strong> and create a key for Kinora.</>,
     favorites: true, disabled: true, history: 'Needs the Playback Reporting plugin; skipped without it.',
   },
   jellyfin: {
     name: 'Jellyfin', product: 'Jellyfin 10.8 or later', urlHint: 'For example http://192.168.1.20:8096.', placeholder: 'http://jellyfin.local:8096',
-    keyLabel: 'API key', keyHelp: <>In Jellyfin open <strong>Dashboard → API Keys</strong> and add a key for MediaMax.</>,
+    keyLabel: 'API key', keyHelp: <>In Jellyfin open <strong>Dashboard → API Keys</strong> and add a key for Kinora.</>,
     favorites: true, disabled: true, history: 'Needs the Playback Reporting plugin; skipped without it.',
   },
   plex: {
@@ -123,7 +123,7 @@ function ConnectionCard({ source, value, onSaved }: { source: ImportSource; valu
           <div key={i} className="row-gap">
             <input className="input grow" value={m.from} onChange={(e) => setMap(i, { from: e.target.value })} placeholder={`Path on ${S.name}`} aria-label={`Path on ${S.name}`} spellCheck={false} />
             <Icon name="next" size={16} />
-            <input className="input grow" value={m.to} onChange={(e) => setMap(i, { to: e.target.value })} placeholder="Path on MediaMax" aria-label="Path on MediaMax" spellCheck={false} />
+            <input className="input grow" value={m.to} onChange={(e) => setMap(i, { to: e.target.value })} placeholder="Path on Kinora" aria-label="Path on Kinora" spellCheck={false} />
             <button className="btn-icon" onClick={() => setF((x) => ({ ...x, pathMappings: x.pathMappings.filter((_, j) => j !== i) }))} aria-label="Remove mapping"><Icon name="trash" size={16} /></button>
           </div>
         ))}
@@ -193,7 +193,7 @@ function PreviewView({ p, selected, setSelected }: { p: ImportPreview; selected:
       <h3 className="form-section-title">Libraries</h3>
       <div className="table-wrap">
         <table className="table">
-          <thead><tr><th>{S.name} library</th><th>Folders</th><th>MediaMax library</th></tr></thead>
+          <thead><tr><th>{S.name} library</th><th>Folders</th><th>Kinora library</th></tr></thead>
           <tbody>
             {p.libraries.map((l) => (
               <tr key={l.sourceId}>
@@ -205,7 +205,7 @@ function PreviewView({ p, selected, setSelected }: { p: ImportPreview; selected:
           </tbody>
         </table>
       </div>
-      {p.libraries.some((l) => !l.libraryId) && <p className="muted">Users only get MediaMax libraries that match a {S.name} library they could see. Add a path mapping or rename a library to match, then preview again.</p>}
+      {p.libraries.some((l) => !l.libraryId) && <p className="muted">Users only get Kinora libraries that match a {S.name} library they could see. Add a path mapping or rename a library to match, then preview again.</p>}
 
       <h3 className="form-section-title">Users</h3>
       <div className="table-wrap">
@@ -253,8 +253,8 @@ function PreviewView({ p, selected, setSelected }: { p: ImportPreview; selected:
       </div>
       {p.unmatchedSamples.length > 0 && (
         <details className="settings-card">
-          <summary><strong>Some titles weren’t found in MediaMax</strong> <span className="muted">(examples)</span></summary>
-          <p className="muted">Usually the title isn’t in a MediaMax library yet, or {S.name}’s file paths need a path mapping. Unmatched items are skipped; run the import again after a library scan to pick them up.</p>
+          <summary><strong>Some titles weren’t found in Kinora</strong> <span className="muted">(examples)</span></summary>
+          <p className="muted">Usually the title isn’t in a Kinora library yet, or {S.name}’s file paths need a path mapping. Unmatched items are skipped; run the import again after a library scan to pick them up.</p>
           <ul>{p.unmatchedSamples.map((s) => <li key={s}>{s}</li>)}</ul>
         </details>
       )}
@@ -289,7 +289,7 @@ function ResultsView({ job }: { job: ImportJob }) {
       {job.notes.length > 0 && <ul className="muted">{job.notes.map((x) => <li key={x}>{x}</li>)}</ul>}
       {withLinks.length > 0 && (
         <p className="muted">
-          Send each person their link: it lets them choose a MediaMax password ({S.name} passwords can’t be copied). Links work once and expire {formatDate(withLinks[0].setPasswordExpiresAt)}.
+          Send each person their link: it lets them choose a Kinora password ({S.name} passwords can’t be copied). Links work once and expire {formatDate(withLinks[0].setPasswordExpiresAt)}.
           Treat them like passwords. Running the import again issues fresh links to anyone who hasn’t used theirs.
         </p>
       )}

@@ -11,7 +11,7 @@ import { Icon, type IconName } from './Icon';
 import { Badge, Modal, Spinner } from './ui';
 import { AiSubtitleOffer } from './AiSubtitleOffer';
 
-/** Downloaded subtitles are stored with a high index (2000+ data folder, 3000+ sidecars MediaMax wrote). */
+/** Downloaded subtitles are stored with a high index (2000+ data folder, 3000+ sidecars Kinora wrote). */
 export function isDownloadedSubtitle(s: Pick<SubtitleStream, 'index' | 'title'>): boolean {
   return s.index >= 2000 || !!s.title?.startsWith('OpenSubtitles');
 }
