@@ -14,10 +14,12 @@
  *   viewer     browse / search / item pages, video player (HLS, subtitles, audio tracks, quality, stats, resume),
  *              music player + lyrics, DJ, Live TV, My List, Discover → request → approval → notification, issues,
  *              help centre, profiles, settings, ListenBrainz (mock)
- *   tv         /?tv=1 at 1920×1080 with the D-pad only
+ *   tv         /?tv=1 at 1920×1080 with the D-pad only; Back on home asks "Press Back again to exit"
  *   phone      390×844: every main page without horizontal scrolling
  *   kids       kids profile & non-admin edge cases (admin deep links, request without permission, quota)
- *   errors     server stopped mid-session → offline state → recovers; 404 items; expired session → login?next=
+ *   errors     server stopped mid-session → offline state → recovers; reload while down → branded offline page
+ *              (service worker) → reconnects by itself; a new build replaces the worker and its cache;
+ *              expired session → login?next=
  *
  * Every page is watched for page errors, console errors and unexpected 4xx/5xx responses; a journey fails on any.
  * No outside network is needed: TMDB, Radarr, Sonarr, ListenBrainz, webhooks and the IPTV provider are local mocks.
@@ -43,6 +45,8 @@ import { startMock, XTREAM_USER, XTREAM_PASS } from './screenshots/lib/mock.mjs'
 import { client, waitFor, sleep } from './screenshots/lib/server.mjs';
 import { MOVIES, SHOWS } from './screenshots/lib/catalog.mjs';
 import { startServiceMocks, LB_TOKEN, ARR_KEY, DISCOVER_MOVIES } from './e2e/mocks.mjs';
+
+const EXIT_WINDOW_MS = 2000; // web/src/tv/backExit.ts
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -902,7 +906,10 @@ async function viewer() {
   });
 
   await step('resume position is saved', async () => {
-    await sleep(2000);
+    // The test film is only 90 s long and keeps playing through the steps above; pause it so a slow run can't
+    // carry it past 90 % (which correctly counts as watched) before we leave the player.
+    await page.evaluate(() => document.querySelectorAll('video').forEach((v) => v.pause()));
+    await sleep(1500);
     await showControls(page);
     await page.getByRole('button', { name: 'Back' }).first().click();
     await page.waitForURL((u) => !u.pathname.startsWith('/play'), { timeout: 10000 });
@@ -1196,15 +1203,53 @@ async function tv() {
     await remote(page, 'ColorF0Red', 403);
     await sleep(500);
     const t0 = (await videoState(page)).t;
-    for (const d of ['5']) await page.keyboard.press(d);
+    // Digits jump to 0–90 %: pick the one farthest from where playback is (it may have resumed near 50 %).
+    const dur = await page.evaluate(() => document.querySelector('video')?.duration || 0);
+    const digit = dur ? ['1', '5', '9'].sort((a, b) => Math.abs(Number(b) * dur / 10 - t0) - Math.abs(Number(a) * dur / 10 - t0))[0] : '5';
+    await page.keyboard.press(digit);
     await sleep(800);
     const t1 = (await videoState(page)).t;
-    assert(Math.abs(t1 - t0) > 5, `digit 5 did not jump (from ${t0.toFixed(1)} to ${t1.toFixed(1)})`);
+    assert(Math.abs(t1 - t0) > 5, `digit ${digit} did not jump (from ${t0.toFixed(1)} to ${t1.toFixed(1)})`);
     await shot(page, 'tv-player');
     await page.keyboard.press('Backspace');
     await page.waitForURL((u) => !u.pathname.startsWith('/play'), { timeout: 10000 });
     await page.keyboard.press('Backspace');
     await page.waitForURL((u) => u.pathname === '/', { timeout: 10000 });
+  });
+
+  await step('Back on home: "Press Back again to exit"; a second Back within 2 s exits (platform exit stubbed)', async () => {
+    await go(page, '/');
+    await page.locator('.row-title').first().waitFor();
+    // Stand in for the Samsung wrapper's exit API (web/src/tv/backExit.ts uses it when present).
+    await page.evaluate(() => {
+      window.__e2eExits = 0;
+      window.tizen = { application: { getCurrentApplication: () => ({ exit: () => { window.__e2eExits++; } }) } };
+    });
+    const exits = () => page.evaluate(() => window.__e2eExits);
+    const hint = page.locator('.toasts[role="status"] .toast', { hasText: 'Press Back again to exit' });
+    await page.keyboard.press('Backspace');
+    await hint.first().waitFor({ timeout: 3000 });
+    await shot(page, 'tv-back-to-exit');
+    assert(new URL(page.url()).pathname === '/', `first Back left home (now ${rel(page.url())})`);
+    assert((await exits()) === 0, 'first Back already exited');
+    await page.keyboard.press('Backspace');
+    await page.waitForFunction(() => window.__e2eExits === 1, null, { timeout: 2000 }).catch(() => undefined);
+    assert((await exits()) === 1, `second Back did not exit (exits=${await exits()})`);
+    // The hint goes away after ~2 s; a Back after that only shows it again.
+    await hint.first().waitFor({ state: 'detached', timeout: 4000 });
+    await page.keyboard.press('Backspace');
+    await hint.first().waitFor({ timeout: 3000 });
+    await sleep(EXIT_WINDOW_MS + 300);
+    await page.keyboard.press('Backspace');
+    assert((await exits()) === 1, 'a Back after the 2 s window exited instead of asking again');
+    assert(new URL(page.url()).pathname === '/', `Back on home navigated away (now ${rel(page.url())})`);
+    // Anywhere else Back still goes back exactly one page (and never shows the hint).
+    await page.evaluate(() => { delete window.tizen; });
+    await go(page, `/item/${S.movie('Neon Meridian').id}`);
+    await sleep(EXIT_WINDOW_MS + 300);
+    await page.keyboard.press('Backspace');
+    await page.waitForURL((u) => u.pathname === '/', { timeout: 10000 });
+    assert(!(await hint.count()), 'Back on an item page showed the exit hint');
   });
 
   await step('no focusable element on home is unreachable by D-pad', async () => {
@@ -1401,6 +1446,7 @@ async function kids() {
       const dlg = p.locator('.modal');
       const go2 = dlg.getByRole('button', { name: /^Request/ }).last();
       await go2.waitFor();
+      await settle(p, 300); // the dialog loads the quota and may disable the button
       if (await go2.isDisabled()) break;
       await go2.click();
       await sleep(1200);
@@ -1442,6 +1488,75 @@ async function errors() {
   });
 
   if (!restarted) await S.server.start();
+  restarted = true;
+  await step('reload while the server is down → branded offline page (service worker); reconnects by itself', async () => {
+    const p = await open({ token: S.viewer.token, label: 'offline' });
+    await go(p, '/');
+    await p.locator('.row-title').first().waitFor();
+    await p.waitForFunction(() => !!navigator.serviceWorker?.controller, null, { timeout: 20000 });
+    const name = (await S.viewer.get('/branding')).serverName || 'MediaMax';
+    current.expect(/.*/); // everything fails while the server is down
+    restarted = false;
+    await S.server.stop();
+    await p.reload({ waitUntil: 'load' });
+    await p.getByRole('heading', { name: /Server offline/ }).waitFor({ timeout: 10000 });
+    assert((await p.locator('#name').textContent()) === name, `offline page shows "${await p.locator('#name').textContent()}", expected the server name "${name}"`);
+    assert(await p.locator('#status[role="status"]').count(), 'retry status is not a live region');
+    assert(await p.locator('#logo img').count(), 'no logo on the offline page');
+    await shot(p, 'offline-page');
+    await S.server.start();
+    restarted = true;
+    // No click: the offline page polls the server and reloads into the app when it answers.
+    await p.locator('.row-title').first().waitFor({ timeout: 30000 });
+    assert(!(await p.getByRole('heading', { name: /Server offline/ }).count()), 'still on the offline page');
+  });
+
+  if (!restarted) await S.server.start();
+  await step('service worker: caches only the app shell, versioned per build; a new build replaces the old one', async () => {
+    const p = await open({ token: S.viewer.token, label: 'sw' });
+    await go(p, '/');
+    await p.waitForFunction(() => !!navigator.serviceWorker?.controller, null, { timeout: 20000 });
+    const swFile = path.join(repo, 'web/dist/sw.js');
+    const original = fs.readFileSync(swFile, 'utf8');
+    const v1 = /const VERSION = "([0-9a-f]+)"/.exec(original)[1];
+    const inventory = () => p.evaluate(async () => {
+      const out = {};
+      for (const k of await caches.keys()) out[k] = (await (await caches.open(k)).keys()).map((r) => new URL(r.url).pathname);
+      return out;
+    });
+    await p.waitForFunction(async (v) => (await caches.keys()).includes(`mm-shell-${v}`), v1, { timeout: 10000, polling: 250 });
+    const before = await inventory();
+    assert(JSON.stringify(Object.keys(before)) === JSON.stringify([`mm-shell-${v1}`]), `caches: ${JSON.stringify(Object.keys(before))}`);
+    const files = Object.values(before).flat();
+    const bad = files.filter((f) => f.startsWith('/api/') || f === '/' || f === '/index.html' || !/^\/(assets\/|brand\/|offline\.(html|js)$|favicon|apple-touch-icon|icon-)/.test(f));
+    assert(!bad.length, `cached outside the app shell: ${bad.join(', ')}`);
+    // "Deploy" a new build: same files, new version. The open app picks it up and the old cache is deleted.
+    const v2 = 'e2e' + Date.now().toString(16).slice(-9);
+    try {
+      fs.writeFileSync(swFile, original.replace(`const VERSION = "${v1}"`, `const VERSION = "${v2}"`));
+      await p.reload({ waitUntil: 'load' });
+      await p.waitForFunction(async (v) => {
+        const keys = await caches.keys();
+        return keys.length === 1 && keys[0] === `mm-shell-${v}`;
+      }, v2, { timeout: 20000, polling: 250 }).catch(async () => { throw new Error(`old cache not replaced: ${JSON.stringify(Object.keys(await inventory()))}`); });
+      // The new worker claims the open page right after deleting the old cache.
+      const controller = () => p.evaluate(() => new Promise((res) => {
+        const ch = new MessageChannel();
+        ch.port1.onmessage = (e) => res(e.data);
+        navigator.serviceWorker.controller?.postMessage('version', [ch.port2]);
+        setTimeout(() => res(null), 2000);
+      }));
+      let version = await controller();
+      for (let i = 0; i < 20 && version !== v2; i++) {
+        await sleep(250);
+        version = await controller();
+      }
+      assert(version === v2, `page is controlled by worker ${version}, expected ${v2}`);
+    } finally {
+      fs.writeFileSync(swFile, original);
+    }
+  });
+
   await step('expired session → login with return path, then back', async () => {
     const p = await open({ label: 'expired' });
     await login(p, 'viewer', PASS.viewer);

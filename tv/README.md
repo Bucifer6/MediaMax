@@ -5,7 +5,7 @@ These are thin wrapper apps. On first launch they ask for the MediaMax server ad
 TV mode (`web/src/tv/spatial.ts` and `web/src/styles/tv.css`) works in any browser on a TV or set-top box, not just these wrappers. Open `http://<server>:8484/?tv=1` once and it is remembered. It provides:
 
 - **D-pad navigation:** the arrow keys move focus to the nearest item in that direction, and OK activates it.
-- **Back key:** closes the open dialog, or goes back a page.
+- **Back key:** closes the open dialog, or goes back a page. On the home screen the first Back shows "Press Back again to exit" for 2 s, and a second Back in that time leaves the app (Tizen: `tizen.application.getCurrentApplication().exit()`; webOS: `webOS.platformBack()` or `window.close()`; in a plain TV browser it goes back a page). See `web/src/tv/backExit.ts`.
 - **Media keys:** play/pause, stop, fast-forward and rewind work in every player.
 - **10-foot styling:** larger text, strong focus rings, focus-zoomed posters, and an overscan-safe margin.
 
@@ -59,7 +59,7 @@ HDMI-CEC (a soundbar or receiver remote) or a Bluetooth remote:
 | Info | Info overlay (playback method, HDR format, why it transcodes) |
 | Guide | TV guide |
 | Red / Green / Yellow / Blue | Subtitles / audio track / skip intro, credits or ad break / info (Live TV: channel list) |
-| Back (Tizen 10009, webOS 461) | Close a menu, leave the player, or go back |
+| Back (Tizen 10009, webOS 461) | Close a menu, leave the player, or go back. On Home: press twice to exit |
 
 Tizen sends media, channel, colour, number, Info and Guide keys only to apps that register them. The wrapper
 registers them with `tizen.tvinputdevice.registerKey` before it opens the server's web app. Registration belongs to
@@ -90,4 +90,5 @@ keys through the `mediamax-media` module (`apps/mobile/modules/mediamax-media`).
 - **Samsung native player (AVPlay):** not included. It could be added later only as an opt-in, per-device fallback
   that is off by default.
 - **Changing the server:** the wrapper reconnects to the saved server on launch. To switch servers, clear the app's data on the TV, or add `?change=1` to the wrapper URL when testing in a browser.
+- **Offline page:** browsers get a small service worker that shows a branded "Server offline" page on a reload while the server is down. It is not registered inside these wrapper apps (their start page already handles an unreachable server at launch).
 - **HTTPS:** a server behind HTTPS with a valid certificate works the same way. Self-signed certificates are rejected by both TV browsers.

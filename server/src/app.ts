@@ -150,8 +150,13 @@ export async function buildApp(): Promise<FastifyInstance> {
       }
       const file = path.resolve(config.webDir, '.' + rel);
       if (rel !== '/' && file.startsWith(config.webDir + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) {
-        reply.header('Cache-Control', rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600');
-        return reply.sendFile(path.relative(config.webDir, file));
+        // The service worker and its offline page change with every build: always revalidated, so a new build is
+        // picked up on the next load (web/sw/).
+        const fresh = rel === '/sw.js' || rel === '/offline.html' || rel === '/offline.js';
+        reply.header('Cache-Control', rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : fresh ? 'no-cache' : 'public, max-age=3600');
+        if (rel === '/offline.html') reply.header('Content-Security-Policy', webAppCsp(req.host));
+        // cacheControl: false keeps the header above (@fastify/static would replace it with max-age=0).
+        return reply.sendFile(path.relative(config.webDir, file), { cacheControl: false });
       }
       // Unknown asset paths must 404 (not return HTML), so the client can detect stale chunks.
       if (rel.startsWith('/assets/')) return reply.status(404).send('Not found');

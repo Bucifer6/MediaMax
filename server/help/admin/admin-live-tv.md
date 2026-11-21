@@ -37,6 +37,8 @@ Add sources under **Admin → Live TV sources → Add source**.
 
 Users also need the **DVR recording** permission (**Admin → Users**).
 
+If the server restarts during a recording, it carries on recording into a second part when it is back, and joins the parts into one file when the programme ends. The recording then says how long it was interrupted for. If the parts can't be joined, nothing is deleted: the extra part is kept next to the recording, listed with it, and deleted when you delete the recording.
+
 ## Docker and tuners
 
 HDHomeRun and SAT>IP discovery use broadcast on the local network, which doesn't cross Docker's default bridge network. Use host networking or add the tuner by address. Next: set up the [TV guide](help:admin-tv-guide).

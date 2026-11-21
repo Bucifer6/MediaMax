@@ -361,4 +361,22 @@ test('the web app is served with a Content-Security-Policy', async () => {
   assert.ok(!webAppCsp("evil; script-src *").includes('script-src *'));
 });
 
+test('the service worker and offline page are always revalidated; the CSP allows the worker', async () => {
+  fs.writeFileSync(path.join(webDir, 'sw.js'), '/* sw */');
+  fs.writeFileSync(path.join(webDir, 'offline.html'), '<!doctype html><title>Offline</title>');
+  fs.mkdirSync(path.join(webDir, 'assets'), { recursive: true });
+  fs.writeFileSync(path.join(webDir, 'assets', 'index-abc123.js'), '/* app */');
+  const sw = await app.inject({ url: '/sw.js' });
+  assert.equal(sw.statusCode, 200);
+  assert.equal(sw.headers['cache-control'], 'no-cache');
+  assert.match(String(sw.headers['content-type']), /javascript/);
+  const page = await app.inject({ url: '/offline.html', headers: { host: 'media.example.com' } });
+  assert.equal(page.headers['cache-control'], 'no-cache');
+  assert.equal(page.headers['content-security-policy'], webAppCsp('media.example.com'));
+  const asset = await app.inject({ url: '/assets/index-abc123.js' });
+  assert.match(String(asset.headers['cache-control']), /immutable/);
+  // A same-origin worker script is allowed by the CSP (worker-src 'self').
+  assert.match(webAppCsp('media.example.com'), /worker-src 'self'/);
+});
+
 void updateUser;

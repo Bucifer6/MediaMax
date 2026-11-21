@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { errorMessage } from '../api/client';
 import { Icon } from '../components/Icon';
 
@@ -9,7 +9,7 @@ interface Toast {
   message: string;
 }
 interface ToastApi {
-  show: (message: string, kind?: Kind) => void;
+  show: (message: string, kind?: Kind, ms?: number) => void;
   success: (message: string) => void;
   error: (e: unknown) => void;
 }
@@ -21,13 +21,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const seq = useRef(0);
   const dismiss = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
   const show = useCallback(
-    (message: string, kind: Kind = 'info') => {
+    (message: string, kind: Kind = 'info', ms?: number) => {
       const id = ++seq.current;
       setToasts((t) => [...t.filter((x) => x.message !== message).slice(-3), { id, kind, message }]);
-      window.setTimeout(() => dismiss(id), kind === 'error' ? 6000 : 3500);
+      window.setTimeout(() => dismiss(id), ms ?? (kind === 'error' ? 6000 : 3500));
     },
     [dismiss],
   );
+  // Code outside React (TV mode's "Press Back again to exit") raises toasts with a `mm:toast` window event.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ message?: string; kind?: Kind; ms?: number }>).detail;
+      if (d?.message) show(d.message, d.kind ?? 'info', d.ms);
+    };
+    window.addEventListener('mm:toast', on);
+    return () => window.removeEventListener('mm:toast', on);
+  }, [show]);
   const api = useMemo<ToastApi>(
     () => ({ show, success: (m) => show(m, 'success'), error: (e) => show(errorMessage(e), 'error') }),
     [show],

@@ -7,6 +7,7 @@ import { config } from '../config.js';
 import { stableId } from '../util/ids.js';
 import { nowIso, parseJson, pool, sortTitle } from '../util/misc.js';
 import { logger } from '../util/log.js';
+import { displayName, isValidUtf8Name } from '../util/fsnames.js';
 import { probe, normLang, type ProbeResult } from './probe.js';
 import { registerImage } from './images.js';
 import { readNfo, type NfoData } from './metadata/nfo.js';
@@ -37,24 +38,67 @@ interface FileEntry {
   mtime: number;
 }
 
-function walk(root: string, accept: (e: string) => boolean): FileEntry[] {
+/** A file (or a folder of media files) left out of a scan because its name is not valid UTF-8. */
+export interface SkippedName {
+  /** Printable path: invalid bytes shown as \xNN. */
+  path: string;
+  /** Media files inside, for a skipped folder. */
+  files?: number;
+}
+
+const IGNORED_NAMES = new Set(['@eaDir', '#recycle', '$RECYCLE.BIN']);
+const isIgnoredName = (n: string) => n.startsWith('.') || IGNORED_NAMES.has(n);
+
+/** Count media files below a folder whose own name can't be used (walked by raw bytes). */
+function countMediaBelow(dir: Buffer, accept: (e: string) => boolean, depth = 0): number {
+  if (depth > 20) return 0;
+  let entries: fs.Dirent<Buffer>[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true, encoding: 'buffer' });
+  } catch {
+    return 0;
+  }
+  let n = 0;
+  for (const e of entries) {
+    const name = e.name.toString('utf8');
+    if (isIgnoredName(name)) continue;
+    const p = Buffer.concat([dir, Buffer.from(path.sep), e.name]);
+    if (e.isDirectory() || (e.isSymbolicLink() && safeIsDir(p))) n += countMediaBelow(p, accept, depth + 1);
+    else if (accept(ext(name))) n++;
+  }
+  return n;
+}
+
+function walk(root: string, accept: (e: string) => boolean, skipped: SkippedName[] = []): FileEntry[] {
   const out: FileEntry[] = [];
   const stack = [root];
   while (stack.length) {
     const dir = stack.pop()!;
-    let entries: fs.Dirent[];
+    let entries: fs.Dirent<Buffer>[];
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
+      // Raw names: a string readdir silently turns legacy-codepage bytes into U+FFFD, giving paths that don't exist.
+      entries = fs.readdirSync(dir, { withFileTypes: true, encoding: 'buffer' });
     } catch (e) {
       log.warn(`Cannot read ${dir}: ${(e as Error).message}`);
       continue;
     }
-    if (entries.some((e) => e.name === '.mediamaxignore' || e.name === '.plexignore' || e.name === '.ignore')) continue;
+    if (entries.some((e) => ['.mediamaxignore', '.plexignore', '.ignore'].includes(e.name.toString('utf8')))) continue;
     for (const e of entries) {
-      if (e.name.startsWith('.') || e.name === '@eaDir' || e.name === '#recycle' || e.name === '$RECYCLE.BIN') continue;
-      const p = path.join(dir, e.name);
+      const raw = e.name;
+      const lossy = raw.toString('utf8');
+      if (isIgnoredName(lossy)) continue;
+      if (!isValidUtf8Name(raw)) {
+        const rawPath = Buffer.concat([Buffer.from(dir + path.sep), raw]);
+        const shown = path.join(dir, displayName(raw));
+        if (e.isDirectory() || (e.isSymbolicLink() && safeIsDir(rawPath))) {
+          const files = countMediaBelow(rawPath, accept);
+          if (files) skipped.push({ path: shown + path.sep, files });
+        } else if (accept(ext(lossy))) skipped.push({ path: shown });
+        continue;
+      }
+      const p = path.join(dir, lossy);
       if (e.isDirectory() || (e.isSymbolicLink() && safeIsDir(p))) stack.push(p);
-      else if (accept(ext(e.name))) {
+      else if (accept(ext(lossy))) {
         try {
           const st = fs.statSync(p);
           out.push({ path: p, rel: path.relative(root, p), root, size: st.size, mtime: Math.floor(st.mtimeMs) });
@@ -67,7 +111,17 @@ function walk(root: string, accept: (e: string) => boolean): FileEntry[] {
   return out;
 }
 
-function safeIsDir(p: string) {
+/** Warn about skipped names without flooding the log: the first few one by one, then a summary. */
+function logSkippedNames(libName: string, skipped: SkippedName[]) {
+  if (!skipped.length) return;
+  const MAX = 10;
+  for (const s of skipped.slice(0, MAX)) {
+    log.warn(`Library "${libName}": skipped ${s.files ? `folder (${s.files} media file${s.files === 1 ? '' : 's'})` : 'file'} with a name that is not valid UTF-8 (legacy character set?) - rename it to import: ${s.path}`);
+  }
+  if (skipped.length > MAX) log.warn(`Library "${libName}": ...and ${skipped.length - MAX} more file(s)/folder(s) with names that are not valid UTF-8 (listed under Admin > Libraries)`);
+}
+
+function safeIsDir(p: string | Buffer) {
   try {
     return fs.statSync(p).isDirectory();
   } catch {
@@ -75,10 +129,15 @@ function safeIsDir(p: string) {
   }
 }
 
+/** Entry names of a folder that can be used as paths (names that are not valid UTF-8 are left out; see walk()). */
+function usableNames(dir: string): string[] {
+  return fs.readdirSync(dir, { encoding: 'buffer' }).filter(isValidUtf8Name).map((b) => b.toString('utf8'));
+}
+
 function findFile(dir: string, names: string[]): string | null {
   let files: string[];
   try {
-    files = fs.readdirSync(dir);
+    files = usableNames(dir);
   } catch {
     return null;
   }
@@ -152,12 +211,12 @@ function sidecarSubs(videoPath: string): SubtitleStream[] {
   const base = stripExt(path.basename(videoPath));
   let files: string[] = [];
   try {
-    files = fs.readdirSync(dir);
+    files = usableNames(dir);
   } catch {
     return [];
   }
   const subsDirs = ['subs', 'subtitles', 'Subs', 'Subtitles'].map((d) => path.join(dir, d)).filter(safeIsDir);
-  const candidates = [...files.map((f) => path.join(dir, f)), ...subsDirs.flatMap((d) => fs.readdirSync(d).map((f) => path.join(d, f)))];
+  const candidates = [...files.map((f) => path.join(dir, f)), ...subsDirs.flatMap((d) => usableNames(d).map((f) => path.join(d, f)))];
   const out: (SubtitleStream & { path: string })[] = [];
   let n = 0;
   for (const p of candidates) {
@@ -643,6 +702,8 @@ async function scanFlat(ctx: ScanCtx, files: FileEntry[], type: 'photo' | 'video
 /* ------------------------------ public ----------------------------- */
 
 const scanning = new Map<string, Promise<void>>();
+/** Skipped names kept per library for the admin page (the count is always exact). */
+const MAX_SKIPPED_LISTED = 200;
 export const isScanning = (libId: string) => scanning.has(libId);
 
 const ACCEPT: Record<string, (e: string) => boolean> = {
@@ -686,7 +747,11 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     return true;
   });
   const accept = ACCEPT[type] ?? ((e: string) => VIDEO_EXT.has(e));
-  const allFiles = paths.flatMap((root) => walk(root, accept));
+  const skipped: SkippedName[] = [];
+  const allFiles = paths.flatMap((root) => walk(root, accept, skipped));
+  logSkippedNames(lib.name, skipped);
+  // Kept with the library (like last_scan_at) so the admin page can show it after a restart.
+  db.run('UPDATE libraries SET skipped_names = ? WHERE id = ?', skipped.length ? JSON.stringify({ count: skipped.length, paths: skipped.slice(0, MAX_SKIPPED_LISTED) }) : null, libId);
   const files = allFiles.filter((f) => type === 'photos' || type === 'music' || type === 'audiobooks' || !isExtra(f.rel));
   const extraFiles = type === 'movies' || type === 'shows' ? allFiles.filter((f) => isExtra(f.rel)) : [];
   let lastEmit = 0;
@@ -772,6 +837,6 @@ export function toLibrary(r: Row): Library {
     `SELECT COUNT(*) n FROM items WHERE library_id = ? AND type IN ('movie','show','artist','photo','video','audiobook','podcast')`, r.id)!.n;
   return {
     id: r.id, name: r.name, type: r.type, paths: parseJson(r.paths, []), sourceId: r.source_id ?? null, itemCount: count,
-    lastScanAt: r.last_scan_at ?? null, scanning: isScanning(r.id), fetchMetadata: !!r.fetch_metadata, sortOrder: r.sort_order, createdAt: r.created_at,
+    lastScanAt: r.last_scan_at ?? null, scanning: isScanning(r.id), skippedNames: parseJson<Library['skippedNames']>(r.skipped_names, null), fetchMetadata: !!r.fetch_metadata, sortOrder: r.sort_order, createdAt: r.created_at,
   };
 }

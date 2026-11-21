@@ -488,6 +488,13 @@ const MIGRATIONS: string[] = [
     offset_ms INTEGER NOT NULL, PRIMARY KEY (user_id, item_id)
   );
   `,
+  /* Files a library scan skipped because their names aren't valid UTF-8; recordings resumed after a restart:
+     parts recorded so far, the time lost between them, and parts kept separately when joining them failed */ `
+  ALTER TABLE libraries ADD COLUMN skipped_names TEXT;
+  ALTER TABLE recordings ADD COLUMN parts TEXT;
+  ALTER TABLE recordings ADD COLUMN gap_seconds INTEGER;
+  ALTER TABLE recordings ADD COLUMN leftover_parts TEXT;
+  `,
 ];
 
 function migrate(db: Database) {

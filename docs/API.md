@@ -57,7 +57,7 @@ the WebSocket emits `branding.updated`.
 ## Libraries
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| GET 🔑 | `/libraries` | | `Library[]` (only those the user may see) |
+| GET 🔑 | `/libraries` | | `Library[]` (only those the user may see; admins also get `skippedNames`: files the last scan skipped because their names aren't valid UTF-8, `{ count, paths: [{ path, files? }] }` capped at 200, invalid bytes shown as `\xNN`) |
 | POST 🛡️ | `/libraries` | `CreateLibraryRequest` | `Library` |
 | PATCH 🛡️ | `/libraries/:id` | `UpdateLibraryRequest` | `Library` |
 | DELETE 🛡️ | `/libraries/:id` | | `{ ok: true }` |
@@ -168,7 +168,7 @@ Xtream VOD & series are imported into virtual libraries (`iptv-movies`, `iptv-sh
 browse, search, resume and play exactly like local media through `/items` and `/playback`.
 
 ## DVR
-`GET /dvr/recordings?status=` → `Recording[]` · `POST /dvr/recordings` `CreateRecordingRequest` → `Recording` · `DELETE /dvr/recordings/:id` (cancel or delete) · `GET /dvr/rules` → `RecordingRule[]` · `POST /dvr/rules` · `PATCH /dvr/rules/:id` · `DELETE /dvr/rules/:id`.
+`GET /dvr/recordings?status=` → `Recording[]` (a recording resumed after a server restart is joined into one file when it ends: `gapSeconds` is the time lost; `leftoverParts` lists parts that could not be joined, kept on disk and deleted with the recording) · `POST /dvr/recordings` `CreateRecordingRequest` → `Recording` · `DELETE /dvr/recordings/:id` (cancel or delete) · `GET /dvr/rules` → `RecordingRule[]` · `POST /dvr/rules` · `PATCH /dvr/rules/:id` · `DELETE /dvr/rules/:id`.
 
 ## Admin
 * `GET/PUT /settings` 🛡️ `ServerSettings`
