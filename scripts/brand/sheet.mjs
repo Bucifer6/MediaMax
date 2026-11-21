@@ -2,7 +2,9 @@
 /**
  * Render a one-page brand sheet (every asset at real sizes, icons under the platform masks) for review.
  *
- *   node scripts/brand/sheet.mjs out.png [--before <dir with the previous kit's PNGs> --compare out2.png]
+ *   node scripts/brand/sheet.mjs out.png
+ *
+ * Also writes branding/kinora/png/icon-sizes.png: the app icon and the mark at launcher, toolbar and favicon sizes.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,9 +15,8 @@ const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
-const B = path.join(repo, 'branding/mediamax');
+const B = path.join(repo, 'branding/kinora');
 const out = path.resolve(process.argv[2] ?? 'brand-sheet.png');
-const arg = (k) => (process.argv.includes(k) ? process.argv[process.argv.indexOf(k) + 1] : null);
 
 const uri = (file) => {
   const p = path.isAbsolute(file) ? file : path.join(B, file);
@@ -30,7 +31,7 @@ h2{font-size:14px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
 .row{display:flex;gap:22px;align-items:flex-end;flex-wrap:wrap}
 .cell{display:flex;flex-direction:column;align-items:center;gap:6px}
 .cell small{color:#8d97b8}
-.dark{background:#0A0F22;padding:16px;border-radius:10px}
+.dark{background:#0D0C1D;padding:16px;border-radius:10px}
 .light{background:#ffffff;padding:16px;border-radius:10px}
 .pix{image-rendering:pixelated}
 .ios{border-radius:22.37%;overflow:hidden}
@@ -48,8 +49,8 @@ const html = `<!doctype html><style>${css}</style>
 <div class="row">
   ${cell(`<div class="dark">${img(uri('mark.svg'), 340)}</div>`, 'mark.svg on dark')}
   ${cell(`<div class="light">${img(uri('mark.svg'), 340)}</div>`, 'mark.svg on white')}
-  ${cell(`<div class="dark row" style="align-items:flex-end">${[16, 32, 48].map((s) => img(png(`branding/mediamax/png/mark-simple-${s}.png`), s, s)).join('')}${img(uri('mark.svg'), 96)}</div>`, 'simplified 16 / 32 / 48 · full 96')}
-  ${cell(`<div class="light row" style="align-items:flex-end">${[16, 32, 48].map((s) => img(png(`branding/mediamax/png/mark-simple-${s}.png`), s, s)).join('')}${img(uri('mark.svg'), 96)}</div>`, 'on white')}
+  ${cell(`<div class="dark row" style="align-items:flex-end">${[16, 32, 48].map((s) => img(png(`branding/kinora/png/mark-simple-${s}.png`), s, s)).join('')}${img(uri('mark.svg'), 96)}</div>`, 'simplified 16 / 32 / 48 · full 96')}
+  ${cell(`<div class="light row" style="align-items:flex-end">${[16, 32, 48].map((s) => img(png(`branding/kinora/png/mark-simple-${s}.png`), s, s)).join('')}${img(uri('mark.svg'), 96)}</div>`, 'on white')}
   ${cell(`<div class="dark row" style="align-items:flex-end">${img(png('web/public/favicon-16.png'), 16, 16)}${img(png('web/public/favicon-32.png'), 32, 32)}${img(png('web/public/favicon-32.png'), 128, 128, 'pix')}</div>`, 'favicon 16 / 32 / 32 zoomed')}
 </div>
 <h2>Single colour</h2>
@@ -74,7 +75,7 @@ const html = `<!doctype html><style>${css}</style>
 <h2>Wordmarks</h2>
 <div class="row">
   ${cell(`<div class="dark">${img(uri('wordmark-dark.svg'), 480)}</div>`, 'wordmark-dark')}
-  ${cell(`<div class="light">${img(uri('wordmark-light.svg'), 480)}</div>`, 'wordmark-light ("Max" #0891B2 → #2362FA)')}
+  ${cell(`<div class="light">${img(uri('wordmark-light.svg'), 480)}</div>`, 'wordmark-light')}
   ${cell(`<div class="dark">${img(uri('wordmark-tagline-dark.svg'), 480)}</div>`, 'with tagline')}
   ${cell(`<div class="light">${img(uri('wordmark-tagline-light.svg'), 480)}</div>`, 'with tagline (light)')}
   ${cell(`<div class="dark">${img(uri('wordmark-dark.svg'), 160)}</div>`, 'header size')}
@@ -93,6 +94,9 @@ const html = `<!doctype html><style>${css}</style>
   ${cell(img(png('apps/mobile/assets/tv/appletv-topshelfwide-2320x720.png'), 700), 'Apple TV top shelf wide')}
   ${cell(img(png('tv/shared/brand/icon-130.png'), 130, 130), 'webOS largeIcon 130')}
   ${cell(img(png('tv/shared/brand/icon-80.png'), 80, 80), 'webOS icon 80')}
+  ${cell(img(png('apps/roku/images/icon_focus_fhd.png'), 336, 210), 'Roku focus icon FHD 336×210')}
+  ${cell(img(png('apps/roku/images/spinner.png'), 48, 48), 'Roku spinner')}
+  ${cell(img(png('branding/kinora/png/store/play-feature-graphic-1024x500.png'), 410, 200), 'Play feature graphic 1024×500')}
 </div>`;
 
 const browser = await chromium.launch();
@@ -101,22 +105,13 @@ await page.setContent(html);
 await page.waitForTimeout(300);
 await page.screenshot({ path: out, fullPage: true });
 
-const before = arg('--before');
-const compare = arg('--compare');
-if (before && compare) {
-  const b = (f) => uri(path.join(before, f));
-  const cmp = `<!doctype html><style>${css} .grid{display:grid;grid-template-columns:160px 1fr 1fr;gap:18px;align-items:center} .grid>b{color:#fff;font-size:15px}</style>
-  <div class="grid">
-    <span></span><b>Before (supplied kit)</b><b>After (redrawn)</b>
-    <span>App icon (iOS mask)</span><div class="row">${img(b('MediaMax_App_Icon_Dark_1024.png'), 300, 300, 'ios')}${img(b('MediaMax_App_Icon_Light_1024.png'), 300, 300, 'ios')}</div><div class="row">${img(uri('app-icon-dark.svg'), 300, 300, 'ios')}${img(uri('app-icon-light.svg'), 300, 300, 'ios')}</div>
-    <span>Android round mask</span><div class="row">${img(b('MediaMax_App_Icon_Dark_1024.png'), 200, 200, 'circle')}</div><div class="row"><div class="adaptive circle" style="width:200px;height:200px"><img src="${png('apps/mobile/assets/android-icon-background.png')}" style="inset:-25px;width:250px;height:250px"><img src="${png('apps/mobile/assets/android-icon-foreground.png')}" style="inset:-25px;width:250px;height:250px"></div></div>
-    <span>Wordmark on dark</span><div class="dark">${img(b('MediaMax_Wordmark_Dark_Transparent_1510.png'), 560)}</div><div class="dark">${img(uri('wordmark-tagline-dark.svg'), 560)}</div>
-    <span>Wordmark on white</span><div class="light">${img(b('MediaMax_Wordmark_Light_Transparent_1510.png'), 560)}</div><div class="light">${img(uri('wordmark-tagline-light.svg'), 560)}</div>
-    <span>32 px</span><div class="dark row">${img(b('MediaMax_Icon_Transparent_512.png'), 32, 32)}${img(b('MediaMax_Icon_Transparent_512.png'), 16, 16)}</div><div class="dark row">${img(png('branding/mediamax/png/mark-simple-32.png'), 32, 32)}${img(png('branding/mediamax/png/mark-simple-16.png'), 16, 16)}</div>
-  </div>`;
-  await page.setContent(cmp);
+{
+  const sizes = [256, 128, 64, 48, 32, 24, 16];
+  const row = (bg, src, cls = '') => `<div style="background:${bg};padding:20px;display:flex;gap:20px;align-items:flex-end">${sizes.map((s) => `<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><img class="${cls}" src="${src}" width="${s}" height="${s}"><small style="color:#8d97b8;font:11px system-ui">${s}</small></div>`).join('')}</div>`;
+  await page.setViewportSize({ width: 900, height: 400 });
+  await page.setContent(`<!doctype html><style>${css} body{width:auto;padding:0;display:inline-block} .ios{border-radius:22.37%}</style>${row('#0D0C1D', uri('app-icon-dark.svg'), 'ios')}${row('#ffffff', uri('app-icon-light.svg'), 'ios')}${row('#0D0C1D', uri('favicon.svg'))}${row('#ffffff', uri('mark-simple.svg'))}`);
   await page.waitForTimeout(300);
-  await page.screenshot({ path: path.resolve(compare), fullPage: true });
+  await page.locator('body').screenshot({ path: path.join(B, 'png/icon-sizes.png') });
 }
 await browser.close();
-console.log(`Wrote ${out}${compare ? ` and ${compare}` : ''}`);
+console.log(`Wrote ${out}`);

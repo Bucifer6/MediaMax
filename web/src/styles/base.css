@@ -1,5 +1,5 @@
 /* ==========================================================================
-   MediaMax web — base. All colours come from theme variables set at runtime
+   Kinora web — base. All colours come from theme variables set at runtime
    by src/theme/applyTheme.ts (from the server's Branding.themes).
    ========================================================================== */
 :root {
@@ -21,7 +21,8 @@
   --radius-lg: 16px;
   --poster-radius: 10px;
   --card-w: var(--card-w-theme, 164px);
-  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font: 'Figtree Variable', 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', var(--font);
 
   /* Derived tokens */
   --c-primary-soft: color-mix(in srgb, var(--c-primary) 16%, transparent);
@@ -35,8 +36,32 @@
   --shadow: 0 10px 30px rgb(0 0 0 / 0.28);
   --shadow-lg: 0 24px 60px rgb(0 0 0 / 0.45);
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --sidebar-w: 240px;
-  --topbar-h: 64px;
+
+  /* Lumen motion: durations and curves. Transform / opacity only; see docs/DESIGN.md. */
+  --dur-1: 120ms;   /* press, hover colour */
+  --dur-2: 200ms;   /* small state changes */
+  --dur-3: 320ms;   /* panels, cards, peek */
+  --dur-4: 560ms;   /* page-level entrances */
+  --dur-light: 1400ms; /* ambient light cross-fades */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --stagger: 55ms;
+
+  /* Lumen surfaces: frosted glass over the ambient light. */
+  --glass-bg: color-mix(in srgb, var(--c-surface) 62%, transparent);
+  --glass-bg-strong: color-mix(in srgb, var(--c-surface) 84%, transparent);
+  --glass-border: color-mix(in srgb, var(--c-text) 11%, transparent);
+  --glass-hi: color-mix(in srgb, var(--c-text) 14%, transparent);
+  --glass-blur: blur(22px) saturate(1.5);
+  --ring: 0 0 0 2px var(--c-bg), 0 0 0 4px var(--c-primary);
+
+  --rail-w: 68px;
+  --rail-open-w: 248px;
+  --rail-gap: 12px;
+  --sidebar-w: calc(var(--rail-w) + var(--rail-gap) * 2);
+  --topbar-h: 68px;
   --mini-h: 0px;
   --gutter: clamp(16px, 3.2vw, 48px);
 }
@@ -54,6 +79,7 @@ body {
   color: var(--c-text);
   font-family: var(--font);
   font-size: 15px;
+  font-optical-sizing: auto;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -70,7 +96,8 @@ button { font: inherit; color: inherit; cursor: pointer; background: none; borde
 button:disabled { cursor: not-allowed; opacity: 0.5; }
 input, select, textarea { font: inherit; color: inherit; }
 h1, h2, h3, h4 { margin: 0; line-height: 1.2; letter-spacing: -0.01em; }
-h1 { font-size: clamp(1.6rem, 2.6vw, 2.1rem); font-weight: 800; letter-spacing: -0.02em; }
+h1, h2 { font-family: var(--font-display); }
+h1 { font-size: clamp(1.7rem, 2.8vw, 2.3rem); font-weight: 750; letter-spacing: -0.025em; }
 h2 { font-size: 1.25rem; font-weight: 700; }
 h3 { font-size: 1.05rem; font-weight: 700; }
 p { margin: 0; }

@@ -15,6 +15,8 @@ export interface AttachOptions {
   onFragment?: (bytes: number, ms: number) => void;
   /** The variant being played changed (index into `levels()`). */
   onLevelSwitched?: (level: number) => void;
+  /** Seconds into the stream to start loading at (resume), so hls.js doesn't fetch fragment 0 first. */
+  startPosition?: number;
 }
 
 export interface EngineLevel {
@@ -66,7 +68,7 @@ export async function attachStream(el: HTMLMediaElement, info: PlaybackInfo, opt
         lowLatencyMode: false,
         backBufferLength: opts.live ? 30 : 90,
         maxBufferLength: 30,
-        startPosition: -1,
+        startPosition: opts.startPosition ?? -1,
         xhrSetup: (xhr) => {
           if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         },

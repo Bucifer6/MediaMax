@@ -1,10 +1,10 @@
-# MediaMax feature matrix
+# Kinora feature matrix
 
-How MediaMax compares with the features people use most in Plex, Jellyfin and Emby.
+How Kinora compares with the features people use most in Plex, Jellyfin and Emby.
 ✅ = implemented in this repository · 🟡 = partial · 🗺️ = roadmap
 
 ## Libraries & metadata
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | Movies, TV, music, photos, home videos | ✅ | ✅ | ✅ | ✅ |
 | Scene-style filename parsing (`Show.S01E02`, `1x02`, daily shows, multi-episode) | ✅ | ✅ | ✅ | ✅ |
@@ -48,7 +48,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Podcasts (RSS, iTunes directory search, OPML import, auto-download) | ✅ | Plugin? | Plugin? | ✅ |
 
 ## Playback
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | Direct play / remux / transcode decision per device | ✅ | ✅ | ✅ | ✅ |
 | On-demand HLS segments (instant seek anywhere) | ✅ | ✅ | ✅ | ✅ |
@@ -61,7 +61,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Per-device HDR decisions (direct play when the device supports the range, DV 8.x → HDR10/HLG base layer, tone-map otherwise) | 🟡 | ✅ | 🟡 | ✅ |
 | Dolby Vision profile 7 (dual-layer) → HDR10 base layer by stream copy, no re-encode | ❌ | 🟡 | ❌ | ✅ |
 | Real Dolby Vision through remuxed HLS (fMP4 with `dvcC`/`dvvC`, `dvh1`/`hvc1` sample entry, DV `CODECS` / `SUPPLEMENTAL-CODECS` / `VIDEO-RANGE` in the master playlist): profiles 5, 8.1, 8.4, 10 (AV1), and 7 for devices that list it | 🟡 | ✅ | 🟡 | ✅ |
-| Dolby Vision on LG webOS TVs and DV-capable browsers (MediaMax: through its own hls.js/MSE engine, detected with `MediaSource.isTypeSupported`/`MediaCapabilities`, with an Auto / Yes / No override per device) | ✅ | ✅ | 🟡 | ✅ |
+| Dolby Vision on LG webOS TVs and DV-capable browsers (Kinora: through its own hls.js/MSE engine, detected with `MediaSource.isTypeSupported`/`MediaCapabilities`, with an Auto / Yes / No override per device) | ✅ | ✅ | 🟡 | ✅ |
 | HDR10 / HDR10+ / HLG / Dolby Vision badges in item info and the player's info overlay | ✅ | ✅ | ✅ | ✅ |
 | Audio format detection: Dolby Atmos (TrueHD / E-AC-3 JOC), DTS:X, DTS-HD MA, lossless, channel layout ([docs/AUDIO.md](AUDIO.md)) | 🟡 | 🟡 | 🟡 | ✅ |
 | Dolby Atmos / DTS:X / DTS-HD MA / TrueHD / 7.1 badges in item info, the player's audio menu and stats | ✅ | 🟡 | 🟡 | ✅ |
@@ -94,6 +94,9 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Skip recaps, previews and ad breaks (comskip / `.edl` markers) | 🟡 | 🟡 (plugins) | 🟡 | ✅ |
 | Cinema mode (trailers + pre-roll before a movie) | ✅ (Pass) | ✅ (plugin) | ✅ | ✅ |
 | Remote control: "Play on…" another device | ✅ | ✅ | ✅ | ✅ |
+| Phone as TV remote via QR pairing (touch-pad, keyboard into TV search; guests from another account after on-screen approval) | ✅ (app) | 🟡 | 🟡 | ✅ web + app, no install needed |
+| Second screen (scrubber with trickplay, chapters, skip intro, audio/subtitle switching, cast, episodes) | 🟡 | ❌ | ❌ | ✅ |
+| "What's this song?" from the playing title's own audio (AcoustID, mic fallback) | ❌ | ❌ | ❌ | ✅ |
 | Auto-play next episode | ✅ | ✅ | ✅ | ✅ |
 | Downloads for offline | Pass | ✅ | Premiere | ✅ (mobile apps) |
 | Watch together | ✅ | ✅ | Plugin? | ✅ SyncPlay rooms with join codes |
@@ -105,11 +108,12 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Seek-bar preview thumbnails (trickplay) | ✅ | ✅ | ✅ | ✅ |
 | Trickplay in the native apps (phone drag, Android TV / Apple TV D-pad and Siri Remote seek) with chapter names, offline with downloads, data-saver mode | ✅ | 🟡 | ✅ | ✅ |
 | Trickplay on Samsung/LG TV (web TV mode) while seeking with the remote | ✅ | 🟡 | 🟡 | ✅ |
-| Online subtitle search & auto-download (OpenSubtitles, hash matching) | ✅ | Plugin | ✅ | ✅ |
+| Online subtitle search & auto-download (OpenSubtitles + Subs.ro + plugin providers, release scoring, hash matching, archive unpacking, encoding/diacritics fixes, alass sync) | ✅ | Plugin | ✅ | ✅ |
+| Automatic subtitles as a last resort: speech-to-text (whisper.cpp or an OpenAI-compatible API) at night, low priority, resumable; LLM translation cue by cue (Romanian diacritics), labelled "Auto-generated (AI)" | ❌ | ❌ | ❌ | ✅ |
 | Converted downloads (device-friendly MP4 at 1080p/720p/480p) | Pass | ✅ | Premiere | ✅ |
 
 ## Live TV & IPTV
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | HDHomeRun tuners | ✅ | ✅ | ✅ | ✅ |
 | HDHomeRun / SAT>IP network discovery (UDP 65001, SSDP) | ✅ | 🟡 | 🟡 | ✅ |
@@ -140,7 +144,7 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Commercial detection on recordings (comskip) | ✅ (Pass) | Plugin | 🟡 | ✅ |
 
 ## Users & access
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | Multiple users, admin roles | ✅ | ✅ | ✅ | ✅ |
 | Profile picker with PINs (Plex Home style) | Pass | 🟡 | ✅ | ✅ |
@@ -159,9 +163,9 @@ How MediaMax compares with the features people use most in Plex, Jellyfin and Em
 | Media requests (Overseerr-style): movies, shows (all/first/latest/specific seasons), music (Lidarr), books (Readarr), "also in 4K", live download progress | Add-on | Add-on | Add-on | ✅ built in |
 
 ### Requests vs. Overseerr / Jellyseerr
-MediaMax has the request app built in — no separate Overseerr/Jellyseerr container, no second user database.
+Kinora has the request app built in — no separate Overseerr/Jellyseerr container, no second user database.
 
-| Feature | Overseerr | Jellyseerr | MediaMax |
+| Feature | Overseerr | Jellyseerr | Kinora |
 |---|:-:|:-:|:-:|
 | Per-user request permissions per kind (movies, shows, 4K movies, 4K shows) | ✅ | ✅ | ✅ (+ music & books) |
 | Auto-approve per user and kind | ✅ | ✅ | ✅ (`none` / `request` / `auto`) |
@@ -185,19 +189,19 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | Music and book requests (Lidarr/Readarr) | ❌ | 🟡 | ✅ |
 
 ## Clients & devices
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | Web, iOS, Android, Apple TV, Android TV apps | ✅ | ✅ | ✅ | ✅ |
-| Apple CarPlay (music, audiobooks, podcasts) | Plexamp | Third-party | Premiere | ✅ (±15/30 s for audiobooks, podcasts and long mixes alongside next/previous, speed button; Siri "Play … in MediaMax" opt-in) |
+| Apple CarPlay (music, audiobooks, podcasts) | Plexamp | Third-party | Premiere | ✅ (±15/30 s for audiobooks, podcasts and long mixes alongside next/previous, speed button; Siri "Play … in Kinora" opt-in) |
 | Android Auto (music, audiobooks, podcasts) | Plexamp | ✅ (no audiobooks) | Premiere | ✅ (±15/30 s for audiobooks, podcasts and long mixes alongside next/previous, speed button; Google Assistant "play …", seek and speed by voice) |
-| Samsung Tizen, LG webOS (wrapper apps + web TV mode with D-pad navigation; Back on Home asks "Press Back again to exit") | ✅ | ✅ | ✅ | ✅ |
+| Samsung Tizen, LG webOS, Hisense VIDAA (wrapper apps + web TV mode with D-pad navigation; Back on Home asks "Press Back again to exit"; VIDAA untested on a set) | ✅ | ✅ | ✅ | ✅ |
 | Web app offline page: a reload while the server is down shows a branded "Server offline — retrying…" page that reconnects by itself (small service worker caching only the app shell; never API responses or media) | 🟡 | 🟡 | 🟡 | ✅ |
 | Amazon Fire TV | ✅ | ✅ | ✅ | ✅ (Android TV build) |
 | Roku, Xbox | ✅ | 🟡 | ✅ | 🗺️ |
 | Desktop/HTPC app (mpv-class player) | ✅ | ✅ | ✅ | 🗺️ |
 
-## Customisation (MediaMax's headline feature)
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+## Customisation (Kinora's headline feature)
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | Server name, logo, wide logo, favicon, splash, login background | ❌ | 🟡 (CSS) | 🟡 | ✅ |
 | Full theme engine (13 colour tokens, radius, font, poster shape, card size, hero style) | ❌ | CSS only | ❌ | ✅ |
@@ -216,7 +220,7 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | Custom CSS for the web client | ❌ | ✅ | ✅ | ✅ |
 
 ## Administration
-| Feature | Plex | Jellyfin | Emby | MediaMax |
+| Feature | Plex | Jellyfin | Emby | Kinora |
 |---|:-:|:-:|:-:|:-:|
 | Dashboard with live sessions, kill stream | ✅ | ✅ | ✅ | ✅ |
 | Scheduled tasks with progress | ✅ | ✅ | ✅ | ✅ |
@@ -232,7 +236,7 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | Trakt scrobbling & watched sync | Plugin | Plugin | Plugin | ✅ built in |
 | Last.fm scrobbling | ✅ | Plugin | Plugin | ✅ built in |
 | ListenBrainz scrobbling (MBIDs, offline queue, love/hate feedback) + weekly playlists & recommendations matched to the library | ❌ | Plugin | Plugin | ✅ built in |
-| Viewing statistics & yearly "Wrapped" | Pass | Plugin | Plugin | ✅ |
+| Viewing statistics & yearly "Wrapped" | Pass | Plugin | Plugin | ✅ animated story (binge record, film personality, heatmap) with 1080×1920 PNG export / share |
 | User avatars | ✅ | ✅ | ✅ | ✅ |
 | Hide unrated content from restricted users | ✅ | ✅ | ✅ | ✅ |
 | CI (typecheck, tests, web build, Docker smoke test) | — | ✅ | — | ✅ |
@@ -244,9 +248,62 @@ MediaMax has the request app built in — no separate Overseerr/Jellyseerr conta
 | NAS disk spin-down friendly: maintenance window for scans, thumbnails, trickplay, intro/DJ/HDR analysis and subtitle matching; piggybacks on disks that are awake (playback, file changes) | ❌ | ❌ | ❌ | ✅ |
 | Per-library disk state (active / idle / standby via hdparm, smartctl or /sys, never wakes a disk), directory-only inotify watching, opt-in long-interval polling for network shares | ❌ | ❌ | ❌ | ✅ (Linux) |
 | Media-folder artwork served from a cached copy in the data dir (browsing never wakes a media disk) | 🟡 | ❌ | ❌ | ✅ |
+| Import from Emby, Jellyfin or Plex: users, permissions, library access, watched/resume/favourites, play history, playlists, collections; quick and full dry-run previews, set-password links, safe re-runs | — | — | — | ✅ |
+
+### AI (Admin → AI)
+One language model (Ollama or any OpenAI-compatible API, write-only key, one daily call cap) shared by every AI feature,
+each with its own switch; with no model everything falls back to built-in behaviour (Help Centre: *AI features*).
+
+| Feature | Plex | Jellyfin | Emby | Kinora |
+|---|:-:|:-:|:-:|:-:|
+| Shared language model for the AI DJ, Ask, recaps and subtitle translation; the DJ's model migrated automatically | ❌ | ❌ | ❌ | ✅ |
+| **Generate missing subtitles** task: picks the dialogue track, 16 kHz mono, silence-split chunks, whisper.cpp (one-click Windows download + tiny/base/small/medium ggml models) or a faster-whisper/OpenAI `/audio/transcriptions` API; night window, one job at a time, low process priority, resumes after dawn or a restart; queue, progress and ETA in Admin → AI; "Generate with AI" per title | ❌ | 🟡 (plugin, no translation) | ❌ | ✅ |
+| Subtitle translation with the language model in batches (same cues and timing, line breaks kept, ș ț comma-below), or whisper's own translation to English; then the normal subtitle clean-up | ❌ | ❌ | ❌ | ✅ |
+| **Ask**: natural-language search in English and Romanian (runtime, decades, genres/moods, unwatched, rating, spoken language, people, "like ⟨title⟩ but lighter") with removable "Understood as" chips on web, TV mode and phone; optional LLM understanding (strict JSON schema, validated) and semantic plot matching (local ONNX MiniLM or an embeddings API, float32 vectors in SQLite, cosine search in a worker thread); per-user access and ratings always applied; p95 ≈ 100 ms on 20k movies without a model | 🟡 | ❌ | ❌ | ✅ |
+| **"Previously on…"** recaps after a break (default 7 days) or at a new season: only episodes the viewer watched before the one about to play, condensed to 3-5 sentences by the model (spoiler checks) or a tidy list; recap-marker clip; cached per user | ❌ | ❌ | ❌ | ✅ |
+
+### Migrating from Emby, Jellyfin or Plex
+**Admin → Import from another server** moves an Emby Server 4.x, Jellyfin 10.8+ or Plex Media Server install over
+(Help Centre: *Moving over from Emby, Jellyfin or Plex*). One page with a source picker; each source keeps its own
+settings, and one shared engine does the matching, account creation, links and re-runs.
+
+* **Connect** with the server URL and a write-only secret (masked like other stored secrets) plus optional **path
+  mappings** (`D:\Movies` → `/mnt/d/Movies`). LAN addresses are allowed for the server, as for the *arr apps.
+  * Emby: admin API key (`X-Emby-Token`).
+  * Jellyfin: admin API key (`Authorization: MediaBrowser Token="…"`, `X-Emby-Token` also sent); handles 10.9+'s
+    move from `/Users/{id}/Items` to `/Items?userId=`.
+  * Plex: the owner's `X-Plex-Token`. The server gives libraries (`/library/sections`), the catalogue with GUIDs,
+    collections, playlists and the viewing history; plex.tv (through the SSRF-guarded fetch) gives the owner, the users
+    the server is shared with and a per-share access token (`/api/servers/{machineId}/shared_servers`).
+* **Preview (dry run)**: *quick* (count-only requests: `Limit=0` / `X-Plex-Container-Size=0`) or *full* (every title
+  read and matched). Users found and whether each would be created, merged into an existing account (same username, or
+  imported before) or updated; library mapping (by folder overlap after path mappings, then by name); matched vs.
+  unmatched counts for watched items, resume points, favourites, play history, playlists and collections, with
+  unmatched examples and per-user notes.
+* **Users**: username/display name, admin, disabled, sign-in screen visibility (hidden users stay off it; Plex Home
+  members are shown), remote access, Live TV / DVR, downloads, transcoding, stream limit (Emby
+  `SimultaneousStreamLimit`, Jellyfin `MaxActiveSessions`; 0 = unlimited), maximum parental rating (Emby's scale,
+  Jellyfin's age score, Plex share rating filters; restricted Plex users without a filter get PG) and library access
+  (`EnabledFolders` / Plex shared sections → mapped libraries). Plex: the owner becomes an admin; friends and managed
+  users get no remote/stream limits (Plex has none); no e-mail is stored. Jellyfin blocked tags are reported, not copied.
+* **Watch data**: watched + play count + last played, resume points, favourites (Emby/Jellyfin). Plex: each shared
+  user's own `viewCount`/`viewOffset` via their share token; managed Home users without a token fall back to the
+  server's history (watched only). **Play history** rows from Plex's `/status/sessions/history/all` or the
+  Emby/Jellyfin **Playback Reporting** plugin (best-effort; skipped cleanly when the plugin is missing).
+* **Matching**: TMDB/IMDb/TVDB ids first (Plex `Guid` / legacy agent guids; episodes via the series' ids + season and
+  episode numbers), then file path, then title + year. The Kinora catalogue is indexed in memory once per run.
+* **Speed**: 1000-item pages with a few pages in flight, four users read in parallel, the Plex catalogue read once
+  and matched by `ratingKey`, one transaction per user; progress per phase.
+* **Passwords**: source hashes can't be read, so new accounts get a random unusable password and a one-time
+  **set-password link** (`/set-password/:token`, stored hashed, expiring, single use). Results list the links with copy
+  buttons and a CSV export.
+* **Runs in the background** with live progress, logged to the activity log, and is **idempotent** (id map per source):
+  existing users are skipped or merged unless "overwrite permissions" is ticked, watched flags are never downgraded,
+  play counts never go down, history rows are never added twice, playlists/collections are topped up instead of
+  duplicated, unclaimed accounts get a fresh link on re-run.
 
 ### Media automation (*arr suite)
-MediaMax can be the hub of a Radarr/Sonarr/Lidarr/Readarr/Bazarr setup (**Admin → Server settings → Media automation (*arr)**):
+Kinora can be the hub of a Radarr/Sonarr/Lidarr/Readarr/Bazarr setup (**Admin → Server settings → Media automation (*arr)**):
 
 * **Any number of instances per app**, each with name, URL, write-only API key, enabled flag, quality profile, root folder,
   metadata profile (Lidarr/Readarr), tags, monitor option, season folders and "search on add". The **Test** button checks
@@ -289,7 +346,7 @@ MediaMax can be the hub of a Radarr/Sonarr/Lidarr/Readarr/Bazarr setup (**Admin 
   with request buttons, and a *Hide what's in the library* toggle. The heart menu on a card adds it to your Discover
   watchlist; with *Auto-request from watchlist* that also requests it.
 * **Webhooks**: add one *Webhook* connection per app (Settings → Connect → Webhook, triggers On Import / Upgrade / Rename /
-  Delete) pointing at the URL shown in the settings tab. MediaMax works out the folder the event touched, maps it through
+  Delete) pointing at the URL shown in the settings tab. Kinora works out the folder the event touched, maps it through
   the instance's path mappings (`/movies` → `/media/Movies`), rescans only the library that contains it, debounces bursts
   (a season pack is one scan within about 10 s) and then marks matching requests as available. Events are logged to
   Activity. The URL carries a random secret, compared in constant time; regenerate it from the settings tab.
@@ -299,6 +356,65 @@ MediaMax can be the hub of a Radarr/Sonarr/Lidarr/Readarr/Bazarr setup (**Admin 
 * Existing single Radarr/Sonarr settings are migrated automatically (the old fields stay as a fallback).
 * For item pages there is a ready-made admin component (`web/src/components/ArrItemActions.tsx`): "Open in Radarr/Sonarr/Lidarr",
   "Search for upgrade" and "Find subtitles with Bazarr", backed by `GET /arr/item/:id` and `POST /arr/item/:id/subtitles`.
+
+## Help us decide: Movie Match, Roulette, Random marathon
+Server: `server/src/services/decide/` (in memory, no database tables), routes in `server/src/routes/decide.ts`.
+Web/TV: `web/src/pages/Match.tsx`, `web/src/pages/Roulette.tsx`, `web/src/player/Marathon.tsx`. Mobile:
+`apps/mobile/app/match/`, `apps/mobile/app/roulette.tsx`, `apps/mobile/src/player/marathon.tsx`. Help Centre:
+*Movie Match*, *Roulette*, *Random marathon and the sleep timer*.
+
+All three use the same access rules as the rest of the app (`items.accessClause`): library access, the parental
+rating cap, "hide unrated" and kids profiles. Titles a viewer gave a thumbs down (≤ 4/10) or marked *Not interested*
+are never suggested.
+
+### Movie Match (group swipe)
+* One person starts a session from the web, TV or phone app: movies / shows / both, libraries, genres, max runtime,
+  "only things nobody in the group has seen" and the match rule (**everyone** says yes, or **majority**: yes + 2 × super
+  likes > half the group, from at least two people). A group of one never matches.
+* Six-letter join code, QR code (rendered client-side, `components/QrCode.tsx`) and a link (`/match/join/<code>`).
+  Other signed-in users or profiles join on their phones (mobile web or the app).
+* **Same deck, same order for everyone.** ~60 cards built server-side from a smart mix: highly rated, recently added,
+  related to the genres the group has watched, plus random picks; extended by 30 when anyone nears the end (max 300).
+* **Strictest member wins**: the deck only contains titles every *current* member can see (each member's
+  `accessClause`, ANDed). When someone joins, cards they can't see (or, with "unwatched", have seen) are removed for
+  everyone.
+* Swipe right = yes, left = no, up = super like (touch drag with spring physics; buttons; keyboard / TV D-pad ← → ↑ —
+  the deck uses `data-own-arrows="all"` so TV spatial navigation leaves left/right/up to it).
+* "It's a match!" is broadcast over the WebSocket (`match.found`) to every member at once, with a canvas confetti
+  burst (no dependencies, off with reduced motion). **Play on…** sends `remote.command playItem` to the device that
+  started the session (only for matched titles, only while that device is online); **Play here**; **Keep swiping**.
+* Live lobby (`match.state`): member avatars with online / "swiping… n/60" / done; results ranked by enthusiasm
+  (yes + 2 × super − no). Sessions live in memory for 2 h after the last activity, survive reconnects (votes are kept
+  per user), and end when the host ends them (`match.ended`). Limits: 200 sessions, 3 per host, 12 members.
+
+### Roulette ("Can't decide? Spin")
+* Movie roulette and series roulette (series: the show plus the right episode — next up if started, else S1E1, or
+  **random episode** for sitcom-style shows; specials only when a show has nothing else).
+* Filters: library, genres, runtime (episode length for series), decade, rating ≥, unwatched only, from My List, and
+  mood presets (*Feel-good*, *Edge of your seat*, *Mind-bending*, *Laugh*, *Family night* (≤ PG), *Short & sweet*)
+  mapped to genres + overview keywords (`decide/common.ts` `MOODS`).
+* Weighting (default on): higher community rating and recently added titles are more likely (`pickWeight`); seeded
+  RNG for deterministic picks (`seed`).
+* One request returns the pick plus ~20 decoy posters for the reel: a single capped (1,500) slim candidate query, then
+  one query for the pick and one or two for the episode — no N+1.
+* Web: horizontal poster reel that accelerates and decelerates onto the pick (transform-only rAF animation;
+  `prefers-reduced-motion` = fade), then a reveal card with backdrop, synopsis, **Play**, **Trailer**, **Spin again**,
+  **Not this one** (excluded for the visit) and **Marathon**. Filters live in the URL.
+* Entry points: Home (above the rows), movie/TV library pages (keeps the genre), Search (empty state), the TV remote's
+  **Green** key outside the player, and the phone/TV app Home.
+
+### Random marathon, sleep timer, "Are you still watching?"
+* `POST /marathon` with roulette filters (or a `showId` for "random episodes, forever") creates a server-side queue;
+  `POST /marathon/:id/next` returns the next pick, never repeating anything played or skipped in that marathon and
+  never a disliked title. Works for any client (web/TV, phone, future Roku) — the player only passes the marathon id.
+* Web/TV and native players reuse their Up-next card: a 10 s countdown the viewer can cancel; the regular next-episode
+  autoplay is suppressed during a marathon.
+* **Still watching**: asked after 2 titles in a row or 4 h with no input (configurable via `stillWatching`, off-able
+  from the sleep menu). The server decides at title boundaries (`stillWatchingDue`), the player checks mid-title.
+  Unanswered for 60 s → pause (progress is reported with the current position, so the title is *not* marked watched),
+  the marathon ends and the player closes.
+* **Sleep timer** in the player: 30 / 60 / 90 min, end of this title, after N titles; audio fades out over the last
+  30 s, then playback stops (position saved).
 
 ## Roadmap
 See the ranked [ROADMAP](ROADMAP.md) (gap analysis against Plex, Jellyfin, Emby, Channels DVR, TiviMate, Audiobookshelf, Navidrome/Plexamp, Infuse and Kodi).

@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 # Multi-arch (linux/amd64, linux/arm64):
-#   docker buildx build --platform linux/amd64,linux/arm64 -t mediamax .
+#   docker buildx build --platform linux/amd64,linux/arm64 -t kinora .
 
 # ---- build ----
 # Runs on the build machine's own architecture: the output (JavaScript, the web app and pure-JS
-# dependencies; MediaMax uses no native addons) is the same for every target, so arm64 images don't
+# dependencies; Kinora uses no native addons) is the same for every target, so arm64 images don't
 # need to run npm and Vite under emulation.
 FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS build
 WORKDIR /src
@@ -43,7 +43,9 @@ COPY --from=build /src/server/dist server/dist
 COPY --from=build /src/server/help server/help
 COPY --from=build /src/web/dist web/dist
 COPY --from=caddy:2 /usr/bin/caddy /usr/local/bin/caddy
-COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/mediamax-entrypoint
+COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/kinora-entrypoint
+# Defaults under the original MEDIAMAX_* names, so a container started with either name works: a KINORA_* variable
+# you pass (e.g. -e KINORA_PORT=9000) overrides these; a MEDIAMAX_* one replaces them as before.
 ENV NODE_ENV=production \
     MEDIAMAX_DATA=/config \
     MEDIAMAX_TRANSCODE_DIR=/transcode \
@@ -51,7 +53,7 @@ ENV NODE_ENV=production \
     MEDIAMAX_PORT=8484
 VOLUME ["/config", "/transcode", "/recordings"]
 EXPOSE 8484
-HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:'+(process.env.MEDIAMAX_PORT||8484)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:'+(process.env.KINORA_PORT||process.env.MEDIAMAX_PORT||8484)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 # Optional PUID/PGID: run as that user (see docker/entrypoint.sh). Unset = root, as in earlier images.
-ENTRYPOINT ["/usr/local/bin/mediamax-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/kinora-entrypoint"]
 CMD ["node", "--disable-warning=ExperimentalWarning", "server/dist/index.js"]

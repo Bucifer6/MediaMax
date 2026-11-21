@@ -53,7 +53,7 @@ export function applyLook(id: string) {
   const look = STARTER_LOOKS.find((l) => l.id === id);
   if (!look) throw notFound('Starter look not found');
   const cur = getBranding();
-  return updateBranding({ defaultThemeId: look.themeId, homeRows: look.homeRows, features: { ...cur.features, ...look.features } });
+  return updateBranding({ baseThemeId: look.themeId, homeRows: look.homeRows, features: { ...cur.features, ...look.features } });
 }
 
 // Keep looks honest: every theme they reference must exist.

@@ -2,7 +2,7 @@ import ExpoModulesCore
 
 /// JS bridge for CarPlay and Siri. See `CarPlayController` for the template logic,
 /// `CarPlaySceneDelegate.swift` for the scene wiring added to Info.plist by plugins/withMediaMaxCar.js
-/// and `SiriIntents.swift` for "Play … in MediaMax".
+/// and `SiriIntents.swift` for "Play … in Kinora".
 public class MediaMaxCarModule: Module {
   public func definition() -> ModuleDefinition {
     Name("MediaMaxCar")

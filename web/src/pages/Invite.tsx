@@ -7,6 +7,7 @@ import { useAsync } from '../hooks';
 import { Spinner } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { BrandLogo } from '../components/BrandLogo';
+import { LightField } from '../components/LightField';
 
 /** Public sign-up page for an invite link: /invite/:code. Works while signed out. */
 export default function InvitePage() {
@@ -46,10 +47,7 @@ export default function InvitePage() {
   const serverName = p?.serverName || branding.serverName;
   return (
     <div className="login">
-      <div className="login-bg" style={bg ? { backgroundImage: `url("${mediaUrl(bg, 1920)}")` } : undefined}>
-        {!bg && <div className="login-aurora" />}
-      </div>
-      <div className="login-shade" />
+      <LightField image={bg ? mediaUrl(bg, 1920) : null} />
       <div className="login-inner">
         <div className="login-brand">
           <BrandLogo height={52} wide={!branding.logoUrl || !!branding.logoWideUrl} />

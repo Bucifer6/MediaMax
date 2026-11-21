@@ -181,7 +181,7 @@ export default function SettingsScreen() {
           <SettingSection title="About">
             <SettingRow label="Server" value={`${info?.name ?? server?.name ?? ''} ${info?.version ? `v${info.version}` : ''}`} chevron={false} />
             <SettingRow label="Address" value={server?.url} chevron={false} />
-            <SettingRow label="App" value={`${Constants.expoConfig?.name ?? 'MediaMax'} ${appVersion()} · ${device?.platform ?? Platform.OS}`} chevron={false} />
+            <SettingRow label="App" value={`${Constants.expoConfig?.name ?? 'Kinora'} ${appVersion()} · ${device?.platform ?? Platform.OS}`} chevron={false} />
             <SettingRow label="Device" value={device?.deviceName} chevron={false} />
             <SettingRow icon="help-circle-outline" label="Help" value="Guides and troubleshooting" onPress={openHelp} />
             {branding?.supportUrl ? <SettingRow icon="help-buoy-outline" label="Contact support" onPress={() => Linking.openURL(branding.supportUrl!)} /> : null}

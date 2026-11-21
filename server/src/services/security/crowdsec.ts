@@ -7,7 +7,7 @@ export interface CsConfig { url: string; machineId: string; password: string }
 import { config } from '../../config.js';
 
 // CrowdSec parses the User-Agent at login and rejects Node's default ("node"); always identify ourselves.
-const UA = () => `MediaMax/${config.version}`;
+const UA = () => `Kinora/${config.version}`;
 
 let tokenCache: { key: string; token: string; until: number } | null = null;
 
@@ -73,9 +73,9 @@ export async function csBan(cfg: CsConfig, ip: string, duration: string, reason:
   const now = new Date().toISOString();
   const scope = ip.includes('/') ? 'Range' : 'Ip';
   await call(cfg, 'POST', '/v1/alerts', [{
-    scenario: `manual 'ban' from MediaMax: ${reason}`.slice(0, 200), scenario_hash: '', scenario_version: '', message: `manual ban from the MediaMax dashboard: ${reason}`.slice(0, 300),
+    scenario: `manual 'ban' from Kinora: ${reason}`.slice(0, 200), scenario_hash: '', scenario_version: '', message: `manual ban from the Kinora dashboard: ${reason}`.slice(0, 300),
     events_count: 1, start_at: now, stop_at: now, capacity: 0, leakspeed: '0', simulated: false, events: [],
     source: { scope, value: ip }, remediation: true,
-    decisions: [{ duration, type: 'ban', scope, value: ip, origin: 'cscli', scenario: `MediaMax dashboard: ${reason}`.slice(0, 200) }],
+    decisions: [{ duration, type: 'ban', scope, value: ip, origin: 'cscli', scenario: `Kinora dashboard: ${reason}`.slice(0, 200) }],
   }]);
 }

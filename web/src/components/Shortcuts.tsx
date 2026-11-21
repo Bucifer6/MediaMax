@@ -16,7 +16,8 @@ interface Group { title: string; rows: Row[] }
 const GLOBAL: Group = {
   title: 'Everywhere',
   rows: [
-    [['/'], 'Search'],
+    [['/'], 'Search and commands'],
+    [['Ctrl', 'K'], 'Search and commands (⌘K on a Mac)'],
     [['?'], 'Show this list'],
     [['Esc'], 'Close a dialog or menu'],
   ],

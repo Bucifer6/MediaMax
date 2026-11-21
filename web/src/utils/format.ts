@@ -27,9 +27,26 @@ export function parseClock(text: string): number | null {
   return Math.round(s * 1000);
 }
 
+let timeFormat: Intl.DateTimeFormat | null = null;
+const timeCache = new Map<string, string>();
+/**
+ * "9:30 PM" in the viewer's locale. One shared formatter plus a small cache: the TV guide formats thousands of
+ * programme times per render, and toLocaleTimeString() builds a new formatter on every call.
+ */
 export function formatTime(iso: string | Date): string {
+  const key = typeof iso === 'string' ? iso : null;
+  if (key !== null) {
+    const hit = timeCache.get(key);
+    if (hit !== undefined) return hit;
+  }
   const d = typeof iso === 'string' ? new Date(iso) : iso;
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (Number.isNaN(d.getTime())) return 'Invalid Date';
+  const s = (timeFormat ??= new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' })).format(d);
+  if (key !== null) {
+    if (timeCache.size > 20000) timeCache.clear();
+    timeCache.set(key, s);
+  }
+  return s;
 }
 
 export function formatDate(iso: string | null | undefined, opts: Intl.DateTimeFormatOptions = { dateStyle: 'medium' }): string {

@@ -12,6 +12,7 @@ import { buildTransitionGraph, ffmpegHasFilter, renderTransition } from '../serv
 import { parseJson } from '../util/misc.js';
 import { findSeed, hostLine, llmChat, llmUsage, parsePrompt, recordFeedback, serverVoiceConfigured, speak, voiceFile } from '../services/dj/ai.js';
 import { getSettings } from '../services/settings.js';
+import { llmAvailable } from '../services/ai/llm.js';
 import { runTask } from '../services/tasks.js';
 import { badRequest, forbidden, notFound } from '../util/errors.js';
 
@@ -29,7 +30,7 @@ export default async function djRoutes(app: FastifyInstance) {
     return {
       ...analysisStatus(),
       ai: {
-        enabled: ai.enabled, llm: ai.llm.provider !== 'none' && !!ai.llm.url && !!ai.llm.model,
+        enabled: ai.enabled, llm: llmAvailable('dj'),
         serverVoice: serverVoiceConfigured(), hostName: ai.hostName, chattiness: ai.chattiness,
       },
     };
@@ -167,7 +168,7 @@ export default async function djRoutes(app: FastifyInstance) {
   app.post<{ Body: { kind: 'llm' | 'tts' } }>('/dj/ai/test', async (req) => {
     requireAdmin(req);
     if (req.body?.kind === 'tts') {
-      const v = await speak(`Hi, this is ${getSettings().aiDj.hostName}. Your MediaMax DJ is ready.`).catch((e) => {
+      const v = await speak(`Hi, this is ${getSettings().aiDj.hostName}. Your Kinora DJ is ready.`).catch((e) => {
         throw badRequest(`Piper failed: ${(e as Error).message}`);
       });
       if (!v) throw badRequest('Choose a server voice (Piper or a speech API) first');

@@ -1,0 +1,46 @@
+/* AI features: Ask (search), "Previously on…" recaps, automatic subtitles (Admin → AI). Theme tokens only. */
+
+/* ---------- Ask ---------- */
+.search-mode { display: inline-flex; flex: none; gap: 2px; padding: 3px; border-radius: 999px; background: color-mix(in srgb, var(--c-text) 8%, transparent); }
+.search-mode-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px; border: 0; border-radius: 999px; background: transparent; color: var(--c-text-dim, inherit); font: inherit; font-weight: 600; cursor: pointer; }
+.search-mode-btn.active { background: var(--c-primary); color: var(--c-on-primary, #fff); }
+.ask-examples { display: flex; flex-direction: column; gap: 12px; padding: 24px 0; }
+.ask-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.ask-example, .ask-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 4px 14px; border-radius: 999px; border: 1px solid var(--c-line); background: var(--c-surface); color: inherit; font: inherit; cursor: pointer; }
+.ask-example:hover, .ask-chip:hover, .ask-example:focus-visible, .ask-chip:focus-visible { border-color: var(--c-primary); }
+.ask-chip { background: color-mix(in srgb, var(--c-primary) 14%, var(--c-surface)); border-color: color-mix(in srgb, var(--c-primary) 40%, transparent); font-weight: 600; }
+.ask-chip svg { opacity: 0.7; }
+.ask-understood { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 4px 0 20px; }
+.ask-understood > .muted { display: inline-flex; align-items: center; gap: 6px; }
+.ask-by { font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--c-line); }
+.ask-results.dim { opacity: 0.6; transition: opacity 0.2s; }
+
+/* ---------- Recaps ---------- */
+.recap-card { display: flex; flex-direction: column; gap: 12px; margin: 16px 0 4px; padding: 18px 20px; max-width: 720px; border-radius: var(--radius-lg); background: color-mix(in srgb, var(--c-surface) 72%, transparent); border: 1px solid color-mix(in srgb, var(--c-text) 14%, transparent); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: var(--shadow-lg, none); animation: fadeIn 0.35s both; }
+.recap-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.recap-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 1.1rem; }
+.recap-text { margin: 0; line-height: 1.55; }
+.recap-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; line-height: 1.45; }
+.recap-by { font-size: 0.78rem; }
+.recap-ask { margin-top: 12px; }
+.player-recap { position: absolute; left: clamp(16px, 4vw, 48px); bottom: 140px; z-index: 7; width: min(560px, calc(100vw - 32px)); }
+.player-recap .recap-card { margin: 0; color: #fff; background: rgb(18 20 26 / 0.82); border-color: rgb(255 255 255 / 0.14); }
+@media (max-width: 640px) { .player-recap { bottom: 110px; } .recap-card { padding: 14px 16px; } }
+
+/* ---------- Subtitle dialog: generate with AI ---------- */
+.subsearch-ai { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 12px 14px; border-radius: var(--radius); border: 1px dashed var(--c-line); }
+.subsearch-ai > div { flex: 1; min-width: 0; }
+
+/* ---------- Admin → AI ---------- */
+.ai-admin { display: flex; flex-direction: column; gap: 16px; }
+.ai-admin h4 { margin: 8px 0 0; }
+.ai-queue { display: flex; flex-direction: column; gap: 10px; }
+.ai-jobs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ai-job { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--c-surface-alt, var(--c-surface)); border: 1px solid var(--c-line); }
+.ai-job-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ai-job-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-problems { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; color: var(--c-warning, inherit); }
+
+/* TV mode: bigger targets. */
+.tv .ask-chip, .tv .ask-example, .tv .search-mode-btn { min-height: 44px; font-size: 1.05rem; }
+.tv .recap-card { max-width: 900px; font-size: 1.15rem; }

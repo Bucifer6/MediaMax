@@ -1,6 +1,6 @@
 # TV guide (EPG) providers
 
-MediaMax gets programme guides from **guide sources** and matches each live channel to a channel in one of them. Manage both under **Admin → TV guide**. The API is in [API.md](API.md#tv-guide-epg-providers).
+Kinora gets programme guides from **guide sources** and matches each live channel to a channel in one of them. Manage both under **Admin → TV guide**. The API is in [API.md](API.md#tv-guide-epg-providers).
 
 ## Guide sources
 
@@ -26,7 +26,7 @@ Guides tied to a live source refresh with it. Other guides refresh on their own 
 
 ### Schedules Direct rules
 
-MediaMax follows the documented client rules:
+Kinora follows the documented client rules:
 
 - **One token per 24 h.** The token is cached and only renewed when it is 23 h old or the server reports it expired (code 4006).
 - **md5 checks.** `POST /schedules/md5` runs first. Only station-days whose md5 changed are downloaded with `POST /schedules`, and only programmes whose md5 changed with `POST /programs`.
@@ -99,4 +99,4 @@ Admin → Channels marks channels with no guide data with a **Missing guide** ba
 - the HDHomeRun `discover.json`, `lineup.json` and `guide.php` calls
 - gzip and xz XMLTV
 
-`MEDIAMAX_SD_URL` and `MEDIAMAX_HDHR_GUIDE_URL` point MediaMax at other endpoints, for example a mock or a mirror.
+`KINORA_SD_URL` and `KINORA_HDHR_GUIDE_URL` point Kinora at other endpoints, for example a mock or a mirror.

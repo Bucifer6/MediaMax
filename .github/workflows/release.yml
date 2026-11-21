@@ -89,12 +89,12 @@ jobs:
         run: |
           set -euo pipefail
           dir="$RUNNER_TEMP/smoke"; mkdir -p "$dir"
-          tar -xzf "release/mediamax-$VERSION-${{ matrix.target }}.tar.gz" -C "$dir"
-          app="$dir/mediamax-$VERSION-${{ matrix.target }}"
-          file "$app/mediamax" "$app/ffmpeg"
+          tar -xzf "release/kinora-$VERSION-${{ matrix.target }}.tar.gz" -C "$dir"
+          app="$dir/kinora-$VERSION-${{ matrix.target }}"
+          file "$app/kinora" "$app/ffmpeg"
           "$app/ffmpeg" -hide_banner -version | head -1
-          # No MEDIAMAX_DATA: must default to ~/.local/share/mediamax and use the bundled ffmpeg.
-          (cd / && MEDIAMAX_PORT=18484 "$app/mediamax" > "$dir/server.log" 2>&1 &)
+          # No MEDIAMAX_DATA: must default to ~/.local/share/kinora and use the bundled ffmpeg.
+          (cd / && MEDIAMAX_PORT=18484 "$app/kinora" > "$dir/server.log" 2>&1 &)
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:18484/api/v1/system/info && break; sleep 1; done
           echo
           curl -sf http://127.0.0.1:18484/api/v1/system/info | grep -q '"setupRequired":true'
@@ -102,8 +102,8 @@ jobs:
           curl -sf http://127.0.0.1:18484/ | grep -qi '<div id="root"'
           asset=$(curl -sf http://127.0.0.1:18484/ | grep -o '/assets/index-[^"]*\.js' | head -1)
           curl -sf -o /dev/null "http://127.0.0.1:18484$asset"
-          test -f "$HOME/.local/share/mediamax/mediamax.db"
-          pkill -f "$app/mediamax" || true
+          test -f "$HOME/.local/share/kinora/mediamax.db"
+          pkill -f "$app/kinora" || true
           cat "$dir/server.log"
           if grep -q 'ffmpeg was not found' "$dir/server.log"; then echo "::error::bundled ffmpeg not used"; exit 1; fi
           if grep -q 'ExperimentalWarning' "$dir/server.log"; then echo "::error::ExperimentalWarning not hidden"; exit 1; fi
@@ -113,20 +113,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app="$RUNNER_TEMP/smoke/mediamax-$VERSION-${{ matrix.target }}"
-          sudo mkdir -p /opt/mediamax && sudo cp -r "$app"/* /opt/mediamax/
-          sudo useradd --system --home-dir /var/lib/mediamax --shell /usr/sbin/nologin mediamax
-          sudo cp /opt/mediamax/mediamax.service /etc/systemd/system/
-          sudo systemd-analyze verify /etc/systemd/system/mediamax.service
+          app="$RUNNER_TEMP/smoke/kinora-$VERSION-${{ matrix.target }}"
+          sudo mkdir -p /opt/kinora && sudo cp -r "$app"/* /opt/kinora/
+          sudo useradd --system --home-dir /var/lib/kinora --shell /usr/sbin/nologin kinora
+          sudo cp /opt/kinora/kinora.service /etc/systemd/system/
+          sudo systemd-analyze verify /etc/systemd/system/kinora.service
           sudo systemctl daemon-reload
-          sudo systemctl start mediamax
+          sudo systemctl start kinora
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8484/api/v1/system/info && break; sleep 1; done
           echo
           curl -sf http://127.0.0.1:8484/api/v1/system/info | grep -q setupRequired
-          sudo test -f /var/lib/mediamax/mediamax.db
-          test "$(sudo stat -c %U /var/lib/mediamax/mediamax.db)" = mediamax
-          sudo systemctl stop mediamax
-          sudo journalctl -u mediamax --no-pager | tail -20
+          sudo test -f /var/lib/kinora/mediamax.db
+          test "$(sudo stat -c %U /var/lib/kinora/mediamax.db)" = kinora
+          sudo systemctl stop kinora
+          sudo journalctl -u kinora --no-pager | tail -20
 
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
@@ -134,15 +134,15 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $dir = Join-Path $env:RUNNER_TEMP 'smoke'
-          Expand-Archive "release/mediamax-$env:VERSION-windows-x64.zip" -DestinationPath $dir
+          Expand-Archive "release/kinora-$env:VERSION-windows-x64.zip" -DestinationPath $dir
           Get-ChildItem $dir | Format-Table Name, Length
-          foreach ($f in 'mediamax.exe','ffmpeg.exe','ffprobe.exe','MediaMax.cmd','install-service.ps1','README.txt','web\index.html') {
+          foreach ($f in 'kinora.exe','ffmpeg.exe','ffprobe.exe','Kinora.cmd','install-service.ps1','README.txt','web\index.html') {
             if (-not (Test-Path (Join-Path $dir $f))) { throw "$f missing from the zip" }
           }
           & (Join-Path $dir 'ffmpeg.exe') -hide_banner -version | Select-Object -First 1
-          # No MEDIAMAX_DATA: must default to %ProgramData%\MediaMax and use the bundled ffmpeg.exe.
+          # No MEDIAMAX_DATA: must default to %ProgramData%\Kinora and use the bundled ffmpeg.exe.
           $env:MEDIAMAX_PORT = '18484'
-          $p = Start-Process -FilePath (Join-Path $dir 'mediamax.exe') -WorkingDirectory $env:SystemRoot -PassThru `
+          $p = Start-Process -FilePath (Join-Path $dir 'kinora.exe') -WorkingDirectory $env:SystemRoot -PassThru `
             -RedirectStandardOutput "$dir\out.log" -RedirectStandardError "$dir\err.log"
           $info = $null
           for ($i = 0; $i -lt 30 -and -not $info; $i++) {
@@ -156,7 +156,7 @@ jobs:
           if ($html -notmatch '<div id="root"') { throw 'web app not served' }
           $asset = [regex]::Match($html, '/assets/index-[^"]*\.js').Value
           Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:18484$asset" | Out-Null
-          if (-not (Test-Path "$env:ProgramData\MediaMax\mediamax.db")) { throw 'database not created in %ProgramData%\MediaMax' }
+          if (-not (Test-Path "$env:ProgramData\Kinora\mediamax.db")) { throw 'database not created in %ProgramData%\Kinora' }
           Stop-Process -Id $p.Id -Force
           Start-Sleep 2
           $log = (Get-Content -Raw "$dir\out.log") + (Get-Content -Raw "$dir\err.log")
@@ -173,26 +173,26 @@ jobs:
           Remove-Item Env:\MEDIAMAX_PORT -ErrorAction SilentlyContinue
           & powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\install-service.ps1"
           if ($LASTEXITCODE) { throw "install failed ($LASTEXITCODE)" }
-          $task = Get-ScheduledTask -TaskName MediaMax
+          $task = Get-ScheduledTask -TaskName Kinora
           $task.Principal | Format-List UserId, LogonType, RunLevel
           if ($task.Principal.UserId -notmatch 'SYSTEM') { throw 'task should run as SYSTEM' }
-          if (-not (Get-NetFirewallRule -DisplayName 'MediaMax (HTTP 8484)')) { throw 'firewall rule missing' }
+          if (-not (Get-NetFirewallRule -DisplayName 'Kinora (HTTP 8484)')) { throw 'firewall rule missing' }
           $info = $null
           for ($i = 0; $i -lt 30 -and -not $info; $i++) {
             try { $info = Invoke-RestMethod http://127.0.0.1:8484/api/v1/system/info } catch { Start-Sleep 1 }
           }
-          if (-not $info) { throw 'scheduled task did not start MediaMax' }
-          (Get-Process mediamax).Path
+          if (-not $info) { throw 'scheduled task did not start Kinora' }
+          (Get-Process kinora).Path
           & powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\install-service.ps1" -Uninstall
           if ($LASTEXITCODE) { throw "uninstall failed ($LASTEXITCODE)" }
-          if (Get-ScheduledTask -TaskName MediaMax -ErrorAction SilentlyContinue) { throw 'task still registered' }
-          if (Get-NetFirewallRule -DisplayName 'MediaMax*' -ErrorAction SilentlyContinue) { throw 'firewall rules left behind' }
-          if (Test-Path "$env:ProgramFiles\MediaMax") { throw 'install folder left behind' }
+          if (Get-ScheduledTask -TaskName Kinora -ErrorAction SilentlyContinue) { throw 'task still registered' }
+          if (Get-NetFirewallRule -DisplayName 'Kinora*' -ErrorAction SilentlyContinue) { throw 'firewall rules left behind' }
+          if (Test-Path "$env:ProgramFiles\Kinora") { throw 'install folder left behind' }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mediamax-${{ matrix.target }}
-          path: release/mediamax-*
+          name: kinora-${{ matrix.target }}
+          path: release/kinora-*
           if-no-files-found: error
 
   github-release:
@@ -206,7 +206,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: release
-          pattern: mediamax-*
+          pattern: kinora-*
           merge-multiple: true
       - name: Combined checksums
         working-directory: release
@@ -216,17 +216,17 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.version }}
-          name: MediaMax ${{ needs.version.outputs.version }}
+          name: Kinora ${{ needs.version.outputs.version }}
           prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
           generate_release_notes: true
           body: |
             ## Downloads
             | Platform | File |
             |---|---|
-            | Windows 10/11, Server 2019+ (x64) | `mediamax-${{ needs.version.outputs.version }}-windows-x64.zip` |
-            | Linux x64 (glibc 2.28+) | `mediamax-${{ needs.version.outputs.version }}-linux-x64.tar.gz` |
-            | Linux arm64 (Raspberry Pi 4/5 64-bit, ARM servers) | `mediamax-${{ needs.version.outputs.version }}-linux-arm64.tar.gz` |
-            | Docker / NAS (amd64, arm64) | `docker pull ghcr.io/${{ github.repository_owner }}/mediamax:${{ needs.version.outputs.version }}` (lower-case the owner) |
+            | Windows 10/11, Server 2019+ (x64) | `kinora-${{ needs.version.outputs.version }}-windows-x64.zip` |
+            | Linux x64 (glibc 2.28+) | `kinora-${{ needs.version.outputs.version }}-linux-x64.tar.gz` |
+            | Linux arm64 (Raspberry Pi 4/5 64-bit, ARM servers) | `kinora-${{ needs.version.outputs.version }}-linux-arm64.tar.gz` |
+            | Docker / NAS (amd64, arm64) | `docker pull ghcr.io/${{ github.repository_owner }}/kinora:${{ needs.version.outputs.version }}` (lower-case the owner) |
 
             Each archive includes FFmpeg. Install guides for Windows, Linux, Docker, Synology, QNAP, Unraid, TrueNAS SCALE
             and OpenMediaVault: [docs/INSTALL.md](https://github.com/${{ github.repository }}/blob/v${{ needs.version.outputs.version }}/docs/INSTALL.md).
@@ -252,7 +252,7 @@ jobs:
         shell: bash
         run: |
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          echo "IMAGE=ghcr.io/$owner/mediamax" >> "$GITHUB_ENV"
+          echo "IMAGE=ghcr.io/$owner/kinora" >> "$GITHUB_ENV"
       - uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
@@ -265,7 +265,7 @@ jobs:
           context: .
           platforms: linux/amd64
           load: true
-          tags: mediamax:release-test
+          tags: kinora:release-test
           cache-from: type=gha,scope=release
           cache-to: type=gha,scope=release,mode=max
       - name: Smoke test image (incl. PUID/PGID)
@@ -273,7 +273,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/config"
-          docker run -d --name mm -p 8484:8484 -e PUID=1234 -e PGID=2345 -v "$RUNNER_TEMP/config:/config" mediamax:release-test
+          docker run -d --name mm -p 8484:8484 -e PUID=1234 -e PGID=2345 -v "$RUNNER_TEMP/config:/config" kinora:release-test
           for i in $(seq 1 30); do curl -sf http://localhost:8484/api/v1/system/info && break; sleep 2; done
           echo
           curl -sf http://localhost:8484/api/v1/system/info | grep -q setupRequired
@@ -289,13 +289,13 @@ jobs:
           context: .
           platforms: linux/arm64
           load: true
-          tags: mediamax:release-test-arm64
+          tags: kinora:release-test-arm64
           cache-from: type=gha,scope=release
       - name: Smoke test arm64 image
         shell: bash
         run: |
           set -euo pipefail
-          docker run -d --platform linux/arm64 --name mm-arm -p 8485:8484 mediamax:release-test-arm64
+          docker run -d --platform linux/arm64 --name mm-arm -p 8485:8484 kinora:release-test-arm64
           for i in $(seq 1 60); do curl -sf http://localhost:8485/api/v1/system/info && break; sleep 2; done
           echo
           curl -sf http://localhost:8485/api/v1/system/info | grep -q setupRequired
@@ -326,7 +326,7 @@ jobs:
           push: true
           tags: ${{ env.TAGS }}
           labels: |
-            org.opencontainers.image.title=MediaMax
+            org.opencontainers.image.title=Kinora
             org.opencontainers.image.description=Self-hosted media server with IPTV, live TV, DVR and server-driven branding
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ env.VERSION }}

@@ -7,7 +7,7 @@
  */
 
 export const MODEL_RATE = 44100;
-/** Stem order used everywhere in MediaMax (files, uploads). */
+/** Stem order used everywhere in Kinora (files, uploads). */
 export const STEMS = ['vocals', 'drums', 'bass', 'other'] as const;
 /** HT-Demucs output order. */
 export const DEMUCS_SOURCES = ['drums', 'bass', 'other', 'vocals'] as const;

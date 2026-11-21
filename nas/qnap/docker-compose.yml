@@ -1,14 +1,14 @@
-# MediaMax on QNAP QTS / QuTS hero with Container Station 3 (Applications -> Create -> paste this YAML).
+# Kinora on QNAP QTS / QuTS hero with Container Station 3 (Applications -> Create -> paste this YAML).
 # Guide: docs/INSTALL.md#qnap
 #
 # Before you start:
-#   1. File Station: create /Container/mediamax with subfolders config, transcode and recordings.
+#   1. File Station: create /Container/kinora with subfolders config, transcode and recordings.
 #   2. PUID/PGID: SSH in and run `id <username>` (QNAP users usually start at uid 1000; group "everyone" = 100).
 #   3. Change the /share/... paths below to your shared folders (keep the right-hand side as is).
 services:
-  mediamax:
-    image: ghcr.io/bucifer6/mediamax:latest
-    container_name: mediamax
+  kinora:
+    image: ghcr.io/bucifer6/kinora:latest
+    container_name: kinora
     restart: unless-stopped
     ports:
       - "8484:8484"
@@ -17,9 +17,9 @@ services:
       - PGID=100
       - TZ=Europe/London
     volumes:
-      - /share/Container/mediamax/config:/config
-      - /share/Container/mediamax/transcode:/transcode
-      - /share/Container/mediamax/recordings:/recordings
+      - /share/Container/kinora/config:/config
+      - /share/Container/kinora/transcode:/transcode
+      - /share/Container/kinora/recordings:/recordings
       - /share/Multimedia/Movies:/media/movies:ro
       - /share/Multimedia/TV:/media/tv:ro
       - /share/Multimedia/Music:/media/music:ro

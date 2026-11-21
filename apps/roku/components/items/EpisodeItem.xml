@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Episode row (MarkupList): thumbnail with progress, "3. Title", runtime / watched, two lines of overview. -->
+<component name="EpisodeItem" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContent" />
+    <field id="width" type="float" onChange="onSize" />
+    <field id="height" type="float" onChange="onSize" />
+    <field id="focusPercent" type="float" onChange="onFocus" />
+    <field id="itemHasFocus" type="boolean" onChange="onFocus" />
+    <field id="listHasFocus" type="boolean" onChange="onFocus" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/items/EpisodeItem.brs" />
+  <children>
+    <Rectangle id="bg" color="0x1E2452FF" />
+    <Rectangle id="thumbBg" translation="[12,12]" width="240" height="135" color="0x0B0E26FF" />
+    <Poster id="thumb" translation="[12,12]" width="240" height="135" loadDisplayMode="scaleToZoom" />
+    <Rectangle id="progressBg" translation="[12,141]" width="240" height="6" color="0x00000099" visible="false" />
+    <Rectangle id="progressBar" translation="[12,141]" height="6" color="0x22D3EEFF" visible="false" />
+    <Label id="title" translation="[276,14]" color="0xFFFFFFFF" font="font:SmallBoldSystemFont" />
+    <Label id="meta" translation="[276,52]" color="0x22D3EEFF" font="font:SmallestSystemFont" />
+    <Label id="overview" translation="[276,84]" wrap="true" maxLines="2" color="0xA9B0D6FF" font="font:SmallestSystemFont" />
+  </children>
+</component>

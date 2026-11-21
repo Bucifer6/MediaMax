@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Branding, BrandingAssetKind, HomeRowConfig, Theme } from '@mediamax/shared';
+import type { Branding, BrandingAssetKind, HomeRowConfig, Theme, ThemeSchedule } from '@mediamax/shared';
+import { productName } from '../util/product.js';
 import { getKv, setKv, getSettings } from './settings.js';
 import { BUILTIN_THEMES, DEFAULT_THEME_ID } from './themes.js';
 import { db } from '../db.js';
@@ -25,14 +26,14 @@ export const DEFAULT_HOME_ROWS: HomeRowConfig[] = [
   { id: 'recordings', type: 'recordings', enabled: true, title: 'Recent Recordings', limit: 20 },
 ];
 
-interface StoredBranding extends Omit<Branding, 'themes' | 'features' | 'revision'> {
+interface StoredBranding extends Omit<Branding, 'themes' | 'features' | 'revision' | 'baseThemeId' | 'activeThemeScheduleId'> {
   customThemes: Theme[];
   features: Partial<Branding['features']>;
   revision: number;
 }
 
 const DEFAULTS: StoredBranding = {
-  serverName: 'MediaMax',
+  serverName: 'Kinora',
   tagline: 'Your movies, shows, music and live TV. Everywhere.',
   logoUrl: null,
   logoWideUrl: null,
@@ -42,10 +43,11 @@ const DEFAULTS: StoredBranding = {
   loginMessage: '',
   footerText: '',
   supportUrl: null,
-  splash: { backgroundColor: '#0A0F22', logoUrl: null },
+  splash: { backgroundColor: '#0D0C1D', logoUrl: null },
   tvBannerUrl: null,
   topShelfUrl: null,
   defaultThemeId: DEFAULT_THEME_ID,
+  themeSchedules: [],
   customThemes: [],
   allowUserThemes: true,
   homeRows: DEFAULT_HOME_ROWS,
@@ -59,8 +61,8 @@ const DEFAULT_FEATURES: Branding['features'] = {
 };
 
 /**
- * The MediaMax theme became the default in branding v2. Installs that were already set up keep the
- * theme they had (Midnight, the old default) unless an admin had picked one; new installs get MediaMax.
+ * The Kinora theme became the default in branding v2. Installs that were already set up keep the
+ * theme they had (Midnight, the old default) unless an admin had picked one; new installs get Kinora.
  * Runs once per database: the marker is written on the first look.
  */
 let defaultsChecked = false;
@@ -80,17 +82,65 @@ function stored(): StoredBranding {
   return { ...DEFAULTS, ...s, splash: { ...DEFAULTS.splash, ...(s.splash ?? {}) } };
 }
 
-export function getBranding(): Branding {
+const MONTH_DAY = /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** Whether "MM-DD" `md` falls in an inclusive window; a window ending before it starts wraps the year end. */
+export function inDateWindow(md: string, start: string, end: string): boolean {
+  return start <= end ? md >= start && md <= end : md >= start || md <= end;
+}
+
+/** The first enabled schedule whose window contains `now` (server local date) and whose theme exists. */
+export function activeThemeSchedule(schedules: ThemeSchedule[], themes: Theme[], now = new Date()): ThemeSchedule | null {
+  const md = `${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+  return schedules.find((s) => s.enabled && inDateWindow(md, s.start, s.end) && themes.some((t) => t.id === s.themeId)) ?? null;
+}
+
+export function getBranding(now = new Date()): Branding {
   const s = stored();
   const { customThemes, ...rest } = s;
   const themes = [...BUILTIN_THEMES, ...customThemes];
+  const baseThemeId = themes.some((t) => t.id === s.defaultThemeId) ? s.defaultThemeId : DEFAULT_THEME_ID;
+  const active = activeThemeSchedule(s.themeSchedules ?? [], themes, now);
   return {
     ...rest,
-    serverName: s.serverName || getSettings().serverName,
+    serverName: productName(s.serverName || getSettings().serverName),
     themes,
-    defaultThemeId: themes.some((t) => t.id === s.defaultThemeId) ? s.defaultThemeId : DEFAULT_THEME_ID,
+    defaultThemeId: active?.themeId ?? baseThemeId,
+    baseThemeId,
+    themeSchedules: s.themeSchedules ?? [],
+    activeThemeScheduleId: active?.id ?? null,
     features: { ...DEFAULT_FEATURES, ...s.features },
   };
+}
+
+function validateSchedules(list: unknown): ThemeSchedule[] {
+  if (!Array.isArray(list)) throw badRequest('themeSchedules must be a list');
+  const seen = new Set<string>();
+  return list.slice(0, 50).map((raw) => {
+    const x = (raw ?? {}) as Partial<ThemeSchedule>;
+    const start = String(x.start ?? '').trim();
+    const end = String(x.end ?? '').trim();
+    if (!MONTH_DAY.test(start) || !MONTH_DAY.test(end)) throw badRequest('Theme schedule dates must be MM-DD, e.g. 10-20');
+    if (typeof x.themeId !== 'string' || !x.themeId) throw badRequest('Theme schedule needs a theme');
+    let id = typeof x.id === 'string' && /^[\w-]{1,64}$/.test(x.id) ? x.id : newId();
+    if (seen.has(id)) id = newId();
+    seen.add(id);
+    return { id, name: String(x.name ?? '').trim().slice(0, 60) || 'Seasonal theme', enabled: x.enabled !== false, start, end, themeId: x.themeId };
+  });
+}
+
+/**
+ * Bump the branding revision when a seasonal theme starts or ends, so connected clients refetch it
+ * (they refresh on `branding.updated` with a new revision). Called every few minutes by the scheduler.
+ */
+export function checkThemeSchedule(now = new Date()): boolean {
+  const b = getBranding(now);
+  const seen = getKv<string | null>('branding.activeSchedule', null);
+  if ((b.activeThemeScheduleId ?? null) === seen) return false;
+  setKv('branding.activeSchedule', b.activeThemeScheduleId ?? null);
+  save(stored());
+  return true;
 }
 
 function save(next: StoredBranding): Branding {
@@ -134,7 +184,13 @@ export function updateBranding(patch: Partial<Branding>): Branding {
   const nullableStr = ['supportUrl', 'logoUrl', 'logoWideUrl', 'faviconUrl', 'appIconUrl', 'loginBackgroundUrl', 'tvBannerUrl', 'topShelfUrl'] as const;
   for (const f of nullableStr) if (patch[f] !== undefined) (next as any)[f] = patch[f] || null;
   if (patch.splash) next.splash = { ...cur.splash, ...patch.splash };
-  if (patch.defaultThemeId) next.defaultThemeId = patch.defaultThemeId;
+  if (patch.baseThemeId) next.defaultThemeId = patch.baseThemeId;
+  else if (patch.defaultThemeId) {
+    // Clients that echo the branding back send the effective (seasonal) theme: that must not become the default.
+    const eff = getBranding();
+    if (!(eff.activeThemeScheduleId && patch.defaultThemeId === eff.defaultThemeId && patch.defaultThemeId !== eff.baseThemeId)) next.defaultThemeId = patch.defaultThemeId;
+  }
+  if (patch.themeSchedules !== undefined) next.themeSchedules = validateSchedules(patch.themeSchedules);
   if (typeof patch.allowUserThemes === 'boolean') next.allowUserThemes = patch.allowUserThemes;
   if (patch.features) next.features = { ...cur.features, ...patch.features };
   if (Array.isArray(patch.homeRows)) {
@@ -205,7 +261,7 @@ export function brandingCss(): string {
 
 /**
  * PWA manifest that follows the branding: the server's name and theme colours, and the uploaded app
- * icon when there is one (else the stock MediaMax icons in the web client, including a maskable one).
+ * icon when there is one (else the stock Kinora icons in the web client, including a maskable one).
  */
 export function webManifest() {
   const b = getBranding();
@@ -219,8 +275,8 @@ export function webManifest() {
         { src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
       ];
   return {
-    name: b.serverName || 'MediaMax',
-    short_name: (b.serverName || 'MediaMax').slice(0, 12),
+    name: productName(b.serverName),
+    short_name: productName(b.serverName).slice(0, 12),
     description: b.tagline,
     start_url: '/',
     scope: '/',

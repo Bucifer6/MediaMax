@@ -1,12 +1,12 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="branding/mediamax/wordmark-tagline-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="branding/mediamax/wordmark-tagline-light.svg">
-  <img alt="MediaMax: Stream without limits." src="branding/mediamax/wordmark-tagline-light.svg" width="460">
+  <source media="(prefers-color-scheme: dark)" srcset="branding/kinora/wordmark-tagline-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="branding/kinora/wordmark-tagline-light.svg">
+  <img alt="Kinora: your own home cinema." src="branding/kinora/wordmark-tagline-light.svg" width="460">
 </picture>
 
-**One self-hosted server for movies, TV, music, audiobooks, podcasts, photos, live TV and IPTV, with apps that wear *your* brand.**
+**Your own home cinema: one self-hosted server for movies, TV, music, audiobooks, podcasts, photos, live TV and IPTV, with apps that wear *your* brand.**
 
 [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-D97757?logo=anthropic&logoColor=white)](https://claude.com/claude-code)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2362FA.svg)](LICENSE)
@@ -15,11 +15,16 @@
 
 [Features](#features) · [Screenshots](#screenshots) · [Themes](#themes) · [Install](#install) · [Apps](#apps) · [Docs](#documentation) · [Built with Claude Code](#built-with-claude-code)
 
-![MediaMax home screen](docs/screenshots/home.jpg)
+![Kinora home screen](docs/screenshots/home.jpg)
 
 </div>
 
-MediaMax brings together the features people love in **Plex, Jellyfin and Emby** and the polish of the big streaming services. It adds first-class **Xtream Codes IPTV** and **TV tuners**, a beat-matching **DJ mode** with an optional **AI DJ**, built-in **requests** and **profiles**, **Home Assistant** and **Play to** support, and a **one-command secure deployment** that fits next to the reverse proxy you already run. Every client (web, iOS, Android, Apple TV, Android TV, Fire TV, Samsung and LG TVs) takes its logo, colours, fonts, home layout and features from your server, applied live with no app rebuild.
+**Kinora** takes its name from *kino*, cinema; a kinora was an 1890s home-movie viewer, a little machine for watching
+your own films at home. That is still the idea: your films, shows, music and photos on hardware you own, presented
+like a premium streaming service. The interface is lit by the films themselves (the *Lumen* design language), and
+the logo is a K drawn in projector light.
+
+Kinora brings together the features people love in **Plex, Jellyfin and Emby** and the polish of the big streaming services. It adds first-class **Xtream Codes IPTV** and **TV tuners**, a beat-matching **DJ mode** with an optional **AI DJ**, built-in **requests** and **profiles**, **Home Assistant** and **Play to** support, and a **one-command secure deployment** that fits next to the reverse proxy you already run. Every client (web, iOS, Android, Apple TV, Android TV, Fire TV, Samsung and LG TVs) takes its logo, colours, fonts, home layout and features from your server, applied live with no app rebuild.
 
 > [!NOTE]
 > **This entire project, from the server and web app to the mobile and TV apps, deployment kit, docs and tests, was designed and written by [Claude Code](https://claude.com/claude-code)**, Anthropic's agentic coding tool, working from a short brief. See [Built with Claude Code](#built-with-claude-code).
@@ -95,7 +100,7 @@ MediaMax brings together the features people love in **Plex, Jellyfin and Emby**
 <tr><td valign="top">
 
 **🔐 Network & security**
-- **No reverse proxy by default**: MediaMax drops in behind the Nginx, Traefik, Caddy or tunnel you already run. Choose *Direct*, *Behind my reverse proxy* or **built-in HTTPS** (bundled Caddy, free certificate) on the admin **Network** page ([docs/DEPLOY.md](docs/DEPLOY.md#network--https-admin--network))
+- **No reverse proxy by default**: Kinora drops in behind the Nginx, Traefik, Caddy or tunnel you already run. Choose *Direct*, *Behind my reverse proxy* or **built-in HTTPS** (bundled Caddy, free certificate) on the admin **Network** page ([docs/DEPLOY.md](docs/DEPLOY.md#network--https-admin--network))
 - **Security dashboard**: sign-in attempts, proxy traffic, HTTPS certificate, and CrowdSec/fail2ban bans with one-click unban
 - Two-factor sign-in, invite links, single sign-on (OIDC), API keys, per-user stream limits, home-network-only accounts
 - Hardened by an audit: content security policy, SSRF-safe fetching with DNS pinning, sessions revoked on password change, remote-streaming rules on every media endpoint
@@ -106,7 +111,7 @@ MediaMax brings together the features people love in **Plex, Jellyfin and Emby**
 - *arr hub (several Radarr/Sonarr/Lidarr/Readarr/Bazarr instances) with a **downloads dashboard** and instant imports
 - Trakt, OpenSubtitles, Bazarr, DLNA server, webhooks, notification agents (Discord, Telegram, ntfy, email…), Prometheus metrics
 - Plugin system, backups and restore, UPnP port mapping, scheduled tasks, activity log
-- **Branding studio** and 26 themes; every app re-skins live from the server. The MediaMax **brand kit** (logo, app icons, splash and store art) lives in [`branding/mediamax`](branding/mediamax/README.md)
+- **Branding studio** and 26 themes; every app re-skins live from the server. The Kinora **brand kit** (logo, app icons, splash and store art) lives in [`branding/kinora`](branding/kinora/README.md)
 
 </td></tr>
 </table>
@@ -161,7 +166,7 @@ All screenshots come from a fictional demo library and are regenerated with `npm
 
 ## Themes
 
-26 built-in themes, each with its own colours, font, card shape and hero style, and every one meets **WCAG AA contrast**. New servers start on the **MediaMax** theme (the brand's cyan, blue and magenta with Plus Jakarta Sans); admins pick the default, can let people choose their own, or design new ones in the Branding Studio. **Starter looks** (Home Cinema, Family & Kids, Music Lover, Live TV & IPTV, Minimal, Easy to See) set the theme, home rows and features in one click.
+26 built-in themes, each with its own colours, font, card shape and hero style, and every one meets **WCAG AA contrast**. New servers start on the **Kinora** theme (the brand's indigo and projector-light amber with Bricolage Grotesque and Figtree, the Lumen type pairing); admins pick the default, can let people choose their own, or design new ones in the Branding Studio. **Starter looks** (Home Cinema, Family & Kids, Music Lover, Live TV & IPTV, Minimal, Easy to See) set the theme, home rows and features in one click.
 
 ![Theme gallery](docs/screenshots/themes-grid.jpg)
 
@@ -170,7 +175,7 @@ All screenshots come from a fictional demo library and are regenerated with `npm
 
 | Dark | | | Light & special |
 |---|---|---|---|
-| **MediaMax** (default) | | | **MediaMax Light** |
+| **Kinora** (default) | | | **Kinora Light** |
 | Midnight | Cinema Gold | Oceanic | Daylight |
 | Crimson | Emerald | Pure OLED | Paper White |
 | Synthwave | Nordic Frost | Velvet Night | Sakura |
@@ -186,11 +191,11 @@ FFmpeg is included in every option. Then open `http://<server>:8484` and follow 
 
 | Platform | How |
 |---|---|
-| **Linux server, secure & public** | `curl -fsSL https://raw.githubusercontent.com/Bucifer6/MediaMax/main/deploy/install.sh \| sudo bash` sets up Docker, **CrowdSec** and/or **fail2ban**, your media folders read-only, hardware transcoding and hardened defaults. It installs **no reverse proxy by default** (`--proxy none`), so it fits behind the one you already run; add `--proxy caddy` or `--proxy nginx` for HTTPS with a free certificate, `--proxy tunnel` for Cloudflare Tunnel, or `--builtin-https` to turn on MediaMax's own HTTPS later from **Admin → Network**. See [docs/DEPLOY.md](docs/DEPLOY.md) |
-| **Docker** (amd64, arm64) | `docker run -d -p 8484:8484 -v "$PWD/config:/config" -v /path/to/media:/media:ro ghcr.io/bucifer6/mediamax` |
+| **Linux server, secure & public** | `curl -fsSL https://raw.githubusercontent.com/Bucifer6/MediaMax/main/deploy/install.sh \| sudo bash` sets up Docker, **CrowdSec** and/or **fail2ban**, your media folders read-only, hardware transcoding and hardened defaults. It installs **no reverse proxy by default** (`--proxy none`), so it fits behind the one you already run; add `--proxy caddy` or `--proxy nginx` for HTTPS with a free certificate, `--proxy tunnel` for Cloudflare Tunnel, or `--builtin-https` to turn on Kinora's own HTTPS later from **Admin → Network**. See [docs/DEPLOY.md](docs/DEPLOY.md) |
+| **Docker** (amd64, arm64) | `docker run -d -p 8484:8484 -v "$PWD/config:/config" -v /path/to/media:/media:ro ghcr.io/bucifer6/kinora` |
 | **NAS**: Synology, QNAP, Unraid, TrueNAS SCALE, OpenMediaVault | ready-made templates in [`nas/`](nas) |
-| **Windows** x64 | `mediamax-<version>-windows-x64.zip` from [Releases](https://github.com/Bucifer6/MediaMax/releases/latest): run `MediaMax.cmd`, or `install-service.ps1` to start at boot |
-| **Linux** x64 / arm64 | `mediamax-<version>-linux-<arch>.tar.gz`: run `./mediamax`, or install the included systemd unit |
+| **Windows** x64 | `kinora-<version>-windows-x64.zip` from [Releases](https://github.com/Bucifer6/MediaMax/releases/latest): run `Kinora.cmd`, or `install-service.ps1` to start at boot |
+| **Linux** x64 / arm64 | `kinora-<version>-linux-<arch>.tar.gz`: run `./kinora`, or install the included systemd unit |
 
 Step-by-step guides, hardware transcoding, upgrades and backups are in **[docs/INSTALL.md](docs/INSTALL.md)**. Optional free add-ons for the AI DJ (Ollama, Kokoro, Piper) are covered there too.
 
@@ -218,23 +223,26 @@ The server listens on port **8484** and serves the web app and API. For developm
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MEDIAMAX_PORT` | `8484` | HTTP port |
-| `MEDIAMAX_HOST` | `0.0.0.0` | Address to listen on (`127.0.0.1` behind a local reverse proxy) |
-| `MEDIAMAX_DATA` | `./data` ([binaries and Docker](docs/INSTALL.md#where-your-data-lives-and-backups) differ) | Database, caches, branding assets, logs |
-| `MEDIAMAX_TRANSCODE_DIR` | `$DATA/transcodes` | HLS segment scratch space (a RAM disk is ideal) |
-| `MEDIAMAX_RECORDINGS` | `$DATA/recordings` | DVR output folder |
-| `MEDIAMAX_FFMPEG` / `MEDIAMAX_FFPROBE` | bundled, else on the PATH | Custom binaries (e.g. jellyfin-ffmpeg) |
-| `MEDIAMAX_HWACCEL` | `none` | Initial hardware accelerator |
-| `MEDIAMAX_TRUSTED_PROXIES` | loopback + private ranges | Proxies whose `X-Forwarded-*` headers are trusted |
+| `KINORA_PORT` | `8484` | HTTP port |
+| `KINORA_HOST` | `0.0.0.0` | Address to listen on (`127.0.0.1` behind a local reverse proxy) |
+| `KINORA_DATA` | `./data` ([binaries and Docker](docs/INSTALL.md#where-your-data-lives-and-backups) differ) | Database, caches, branding assets, logs |
+| `KINORA_TRANSCODE_DIR` | `$DATA/transcodes` | HLS segment scratch space (a RAM disk is ideal) |
+| `KINORA_RECORDINGS` | `$DATA/recordings` | DVR output folder |
+| `KINORA_FFMPEG` / `KINORA_FFPROBE` | bundled, else on the PATH | Custom binaries (e.g. jellyfin-ffmpeg) |
+| `KINORA_HWACCEL` | `none` | Initial hardware accelerator |
+| `KINORA_TRUSTED_PROXIES` | loopback + private ranges | Proxies whose `X-Forwarded-*` headers are trusted |
 | `TMDB_API_KEY` | | Online metadata (also settable in the admin UI) |
-| `OPENSUBTITLES_API_KEY`, `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET`, `LASTFM_API_KEY` / `LASTFM_SECRET`, `ACOUSTID_API_KEY` | | Initial integration keys (the admin UI can set them too) |
-| `MEDIAMAX_WEB_DIR` / `MEDIAMAX_HELP_DIR` | bundled | Serve the web app / Help Centre articles from another folder |
-| `MEDIAMAX_ALLOW_PRIVATE_URLS` | unset | `1` lets podcast feeds and other user-supplied URLs point at LAN addresses |
-| `MEDIAMAX_CADDY` | bundled in Docker and release archives | Caddy binary for **built-in HTTPS** (Admin → Network) |
-| `MEDIAMAX_ORT_DIR` | downloaded on first use | A local copy of onnxruntime-web for AI vocal separation on air-gapped servers |
-| `MEDIAMAX_LOG_LEVEL` | `info` | `debug` for verbose logs |
+| `OPENSUBTITLES_API_KEY`, `SUBSRO_API_KEY`, `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET`, `LASTFM_API_KEY` / `LASTFM_SECRET`, `ACOUSTID_API_KEY` | | Initial integration keys (the admin UI can set them too) |
+| `KINORA_WEB_DIR` / `KINORA_HELP_DIR` | bundled | Serve the web app / Help Centre articles from another folder |
+| `KINORA_ALLOW_PRIVATE_URLS` | unset | `1` lets podcast feeds and other user-supplied URLs point at LAN addresses |
+| `KINORA_CADDY` | bundled in Docker and release archives | Caddy binary for **built-in HTTPS** (Admin → Network) |
+| `KINORA_ORT_DIR` | downloaded on first use | A local copy of onnxruntime-web for AI vocal separation on air-gapped servers |
+| `KINORA_LOG_LEVEL` | `info` | `debug` for verbose logs |
 
 More, including the security dashboard and integration variables, is in [docs/INSTALL.md](docs/INSTALL.md) and [docs/DEPLOY.md](docs/DEPLOY.md).
+
+Every `KINORA_*` variable also works under its original `MEDIAMAX_*` name (Kinora was called MediaMax before it was
+renamed), so existing configurations keep working; when both are set, the `KINORA_*` value wins.
 
 </details>
 
@@ -243,10 +251,11 @@ More, including the security dashboard and integration variables, is in [docs/IN
 | Client | Status |
 |---|---|
 | **Web** (any browser) | ✅ Served by the server; responsive down to phones |
-| **Samsung (Tizen) & LG (webOS)** | ✅ Wrapper apps in [`tv/`](tv) that load the web app in TV mode: D-pad navigation, remote keys, and MediaMax's own hls.js/MSE player and subtitle renderer instead of the TV's ([tv/README.md](tv/README.md)) |
+| **Samsung (Tizen), LG (webOS) & Hisense (VIDAA)** | ✅ Wrapper apps in [`tv/`](tv) that load the web app in TV mode (VIDAA: 🧪 hosted web app, not yet tested on a set): D-pad navigation, remote keys, and Kinora's own hls.js/MSE player and subtitle renderer instead of the TV's ([tv/README.md](tv/README.md)) |
 | **iOS / iPadOS, Android** | 🧪 Built from [`apps/mobile`](apps/mobile) with Expo. Compiled in CI ([Native apps](https://github.com/Bucifer6/MediaMax/actions/workflows/apps.yml)); store release needs your developer accounts |
 | **Apple TV, Android TV, Fire TV** | 🧪 Same codebase, TV builds compiled in CI; installable Android TV/Fire TV APKs are produced on every change |
-| **CarPlay, Android Auto** | 🧪 Native module in the mobile app: browse, search, ±15/30 s for audiobooks, podcasts and long mixes, speed, Assistant voice commands, opt-in Siri "Play … in MediaMax"; CarPlay needs Apple's audio entitlement |
+| **Roku** | 🧪 Native BrightScript/SceneGraph channel in [`apps/roku`](apps/roku): link-code sign-in, profiles, home rows, libraries, search, Live TV, direct play / HLS with a device profile read from the Roku at runtime. Passes BrighterScript's static checks; not yet run on a Roku ([apps/roku/README.md](apps/roku/README.md)) |
+| **CarPlay, Android Auto** | 🧪 Native module in the mobile app: browse, search, ±15/30 s for audiobooks, podcasts and long mixes, speed, Assistant voice commands, opt-in Siri "Play … in Kinora"; CarPlay needs Apple's audio entitlement |
 | **Subsonic apps, DLNA players** | ✅ Through the built-in Subsonic API and DLNA server |
 
 🧪 means it compiles and is ready for device testing and store submission; it hasn't been through store review yet. Debug-signed Android APKs can be downloaded from the latest [Native apps](https://github.com/Bucifer6/MediaMax/actions/workflows/apps.yml) run. White-labelling (your own name, icon and colours in the store) is one command; see [apps/mobile/README.md](apps/mobile/README.md).
@@ -272,12 +281,13 @@ More, including the security dashboard and integration variables, is in [docs/IN
 | [docs/ROADMAP.md](docs/ROADMAP.md) | What's next |
 | [apps/mobile/README.md](apps/mobile/README.md) | Building the phone, tablet, TV and car apps |
 | [tv/README.md](tv/README.md) | The Samsung and LG TV apps |
-| [branding/mediamax/README.md](branding/mediamax/README.md) | The MediaMax brand kit: logo, colours, app icons and store art |
+| [apps/roku/README.md](apps/roku/README.md) | The Roku channel: build, sideload, debug, package |
+| [branding/kinora/README.md](branding/kinora/README.md) | The Kinora brand kit: logo, colours, app icons and store art |
 
 <details>
 <summary><b>Adding IPTV</b></summary>
 
-Go to **Admin → Live TV sources → Add source → Xtream Codes**, enter the portal URL, username and password, and press **Test**. You'll see the account status, expiry and channel/VOD/series counts. On save, MediaMax:
+Go to **Admin → Live TV sources → Add source → Xtream Codes**, enter the portal URL, username and password, and press **Test**. You'll see the account status, expiry and channel/VOD/series counts. On save, Kinora:
 
 1. imports live channels and categories and loads the provider's guide (add more guide sources, and check how channels were matched, under **Admin → TV guide**);
 2. creates **"<name> Movies"** and **"<name> Series"** libraries from the VOD catalogue, which browse, search, resume and play like local media;
@@ -307,7 +317,7 @@ Profiles never have more access than their owner: library access is the owner's 
 **Admin → Branding studio** controls everything the apps show:
 
 - server name, tagline, login message, footer and support link;
-- logo, wide logo, favicon, app icon, splash and login background (until you upload your own, the MediaMax logo from [`branding/mediamax/`](branding/mediamax/README.md) is used);
+- logo, wide logo, favicon, app icon, splash and login background (until you upload your own, the Kinora logo from [`branding/kinora/`](branding/kinora/README.md) is used);
 - themes, starter looks, and your own themes (13 colour tokens, radius, font, poster shape, card size, hero style);
 - the home screen rows and their order;
 - feature toggles that hide areas in every app;
@@ -320,7 +330,7 @@ Every connected app receives a `branding.updated` event and re-themes instantly.
 <details>
 <summary><b>Use your favourite music apps (Subsonic)</b></summary>
 
-MediaMax speaks the **Subsonic / OpenSubsonic API** at `http://<server>:8484/rest`. Players such as Symfonium, Feishin, play:Sub, Amperfy, Substreamer and Sonos bridges can browse, search, stream (with transcoding and ReplayGain), star, scrobble, edit playlists and show synced lyrics. Sign in with your MediaMax username and password, or with an API key if you use two-factor sign-in.
+Kinora speaks the **Subsonic / OpenSubsonic API** at `http://<server>:8484/rest`. Players such as Symfonium, Feishin, play:Sub, Amperfy, Substreamer and Sonos bridges can browse, search, stream (with transcoding and ReplayGain), star, scrobble, edit playlists and show synced lyrics. Sign in with your Kinora username and password, or with an API key if you use two-factor sign-in.
 
 </details>
 
@@ -341,16 +351,17 @@ MediaMax speaks the **Subsonic / OpenSubsonic API** at `http://<server>:8484/res
 
 ```
 shared/        API contract (TypeScript types used by every client)
-server/        MediaMax server (Fastify, node:sqlite, FFmpeg)
+server/        Kinora server (Fastify, node:sqlite, FFmpeg)
 web/           Web app and admin dashboard (React + Vite)
 apps/mobile/   iOS, Android, Apple TV, Android TV and Fire TV apps (Expo / React Native) + CarPlay/Android Auto
-tv/            Samsung Tizen and LG webOS wrapper apps
+apps/roku/     Roku channel (BrightScript + SceneGraph)
+tv/            Samsung Tizen, LG webOS and Hisense VIDAA wrapper apps
 deploy/        One-command installer, Caddy/Nginx, CrowdSec and fail2ban configs
 nas/           Templates for Synology, QNAP, Unraid, TrueNAS SCALE and OpenMediaVault
 packaging/     Files shipped in the Windows and Linux release archives
 plugins/       Plugin SDK and examples
 scripts/       Release packaging, end-to-end smoke test and user journeys, screenshot generator
-branding/      The MediaMax brand kit (logo, icons, splash and store art)
+branding/      The Kinora brand kit (logo, icons, splash and store art)
 docs/          Install, deploy, API, features, playback, HDR, audio, tuners, plugins
 ```
 
@@ -372,7 +383,7 @@ It generates fictional demo media and artwork (including a Dolby Vision film and
 
 ## Built with Claude Code
 
-MediaMax was built end to end by **[Claude Code](https://claude.com/claude-code)**, Anthropic's agentic coding tool. It started from a short brief: *"build a media server that combines Plex, Jellyfin and Emby with Xtream IPTV, apps for phones and TVs, all customisable from the server."*
+Kinora was built end to end by **[Claude Code](https://claude.com/claude-code)**, Anthropic's agentic coding tool. It started from a short brief: *"build a media server that combines Plex, Jellyfin and Emby with Xtream IPTV, apps for phones and TVs, all customisable from the server."*
 
 Claude Code designed the architecture and wrote the server, web app, mobile, TV and car apps, deployment kit, tests and documentation. It worked through the usual engineering loop: building features, running unit tests, end-to-end browser tests and real tools (FFmpeg, CrowdSec, fail2ban, Caddy, Nginx), reading CI logs and fixing what failed. For larger pieces it ran several agents in parallel, each on a separate part of the codebase. Every change went through pull requests with CI before merging.
 
@@ -380,7 +391,7 @@ The project's owner steered the direction with feature requests; the code is Cla
 
 ## License
 
-MediaMax is open source under the [MIT License](LICENSE). You're free to use, modify and redistribute it, including publishing your own branded builds of the apps, as long as the licence notice is kept.
+Kinora is open source under the [MIT License](LICENSE). You're free to use, modify and redistribute it, including publishing your own branded builds of the apps, as long as the licence notice is kept.
 
 Third-party services you connect (TMDB, Trakt, Last.fm, OpenSubtitles, IPTV providers, Schedules Direct, AI providers) have their own terms; make sure your use of them complies. FFmpeg is used as a separate program and is licensed under the LGPL/GPL. Bundled and downloadable third-party components (onnxruntime-web, the optional HT-Demucs model) and code adapted from OpenDJ are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

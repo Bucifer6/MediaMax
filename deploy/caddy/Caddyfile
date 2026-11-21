@@ -1,4 +1,4 @@
-# MediaMax behind Caddy
+# Kinora behind Caddy
 #
 # One file for both setups, chosen by MEDIAMAX_SITE_ADDRESS in .env (deploy/install.sh writes it):
 #   MEDIAMAX_SITE_ADDRESS=media.example.com   automatic HTTPS (Let's Encrypt / ZeroSSL), HTTP→HTTPS redirect, HTTP/3
@@ -27,7 +27,7 @@
 }
 
 (mediamax_headers) {
-	# MediaMax already sends X-Content-Type-Options, Referrer-Policy and X-Frame-Options, and its own
+	# Kinora already sends X-Content-Type-Options, Referrer-Policy and X-Frame-Options, and its own
 	# Content-Security-Policy on the sandboxed plugin pages and uploaded images (server/src/app.ts,
 	# server/src/routes/plugins.ts). "?" only sets a header the server did not send, so nothing here
 	# overrides or doubles those policies.
@@ -50,7 +50,7 @@
 	import /etc/caddy/conf.d/*.site
 	import mediamax_headers
 
-	# Uploads: 50 MB in MediaMax, with headroom for multipart overhead. Backup restores can be large.
+	# Uploads: 50 MB in Kinora, with headroom for multipart overhead. Backup restores can be large.
 	@mm_restore path /api/v1/admin/backups/restore-upload
 	@mm_regular not path /api/v1/admin/backups/restore-upload
 	request_body @mm_restore {
@@ -85,16 +85,16 @@
 		flush_interval -1
 		# WebSockets (/api/v1/ws) are proxied automatically; keep them open across `caddy reload`.
 		stream_close_delay 5m
-		# Ride out a MediaMax restart (upgrade, Admin → Restart) instead of failing at once.
+		# Ride out a Kinora restart (upgrade, Admin → Restart) instead of failing at once.
 		lb_try_duration 30s
 		lb_try_interval 1s
-		# Caddy sets X-Forwarded-For/-Proto/-Host itself; MediaMax trusts them from the Docker network only
+		# Caddy sets X-Forwarded-For/-Proto/-Host itself; Kinora trusts them from the Docker network only
 		# (MEDIAMAX_TRUSTED_PROXIES in docker-compose.yml).
 	}
 
 	# JSON access log, read by CrowdSec (type: caddy). Tokens, API keys (api_key, OpenSubsonic apiKey), device-link
 	# poll tokens and Subsonic credentials in query strings are redacted; Authorization and Cookie headers are
-	# redacted by Caddy by default, MediaMax's own X-Api-Key / X-MediaMax-Token headers are dropped here.
+	# redacted by Caddy by default, Kinora's own X-Api-Key / X-Kinora-Token (and legacy X-MediaMax-Token) headers are dropped here.
 	log {
 		output file /var/log/caddy/access.log {
 			roll_size 50MiB
@@ -111,6 +111,7 @@
 				replace s REDACTED
 			}
 			request>headers>X-Api-Key delete
+			request>headers>X-Kinora-Token delete
 			request>headers>X-Mediamax-Token delete
 			wrap json
 		}

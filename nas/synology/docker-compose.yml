@@ -1,14 +1,14 @@
-# MediaMax on Synology DSM 7.2+ (Container Manager -> Project -> Create). Guide: docs/INSTALL.md#synology
+# Kinora on Synology DSM 7.2+ (Container Manager -> Project -> Create). Guide: docs/INSTALL.md#synology
 #
 # Before you start:
-#   1. File Station: create /docker/mediamax with subfolders config, transcode and recordings.
-#   2. PUID/PGID: the user that should own MediaMax's files and can read your media.
+#   1. File Station: create /docker/kinora with subfolders config, transcode and recordings.
+#   2. PUID/PGID: the user that should own Kinora's files and can read your media.
 #      SSH in and run `id <username>` (the first DSM user is usually uid 1026, group "users" = 100).
 #   3. Change the /volume1/... paths below to your shared folders (keep the right-hand side as is).
 services:
-  mediamax:
-    image: ghcr.io/bucifer6/mediamax:latest
-    container_name: mediamax
+  kinora:
+    image: ghcr.io/bucifer6/kinora:latest
+    container_name: kinora
     restart: unless-stopped
     ports:
       - "8484:8484"
@@ -16,11 +16,11 @@ services:
       - PUID=1026
       - PGID=100
       - TZ=Europe/London
-      # - MEDIAMAX_HWACCEL=vaapi          # or qsv; then pick it in Admin -> Settings -> Transcoding
+      # - KINORA_HWACCEL=vaapi          # or qsv; then pick it in Admin -> Settings -> Transcoding
     volumes:
-      - /volume1/docker/mediamax/config:/config
-      - /volume1/docker/mediamax/transcode:/transcode   # most DS units have little RAM, so use disk, not tmpfs
-      - /volume1/docker/mediamax/recordings:/recordings
+      - /volume1/docker/kinora/config:/config
+      - /volume1/docker/kinora/transcode:/transcode   # most DS units have little RAM, so use disk, not tmpfs
+      - /volume1/docker/kinora/recordings:/recordings
       - /volume1/video/Movies:/media/movies:ro
       - /volume1/video/TV Shows:/media/tv:ro
       - /volume1/music:/media/music:ro
@@ -29,5 +29,5 @@ services:
     # DS1520+). AMD Ryzen models (DS923+, DS1522+) have no GPU. Check over SSH: `ls -l /dev/dri`.
     # devices:
     #   - /dev/dri:/dev/dri
-    # DLNA (smart TVs finding MediaMax by themselves) needs the host network instead of the port mapping:
+    # DLNA (smart TVs finding Kinora by themselves) needs the host network instead of the port mapping:
     # network_mode: host

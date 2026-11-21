@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { DownloadQuality, PlaybackRequest, ProgressReport } from '@mediamax/shared';
+import type { DownloadQuality, PlaybackPrepareRequest, PlaybackRequest, ProgressReport } from '@mediamax/shared';
 import { db } from '../db.js';
-import { requireAdmin, requireUser, remoteAddr } from '../http.js';
-import { assertRemoteAllowed, transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, subtitleVtt, touchSession } from '../services/playback.js';
+import { clientHints, requireAdmin, requireUser, remoteAddr } from '../http.js';
+import { assertRemoteAllowed, preparePlayback, reclaimWarmTranscodes, transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, subtitleVtt, touchSession } from '../services/playback.js';
 import { assertCanSee } from '../services/items.js';
 import { liveJobBySession } from '../services/livetv/livetv.js';
 import { badRequest, forbidden, notFound, HttpError } from '../util/errors.js';
@@ -14,7 +14,9 @@ import { spawn } from 'node:child_process';
 import { config } from '../config.js';
 import { safeFetch } from '../util/net.js';
 import { logActivity } from '../services/activity.js';
+import { events } from '../services/events.js';
 import { renditionRequest } from '../services/abr.js';
+import { pollDelay } from '../services/transcoder.js';
 import { doviMasterForJob } from '../services/dovi.js';
 import { serveSubtitle } from './streaming.js';
 
@@ -86,6 +88,7 @@ const conversionTotal = () => [...activeConversions.values()].reduce((a, b) => a
 function convertedDownload(req: FastifyRequest, reply: FastifyReply, m: Record<string, any>, baseName: string, quality: string, userId: string) {
   const q = QUALITY[quality];
   const max = getSettings().transcoding.maxConcurrent;
+  reclaimWarmTranscodes(transcodeCount() + conversionTotal() + 1);
   if (transcodeCount() + conversionTotal() >= max) throw new HttpError(503, 'The server is busy converting other media. Try again shortly or download the original file.', 'transcoder_busy');
   if ((activeConversions.get(userId) ?? 0) >= 2) throw new HttpError(429, 'You already have 2 converted downloads in progress.', 'too_many');
   activeConversions.set(userId, (activeConversions.get(userId) ?? 0) + 1);
@@ -116,16 +119,18 @@ function convertedDownload(req: FastifyRequest, reply: FastifyReply, m: Record<s
   reply.header('Content-Type', isAudio ? 'audio/mp4' : 'video/mp4')
     .header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`${baseName} - ${quality}.${isAudio ? 'm4a' : 'mp4'}`)}`)
     .header('Cache-Control', 'no-store');
-  if (m.duration_ms) reply.header('X-MediaMax-Duration-Ms', String(m.duration_ms));
+  if (m.duration_ms) reply.header('X-Kinora-Duration-Ms', String(m.duration_ms)).header('X-MediaMax-Duration-Ms', String(m.duration_ms));
   return reply.send(p.stdout);
 }
 
 export default async function playbackRoutes(app: FastifyInstance) {
-  app.post<{ Params: { itemId: string }; Body: PlaybackRequest }>('/playback/:itemId', async (req) => startPlayback(requireUser(req), req.params.itemId, req.body ?? {}, remoteAddr(req)));
+  app.post<{ Params: { itemId: string }; Body: PlaybackRequest }>('/playback/:itemId', async (req) => startPlayback(requireUser(req), req.params.itemId, req.body ?? {}, remoteAddr(req), clientHints(req)));
+  // Instant play: decide now and start remux / transcode jobs early (no session, history or stream-limit use).
+  app.post<{ Params: { itemId: string }; Body: PlaybackPrepareRequest }>('/playback/:itemId/prepare', async (req) => preparePlayback(requireUser(req), req.params.itemId, req.body ?? {}, remoteAddr(req)));
 
   app.post<{ Params: { sessionId: string }; Body: ProgressReport }>('/playback/sessions/:sessionId/progress', async (req) => {
     const b = req.body ?? ({} as ProgressReport);
-    return sessionProgress(requireUser(req), req.params.sessionId, Number(b.positionMs) || 0, b.state ?? 'playing', b.durationMs);
+    return sessionProgress(requireUser(req), req.params.sessionId, Number(b.positionMs) || 0, b.state ?? 'playing', b.durationMs, b.subtitleIndex);
   });
 
   app.delete<{ Params: { sessionId: string } }>('/playback/sessions/:sessionId', async (req) => {
@@ -150,6 +155,29 @@ export default async function playbackRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  /** Admin remote control of a stream, like Emby's dashboard: pause / resume, or show a message on the device. */
+  app.post<{ Params: { id: string }; Body: { action?: string; text?: string; header?: string; timeoutMs?: number } }>('/sessions/:id/command', async (req) => {
+    const a = requireAdmin(req);
+    const s = getSession(req.params.id);
+    if (!s) throw notFound('Session not found');
+    const b = req.body ?? {};
+    const action = String(b.action ?? '');
+    if (!['pause', 'play', 'togglePause', 'message'].includes(action)) throw badRequest('Unknown action');
+    const targets = events.clients().filter((c) => c.userId === s.ctx.user.id && c.deviceRowId === s.ctx.deviceRowId);
+    if (!targets.length) throw new HttpError(409, 'That device is not connected for remote control (it may be a TV app or renderer without a live connection).', 'device_offline');
+    if (action === 'message') {
+      const text = String(b.text ?? '').trim().slice(0, 500);
+      if (!text) throw badRequest('Message is empty');
+      const header = b.header ? String(b.header).trim().slice(0, 100) || null : null;
+      const timeoutMs = Math.min(60000, Math.max(3000, Number(b.timeoutMs) || 10000));
+      for (const t of targets) t.send({ type: 'session.message', from: a.user.displayName, header, text, timeoutMs });
+      logActivity('session.message', `Sent a message to ${s.ctx.user.displayName} on ${s.ctx.device.deviceName}: ${text}`, { userId: a.user.id, userName: a.user.displayName });
+    } else {
+      for (const t of targets) t.send({ type: 'remote.command', fromDeviceName: 'Server administrator', action: action as 'pause' | 'play' | 'togglePause' });
+    }
+    return { ok: true, delivered: targets.length };
+  });
+
   /* ------------------------------ streams --------------------------- */
   app.get<{ Params: { mediaId: string }; Querystring: { session?: string } }>('/stream/direct/:mediaId', async (req, reply) => {
     const { user } = requireUser(req);
@@ -164,7 +192,7 @@ export default async function playbackRoutes(app: FastifyInstance) {
       return sendFileRange(req, reply, m.path, mime);
     }
     const ua = db.get<{ user_agent: string | null }>('SELECT s.user_agent FROM live_sources s JOIN libraries l ON l.source_id = s.id JOIN items i ON i.library_id = l.id WHERE i.id = ?', m.item_id)?.user_agent;
-    return proxyRemote(req, reply, m.remote_url, ua || 'MediaMax/1.0', mime, isUntrustedMedia(m.item_id));
+    return proxyRemote(req, reply, m.remote_url, ua || 'Kinora/1.0', mime, isUntrustedMedia(m.item_id));
   });
 
   const hlsHandler = async (req: FastifyRequest<{ Params: { sessionId: string; file: string } }>, reply: FastifyReply) => {
@@ -222,9 +250,12 @@ export default async function playbackRoutes(app: FastifyInstance) {
     let segPath: string;
     if (job.opts.mode === 'transcode') segPath = await job.waitForSegment(n);
     else {
+      // Remux: without this the throttle measured "ahead" from segment 0 and could pause ffmpeg for good.
+      if (job.opts.mode === 'remux') job.requested(n);
       segPath = job.segmentPath(n);
-      const deadline = Date.now() + 20000;
-      while (!fs.existsSync(segPath) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 150));
+      const t0 = Date.now();
+      const deadline = t0 + 20000;
+      while (!fs.existsSync(segPath) && Date.now() < deadline) await new Promise((r) => setTimeout(r, pollDelay(Date.now() - t0)));
       if (!fs.existsSync(segPath)) throw notFound('Segment not available');
     }
     reply.type(job.segmentType === 'fmp4' ? 'video/mp4' : 'video/mp2t').header('Cache-Control', 'private, max-age=600');
@@ -254,6 +285,6 @@ export default async function playbackRoutes(app: FastifyInstance) {
     const name = `${item.title}${item.year ? ` (${item.year})` : ''}.${ext}`.replace(/[\\/:*?"<>|]/g, '');
     if (m.path) return sendFileRange(req, reply, m.path, mime, name);
     reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);
-    return proxyRemote(req, reply, m.remote_url, 'MediaMax/1.0', mime, isUntrustedMedia(item.id));
+    return proxyRemote(req, reply, m.remote_url, 'Kinora/1.0', mime, isUntrustedMedia(item.id));
   });
 }

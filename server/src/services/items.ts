@@ -1,7 +1,7 @@
 import type {
   HomeRow, HomeRowConfig, Item, MusicInfo, SubtitleStream, Chapter, ItemQuery, ItemSort, MediaSource, Marker, Paged, Person, User, UserItemData, UpdateItemRequest, VideoRangeInfo,
 } from '@mediamax/shared';
-import { db, type Param, type Row } from '../db.js';
+import { db, itemsVersion, type Param, type Row } from '../db.js';
 import { imageUrl } from './images.js';
 import { forbidden, notFound } from '../util/errors.js';
 import { nowIso, parseJson, ratingLevel, resolutionLabel, sortTitle, toInt } from '../util/misc.js';
@@ -24,13 +24,17 @@ export function allowedLibraryIds(user: User): string[] {
 }
 
 /** SQL fragment restricting `alias` items to what `user` may see. */
-export function accessClause(user: User, alias = 'i'): { sql: string; params: Param[] } {
+export function accessClause(user: User, alias = 'i', opts: { libraryId?: string | null } = {}): { sql: string; params: Param[] } {
   const libs = allowedLibraryIds(user);
   const parts: string[] = [];
   const params: Param[] = [];
-  const libSql = libs.length ? `${alias}.library_id IN (${libs.map(() => '?').join(',')})` : '0';
-  parts.push(`(${libSql} OR ${alias}.type = 'collection' OR (${alias}.type = 'playlist' AND ${alias}.owner_id = ?))`);
-  params.push(...libs, user.id);
+  // A query already restricted to one library the user may see (`library_id = X`) needs no library check: the clause
+  // is true for every such row, and leaving it out lets SQLite answer from the (library_id, type, …) indexes.
+  if (!(opts.libraryId && libs.includes(opts.libraryId))) {
+    const libSql = libs.length ? `${alias}.library_id IN (${libs.map(() => '?').join(',')})` : '0';
+    parts.push(`(${libSql} OR ${alias}.type = 'collection' OR (${alias}.type = 'playlist' AND ${alias}.owner_id = ?))`);
+    params.push(...libs, user.id);
+  }
   const max = ratingLevel(user.maxContentRating);
   if (max !== null && max >= 0) {
     // Effective rating: the item's own, else its show's/parent's. mm_rating_level() → age, NULL (unrated) or -1 (unknown).
@@ -42,7 +46,7 @@ export function accessClause(user: User, alias = 'i'): { sql: string; params: Pa
     parts.push(`mm_rating_ok(${eff}, ?, ${unratedOk}) = 1`);
     params.push(max);
   }
-  return { sql: parts.join(' AND '), params };
+  return { sql: parts.length ? parts.join(' AND ') : '1', params };
 }
 
 export function assertCanSee(user: User, itemId: string): Row {
@@ -54,7 +58,7 @@ export function assertCanSee(user: User, itemId: string): Row {
 
 /* ----------------------------- mapping ----------------------------- */
 
-const SELECT = (userParam = '?') => `
+const SELECT_COLS = (userParam = '?') => `
   SELECT i.*, p.title p_title, g.title g_title, p.poster p_poster, g.poster g_poster, p.backdrop p_backdrop, g.backdrop g_backdrop,
     p.logo p_logo, g.logo g_logo, p.content_rating p_rating, g.content_rating g_rating,
     ud.played u_played, ud.play_count u_play_count, ud.position_ms u_position, ud.favorite u_favorite, ud.last_played_at u_last, ud.rating u_rating,
@@ -63,12 +67,69 @@ const SELECT = (userParam = '?') => `
          WHEN i.type IN ('show','season','artist','album','audiobook','podcast') THEN (SELECT COUNT(*) FROM items c WHERE c.parent_id = i.id) ELSE 0 END child_count,
     CASE WHEN i.type = 'show' THEN (SELECT COUNT(*) FROM items e LEFT JOIN user_data eu ON eu.item_id = e.id AND eu.user_id = ${userParam} WHERE e.grandparent_id = i.id AND e.type = 'episode' AND COALESCE(eu.played, 0) = 0)
          WHEN i.type = 'season' THEN (SELECT COUNT(*) FROM items e LEFT JOIN user_data eu ON eu.item_id = e.id AND eu.user_id = ${userParam} WHERE e.parent_id = i.id AND e.type = 'episode' AND COALESCE(eu.played, 0) = 0)
-         ELSE NULL END unplayed
+         ELSE NULL END unplayed`;
+
+/** The joins every item query uses: parent/grandparent (art, titles), the viewer's user data (`ud`) and watchlist (`wl`). Binds the user id twice. */
+const JOINS = (userParam = '?') => `
   FROM items i
   LEFT JOIN items p ON p.id = i.parent_id
   LEFT JOIN items g ON g.id = i.grandparent_id
   LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ${userParam}
   LEFT JOIN watchlist wl ON wl.item_id = i.id AND wl.user_id = ${userParam}`;
+
+/**
+ * Only the joins a filter/sort actually references. SQLite doesn't drop an unused LEFT JOIN here, so counting or
+ * paging a 20k-title library probed user_data and the watchlist once per title for nothing (30+ ms per query).
+ */
+function neededJoins(sql: string, user: User): { sql: string; params: Param[] } {
+  const parts = ['FROM items i'];
+  const params: Param[] = [];
+  if (/\bp\./.test(sql)) parts.push('LEFT JOIN items p ON p.id = i.parent_id');
+  if (/\bg\./.test(sql)) parts.push('LEFT JOIN items g ON g.id = i.grandparent_id');
+  if (/\bud\./.test(sql)) {
+    parts.push('LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ?');
+    params.push(user.id);
+  }
+  if (/\bwl\./.test(sql)) {
+    parts.push('LEFT JOIN watchlist wl ON wl.item_id = i.id AND wl.user_id = ?');
+    params.push(user.id);
+  }
+  return { sql: parts.join(' '), params };
+}
+
+/** COUNT(*) of items matching a WHERE (same joins rule as paging). */
+function countWhere(user: User, whereSql: string, params: Param[]): number {
+  const j = neededJoins(whereSql, user);
+  return db.get<{ n: number }>(`SELECT COUNT(*) n ${j.sql} WHERE ${whereSql}`, ...j.params, ...params)!.n;
+}
+
+/** ORDER BY terms with the title tie-break, unless the sort already ends on it (a repeated term defeats the index). */
+const orderBy = (terms: string[], dir: string) => [...terms.map((t) => `${t} ${dir}`), ...(terms[terms.length - 1] === 'i.sort_title' ? [] : ['i.sort_title'])].join(', ');
+
+const SELECT = (userParam = '?') => `${SELECT_COLS(userParam)}${JOINS(userParam)}`;
+
+/**
+ * Paged item queries run in two steps: first the matching ids (filter + sort + LIMIT, with only the joins the
+ * filter needs), then the full rows for just that page. SQLite computes every selected column, including the
+ * child/unplayed count subqueries, for each row it sorts, so a one-step `ORDER BY … LIMIT 20` over a big library
+ * ran those subqueries for every title instead of for the 20 it returned.
+ */
+function pagedRows(user: User, whereSql: string, params: Param[], tail: string, tailParams: Param[] = []): Row[] {
+  const j = neededJoins(`${whereSql} ${tail}`, user);
+  const ids = db.all<{ id: string }>(`SELECT i.id ${j.sql} WHERE ${whereSql} ${tail}`, ...j.params, ...params, ...tailParams).map((r) => r.id);
+  return rowsByIds(user, ids);
+}
+
+/** Full item rows (SELECT columns) for ids, in the given order. Callers have already applied access rules. */
+function rowsByIds(user: User, ids: string[]): Row[] {
+  if (!ids.length) return [];
+  const byId = new Map<string, Row>();
+  for (let k = 0; k < ids.length; k += 400) {
+    const chunk = ids.slice(k, k + 400);
+    for (const r of db.all(`${SELECT()} WHERE i.id IN (${chunk.map(() => '?').join(',')})`, ...userParams(user), ...chunk)) byId.set(r.id, r);
+  }
+  return ids.map((id) => byId.get(id)).filter((r): r is Row => !!r);
+}
 
 /** SELECT() binds the viewer's id this many times, before any other parameter. */
 const userParams = (user: User): Param[] => [user.id, user.id, user.id, user.id];
@@ -174,7 +235,7 @@ const SORTS: Record<ItemSort, string[]> = {
 };
 
 export function queryItems(user: User, q: ItemQuery): Paged<Item> {
-  const a = accessClause(user);
+  const a = accessClause(user, 'i', { libraryId: q.libraryId });
   const where: string[] = [a.sql];
   const params: Param[] = [...userParams(user), ...a.params];
   const limit = toInt(q.limit, 50, 1, 500);
@@ -204,7 +265,8 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
     }
   }
   // Extras (videos attached to a movie/show) only appear via their owner (GET /items/:id/extras).
-  if (!q.parentId) where.push("NOT (i.type = 'video' AND i.parent_id IS NOT NULL)");
+  // (Redundant when the requested types exclude videos; leaving it out keeps the indexed browse queries covering.)
+  if (!q.parentId && (!types.length || types.includes('video'))) where.push("NOT (i.type = 'video' AND i.parent_id IS NOT NULL)");
   if (q.genre) {
     where.push('EXISTS (SELECT 1 FROM json_each(i.genres) WHERE json_each.value = ?)');
     params.push(q.genre);
@@ -228,8 +290,9 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
       params.push(q.letter.toLowerCase().slice(0, 1));
     }
   }
-  if (q.played !== undefined) where.push(String(q.played) === 'true' ? 'COALESCE(ud.played,0) = 1' : 'COALESCE(ud.played,0) = 0');
-  if (q.favorite !== undefined && String(q.favorite) === 'true') where.push('COALESCE(ud.favorite,0) = 1');
+  // `ud.x = 1` (not COALESCE(ud.x,0) = 1, same rows) lets SQLite start from the viewer's user_data rows.
+  if (q.played !== undefined) where.push(String(q.played) === 'true' ? 'ud.played = 1' : 'COALESCE(ud.played,0) = 0');
+  if (q.favorite !== undefined && String(q.favorite) === 'true') where.push('ud.favorite = 1');
   let sort = SORTS[q.sort as ItemSort] ?? (q.parentId || q.ancestorId ? SORTS.index : SORTS.title);
   if (q.series && !q.sort) sort = ["COALESCE(json_extract(i.extra, '$.series.index'), 9999)", 'i.year'];
   // Across several parents (an artist's albums, a show's seasons), keep each parent's children together.
@@ -237,9 +300,9 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
     sort = ['(SELECT COALESCE(x.year, 0) FROM items x WHERE x.id = i.parent_id)', '(SELECT x.sort_title FROM items x WHERE x.id = i.parent_id)', ...SORTS.index];
   }
   const dir = q.order === 'desc' ? 'DESC' : q.order === 'asc' ? 'ASC' : q.sort === 'addedAt' || q.sort === 'rating' || q.sort === 'lastPlayed' ? 'DESC' : 'ASC';
-  const sql = `${SELECT()} WHERE ${where.join(' AND ')}`;
-  const total = db.get<{ n: number }>(`SELECT COUNT(*) n FROM items i LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ? WHERE ${where.join(' AND ')}`, user.id, ...params.slice(userParams(user).length))!.n;
-  const rows = db.all(`${sql} ORDER BY ${sort.map((s) => `${s} ${dir}`).join(', ')}, i.sort_title LIMIT ? OFFSET ?`, ...params, limit, offset);
+  const whereParams = params.slice(userParams(user).length);
+  const total = countWhere(user, where.join(' AND '), whereParams);
+  const rows = offset >= total ? [] : pagedRows(user, where.join(' AND '), whereParams, `ORDER BY ${orderBy(sort, dir)} LIMIT ? OFFSET ?`, [limit, offset]);
   return { items: rows.map(rowToItem), total, limit, offset };
 }
 
@@ -247,20 +310,21 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
 export function queryWhere(user: User, whereSql: string, params: Param[], sort: ItemSort, order: 'asc' | 'desc', limit: number, offset: number, maxTotal: number | null = null): Paged<Item> {
   const a = accessClause(user);
   const where = `${a.sql} AND (${whereSql})`;
-  let total = db.get<{ n: number }>(`SELECT COUNT(*) n FROM items i LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ? WHERE ${where}`, user.id, ...a.params, ...params)!.n;
+  let total = countWhere(user, where, [...a.params, ...params]);
   if (maxTotal) total = Math.min(total, maxTotal);
   const lim = Math.max(0, Math.min(limit, total - offset));
   if (lim <= 0) return { items: [], total, limit, offset };
   const s = SORTS[sort] ?? SORTS.title;
   const dir = order === 'desc' ? 'DESC' : 'ASC';
-  const rows = db.all(`${SELECT()} WHERE ${where} ORDER BY ${s.map((x) => `${x} ${dir}`).join(', ')}, i.sort_title LIMIT ? OFFSET ?`,
-    ...userParams(user), ...a.params, ...params, lim, offset);
+  const rows = pagedRows(user, where, [...a.params, ...params], `ORDER BY ${orderBy(s, dir)} LIMIT ? OFFSET ?`, [lim, offset]);
   return { items: rows.map(rowToItem), total, limit, offset };
 }
 
 /** Items matching a caller-built WHERE (bound params only), with access rules applied. `ud` and `wl` are the viewer's user data / watchlist rows. */
 export function selectItems(user: User, whereSql: string, params: Param[], tail = ''): Item[] {
   const a = accessClause(user);
+  // Sorted/limited selections fetch ids first (see pagedRows); unbounded ones are loaded in one go.
+  if (/\bLIMIT\b/i.test(tail)) return pagedRows(user, `${a.sql} AND (${whereSql})`, [...a.params, ...params], tail).map(rowToItem);
   return db.all(`${SELECT()} WHERE ${a.sql} AND (${whereSql}) ${tail}`, ...userParams(user), ...a.params, ...params).map(rowToItem);
 }
 
@@ -407,8 +471,24 @@ export function nextItem(user: User, id: string): Item | null {
   return null;
 }
 
+/** Genre lists per (library, access rules), valid until an item is added, removed or re-tagged (itemsVersion). */
+const genreCache = new Map<string, { v: number; list: string[] }>();
+
 export function genres(user: User, libraryId?: string): string[] {
   const a = accessClause(user);
+  // The viewer's id is only bound for their own playlists, which genre lists never include: viewers with the same
+  // libraries and rating limit share an entry.
+  const key = `${libraryId ?? ''}|${a.sql}|${JSON.stringify(a.params.filter((p) => p !== user.id))}`;
+  const v = itemsVersion();
+  const hit = genreCache.get(key);
+  if (hit && hit.v === v) return [...hit.list];
+  const list = genresUncached(a, libraryId);
+  if (genreCache.size > 500) genreCache.clear();
+  genreCache.set(key, { v, list });
+  return [...list];
+}
+
+function genresUncached(a: { sql: string; params: Param[] }, libraryId?: string): string[] {
   const rows = db.all<{ value: string }>(
     `SELECT DISTINCT j.value FROM items i, json_each(i.genres) j WHERE ${a.sql} ${libraryId ? 'AND i.library_id = ?' : ''} AND i.type IN ('movie','show','album','artist') ORDER BY j.value`,
     ...a.params, ...(libraryId ? [libraryId] : []));
@@ -618,23 +698,27 @@ export function continueWatching(user: User, limit = 20): Item[] {
 }
 
 export function nextUp(user: User, limit = 20): Item[] {
-  const recentShows = db.all<{ show: string; last: string }>(
-    `SELECT i.grandparent_id show, MAX(ud.last_played_at) last FROM user_data ud JOIN items i ON i.id = ud.item_id
+  // Shows the viewer watched recently, each with the furthest episode they finished (season × 1e6 + episode).
+  const recentShows = db.all<{ show: string; last: string; k: number }>(
+    `SELECT i.grandparent_id show, MAX(ud.last_played_at) last, MAX(COALESCE(i.parent_idx,0) * 1000000 + COALESCE(i.idx,0)) k
+     FROM user_data ud JOIN items i ON i.id = ud.item_id
      WHERE ud.user_id = ? AND i.type = 'episode' AND ud.played = 1 AND i.grandparent_id IS NOT NULL
      GROUP BY i.grandparent_id ORDER BY last DESC LIMIT 60`, user.id);
-  const out: Item[] = [];
-  for (const { show } of recentShows) {
-    if (out.length >= limit) break;
-    const last = db.get(
-      `SELECT i.parent_idx, i.idx FROM user_data ud JOIN items i ON i.id = ud.item_id WHERE ud.user_id = ? AND i.grandparent_id = ? AND ud.played = 1
-       ORDER BY COALESCE(i.parent_idx,0) DESC, COALESCE(i.idx,0) DESC LIMIT 1`, user.id, show);
-    if (!last) continue;
-    const next = selectItems(user,
-      `i.grandparent_id = ? AND i.type = 'episode' AND COALESCE(ud.played,0) = 0 AND COALESCE(ud.position_ms,0) = 0 AND COALESCE(i.parent_idx,0) > 0 AND (COALESCE(i.parent_idx,0) > ? OR (COALESCE(i.parent_idx,0) = ? AND COALESCE(i.idx,0) > ?))`,
-      [show, last.parent_idx ?? 0, last.parent_idx ?? 0, last.idx ?? 0], 'ORDER BY COALESCE(i.parent_idx,0), COALESCE(i.idx,0) LIMIT 1');
-    if (next[0]) out.push(next[0]);
-  }
-  return out;
+  if (!recentShows.length) return [];
+  // For all of them at once: the first untouched episode after that one (one query instead of two per show).
+  const a = accessClause(user);
+  const next = db.all<{ show: string; id: string }>(
+    `WITH w AS (SELECT json_extract(j.value, '$[0]') show, json_extract(j.value, '$[1]') k FROM json_each(?) j)
+     SELECT i.grandparent_id show, i.id, MIN(COALESCE(i.parent_idx,0) * 1000000 + COALESCE(i.idx,0)) nk
+     FROM w JOIN items i ON i.grandparent_id = w.show
+     LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ?
+     WHERE i.type = 'episode' AND COALESCE(ud.played,0) = 0 AND COALESCE(ud.position_ms,0) = 0 AND COALESCE(i.parent_idx,0) > 0
+       AND COALESCE(i.parent_idx,0) * 1000000 + COALESCE(i.idx,0) > w.k AND ${a.sql}
+     GROUP BY i.grandparent_id`,
+    JSON.stringify(recentShows.map((r) => [r.show, r.k])), user.id, ...a.params);
+  const byShow = new Map(next.map((r) => [r.show, r.id]));
+  const ids = recentShows.map((r) => byShow.get(r.show)).filter((x): x is string => !!x).slice(0, limit);
+  return rowsByIds(user, ids).map(rowToItem);
 }
 
 function recentlyAdded(user: User, libraryId: string | null, limit: number): Item[] {
@@ -655,8 +739,50 @@ const DEFAULT_TITLES: Record<string, string> = {
   'favorite-channels': 'Favourite Channels', recordings: 'Recordings', collection: 'Collection', genre: 'Genre', playlist: 'Playlist', 'library-recent': 'Recently Added',
   // {title} = the title a "because" row is based on; {server} = the server name.
   recommended: 'Recommended for you', because: 'Because you watched {title}', top10: 'Top 10 on {server} this week', trending: 'Popular right now',
-  watchlist: 'My List', upcoming: 'Coming soon',
+  watchlist: 'My List', upcoming: 'Coming soon', spotlight: 'Spotlight',
 };
+
+/** 32-bit FNV-1a, for seeding the daily spotlight shuffle. */
+function hash32(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  return h >>> 0;
+}
+/** mulberry32: small seeded PRNG (same seed → same sequence). */
+function seededRandom(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * "Random spotlight" row: random movies/shows from the chosen libraries, limited to what the viewer may see (library
+ * access, rating limit). `daily` shuffles with a seed from the server date and the row id, so picks hold all day.
+ */
+export function spotlightItems(user: User, cfg: Pick<HomeRowConfig, 'id' | 'libraryIds' | 'itemTypes' | 'rotation'>, limit: number, now = new Date()): Item[] {
+  const allowed = allowedLibraryIds(user);
+  const chosen = Array.isArray(cfg.libraryIds) && cfg.libraryIds.length ? allowed.filter((id) => cfg.libraryIds!.includes(id)) : allowed;
+  if (!chosen.length) return [];
+  const types = (Array.isArray(cfg.itemTypes) ? cfg.itemTypes : []).filter((t) => t === 'movie' || t === 'show');
+  const typeList = types.length ? [...new Set(types)] : ['movie', 'show'];
+  const where = `i.type IN (${typeList.map(() => '?').join(',')}) AND i.library_id IN (${chosen.map(() => '?').join(',')})`;
+  const params = [...typeList, ...chosen];
+  if (cfg.rotation !== 'daily') return selectItems(user, where, params, `ORDER BY RANDOM() LIMIT ${limit}`);
+  const a = accessClause(user);
+  const ids = db.all<{ id: string }>(`SELECT i.id FROM items i WHERE ${a.sql} AND ${where} ORDER BY i.id`, ...a.params, ...params).map((r) => r.id);
+  const day = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+  const rnd = seededRandom(hash32(`${day}|${cfg.id}`));
+  // Partial Fisher–Yates: only the first `limit` positions are needed.
+  for (let i = 0; i < Math.min(limit, ids.length); i++) {
+    const j = i + Math.floor(rnd() * (ids.length - i));
+    [ids[i], ids[j]] = [ids[j]!, ids[i]!];
+  }
+  return itemsByIds(user, ids.slice(0, limit));
+}
 
 /** Home rows that depend on Live TV/DVR are filled by the live module via this hook. */
 export const homeHooks: {
@@ -677,8 +803,12 @@ export function buildHome(user: User): HomeRow[] {
       switch (cfg.type) {
         case 'hero': {
           // Never feature what the viewer said they don't want (not interested / thumbs down).
-          const items = selectItems(user, "i.type IN ('movie','show') AND i.backdrop IS NOT NULL AND COALESCE(ud.played,0) = 0 AND COALESCE(ud.not_interested,0) = 0 AND COALESCE(ud.rating, 10) > 4",
-            [], `ORDER BY (i.added_at > '${new Date(Date.now() - 30 * 86400000).toISOString()}') DESC, RANDOM() LIMIT ${limit}`);
+          // Titles added in the last 30 days first (random order), then random older ones: the recent ones come from a
+          // small index range, so the whole library is only shuffled when there aren't enough new titles.
+          const eligible = "i.type IN ('movie','show') AND i.backdrop IS NOT NULL AND COALESCE(ud.played,0) = 0 AND COALESCE(ud.not_interested,0) = 0 AND COALESCE(ud.rating, 10) > 4";
+          const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
+          let items = selectItems(user, `${eligible} AND i.added_at > ?`, [cutoff], `ORDER BY RANDOM() LIMIT ${limit}`);
+          if (items.length < limit) items = [...items, ...selectItems(user, `${eligible} AND NOT (i.added_at > ?)`, [cutoff], `ORDER BY RANDOM() LIMIT ${limit - items.length}`)];
           if (items.length) rows.push({ id: cfg.id, type: 'hero', title, items });
           break;
         }
@@ -707,7 +837,7 @@ export function buildHome(user: User): HomeRow[] {
           break;
         }
         case 'favorites': {
-          const items = selectItems(user, "COALESCE(ud.favorite,0) = 1 AND i.type IN ('movie','show','episode','album','artist','video')", [], `ORDER BY i.sort_title LIMIT ${limit}`);
+          const items = selectItems(user, "ud.favorite = 1 AND i.type IN ('movie','show','episode','album','artist','video')", [], `ORDER BY i.sort_title LIMIT ${limit}`);
           if (items.length) rows.push({ id: cfg.id, type: cfg.type, title, items });
           break;
         }
@@ -737,6 +867,11 @@ export function buildHome(user: User): HomeRow[] {
           if (r) rows.push(r);
           break;
         }
+        case 'spotlight': {
+          const items = spotlightItems(user, cfg, limit);
+          if (items.length) rows.push({ id: cfg.id, type: cfg.type, title, items });
+          break;
+        }
         case 'watchlist': {
           const items = listWatchlist(user, limit).items;
           if (items.length) rows.push({ id: cfg.id, type: cfg.type, title, items, link: { page: 'watchlist' } });
@@ -763,10 +898,14 @@ export function searchItems(user: User, q: string, limit = 30): Item[] {
   const term = q.trim();
   if (!term) return [];
   const like = `%${term}%`;
+  // People match by name inside the cast JSON. A plain substring test on the raw JSON first skips the JSON parse for
+  // the (nearly all) rows that can't match; it is exact for terms without characters JSON escapes (quotes, backslashes, control characters).
+  // eslint-disable-next-line no-control-regex
+  const rawOk = !/["\\\u0000-\u001f]/.test(term);
   // Tracks are also found by their featured / credited artists (track_artists, position > 0).
   return withCredits(selectItems(user,
-    `(i.title LIKE ? OR i.original_title LIKE ? OR EXISTS (SELECT 1 FROM json_each(i.people) WHERE json_extract(json_each.value,'$.name') LIKE ?) OR (i.type = 'track' AND EXISTS (SELECT 1 FROM track_artists ta WHERE ta.track_id = i.id AND ta.position > 0 AND ta.name LIKE ?))) AND i.type IN ('movie','show','episode','artist','album','track','collection','video','audiobook','podcast','podcastepisode') AND NOT (i.type = 'video' AND i.parent_id IS NOT NULL)`,
-    [like, like, like, like, term, `${term}%`],
+    `(i.title LIKE ? OR i.original_title LIKE ? OR (${rawOk ? 'i.people LIKE ? AND ' : '? IS NOT NULL AND '}EXISTS (SELECT 1 FROM json_each(i.people) WHERE json_extract(json_each.value,'$.name') LIKE ?)) OR (i.type = 'track' AND EXISTS (SELECT 1 FROM track_artists ta WHERE ta.track_id = i.id AND ta.position > 0 AND ta.name LIKE ?))) AND i.type IN ('movie','show','episode','artist','album','track','collection','video','audiobook','podcast','podcastepisode') AND NOT (i.type = 'video' AND i.parent_id IS NOT NULL)`,
+    [like, like, like, like, like, term, `${term}%`],
     `ORDER BY CASE WHEN i.title LIKE ? THEN 0 WHEN i.title LIKE ? THEN 1 ELSE 2 END, CASE i.type WHEN 'movie' THEN 0 WHEN 'show' THEN 0 WHEN 'artist' THEN 1 ELSE 2 END, i.sort_title LIMIT ${toInt(limit, 30, 1, 200)}`))
 
 }

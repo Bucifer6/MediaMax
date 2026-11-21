@@ -11,11 +11,13 @@ import { AvatarEditor, Badge, EmptyState, Field, Skeleton, Spinner, Switch, useC
 import { Icon, type IconName } from '../components/Icon';
 import { themeStyle } from '../theme/applyTheme';
 import { DEFAULT_PREFERENCES } from '../theme/defaults';
+import { autoLiteReason, getFxPref, isLite, onFxChange, setFxPref, type FxPref } from '../theme/fx';
 import { QUALITY_OPTIONS } from '../player/deviceProfile';
 import { DEFAULT_SUBTITLE_STYLE, SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitlePreviewStyle, subtitleStyleOf } from '../player/subtitleStyle';
 import { relativeTime } from '../utils/format';
 import { LinkDeviceForm } from './LinkDevice';
 import { ApiKeysCard, SubsonicCard, TwoFactorCard } from './SecuritySettings';
+import { DownloadRulesSettings } from './DownloadRules';
 import { BrowsingSettings } from './BrowsingSettings';
 import ProfilesSettings from './ProfilesSettings';
 import { HelpLink } from '../components/HelpLink';
@@ -173,13 +175,53 @@ export function ThemeSwatch({ theme, active, onClick }: { theme: Theme; active?:
   );
 }
 
+/** Lite / full visual effects for this device (theme/fx.ts). */
+function VisualEffects() {
+  const [pref, setPref] = useState<FxPref>(getFxPref);
+  const [, bump] = useState(0);
+  useEffect(() => onFxChange(() => bump((n) => n + 1)), []);
+  const reason = autoLiteReason();
+  const lite = isLite();
+  const opts: { v: FxPref; label: string }[] = [
+    { v: 'auto', label: 'Automatic' },
+    { v: 'full', label: 'Full' },
+    { v: 'lite', label: 'Lite' },
+  ];
+  return (
+    <div className="settings-card">
+      <h2>Visual effects</h2>
+      <p className="muted">
+        Full effects add frosted glass, light from the artwork that drifts behind the page, parallax and card tilt. Lite keeps the look but drops the
+        expensive layers, for TVs and older devices. This setting is saved on this device only.
+      </p>
+      <div className="segmented" role="radiogroup" aria-label="Visual effects">
+        {opts.map((o) => (
+          <button key={o.v} type="button" role="radio" aria-checked={pref === o.v} className={pref === o.v ? 'active' : ''} onClick={() => { setPref(o.v); setFxPref(o.v); }}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <p className="field-hint" aria-live="polite">
+        {pref === 'auto' ? (lite ? `Using lite effects on this device (${reason ?? 'performance'}).` : 'Using full effects on this device.') : pref === 'lite' ? 'Lite effects are on.' : 'Full effects are on.'}
+      </p>
+    </div>
+  );
+}
+
 function Appearance() {
   const { branding } = useApp();
   const { prefs, save } = usePrefs();
   if (!branding.allowUserThemes) {
-    return <div className="settings-card"><EmptyState icon="palette" title="Themes are managed by your admin" message="This server uses one look for everyone." /></div>;
+    return (
+      <>
+        <VisualEffects />
+        <div className="settings-card"><EmptyState icon="palette" title="Themes are managed by your admin" message="This server uses one look for everyone." /></div>
+      </>
+    );
   }
   return (
+    <>
+    <VisualEffects />
     <div className="settings-card">
       <h2>Theme</h2>
       <p className="muted">Pick how {branding.serverName} looks for you on this and every other device.</p>
@@ -191,6 +233,7 @@ function Appearance() {
         {branding.themes.map((t) => <ThemeSwatch key={t.id} theme={t} active={prefs.themeId === t.id} onClick={() => save({ themeId: t.id })} />)}
       </div>
     </div>
+    </>
   );
 }
 
@@ -441,7 +484,7 @@ function TraktCard() {
     }
   };
   const disconnect = async () => {
-    if (!(await confirm({ title: 'Disconnect Trakt?', message: 'MediaMax will stop scrobbling to your Trakt account.', confirmLabel: 'Disconnect', danger: true }))) return;
+    if (!(await confirm({ title: 'Disconnect Trakt?', message: 'Kinora will stop scrobbling to your Trakt account.', confirmLabel: 'Disconnect', danger: true }))) return;
     setBusy(true);
     try {
       status.setData(await api.trakt.disconnect());
@@ -482,7 +525,7 @@ function TraktCard() {
             {code.userCode}
             <button className="btn-icon" onClick={() => { void navigator.clipboard?.writeText(code.userCode); toast.success('Code copied'); }} aria-label="Copy code"><Icon name="copy" size={18} /></button>
           </div>
-          <p className="muted device-code-wait"><Spinner size={14} /> Waiting for you to approve MediaMax on Trakt…</p>
+          <p className="muted device-code-wait"><Spinner size={14} /> Waiting for you to approve Kinora on Trakt…</p>
           <div className="form-actions"><button className="btn btn-ghost" onClick={() => setCode(null)}>Cancel</button></div>
         </div>
       ) : (
@@ -563,7 +606,7 @@ function LastfmCard() {
     }
   };
   const disconnect = async () => {
-    if (!(await confirm({ title: 'Disconnect Last.fm?', message: 'MediaMax will stop scrobbling your music to Last.fm.', confirmLabel: 'Disconnect', danger: true }))) return;
+    if (!(await confirm({ title: 'Disconnect Last.fm?', message: 'Kinora will stop scrobbling your music to Last.fm.', confirmLabel: 'Disconnect', danger: true }))) return;
     setBusy(true);
     try {
       status.setData(await api.lastfm.disconnect());
@@ -599,7 +642,7 @@ function LastfmCard() {
         </>
       ) : waiting ? (
         <div className="device-code">
-          <p>Approve MediaMax in the Last.fm tab that just opened. This page updates by itself once you’re done.</p>
+          <p>Approve Kinora in the Last.fm tab that just opened. This page updates by itself once you’re done.</p>
           <p className="muted device-code-wait" aria-live="polite"><Spinner size={14} /> Waiting for Last.fm…</p>
           <div className="form-actions">
             <button className="btn btn-ghost" onClick={() => setWaiting(false)}>Cancel</button>
@@ -654,6 +697,7 @@ export default function SettingsPage() {
     { to: 'playback', label: 'Playback', icon: 'play' },
     { to: 'browsing', label: 'Browsing', icon: 'compass' },
     { to: 'devices', label: 'Devices', icon: 'device' },
+    ...(features.downloads && (user?.allowDownloads || user?.isAdmin) ? [{ to: 'downloads', label: 'Downloads', icon: 'download' as IconName }] : []),
     { to: 'services', label: 'Connected services', icon: 'globe' },
     { to: '/wrapped', label: 'Your year', icon: 'sparkles' },
     ...(features.linkCodes && !profileSession ? [{ to: 'link', label: 'Link device', icon: 'link' as IconName }] : []),
@@ -681,6 +725,7 @@ export default function SettingsPage() {
             <Route path="browsing" element={<BrowsingSettings />} />
             <Route path="playback" element={<><Playback /><SubtitleSettings /><AudioSettingsCard /><MusicSettings /><DeviceCapabilitiesCard /></>} />
             <Route path="devices" element={<Devices />} />
+            <Route path="downloads" element={<DownloadRulesSettings />} />
             <Route path="services" element={<Services />} />
             <Route path="link" element={<LinkTab />} />
           </Routes>

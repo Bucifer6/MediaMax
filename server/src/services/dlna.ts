@@ -34,7 +34,7 @@ export function lanAddress(): string {
 }
 
 const baseUrl = () => `http://${lanAddress()}:${config.port}`;
-const friendlyName = () => getSettings().dlna.friendlyName || getBranding().serverName || 'MediaMax';
+const friendlyName = () => getSettings().dlna.friendlyName || getBranding().serverName || 'Kinora';
 
 /** The account DLNA browses as. Must be chosen explicitly by an admin — there is no admin fallback. */
 export function dlnaUser(): User | null {
@@ -49,11 +49,7 @@ export function dlnaUser(): User | null {
 }
 
 /** DLNA streams are unauthenticated, so only serve the local network. */
-export function isLocalAddress(ip: string | null | undefined): boolean {
-  if (!ip) return false;
-  const v4 = ip.replace(/^::ffff:/, '');
-  return v4 === '127.0.0.1' || ip === '::1' || /^10\./.test(v4) || /^192\.168\./.test(v4) || /^172\.(1[6-9]|2\d|3[01])\./.test(v4) || /^169\.254\./.test(v4) || /^f[cd]/i.test(ip) || /^fe80/i.test(ip);
-}
+export { isLocalAddress } from '../util/net.js';
 
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -66,8 +62,8 @@ export function deviceDescription(): string {
   <device>
     <deviceType>${DEVICE}</deviceType>
     <friendlyName>${esc(friendlyName())}</friendlyName>
-    <manufacturer>MediaMax</manufacturer>
-    <modelName>MediaMax Server</modelName>
+    <manufacturer>Kinora</manufacturer>
+    <modelName>Kinora Server</modelName>
     <modelNumber>${config.version}</modelNumber>
     <UDN>${dlnaUuid()}</UDN>
     <dlna:X_DLNADOC>DMS-1.50</dlna:X_DLNADOC>
@@ -210,7 +206,7 @@ function ssdpTargets(): [string, string][] {
 }
 
 const location = () => `${baseUrl()}/dlna/description.xml`;
-const SERVER_HDR = `${os.type()}/${os.release()} UPnP/1.0 MediaMax/${config.version}`;
+const SERVER_HDR = `${os.type()}/${os.release()} UPnP/1.0 Kinora/${config.version}`;
 
 function notify(type: 'ssdp:alive' | 'ssdp:byebye') {
   if (!socket) return;

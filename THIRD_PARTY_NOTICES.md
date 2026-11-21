@@ -1,6 +1,6 @@
 # Third-party notices
 
-MediaMax includes code adapted from the following projects. Their licences are reproduced or referenced below.
+Kinora includes code adapted from the following projects. Their licences are reproduced or referenced below.
 Packages installed from npm carry their own licence files in `node_modules`.
 
 ## OpenDJ
@@ -29,7 +29,7 @@ Packages installed from npm carry their own licence files in `node_modules`.
 
 ## Lyrics, karaoke and visualisers
 
-MediaMax itself is MIT licensed (see [LICENSE](LICENSE)). This file lists third-party code and models used by the
+Kinora itself is MIT licensed (see [LICENSE](LICENSE)). This file lists third-party code and models used by the
 lyrics, karaoke and visualiser features. Other dependencies are listed in each workspace's `package.json` and carry
 their own licences; FFmpeg is run as a separate program (LGPL/GPL).
 
@@ -55,7 +55,7 @@ their own licences; FFmpeg is run as a separate program (LGPL/GPL).
 
 ### ONNX Runtime Web (`onnxruntime-web` 1.23.2)
 
-- Used to run the AI stem-separation model in the browser (WebGPU / WebAssembly). Not shipped with MediaMax: the
+- Used to run the AI stem-separation model in the browser (WebGPU / WebAssembly). Not shipped with Kinora: the
   server downloads the pinned npm tarball the first time AI separation is used, verifies its SHA-512 integrity, keeps
   only `dist/ort*.mjs` / `ort*.wasm` and serves them same-origin (`/api/v1/stems/ort/…`). Not bundled into the web app.
 - MIT License, © Microsoft Corporation — <https://github.com/microsoft/onnxruntime>.

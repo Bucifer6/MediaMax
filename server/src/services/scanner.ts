@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import type { ExtraType, Library, LibraryType, SubtitleStream } from '@mediamax/shared';
+import type { DateAddedSource, ExtraType, Library, LibraryType, SubtitleStream } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { config } from '../config.js';
 import { stableId } from '../util/ids.js';
@@ -14,13 +14,13 @@ import { readNfo, type NfoData } from './metadata/nfo.js';
 import { importSidecarEdl } from './edl.js';
 import { parseReplayGain, gainTags } from '../util/replaygain.js';
 import {
-  AUDIO_EXT, IMAGE_EXT, SUB_EXT, VIDEO_EXT, ext, isExtra, parseEpisodeName, parseMovieName, parseSeasonFolder, parseShowFolder,
-  parseSubtitleName, stripExt,
+  AUDIO_EXT, IMAGE_EXT, VIDEO_EXT, ext, isExtra, parseEpisodeName, parseMovieName, parseSeasonFolder, parseShowFolder,
+  stripExt,
 } from './parser.js';
 import { events, bus } from './events.js';
 import { enrichLibrary } from './metadata/index.js';
 import { logActivity } from './activity.js';
-import { downloadedSubs } from './opensubtitles.js';
+import { externalSubs } from './subtitleProviders/storage.js';
 import { applyPluginMetadata } from './plugins.js';
 import { mbTagSubset, parseMbTags, tagsWithId3, type MbTags } from './music/tags.js';
 import { rebuildCredits } from './music/credits.js';
@@ -36,6 +36,8 @@ interface FileEntry {
   root: string;
   size: number;
   mtime: number;
+  /** Creation time in ms; 0 where the filesystem does not record one. */
+  birthtime: number;
 }
 
 /** A file (or a folder of media files) left out of a scan because its name is not valid UTF-8. */
@@ -69,20 +71,25 @@ function countMediaBelow(dir: Buffer, accept: (e: string) => boolean, depth = 0)
   return n;
 }
 
-function walk(root: string, accept: (e: string) => boolean, skipped: SkippedName[] = []): FileEntry[] {
+/**
+ * Every media file under `root`. Asynchronous (readdir/stat run on libuv's thread pool) so walking ten drives of
+ * media doesn't freeze the server. Names are read as raw bytes: a string readdir silently turns legacy-codepage bytes
+ * into U+FFFD, giving paths that don't exist; such names are reported in `skipped` instead.
+ */
+async function walk(root: string, accept: (e: string) => boolean, skipped: SkippedName[] = []): Promise<FileEntry[]> {
   const out: FileEntry[] = [];
   const stack = [root];
   while (stack.length) {
     const dir = stack.pop()!;
     let entries: fs.Dirent<Buffer>[];
     try {
-      // Raw names: a string readdir silently turns legacy-codepage bytes into U+FFFD, giving paths that don't exist.
-      entries = fs.readdirSync(dir, { withFileTypes: true, encoding: 'buffer' });
+      entries = await fs.promises.readdir(dir, { withFileTypes: true, encoding: 'buffer' });
     } catch (e) {
       log.warn(`Cannot read ${dir}: ${(e as Error).message}`);
       continue;
     }
     if (entries.some((e) => ['.mediamaxignore', '.plexignore', '.ignore'].includes(e.name.toString('utf8')))) continue;
+    const files: string[] = [];
     for (const e of entries) {
       const raw = e.name;
       const lossy = raw.toString('utf8');
@@ -98,15 +105,14 @@ function walk(root: string, accept: (e: string) => boolean, skipped: SkippedName
       }
       const p = path.join(dir, lossy);
       if (e.isDirectory() || (e.isSymbolicLink() && safeIsDir(p))) stack.push(p);
-      else if (accept(ext(lossy))) {
-        try {
-          const st = fs.statSync(p);
-          out.push({ path: p, rel: path.relative(root, p), root, size: st.size, mtime: Math.floor(st.mtimeMs) });
-        } catch {
-          /* vanished */
-        }
-      }
+      else if (accept(ext(lossy))) files.push(p);
     }
+    // Keep the order of a synchronous walk (directory listing order) while statting a folder's files in parallel.
+    const stats = await Promise.all(files.map((p) => fs.promises.stat(p).catch(() => null)));
+    files.forEach((p, k) => {
+      const st = stats[k];
+      if (st) out.push({ path: p, rel: path.relative(root, p), root, size: st.size, mtime: Math.floor(st.mtimeMs), birthtime: Math.floor(st.birthtimeMs || 0) });
+    });
   }
   return out;
 }
@@ -206,36 +212,11 @@ function nfoFields(n: NfoData | null): Row {
   return f;
 }
 
-function sidecarSubs(videoPath: string): SubtitleStream[] {
-  const dir = path.dirname(videoPath);
-  const base = stripExt(path.basename(videoPath));
-  let files: string[] = [];
-  try {
-    files = usableNames(dir);
-  } catch {
-    return [];
-  }
-  const subsDirs = ['subs', 'subtitles', 'Subs', 'Subtitles'].map((d) => path.join(dir, d)).filter(safeIsDir);
-  const candidates = [...files.map((f) => path.join(dir, f)), ...subsDirs.flatMap((d) => usableNames(d).map((f) => path.join(d, f)))];
-  const out: (SubtitleStream & { path: string })[] = [];
-  let n = 0;
-  for (const p of candidates) {
-    const e = ext(p);
-    if (!SUB_EXT.has(e)) continue;
-    const fname = path.basename(p);
-    const inSubDir = path.dirname(p) !== dir;
-    const info = parseSubtitleName(fname, inSubDir ? stripExt(fname).split('.')[0] : base) ?? (inSubDir ? parseSubtitleName(fname, '') : null);
-    if (!info) continue;
-    out.push({ index: 1000 + n++, codec: e === 'srt' ? 'subrip' : e, language: normLang(info.language), title: info.title, default: info.default, forced: info.forced, external: true, path: p });
-  }
-  return out;
-}
-
 /** Upsert the media row for a file, probing when new or changed. Returns probe result (fresh or cached). */
 async function upsertMedia(itemId: string, f: FileEntry, force = false, preProbed?: ProbeResult | null): Promise<{ mediaId: string; probe: ProbeResult | null; changed: boolean }> {
   const existing = db.get('SELECT * FROM media WHERE path = ?', f.path);
   const id = existing?.id ?? stableId('media', f.path);
-  const subsSide = [...sidecarSubs(f.path), ...downloadedSubs(id, 2000)];
+  const subsSide = externalSubs(id, f.path);
   if (existing && existing.mtime === f.mtime && existing.size === f.size && !force && existing.probed_at) {
     // Keep sidecar subtitles fresh even when the file itself is unchanged.
     const embedded = parseJson<SubtitleStream[]>(existing.subs, []).filter((s) => !s.external);
@@ -699,6 +680,89 @@ async function scanFlat(ctx: ScanCtx, files: FileEntry[], type: 'photo' | 'video
   });
 }
 
+/* ---------------------------- date added --------------------------- */
+
+const DATE_ADDED: DateAddedSource[] = ['scan', 'created', 'modified'];
+export const isDateAddedSource = (v: unknown): v is DateAddedSource => DATE_ADDED.includes(v as DateAddedSource);
+export const libraryDateAdded = (v: unknown): DateAddedSource => (isDateAddedSource(v) ? v : 'scan');
+
+/**
+ * The date added a file gets under a rule, in ms (null = keep the scan time). `created` falls back to the modification
+ * time when the filesystem records no creation time (birthtime 0, as on some Linux filesystems); never in the future.
+ */
+export function fileAddedMs(rule: DateAddedSource, f: { birthtime: number; mtime: number }, now = Date.now()): number | null {
+  if (rule === 'scan') return null;
+  const t = rule === 'created' && f.birthtime > 0 ? f.birthtime : f.mtime;
+  if (!Number.isFinite(t) || t <= 0) return null;
+  return Math.min(t, now);
+}
+
+const LEAF_TYPES = "('movie','episode','track','photo','video','bookpart')";
+/** Parents take the earliest date of these children; inner levels first, so shows see their seasons' new dates. */
+const PARENT_LEVELS: [string, string][] = [['season', 'episode'], ['album', 'track'], ['audiobook', 'bookpart'], ['show', 'season'], ['artist', 'album']];
+
+/**
+ * Apply a library's "date added" rule. `since` = only items added at or after it (the ones a scan just created),
+ * null = every item (Recalculate date added). `files` saves a stat per file during a scan. Returns items changed.
+ */
+export function applyDateAdded(libId: string, since: string | null, files?: Map<string, { birthtime: number; mtime: number }>): number {
+  const lib = db.get<{ type: string; date_added: string }>('SELECT type, date_added FROM libraries WHERE id = ?', libId);
+  if (!lib || lib.type.startsWith('iptv-') || lib.type === 'podcasts') return 0;
+  const rule = libraryDateAdded(lib.date_added);
+  if (rule === 'scan') return 0;
+  const now = Date.now();
+  const sinceSql = since ? ' AND i.added_at >= ?' : '';
+  const sinceParams = since ? [since] : [];
+  const rows = db.all<{ id: string; path: string; added_at: string }>(
+    `SELECT i.id, m.path, i.added_at FROM items i JOIN media m ON m.item_id = i.id WHERE i.library_id = ? AND i.type IN ${LEAF_TYPES} AND m.path IS NOT NULL${sinceSql}`,
+    libId, ...sinceParams);
+  // Items with several files (movie versions) take the earliest file.
+  const best = new Map<string, { ms: number; cur: string }>();
+  for (const r of rows) {
+    let st = files?.get(r.path) ?? null;
+    if (!st) {
+      try {
+        const s = fs.statSync(r.path);
+        st = { birthtime: Math.floor(s.birthtimeMs || 0), mtime: Math.floor(s.mtimeMs) };
+      } catch {
+        continue;
+      }
+    }
+    const ms = fileAddedMs(rule, st, now);
+    if (ms === null) continue;
+    const b = best.get(r.id);
+    if (!b || ms < b.ms) best.set(r.id, { ms, cur: r.added_at });
+  }
+  let changed = 0;
+  db.tx(() => {
+    for (const [id, b] of best) {
+      const iso = new Date(b.ms).toISOString();
+      if (iso === b.cur) continue;
+      db.run('UPDATE items SET added_at = ? WHERE id = ?', iso, id);
+      changed++;
+    }
+    for (const [parent, child] of PARENT_LEVELS) {
+      const r = db.run(
+        `UPDATE items SET added_at = (SELECT MIN(c.added_at) FROM items c WHERE c.parent_id = items.id AND c.type = '${child}')
+         WHERE library_id = ? AND type = '${parent}'${since ? ' AND added_at >= ?' : ''}
+           AND EXISTS (SELECT 1 FROM items c WHERE c.parent_id = items.id AND c.type = '${child}')
+           AND added_at IS NOT (SELECT MIN(c.added_at) FROM items c WHERE c.parent_id = items.id AND c.type = '${child}')`,
+        libId, ...sinceParams);
+      changed += Number(r.changes);
+    }
+  });
+  return changed;
+}
+
+/** Re-apply the "date added" rule to every item of one library (or all libraries) without rescanning. */
+export function recalculateDateAdded(libId?: string): number {
+  const ids = libId ? [libId] : db.all<{ id: string }>('SELECT id FROM libraries').map((l) => l.id);
+  let n = 0;
+  for (const id of ids) n += applyDateAdded(id, null);
+  if (n) for (const id of ids) events.broadcast({ type: 'library.updated', libraryId: id });
+  return n;
+}
+
 /* ------------------------------ public ----------------------------- */
 
 const scanning = new Map<string, Promise<void>>();
@@ -737,6 +801,7 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     return;
   }
   const started = Date.now();
+  const startedIso = new Date(started).toISOString();
   log.info(`Scanning library "${lib.name}" (${type})`);
   events.toAdmins({ type: 'library.scan', libraryId: libId, status: 'started', progress: 0 });
   const paths = parseJson<string[]>(lib.paths, []).filter((p) => {
@@ -748,7 +813,8 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
   });
   const accept = ACCEPT[type] ?? ((e: string) => VIDEO_EXT.has(e));
   const skipped: SkippedName[] = [];
-  const allFiles = paths.flatMap((root) => walk(root, accept, skipped));
+  const allFiles: FileEntry[] = [];
+  for (const root of paths) allFiles.push(...(await walk(root, accept, skipped)));
   logSkippedNames(lib.name, skipped);
   // Kept with the library (like last_scan_at) so the admin page can show it after a restart.
   db.run('UPDATE libraries SET skipped_names = ? WHERE id = ?', skipped.length ? JSON.stringify({ count: skipped.length, paths: skipped.slice(0, MAX_SKIPPED_LISTED) }) : null, libId);
@@ -801,6 +867,8 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
         db.run(`DELETE FROM items WHERE library_id = ? AND type IN ('show','artist') AND NOT EXISTS (SELECT 1 FROM items c WHERE c.parent_id = items.id)`, libId);
       });
     }
+    // Items found by this scan take their date added from their files (per the library's rule).
+    applyDateAdded(libId, startedIso, new Map(allFiles.map((f) => [f.path, f])));
     events.toAdmins({ type: 'library.scan', libraryId: libId, status: 'progress', progress: 85, message: 'Fetching metadata' });
     if (lib.fetch_metadata) {
       await enrichLibrary(libId, { refresh: !!opts.refreshMetadata, onProgress: (d, t) => events.toAdmins({ type: 'library.scan', libraryId: libId, status: 'progress', progress: 85 + Math.round((d / Math.max(t, 1)) * 15), message: `Metadata ${d}/${t}` }) });
@@ -838,5 +906,6 @@ export function toLibrary(r: Row): Library {
   return {
     id: r.id, name: r.name, type: r.type, paths: parseJson(r.paths, []), sourceId: r.source_id ?? null, itemCount: count,
     lastScanAt: r.last_scan_at ?? null, scanning: isScanning(r.id), skippedNames: parseJson<Library['skippedNames']>(r.skipped_names, null), fetchMetadata: !!r.fetch_metadata, sortOrder: r.sort_order, createdAt: r.created_at,
+    dateAdded: libraryDateAdded(r.date_added),
   };
 }

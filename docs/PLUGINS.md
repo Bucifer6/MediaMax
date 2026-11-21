@@ -1,4 +1,4 @@
-# MediaMax plugins
+# Kinora plugins
 
 Plugins extend the server, the same way Jellyfin and Emby plugins do. A plugin can:
 
@@ -69,17 +69,28 @@ export async function activate(ctx) {
     name: 'My provider', types: ['movie'],
     fetch: async (item) => ({ overview: `Fetched for ${item.title}` }),
   });
+
+  // Subtitle source: listed in Server settings → Subtitles; Kinora scores, unpacks, cleans and saves for you.
+  ctx.subtitles.registerProvider({
+    id: 'mysite', name: 'My subtitle site',
+    configured: () => !!ctx.settings.get('apiKey'),
+    search: async (q) => [{ id: '42', language: 'ro', release: 'Movie.2024.1080p.WEB-DL-GROUP' }],
+    download: async (r) => ({ data: Buffer.from('1\n00:00:01,000 --> 00:00:02,000\nSalut\n'), fileName: `${r.id}.srt` }),
+  });
 }
 
 export function deactivate() { /* close timers/sockets */ }
 ```
 
 The full API is typed in [`plugins/sdk/index.d.ts`](../plugins/sdk/index.d.ts), and covers `ctx.settings`, `ctx.storage`,
-`ctx.events`, `ctx.http`, `ctx.tasks`, `ctx.metadata`, `ctx.library`, `ctx.log` and `ctx.dataDir`.
+`ctx.events`, `ctx.http`, `ctx.tasks`, `ctx.metadata`, `ctx.subtitles`, `ctx.library`, `ctx.log` and `ctx.dataDir`.
 
 Working examples are in [`plugins/examples/`](../plugins/examples):
 
 - **discord-notify** posts new media, playback and requests to a Discord channel. It shows events, routes, settings and an admin page.
+- **local-subtitles** is a subtitle provider that searches a folder on the server (e.g. a shared archive of
+  Romanian subtitles) by IMDb id or title. It shows `ctx.subtitles.registerProvider`, and its downloads go through the
+  same archive, encoding, diacritics and sync pipeline as OpenSubtitles and Subs.ro.
 - **omdb-ratings** is an OMDb metadata provider with a key-check task. It shows metadata providers, tasks and settings.
 - **anilist** fills anime series and films from AniList: synopsis, genres, score, cover and banner, plus AniList/MAL ids. It needs no key, matches strictly on title and year, and keeps under AniList's rate limit.
 - **musicbrainz** matches artists and albums to MusicBrainz. It adds MBIDs, genres and a short artist description, and fetches missing album covers from the Cover Art Archive. It sends one request per second, as MusicBrainz asks, with a configurable contact in the User-Agent.

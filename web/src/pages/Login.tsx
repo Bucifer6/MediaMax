@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import type React from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import type { AuthResponse, PublicProfile } from '@mediamax/shared';
 import { useApp } from '../state/app';
@@ -8,6 +9,8 @@ import { getDeviceId, getDeviceName, PLATFORM } from '../api/device';
 import { Avatar, Spinner } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { BrandLogo } from '../components/BrandLogo';
+import { LightField } from '../components/LightField';
+import { isCalm } from '../theme/fx';
 import { mediaUrl } from '../api/client';
 import { safeNext } from '../utils/safeNext';
 
@@ -151,6 +154,7 @@ export function Login() {
   const [profiles, setProfiles] = useState<PublicProfile[] | null>(null);
   const [mode, setMode] = useState<Mode>('password');
   const [selected, setSelected] = useState<PublicProfile | null>(null);
+  const [chosen, setChosen] = useState<string | null>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -208,6 +212,11 @@ export function Login() {
   if (user) return <Navigate to={user.profileCount ? `/profiles?next=${encodeURIComponent(next)}` : next} replace />;
 
   const pickProfile = async (p: PublicProfile) => {
+    // The chosen tile steps forward while the others fall away, then the sign-in continues.
+    if (chosen) return;
+    setChosen(p.id);
+    if (!isCalm()) await new Promise((r) => window.setTimeout(r, 360));
+    setChosen(null);
     setSelected(p);
     setError(null);
     if (p.requiresPassword) {
@@ -266,10 +275,7 @@ export function Login() {
   const bg = branding.loginBackgroundUrl;
   return (
     <div className="login">
-      <div className="login-bg" style={bg ? { backgroundImage: `url("${mediaUrl(bg, 1920)}")` } : undefined}>
-        {!bg && <div className="login-aurora" />}
-      </div>
-      <div className="login-shade" />
+      <LightField image={bg ? mediaUrl(bg, 1920) : null} />
       <div className="login-inner">
         <div className="login-brand">
           <BrandLogo height={52} wide={!branding.logoUrl || !!branding.logoWideUrl} />
@@ -283,9 +289,9 @@ export function Login() {
         ) : mode === 'profiles' ? (
           <div className="profiles fade-in">
             <h1>Who's watching?</h1>
-            <div className="profile-grid">
-              {profiles.map((p) => (
-                <button key={p.id} className="profile" onClick={() => pickProfile(p)} disabled={busy}>
+            <div className={`profile-grid ${chosen ? 'choosing' : ''}`}>
+              {profiles.map((p, i) => (
+                <button key={p.id} className={`profile ${chosen === p.id ? 'chosen' : ''}`} style={{ '--i': i } as React.CSSProperties} onClick={() => pickProfile(p)} disabled={busy} aria-disabled={!!chosen || undefined}>
                   <Avatar name={p.displayName} url={p.avatarUrl} size={112} />
                   <span className="profile-name">{p.displayName}</span>
                   {(p.hasPin || p.requiresPassword) && (

@@ -13,7 +13,7 @@ import { once } from 'node:events';
 
 // A web build to serve (index.html), so the CSP header can be checked.
 const webDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-web-'));
-fs.writeFileSync(path.join(webDir, 'index.html'), '<!doctype html><title>MediaMax</title>');
+fs.writeFileSync(path.join(webDir, 'index.html'), '<!doctype html><title>Kinora</title>');
 process.env.MEDIAMAX_WEB_DIR = webDir;
 
 const { createUser, issueToken, updateUser, authenticate, _resetLinks, LINK_LIMITS } = await import('../src/services/auth.ts');
@@ -46,7 +46,7 @@ void adminTok;
 
 /* ------------------------------------------------------------------ route table ------------------------------------------------------------------ */
 
-/** Routes that answer without a MediaMax session, on purpose (each has its own protection where it needs one). */
+/** Routes that answer without a Kinora session, on purpose (each has its own protection where it needs one). */
 const PUBLIC = new Set([
   'GET /health', 'GET /manifest.webmanifest', 'GET /*', 'HEAD /*',
   'GET /api/v1/system/info', 'POST /api/v1/setup', // setup refuses once a user exists
@@ -55,6 +55,7 @@ const PUBLIC = new Set([
   'GET /api/v1/auth/oidc/start', 'GET /api/v1/auth/oidc/callback',
   'POST /api/v1/auth/link/request', 'GET /api/v1/auth/link/poll', // the poll token is the secret
   'GET /api/v1/invites/:code/preview', 'POST /api/v1/invites/:code/accept', // the invite code is the secret
+  'GET /api/v1/auth/password-link/:token', 'POST /api/v1/auth/password-link/:token', // the random token is the secret
   'GET /api/v1/images/:id', 'GET /api/v1/avatars', 'GET /api/v1/avatars/:file',
   'GET /api/v1/help', 'GET /api/v1/help/search', 'GET /api/v1/help/whats-new', 'GET /api/v1/help/:slug', // admin articles filtered
   'GET /api/v1/ws', // authenticates the socket itself (tested below)

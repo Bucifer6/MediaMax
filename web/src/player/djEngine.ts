@@ -19,6 +19,7 @@ import { getToken } from '../api/client';
 import { api } from '../api/endpoints';
 import { attachStream, type Attached } from './engine';
 import { profileWithBitrate } from './deviceProfile';
+import { djLive } from './djLive';
 import {
   automationCurves, ECHO_BEATS, ECHO_FEEDBACK, glideMs, incomingRate, levelsAt, OPEN_HP, OPEN_LP, resolveKeyLock, transitionLabel, transitionPoints, usedControls,
   type KeyLockMode, type MixLevels,
@@ -467,6 +468,7 @@ export class DjEngine {
 
   private emit() {
     const s = this.snapshot();
+    djLive.set(s.status === 'playing');
     for (const l of this.listeners) l(s);
   }
 

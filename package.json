@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "license": "MIT",
-  "description": "MediaMax - all-in-one self-hosted media server with Xtream IPTV, live TV, DVR and fully server-driven branding.",
+  "description": "Kinora - all-in-one self-hosted media server with Xtream IPTV, live TV, DVR and fully server-driven branding.",
   "workspaces": [
     "shared",
     "server",
@@ -17,7 +17,8 @@
     "test": "npm test -w server",
     "sync-types": "node scripts/sync-types.mjs",
     "test:e2e": "node scripts/e2e-smoke.cjs",
-    "screenshots": "node scripts/screenshots/run.mjs"
+    "screenshots": "node scripts/screenshots/run.mjs",
+    "perf": "node scripts/perf/run.mjs"
   },
   "engines": {
     "node": ">=22.5"

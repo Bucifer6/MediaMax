@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Produce a white-label brand folder from a running MediaMax server.
+ * Produce a white-label brand folder from a running Kinora server.
  *
  *   npm run brand -- https://media.example.com acme [--bundle-id com.acme.media] [--lock]
  *
@@ -9,7 +9,7 @@
  *   branding/<brand>/icon.png     from Branding.appIconUrl (or logoUrl)
  *   branding/<brand>/splash.png   from Branding.splash.logoUrl (or logoUrl)
  *
- * Then build with:  MEDIAMAX_BRAND=acme eas build --profile ios   (or android/tvos/androidtv)
+ * Then build with:  KINORA_BRAND=acme eas build --profile ios   (or android/tvos/androidtv)
  *
  *   branding/<brand>/tv-banner.png  from Branding.tvBannerUrl (Android TV launcher banner, 320x180)
  *   branding/<brand>/appletv-topshelf*.png  from Branding.topShelfUrl (Apple TV top shelf, 1920x720),
@@ -46,21 +46,23 @@ const res = await fetch(`${server}/api/v1/branding`);
 if (!res.ok) throw new Error(`GET /api/v1/branding failed: ${res.status}`);
 const branding = await res.json();
 
-const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'mediamax';
+const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'kinora';
 const brand = brandArg ?? slugify(branding.serverName);
 const dir = path.join(root, 'branding', brand);
 mkdirSync(dir, { recursive: true });
 
 const theme = branding.themes.find((t) => t.id === branding.defaultThemeId) ?? branding.themes[0];
 const idPart = brand.replace(/[^a-z0-9]/g, '');
-const bundleId = flag('--bundle-id') ?? `tv.mediamax.${idPart}`;
+// White-label ids default to the stock id prefix from branding/defaults.json (pass --bundle-id for your own domain).
+const DEFAULTS = JSON.parse(readFileSync(path.join(root, 'branding', 'defaults.json'), 'utf8'));
+const bundleId = flag('--bundle-id') ?? `${DEFAULTS.idPrefix}.${idPart}`;
 
 const existing = existsSync(path.join(dir, 'brand.json')) ? JSON.parse(readFileSync(path.join(dir, 'brand.json'), 'utf8')) : {};
 const brandJson = {
   ...existing,
   appName: branding.serverName,
-  slug: `mediamax-${idPart}`,
-  scheme: `mediamax-${idPart}`,
+  slug: `kinora-${idPart}`,
+  scheme: `kinora-${idPart}`,
   bundleId,
   androidPackage: flag('--android-package') ?? bundleId,
   serverUrl: server,
@@ -168,5 +170,5 @@ if (manual.length) {
   console.log('\nAdd these TV images by hand (exact sizes, PNG) to use the server art:');
   for (const m of manual) console.log(`  - ${m}`);
 }
-console.log(`\nNext: MEDIAMAX_BRAND=${brand} npx expo prebuild --clean   (or eas build --profile ios|android|tvos|androidtv)`);
+console.log(`\nNext: KINORA_BRAND=${brand} npx expo prebuild --clean   (or eas build --profile ios|android|tvos|androidtv)`);
 console.log('Icons must be PNG. If the server serves another format, convert it to a 1024x1024 PNG first.');

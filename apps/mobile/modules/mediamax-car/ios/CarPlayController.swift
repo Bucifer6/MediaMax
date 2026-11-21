@@ -55,7 +55,7 @@ final class CarPlayController: NSObject {
     if jsReady {
       loadRoot()
     } else {
-      showMessage("MediaMax is starting…")
+      showMessage("Kinora is starting…")
     }
     CarEventEmitter.shared.emit("onConnectionChange", ["connected": true, "platform": "carplay"])
   }
@@ -82,7 +82,7 @@ final class CarPlayController: NSObject {
     if ready {
       loadRoot()
     } else {
-      showMessage("MediaMax is starting…")
+      showMessage("Kinora is starting…")
     }
   }
 
@@ -128,7 +128,7 @@ final class CarPlayController: NSObject {
 
   private func showMessage(_ message: String) {
     guard let controller = interfaceController else { return }
-    let list = CPListTemplate(title: "MediaMax", sections: [])
+    let list = CPListTemplate(title: "Kinora", sections: [])
     list.emptyViewTitleVariants = [message]
     controller.setRootTemplate(list, animated: false, completion: nil)
   }
@@ -143,7 +143,7 @@ final class CarPlayController: NSObject {
         let tabs = Array(nodes.filter { $0.browsable }.prefix(CPTabBarTemplate.maximumTabCount))
         guard !tabs.isEmpty else {
           // Not signed in, no audio libraries…: show the message rows JS sent.
-          let list = CPListTemplate(title: "MediaMax", sections: self.sections(for: nodes, parentId: "root"))
+          let list = CPListTemplate(title: "Kinora", sections: self.sections(for: nodes, parentId: "root"))
           list.emptyViewTitleVariants = ["Nothing to play yet"]
           controller.setRootTemplate(list, animated: false, completion: nil)
           return
@@ -348,7 +348,7 @@ final class CarPlayController: NSObject {
     completion: @escaping (Result<[CarNode], CarError>) -> Void
   ) {
     guard jsReady else {
-      completion(.failure(CarError(message: "MediaMax is starting…")))
+      completion(.failure(CarError(message: "Kinora is starting…")))
       return
     }
     sequence += 1

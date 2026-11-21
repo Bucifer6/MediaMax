@@ -3,6 +3,7 @@ import type React from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from './state/app';
 import { ToastProvider } from './state/toast';
+import { ServerMessages } from './components/ServerMessages';
 import { ConfirmProvider, PageLoader } from './components/ui';
 import { MusicProvider } from './player/music';
 import { KaraokeProvider } from './player/karaoke';
@@ -10,16 +11,11 @@ import { NowPlayingProvider } from './player/NowPlaying';
 import { Layout } from './components/Layout';
 import { Icon } from './components/Icon';
 import { BrandLogo } from './components/BrandLogo';
-import { Login } from './pages/Login';
-import { SetupWizard } from './pages/SetupWizard';
 import { Home } from './pages/Home';
-import { LibraryPage } from './pages/Library';
-import { ItemPage } from './pages/ItemDetail';
-import { SearchPage } from './pages/Search';
-import { LinkDevicePage } from './pages/LinkDevice';
 import { NotFound } from './pages/NotFound';
 import { ShortcutsHost } from './components/Shortcuts';
 import { WhatsNew } from './components/WhatsNew';
+import { RemoteHost } from './remote/RemoteHost';
 
 /** Lazy-load a route chunk; after a server upgrade old chunk names 404, so reload once. */
 function lazyPage<T extends { default: React.ComponentType<any> }>(load: () => Promise<T>) {
@@ -43,6 +39,14 @@ function lazyPage<T extends { default: React.ComponentType<any> }>(load: () => P
   );
 }
 
+// Home is in the main chunk (it is the first screen); everything else is a route chunk. utils/prefetch.ts warms the
+// likely next ones (detail, library, search, the player) when the browser is idle or a play button is focused.
+const Login = lazyPage(() => import('./pages/Login').then((m) => ({ default: m.Login })));
+const SetupWizard = lazyPage(() => import('./pages/SetupWizard').then((m) => ({ default: m.SetupWizard })));
+const LibraryPage = lazyPage(() => import('./pages/Library').then((m) => ({ default: m.LibraryPage })));
+const ItemPage = lazyPage(() => import('./pages/ItemDetail').then((m) => ({ default: m.ItemPage })));
+const SearchPage = lazyPage(() => import('./pages/Search').then((m) => ({ default: m.SearchPage })));
+const LinkDevicePage = lazyPage(() => import('./pages/LinkDevice').then((m) => ({ default: m.LinkDevicePage })));
 const VideoPlayer = lazyPage(() => import('./player/VideoPlayer'));
 const LivePlayer = lazyPage(() => import('./player/LivePlayer'));
 const Multiview = lazyPage(() => import('./player/Multiview'));
@@ -60,10 +64,15 @@ const DiscoverPersonPage = lazyPage(() => import('./pages/DiscoverPerson'));
 const IssuesPage = lazyPage(() => import('./pages/Issues'));
 const AdminRoutes = lazyPage(() => import('./admin/AdminRoutes'));
 const InvitePage = lazyPage(() => import('./pages/Invite'));
+const SetPasswordPage = lazyPage(() => import('./pages/SetPassword'));
 const MyListPage = lazyPage(() => import('./pages/MyList'));
 const CalendarPage = lazyPage(() => import('./pages/Calendar'));
 const ProfilePickerPage = lazyPage(() => import('./pages/ProfilePicker'));
 const HelpPage = lazyPage(() => import('./pages/Help'));
+const PairPage = lazyPage(() => import('./pages/Pair'));
+const PhoneRemotePage = lazyPage(() => import('./pages/PhoneRemote'));
+const RoulettePage = lazyPage(() => import('./pages/Roulette'));
+const MatchPage = lazyPage(() => import('./pages/Match'));
 const PublicHelpShell = lazyPage(() => import('./pages/Help').then((m) => ({ default: m.PublicHelpShell })));
 
 /** The Help Centre is readable signed out too (login screen, phone and TV apps open it in a browser). */
@@ -115,7 +124,7 @@ function Offline() {
         <BrandLogo height={40} />
         <div className="empty-icon" style={{ marginTop: 24 }}><Icon name="server" size={34} /></div>
         <h3>Can't reach the server</h3>
-        <p className="muted">MediaMax isn't responding right now. Check that the server is running and you're on the right network.</p>
+        <p className="muted">Kinora isn't responding right now. Check that the server is running and you're on the right network.</p>
         <button className="btn btn-primary" onClick={retryBoot}>
           <Icon name="refresh" size={16} /> Retry
         </button>
@@ -141,17 +150,23 @@ function Gate() {
   const { status, system } = useApp();
   if (status === 'loading') return <Splash />;
   if (status === 'offline') return <Offline />;
-  if (system?.setupRequired) return <SetupWizard />;
+  if (system?.setupRequired) return <Suspense fallback={<PageLoader />}><SetupWizard /></Suspense>;
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/login" element={<Login />} />
         {/* Public: invite links are opened by people who don't have an account yet. */}
         <Route path="/invite/:code" element={<InvitePage />} />
+        {/* Public: one-time set-password links for accounts moved over from Emby, Jellyfin or Plex. */}
+        <Route path="/set-password/:token" element={<SetPasswordPage />} />
         <Route path="/profiles" element={<RequireAuth><ProfilePickerPage /></RequireAuth>} />
         <Route path="/play/:itemId" element={<RequireAuth><VideoPlayer /></RequireAuth>} />
         <Route path="/watch/multiview" element={<RequireAuth><Multiview /></RequireAuth>} />
         <Route path="/watch/live/:channelId" element={<RequireAuth><LivePlayer /></RequireAuth>} />
+        {/* Phone remote: QR pairing landing page and the full-screen remote / second screen. */}
+        <Route path="/pair" element={<RequireAuth><PairPage /></RequireAuth>} />
+        <Route path="/remote" element={<RequireAuth><PhoneRemotePage /></RequireAuth>} />
+        <Route path="/remote/:deviceId" element={<RequireAuth><PhoneRemotePage /></RequireAuth>} />
         <Route path="/help" element={<HelpShell />}>
           <Route index element={<HelpPage />} />
           <Route path=":slug" element={<HelpPage />} />
@@ -177,6 +192,10 @@ function Gate() {
           <Route path="issues/:issueId" element={<IssuesPage />} />
           <Route path="my-list" element={<MyListPage />} />
           <Route path="calendar" element={<CalendarPage />} />
+          <Route path="roulette" element={<RoulettePage />} />
+          <Route path="match" element={<MatchPage />} />
+          <Route path="match/join/:code" element={<MatchPage />} />
+          <Route path="match/:id" element={<MatchPage />} />
           <Route path="settings/*" element={<SettingsPage />} />
           <Route path="admin/*" element={<RequireAdmin><AdminRoutes /></RequireAdmin>} />
           <Route path="*" element={<NotFound />} />
@@ -184,6 +203,8 @@ function Gate() {
       </Routes>
       <ShortcutsHost />
       <WhatsNew />
+      <ServerMessages />
+      <RemoteHost />
     </Suspense>
   );
 }

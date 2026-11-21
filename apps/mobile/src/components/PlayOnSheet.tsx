@@ -13,7 +13,7 @@ import { Icon } from './Icon';
 import { Sheet } from './Sheet';
 import { T } from './Text';
 
-const ICONS = { ios: 'phone-portrait-outline', android: 'phone-portrait-outline', tvos: 'tv-outline', androidtv: 'tv-outline', web: 'desktop-outline', other: 'hardware-chip-outline' } as const;
+const ICONS = { ios: 'phone-portrait-outline', android: 'phone-portrait-outline', tvos: 'tv-outline', androidtv: 'tv-outline', roku: 'tv-outline', web: 'desktop-outline', other: 'hardware-chip-outline' } as const;
 
 export interface PlayOnWhat {
   itemId?: string;
@@ -64,7 +64,7 @@ export function PlayOnSheet({ visible, what, onClose, onSent }: { visible: boole
       ) : (
         <View style={{ gap: t.space.sm, paddingVertical: t.space.sm }}>
           <T weight="700">No other devices online</T>
-          <T tone="muted">Open MediaMax on a TV, phone or browser signed in to your account and it will show up here.</T>
+          <T tone="muted">Open Kinora on a TV, phone or browser signed in to your account and it will show up here.</T>
         </View>
       )}
       {what.itemId && !what.channelId ? <RendererSection visible={visible} what={what} /> : null}

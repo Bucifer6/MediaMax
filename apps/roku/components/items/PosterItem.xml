@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Poster / landscape card for RowList and MarkupGrid: artwork, title, second line, progress bar, watched / unplayed badge. -->
+<component name="PosterItem" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContent" />
+    <field id="width" type="float" onChange="onSize" />
+    <field id="height" type="float" onChange="onSize" />
+    <field id="focusPercent" type="float" onChange="onFocus" />
+    <field id="itemHasFocus" type="boolean" onChange="onFocus" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/items/PosterItem.brs" />
+  <children>
+    <Rectangle id="frame" color="0x2A3166FF" />
+    <Rectangle id="placeholder" color="0x1E2452FF" />
+    <Label id="placeholderText" horizAlign="center" vertAlign="center" wrap="true" maxLines="3" color="0x8E96C8FF" font="font:SmallSystemFont" />
+    <Poster id="poster" loadDisplayMode="scaleToZoom" />
+    <Rectangle id="progressBg" color="0x00000099" visible="false" />
+    <Rectangle id="progressBar" color="0x22D3EEFF" visible="false" />
+    <Group id="badge" visible="false">
+      <Rectangle id="badgeBg" width="48" height="36" color="0xA855F7FF" />
+      <Label id="badgeText" width="48" height="36" horizAlign="center" vertAlign="center" color="0xFFFFFFFF" font="font:SmallestBoldSystemFont" />
+    </Group>
+    <Label id="title" horizAlign="left" color="0xFFFFFFFF" font="font:SmallBoldSystemFont" />
+    <Label id="line2" horizAlign="left" color="0xA9B0D6FF" font="font:SmallestSystemFont" />
+  </children>
+</component>

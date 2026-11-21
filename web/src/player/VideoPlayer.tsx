@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { AudioComforts, Item, Marker, PlaybackInfo, PlaybackRequest, Renderer, SubtitleFormat, SubtitleStyle, TrickplayInfo } from '@mediamax/shared';
+import { RecapCard } from '../components/RecapCard';
+import type { AudioComforts, Item, Marker, PlaybackInfo, PlaybackRequest, Renderer, SubtitleStyle, TrickplayInfo } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import { useApp } from '../state/app';
@@ -26,6 +27,8 @@ import { ChapterList } from './MiniPlayer';
 import { DEFAULT_PREFERENCES } from '../theme/defaults';
 import { isTypingTarget } from '../hooks';
 import { formatClock, languageName } from '../utils/format';
+import { useRemoteTarget } from '../remote/useRemoteTarget';
+import { openPairDialog } from '../remote/api';
 import { isResumable } from '../utils/items';
 import { SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitleStyleOf } from './subtitleStyle';
 import { SubtitleOverlay, type SubtitleStatus } from './subtitles/SubtitleOverlay';
@@ -34,9 +37,11 @@ import { initialBandwidth } from './bandwidth';
 import { formatBps } from './abr';
 import { VideoPair, whenPlayable } from './videoPair';
 import { helpForReason, helpPath } from '../utils/helpLinks';
+import { useMarathon } from './Marathon';
+import { buildPlaybackRequest } from './warmupCore';
+import { prepareItem } from './warmup';
 
 /** Subtitle formats our own renderer draws (SubtitleOverlay). VobSub/DVB still need server burn-in. */
-const SUBTITLE_FORMATS: SubtitleFormat[] = ['srt', 'vtt', 'ass', 'pgs'];
 /** Seamless switches start the new stream this far ahead of the playhead, so it is ready when the old one gets there. */
 const SWITCH_LEAD_MS = 4000;
 const isTvMode = () => typeof document !== 'undefined' && document.documentElement.classList.contains('tv');
@@ -174,6 +179,9 @@ export default function VideoPlayer() {
   const [controls, setControls] = useState(true);
   const [menu, setMenu] = useState<Menu>(null);
   const [subtitleIndex, setSubtitleIndex] = useState<number | null>(null);
+  // The admin dashboard shows which subtitle is on (text subtitles are rendered here, so only the player knows).
+  const subtitleIndexRef = useRef<number | null>(null);
+  subtitleIndexRef.current = subtitleIndex;
   const [burned, setBurned] = useState(false);
   const [audioIndex, setAudioIndex] = useState<number | undefined>(undefined);
   const [maxBitrate, setMaxBitrate] = useState<number | null>(prefs.maxBitrate);
@@ -211,6 +219,9 @@ export default function VideoPlayer() {
 
   const durationMs = info?.durationMs ?? item?.durationMs ?? 0;
   const markers: Marker[] = info?.markers?.length ? info.markers : item?.markers ?? [];
+  // "Previously on…" card at the start of an episode (dismissed by the viewer or when it scrolls past 2 minutes).
+  const [showRecap, setShowRecap] = useState(true);
+  useEffect(() => setShowRecap(true), [itemId]);
 
   /* ---------------- adaptive quality (Auto) ---------------- */
   const restartRef = useRef<(kbps: number) => void>(() => {});
@@ -242,16 +253,11 @@ export default function VideoPlayer() {
         kbps = bw.bps ? Math.round(bw.bps / 1000) : null;
       }
     }
-    return {
-      startMs: Math.round(opts.startMs),
-      audioStreamIndex: opts.audioIndex,
-      subtitleStreamIndex: opts.burn ? opts.subtitleIndex : undefined,
-      burnSubtitles: opts.burn || undefined,
-      deviceProfile: profileWithBitrate(opts.auto ? null : opts.maxBitrate),
-      subtitleFormats: SUBTITLE_FORMATS,
-      ...comfortRequest(comfortsRef.current, audioCaps()?.webAudioFx ?? false),
-      ...(opts.auto ? { adaptive: true, measuredBandwidth: kbps } : {}),
-    };
+    // Same builder as the instant-play warm-up (warmup.ts), so a prepared stream is adopted.
+    return buildPlaybackRequest({
+      startMs: opts.startMs, audioIndex: opts.audioIndex, subtitleIndex: opts.subtitleIndex, burn: opts.burn, maxBitrate: opts.maxBitrate ?? null,
+      auto: !!opts.auto, kbps, profile: profileWithBitrate, comforts: comfortRequest(comfortsRef.current, audioCaps()?.webAudioFx ?? false),
+    });
   };
   const abrAttachOptions = (opts: StartOpts) => ({
     manualLevels: !!opts.auto,
@@ -296,7 +302,7 @@ export default function VideoPlayer() {
   const report = useCallback((state: 'playing' | 'paused' | 'stopped', keepalive = false) => {
     const sid = sessionRef.current;
     if (!sid) return;
-    api.playback.progress(sid, { positionMs: Math.round(currentMs()), durationMs: durationMs || undefined, state, sessionId: sid }, keepalive).catch(() => {});
+    api.playback.progress(sid, { positionMs: Math.round(currentMs()), durationMs: durationMs || undefined, state, sessionId: sid, subtitleIndex: subtitleIndexRef.current }, keepalive).catch(() => {});
   }, [currentMs, durationMs]);
 
   const endSession = useCallback((keepalive = false) => {
@@ -403,8 +409,11 @@ export default function VideoPlayer() {
       setInfo(pi);
       setBurned(opts.burn);
       let me: Attached | null = null;
+      const seekTo = pendingSeek.current != null ? (pendingSeek.current - (pi.streamStartMs ?? 0)) / 1000 : 0;
       me = attached.current = await attachStream(v, pi, {
         ...abrAttachOptions(opts),
+        // hls.js fetches the resume fragment first instead of segment 0 (a transcode would encode both).
+        startPosition: seekTo > 0.5 ? seekTo : undefined,
         onFatal: (kind, msg) => {
           // A stream that was already replaced (seamless switch) may fail as its session ends: not an error.
           if (me && (attached.current !== me || retiringRef.current === me)) return;
@@ -746,7 +755,7 @@ export default function VideoPlayer() {
       offsetRef.current = info.streamStartMs ?? 0;
       if (target != null) {
         const local = (target - offsetRef.current) / 1000;
-        if (local > 0.5) v.currentTime = local;
+        if (local > 0.5 && Math.abs(v.currentTime - local) > 0.5) v.currentTime = local;
       }
     };
     const onTime = () => {
@@ -913,6 +922,12 @@ export default function VideoPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMs]);
 
+  // Pause / resume from the admin dashboard or a paired phone: handled by useRemoteTarget below.
+  useEffect(() => {
+    if (sessionRef.current) report(videoRef.current?.paused ? 'paused' : 'playing');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtitleIndex]);
+
   const sync = useSyncPlay({
     itemId,
     userId: user?.id ?? '',
@@ -959,6 +974,10 @@ export default function VideoPlayer() {
     if (window.history.length > 1) navigate(-1);
     else navigate(item ? `/item/${item.id}` : '/');
   }, [navigate, item]);
+
+  /* Random marathon (?marathon=…) and the sleep timer. */
+  const marathonId = sp.get('marathon');
+  const marathon = useMarathon({ videoRef, item, marathonId, ended, positionMs, durationMs, exit });
 
   /* "Play to" a network renderer (DLNA TV, Kodi): the server takes over, this page becomes a remote. */
   const rendererRemote = useRendererRemote();
@@ -1226,6 +1245,8 @@ export default function VideoPlayer() {
 
   useEffect(() => {
     if (!activeSkip || !prefs.skipIntros) return;
+    // The viewer asked to watch the recap segment ("Play the recap clip").
+    if (activeSkip.type === 'recap' && sp.get('keeprecap')) return;
     const key = `${activeSkip.type}-${activeSkip.startMs}`;
     if (skippedMarkers.current.has(key)) return;
     skippedMarkers.current.add(key);
@@ -1241,7 +1262,14 @@ export default function VideoPlayer() {
     if (remaining < 90000 || inCredits) api.items.get(info.nextItemId).then(setNextItem).catch(() => {});
   }, [info?.nextItemId, remaining < 90000, !!inCredits]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const showUpNext = (nearEnd || ended) && !!nextItem && !upNextDismissed;
+  const showUpNext = (nearEnd || ended) && !!nextItem && !upNextDismissed && !marathon.blockAutoplay;
+  // Instant play: warm up the next episode while "Up next" is on screen (re-sent so long credits don't outlast it).
+  useEffect(() => {
+    if (!showUpNext || !nextItem) return;
+    void prepareItem(nextItem, user, 'next');
+    const t = window.setInterval(() => void prepareItem(nextItem, user, 'next'), 25000);
+    return () => window.clearInterval(t);
+  }, [showUpNext, nextItem?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!showUpNext || !prefs.autoplayNext || paused && !ended) {
       setCountdown(null);
@@ -1267,6 +1295,21 @@ export default function VideoPlayer() {
   const currentAudio = audioIndex ?? audioStreams.find((a) => a.default)?.index ?? audioStreams[0]?.index;
 
   const backdrop = useMemo(() => info?.backdropUrl ?? item?.backdropUrl ?? null, [info?.backdropUrl, item?.backdropUrl]);
+
+  /* Remote control target (your other devices, a paired phone remote / second screen). */
+  const remoteSkip = introThen ? { type: 'intro', label: 'Skip to movie' }
+    : activeSkip && !prefs.skipIntros ? { type: activeSkip.type, label: `Skip ${activeSkip.type === 'commercial' ? 'ad break' : activeSkip.type}` }
+      : inCredits ? { type: 'credits', label: info?.nextItemId ? 'Next episode' : 'Skip credits' } : null;
+  useRemoteTarget(item ? {
+    itemId: item.id, title, subtitle: subtitle || null, posterUrl: item.posterUrl ?? null, positionMs, durationMs: durationMs || null, paused, volume: muted ? 0 : volume,
+    audioTracks: audioStreams.map((a) => ({ index: a.index, label: a.title ?? languageName(a.language) })), audioIndex: currentAudio ?? null,
+    subtitleTracks: textSubs.map((t) => ({ index: t.index, label: t.title || languageName(t.language) })), subtitleIndex: subtitleIndex ?? null,
+    skip: remoteSkip, nextItemId: info?.nextItemId ?? null,
+  } : null, {
+    togglePlay, seekTo, setVolume: (v) => { setVolume(v); setMuted(false); }, next: goNext, stop: exit,
+    setAudio: (i) => selectAudio(i), setSubtitle: (i) => selectSubtitle(i),
+    skip: () => (introThen ? skipIntros() : activeSkip ? seekTo(activeSkip.endMs) : inCredits ? (info?.nextItemId ? goNext() : seekTo(inCredits.endMs)) : undefined),
+  });
 
   return (
     <div
@@ -1344,6 +1387,7 @@ export default function VideoPlayer() {
             <dt>Dropped frames</dt><dd>{stats.dropped}</dd>
             <dt>Speed / sync</dt><dd>{stats.extra}</dd>
           </dl>
+          <button className="btn btn-glass btn-sm player-stats-pair" onClick={() => { setShowStats(false); openPairDialog(); }}><Icon name="device" size={14} /> Use your phone as remote</button>
         </div>
       )}
 
@@ -1371,7 +1415,10 @@ export default function VideoPlayer() {
         </div>
         {info && <span className={`badge player-method method-${info.method}`} title="Playback method">{info.method === 'direct' ? 'Direct play' : info.method === 'remux' ? 'Direct stream' : info.method === 'transcode' ? 'Transcoding' : 'Live'}</span>}
         {sync.room && <span className="badge badge-accent"><Icon name="together" size={12} /> {sync.room.members.length} watching</span>}
+        {marathonId && <span className="badge badge-accent"><Icon name="shuffle" size={12} /> Marathon</span>}
+        {marathon.sleepButton}
       </div>
+      {marathon.overlay}
 
       {introThen && (
         <button className="skip-btn" onClick={skipIntros}>
@@ -1380,6 +1427,15 @@ export default function VideoPlayer() {
       )}
 
       {/* Skip intro / credits */}
+      {item?.type === 'episode' && showRecap && !sp.get('keeprecap') && positionMs < 120000 && (
+        <div className="player-recap">
+          <RecapCard itemId={item.id} variant="player" onClose={() => setShowRecap(false)} onPlayClip={(c) => {
+            skippedMarkers.current.add(`recap-${c.startMs}`);
+            setShowRecap(false);
+            seekTo(c.startMs);
+          }} />
+        </div>
+      )}
       {activeSkip && !prefs.skipIntros && (
         <button className="skip-btn" onClick={() => seekTo(activeSkip.endMs)}>
           Skip {activeSkip.type === 'commercial' ? 'ad break' : activeSkip.type} <Icon name="skipFwd" size={16} />
@@ -1415,7 +1471,7 @@ export default function VideoPlayer() {
         </div>
       )}
 
-      {ended && !showUpNext && (
+      {ended && !showUpNext && !marathonId && (
         <div className="player-center ended">
           <button className="btn btn-primary btn-lg" onClick={() => seekTo(0)}><Icon name="refresh" size={18} /> Watch again</button>
           <button className="btn btn-glass btn-lg" onClick={exit}>Back</button>
@@ -1598,7 +1654,7 @@ export default function VideoPlayer() {
                 <div className="option-title">Watch together</div>
                 {sync.room ? (
                   <div className="together-room">
-                    <p className="muted">Share this code with friends on any MediaMax device:</p>
+                    <p className="muted">Share this code with friends on any Kinora device:</p>
                     <div className="room-code">
                       {sync.room.code}
                       <button className="btn-icon" onClick={() => { void navigator.clipboard?.writeText(sync.room!.code); toast.success('Code copied'); }} aria-label="Copy code"><Icon name="copy" size={16} /></button>

@@ -6,7 +6,8 @@ import { db } from '../db.js';
 import { config } from '../config.js';
 import { requireAdmin, requireUser } from '../http.js';
 import { allowedLibraryIds, addToContainer, buildHome, createContainer, genres, getChildren, getContainer, getItem, listContainers, nextItem, queryItems, removeFromContainer, searchItems, setFavorite, setPlayed, setRating, similarItems, updateItem, reportProgress } from '../services/items.js';
-import { scanLibrary, toLibrary } from '../services/scanner.js';
+import { isDateAddedSource, recalculateDateAdded, scanLibrary, toLibrary } from '../services/scanner.js';
+import { getSettings } from '../services/settings.js';
 import { refreshItem } from '../services/metadata/index.js';
 import { registerImage, resolveImage } from '../services/images.js';
 import { ensureIptvDetails, searchLive } from '../services/livetv/livetv.js';
@@ -37,9 +38,12 @@ export default async function libraryRoutes(app: FastifyInstance) {
     const paths = (b.paths ?? []).map((p) => path.resolve(p.trim())).filter(Boolean);
     if (!paths.length) throw badRequest('At least one folder is required');
     for (const p of paths) if (!fs.existsSync(p)) throw badRequest(`Folder not found on the server: ${p}`);
+    if (b.dateAdded !== undefined && !isDateAddedSource(b.dateAdded)) throw badRequest('Invalid "date added" option');
+    const fallback = getSettings().defaultDateAdded;
+    const dateAdded = b.dateAdded ?? (isDateAddedSource(fallback) ? fallback : 'created');
     const id = newId();
     const max = db.get<{ m: number | null }>('SELECT MAX(sort_order) m FROM libraries')?.m ?? 0;
-    db.insert('libraries', { id, name: b.name.trim(), type: b.type, paths: JSON.stringify(paths), fetch_metadata: b.fetchMetadata ?? true, sort_order: (max ?? 0) + 1, created_at: nowIso() });
+    db.insert('libraries', { id, name: b.name.trim(), type: b.type, paths: JSON.stringify(paths), fetch_metadata: b.fetchMetadata ?? true, sort_order: (max ?? 0) + 1, created_at: nowIso(), date_added: dateAdded });
     logActivity('library.create', `Library "${b.name}" created`, { userId: a.user.id, userName: a.user.displayName });
     void scanLibrary(id);
     return toLibrary(db.get('SELECT * FROM libraries WHERE id = ?', id)!);
@@ -54,6 +58,10 @@ export default async function libraryRoutes(app: FastifyInstance) {
     if (b.name) patch.name = b.name.trim();
     if (b.fetchMetadata !== undefined) patch.fetch_metadata = b.fetchMetadata;
     if (b.sortOrder !== undefined) patch.sort_order = b.sortOrder;
+    if (b.dateAdded !== undefined) {
+      if (!isDateAddedSource(b.dateAdded)) throw badRequest('Invalid "date added" option');
+      patch.date_added = b.dateAdded;
+    }
     if (b.paths && !String(lib.type).startsWith('iptv-')) {
       const paths = b.paths.map((p) => path.resolve(p.trim()));
       for (const p of paths) if (!fs.existsSync(p)) throw badRequest(`Folder not found on the server: ${p}`);
@@ -78,6 +86,13 @@ export default async function libraryRoutes(app: FastifyInstance) {
     if (!db.get('SELECT 1 FROM libraries WHERE id = ?', req.params.id)) throw notFound('Library not found');
     void scanLibrary(req.params.id, { refreshMetadata: !!req.body?.refreshMetadata });
     return { ok: true };
+  });
+
+  /** Re-apply the library's "date added" rule to the items it already has, without a rescan. */
+  app.post<{ Params: { id: string } }>('/libraries/:id/recalculate-date-added', async (req) => {
+    requireAdmin(req);
+    if (!db.get('SELECT 1 FROM libraries WHERE id = ?', req.params.id)) throw notFound('Library not found');
+    return { ok: true, changed: recalculateDateAdded(req.params.id) };
   });
 
   app.post('/libraries/scan', async (req) => {
@@ -199,7 +214,14 @@ export default async function libraryRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string }; Querystring: { w?: string } }>('/images/:id', async (req, reply) => {
     const img = await resolveImage(req.params.id, req.query.w ? toInt(req.query.w, 0, 0, 4000) : undefined);
-    reply.header('Cache-Control', 'public, max-age=604800').header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox").type(img.mime);
+    // Artwork ids are stable while the file behind them can be refreshed: cache for a week, then revalidate by ETag.
+    const st = await fs.promises.stat(img.path);
+    const etag = `W/"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+    reply.header('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400').header('ETag', etag).header('Last-Modified', st.mtime.toUTCString())
+      .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox").type(img.mime);
+    const inm = req.headers['if-none-match'];
+    if (inm && inm.split(',').some((t) => t.trim() === etag)) return reply.code(304).send();
+    reply.header('Content-Length', String(st.size));
     return fs.createReadStream(img.path);
   });
 

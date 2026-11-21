@@ -4,7 +4,7 @@
  *
  *   npm run build && node scripts/e2e-journeys.mjs
  *
- * Boots a fresh MediaMax (server/dist + web/dist) on --port (default 18770) with an empty data folder, then walks
+ * Boots a fresh Kinora (server/dist + web/dist) on --port (default 18770) with an empty data folder, then walks
  * through what people actually do, as different personas, in Chromium:
  *
  *   first-run  setup wizard → admin → five libraries → scan → home; Network page in Direct mode
@@ -157,7 +157,7 @@ class Server {
     if (fresh) fs.rmSync(this.data, { recursive: true, force: true });
     this.proc = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/dist/index.js'], {
       cwd: repo,
-      env: { ...process.env, MEDIAMAX_DATA: this.data, MEDIAMAX_PORT: String(PORT), MEDIAMAX_HOST: '127.0.0.1', MEDIAMAX_NO_SCHEDULER: '1', ...this.env },
+      env: { ...process.env, KINORA_DATA: this.data, KINORA_PORT: String(PORT), KINORA_HOST: '127.0.0.1', KINORA_NO_SCHEDULER: '1', ...this.env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     this.proc.stdout.on('data', (d) => (this.log += d));
@@ -350,13 +350,13 @@ async function firstRun() {
   const page = await open({ label: 'setup' });
   await step('wizard appears on a fresh server', async () => {
     await go(page, '/');
-    await page.getByRole('heading', { name: 'Welcome to MediaMax' }).waitFor();
+    await page.getByRole('heading', { name: 'Welcome to Kinora' }).waitFor();
     await shot(page, 'first-run-welcome');
   });
   await step('create the admin account', async () => {
     await page.getByLabel('Server name').fill('Journey Media');
     await page.getByRole('button', { name: /Get started/ }).click();
-    await page.getByLabel('Username').fill('admin');
+    await page.getByLabel('Username', { exact: true }).fill('admin');
     await page.getByLabel('Password', { exact: true }).fill('short');
     await page.getByLabel('Confirm password').fill('short');
     await page.getByRole('button', { name: 'Create account' }).click();
@@ -419,7 +419,7 @@ async function login(page, username, password, next = '/') {
   await page.locator('.login-card, .profiles').first().waitFor();
   const other = page.getByRole('button', { name: 'Sign in with a username' });
   if (await other.count()) await other.first().click();
-  await page.getByLabel('Username').fill(username);
+  await page.getByLabel('Username', { exact: true }).fill(username);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: /^Sign in/ }).click();
   await page.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 15000 });
@@ -459,7 +459,7 @@ async function admin() {
       await page.keyboard.press('Tab');
       assert(await page.evaluate(() => !!document.activeElement?.closest('.modal')), `Tab #${i + 1} left the open dialog`);
     }
-    await dlg.getByLabel('Username').fill('viewer');
+    await dlg.getByLabel('Username', { exact: true }).fill('viewer');
     await dlg.getByLabel('Display name').fill('Val Viewer');
     await dlg.getByLabel(/^Password/).fill(PASS.viewer);
     await dlg.getByRole('radiogroup', { name: 'Movies', exact: true }).getByRole('radio', { name: 'Request' }).click();
@@ -494,7 +494,7 @@ async function admin() {
     await guest.goto(BASE + new URL(url).pathname);
     await guest.getByRole('heading', { name: /invited to Journey Media/ }).waitFor();
     await guest.getByLabel('Display name').fill('Iris Invited');
-    await guest.getByLabel('Username').fill('iris');
+    await guest.getByLabel('Username', { exact: true }).fill('iris');
     await guest.getByLabel(/^Password/).fill(PASS.invited);
     await guest.getByLabel('Confirm password').fill(PASS.invited);
     await guest.getByRole('button', { name: 'Create account' }).click();
@@ -678,7 +678,7 @@ async function admin() {
     await dlg.locator('.type-option', { hasText: /Xtream/ }).click();
     await dlg.getByRole('textbox', { name: 'Name', exact: true }).fill('Mock IPTV');
     await dlg.getByLabel(/Server URL|URL/).first().fill(S.xtream.base);
-    await dlg.getByLabel('Username').fill(XTREAM_USER);
+    await dlg.getByLabel('Username', { exact: true }).fill(XTREAM_USER);
     await dlg.getByLabel('Password').fill(XTREAM_PASS);
     await dlg.getByRole('button', { name: /Test/ }).click();
     await dlg.locator('.test-result, .source-test, .badge-success, .form-ok').first().waitFor({ timeout: 20000 }).catch(() => undefined);
@@ -1337,11 +1337,19 @@ async function phone() {
 
   await step('menu drawer and bottom navigation work', async () => {
     await go(page, '/');
-    await page.getByRole('button', { name: 'Menu', exact: true }).click();
-    await page.locator('.drawer-open .sidebar, .sidebar').getByText('My List').click();
+    // "More" opens the rail as a drawer; its groups (Libraries, Live & IPTV, You) fold open and shut.
+    await page.locator('.bottom-nav').getByRole('button', { name: /More/ }).click();
+    const you = page.locator('.drawer-open .rail .nav-group-head', { hasText: 'You' });
+    if ((await you.getAttribute('aria-expanded')) !== 'true') await you.click();
+    await page.locator('.drawer-open .rail').getByRole('link', { name: 'Calendar' }).click();
+    await page.waitForURL(/\/calendar/);
+    await page.locator('.bottom-nav').getByText('My List').click();
     await page.waitForURL(/\/my-list/);
+    // Search opens the command palette; "Search everything" goes to the search page.
     await page.locator('.bottom-nav').getByText('Search').click();
-    await page.waitForURL(/\/search/);
+    await page.locator('.cmdk-input').fill('the');
+    await page.getByRole('option', { name: /Search everything/ }).click();
+    await page.waitForURL(/\/search\?q=the/);
     await page.locator('.bottom-nav a').first().click();
     await page.waitForURL(BASE + '/');
   });
@@ -1574,7 +1582,7 @@ async function errors() {
     await p.locator('.login-card, .profiles').first().waitFor();
     const other = p.getByRole('button', { name: 'Sign in with a username' });
     if (await other.count()) await other.first().click();
-    await p.getByLabel('Username').fill('viewer');
+    await p.getByLabel('Username', { exact: true }).fill('viewer');
     await p.getByLabel('Password').fill(PASS.viewer);
     await p.getByRole('button', { name: /^Sign in/ }).click();
     await p.waitForURL((u) => u.pathname === target, { timeout: 10000 });
@@ -1589,12 +1597,12 @@ async function main() {
   const mocks = await startServiceMocks();
   S.mocks = mocks;
   S.xtream = xtream;
-  const server = new Server({ MEDIAMAX_ALLOW_PRIVATE_URLS: '1', MEDIAMAX_TMDB_API_BASE: `${mocks.base}/3`, MEDIAMAX_LISTENBRAINZ_API_BASE: `${mocks.base}/lb`, MEDIAMAX_LISTENBRAINZ_LABS_BASE: `${mocks.base}/lb`, MEDIAMAX_NO_WATCH: '1' });
+  const server = new Server({ KINORA_ALLOW_PRIVATE_URLS: '1', KINORA_TMDB_API_BASE: `${mocks.base}/3`, KINORA_LISTENBRAINZ_API_BASE: `${mocks.base}/lb`, KINORA_LISTENBRAINZ_LABS_BASE: `${mocks.base}/lb`, KINORA_NO_WATCH: '1' });
   S.server = server;
   let exit = 0;
   try {
     await server.start({ fresh: true });
-    log(`MediaMax on ${BASE} (data ${server.data})`);
+    log(`Kinora on ${BASE} (data ${server.data})`);
     await journey('first-run', firstRun);
     if (results[0].steps.every((s) => s.ok)) {
       for (const [name, fn] of Object.entries(JOURNEYS)) await journey(name, fn);

@@ -1,7 +1,7 @@
 /**
- * TV mode for the web app (Samsung Tizen, LG webOS, Fire TV/Android TV browsers, set-top boxes).
+ * TV mode for the web app (Samsung Tizen, LG webOS, Hisense VIDAA, Fire TV/Android TV browsers, set-top boxes).
  *
- * Turned on by `?tv=1` (remembered), a TV user agent, or the Tizen/webOS wrapper apps in /tv.
+ * Turned on by `?tv=1` (remembered), a TV user agent, or the Tizen/webOS/VIDAA wrapper apps in /tv.
  * - Arrow keys move focus to the nearest focusable element in that direction (spatial navigation).
  * - Enter/OK clicks; the remote's Back key goes back (or closes a dialog). On the home screen the first Back shows
  *   "Press Back again to exit" and a second Back within 2 s leaves the app (web/src/tv/backExit.ts).
@@ -9,17 +9,24 @@
  * - `html.tv` enables the 10-foot CSS (bigger focus rings, larger hit targets, no hover-only controls).
  */
 
+import { isVidaaUa } from '../player/capabilities';
 import { createBackToExit, EXIT_MESSAGE, EXIT_WINDOW_MS, exitApp, isHomeScreen } from './backExit';
 
 const KEY = 'mm.tv';
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), video[controls]';
 
-// Remote key codes: Tizen (10009 back, 10182 exit), webOS (461 back), plus Backspace.
+// Remote key codes: Tizen (10009 back, 10182 exit), webOS (461 back), plus Backspace (VIDAA's Back on most firmware;
+// some VIDAA versions send 461 like webOS). A few VIDAA firmwares are reported to send Escape (27) for Back, so on
+// VIDAA, Escape counts as Back too (dialogs and players treat it as Escape either way; on a page it goes back).
 const BACK = new Set([10009, 461, 8]);
+let vidaa = false;
+const isBack = (code: number) => BACK.has(code) || (code === 27 && vidaa);
 
 /**
  * TV remote / HDMI-CEC / Bluetooth remote keys, normalised to KeyboardEvent.key names. Browsers on Android TV and
- * Fire TV already send the standard `key` values; Tizen and webOS send vendor key codes.
+ * Fire TV already send the standard `key` values; Tizen and webOS send vendor key codes. VIDAA uses the same
+ * DTV/HbbTV codes as webOS (415 play, 19 pause, 413 stop, 417/412 ff/rew, 403–406 colours, 457 info, 427/428
+ * channel) and 48–57 for the digits, without any key registration.
  */
 const REMOTE: Record<number, string> = {
   10252: 'MediaPlayPause', 179: 'MediaPlayPause', 415: 'MediaPlay', 19: 'MediaPause', 413: 'MediaStop', 178: 'MediaStop',
@@ -46,7 +53,7 @@ export const REMOTE_HELP: { keys: string; action: string }[] = [
   { keys: 'Info', action: 'Show the info overlay (playback details, HDR format)' },
   { keys: 'Guide', action: 'Open the TV guide' },
   { keys: 'Red', action: 'Subtitles on / next language' },
-  { keys: 'Green', action: 'Next audio track' },
+  { keys: 'Green', action: 'Next audio track · outside the player: Roulette ("Can\'t decide? Spin")' },
   { keys: 'Yellow', action: 'Skip intro / credits / ad break' },
   { keys: 'Blue', action: 'Info overlay (Live TV: channel list)' },
   { keys: 'Back', action: 'Close a menu, leave the player, or go back (on Home: press twice to exit)' },
@@ -95,6 +102,8 @@ function handleRemote(key: string, target: Element | null): boolean {
       return false;
     case 'ColorF1Green':
       if (player && !live) { send(target, 'a'); return true; }
+      // Outside the players: "Can't decide? Spin" (Roulette).
+      if (!player) { goTo('/roulette'); return true; }
       return false;
     case 'ColorF2Yellow':
       return player ? clickSkip() : false;
@@ -111,7 +120,7 @@ export function detectTv(): boolean {
   } catch {
     /* storage blocked */
   }
-  return /SMART-TV|Tizen|Web0S|WebOS|NetCast|AFT[A-Z]|BRAVIA|HbbTV|CrKey|GoogleTV|Android TV/i.test(navigator.userAgent);
+  return /SMART-TV|Tizen|Web0S|WebOS|NetCast|AFT[A-Z]|BRAVIA|HbbTV|CrKey|GoogleTV|Android TV/i.test(navigator.userAgent) || isVidaaUa(navigator.userAgent);
 }
 
 type Dir = 'up' | 'down' | 'left' | 'right';
@@ -190,6 +199,21 @@ function move(dir: Dir): boolean {
     first.focus({ preventScroll: false });
     return true;
   }
+  // An open peek card (components/Peek.tsx) sits over its poster: Down from the poster enters it, Up leaves it.
+  if (dir === 'down' && cur.dataset.peeking) {
+    const action = document.querySelector<HTMLElement>('.peek button, .peek a[href]');
+    if (action) {
+      action.focus({ preventScroll: true });
+      return true;
+    }
+  }
+  if (dir === 'up' && cur.closest('.peek')) {
+    const card = document.querySelector<HTMLElement>('[data-peeking]');
+    if (card) {
+      card.focus({ preventScroll: true });
+      return true;
+    }
+  }
   const next = best(cur.getBoundingClientRect(), dir, els, cur);
   if (!next) return false;
   next.focus({ preventScroll: true });
@@ -199,8 +223,92 @@ function move(dir: Dir): boolean {
 
 const DIRS: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
 
+/**
+ * A key from a paired phone remote (`remote.key` over the socket). Synthetic keyboard events are ignored by the
+ * TV-mode key handler (it only trusts real key presses), so the phone's keys drive the same logic directly:
+ * D-pad → spatial navigation (or the player's seek/volume keys), OK → click, Back → one step back,
+ * text → typed into the focused (or the page's search) input. Works with or without TV mode installed.
+ */
+export function handleRemoteKey(key: string, text?: string): boolean {
+  const active = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+  const target: Element = active ?? document.body;
+  const inPlayer = !!document.querySelector('video') && !!document.querySelector('.player, .live-player, .mv-shell');
+  const typeInto = (fn: (el: HTMLInputElement | HTMLTextAreaElement) => string) => {
+    let el = isTextInput(active) ? active : null;
+    if (!el) {
+      // No field focused: use the page's search box, else open Search.
+      el = document.querySelector<HTMLInputElement>('input[type="search"], .search-input input, input.search-input, input[name="q"]');
+      if (!el) {
+        goTo(`/search${text ? `?q=${encodeURIComponent(text)}` : ''}`);
+        return false;
+      }
+      el.focus();
+    }
+    // React tracks the value itself: set it through the native setter, then fire `input`.
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, fn(el));
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  };
+  switch (key) {
+    case 'up': case 'down': case 'left': case 'right': {
+      const dir = key as Dir;
+      const arrow = `Arrow${dir[0].toUpperCase()}${dir.slice(1)}`;
+      // In the player (no menu focused), arrows are the player's own seek / volume keys; sliders step themselves.
+      if ((inPlayer && (!active || active.tagName === 'VIDEO') && scope() === document) || active?.getAttribute('role') === 'slider' || (active instanceof HTMLInputElement && active.type === 'range')) {
+        send(target, arrow);
+        return true;
+      }
+      if (isTextInput(active) && (dir === 'left' || dir === 'right')) return false;
+      return move(dir);
+    }
+    case 'ok':
+      if (active instanceof HTMLSelectElement) {
+        try { active.showPicker(); } catch { /* unsupported */ }
+        return true;
+      }
+      if (inPlayer && (!active || active.tagName === 'VIDEO')) {
+        send(target, ' ');
+        return true;
+      }
+      if (active && isTextInput(active)) {
+        send(active, 'Enter');
+        active.form?.requestSubmit?.();
+        return true;
+      }
+      if (active) {
+        active.click();
+        return true;
+      }
+      return move('down');
+    case 'back':
+      if (inPlayer && document.fullscreenElement && scope() === document) void document.exitFullscreen().catch(() => undefined);
+      else if (scope() !== document || inPlayer) target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      else if (window.history.length > 1) window.history.back();
+      return true;
+    case 'home':
+      goTo('/');
+      return true;
+    case 'playPause': return handleRemote('MediaPlayPause', target);
+    case 'rewind': return handleRemote('MediaRewind', target);
+    case 'forward': return handleRemote('MediaFastForward', target);
+    case 'info': return handleRemote('Info', target);
+    case 'text': return text ? typeInto((el) => el.value + text) : false;
+    case 'backspace': return typeInto((el) => el.value.slice(0, -1));
+    case 'submit':
+      if (isTextInput(active)) {
+        send(active, 'Enter');
+        active.form?.requestSubmit?.();
+        return true;
+      }
+      return false;
+  }
+  return false;
+}
+
 export function installTvMode() {
   document.documentElement.classList.add('tv');
+  vidaa = isVidaaUa(navigator.userAgent);
   // Ask the platforms for the media keys (they're swallowed by the system otherwise).
   const w = window as unknown as { tizen?: { tvinputdevice?: { registerKey?: (k: string) => void } } };
   try {
@@ -222,7 +330,7 @@ export function installTvMode() {
     const inPlayer = !!document.querySelector('video') && !!document.querySelector('.player, .live-player, .mv-shell');
 
     // Back key.
-    if (BACK.has(e.keyCode) && !(e.keyCode === 8 && isTextInput(target))) {
+    if (isBack(e.keyCode) && !(e.keyCode === 8 && isTextInput(target)) && !(e.keyCode === 27 && !e.isTrusted)) {
       e.preventDefault();
       // One press is one step back: the players also listen for Backspace, and both handling it went back twice
       // (player → home instead of player → title page).
@@ -230,6 +338,8 @@ export function installTvMode() {
       // An open dialog/picker, or a player (its menus first, then the player itself), handles it as Escape;
       // otherwise go back a page.
       if (inPlayer && document.fullscreenElement && scope() === document) void document.exitFullscreen().catch(() => undefined);
+      // An open peek card (components/Peek.tsx) closes first and focus returns to its poster.
+      else if (!inPlayer && scope() === document && document.querySelector('.peek')) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       else if (scope() !== document || inPlayer) (target ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       else if (isHomeScreen(window.location.pathname, import.meta.env.BASE_URL)) {
         // Home is the root: Back has nowhere left to go in the app, so it asks before leaving it.
@@ -258,7 +368,7 @@ export function installTvMode() {
     // A focused seek bar (role=slider) steps the position itself, with a trickplay preview.
     if ((dir === 'left' || dir === 'right') && target?.getAttribute?.('role') === 'slider') return;
     // Elements that use the arrows themselves (e.g. the music visualiser stage: left/right switch styles).
-    if (target instanceof HTMLElement && target.dataset.ownArrows !== undefined && (dir === 'left' || dir === 'right')) return;
+    if (target instanceof HTMLElement && target.dataset.ownArrows !== undefined && (dir === 'left' || dir === 'right' || (dir === 'up' && target.dataset.ownArrows === 'all'))) return;
     if (inPlayer && (!target || target === document.body || target.tagName === 'VIDEO')) return;
     if (move(dir)) e.preventDefault();
   }, true);

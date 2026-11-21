@@ -4,7 +4,8 @@ import { requireAccountOwner, requireAdmin, requireUser, deviceFromRequest, remo
 import * as auth from '../services/auth.js';
 import * as oidc from '../services/oidc.js';
 import * as invites from '../services/invites.js';
-import type { AcceptInviteRequest, CreateInviteRequest } from '@mediamax/shared';
+import * as passwordLinks from '../services/passwordLinks.js';
+import type { AcceptInviteRequest, CreateInviteRequest, UsePasswordLinkRequest } from '@mediamax/shared';
 import { getSettings } from '../services/settings.js';
 import { logActivity } from '../services/activity.js';
 import { stopUserSessions } from '../services/playback.js';
@@ -53,9 +54,9 @@ export default async function authRoutes(app: FastifyInstance) {
     }
   });
 
-  app.get('/auth/profiles', async (_req, reply) => {
+  app.get('/auth/profiles', async (req, reply) => {
     noCache(reply);
-    return auth.publicProfiles();
+    return auth.publicProfiles(remoteAddr(req));
   });
 
   app.post<{ Body: PinLoginRequest }>('/auth/profile-login', async (req) => {
@@ -172,6 +173,22 @@ export default async function authRoutes(app: FastifyInstance) {
     rateLimit(ip);
     try {
       return invites.acceptInvite(req.params.code, { ...(req.body ?? ({} as AcceptInviteRequest)), ...deviceFromRequest(req, req.body) } as AcceptInviteRequest, ip ?? undefined);
+    } catch (e) {
+      recordFail(ip);
+      throw e;
+    }
+  });
+
+  /* One-time set-password links (accounts imported from Emby). Public: the random token is the secret. */
+  app.get<{ Params: { token: string } }>('/auth/password-link/:token', async (req, reply) => {
+    noCache(reply);
+    return passwordLinks.previewPasswordLink(req.params.token);
+  });
+  app.post<{ Params: { token: string }; Body: UsePasswordLinkRequest }>('/auth/password-link/:token', async (req) => {
+    const ip = remoteAddr(req);
+    rateLimit(ip);
+    try {
+      return passwordLinks.usePasswordLink(req.params.token, { ...(req.body ?? ({} as UsePasswordLinkRequest)), ...deviceFromRequest(req, req.body) }, ip ?? undefined);
     } catch (e) {
       recordFail(ip);
       throw e;

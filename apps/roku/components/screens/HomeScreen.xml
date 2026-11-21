@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Home: top menu + the server's home rows (GET /home, driven by Branding.homeRows) with a focused-item header. -->
+<component name="HomeScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Screen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Content.brs" />
+  <script type="text/brightscript" uri="pkg:/components/screens/HomeScreen.brs" />
+  <children>
+    <Poster id="backdrop" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.35" />
+    <Rectangle width="1920" height="1080" color="0x0D0C1D99" />
+
+    <Poster uri="pkg:/images/logo.png" translation="[96,36]" width="72" height="72" />
+    <Label id="serverName" translation="[186,52]" width="420" color="0xFFFFFFFF" font="font:MediumBoldSystemFont" />
+    <MarkupGrid id="nav" translation="[640,40]" itemComponentName="NavItem" itemSize="[220,64]" itemSpacing="[16,0]"
+      numColumns="5" numRows="1" drawFocusFeedback="false" />
+    <Label id="userName" translation="[1424,116]" width="400" horizAlign="right" color="0xA9B0D6FF" font="font:SmallSystemFont" />
+
+    <Group id="info" translation="[96,150]">
+      <Label id="infoTitle" width="1300" color="0xFFFFFFFF" font="font:LargeBoldSystemFont" />
+      <Label id="infoMeta" translation="[0,70]" width="1300" color="0x22D3EEFF" font="font:SmallBoldSystemFont" />
+      <Label id="infoText" translation="[0,112]" width="1200" wrap="true" maxLines="3" lineSpacing="4" color="0xD5DAF5FF" font="font:SmallSystemFont" />
+    </Group>
+
+    <Label id="empty" translation="[96,520]" width="1728" wrap="true" color="0xA9B0D6FF" font="font:MediumSystemFont" visible="false" />
+
+    <RowList id="rows" translation="[96,420]" itemComponentName="PosterItem" numRows="3" itemSize="[1824,430]"
+      rowItemSize="[[200,376]]" rowItemSpacing="[[28,0]]" itemSpacing="[0,40]" showRowLabel="[true]" rowLabelOffset="[[0,14]]"
+      rowLabelColor="0xFFFFFFFF" rowLabelFont="font:MediumBoldSystemFont" drawFocusFeedback="false"
+      rowFocusAnimationStyle="floatingFocus" vertFocusAnimationStyle="fixedFocus" />
+  </children>
+</component>

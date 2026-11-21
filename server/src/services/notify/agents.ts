@@ -23,7 +23,7 @@ export interface NotifyMessage {
   data?: Record<string, unknown>;
 }
 
-const UA = () => `MediaMax/${config.version}`;
+const UA = () => `Kinora/${config.version}`;
 
 async function post(url: string, body: unknown, headers: Record<string, string> = {}) {
   const res = await fetch(url, {
@@ -43,7 +43,7 @@ const COLORS: Partial<Record<NotifyEvent, number>> = {
 const plain = (m: NotifyMessage) => [m.body, ...(m.fields ?? []).map((f) => `${f.name}: ${f.value}`), m.url ?? ''].filter(Boolean).join('\n');
 const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** The server's app icon (uploaded in Branding, else the stock MediaMax icon) as an absolute URL, when the public URL is known. */
+/** The server's app icon (uploaded in Branding, else the stock Kinora icon) as an absolute URL, when the public URL is known. */
 function avatarUrl(): string | null {
   const base = getSettings().publicUrl?.replace(/\/+$/, '');
   if (!base) return null;
@@ -57,10 +57,10 @@ export async function sendWith(agent: NotificationAgent, m: NotifyMessage): Prom
   switch (agent.kind) {
     case 'discord':
       return post(c.webhookUrl, {
-        username: c.username || getSettings().serverName || 'MediaMax',
+        username: c.username || getSettings().serverName || 'Kinora',
         ...(avatarUrl() ? { avatar_url: avatarUrl() } : {}),
         embeds: [{
-          title: m.title, description: m.body, url: m.url || undefined, color: COLORS[m.event] ?? 0x1fb6f5,
+          title: m.title, description: m.body, url: m.url || undefined, color: COLORS[m.event] ?? 0x9198ff,
           fields: (m.fields ?? []).slice(0, 10).map((f) => ({ name: f.name, value: f.value.slice(0, 1000) || '—', inline: true })),
           ...(m.imageUrl ? { thumbnail: { url: m.imageUrl } } : {}), timestamp: new Date().toISOString(),
         }],
@@ -105,7 +105,7 @@ export function dispatch(m: NotifyMessage): Promise<{ id: string; ok: boolean; e
 export async function testAgent(agent: NotificationAgent): Promise<NotificationTestResult> {
   try {
     await sendWith(agent, {
-      event: 'test', title: `Test from ${getSettings().serverName || 'MediaMax'}`, body: 'Notifications from MediaMax work. 🎬',
+      event: 'test', title: `Test from ${getSettings().serverName || 'Kinora'}`, body: 'Notifications from Kinora work. 🎬',
       fields: [{ name: 'Agent', value: agent.name || agent.kind }],
     });
     return { ok: true, message: 'Sent' };

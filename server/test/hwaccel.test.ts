@@ -232,7 +232,7 @@ test('buildArgs: software H.264 on MPEG-TS (unchanged default path)', () => {
     '-f', 'hls', '-hls_time', '4', '-hls_segment_type', 'mpegts', '-start_number', '0', '-hls_segment_filename', '/t/seg%d.ts',
     '-hls_list_size', '0', '-hls_playlist_type', 'event', '-hls_flags', 'independent_segments+temp_file', '/t/ff.m3u8',
   ]);
-  assert.deepEqual(info, { videoCodec: 'libx264', audioCodec: 'aac', bitrate: 8000, hwAccel: 'none', toneMap: null, hwFallback: null });
+  assert.deepEqual(info, { videoCodec: 'libx264', audioCodec: 'aac', bitrate: 8000, hwAccel: 'none', toneMap: null, hwFallback: null, height: 1080 });
 });
 
 test('buildArgs: VA-API HEVC with GPU tone-mapping on fMP4 HLS', () => {
@@ -250,7 +250,7 @@ test('buildArgs: VA-API HEVC with GPU tone-mapping on fMP4 HLS', () => {
     '-f', 'hls', '-hls_time', '4', '-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', 'init.mp4', '-start_number', '2', '-hls_segment_filename', '/t/seg%d.m4s',
     '-hls_list_size', '0', '-hls_playlist_type', 'event', '-hls_flags', 'independent_segments+temp_file', '/t/ff.m3u8',
   ]);
-  assert.deepEqual(info, { videoCodec: 'hevc_vaapi', audioCodec: 'aac', bitrate: 5200, hwAccel: 'vaapi', toneMap: 'vaapi', hwFallback: null });
+  assert.deepEqual(info, { videoCodec: 'hevc_vaapi', audioCodec: 'aac', bitrate: 5200, hwAccel: 'vaapi', toneMap: 'vaapi', hwFallback: null, height: 1080 });
 });
 
 test('buildArgs: image subtitle overlay with NVENC, Windows QSV, AMF', () => {

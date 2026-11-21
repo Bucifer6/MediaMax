@@ -116,7 +116,7 @@ export function TwoFactorCard() {
     }
   };
 
-  const codesText = codes ? `${branding.serverName || 'MediaMax'} recovery codes for ${user.username}\nEach code works once.\n\n${codes.join('\n')}\n` : '';
+  const codesText = codes ? `${branding.serverName || 'Kinora'} recovery codes for ${user.username}\nEach code works once.\n\n${codes.join('\n')}\n` : '';
 
   return (
     <div className="settings-card">
@@ -134,7 +134,7 @@ export function TwoFactorCard() {
           </ol>
           <div className="form-actions">
             <CopyButton text={codes.join('\n')} what="Recovery codes copied" />
-            <button type="button" className="btn btn-sm" onClick={() => downloadText('mediamax-recovery-codes.txt', codesText)}><Icon name="download" size={14} /> Download .txt</button>
+            <button type="button" className="btn btn-sm" onClick={() => downloadText('kinora-recovery-codes.txt', codesText)}><Icon name="download" size={14} /> Download .txt</button>
             <button type="button" className="btn btn-primary btn-sm" onClick={() => setCodes(null)}>I’ve saved them</button>
           </div>
         </div>
@@ -284,7 +284,7 @@ export function SubsonicCard() {
   const base = (system?.publicUrl || window.location.origin).replace(/\/+$/, '');
   return (
     <div className="settings-card">
-      <h2>Use MediaMax with Subsonic music apps</h2>
+      <h2>Use Kinora with Subsonic music apps</h2>
       <p className="muted">Apps such as Symfonium, DSub, Substreamer, Feishin and play:Sub can play your music library over the Subsonic / OpenSubsonic API.</p>
       <dl className="kv-list">
         <dt>Server address</dt>
@@ -294,7 +294,7 @@ export function SubsonicCard() {
         <dt>Username</dt>
         <dd><code>{user.username}</code></dd>
         <dt>Password</dt>
-        <dd>{user.totpEnabled ? <span>Your account uses two-factor, so create an <strong>API key</strong> above and use it in apps that support OpenSubsonic API keys.</span> : <span>Your MediaMax password, or an API key in apps that support OpenSubsonic API keys.</span>}</dd>
+        <dd>{user.totpEnabled ? <span>Your account uses two-factor, so create an <strong>API key</strong> above and use it in apps that support OpenSubsonic API keys.</span> : <span>Your Kinora password, or an API key in apps that support OpenSubsonic API keys.</span>}</dd>
       </dl>
       <p className="muted small">If the app offers “legacy” or plain-password authentication, turn it on: salted-token sign-in isn’t supported.</p>
     </div>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Root scene: owns the global state, the screen stack and app-wide UI (toast, loading spinner, dialogs).
+  Screens navigate by setting fields on the scene:
+    scene.navigate = { screen: "DetailScreen", params: { itemId: "…" } }   push
+    scene.resetTo  = { screen: "HomeScreen" }                               clear the stack, then push
+    scene.goBack   = true                                                    pop
+-->
+<component name="MainScene" extends="Scene">
+  <interface>
+    <field id="navigate" type="assocarray" alwaysNotify="true" onChange="onNavigate" />
+    <field id="resetTo" type="assocarray" alwaysNotify="true" onChange="onResetTo" />
+    <field id="goBack" type="boolean" alwaysNotify="true" onChange="onGoBack" />
+    <field id="toast" type="string" alwaysNotify="true" onChange="onToast" />
+    <field id="loading" type="boolean" onChange="onLoading" />
+    <!-- Sign the device out locally (token dropped) and return to the sign-in screen. -->
+    <field id="signedOut" type="boolean" alwaysNotify="true" onChange="onSignedOut" />
+    <!-- Called after sign-in / profile switch: { token, user } -->
+    <field id="signedIn" type="assocarray" alwaysNotify="true" onChange="onSignedIn" />
+    <field id="deepLink" type="assocarray" onChange="onDeepLink" />
+    <field id="exitChannel" type="boolean" />
+    <!-- Requests that must outlive the screen that sent them (final progress report + session stop): { method, path, body, followUp? } -->
+    <field id="backgroundRequest" type="assocarray" alwaysNotify="true" onChange="onBackgroundRequest" />
+  </interface>
+
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/DeviceProfile.brs" />
+  <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
+
+  <children>
+    <Rectangle id="background" width="1920" height="1080" color="0x0D0C1DFF" />
+    <Group id="screens" />
+
+    <Group id="toastGroup" visible="false" translation="[560,940]">
+      <Rectangle id="toastBg" width="800" height="80" color="0x0B0E26EE" />
+      <Label id="toastLabel" width="760" height="80" translation="[20,0]" horizAlign="center" vertAlign="center" wrap="true"
+        maxLines="2" color="0xFFFFFFFF" font="font:SmallSystemFont" />
+    </Group>
+    <Timer id="toastTimer" duration="3.5" repeat="false" />
+
+    <BusySpinner id="spinner" visible="false" translation="[912,492]" spinInterval="1" />
+  </children>
+</component>

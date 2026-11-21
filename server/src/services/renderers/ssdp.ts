@@ -83,7 +83,7 @@ export function ssdpSearch(timeoutMs = 3000, targets = [MEDIA_RENDERER, ZONE_PLA
         /* unicast test target */
       }
       for (const st of targets) {
-        const m = `M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: "ssdp:discover"\r\nMX: 2\r\nST: ${st}\r\nUSER-AGENT: Node/22 UPnP/1.1 MediaMax/1\r\n\r\n`;
+        const m = `M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: "ssdp:discover"\r\nMX: 2\r\nST: ${st}\r\nUSER-AGENT: Node/22 UPnP/1.1 Kinora/1\r\n\r\n`;
         // Send twice: UDP multicast is lossy.
         s.send(m, port, addr);
         setTimeout(() => !finished && s.send(m, port, addr), 300);

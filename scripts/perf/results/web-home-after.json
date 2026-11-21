@@ -1,0 +1,144 @@
+{
+ "label": "home-after",
+ "date": "2026-11-21T02:43:46.028Z",
+ "cpuThrottle": 4,
+ "runs": 7,
+ "home": [
+  {
+   "fcpMs": 492,
+   "rowsVisibleMs": 1161,
+   "jsKB": 105,
+   "cssKB": 37,
+   "apiKB": 52,
+   "longTasks": {
+    "count": 5,
+    "totalMs": 647,
+    "maxMs": 271
+   }
+  },
+  {
+   "fcpMs": 492,
+   "rowsVisibleMs": 936,
+   "jsKB": 105,
+   "cssKB": 31,
+   "apiKB": 52,
+   "longTasks": {
+    "count": 5,
+    "totalMs": 486,
+    "maxMs": 153
+   }
+  },
+  {
+   "fcpMs": 492,
+   "rowsVisibleMs": 839,
+   "jsKB": 105,
+   "cssKB": 31,
+   "apiKB": 52,
+   "longTasks": {
+    "count": 7,
+    "totalMs": 560,
+    "maxMs": 165
+   }
+  },
+  {
+   "fcpMs": 420,
+   "rowsVisibleMs": 715,
+   "jsKB": 105,
+   "cssKB": 31,
+   "apiKB": 52,
+   "longTasks": {
+    "count": 5,
+    "totalMs": 454,
+    "maxMs": 142
+   }
+  },
+  {
+   "fcpMs": 368,
+   "rowsVisibleMs": 723,
+   "jsKB": 105,
+   "cssKB": 31,
+   "apiKB": 52,
+   "longTasks": {
+    "count": 8,
+    "totalMs": 643,
+    "maxMs": 158
+   }
+  },
+  {
+   "fcpMs": 404,
+   "rowsVisibleMs": 832,
+   "jsKB": 105,
+   "cssKB": 31,
+   "apiKB": 52,
+   "longTasks": {
+    "count": 6,
+    "totalMs": 534,
+    "maxMs": 181
+   }
+  },
+  {
+   "fcpMs": 420,
+   "rowsVisibleMs": 897,
+   "jsKB": 133,
+   "cssKB": 37,
+   "apiKB": 52,
+   "longTasks": {
+    "count": 6,
+    "totalMs": 530,
+    "maxMs": 208
+   }
+  }
+ ],
+ "library": [],
+ "guide": [],
+ "nav": [
+  {
+   "homeToItemMs": 1088,
+   "itemToPlayerUiMs": 281
+  },
+  {
+   "homeToItemMs": 710,
+   "itemToPlayerUiMs": 189
+  },
+  {
+   "homeToItemMs": 498,
+   "itemToPlayerUiMs": 178
+  },
+  {
+   "homeToItemMs": 413,
+   "itemToPlayerUiMs": 176
+  },
+  {
+   "homeToItemMs": 543,
+   "itemToPlayerUiMs": 183
+  },
+  {
+   "homeToItemMs": 547,
+   "itemToPlayerUiMs": 184
+  },
+  {
+   "homeToItemMs": 559,
+   "itemToPlayerUiMs": 154
+  }
+ ],
+ "summary": {
+  "homeFcpMs": 420,
+  "homeRowsMs": 839,
+  "homeJsKB": 105,
+  "homeCssKB": 31,
+  "homeLongTaskMs": 534,
+  "homeToItemMs": 547,
+  "itemToPlayerUiMs": 183,
+  "libraryCards": null,
+  "libraryLoadFps": null,
+  "libraryLoadLongTaskMs": null,
+  "librarySweepFps": null,
+  "librarySweepLongTaskMs": null,
+  "guideFirstRowsMs": null,
+  "guideRows": null,
+  "guideLoadFps": null,
+  "guideLoadLongTaskMs": null,
+  "guideSweepFps": null,
+  "guideHorizontalFps": null
+ }
+}

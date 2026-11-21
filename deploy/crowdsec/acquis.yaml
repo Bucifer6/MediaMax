@@ -1,13 +1,13 @@
-# CrowdSec log sources for MediaMax (mounted as /etc/crowdsec/acquis.yaml by the generated docker-compose.yml).
+# CrowdSec log sources for Kinora (mounted as /etc/crowdsec/acquis.yaml by the generated docker-compose.yml).
 #
 # Paths are inside the crowdsec container:
-#   /var/log/mediamax  <- ./config/logs  (MediaMax data folder, read-only)
+#   /var/log/mediamax  <- ./config/logs  (Kinora data folder, read-only)
 #   /var/log/caddy     <- ./logs/caddy   (Caddy JSON access log, read-only)
 #   /var/log/nginx     <- ./logs/nginx   (nginx access log, read-only)
 # A source whose file doesn't exist yet is fine: CrowdSec picks it up once it appears.
 # Check what is read and parsed:  docker compose exec crowdsec cscli metrics
 
-# MediaMax sign-in events -> parsers/s01-parse/mediamax-logs.yaml -> scenarios/mediamax-bf.yaml
+# Kinora sign-in events -> parsers/s01-parse/mediamax-logs.yaml -> scenarios/mediamax-bf.yaml
 filenames:
   - /var/log/mediamax/security.log
 labels:

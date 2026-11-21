@@ -100,6 +100,13 @@ export interface MusicOutputApi {
 }
 
 const Ctx = createContext<MusicApi | null>(null);
+/**
+ * Stable actions for components that start playback but don't show player state (every poster card via
+ * usePlayItem). The full context changes on every timeupdate while something plays, which re-rendered each card on
+ * screen four times a second; this one never changes.
+ */
+type MusicActions = Pick<MusicApi, 'playQueue'>;
+const ActionsCtx = createContext<MusicActions | null>(null);
 export function useMusic(): MusicApi {
   const v = useContext(Ctx);
   if (!v) throw new Error('useMusic outside provider');
@@ -1131,14 +1138,23 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto, togglePlayback, pausePlayback, cast, casting, sleep, setSleep, radio, startRadio, cancelHandover, outputApi, altSource],
   );
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  const latest = useRef(value);
+  latest.current = value;
+  const actions = useMemo<MusicActions>(() => ({ playQueue: (...a) => latest.current.playQueue(...a) }), []);
+
+  return (
+    <Ctx.Provider value={value}>
+      <ActionsCtx.Provider value={actions}>{children}</ActionsCtx.Provider>
+    </Ctx.Provider>
+  );
 }
 
 
 /** One function that "plays" any item the right way. */
 export function usePlayItem() {
   const navigate = useNavigate();
-  const music = useMusic();
+  const music = useContext(ActionsCtx);
+  if (!music) throw new Error('usePlayItem outside MusicProvider');
   const toast = useToast();
   return useCallback(
     async (item: Item, opts: { shuffle?: boolean; fromStart?: boolean } = {}) => {

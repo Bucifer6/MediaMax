@@ -1,0 +1,18 @@
+{
+  "_comment": "Kinora's own descriptor for the VIDAA app, not an official VIDAA manifest (VIDAA publishes no public package format: store apps are hosted web apps registered by VIDAA). tv/build.mjs fills in the name, version and, with --url, the hosted address, and writes it as vidaa-app.json. Its fields mirror the launcher entries VIDAA keeps for web apps (websdk/Appinfo.json), so the same values go into the VIDAA partner submission form or a developer-mode install.",
+  "Id": "uk.burdujeni82.kinora.vidaa",
+  "AppName": "Kinora",
+  "Title": "Kinora",
+  "Version": "0.1.0",
+  "Description": "Your Kinora server on a Hisense VIDAA TV.",
+  "URL": "index.html",
+  "StartCommand": "index.html",
+  "IconURL": "icon.png",
+  "Icon_96": "icon-130.png",
+  "Image": "icon.png",
+  "Thumb": "icon-130.png",
+  "Splash": "splash.png",
+  "Type": "Browser",
+  "StoreType": "custom",
+  "Resolution": "1920x1080"
+}

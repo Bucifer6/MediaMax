@@ -262,7 +262,7 @@ function MixerSettings() {
   const keyLockHint = !support.native && !support.worklet
     ? 'This browser can\'t change tempo without changing pitch, so tracks play at their own tempo (plain crossfades).'
     : o.keyLock === 'worklet' || (!support.native && support.worklet)
-      ? 'MediaMax\'s own WSOLA time-stretch (AudioWorklet).'
+      ? 'Kinora\'s own WSOLA time-stretch (AudioWorklet).'
       : 'The browser\'s built-in pitch-preserving playback.';
   return (
     <section className="dj-options dj-mixer-settings">

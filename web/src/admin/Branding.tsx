@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { Branding, BrandingAssetKind, FeatureFlags, HomeRowConfig, HomeRowType, Item, StarterLook, Theme, ThemeColors } from '@mediamax/shared';
+import type { Branding, BrandingAssetKind, FeatureFlags, HomeRowConfig, HomeRowType, Item, StarterLook, Theme, ThemeColors, ThemeSchedule } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
@@ -53,6 +53,7 @@ const ROW_TYPES: { value: HomeRowType; label: string; hint: string }[] = [
   { value: 'trending', label: 'Popular right now', hint: 'Recent plays across the server, newest weighted most' },
   { value: 'watchlist', label: 'My List', hint: "The viewer's watchlist" },
   { value: 'upcoming', label: 'Coming soon', hint: 'Next airing episodes of shows in the libraries (needs a TMDB key)' },
+  { value: 'spotlight', label: 'Random spotlight', hint: 'Random movies and/or shows from the libraries you pick. Add several, e.g. “Random Movie”, “Random Series”, “Kids Spotlight”. Viewers only see titles they are allowed to' },
 ];
 
 const FEATURE_LABELS: { key: keyof FeatureFlags; label: string; hint: string; icon: IconName }[] = [
@@ -265,7 +266,113 @@ function ThemeEditor({ theme, onChange }: { theme: Theme; onChange: (t: Theme) =
   );
 }
 
+/* ---------------- seasonal themes ---------------- */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+function MonthDay({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
+  const [m, d] = value.split('-').map(Number) as [number, number];
+  return (
+    <span className="ts-date">
+      <select className="select" value={d} onChange={(e) => onChange(`${pad2(m)}-${pad2(Number(e.target.value))}`)} aria-label={`${label} day`}>
+        {Array.from({ length: 31 }, (_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}
+      </select>
+      <select className="select" value={m} onChange={(e) => onChange(`${pad2(Number(e.target.value))}-${pad2(d)}`)} aria-label={`${label} month`}>
+        {MONTHS.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}
+      </select>
+    </span>
+  );
+}
+
+/** Date windows that swap the default theme every year (Halloween, Christmas…). Resolved by the server for every client. */
+function ThemeSchedules({ schedules, themes, activeId, onChange }: { schedules: ThemeSchedule[]; themes: Theme[]; activeId: string | null; onChange: (s: ThemeSchedule[]) => void }) {
+  const update = (i: number, p: Partial<ThemeSchedule>) => onChange(schedules.map((s, j) => (j === i ? { ...s, ...p } : s)));
+  const add = (preset?: Partial<ThemeSchedule>) => onChange([...schedules, { id: rid(), name: 'Seasonal theme', enabled: true, start: '12-01', end: '01-06', themeId: themes.find((t) => t.id === 'festive')?.id ?? themes[0]?.id ?? '', ...preset }]);
+  return (
+    <div className="theme-schedules">
+      <h3>Seasonal themes</h3>
+      <p className="muted small">Replace the default theme on these dates every year, on every app. A window may cross the new year (1 Dec – 6 Jan). The first matching one wins; users who chose their own theme keep it.</p>
+      {schedules.map((s, i) => (
+        <div key={s.id} className={`ts-row ${s.enabled ? '' : 'dim'}`}>
+          <input className="input" value={s.name} onChange={(e) => update(i, { name: e.target.value })} aria-label="Name" placeholder="Name" />
+          <MonthDay label="From" value={s.start} onChange={(start) => update(i, { start })} />
+          <span className="muted">to</span>
+          <MonthDay label="To" value={s.end} onChange={(end) => update(i, { end })} />
+          <select className="select" value={s.themeId} onChange={(e) => update(i, { themeId: e.target.value })} aria-label="Theme">
+            {themes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          {s.id === activeId && <Badge tone="accent">Active now</Badge>}
+          <input type="checkbox" className="switch" checked={s.enabled} onChange={(e) => update(i, { enabled: e.target.checked })} aria-label="Enabled" />
+          <button className="btn-icon" onClick={() => onChange(schedules.filter((_, j) => j !== i))} aria-label="Remove seasonal theme"><Icon name="trash" size={16} /></button>
+        </div>
+      ))}
+      <div className="toolbar">
+        <button className="btn btn-sm" onClick={() => add()}><Icon name="plus" size={14} /> Add seasonal theme</button>
+        {!schedules.some((s) => s.name === 'Christmas') && themes.some((t) => t.id === 'festive') && (
+          <button className="btn btn-sm btn-ghost" onClick={() => add({ name: 'Christmas', start: '12-01', end: '01-06', themeId: 'festive' })}>+ Christmas (Festive)</button>
+        )}
+        {!schedules.some((s) => s.name === 'Halloween') && (
+          <button className="btn btn-sm btn-ghost" onClick={() => add({ name: 'Halloween', start: '10-20', end: '11-01' })}>+ Halloween</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- home row builder ---------------- */
+/** Top 10 pins: titles that always lead the row, in this order (viewers who can't see one just skip it). */
+function PinnedTitles({ ids, onChange }: { ids: string[]; onChange: (ids: string[]) => void }) {
+  const [q, setQ] = useState('');
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  const results = useAsync(() => (q.trim().length < 2 ? Promise.resolve([] as Item[]) : api.items.search(q.trim(), 10).then((r) => r.items.filter((i) => i.type === 'movie' || i.type === 'show')).catch(() => [] as Item[])), [q]);
+  useEffect(() => {
+    const missing = ids.filter((id) => !(id in titles));
+    if (!missing.length) return;
+    void Promise.all(missing.map((id) => api.items.get(id).then((it) => [id, it.title] as const).catch(() => [id, 'Unavailable title'] as const)))
+      .then((pairs) => setTitles((t) => ({ ...t, ...Object.fromEntries(pairs) })));
+  }, [ids, titles]);
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= ids.length) return;
+    const next = [...ids];
+    const [x] = next.splice(from, 1);
+    next.splice(to, 0, x!);
+    onChange(next);
+  };
+  return (
+    <div className="rb-pins">
+      <span className="field-label">Pinned titles <small className="muted">always first, in this order; the weekly chart fills the rest</small></span>
+      {ids.length > 0 && (
+        <ol className="rb-pin-list">
+          {ids.map((id, i) => (
+            <li key={id}>
+              <span className="grow">{titles[id] ?? '…'}</span>
+              <button className="btn-icon" onClick={() => move(i, i - 1)} disabled={i === 0} aria-label="Move pin up"><Icon name="chevronUp" size={14} /></button>
+              <button className="btn-icon" onClick={() => move(i, i + 1)} disabled={i === ids.length - 1} aria-label="Move pin down"><Icon name="chevronDown" size={14} /></button>
+              <button className="btn-icon" onClick={() => onChange(ids.filter((x) => x !== id))} aria-label="Unpin"><Icon name="x" size={14} /></button>
+            </li>
+          ))}
+        </ol>
+      )}
+      {ids.length < 10 && (
+        <div className="rb-pin-search">
+          <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a movie or show to pin…" aria-label="Search titles to pin" />
+          {(results.data ?? []).filter((it) => !ids.includes(it.id)).length > 0 && (
+            <ul className="rb-pin-results">
+              {(results.data ?? []).filter((it) => !ids.includes(it.id)).map((it) => (
+                <li key={it.id}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setTitles((t) => ({ ...t, [it.id]: it.title })); onChange([...ids, it.id]); setQ(''); }}>
+                    <Icon name="plus" size={14} /> {it.title}{it.year ? ` (${it.year})` : ''} <small className="muted">{it.type === 'show' ? 'Show' : 'Movie'}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RowBuilder({ rows, onChange }: { rows: HomeRowConfig[]; onChange: (r: HomeRowConfig[]) => void }) {
   const { libraries } = useApp();
   const collections = useAsync(() => api.collections.list().catch(() => [] as Item[]), []);
@@ -322,6 +429,33 @@ function RowBuilder({ rows, onChange }: { rows: HomeRowConfig[]; onChange: (r: H
                   </select>
                 </>
               )}
+              {r.type === 'top10' && <PinnedTitles ids={r.pinnedItemIds ?? []} onChange={(pinnedItemIds) => update(i, { pinnedItemIds: pinnedItemIds.length ? pinnedItemIds : undefined })} />}
+              {r.type === 'spotlight' && (
+                <div className="rb-spotlight">
+                  <div className="rb-chips" role="group" aria-label="Libraries">
+                    {libraries.filter((l) => ['movies', 'shows', 'iptv-movies', 'iptv-shows'].includes(l.type)).map((l) => (
+                      <label key={l.id} className="check-inline">
+                        <input type="checkbox" checked={!!r.libraryIds?.includes(l.id)}
+                          onChange={(e) => update(i, { libraryIds: e.target.checked ? [...(r.libraryIds ?? []), l.id] : (r.libraryIds ?? []).filter((x) => x !== l.id) })} />
+                        {l.name}
+                      </label>
+                    ))}
+                    {!r.libraryIds?.length && <small className="muted">No library ticked: all of them.</small>}
+                  </div>
+                  <div className="rb-line">
+                    <select className="select" value={r.itemTypes?.length === 1 ? r.itemTypes[0] : 'both'} aria-label="Item types"
+                      onChange={(e) => update(i, { itemTypes: e.target.value === 'both' ? undefined : [e.target.value as 'movie' | 'show'] })}>
+                      <option value="both">Movies and shows</option>
+                      <option value="movie">Movies only</option>
+                      <option value="show">Shows only</option>
+                    </select>
+                    <select className="select" value={r.rotation ?? 'load'} aria-label="Rotation" onChange={(e) => update(i, { rotation: e.target.value as 'load' | 'daily' })}>
+                      <option value="load">New picks every visit</option>
+                      <option value="daily">Same picks all day</option>
+                    </select>
+                  </div>
+                </div>
+              )}
               {(r.type === 'collection' || r.type === 'playlist') && (
                 <select className="select" value={r.itemId ?? ''} onChange={(e) => update(i, { itemId: e.target.value || undefined })}>
                   <option value="">Choose a {r.type}…</option>
@@ -369,7 +503,7 @@ function CssEditor({ value, onChange }: { value: string; onChange: (v: string) =
       </div>
       <details className="css-snippets">
         <summary>Useful selectors</summary>
-        <code>.sidebar .topbar .hero .hero-title .row-title .card .card-art .detail .player .login .login-card .miniplayer</code>
+        <code>.rail .topbar .hero .hero-title .row-title .card .card-art .detail .player .login .login-card .miniplayer</code>
       </details>
     </div>
   );
@@ -453,7 +587,8 @@ export function BrandingStudio() {
           footerText: draft.footerText,
           supportUrl: draft.supportUrl || null,
           splash: draft.splash,
-          defaultThemeId: draft.defaultThemeId,
+          baseThemeId: draft.baseThemeId,
+          themeSchedules: draft.themeSchedules,
           allowUserThemes: draft.allowUserThemes,
           homeRows: draft.homeRows,
           features: draft.features,
@@ -535,7 +670,7 @@ export function BrandingStudio() {
     <div className="studio">
       <AdminHeader help="admin-branding"
         title="Branding studio"
-        subtitle="Everything here is served to every MediaMax client — web, iOS, Android and TV — and updates live."
+        subtitle="Everything here is served to every Kinora client — web, iOS, Android and TV — and updates live."
         actions={
           <>
             <label className="check-inline"><input type="checkbox" checked={livePreview} onChange={(e) => setLivePreview(e.target.checked)} /> Preview on whole app</label>
@@ -565,7 +700,7 @@ export function BrandingStudio() {
           {tab === 'looks' && (
             <StarterLooks
               themes={draft.themes}
-              current={draft.defaultThemeId}
+              current={draft.baseThemeId}
               onApply={async (look) => {
                 if (!(await confirm({ title: `Apply “${look.name}”?`, message: 'This sets the default theme, replaces the home screen rows and turns on the features it needs. Logos, text and your own themes are kept. You can fine-tune everything afterwards.', confirmLabel: 'Apply look' }))) return;
                 try {
@@ -597,7 +732,8 @@ export function BrandingStudio() {
                       </span>
                       <span className="preset-name">{t.name}{dirtyThemes.has(t.id) ? ' •' : ''}</span>
                       <span className="preset-badges">
-                        {t.id === draft.defaultThemeId && <Badge tone="primary">Default</Badge>}
+                        {t.id === draft.baseThemeId && <Badge tone="primary">Default</Badge>}
+                        {draft.activeThemeScheduleId && t.id === draft.defaultThemeId && t.id !== draft.baseThemeId && <Badge tone="accent">Seasonal now</Badge>}
                         {t.builtIn && <Badge tone="muted">Built-in</Badge>}
                       </span>
                     </button>
@@ -607,13 +743,14 @@ export function BrandingStudio() {
               </div>
               <div className="toolbar">
                 <button className="btn btn-sm" onClick={() => newTheme(theme, `${theme.name} copy`)}><Icon name="copy" size={14} /> Duplicate</button>
-                <button className="btn btn-sm" disabled={draft.defaultThemeId === theme.id} onClick={() => patch({ defaultThemeId: theme.id })}><Icon name="check" size={14} /> Make default</button>
+                <button className="btn btn-sm" disabled={draft.baseThemeId === theme.id} onClick={() => patch({ baseThemeId: theme.id })}><Icon name="check" size={14} /> Make default</button>
                 <button className="btn btn-sm btn-ghost" disabled={!!theme.builtIn} onClick={() => deleteTheme(theme)}><Icon name="trash" size={14} /> Delete</button>
                 <span className="spacer" />
                 <Switch checked={draft.allowUserThemes} onChange={(v) => patch({ allowUserThemes: v })} label="Let users choose a theme" />
               </div>
               {theme.builtIn && <p className="muted small">Built-in presets can be tweaked but not deleted. Duplicate one to start your own.</p>}
               <ThemeEditor theme={theme} onChange={editTheme} />
+              <ThemeSchedules schedules={draft.themeSchedules ?? []} themes={draft.themes} activeId={draft.activeThemeScheduleId ?? null} onChange={(themeSchedules) => patch({ themeSchedules })} />
             </div>
           )}
 

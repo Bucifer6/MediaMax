@@ -40,7 +40,7 @@ export function LinkDeviceForm() {
 
   return (
     <form onSubmit={submit} className="link-form">
-      <p className="muted">Open MediaMax on your TV, phone or streaming box and choose <strong>Link with code</strong>. Type the code it shows below.</p>
+      <p className="muted">Open Kinora on your TV, phone or streaming box and choose <strong>Link with code</strong>. Type the code it shows below.</p>
       <input
         className="input code-input"
         value={code}

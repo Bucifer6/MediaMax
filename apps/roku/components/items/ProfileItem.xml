@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Who's watching?" tile: avatar (or coloured initial) and name. -->
+<component name="ProfileItem" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContent" />
+    <field id="width" type="float" />
+    <field id="height" type="float" />
+    <field id="focusPercent" type="float" onChange="onFocus" />
+    <field id="itemHasFocus" type="boolean" onChange="onFocus" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/items/ProfileItem.brs" />
+  <children>
+    <Rectangle id="ring" translation="[0,0]" width="240" height="240" color="0x22D3EEFF" opacity="0" />
+    <Rectangle id="tile" translation="[8,8]" width="224" height="224" color="0x4F46E5FF" />
+    <Label id="initial" translation="[8,8]" width="224" height="224" horizAlign="center" vertAlign="center" color="0xFFFFFFFF" font="font:LargeBoldSystemFont" />
+    <Poster id="avatar" translation="[8,8]" width="224" height="224" loadDisplayMode="scaleToZoom" />
+    <Label id="name" translation="[0,256]" width="240" horizAlign="center" color="0xFFFFFFFF" font="font:MediumSystemFont" />
+    <Label id="lock" translation="[0,296]" width="240" horizAlign="center" color="0xA9B0D6FF" font="font:SmallestSystemFont" />
+  </children>
+</component>

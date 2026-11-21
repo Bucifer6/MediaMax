@@ -10,7 +10,7 @@ import { useApi } from '@/state/session';
 import { useTheme } from '@/theme';
 import { formatDay, formatTime } from '@/utils/format';
 
-const ICONS = { ios: 'phone-portrait-outline', android: 'phone-portrait-outline', tvos: 'tv-outline', androidtv: 'tv-outline', web: 'desktop-outline', other: 'hardware-chip-outline' } as const;
+const ICONS = { ios: 'phone-portrait-outline', android: 'phone-portrait-outline', tvos: 'tv-outline', androidtv: 'tv-outline', roku: 'tv-outline', web: 'desktop-outline', other: 'hardware-chip-outline' } as const;
 
 export default function DevicesScreen() {
   const t = useTheme();

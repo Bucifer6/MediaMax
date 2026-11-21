@@ -24,7 +24,7 @@ export function useSpatialNav(enabled = true) {
       const cur = document.activeElement as HTMLElement | null;
       if (!cur || isTypingTarget(cur) || !cur.hasAttribute('data-nav')) return;
       if (cur.closest('.modal, .player, .guide-grid')) return;
-      const scope = cur.closest('main, .sidebar') ?? document.body;
+      const scope = cur.closest('main, .rail') ?? document.body;
       const cr = cur.getBoundingClientRect();
       const cx = cr.left + cr.width / 2;
       const cy = cr.top + cr.height / 2;

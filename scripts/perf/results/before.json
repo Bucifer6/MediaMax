@@ -1,0 +1,1188 @@
+{
+ "label": "before",
+ "transportErrors": 1,
+ "date": "2026-11-21T02:10:08.321Z",
+ "node": "v22.23.5",
+ "cpus": 4,
+ "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+ "scale": 1,
+ "counts": {
+  "movies": 20000,
+  "shows": 2000,
+  "seasons": 8038,
+  "episodes": 60521,
+  "people": 30000,
+  "users": 80,
+  "channels": 3000,
+  "programmes": 200401,
+  "userData": 30355,
+  "playHistory": 30355
+ },
+ "bootMs": 855,
+ "levels": [
+  1,
+  10,
+  50
+ ],
+ "results": [
+  {
+   "name": "auth: /system/info (no auth)",
+   "seqP50": 1.3,
+   "seqP95": 2,
+   "serverP50": 0.2,
+   "queries": 4,
+   "bytes": 275,
+   "wire": 275,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 1.2,
+     "p95": 1.6,
+     "rps": 824,
+     "n": 200
+    },
+    "10": {
+     "p50": 2.5,
+     "p95": 5.4,
+     "rps": 3307,
+     "n": 200
+    },
+    "50": {
+     "p50": 9.3,
+     "p95": 12,
+     "rps": 4790,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "auth: /auth/me (token lookup)",
+   "seqP50": 1.4,
+   "seqP95": 1.9,
+   "serverP50": 0.4,
+   "queries": 4,
+   "bytes": 1083,
+   "wire": 1083,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 1.2,
+     "p95": 1.6,
+     "rps": 805,
+     "n": 200
+    },
+    "10": {
+     "p50": 3.1,
+     "p95": 7.2,
+     "rps": 2595,
+     "n": 200
+    },
+    "50": {
+     "p50": 13.7,
+     "p95": 29.1,
+     "rps": 2881,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "home",
+   "seqP50": 498.3,
+   "seqP95": 560.4,
+   "serverP50": 495.8,
+   "queries": 135.9,
+   "bytes": 304038,
+   "wire": 304038,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 516,
+     "p95": 560.2,
+     "rps": 2,
+     "n": 30
+    },
+    "10": {
+     "p50": 3835.9,
+     "p95": 7757.8,
+     "rps": 2,
+     "n": 42
+    },
+    "50": {
+     "p50": 19260.3,
+     "p95": 20189.9,
+     "rps": 2,
+     "n": 100
+    }
+   }
+  },
+  {
+   "name": "home (restricted profile)",
+   "seqP50": 504,
+   "seqP95": 645.3,
+   "serverP50": 501.3,
+   "queries": 120.4,
+   "bytes": 276041,
+   "wire": 276041,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 499.5,
+     "p95": 533.6,
+     "rps": 2,
+     "n": 30
+    },
+    "10": {
+     "p50": 4142.1,
+     "p95": 8675,
+     "rps": 2,
+     "n": 39
+    },
+    "50": {
+     "p50": 22774.3,
+     "p95": 25648,
+     "rps": 2,
+     "n": 100
+    }
+   }
+  },
+  {
+   "name": "browse movies: title p1",
+   "seqP50": 44.9,
+   "seqP95": 48.9,
+   "serverP50": 43.2,
+   "queries": 8,
+   "bytes": 110028,
+   "wire": 110028,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 44.8,
+     "p95": 59.9,
+     "rps": 21,
+     "n": 200
+    },
+    "10": {
+     "p50": 358.4,
+     "p95": 796.8,
+     "rps": 22,
+     "n": 200
+    },
+    "50": {
+     "p50": 2112.9,
+     "p95": 2363.1,
+     "rps": 22,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "browse movies: title deep page",
+   "seqP50": 305.4,
+   "seqP95": 333.8,
+   "serverP50": 302.1,
+   "queries": 6,
+   "bytes": 110665,
+   "wire": 110665,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 329.7,
+     "p95": 380.8,
+     "rps": 3,
+     "n": 46
+    },
+    "10": {
+     "p50": 2644.8,
+     "p95": 5663.7,
+     "rps": 3,
+     "n": 55
+    },
+    "50": {
+     "p50": 14634,
+     "p95": 15336.1,
+     "rps": 3,
+     "n": 100
+    }
+   }
+  },
+  {
+   "name": "browse movies: added desc",
+   "seqP50": 46.5,
+   "seqP95": 61.5,
+   "serverP50": 45,
+   "queries": 6,
+   "bytes": 110782,
+   "wire": 110782,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 46.6,
+     "p95": 66.4,
+     "rps": 21,
+     "n": 200
+    },
+    "10": {
+     "p50": 391.1,
+     "p95": 852.3,
+     "rps": 21,
+     "n": 200
+    },
+    "50": {
+     "p50": 2231.9,
+     "p95": 2450.3,
+     "rps": 21,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "browse movies: rating desc",
+   "seqP50": 45.1,
+   "seqP95": 51.3,
+   "serverP50": 43.5,
+   "queries": 6,
+   "bytes": 110875,
+   "wire": 110875,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 46.9,
+     "p95": 63.5,
+     "rps": 20,
+     "n": 200
+    },
+    "10": {
+     "p50": 370.4,
+     "p95": 799.1,
+     "rps": 21,
+     "n": 200
+    },
+    "50": {
+     "p50": 2250.3,
+     "p95": 2432.7,
+     "rps": 21,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "browse movies: genre filter",
+   "seqP50": 48,
+   "seqP95": 63.6,
+   "serverP50": 46.2,
+   "queries": 6,
+   "bytes": 110495,
+   "wire": 110495,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 48.4,
+     "p95": 64,
+     "rps": 20,
+     "n": 200
+    },
+    "10": {
+     "p50": 368.4,
+     "p95": 846,
+     "rps": 21,
+     "n": 200
+    },
+    "50": {
+     "p50": 2296.7,
+     "p95": 2500.7,
+     "rps": 21,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "browse movies: unwatched",
+   "seqP50": 45.3,
+   "seqP95": 61.4,
+   "serverP50": 43.8,
+   "queries": 6,
+   "bytes": 110005,
+   "wire": 110005,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 47.7,
+     "p95": 69.6,
+     "rps": 19,
+     "n": 200
+    },
+    "10": {
+     "p50": 389.1,
+     "p95": 864.3,
+     "rps": 21,
+     "n": 200
+    },
+    "50": {
+     "p50": 2205.3,
+     "p95": 2272.5,
+     "rps": 22,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "browse movies: letter M",
+   "seqP50": 26.6,
+   "seqP95": 35.3,
+   "serverP50": 25.2,
+   "queries": 6,
+   "bytes": 110124,
+   "wire": 110124,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 27.8,
+     "p95": 37.3,
+     "rps": 35,
+     "n": 200
+    },
+    "10": {
+     "p50": 226.9,
+     "p95": 502.7,
+     "rps": 36,
+     "n": 200
+    },
+    "50": {
+     "p50": 1363.6,
+     "p95": 1445,
+     "rps": 36,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "browse shows: title p1",
+   "seqP50": 19.6,
+   "seqP95": 24.8,
+   "serverP50": 18.1,
+   "queries": 6,
+   "bytes": 110955,
+   "wire": 110955,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 18,
+     "p95": 25.5,
+     "rps": 51,
+     "n": 200
+    },
+    "10": {
+     "p50": 139.4,
+     "p95": 312.5,
+     "rps": 56,
+     "n": 200
+    },
+    "50": {
+     "p50": 783.4,
+     "p95": 922.9,
+     "rps": 60,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "browse movies (restricted)",
+   "seqP50": 47.3,
+   "seqP95": 53.3,
+   "serverP50": 46.1,
+   "queries": 6.8,
+   "bytes": 110042,
+   "wire": 110042,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 46.8,
+     "p95": 62.3,
+     "rps": 21,
+     "n": 200
+    },
+    "10": {
+     "p50": 370.7,
+     "p95": 823.1,
+     "rps": 21,
+     "n": 200
+    },
+    "50": {
+     "p50": 2253,
+     "p95": 2605.3,
+     "rps": 21,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "genres list",
+   "seqP50": 25.3,
+   "seqP95": 31.8,
+   "serverP50": 24.3,
+   "queries": 6.2,
+   "bytes": 184,
+   "wire": 184,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 25.3,
+     "p95": 31.5,
+     "rps": 39,
+     "n": 200
+    },
+    "10": {
+     "p50": 200.8,
+     "p95": 435.7,
+     "rps": 39,
+     "n": 200
+    },
+    "50": {
+     "p50": 1367.7,
+     "p95": 1659.4,
+     "rps": 34,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "item: movie",
+   "seqP50": 1.4,
+   "seqP95": 7,
+   "serverP50": 0.8,
+   "queries": 10,
+   "bytes": 2550,
+   "wire": 2550,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 1.7,
+     "p95": 2.7,
+     "rps": 550,
+     "n": 200
+    },
+    "10": {
+     "p50": 7,
+     "p95": 15.8,
+     "rps": 1132,
+     "n": 200
+    },
+    "50": {
+     "p50": 47.5,
+     "p95": 63,
+     "rps": 979,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "item: movie similar",
+   "seqP50": 58.2,
+   "seqP95": 68.3,
+   "serverP50": 55.4,
+   "queries": 20.7,
+   "bytes": 29502,
+   "wire": 29502,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 51.1,
+     "p95": 81.3,
+     "rps": 18,
+     "n": 200
+    },
+    "10": {
+     "p50": 389.6,
+     "p95": 868.1,
+     "rps": 20,
+     "n": 200
+    },
+    "50": {
+     "p50": 2263.7,
+     "p95": 2387.4,
+     "rps": 23,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "item: show",
+   "seqP50": 1.4,
+   "seqP95": 2,
+   "serverP50": 0.7,
+   "queries": 10,
+   "bytes": 1894,
+   "wire": 1894,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 1.5,
+     "p95": 2.1,
+     "rps": 647,
+     "n": 200
+    },
+    "10": {
+     "p50": 6.1,
+     "p95": 13.2,
+     "rps": 1271,
+     "n": 200
+    },
+    "50": {
+     "p50": 40.3,
+     "p95": 49.7,
+     "rps": 1154,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "item: show seasons",
+   "seqP50": 1.5,
+   "seqP95": 2.9,
+   "serverP50": 0.9,
+   "queries": 10,
+   "bytes": 3306,
+   "wire": 3306,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 1.8,
+     "p95": 3.1,
+     "rps": 512,
+     "n": 200
+    },
+    "10": {
+     "p50": 7,
+     "p95": 14.7,
+     "rps": 1149,
+     "n": 200
+    },
+    "50": {
+     "p50": 46.9,
+     "p95": 92,
+     "rps": 987,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "item: show next-up",
+   "seqP50": 1.4,
+   "seqP95": 1.6,
+   "serverP50": 0.9,
+   "queries": 12,
+   "bytes": 1014,
+   "wire": 1014,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 1.7,
+     "p95": 2.7,
+     "rps": 535,
+     "n": 200
+    },
+    "10": {
+     "p50": 11.1,
+     "p95": 25.8,
+     "rps": 743,
+     "n": 200
+    },
+    "50": {
+     "p50": 64.2,
+     "p95": 80.1,
+     "rps": 720,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "item: season episodes",
+   "seqP50": 1.6,
+   "seqP95": 3.8,
+   "serverP50": 1,
+   "queries": 10,
+   "bytes": 6156,
+   "wire": 6156,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 1.4,
+     "p95": 1.7,
+     "rps": 697,
+     "n": 200
+    },
+    "10": {
+     "p50": 6.9,
+     "p95": 14.9,
+     "rps": 1162,
+     "n": 200
+    },
+    "50": {
+     "p50": 41.4,
+     "p95": 73.8,
+     "rps": 1102,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "item: episode",
+   "seqP50": 1.3,
+   "seqP95": 1.8,
+   "serverP50": 0.7,
+   "queries": 10,
+   "bytes": 1734,
+   "wire": 1734,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 1.4,
+     "p95": 1.7,
+     "rps": 710,
+     "n": 200
+    },
+    "10": {
+     "p50": 7.6,
+     "p95": 16.1,
+     "rps": 1121,
+     "n": 200
+    },
+    "50": {
+     "p50": 38.9,
+     "p95": 49.9,
+     "rps": 1198,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "search \"shadow\"",
+   "seqP50": 282.9,
+   "seqP95": 363.5,
+   "serverP50": 281.7,
+   "queries": 11,
+   "bytes": 89332,
+   "wire": 89332,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 293.4,
+     "p95": 360.7,
+     "rps": 3,
+     "n": 50
+    },
+    "10": {
+     "p50": 2422.7,
+     "p95": 5189.4,
+     "rps": 3,
+     "n": 60
+    },
+    "50": {
+     "p50": 13424.9,
+     "p95": 13941.3,
+     "rps": 3,
+     "n": 102
+    }
+   }
+  },
+  {
+   "name": "search \"Smith\" (people)",
+   "seqP50": 284.7,
+   "seqP95": 364.9,
+   "serverP50": 283.1,
+   "queries": 11.5,
+   "bytes": 55010,
+   "wire": 55010,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 261.7,
+     "p95": 303.1,
+     "rps": 4,
+     "n": 57
+    },
+    "10": {
+     "p50": 2137.3,
+     "p95": 4571.5,
+     "rps": 4,
+     "n": 66
+    },
+    "50": {
+     "p50": 12468.6,
+     "p95": 13280.3,
+     "rps": 4,
+     "n": 107
+    }
+   }
+  },
+  {
+   "name": "watchlist",
+   "seqP50": 2.8,
+   "seqP95": 3.2,
+   "serverP50": 1.9,
+   "queries": 9,
+   "bytes": 55277,
+   "wire": 55277,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 2.8,
+     "p95": 4.1,
+     "rps": 344,
+     "n": 200
+    },
+    "10": {
+     "p50": 18.2,
+     "p95": 39.7,
+     "rps": 452,
+     "n": 200
+    },
+    "50": {
+     "p50": 99.4,
+     "p95": 123,
+     "rps": 452,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "guide 6h x 500ch",
+   "seqP50": 32.9,
+   "seqP95": 40.6,
+   "serverP50": 25.8,
+   "queries": 9,
+   "bytes": 1662523,
+   "wire": 1662523,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 31,
+     "p95": 44.2,
+     "rps": 30,
+     "n": 200
+    },
+    "10": {
+     "p50": 222,
+     "p95": 474.6,
+     "rps": 37,
+     "n": 200
+    },
+    "50": {
+     "p50": 1350.4,
+     "p95": 1438.9,
+     "rps": 35,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "guide 6h x 60ch (web page)",
+   "seqP50": 6.2,
+   "seqP95": 8.8,
+   "serverP50": 4.9,
+   "queries": 9,
+   "bytes": 199046,
+   "wire": 199046,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 6.1,
+     "p95": 9,
+     "rps": 151,
+     "n": 200
+    },
+    "10": {
+     "p50": 44.7,
+     "p95": 96.1,
+     "rps": 175,
+     "n": 200
+    },
+    "50": {
+     "p50": 265,
+     "p95": 293.3,
+     "rps": 176,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "channels (now/next) 200",
+   "seqP50": 10.4,
+   "seqP95": 12.4,
+   "serverP50": 8.8,
+   "queries": 6,
+   "bytes": 252363,
+   "wire": 252363,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 10.1,
+     "p95": 13.8,
+     "rps": 94,
+     "n": 200
+    },
+    "10": {
+     "p50": 80.7,
+     "p95": 179.3,
+     "rps": 100,
+     "n": 200
+    },
+    "50": {
+     "p50": 442.5,
+     "p95": 736,
+     "rps": 102,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "admin: system stats",
+   "seqP50": 4,
+   "seqP95": 4.5,
+   "serverP50": 3.4,
+   "queries": 10,
+   "bytes": 222,
+   "wire": 222,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 4.1,
+     "p95": 5.7,
+     "rps": 235,
+     "n": 200
+    },
+    "10": {
+     "p50": 27.7,
+     "p95": 59.9,
+     "rps": 285,
+     "n": 200
+    },
+    "50": {
+     "p50": 162.6,
+     "p95": 175,
+     "rps": 293,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "admin: stats/server 30d",
+   "seqP50": 80.9,
+   "seqP95": 101.7,
+   "serverP50": 79.8,
+   "queries": 3,
+   "bytes": 9733,
+   "wire": 9733,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 73.9,
+     "p95": 94.5,
+     "rps": 13,
+     "n": 197
+    },
+    "10": {
+     "p50": 609.1,
+     "p95": 1273.6,
+     "rps": 13,
+     "n": 200
+    },
+    "50": {
+     "p50": 3640.4,
+     "p95": 3791.9,
+     "rps": 13,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "admin: sessions",
+   "seqP50": 0.8,
+   "seqP95": 4.8,
+   "serverP50": 0.2,
+   "queries": 2,
+   "bytes": 2,
+   "wire": 2,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 0.8,
+     "p95": 1.5,
+     "rps": 1146,
+     "n": 200
+    },
+    "10": {
+     "p50": 1.7,
+     "p95": 6.1,
+     "rps": 4081,
+     "n": 200
+    },
+    "50": {
+     "p50": 6.1,
+     "p95": 31.2,
+     "rps": 5346,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "admin: activity",
+   "seqP50": 1,
+   "seqP95": 3.9,
+   "serverP50": 0.3,
+   "queries": 4,
+   "bytes": 1324,
+   "wire": 1324,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 1,
+     "p95": 1.5,
+     "rps": 946,
+     "n": 200
+    },
+    "10": {
+     "p50": 3,
+     "p95": 8.6,
+     "rps": 2650,
+     "n": 200
+    },
+    "50": {
+     "p50": 13,
+     "p95": 24.1,
+     "rps": 3442,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "admin: users",
+   "seqP50": 1.9,
+   "seqP95": 4.1,
+   "serverP50": 1.1,
+   "queries": 83,
+   "bytes": 86805,
+   "wire": 86805,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 1.8,
+     "p95": 3.5,
+     "rps": 488,
+     "n": 200
+    },
+    "10": {
+     "p50": 12.7,
+     "p95": 27.2,
+     "rps": 668,
+     "n": 200
+    },
+    "50": {
+     "p50": 63.5,
+     "p95": 80.8,
+     "rps": 725,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "image: cached w=300",
+   "seqP50": 0.9,
+   "seqP95": 2.9,
+   "serverP50": 0.1,
+   "queries": 1,
+   "bytes": 15850,
+   "wire": 15850,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 0.8,
+     "p95": 1.2,
+     "rps": 1138,
+     "n": 200
+    },
+    "10": {
+     "p50": 3,
+     "p95": 10,
+     "rps": 2334,
+     "n": 200
+    },
+    "50": {
+     "p50": 15.5,
+     "p95": 30.6,
+     "rps": 2624,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "image: cached w=300 revalidate",
+   "seqP50": 0.8,
+   "seqP95": 1.2,
+   "serverP50": 0.1,
+   "queries": 1,
+   "bytes": 15850,
+   "wire": 15850,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 0.8,
+     "p95": 1.2,
+     "rps": 1150,
+     "n": 200
+    },
+    "10": {
+     "p50": 2.9,
+     "p95": 9.3,
+     "rps": 2580,
+     "n": 200
+    },
+    "50": {
+     "p50": 12.7,
+     "p95": 25.2,
+     "rps": 3208,
+     "n": 200
+    }
+   }
+  },
+  {
+   "name": "static: main JS chunk",
+   "seqP50": 1.8,
+   "seqP95": 9.8,
+   "serverP50": 0.3,
+   "queries": 0,
+   "bytes": 398359,
+   "wire": 398359,
+   "status": 200,
+   "encoding": null,
+   "levels": {
+    "1": {
+     "p50": 1.6,
+     "p95": 6.7,
+     "rps": 419,
+     "n": 200
+    },
+    "10": {
+     "p50": 12.2,
+     "p95": 25.4,
+     "rps": 725,
+     "n": 200
+    },
+    "50": {
+     "p50": 61.4,
+     "p95": 87.1,
+     "rps": 750,
+     "n": 200
+    }
+   }
+  }
+ ],
+ "slowTop": [
+  {
+   "sql": " SELECT i.*, p.title p_title, g.title g_title, p.poster p_poster, g.poster g_poster, p.backdrop p_backdrop, g.backdrop g_backdrop, p.logo p_logo, g.logo g_logo, p.content_rating p_rating, g.content_ra",
+   "n": 6133,
+   "max": 519.9,
+   "total": 441128
+  },
+  {
+   "sql": "SELECT COUNT(*) n FROM items i LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ? WHERE (i.library_id IN (?,?) OR i.type = 'collection' OR (i.type = 'playlist' AND i.owner_id = ?)) AND i.l",
+   "n": 2547,
+   "max": 46.5,
+   "total": 46585
+  },
+  {
+   "sql": "SELECT h.*, CASE WHEN o.id IS NOT NULL THEN o.display_name || ' › ' || u.display_name ELSE u.display_name END uname, i.type itype, i.title ititle, i.genres igenres, i.duration_ms item_duration, i.post",
+   "n": 618,
+   "max": 123.9,
+   "total": 36801
+  },
+  {
+   "sql": "SELECT p.*, c.id cid FROM programs p JOIN channels c ON (CASE WHEN c.guide_status IS NOT NULL THEN c.guide_key ELSE COALESCE(json_extract(c.custom,'$.epgChannelId'), c.epg_channel_id) END) = p.epg_cha",
+   "n": 484,
+   "max": 76.3,
+   "total": 24685
+  },
+  {
+   "sql": "SELECT i.id FROM items i WHERE i.type IN (?) AND (i.library_id IN (?,?) OR i.type = 'collection' OR (i.type = 'playlist' AND i.owner_id = ?)) AND EXISTS (SELECT 1 FROM json_each(i.genres) j WHERE lowe",
+   "n": 671,
+   "max": 63.4,
+   "total": 22979
+  },
+  {
+   "sql": "SELECT DISTINCT j.value FROM items i, json_each(i.genres) j WHERE (i.library_id IN (?,?) OR i.type = 'collection' OR (i.type = 'playlist' AND i.owner_id = ?)) AND i.library_id = ? AND i.type IN ('movi",
+   "n": 621,
+   "max": 45.6,
+   "total": 15908
+  },
+  {
+   "sql": "SELECT COUNT(*) n FROM items i LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ? WHERE (i.library_id IN (?,?) OR i.type = 'collection' OR (i.type = 'playlist' AND i.owner_id = ?)) AND mm_",
+   "n": 621,
+   "max": 32.3,
+   "total": 11307
+  },
+  {
+   "sql": "SELECT i.id FROM items i WHERE i.type IN (?,?) AND (i.library_id IN (?,?) OR i.type = 'collection' OR (i.type = 'playlist' AND i.owner_id = ?)) AND EXISTS (SELECT 1 FROM json_each(i.genres) j WHERE lo",
+   "n": 70,
+   "max": 49.9,
+   "total": 2662
+  },
+  {
+   "sql": "SELECT i.id FROM items i WHERE i.type IN (?,?) AND (i.library_id IN (?,?) OR i.type = 'collection' OR (i.type = 'playlist' AND i.owner_id = ?)) AND mm_rating_ok(COALESCE(i.content_rating, CASE WHEN i.",
+   "n": 9,
+   "max": 53.6,
+   "total": 345
+  },
+  {
+   "sql": "SELECT i.id FROM items i WHERE i.type IN (?) AND (i.library_id IN (?,?) OR i.type = 'collection' OR (i.type = 'playlist' AND i.owner_id = ?)) AND mm_rating_ok(COALESCE(i.content_rating, CASE WHEN i.pa",
+   "n": 9,
+   "max": 31.9,
+   "total": 225
+  },
+  {
+   "sql": "SELECT * FROM programs WHERE epg_channel_id IN (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,",
+   "n": 8,
+   "max": 19.1,
+   "total": 137
+  },
+  {
+   "sql": "SELECT ud.user_id uid, CASE WHEN i.type = 'episode' THEN i.grandparent_id ELSE i.id END tid FROM user_data ud JOIN items i ON i.id = ud.item_id WHERE i.type IN ('movie','show','episode') AND (ud.playe",
+   "n": 1,
+   "max": 87.5,
+   "total": 88
+  }
+ ]
+}

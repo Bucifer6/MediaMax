@@ -23,7 +23,7 @@ export function traktStatus(userId: string): TraktStatus {
 async function post(path: string, body: unknown, token?: string): Promise<Response> {
   const app = appCreds();
   if (!app) throw badRequest('Trakt is not configured on this server');
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', 'trakt-api-version': '2', 'trakt-api-key': app.id, 'User-Agent': 'MediaMax' };
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', 'trakt-api-version': '2', 'trakt-api-key': app.id, 'User-Agent': 'Kinora' };
   if (token) headers.Authorization = `Bearer ${token}`;
   return fetch(API + path, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
 }

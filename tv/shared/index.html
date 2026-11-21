@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=1920, height=1080" />
-<title>MediaMax</title>
+<title>Kinora</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #0A0F22; color: #F2F5FF; font: 28px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  html, body { margin: 0; height: 100%; background: #0D0C1D; color: #F4F3FF; font: 28px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   main { height: 100%; display: grid; place-items: center; align-content: center; gap: 28px; text-align: center; padding: 0 10vw; }
   h1 { margin: 0; font-size: 64px; letter-spacing: -0.02em; }
   p { margin: 0; color: #9AA6CC; max-width: 34em; }
   .logo { display: block; height: 120px; width: auto; }
   input { width: 900px; max-width: 80vw; font: inherit; padding: 18px 24px; border-radius: 14px; border: 3px solid #27315C; background: #121936; color: inherit; }
-  input:focus { outline: none; border-color: #1FB6F5; }
-  button { font: inherit; font-weight: 700; padding: 16px 48px; border-radius: 14px; border: 0; background: #1FB6F5; color: #04101F; }
+  input:focus { outline: none; border-color: #9198FF; }
+  button { font: inherit; font-weight: 700; padding: 16px 48px; border-radius: 14px; border: 0; background: #9198FF; color: #0B0A1F; }
   button:focus { outline: 5px solid #fff; outline-offset: 5px; }
   .err { color: #ff8a8a; min-height: 1.4em; }
   .hint { font-size: 22px; }
@@ -20,9 +20,9 @@
 </head>
 <body>
 <main>
-  <!-- tv/build.mjs swaps this for the outlined MediaMax wordmark (logo.svg), or keeps the text for a white-label --name. -->
-  <h1 id="brand">MediaMax</h1>
-  <p>Enter the address of your MediaMax server. You'll find it under Settings → Devices in the web app, for example <b>http://192.168.1.20:8484</b>.</p>
+  <!-- tv/build.mjs swaps this for the outlined Kinora wordmark (logo.svg), or keeps the text for a white-label --name. -->
+  <h1 id="brand">Kinora</h1>
+  <p>Enter the address of your Kinora server. You'll find it under Settings → Devices in the web app, for example <b>http://192.168.1.20:8484</b>.</p>
   <input id="url" type="url" inputmode="url" placeholder="http://192.168.1.20:8484" autocomplete="off" spellcheck="false" />
   <button id="go">Connect</button>
   <div class="err" id="err"></div>
@@ -31,6 +31,8 @@
 <script>
 (function () {
   var KEY = 'mediamax.server';
+  var TRIED = 'mediamax.unverified';
+  var vidaa = /VIDAA/i.test(navigator.userAgent) || (/Hisense/i.test(navigator.userAgent) && !/Mobile|Android/i.test(navigator.userAgent));
   var input = document.getElementById('url');
   var err = document.getElementById('err');
   var go = document.getElementById('go');
@@ -38,6 +40,7 @@
   // Registration belongs to the application, so it stays in force after we navigate to the server's web app
   // (web/src/tv/spatial.ts maps these keys to player shortcuts). Back is 10009 (Tizen) / 461 (webOS); webOS sends
   // its remote keys without registration. Keys are registered one at a time: a key a model lacks would fail a batch.
+  // Hisense VIDAA needs no registration either; its Back is 8 (Backspace) on most firmware, 461 or 27 on some.
   var KEYS = ['MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop', 'MediaFastForward', 'MediaRewind', 'MediaTrackNext', 'MediaTrackPrevious',
     'ChannelUp', 'ChannelDown', 'ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue', 'Info', 'Guide', 'Caption', 'ChannelList',
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -49,12 +52,20 @@
     if (!/^https?:\/\//i.test(v)) v = 'http://' + v;
     try {
       var u = new URL(v);
-      // Plain http with no port: assume MediaMax's default port.
+      // Plain http with no port: assume Kinora's default port.
       if (u.protocol === 'http:' && !u.port) u.port = '8484';
       return u.origin + (u.pathname === '/' ? '' : u.pathname.replace(/\/+$/, ''));
     } catch (e) { return null; }
   }
   function connect(url, quiet) {
+    // Hosted over HTTPS (the VIDAA store app) and the server is plain http: the browser blocks the check request as
+    // mixed content, so go straight there. Remember the attempt: coming Back to this page then shows the form instead
+    // of reconnecting in a loop.
+    if (location.protocol === 'https:' && /^http:/i.test(url)) {
+      try { localStorage.setItem(KEY, url); sessionStorage.setItem(TRIED, '1'); } catch (e) {}
+      window.location.assign(url + '/?tv=1');
+      return;
+    }
     err.textContent = quiet ? '' : 'Connecting…';
     var x = new XMLHttpRequest();
     x.open('GET', url + '/api/v1/system/info');
@@ -63,7 +74,7 @@
       if (x.status === 200) {
         try { localStorage.setItem(KEY, url); } catch (e) {}
         window.location.replace(url + '/?tv=1');
-      } else err.textContent = 'That address answered, but it is not a MediaMax server (HTTP ' + x.status + ').';
+      } else err.textContent = 'That address answered, but it is not a Kinora server (HTTP ' + x.status + ').';
     };
     x.onerror = x.ontimeout = function () { err.textContent = 'Could not reach ' + url + '. Check the address and that the TV is on the same network.'; };
     x.send();
@@ -79,15 +90,24 @@
   });
   go.addEventListener('keydown', function (e) { if (e.keyCode === 38) { e.preventDefault(); input.focus(); } });
   document.addEventListener('keydown', function (e) {
-    if (e.keyCode === 10009 || e.keyCode === 461) {
+    // VIDAA's Back is Backspace: in the address field it deletes, unless the field is empty.
+    var vidaaBack = vidaa && (e.keyCode === 27 || (e.keyCode === 8 && (document.activeElement !== input || !input.value)));
+    if (e.keyCode === 10009 || e.keyCode === 461 || vidaaBack) {
       e.preventDefault();
-      try { tizen.application.getCurrentApplication().exit(); } catch (x) { try { webOS.platformBack(); } catch (y) { window.close(); } }
+      exit();
     }
   });
-  var saved = null;
-  try { saved = localStorage.getItem(KEY); } catch (e) {}
+  function exit() {
+    // Tizen, webOS, then VIDAA (Hisense_Exit is VIDAA's own call; window.close() is reported to do nothing there).
+    try { tizen.application.getCurrentApplication().exit(); return; } catch (a) {}
+    try { webOS.platformBack(); return; } catch (b) {}
+    try { if (typeof Hisense_Exit === 'function') { Hisense_Exit(); return; } } catch (c) {}
+    window.close();
+  }
+  var saved = null, tried = false;
+  try { saved = localStorage.getItem(KEY); tried = !!sessionStorage.getItem(TRIED); sessionStorage.removeItem(TRIED); } catch (e) {}
   // ?change=1 (or a failed saved address) shows the form instead of reconnecting.
-  if (saved && !/[?&]change=1/.test(location.search)) { input.value = saved; connect(saved, true); }
+  if (saved && !tried && !/[?&]change=1/.test(location.search)) { input.value = saved; connect(saved, true); }
   else if (saved) input.value = saved;
   input.focus();
 })();

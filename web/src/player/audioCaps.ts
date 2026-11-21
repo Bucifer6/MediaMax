@@ -1,5 +1,5 @@
 /**
- * Audio capability detection for the web player (browsers and the Samsung Tizen / LG webOS TV apps).
+ * Audio capability detection for the web player (browsers and the Samsung Tizen / LG webOS / Hisense VIDAA TV apps).
  *
  * Like capabilities.ts this probes what our own engine (hls.js → Media Source Extensions) can feed the decoder:
  * `MediaSource.isTypeSupported` for AC-3 / E-AC-3 / Opus / FLAC, `MediaCapabilities.decodingInfo` for multichannel AAC
@@ -8,6 +8,8 @@
  * is a hint; TVs that decode AC-3 / E-AC-3 through MSE pass them on to a soundbar over ARC/eARC and report 6.
  * The server uses `maxAudioChannels` to choose AAC 7.1 / 5.1 / stereo (with a proper downmix) or E-AC-3. See docs/AUDIO.md.
  */
+import { isVidaaUa } from './capabilities';
+
 export interface AudioCaps {
   /** Extra codec tokens for the device profile ("ac3", "eac3", "eac3-joc", "opus", "flac" …). */
   audioCodecs: string[];
@@ -41,7 +43,7 @@ function canPlay(type: string): boolean {
   }
 }
 
-const isTv = () => /Tizen|Web0S|WebOS|NetCast/i.test(navigator.userAgent);
+const isTv = () => /Tizen|Web0S|WebOS|NetCast/i.test(navigator.userAgent) || isVidaaUa(navigator.userAgent);
 
 /** MediaCapabilities check for an audio configuration (MSE). Unknown dictionary members make old engines throw → false. */
 async function decodesAudio(contentType: string, channels: number, extra: Record<string, unknown> = {}): Promise<boolean | null> {

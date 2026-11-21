@@ -16,77 +16,17 @@ import { getSettings } from '../settings.js';
 import { accessClause } from '../items.js';
 import { logger } from '../../util/log.js';
 import { getAnalysis } from './analysis.js';
+import { extractJson, llmAvailable, llmChat as sharedChat, openaiUrl, type ChatOptions } from '../ai/llm.js';
 
 const log = logger('ai-dj');
 
 /* ------------------------------ LLM client ------------------------------ */
 
-/** OpenAI-compatible endpoint for `path` (e.g. "chat/completions") from whatever base URL the admin pasted. */
-export function openaiUrl(base: string, pathPart: string): string {
-  const b = base.replace(/\/+$/, '').replace(/\/(chat\/completions|audio\/speech)$/, '');
-  // Bases that already carry an API version or an /openai prefix: Groq …/openai/v1, Gemini …/v1beta/openai, OpenRouter …/api/v1.
-  return /\/(v\d+[a-z0-9]*|openai)$/i.test(b) ? `${b}/${pathPart}` : `${b}/v1/${pathPart}`;
-}
-
-// Daily call budget so hosted free tiers stay free (resets at UTC midnight).
-let budget = { day: '', used: 0 };
-function takeBudget(): boolean {
-  const max = getSettings().aiDj.llm.maxRequestsPerDay;
-  const day = new Date().toISOString().slice(0, 10);
-  if (budget.day !== day) budget = { day, used: 0 };
-  if (max > 0 && budget.used >= max) return false;
-  budget.used++;
-  return true;
-}
-export const llmUsage = () => ({ ...budget, max: getSettings().aiDj.llm.maxRequestsPerDay });
-
-/** Send a chat to the configured local model. Returns the reply text, or null when no model is set up / it fails. */
-export async function llmChat(system: string, user: string, opts: { json?: boolean; maxTokens?: number; temperature?: number } = {}): Promise<string | null> {
-  const cfg = getSettings().aiDj.llm;
-  if (cfg.provider === 'none' || !cfg.url || !cfg.model) return null;
-  if (!takeBudget()) {
-    log.info('Daily language-model budget used up; using the built-in DJ until tomorrow');
-    return null;
-  }
-  const base = cfg.url.replace(/\/+$/, '');
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
-  if (cfg.apiKey) headers.authorization = `Bearer ${cfg.apiKey}`;
-  const messages = [{ role: 'system', content: system }, { role: 'user', content: user }];
-  try {
-    if (cfg.provider === 'ollama') {
-      const res = await fetch(`${base}/api/chat`, {
-        method: 'POST', headers, signal: AbortSignal.timeout(45000),
-        body: JSON.stringify({ model: cfg.model, messages, stream: false, ...(opts.json ? { format: 'json' } : {}), options: { temperature: opts.temperature ?? 0.7, num_predict: opts.maxTokens ?? 300 } }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const j = (await res.json()) as { message?: { content?: string } };
-      return j.message?.content?.trim() || null;
-    }
-    const res = await fetch(openaiUrl(base, 'chat/completions'), {
-      method: 'POST', headers, signal: AbortSignal.timeout(45000),
-      body: JSON.stringify({ model: cfg.model, messages, temperature: opts.temperature ?? 0.7, max_tokens: opts.maxTokens ?? 300, ...(opts.json ? { response_format: { type: 'json_object' } } : {}) }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    return j.choices?.[0]?.message?.content?.trim() || null;
-  } catch (e) {
-    log.warn(`Language model request failed: ${(e as Error).message}`);
-    return null;
-  }
-}
-
-/** Pull the first JSON object out of a model reply (models like to wrap JSON in prose or code fences). */
-function extractJson(text: string): Record<string, unknown> | null {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  try {
-    const v = JSON.parse(text.slice(start, end + 1));
-    return v && typeof v === 'object' && !Array.isArray(v) ? v : null;
-  } catch {
-    return null;
-  }
-}
+// The language model is shared by every AI feature and configured in Admin → AI (it used to live in the DJ settings).
+export { openaiUrl };
+export { llmUsage } from '../ai/llm.js';
+/** Chat with the shared model on behalf of the DJ (null when not configured, switched off for the DJ or over budget). */
+export const llmChat = (system: string, user: string, opts: Omit<ChatOptions, 'feature'> = {}) => sharedChat(system, user, { ...opts, feature: 'dj' });
 
 /* --------------------------- prompt understanding --------------------------- */
 
@@ -333,7 +273,7 @@ function templateLine(host: string, prev: TrackFacts | null, next: TrackFacts, r
   else if (next.year && next.year < 2000 && Math.random() < 0.3) extras.push(`A bit of ${Math.floor(next.year / 10) * 10}s magic.`);
   if (extras.length) lines.push(pick(extras));
   lines.push(pick([`Here's ${by(next)}.`, `Coming up: ${by(next)}.`, `Next, ${by(next)}.`, `This is ${by(next)}.`]));
-  if (req.position > 0 && req.position % 8 === 0) lines.push(pick([`You're listening to ${host} on MediaMax.`, `${host} on MediaMax — stay with me.`]));
+  if (req.position > 0 && req.position % 8 === 0) lines.push(pick([`You're listening to ${host} on Kinora.`, `${host} on Kinora — stay with me.`]));
   return lines.join(' ');
 }
 
@@ -349,7 +289,7 @@ export async function hostLine(user: User, req: DjHostRequest): Promise<DjHostLi
   const prev = facts(user, req.previousItemId);
   let text = '';
   let by: DjHostLine['by'] = 'template';
-  if (cfg.llm.provider !== 'none') {
+  if (llmAvailable('dj')) {
     const hour = req.hour ?? new Date().getHours();
     const ctx = { opening: !prev, listenerRequest: req.prompt ?? null, localHour: hour, tracksPlayedSoFar: req.position, previous: prev, next };
     const reply = await llmChat(HOST_SYSTEM(cfg.hostName), JSON.stringify(ctx), { temperature: 0.9, maxTokens: 90 });

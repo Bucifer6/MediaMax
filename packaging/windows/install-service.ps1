@@ -1,32 +1,35 @@
 <#
 .SYNOPSIS
-  Installs MediaMax to start at boot in the background (Windows Task Scheduler, running as SYSTEM).
+  Installs Kinora to start at boot in the background (Windows Task Scheduler, running as SYSTEM).
 
 .DESCRIPTION
-  Run from an elevated PowerShell, in the folder you extracted the MediaMax zip to:
+  Run from an elevated PowerShell, in the folder you extracted the Kinora zip to:
 
       powershell -ExecutionPolicy Bypass -File .\install-service.ps1
 
   The script:
-    1. copies mediamax.exe, ffmpeg, ffprobe and the web app into -InstallDir (default C:\Program Files\MediaMax),
+    1. copies kinora.exe, ffmpeg, ffprobe and the web app into -InstallDir (default C:\Program Files\Kinora),
        a folder only administrators can change. A task that runs as SYSTEM must never start a program
        from a folder ordinary users can write to (such as Downloads);
-    2. registers a scheduled task "MediaMax" that starts at boot as SYSTEM, has no run-time limit, and is
-       started again within 5 minutes if it ever exits (to stop it for good: Disable-ScheduledTask MediaMax);
+    2. registers a scheduled task "Kinora" that starts at boot as SYSTEM, has no run-time limit, and is
+       started again within 5 minutes if it ever exits (to stop it for good: Disable-ScheduledTask Kinora);
     3. opens the port in Windows Firewall (TCP, plus UDP 1900 for DLNA discovery);
     4. starts it now.
 
   Run it again from a newer zip to upgrade: it stops the task, replaces the program files and starts it
-  again. Data (database, artwork, logs) lives in %ProgramData%\MediaMax and is never touched.
+  again. Data (database, artwork, logs) lives in %ProgramData%\Kinora and is never touched. A machine upgraded
+  from MediaMax keeps using %ProgramData%\MediaMax (when it exists and %ProgramData%\Kinora does not), and the old
+  "MediaMax" task and firewall rules are replaced by the Kinora ones.
 
   Uses only what ships with Windows (Task Scheduler and Windows Firewall); no service wrapper.
 
 .PARAMETER Uninstall
-  Stops and removes the task and the firewall rules, and deletes -InstallDir. Data in %ProgramData%\MediaMax
+  Stops and removes the task and the firewall rules, and deletes -InstallDir. Data in %ProgramData%\Kinora
   is kept unless -RemoveData is also given.
 
 .PARAMETER Port
-  HTTP port (default 8484). A non-default port is stored in the machine environment variable MEDIAMAX_PORT.
+  HTTP port (default 8484). A non-default port is stored in the machine environment variable KINORA_PORT
+  (the server also reads the original MEDIAMAX_PORT; KINORA_PORT wins).
 
 .PARAMETER AllNetworkProfiles
   Also open the firewall on networks Windows classifies as Public. By default only Private and Domain
@@ -44,14 +47,38 @@ param(
   [switch]$Uninstall,
   [switch]$RemoveData,
   [ValidateRange(1, 65535)][int]$Port = 8484,
-  [string]$InstallDir = (Join-Path $env:ProgramFiles 'MediaMax'),
+  [string]$InstallDir = (Join-Path $env:ProgramFiles 'Kinora'),
   [switch]$AllNetworkProfiles
 )
 
 $ErrorActionPreference = 'Stop'
-$TaskName = 'MediaMax'
-$RuleName = 'MediaMax'
-$DataDir = if ($env:MEDIAMAX_DATA) { $env:MEDIAMAX_DATA } else { Join-Path $env:ProgramData 'MediaMax' }
+$TaskName = 'Kinora'
+$RuleName = 'Kinora'
+$LegacyName = 'MediaMax'
+# Same rule as the server (server/src/config.ts): KINORA_DATA, else MEDIAMAX_DATA, else %ProgramData%\Kinora,
+# unless only a MediaMax data folder exists.
+$DataDir = if ($env:KINORA_DATA) { $env:KINORA_DATA } elseif ($env:MEDIAMAX_DATA) { $env:MEDIAMAX_DATA } else {
+  $new = Join-Path $env:ProgramData 'Kinora'
+  $old = Join-Path $env:ProgramData $LegacyName
+  if (-not (Test-Path $new) -and (Test-Path $old)) { $old } else { $new }
+}
+
+function Clear-PortVariables {
+  foreach ($v in 'KINORA_PORT', 'MEDIAMAX_PORT') {
+    if ([Environment]::GetEnvironmentVariable($v, 'Machine')) { [Environment]::SetEnvironmentVariable($v, $null, 'Machine') }
+  }
+}
+
+# An install made before the rename: remove its task and firewall rules (its data folder is kept and used).
+function Remove-LegacyInstall {
+  if (Get-ScheduledTask -TaskName $LegacyName -ErrorAction SilentlyContinue) {
+    Stop-ScheduledTask -TaskName $LegacyName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $LegacyName -Confirm:$false
+    Write-Host "Removed the old '$LegacyName' scheduled task."
+  }
+  Get-Process -Name 'mediamax' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Get-NetFirewallRule -DisplayName "$LegacyName*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+}
 
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -59,14 +86,14 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
   exit 1
 }
 
-function Stop-MediaMax {
+function Stop-Kinora {
   $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
   if ($task) {
     Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
   }
-  # Also stop copies started by hand (MediaMax.cmd) from the install folder, so files can be replaced.
-  $exe = Join-Path $InstallDir 'mediamax.exe'
-  Get-Process -Name 'mediamax' -ErrorAction SilentlyContinue |
+  # Also stop copies started by hand (Kinora.cmd) from the install folder, so files can be replaced.
+  $exe = Join-Path $InstallDir 'kinora.exe'
+  Get-Process -Name 'kinora' -ErrorAction SilentlyContinue |
     Where-Object { $_.Path -and ($_.Path -ieq $exe) } |
     Stop-Process -Force -ErrorAction SilentlyContinue
   Start-Sleep -Seconds 2
@@ -77,16 +104,14 @@ function Remove-FirewallRules {
 }
 
 if ($Uninstall) {
-  Stop-MediaMax
+  Stop-Kinora
   if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
     Write-Host "Removed scheduled task '$TaskName'."
   }
   Remove-FirewallRules
   Write-Host 'Removed firewall rules.'
-  if ([Environment]::GetEnvironmentVariable('MEDIAMAX_PORT', 'Machine')) {
-    [Environment]::SetEnvironmentVariable('MEDIAMAX_PORT', $null, 'Machine')
-  }
+  Clear-PortVariables
   $here = (Resolve-Path $PSScriptRoot).Path.TrimEnd('\')
   if (Test-Path $InstallDir) {
     if ($here -ieq (Resolve-Path $InstallDir).Path.TrimEnd('\')) {
@@ -105,33 +130,33 @@ if ($Uninstall) {
 }
 
 $source = (Resolve-Path $PSScriptRoot).Path.TrimEnd('\')
-if (-not (Test-Path (Join-Path $source 'mediamax.exe'))) {
-  Write-Host "mediamax.exe was not found next to this script ($source)." -ForegroundColor Red
+if (-not (Test-Path (Join-Path $source 'kinora.exe'))) {
+  Write-Host "kinora.exe was not found next to this script ($source)." -ForegroundColor Red
   exit 1
 }
 
 # 1. Program files.
-Stop-MediaMax
+Remove-LegacyInstall
+Stop-Kinora
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 $target = (Resolve-Path $InstallDir).Path.TrimEnd('\')
 if ($source -ine $target) {
   if (Test-Path (Join-Path $target 'web')) { Remove-Item -Recurse -Force (Join-Path $target 'web') }
   Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
-  Write-Host "Installed MediaMax to $target."
+  Write-Host "Installed Kinora to $target."
 }
-$exe = Join-Path $target 'mediamax.exe'
+$exe = Join-Path $target 'kinora.exe'
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 
 # 2. Port (only stored when it differs from the default, so a plain install changes no environment).
+Clear-PortVariables
 if ($Port -ne 8484) {
-  [Environment]::SetEnvironmentVariable('MEDIAMAX_PORT', "$Port", 'Machine')
-} elseif ([Environment]::GetEnvironmentVariable('MEDIAMAX_PORT', 'Machine')) {
-  [Environment]::SetEnvironmentVariable('MEDIAMAX_PORT', $null, 'Machine')
+  [Environment]::SetEnvironmentVariable('KINORA_PORT', "$Port", 'Machine')
 }
 
 # 3. Scheduled task: at boot, as SYSTEM, no time limit. Task Scheduler's "restart on failure" only covers a
 #    launch that fails, so a second trigger re-checks every 5 minutes; with MultipleInstances IgnoreNew it
-#    does nothing while MediaMax runs and starts it again if it has exited.
+#    does nothing while Kinora runs and starts it again if it has exited.
 $action = New-ScheduledTaskAction -Execute $exe -WorkingDirectory $target
 $watchdog = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) -RepetitionInterval (New-TimeSpan -Minutes 5)
 $trigger = @((New-ScheduledTaskTrigger -AtStartup), $watchdog)
@@ -140,7 +165,7 @@ $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) 
   -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -AllowStartIfOnBatteries `
   -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $runAs -Settings $settings `
-  -Description 'MediaMax media server (installed by install-service.ps1)' -Force | Out-Null
+  -Description 'Kinora media server (installed by install-service.ps1)' -Force | Out-Null
 Write-Host "Registered scheduled task '$TaskName' (starts at boot as SYSTEM)."
 
 # 4. Firewall.
@@ -163,8 +188,8 @@ for ($i = 0; $i -lt 30; $i++) {
   } catch { Start-Sleep -Seconds 1 }
 }
 if ($ok) {
-  Write-Host "MediaMax is running: http://localhost:$Port/" -ForegroundColor Green
+  Write-Host "Kinora is running: http://localhost:$Port/" -ForegroundColor Green
 } else {
-  Write-Host "MediaMax did not answer yet. Check the logs in $DataDir\logs and Task Scheduler > '$TaskName'." -ForegroundColor Yellow
+  Write-Host "Kinora did not answer yet. Check the logs in $DataDir\logs and Task Scheduler > '$TaskName'." -ForegroundColor Yellow
 }
 Write-Host "Data folder: $DataDir"

@@ -1,254 +1,119 @@
 /**
- * MediaMax mark geometry: a ribbon folded into an "M" whose right leg ends in a play button.
+ * Kinora mark geometry: a "K" whose arms are two beams of projector light.
  *
- * Everything is constructed on a 512 x 512 grid from a handful of numbers so the joins line up exactly:
- *  - both legs and both diagonals are the same width (W, measured perpendicular to the stroke);
- *  - each fold crease runs from the outer corner to the inner corner (the angle bisector), so the
- *    diagonal lies cleanly over the leg with no stray wedges;
- *  - the two diagonals meet on the vertical centre line (x = 256), the left one in front;
- *  - the outline is one silhouette with consistent corner radii; the pieces are clipped to it, so
- *    overlaps never leak past the edge;
- *  - the play button's tip lines up with the right leg's outer edge and its top edge is parallel to
- *    the leg's end cut, with the same gap all along.
+ * The stem is the projector (a solid rounded bar); the K's arms are two wedges of light that leave from one point
+ * just right of the stem's centre and widen as they travel, ending on an arc centred on that point, like a beam
+ * landing on a curved screen. The notch between the beams is the K's crotch. It reads as a K at 16 px and as a beam of
+ * light at launcher size, and it is built from three shapes, so the single-colour versions need no tricks.
+ *
+ * Everything is constructed on a 512 x 512 grid from a handful of numbers:
+ *  - the stem is W wide and spans Y0..Y1;
+ *  - the apex A sits a hair (APEX_GAP) right of the stem, on the vertical centre of the stem;
+ *  - each beam spans the angles A0..A1 above / below the horizontal, out to radius R from A;
+ *  - R is solved so the outer edge of each beam ends level with the stem's top / bottom.
  *
  * Exports SVG fragments; scripts/brand/build-masters.mjs assembles them into the master files.
  */
 
 // ---- grid -------------------------------------------------------------------------------------
 export const G = (() => {
-  const W = 76; // ribbon width
-  const L0 = 72; // left leg outer edge
-  const L1 = L0 + W;
-  const R1 = 512 - L0; // right leg outer edge
-  const R0 = R1 - W;
-  const Y0 = 104; // top of the outer corners
-  const Yb = 408; // bottom of the left leg
-  const s = 0.7; // diagonal slope (dy/dx), ~35 degrees
-  const T = W * Math.hypot(1, s); // vertical thickness of a diagonal
-  const Yv = Y0 + (256 - L0) * s; // inner V (top of the seam)
-  const crease = Y0 + W * s + T; // y of the inner corner where a diagonal's lower edge meets a leg
-  // Play button. Its top edge has slope k; the right leg ends in a cut through the inner corner with
-  // the same slope, and the button nests under that cut and the right diagonal with a uniform gap.
-  const gap = 18;
-  const k = 0.56;
-  const Ir = [R0, crease];
-  // offset lines: cut line (through Ir, slope k) and diagonal's lower edge (through Ir, slope -s), both moved down by gap
-  const offY = (slope) => gap * Math.hypot(1, slope);
-  // y = Ir.y + offY(k) + k(x - R0)  and  y = Ir.y + offY(s) - s(x - R0)
-  const x = R0 + (offY(s) - offY(k)) / (k + s);
-  const pTl = [x, Ir[1] + offY(k) + k * (x - R0)];
-  const pBottom = Yb + 4;
-  const ph = pBottom - pTl[1];
-  const pw = ph / 2 / k;
-  const pTip = [pTl[0] + pw, pTl[1] + ph / 2];
-  const pTop = pTl[1];
-  const pLeft = pTl[0];
-  return { W, L0, L1, R0, R1, Y0, Yb, s, T, Yv, crease, gap, k, ph, pw, pTip, pTop, pBottom, pLeft };
+  const W = 84; // stem width
+  const X0 = 108; // stem left edge
+  const X1 = X0 + W;
+  const Y0 = 88; // stem top
+  const Y1 = 424; // stem bottom
+  const APEX_GAP = 8;
+  const A = [X1 + APEX_GAP, (Y0 + Y1) / 2];
+  const A0 = 20; // inner edge of each beam (degrees from horizontal); the notch is 2 x A0
+  const A1 = 52; // outer edge
+  const R = (A[1] - Y0) / Math.sin((A1 * Math.PI) / 180);
+  return { W, X0, X1, Y0, Y1, A, A0, A1, R, stemR: 22, beamR: 10 };
 })();
 
 const f = (n) => +n.toFixed(2);
+const rad = (d) => (d * Math.PI) / 180;
+/** Point at `deg` degrees above the horizontal (negative = below) and distance r from the apex. */
+const at = (deg, r) => [G.A[0] + r * Math.cos(rad(deg)), G.A[1] - r * Math.sin(rad(deg))];
+const P = ([x, y]) => `${f(x)} ${f(y)}`;
 
-/** Polygon with rounded corners. pts: [[x, y, r?], ...]; r = 0 keeps the corner sharp. */
-export function roundedPath(pts) {
-  const n = pts.length;
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const [x, y, r = 0] = pts[i];
-    const p = pts[(i + n - 1) % n];
-    const q = pts[(i + 1) % n];
-    if (!r) {
-      out.push({ a: [x, y], b: [x, y] });
-      continue;
-    }
-    const v1 = [p[0] - x, p[1] - y];
-    const v2 = [q[0] - x, q[1] - y];
-    const l1 = Math.hypot(...v1);
-    const l2 = Math.hypot(...v2);
-    const u1 = [v1[0] / l1, v1[1] / l1];
-    const u2 = [v2[0] / l2, v2[1] / l2];
-    const ang = Math.acos(Math.max(-1, Math.min(1, u1[0] * u2[0] + u1[1] * u2[1])));
-    let t = r / Math.tan(ang / 2);
-    const tMax = Math.min(l1, l2) * 0.5;
-    let rr = r;
-    if (t > tMax) {
-      t = tMax;
-      rr = t * Math.tan(ang / 2);
-    }
-    const a = [x + u1[0] * t, y + u1[1] * t];
-    const b = [x + u2[0] * t, y + u2[1] * t];
-    const cross = u1[0] * u2[1] - u1[1] * u2[0];
-    out.push({ a, b, r: rr, sweep: cross < 0 ? 1 : 0 });
-  }
-  let d = `M${f(out[0].b[0])} ${f(out[0].b[1])}`;
-  for (let i = 1; i <= n; i++) {
-    const c = out[i % n];
-    d += `L${f(c.a[0])} ${f(c.a[1])}`;
-    if (c.r) d += `A${f(c.r)} ${f(c.r)} 0 0 ${c.sweep} ${f(c.b[0])} ${f(c.b[1])}`;
-  }
-  return d + 'Z';
+/** Rounded rectangle path (all four corners radius r). */
+function rrect(x, y, w, h, r) {
+  return `M${f(x + r)} ${f(y)}H${f(x + w - r)}A${r} ${r} 0 0 1 ${f(x + w)} ${f(y + r)}V${f(y + h - r)}A${r} ${r} 0 0 1 ${f(x + w - r)} ${f(y + h)}H${f(x + r)}A${r} ${r} 0 0 1 ${f(x)} ${f(y + h - r)}V${f(y + r)}A${r} ${r} 0 0 1 ${f(x + r)} ${f(y)}Z`;
 }
 
-const poly = (pts) => 'M' + pts.map(([x, y]) => `${f(x)} ${f(y)}`).join('L') + 'Z';
-const add = (a, b, k = 1) => [a[0] + b[0] * k, a[1] + b[1] * k];
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
-const unit = (v) => {
-  const l = Math.hypot(...v);
-  return [v[0] / l, v[1] / l];
-};
-
-// ---- key points -------------------------------------------------------------------------------
-const { W, L0, L1, R0, R1, Y0, Yb, s, T, Yv, crease, gap } = G;
-const O = [L0, Y0]; // left outer corner
-const I = [L1, crease]; // left inner corner
-const Or = [R1, Y0];
-const Ir = [R0, crease];
-const seamTop = [256, Yv];
-const seamBot = [256, Yv + T];
-
-// Play triangle (sharp vertices; rounded when drawn).
-const P = { tl: [G.pLeft, G.pTop], tip: G.pTip, bl: [G.pLeft, G.pBottom] };
-// Right leg ends with a cut through the inner corner, parallel to the play button's top edge.
-const legCutOut = [R1, crease + G.k * W];
-
-export const RADII = { outer: 34, end: 14, inner: 8, seam: 16, play: 18 };
-
-/** The M's outline (without the play button). */
-export function silhouette(r = RADII) {
-  return roundedPath([
-    [L0, Yb, r.end],
-    [O[0], O[1], r.outer],
-    [seamTop[0], seamTop[1], r.inner],
-    [Or[0], Or[1], r.outer],
-    [legCutOut[0], legCutOut[1], r.end],
-    [Ir[0], Ir[1], r.end],
-    [seamBot[0], seamBot[1], r.seam],
-    [I[0], I[1], r.inner],
-    [L1, Yb, r.end],
-  ]);
+export function stemPath() {
+  return rrect(G.X0, G.Y0, G.W, G.Y1 - G.Y0, G.stemR);
 }
 
-export function playPath(r = RADII.play) {
-  return roundedPath([
-    [P.tl[0], P.tl[1], r],
-    [P.tip[0], P.tip[1], r],
-    [P.bl[0], P.bl[1], r],
-  ]);
-}
-
-// Pieces, drawn back to front and clipped to the silhouette. Edges that are not creases or the
-// seam are pushed well outside the outline so only the silhouette defines the outer edge.
-export function pieces() {
-  const creaseL = sub(I, O);
-  const creaseR = sub(Ir, Or);
-  return {
-    leftLeg: poly([[L0 - 40, 0], [L1 + 40, 0], [L1 + 40, Yb + 40], [L0 - 40, Yb + 40]]),
-    rightLeg: poly([[R0 - 40, 0], [R1 + 40, 0], [R1 + 40, Yb + 40], [R0 - 40, Yb + 40]]),
-    // right diagonal: from the right crease to beyond the seam (hidden under the left diagonal)
-    rightDiag: poly([add(Or, creaseR, -0.6), [200, -60], [200, Yb + 60], add(Ir, creaseR, 0.6)]),
-    // left diagonal: from the left crease to the seam, in front
-    leftDiag: poly([add(O, creaseL, -0.6), [256, -60], [256, Yb + 60], add(I, creaseL, 0.6)]),
-    // soft shadows cast by the front layer at each fold
-    leftLegShade: poly([add(O, creaseL, -0.6), add(I, creaseL, 0.6), add(add(I, creaseL, 0.6), [-120, 120]), add(add(O, creaseL, -0.6), [-120, 120])]),
-    rightLegShade: poly([add(Or, creaseR, -0.6), add(Ir, creaseR, 0.6), add(add(Ir, creaseR, 0.6), [120, 120]), add(add(Or, creaseR, -0.6), [120, 120])]),
-    seamShade: poly([[256, 0], [R0 - 1, 0], [R0 - 1, 512], [256, 512]]),
-    creaseL: { a: O, b: I },
-    creaseR: { a: Or, b: Ir },
-  };
-}
-
-/** Unit normal of a crease, pointing towards `toward`. */
-function normalToward(a, b, toward) {
-  const d = unit(sub(b, a));
-  let n = [-d[1], d[0]];
-  const v = sub(toward, a);
-  if (n[0] * v[0] + n[1] * v[1] < 0) n = [-n[0], -n[1]];
-  return n;
+/**
+ * One beam: a wedge from the apex between angles a and b (degrees), closed by an arc of radius R about the apex.
+ * The two outer corners are filleted with radius rho (a circle tangent to the straight edge and the arc); the apex stays
+ * sharp (it is where the light leaves the projector).
+ */
+export function beamPath(sign, { R = G.R, rho = G.beamR, a0 = G.A0, a1 = G.A1 } = {}) {
+  const lo = sign * a0;
+  const hi = sign * a1;
+  // Fillet centre sits at distance R - rho from the apex, rotated inwards by delta from the edge.
+  const delta = (Math.asin(rho / (R - rho)) * 180) / Math.PI;
+  const along = (R - rho) * Math.cos(rad(delta)); // tangent point on the straight edge
+  const inward = sign; // rotate towards the beam's middle
+  const t1 = at(lo, along);
+  const u1 = at(lo + inward * delta, R);
+  const u2 = at(hi - inward * delta, R);
+  const t2 = at(hi, along);
+  // Upper beam (sign > 0): going from the low edge outwards, then along the arc anticlockwise on screen (y up) = sweep 0.
+  const sw = sign > 0 ? 0 : 1;
+  return `M${P(G.A)}L${P(t1)}A${f(rho)} ${f(rho)} 0 0 ${sw} ${P(u1)}A${f(R)} ${f(R)} 0 0 ${sw} ${P(u2)}A${f(rho)} ${f(rho)} 0 0 ${sw} ${P(t2)}Z`;
 }
 
 export const COLORS = {
-  ground: '#0A0F22',
-  ink: '#0B1026',
-  leg: ['#00F5E9', '#04BDF2', '#2362FA'],
-  fold: ['#07D8EF', '#4777F9'],
-  right: ['#F03CF2', '#6723D5'],
-  rightLeg: ['#C93BEF', '#5A1FC4'],
-  play: ['#F045FF', '#6427FA'],
+  ground: '#0D0C1D', // dark background (app icon, splash, default theme)
+  groundGlow: '#1F1C45', // centre of the background's radial light
+  ink: '#14122B', // the name on light backgrounds
+  stem: ['#A9AEFF', '#5B45F0'], // periwinkle -> indigo, top to bottom
+  stemSimple: '#7569FA',
+  beam: ['#FFE6A6', '#FFAA4D', '#F4506E'], // warm light: lamp white-gold -> amber -> rose, from the apex outwards
+  beamSimple: ['#FFC05C', '#F76A5C'],
 };
 
-/**
- * Full-colour mark as an SVG fragment (defs + group). `id` prefixes gradient ids so several marks can
- * share one document.
- */
-export function markFull(id = 'mm') {
-  const p = pieces();
-  const nL = normalToward(O, I, [L0, Yb]);
-  const nR = normalToward(Or, Ir, [R1, Yb]);
-  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-  const cL = mid(O, I);
-  const cR = mid(Or, Ir);
+/** Full-colour mark as an SVG fragment (defs + body). `id` prefixes gradient ids so several marks can share one document. */
+export function markFull(id = 'km') {
   const C = COLORS;
-  const lin = (gid, x1, y1, x2, y2, stops) =>
-    `<linearGradient id="${id}-${gid}" gradientUnits="userSpaceOnUse" x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}">${stops
-      .map(([o, c, a]) => `<stop offset="${o}" stop-color="${c}"${a != null ? ` stop-opacity="${a}"` : ''}/>`)
-      .join('')}</linearGradient>`;
-  const defs = [
-    lin('leg', L0, Y0, L1 + 60, Yb, [[0, C.leg[0]], [0.55, C.leg[1]], [1, C.leg[2]]]),
-    lin('fold', L0, Y0, 256, Yv + T, [[0, C.fold[0]], [1, C.fold[1]]]),
-    lin('right', 256, Yv + T, R1, Y0, [[0, C.right[1]], [1, C.right[0]]]),
-    lin('rleg', R1, Y0, R0, Yb, [[0, C.rightLeg[0]], [1, C.rightLeg[1]]]),
-    lin('play', G.pLeft, G.pTop, G.pTip[0], G.pBottom, [[0, C.play[0]], [1, C.play[1]]]),
-    lin('shL', cL[0], cL[1], cL[0] + nL[0] * 46, cL[1] + nL[1] * 46, [[0, '#061033', 0.5], [1, '#061033', 0]]),
-    lin('shR', cR[0], cR[1], cR[0] + nR[0] * 46, cR[1] + nR[1] * 46, [[0, '#1A0640', 0.55], [1, '#1A0640', 0]]),
-    lin('shS', 256, 0, 306, 0, [[0, '#1A0640', 0.5], [1, '#1A0640', 0]]),
-    `<clipPath id="${id}-clip"><path d="${silhouette()}"/></clipPath>`,
-  ].join('');
-  const body = `<g clip-path="url(#${id}-clip)">
-<path d="${p.rightLeg}" fill="url(#${id}-rleg)"/>
-<path d="${p.rightLegShade}" fill="url(#${id}-shR)"/>
-<path d="${p.rightDiag}" fill="url(#${id}-right)"/>
-<path d="${p.seamShade}" fill="url(#${id}-shS)"/>
-<path d="${p.leftLeg}" fill="url(#${id}-leg)"/>
-<path d="${p.leftLegShade}" fill="url(#${id}-shL)"/>
-<path d="${p.leftDiag}" fill="url(#${id}-fold)"/>
-</g>
-<path d="${playPath()}" fill="url(#${id}-play)"/>`;
+  const defs =
+    `<linearGradient id="${id}-stem" gradientUnits="userSpaceOnUse" x1="0" y1="${G.Y0}" x2="0" y2="${G.Y1}"><stop offset="0" stop-color="${C.stem[0]}"/><stop offset="1" stop-color="${C.stem[1]}"/></linearGradient>` +
+    `<radialGradient id="${id}-beam" gradientUnits="userSpaceOnUse" cx="${f(G.A[0])}" cy="${f(G.A[1])}" r="${f(G.R)}"><stop offset="0" stop-color="${C.beam[0]}"/><stop offset="0.5" stop-color="${C.beam[1]}"/><stop offset="1" stop-color="${C.beam[2]}"/></radialGradient>`;
+  const body = `<path d="${stemPath()}" fill="url(#${id}-stem)"/><path d="${beamPath(1)}" fill="url(#${id}-beam)"/><path d="${beamPath(-1)}" fill="url(#${id}-beam)"/>`;
   return { defs, body };
 }
 
 /**
- * Simplified mark for 16-48 px: same silhouette, flat two-tone (cyan-blue left, magenta right),
- * no shading, and a slightly larger play button.
+ * Simplified mark for 16-32 px: flat stem, two-stop beams, a slightly wider notch and a bigger apex gap so the
+ * beams stay apart from the stem and from each other once pixels get coarse.
  */
-export function markSimple(id = 'mms') {
-  const p = pieces();
+export function markSimple(id = 'kms') {
   const C = COLORS;
-  const defs = `<linearGradient id="${id}-l" gradientUnits="userSpaceOnUse" x1="${L0}" y1="${Y0}" x2="256" y2="${Yb}"><stop offset="0" stop-color="${C.leg[0]}"/><stop offset="1" stop-color="${C.leg[2]}"/></linearGradient><linearGradient id="${id}-r" gradientUnits="userSpaceOnUse" x1="${R1}" y1="${Y0}" x2="256" y2="${Yb}"><stop offset="0" stop-color="${C.right[0]}"/><stop offset="1" stop-color="${C.right[1]}"/></linearGradient><clipPath id="${id}-clip"><path d="${silhouette()}"/></clipPath>`;
-  const body = `<g clip-path="url(#${id}-clip)"><rect x="256" width="256" height="512" fill="url(#${id}-r)"/><path d="${p.leftLeg}" fill="url(#${id}-l)"/><path d="${p.leftDiag}" fill="url(#${id}-l)"/></g><path d="${playPath(14)}" fill="url(#${id}-r)"/>`;
+  const defs = `<linearGradient id="${id}-b" gradientUnits="userSpaceOnUse" x1="${f(G.A[0])}" y1="0" x2="${f(G.A[0] + G.R)}" y2="0"><stop offset="0" stop-color="${C.beamSimple[0]}"/><stop offset="1" stop-color="${C.beamSimple[1]}"/></linearGradient>`;
+  const opts = { a0: G.A0 + 3, rho: 6 };
+  const body = `<path d="${stemPath()}" fill="${C.stemSimple}"/><path d="${beamPath(1, opts)}" fill="url(#${id}-b)"/><path d="${beamPath(-1, opts)}" fill="url(#${id}-b)"/>`;
   return { defs, body };
 }
 
-/** Single-colour silhouette (outline of the M + play button) in `color`; creases shown as thin gaps. */
-export function markMono(color = '#000', { creases = true } = {}) {
-  const d = silhouette() + playPath();
-  if (!creases) return { defs: '', body: `<path d="${d}" fill="${color}"/>` };
-  // Cut a thin line along the left fold and the seam so the ribbon still reads in one colour.
-  const cut = (a, b, w) => {
-    const n = unit([-(b[1] - a[1]), b[0] - a[0]]);
-    return poly([add(a, n, w / 2), add(b, n, w / 2), add(b, n, -w / 2), add(a, n, -w / 2)]);
-  };
-  const m = `<mask id="mmmono"><rect width="512" height="512" fill="#fff"/><path d="${cut(O, I, 10)}" fill="#000"/><path d="${cut(Or, Ir, 10)}" fill="#000"/><path d="${cut([256, Yv - 5], [256, Yv + T + 5], 10)}" fill="#000"/></mask>`;
-  return { defs: m, body: `<path d="${d}" fill="${color}" mask="url(#mmmono)"/>` };
+/** Single-colour mark in `color` (the gap between stem and beams keeps the K readable). */
+export function markMono(color = '#000') {
+  return { defs: '', body: `<path d="${stemPath()}${beamPath(1)}${beamPath(-1)}" fill="${color}"/>` };
 }
 
-/** Bounding box of the mark (silhouette + play button) on the 512 grid. */
-export const BBOX = { x: L0, y: Y0, w: G.pTip[0] - L0, h: G.pBottom - Y0 };
+/** Bounding box of the mark on the 512 grid. The beams' rightmost point is on the arc at the inner edge angle. */
+export const BBOX = (() => {
+  const right = at(G.A0, G.R)[0];
+  return { x: G.X0, y: G.Y0, w: right - G.X0, h: G.Y1 - G.Y0 };
+})();
 
 /**
- * Translation that centres the mark optically in the 512 square: the play button's pointed tip
- * carries less visual weight than its bounding box suggests, so the mark sits ~6 px right of the
- * geometric centre; vertically the heavy top bar is balanced by sitting 2 px high.
+ * Translation that centres the mark optically in the 512 square: the beams taper to the right, so the mark carries
+ * more weight on the left (the stem) than its bounding box suggests; it sits ~6 px right of the geometric centre.
  */
-export const CENTER = { dx: +(256 - (BBOX.x + BBOX.w / 2) + 6).toFixed(2), dy: +(256 - (BBOX.y + BBOX.h / 2) - 2).toFixed(2) };
+export const CENTER = { dx: +(256 - (BBOX.x + BBOX.w / 2) + 6).toFixed(2), dy: +(256 - (BBOX.y + BBOX.h / 2)).toFixed(2) };
 
 /** Wrap a fragment in a <g> that centres it, scaled by `scale` around the 512 square's centre. */
 export function centered(frag, scale = 1) {
@@ -256,7 +121,8 @@ export function centered(frag, scale = 1) {
   return { defs: frag.defs, body: `<g transform="${t}">${frag.body}</g>` };
 }
 
-/** Outline vertices (silhouette + play button), for safe-zone calculations. Rounded corners lie inside these. */
+/** Outline extremes (stem corners and beam arc ends), for safe-zone calculations. Rounded corners lie inside these. */
 export function keyPoints() {
-  return [[L0, Yb], O, seamTop, Or, legCutOut, Ir, seamBot, I, [L1, Yb], P.tl, P.tip, P.bl];
+  const { X0, X1, Y0, Y1, A0, A1, R } = G;
+  return [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1], at(A0, R), at(A1, R), at(-A0, R), at(-A1, R)];
 }
