@@ -88,7 +88,7 @@ export function readSidecar(file: string): Found | null {
 }
 
 /** Lyrics tag keys FFmpeg reports (lower-cased): lyrics, lyrics-eng, unsyncedlyrics, ©lyr, … */
-const isLyricsKey = (k: string) => k === 'lyrics' || k.startsWith('lyrics-') || k === 'unsyncedlyrics' || k === 'unsynced lyrics' || k === 'uslt' || k === '©lyr' || k === 'wm/lyrics';
+const isLyricsKey = (k: string) => k === 'lyrics' || k.startsWith('lyrics-') || k === 'unsyncedlyrics' || k === 'unsynced lyrics' || k === 'syncedlyrics' || k === 'synced lyrics' || k === 'uslt' || k === '©lyr' || k === 'wm/lyrics';
 
 /** Lyrics from FFmpeg tags: synced (LRC in a tag) first, then the first plain text. */
 export function fromTags(rawTags: Record<string, unknown>): Found | null {

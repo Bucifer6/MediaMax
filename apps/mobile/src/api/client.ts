@@ -76,7 +76,7 @@ import type {
   UpdateMeRequest,
   User,
   UserItemData,
-  UserStats, TrackStems } from './types';
+  UserStats, TrackStems, StemsStatus } from './types';
 
 export const API_PREFIX = '/api/v1';
 
@@ -503,9 +503,21 @@ export class MediaMaxClient {
   setLyricsOffset(itemId: string, offsetMs: number) {
     return this.request<{ offsetMs: number }>('PUT', `/items/${encodeURIComponent(itemId)}/lyrics/offset`, { body: { offsetMs } });
   }
-  /** Karaoke stems prepared for a track (AI separation happens in the web app). */
+  /** Karaoke stems prepared for a track, with the server's separation job while one is queued / running. */
   trackStems(itemId: string) {
     return this.get<TrackStems>(`/items/${encodeURIComponent(itemId)}/stems`);
+  }
+  /** AI stems availability; `engine: 'server'` means the server separates (admins can prepare from any app). */
+  stemsStatus() {
+    return this.get<StemsStatus>('/stems/status');
+  }
+  /** Admin: separate a track on the server (queued); poll trackStems() for progress. */
+  prepareStemsOnServer(itemId: string) {
+    return this.post<TrackStems>(`/items/${encodeURIComponent(itemId)}/stems/prepare`, {});
+  }
+  /** Admin: cancel that. */
+  cancelStemsOnServer(itemId: string) {
+    return this.del<{ cancelled: boolean }>(`/items/${encodeURIComponent(itemId)}/stems/prepare`);
   }
   /** Server-side karaoke mix (vocals 0–100 %), a seekable MP3 any device can play. */
   karaokeMixPath(itemId: string, vocals: number) {

@@ -9,3 +9,11 @@ for (const dest of ['server/src/services/lrc.ts', 'web/src/lyrics/lrc.ts', 'apps
   copyFileSync('shared/src/lrc.ts', dest);
   console.log(`Synced shared/src/lrc.ts -> ${dest}`);
 }
+// The stem separation DSP and model runner (shared/src/stems/) for the browser worker and the server's separation process.
+for (const dir of ['web/src/stems', 'server/src/services/separation']) {
+  mkdirSync(dir, { recursive: true });
+  for (const f of ['dsp.ts', 'model.ts']) {
+    copyFileSync(`shared/src/stems/${f}`, `${dir}/${f}`);
+    console.log(`Synced shared/src/stems/${f} -> ${dir}/${f}`);
+  }
+}

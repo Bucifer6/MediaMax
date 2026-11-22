@@ -1,19 +1,25 @@
 /**
- * Prepare AI karaoke stems for a track in this browser: make sure the server has the model, decode the track at
- * 44.1 kHz, run HT-Demucs in a Web Worker (WebGPU or WASM), and upload the stems block by block. Afterwards every
- * device can play the server's karaoke mix. Adapted from OpenDJ (MIT, github.com/Bucifer6/OpenDJ) — stems.js.
+ * Prepare AI karaoke stems for a track. When the server separates (StemsStatus.engine 'server': onnxruntime-node, the
+ * GPU where it has one), this queues the track there and follows the job. Otherwise it separates in this browser:
+ * make sure the server has the model, decode the track at 44.1 kHz, run HT-Demucs in a Web Worker (WebGPU or WASM),
+ * and upload the stems block by block. Either way every device can then play the server's karaoke mix.
+ * Adapted from OpenDJ (MIT, github.com/Bucifer6/OpenDJ) — stems.js.
  */
 import type { StemsStatus, TrackStems } from '@mediamax/shared';
 import { karaokeApi } from '../api/karaoke';
 import { API_BASE, withToken } from '../api/client';
-import { MODEL_RATE, STEMS } from './dsp';
+import { MODEL_RATE, STEMS } from './dsp.js';
 
-export type PreparePhase = 'runtime-download' | 'model-download' | 'decoding' | 'loading-model' | 'separating' | 'saving';
+export type PreparePhase = 'waiting' | 'runtime-download' | 'model-download' | 'decoding' | 'loading-model' | 'separating' | 'saving';
 export interface PrepareProgress {
   phase: PreparePhase;
   done: number;
   total: number;
   backend?: string;
+  /** Where the separation runs. */
+  where?: 'server' | 'browser';
+  /** Place in the server's queue (1 = next) while waiting. */
+  position?: number;
 }
 
 const abortError = () => Object.assign(new Error('Cancelled'), { name: 'AbortError' });
@@ -48,6 +54,28 @@ export async function ensureModel(onProgress: (p: PrepareProgress) => void, sign
   }
 }
 
+/**
+ * Queue the track on the server and follow its job until the stems are saved. Aborting cancels the job. Also resumes
+ * following a job that is already queued or running (the request is a no-op then).
+ */
+export async function prepareOnServer(itemId: string, onProgress: (p: PrepareProgress) => void, signal?: AbortSignal): Promise<TrackStems> {
+  const cancel = () => void karaokeApi.cancelOnServer(itemId).catch(() => {});
+  signal?.addEventListener('abort', cancel);
+  try {
+    let t = await karaokeApi.prepareOnServer(itemId);
+    for (;;) {
+      if (t.job) onProgress({ phase: t.job.phase, done: t.job.done, total: t.job.total, backend: t.job.backend, position: t.job.position, where: 'server' });
+      else if (t.ready) return t;
+      else throw new Error(t.error || 'The server stopped separating this track');
+      await sleep(1000);
+      if (signal?.aborted) throw abortError();
+      t = await karaokeApi.trackStems(itemId);
+    }
+  } finally {
+    signal?.removeEventListener('abort', cancel);
+  }
+}
+
 /** Decode the track (server-side converted to 44.1 kHz stereo FLAC) into two Float32 channels. */
 async function decode(itemId: string, signal?: AbortSignal) {
   const res = await fetch(withToken(`${API_BASE}/items/${encodeURIComponent(itemId)}/stems/source`), { signal });
@@ -65,6 +93,7 @@ async function decode(itemId: string, signal?: AbortSignal) {
  * Rejects with an AbortError when `signal` aborts.
  */
 export async function prepareStems(itemId: string, onProgress: (p: PrepareProgress) => void, { signal, stub = false }: { signal?: AbortSignal; stub?: boolean } = {}): Promise<TrackStems> {
+  if (!stub && (await karaokeApi.stemsStatus()).engine === 'server') return prepareOnServer(itemId, onProgress, signal);
   const st = stub ? null : await ensureModel(onProgress, signal);
   onProgress({ phase: 'decoding', done: 0, total: 0 });
   const audio = await decode(itemId, signal);

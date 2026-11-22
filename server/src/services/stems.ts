@@ -1,9 +1,10 @@
 /**
  * Karaoke stems: AI model download/cache, onnxruntime-web files, the per-track stem cache and server-side mixes.
  *
- * Separation itself runs in an administrator's browser (web/src/stems/stems.worker.ts, onnxruntime-web, WebGPU or
- * WASM); the server only downloads/verifies the model, stores the stems the browser uploads, and renders mixes with
- * FFmpeg so any client — TVs and phones that can't run the model — can play "instrumental", "vocals only" or
+ * Separation runs on the server (separation/native.ts: onnxruntime-node in a child process, the GPU where there is
+ * one) or, where the native runtime can't run, in an administrator's browser (web/src/stems/stems.worker.ts,
+ * onnxruntime-web, WebGPU or WASM), which uploads the stems. The server downloads/verifies the model, stores the stems
+ * and renders mixes with FFmpeg so any client — TVs and phones that can't run the model — can play "instrumental", "vocals only" or
  * "karaoke (vocals at x %)" as an ordinary seekable audio file.
  *
  *   <data>/stems/models/<sha256>.onnx(.json)          the downloaded model (verified)
@@ -72,7 +73,11 @@ export const DEFAULT_MODEL: Readonly<ModelSpec> = Object.freeze({
   custom: false,
 });
 
-/** The model the settings ask for: the default, or { url[#entry], sha256 } from the admin settings. */
+/**
+ * The model the settings ask for: the default, or { url[#entry], sha256 } from the admin settings. A custom URL needs
+ * its SHA-256: the server downloads the model and serves it back, so an unpinned URL would let whoever can edit settings
+ * read arbitrary URLs through the server (as in OpenDJ 0.5.2).
+ */
 export function modelSpec(s: Partial<KaraokeSettings> = {}, fallback: Readonly<ModelSpec> = DEFAULT_MODEL): ModelSpec {
   const raw = String(s.stemsModelUrl ?? '').trim();
   if (!raw || raw === fallback.url) return { ...fallback };
@@ -86,6 +91,7 @@ export function modelSpec(s: Partial<KaraokeSettings> = {}, fallback: Readonly<M
   const entry = decodeURIComponent(u.hash.replace(/^#(entry=)?/, '')) || null; // archive member: https://…/x.tgz#package/model.onnx
   u.hash = '';
   const sha256 = isHex64(s.stemsModelSha256) ? String(s.stemsModelSha256).toLowerCase() : null;
+  if (!sha256) throw new StemsError('A custom stems model URL needs its SHA-256, so the download can be verified');
   const archive = /\.(tgz|tar\.gz)$/i.test(u.pathname) || !!entry;
   return {
     id: 'custom', name: path.basename(entry || u.pathname) || 'Custom model', url: u.href, entry: archive ? entry : null,
@@ -93,8 +99,8 @@ export function modelSpec(s: Partial<KaraokeSettings> = {}, fallback: Readonly<M
   };
 }
 
-/** Cache file name: the expected hash, or a hash of the URL for unpinned custom models (trust on first use). */
-export const modelKey = (spec: ModelSpec) => spec.sha256 || `url-${crypto.createHash('sha256').update(spec.url + '#' + (spec.entry || '')).digest('hex').slice(0, 32)}`;
+/** Cache file name: the expected (pinned) hash. */
+export const modelKey = (spec: ModelSpec) => spec.sha256 as string;
 
 /** Streams a .tar (already gunzipped) and writes only `entry` to `out`. Handles the ustar prefix and pax paths. */
 export async function extractTarEntry(readable: AsyncIterable<Buffer>, entry: string, out: Writable): Promise<boolean> {
@@ -263,13 +269,19 @@ export interface StemStore {
   begin(id: string, body: { frames?: unknown; sampleRate?: unknown; model?: unknown; backend?: unknown }): Promise<{ token: string }>;
   part(id: string, token: string, stem: string, frame: number, body: Buffer): Promise<void>;
   finish(id: string, token: string): Promise<TrackStems>;
+  /**
+   * Install stems separated on the server: `dir` (directly under `root`, dot-prefixed) holds
+   * {vocals,drums,bass,other}.raw (interleaved stereo s16le at 44.1 kHz, `frames` long). Encodes them to FLAC and
+   * replaces the track's stems.
+   */
+  installRaw(id: string, dir: string, info: { frames: number; model: string; backend: string }): Promise<TrackStems>;
   remove(id: string): Promise<void>;
   stemFile(id: string, stem: string): string;
   mix(id: string, vocals: number, inst: number): Promise<string>;
   close(): void;
 }
 
-const RESERVED_DIRS = new Set(['models', 'ort']);
+const RESERVED_DIRS = new Set(['models', 'ort', 'ort-node']);
 /**
  * Remove cached stems of tracks that no longer exist (deleted items / libraries). Stems are ~4 FLAC files per track,
  * so orphans add up. The model and onnxruntime folders and in-progress uploads (dot-prefixed) are left alone.
@@ -314,7 +326,11 @@ export function createStemStore({ dataDir = config.dataDir, fetchImpl = globalTh
       return null;
     }
   };
-  const modelReady = (sp: ModelSpec) => fs.existsSync(modelPath(sp)) && !!modelMeta(sp);
+  /** Downloaded and verified against the pinned SHA-256 (only such a file is ever served). */
+  const modelReady = (sp: ModelSpec) => {
+    const m = modelMeta(sp);
+    return !!m && !!sp.sha256 && m.sha256 === sp.sha256 && fs.existsSync(modelPath(sp));
+  };
 
   async function fetchModel(sp: ModelSpec, ctrl: AbortController) {
     const target = modelPath(sp);
@@ -412,7 +428,23 @@ export function createStemStore({ dataDir = config.dataDir, fetchImpl = globalTh
     for (const [id, u] of uploads) if (Date.now() - u.at > 3600e3) void dropUpload(id);
   }, 600e3);
   sweep.unref?.();
-  for (const n of fs.readdirSync(root)) if (n.startsWith('.upload-')) void fs.promises.rm(path.join(root, n), { recursive: true, force: true }).catch(() => {});
+  for (const n of fs.readdirSync(root)) if (n.startsWith('.upload-') || n.startsWith('.native-')) void fs.promises.rm(path.join(root, n), { recursive: true, force: true }).catch(() => {});
+
+  /** Raw stems in `dir` → FLAC + meta.json, then `dir` replaces the track's stems folder. */
+  async function install(id: string, dir: string, u: { frames: number; sampleRate: number; model: string; backend: string }) {
+    for (const s of STEM_NAMES) {
+      const raw = path.join(dir, `${s}.raw`);
+      const st = await fs.promises.stat(raw);
+      if (st.size !== u.frames * 4) throw new StemsError(`Stem "${s}" is incomplete (${st.size} of ${u.frames * 4} bytes)`);
+      await runFfmpeg(['-y', '-f', 's16le', '-ar', String(u.sampleRate), '-ac', '2', '-i', raw, '-c:a', 'flac', '-compression_level', '5', path.join(dir, `${s}.flac`)], ffmpeg);
+      await fs.promises.rm(raw, { force: true });
+    }
+    const meta = { model: u.model, backend: u.backend, format: 'flac', sampleRate: u.sampleRate, frames: u.frames, stems: STEM_NAMES, at: Date.now() };
+    await fs.promises.writeFile(path.join(dir, 'meta.json'), JSON.stringify(meta));
+    const dest = trackDir(id);
+    await fs.promises.rm(dest, { recursive: true, force: true });
+    await fs.promises.rename(dir, dest);
+  }
 
   const mixing = new Map<string, Promise<string>>();
 
@@ -496,19 +528,15 @@ export function createStemStore({ dataDir = config.dataDir, fetchImpl = globalTh
     },
     async finish(id, token) {
       const u = upload(checkId(id), token);
-      for (const s of STEM_NAMES) {
-        const raw = path.join(u.dir, `${s}.raw`);
-        const st = await fs.promises.stat(raw);
-        if (st.size !== u.frames * 4) throw new StemsError(`Stem "${s}" is incomplete (${st.size} of ${u.frames * 4} bytes)`);
-        await runFfmpeg(['-y', '-f', 's16le', '-ar', String(u.sampleRate), '-ac', '2', '-i', raw, '-c:a', 'flac', '-compression_level', '5', path.join(u.dir, `${s}.flac`)], ffmpeg);
-        await fs.promises.rm(raw, { force: true });
-      }
-      const meta = { model: u.model, backend: u.backend, format: 'flac', sampleRate: u.sampleRate, frames: u.frames, stems: STEM_NAMES, at: Date.now() };
-      await fs.promises.writeFile(path.join(u.dir, 'meta.json'), JSON.stringify(meta));
-      const dest = trackDir(id);
-      await fs.promises.rm(dest, { recursive: true, force: true });
-      await fs.promises.rename(u.dir, dest);
+      await install(id, u.dir, u);
       uploads.delete(id);
+      return this.status(id);
+    },
+    async installRaw(id, dir, info) {
+      checkId(id);
+      const rel = path.relative(root, dir);
+      if (!rel.startsWith('.') || rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(path.sep) || rel.includes('/')) throw new StemsError('Bad stems folder');
+      await install(id, dir, { frames: info.frames, sampleRate: STEM_RATE, model: String(info.model).slice(0, 80), backend: String(info.backend).slice(0, 40) });
       return this.status(id);
     },
     async remove(id) {
