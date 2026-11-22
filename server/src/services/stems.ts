@@ -308,7 +308,13 @@ export function createStemStore({ dataDir = config.dataDir, fetchImpl = globalTh
   const root = path.join(dataDir, 'stems');
   const modelsDir = path.join(root, 'models');
   fs.mkdirSync(modelsDir, { recursive: true });
-  const trackDir = (id: string) => path.join(root, id);
+  const rootAbs = path.resolve(root);
+  /** A track's stems folder: the id must be a plain id and the folder a direct child of the stems root. */
+  const trackDir = (id: string) => {
+    const dir = path.resolve(rootAbs, id);
+    if (!ID_RE.test(id) || !dir.startsWith(rootAbs + path.sep) || path.dirname(dir) !== rootAbs) throw new StemsError('Bad track id');
+    return dir;
+  };
   const checkId = (id: string) => {
     if (!ID_RE.test(id)) throw new StemsError('Bad track id');
     return id;
@@ -534,9 +540,9 @@ export function createStemStore({ dataDir = config.dataDir, fetchImpl = globalTh
     },
     async installRaw(id, dir, info) {
       checkId(id);
-      const rel = path.relative(root, dir);
-      if (!rel.startsWith('.') || rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(path.sep) || rel.includes('/')) throw new StemsError('Bad stems folder');
-      await install(id, dir, { frames: info.frames, sampleRate: STEM_RATE, model: String(info.model).slice(0, 80), backend: String(info.backend).slice(0, 40) });
+      const d = path.resolve(dir);
+      if (!d.startsWith(rootAbs + path.sep) || path.dirname(d) !== rootAbs || !path.basename(d).startsWith('.') || path.basename(d).startsWith('..')) throw new StemsError('Bad stems folder');
+      await install(id, d, { frames: info.frames, sampleRate: STEM_RATE, model: String(info.model).slice(0, 80), backend: String(info.backend).slice(0, 40) });
       return this.status(id);
     },
     async remove(id) {
