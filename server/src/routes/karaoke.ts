@@ -9,7 +9,9 @@
  *   DELETE /stems/model                   admin
  *   GET    /stems/model                   admin: the verified model bytes (the browser worker runs it)
  *   GET    /stems/ort/:file               onnxruntime-web files, served same-origin
- *   GET    /items/:id/stems               stem status for a track
+ *   GET    /items/:id/stems               stem status for a track (with the server job while one is queued / running)
+ *   POST   /items/:id/stems/prepare       admin: separate on the server (queued; onnxruntime-node, GPU where there is one)
+ *   DELETE /items/:id/stems/prepare       admin: cancel that
  *   POST   /items/:id/stems/begin         admin: start an upload { frames, sampleRate, model, backend } → { token }
  *   PUT    /items/:id/stems/part          admin: ?token&stem&frame, body = interleaved stereo s16le
  *   POST   /items/:id/stems/finish        admin: ?token → FLAC stems
@@ -20,13 +22,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import type { SaveLyricsRequest, SaveLyricsResponse, StemsStatus } from '@mediamax/shared';
+import type { KaraokeSettings, NativeStemsStatus, SaveLyricsRequest, SaveLyricsResponse, StemsStatus, TrackStems } from '@mediamax/shared';
 import { requireAdmin, requireUser } from '../http.js';
 import { assertCanSee } from '../services/items.js';
 import { badRequest, notFound } from '../util/errors.js';
 import { deleteEdit, getLyrics, saveEdit, setUserOffset } from '../services/lyrics.js';
 import { ortRuntime } from '../services/ortRuntime.js';
 import { createStemStore, findOrtDir, mixLevel, ortVersion, STEM_NAMES, STEM_RATE, type StemStore } from '../services/stems.js';
+import { createSeparationQueue, type SeparationQueue } from '../services/separation/native.js';
+import { findOrtNode, ORT_NODE_VERSION, ortNodeRuntime, platformUnsupported } from '../services/ortNode.js';
 import { getSettings } from '../services/settings.js';
 import { sendFileRange } from './playback.js';
 import { assertRemoteAllowed } from '../services/playback.js';
@@ -41,13 +45,53 @@ export function stemStore(): StemStore {
 }
 /** Tests: use another store (e.g. with a mock fetch). */
 export function setStemStore(s: StemStore | null) {
+  setSeparationQueue(null);
   store?.close();
   store = s;
+}
+
+let queue: SeparationQueue | null = null;
+/** The process-wide server separation queue. */
+export function separationQueue(): SeparationQueue {
+  return (queue ??= createSeparationQueue({ store: stemStore(), settings: karaoke }));
+}
+/** Tests: use another queue (e.g. the stub model). */
+export function setSeparationQueue(q: SeparationQueue | null) {
+  queue?.close();
+  queue = q;
+}
+
+/** Where "Prepare" separates for these settings: the server when the native runtime can run here (or is forced). */
+export function stemsEngine(k: Partial<KaraokeSettings>): 'server' | 'browser' {
+  if (k.stemsEngine === 'browser') return 'browser';
+  if (k.stemsEngine === 'server') return 'server';
+  return platformUnsupported() === null || findOrtNode() ? 'server' : 'browser';
+}
+
+function nativeStatus(isAdmin: boolean): NativeStemsStatus {
+  const found = findOrtNode();
+  const reason = found ? null : platformUnsupported();
+  const d = ortNodeRuntime().status();
+  return {
+    supported: !reason, reason, ready: !!found, version: found?.version ?? ORT_NODE_VERSION,
+    ...(isAdmin ? { download: { state: d.state, received: d.received, total: d.total, error: d.error } } : {}),
+    lastBackend: queue?.lastBackend() ?? null,
+    gpuProblem: queue?.gpuProblem() ?? null,
+    queued: queue?.size() ?? 0,
+  };
+}
+
+/** A track's stems with the server job (if any) and the last server error. */
+function trackStems(id: string): TrackStems {
+  const s = stemStore().status(id);
+  const job = queue?.job(id) ?? null;
+  return { ...s, preparing: s.preparing || !!job, job, error: job ? null : queue?.error(id) ?? null };
 }
 
 const karaoke = () => getSettings().karaoke ?? { stemsEnabled: false, stemsModelUrl: null, stemsModelSha256: null, writeLrcSidecars: false };
 
 export default async function karaokeRoutes(app: FastifyInstance) {
+  app.addHook('onClose', async () => setSeparationQueue(null));
   app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: 64 * 1024 * 1024 }, (_req, body, done) => done(null, body));
 
   /* -------------------------------- lyrics -------------------------------- */
@@ -87,6 +131,8 @@ export default async function karaokeRoutes(app: FastifyInstance) {
       ortDownload: user.isAdmin ? ortRuntime().status() : undefined,
       format: 'flac', sampleRate: STEM_RATE, stemNames: STEM_NAMES,
       canPrepare: user.isAdmin && !!k.stemsEnabled,
+      engine: stemsEngine(k),
+      native: nativeStatus(user.isAdmin),
     };
   });
   // The browser runtime is fetched on first use (ortRuntime.ts); downloading the model starts it too.
@@ -102,7 +148,8 @@ export default async function karaokeRoutes(app: FastifyInstance) {
   app.post('/stems/model/download', async (req) => {
     requireAdmin(req);
     needEnabled();
-    startOrt();
+    if (stemsEngine(karaoke()) === 'server') ortNodeRuntime().ensure().catch(() => {});
+    else startOrt();
     return stemStore().startDownload(karaoke());
   });
   app.post('/stems/model/cancel', async (req) => {
@@ -134,7 +181,23 @@ export default async function karaokeRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>('/items/:id/stems', async (req) => {
     const { user } = requireUser(req);
     assertCanSee(user, req.params.id);
-    return stemStore().status(req.params.id);
+    return trackStems(req.params.id);
+  });
+  app.post<{ Params: { id: string } }>('/items/:id/stems/prepare', async (req): Promise<TrackStems> => {
+    const { user } = requireAdmin(req);
+    needEnabled();
+    const row = assertCanSee(user, req.params.id);
+    if (row.type !== 'track') throw badRequest('Stems can only be prepared for music tracks');
+    if (stemsEngine(karaoke()) !== 'server') throw badRequest('This server separates stems in the browser (Server settings → Karaoke & lyrics)');
+    const m = db.get<{ path: string | null }>('SELECT path FROM media WHERE item_id = ? AND path IS NOT NULL LIMIT 1', req.params.id);
+    if (!m?.path) throw notFound('This track has no local file');
+    separationQueue().enqueue(req.params.id, m.path);
+    return trackStems(req.params.id);
+  });
+  app.delete<{ Params: { id: string } }>('/items/:id/stems/prepare', async (req) => {
+    const { user } = requireAdmin(req);
+    assertCanSee(user, req.params.id);
+    return { cancelled: queue?.cancel(req.params.id) ?? false };
   });
   app.post<{ Params: { id: string }; Body: { frames: number; sampleRate: number; model?: string; backend?: string } }>('/items/:id/stems/begin', async (req) => {
     const { user } = requireAdmin(req);
@@ -167,6 +230,7 @@ export default async function karaokeRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>('/items/:id/stems', async (req) => {
     const { user } = requireAdmin(req);
     assertCanSee(user, req.params.id);
+    queue?.cancel(req.params.id);
     await stemStore().remove(req.params.id);
     return { ok: true };
   });

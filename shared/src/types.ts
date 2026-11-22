@@ -4431,8 +4431,17 @@ export interface KaraokeSettings {
   stemsEnabled: boolean;
   /** Model URL (http(s); `.../x.tgz#path/in/archive.onnx` for an archive member); null = the default HT-Demucs export. */
   stemsModelUrl: string | null;
-  /** Expected SHA-256 of a custom model (the default model is always pinned). */
+  /** Expected SHA-256 of a custom model (required for a custom URL; the default model is always pinned). */
   stemsModelSha256: string | null;
+  /**
+   * Where separation runs. `auto` (default): on the server with the native AI runtime when this platform has it, else
+   * in an administrator's browser. `server` / `browser` force one.
+   */
+  stemsEngine?: StemsEngine;
+  /** Server separation: `auto` (default) uses the GPU when there is one (DirectML / CoreML / CUDA), `cpu` never does. */
+  stemsBackend?: 'auto' | 'cpu';
+  /** Server separation: CPU threads (0 / null = all cores but two). */
+  stemsThreads?: number | null;
   /** Saving lyrics also writes an .lrc next to the audio file when the library folder is writable. Default false. */
   writeLrcSidecars: boolean;
 }
@@ -4442,6 +4451,26 @@ export interface ServerSettings {
 }
 
 export type StemName = 'vocals' | 'drums' | 'bass' | 'other';
+export type StemsEngine = 'auto' | 'server' | 'browser';
+
+/** The server's native AI runtime (onnxruntime-node), downloaded on first use. */
+export interface NativeStemsStatus {
+  /** This platform has a build (Windows x64/arm64, Linux x64/arm64 with glibc, macOS arm64). */
+  supported: boolean;
+  /** Why not, when it isn't. */
+  reason: string | null;
+  /** Downloaded (or installed) and ready to load. */
+  ready: boolean;
+  version: string;
+  /** Progress of the first-use download (administrators). */
+  download?: { state: 'idle' | 'downloading' | 'ready' | 'error' | 'unsupported'; received: number; total: number; error: string | null };
+  /** Backend of the last server separation: dml / coreml / cuda (GPU) or cpu. */
+  lastBackend: string | null;
+  /** The GPU failed or returned invalid audio earlier, so the CPU is used until the server restarts: why. */
+  gpuProblem?: string | null;
+  /** Tracks queued or running. */
+  queued: number;
+}
 
 export interface StemsModelStatus {
   id: string;
@@ -4473,6 +4502,20 @@ export interface StemsStatus {
   stemNames: StemName[];
   /** May download the model / prepare stems (administrators). */
   canPrepare: boolean;
+  /** Where "Prepare" separates: on the server (POST /items/:id/stems/prepare) or in this browser. */
+  engine?: 'server' | 'browser';
+  native?: NativeStemsStatus;
+}
+
+/** A server separation job for a track (GET /items/:id/stems while it is queued or running). */
+export interface StemsJob {
+  state: 'queued' | 'running';
+  phase: 'waiting' | 'runtime-download' | 'model-download' | 'loading-model' | 'decoding' | 'separating' | 'saving';
+  done: number;
+  total: number;
+  /** Place in the queue (1 = next) while queued. */
+  position?: number;
+  backend?: string;
 }
 
 /** GET /items/:id/stems */
@@ -4486,6 +4529,10 @@ export interface TrackStems {
   frames?: number;
   sampleRate?: number;
   at?: number;
+  /** Server separation in progress. */
+  job?: StemsJob | null;
+  /** Why the last server separation of this track failed (cleared when it is prepared again). */
+  error?: string | null;
 }
 
 /* ------------------------------------------------------------------ */

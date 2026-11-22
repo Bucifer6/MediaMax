@@ -377,18 +377,20 @@ When Settings → DLNA is on, the server announces itself over SSDP and serves U
 * `PUT /items/:id/lyrics/offset` `{ offsetMs }` → `{ offsetMs }` — the caller's own timing offset for a track (−30000…30000; 0 removes it).
 
 ## Karaoke stems (AI vocal separation)
-See [KARAOKE.md](KARAOKE.md). Requires `ServerSettings.karaoke.stemsEnabled`; separation runs in an administrator's browser.
+See [KARAOKE.md](KARAOKE.md). Requires `ServerSettings.karaoke.stemsEnabled`. Separation runs on the server (`StemsStatus.engine: 'server'`: `POST /items/:id/stems/prepare`, onnxruntime-node) or, where the server can't, in an administrator's browser (`engine: 'browser'`: the begin / part / finish upload below).
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/stems/status` | `StemsStatus` (model state, onnxruntime-web availability, `canPrepare`) |
+| GET | `/stems/status` | `StemsStatus` (model state, `engine` (`server` / `browser`), `native` (onnxruntime-node support, download, last backend, GPU problem, queue), onnxruntime-web availability, `canPrepare`) |
 | POST | `/stems/model/download` 🛡️ | start the one-time model download (SHA-256 verified) |
 | POST | `/stems/model/cancel` 🛡️ | cancel it |
 | DELETE | `/stems/model` 🛡️ | delete the cached model |
 | GET | `/stems/model` 🛡️ | the verified model bytes (fetched by the separation worker) |
 | GET | `/stems/ort/:file` | onnxruntime-web runtime files (`ort*.mjs` / `ort*.wasm`), same origin, no auth |
 | POST | `/stems/ort/download` | Admin: download the AI runtime now (otherwise it is fetched with the model on first use); progress in `StemsStatus.ortDownload` |
-| GET | `/items/:id/stems` | `TrackStems` (`ready`, `preparing`, model, backend, frames…) |
+| GET | `/items/:id/stems` | `TrackStems` (`ready`, `preparing`, model, backend, frames…; `job` while a server separation is queued / running: state, phase, done / total, queue position; `error` when the last one failed) |
+| POST | `/items/:id/stems/prepare` 🛡️ | separate on the server: queued (no-op when already queued / running) → `TrackStems` with `job`. The native runtime and the model are downloaded on first use. 400 when `engine` is `browser` |
+| DELETE | `/items/:id/stems/prepare` 🛡️ | cancel that → `{ cancelled }` |
 | GET | `/items/:id/stems/source` 🛡️ | the track decoded to 44.1 kHz stereo FLAC (input for the worker) |
 | POST | `/items/:id/stems/begin` 🛡️ | `{ frames, sampleRate: 44100, model, backend }` → `{ token }` |
 | PUT | `/items/:id/stems/part?token&stem&frame` 🛡️ | body: interleaved stereo s16le (`application/octet-stream`, ≤ 64 MB) for `stem` ∈ vocals, drums, bass, other |

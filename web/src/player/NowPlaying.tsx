@@ -112,12 +112,18 @@ function MusicScreensaver() {
 
 /* ------------------------------------------------------------------ karaoke controls */
 
+/** ONNX Runtime backend id → what to show: dml / coreml / cuda run on the GPU. */
+export const backendLabel = (b: string) => ({ dml: 'GPU, DirectML', coreml: 'GPU, Core ML', cuda: 'GPU, CUDA', cpu: 'CPU', webgpu: 'GPU, WebGPU', wasm: 'CPU' } as Record<string, string>)[b] ?? b;
+
 export function KaraokeControls({ compact = false }: { compact?: boolean }) {
   const k = useKaraoke();
   const m = useMusic();
   const pct = k.preparing && k.preparing.total ? Math.round((k.preparing.done / k.preparing.total) * 100) : null;
-  const phase: Record<string, string> = { 'runtime-download': 'Downloading the AI runtime', 'model-download': 'Downloading the AI model', decoding: 'Decoding the track', 'loading-model': 'Loading the AI model', separating: 'Separating vocals', saving: 'Saving stems' };
+  const phase: Record<string, string> = { waiting: 'Waiting for the server', 'runtime-download': 'Downloading the AI runtime', 'model-download': 'Downloading the AI model', decoding: 'Decoding the track', 'loading-model': 'Loading the AI model', separating: 'Separating vocals', saving: 'Saving stems' };
   const canPrepare = !!k.status?.canPrepare && m.current?.type === 'track';
+  const onServer = k.status?.engine === 'server';
+  const p = k.preparing;
+  const where = p?.where === 'server' ? (p.phase === 'waiting' && p.position && p.position > 1 ? ` (${p.position - 1} ahead)` : p.backend && p.phase === 'separating' ? ` on the server (${backendLabel(p.backend)})` : '') : '';
   return (
     <div className={`karaoke-controls ${compact ? 'compact' : ''}`}>
       <label className="karaoke-toggle">
@@ -141,12 +147,12 @@ export function KaraokeControls({ compact = false }: { compact?: boolean }) {
       {k.enabled && k.mode === 'quick' && k.quickUnavailable && <small className="muted">Quick mode needs Web Audio on this device.</small>}
       {k.preparing ? (
         <span className="karaoke-progress" role="status">
-          <Spinner size={14} /> {phase[k.preparing.phase]}{pct != null ? ` · ${pct}%` : ''}
+          <Spinner size={14} /> {phase[k.preparing.phase]}{where}{pct != null ? ` · ${pct}%` : ''}
           <button className="btn btn-sm btn-ghost" onClick={k.cancelPrepare}>Cancel</button>
         </span>
       ) : (
         k.enabled && k.mode === 'quick' && canPrepare && (
-          <button className="btn btn-sm" onClick={() => void k.prepare()} title="Separate the vocals with the AI model in this browser; afterwards every device can play the karaoke version">
+          <button className="btn btn-sm" onClick={() => void k.prepare()} title={onServer ? 'Separate the vocals with the AI model on the server; afterwards every device can play the karaoke version' : 'Separate the vocals with the AI model in this browser; afterwards every device can play the karaoke version'}>
             <Icon name="wand" size={14} /> Prepare (AI)
           </button>
         )

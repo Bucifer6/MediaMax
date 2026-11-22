@@ -5,8 +5,11 @@
  *  - "waveform" exports with the STFT inside the graph: mix [1,2,N] → [1,S,2,N]
  * A deterministic stub session (frequency bands) stands in for the model in tests.
  * Adapted from OpenDJ (MIT, github.com/Bucifer6/OpenDJ) — public/js/stems/stems-model.js.
+ *
+ * The canonical copy lives in shared/src/stems/; `node scripts/sync-types.mjs` copies it verbatim to web/src/stems/ and
+ * server/src/services/separation/ (a server test checks they match).
  */
-import { BINS, DEMUCS_SOURCES, demucsISpec, demucsSpec, MODEL_RATE, NFFT, specFrames } from './dsp';
+import { BINS, DEMUCS_SOURCES, demucsISpec, demucsSpec, MODEL_RATE, NFFT, specFrames } from './dsp.js';
 
 export const SEGMENT = Math.floor(7.8 * MODEL_RATE); // 343980: fixed by the exported graphs
 

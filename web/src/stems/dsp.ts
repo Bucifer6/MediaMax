@@ -1,9 +1,13 @@
 /**
- * Pure DSP for AI stem separation (no DOM, no ORT): runs in the stems worker and in Node tests.
+ * Pure DSP for AI stem separation (no DOM, no ORT): runs in the browser's stems worker and the server's separation
+ * process (and in Node tests).
  *  - FFT / Demucs-compatible STFT (spec) and inverse STFT (ispec), matching torch.stft/istft as used by HT-Demucs
  *  - chunk planning + streaming overlap-add (finished audio leaves the worker block by block)
  *  - Int16 helpers
  * Adapted from OpenDJ (MIT, github.com/Bucifer6/OpenDJ) — public/js/stems/stem-dsp.js.
+ *
+ * The canonical copy lives in shared/src/stems/; `node scripts/sync-types.mjs` copies it verbatim to web/src/stems/ and
+ * server/src/services/separation/ (a server test checks they match).
  */
 
 export const MODEL_RATE = 44100;

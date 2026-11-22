@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -29,6 +30,15 @@ test('LRC copies in server / web / mobile match shared/src/lrc.ts', () => {
   const canon = fs.readFileSync(path.join(root, 'shared/src/lrc.ts'), 'utf8');
   for (const p of ['server/src/services/lrc.ts', 'web/src/lyrics/lrc.ts', 'apps/mobile/src/player/lrc.ts']) {
     assert.equal(fs.readFileSync(path.join(root, p), 'utf8'), canon, `${p} is out of date: run node scripts/sync-types.mjs`);
+  }
+});
+
+test('stem DSP / model copies in web and server match shared/src/stems', () => {
+  for (const f of ['dsp.ts', 'model.ts']) {
+    const canon = fs.readFileSync(path.join(root, 'shared/src/stems', f), 'utf8');
+    for (const dir of ['web/src/stems', 'server/src/services/separation']) {
+      assert.equal(fs.readFileSync(path.join(root, dir, f), 'utf8'), canon, `${dir}/${f} is out of date: run node scripts/sync-types.mjs`);
+    }
   }
 });
 
@@ -358,6 +368,9 @@ test('mix helpers: 5 % steps, filter gains', () => {
   assert.equal(c.entry, 'package/m.onnx');
   assert.equal(c.sha256, 'a'.repeat(64));
   assert.equal(stems.modelSpec({}).id, 'htdemucs-v4');
+  assert.throws(() => stems.modelSpec({ stemsModelUrl: 'https://example.com/m.onnx' }), /SHA-256/);
+  // TXXX:SYNCEDLYRICS (Mp3tag / foobar2000) reaches FFmpeg as a plain SYNCEDLYRICS tag
+  assert.equal(lyrics.fromTags({ SYNCEDLYRICS: '[00:01.00]Hi' })?.synced, true);
 });
 
 test('model download: tgz member extracted, SHA-256 verified (archive + model), mismatches rejected', { skip }, async () => {

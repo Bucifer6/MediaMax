@@ -12,8 +12,8 @@
  *      { type: 'done', id, ms, chunks } { type: 'error', id?, message }
  * Adapted from OpenDJ (MIT, github.com/Bucifer6/OpenDJ) — public/js/stems/stems-worker.js.
  */
-import { DEMUCS_SOURCES, interleaveInt16, separateChunked, STEMS } from './dsp';
-import { createRunner, createStubSession, StubTensor, type Runner, type TensorCtor } from './model';
+import { DEMUCS_SOURCES, interleaveInt16, separateChunked, STEMS } from './dsp.js';
+import { createRunner, createStubSession, StubTensor, type Runner, type TensorCtor } from './model.js';
 
 declare const self: DedicatedWorkerGlobalScope;
 let runner: Runner | null = null;

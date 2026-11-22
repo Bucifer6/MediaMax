@@ -42,8 +42,10 @@ their own licences; FFmpeg is run as a separate program (LGPL/GPL).
   - ID3 SYLT → lines, lyrics source order, text decoding → `server/src/services/id3.ts`, `server/src/services/lyrics.ts`
   - Lyrics editor model (tap-to-sync) → `web/src/lyrics/editorModel.ts`, `web/src/lyrics/LyricsEditor.tsx`
   - Karaoke display → `web/src/lyrics/KaraokeLyrics.tsx`
-  - Stem DSP (FFT, HT-Demucs STFT/iSTFT, chunking, overlap-add), ONNX runner and stub, separation worker, preparation
-    flow → `web/src/stems/*`
+  - Stem DSP (FFT, HT-Demucs STFT/iSTFT, chunking, overlap-add), ONNX runner and stub → `shared/src/stems/*` (copied
+    to `web/src/stems/` and `server/src/services/separation/`); separation worker and preparation flow → `web/src/stems/*`
+  - Native separation process (onnxruntime-node, GPU providers, CPU fallback) and its queue →
+    `server/src/services/separation/child.ts`, `native.ts`
   - Model download / SHA-256 verification / tar extraction and the per-track stem cache → `server/src/services/stems.ts`
   - Mid/side "quick stems" split → `web/src/player/karaokeFx.ts`
   - Cover art + spectrum ring + beat pulse visualiser → `web/src/visualizer/styles.ts` (`ring`), `withAlpha`
@@ -52,6 +54,15 @@ their own licences; FFmpeg is run as a separate program (LGPL/GPL).
   rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to
   the copyright notice and this permission notice being included in all copies or substantial portions of the
   Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+
+### ONNX Runtime for Node.js (`onnxruntime-node` and `onnxruntime-common` 1.31.1)
+
+- Used by the server to run the AI stem-separation model natively (CPU; DirectML / Core ML / CUDA GPUs). Not shipped
+  with Kinora: the server downloads the pinned npm tarballs the first time a track is separated on the server, verifies
+  their SHA-512 integrity and keeps only `package.json`, the `dist/` JavaScript and this platform's
+  `bin/napi-v6/<platform>/<arch>/` binaries (on Windows these include Microsoft's DirectML runtime, `DirectML.dll`).
+  Its install-script dependencies (`adm-zip`, `global-agent`) are not downloaded.
+- MIT License, © Microsoft Corporation — <https://github.com/microsoft/onnxruntime>.
 
 ### ONNX Runtime Web (`onnxruntime-web` 1.23.2)
 

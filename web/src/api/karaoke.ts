@@ -15,6 +15,9 @@ export const karaokeApi = {
   downloadModel: () => http.post<{ ready: boolean; started?: boolean; downloading?: { received: number; total: number } }>('/stems/model/download'),
   cancelModel: () => http.post<{ ok: true }>('/stems/model/cancel'),
   trackStems: (id: string) => http.get<TrackStems>(`/items/${enc(id)}/stems`),
+  /** Separate on the server (queued); poll trackStems() for the job's progress. */
+  prepareOnServer: (id: string) => http.post<TrackStems>(`/items/${enc(id)}/stems/prepare`, {}),
+  cancelOnServer: (id: string) => http.del<{ cancelled: boolean }>(`/items/${enc(id)}/stems/prepare`),
   deleteStems: (id: string) => http.del<{ ok: true }>(`/items/${enc(id)}/stems`),
   beginStems: (id: string, body: { frames: number; sampleRate: number; model: string; backend: string }) => http.post<{ token: string }>(`/items/${enc(id)}/stems/begin`, body),
   finishStems: (id: string, token: string) => http.post<TrackStems>(`/items/${enc(id)}/stems/finish`, {}, { token }),

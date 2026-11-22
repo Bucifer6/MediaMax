@@ -4,7 +4,7 @@
  * - AI mode: the track has stems on the server → the live deck plays the server's karaoke mix
  *   (/items/:id/karaoke.mp3?vocals=<level>), which works on any device.
  * - Quick mode: no stems → centre-channel vocal reduction in Web Audio (karaokeFx.ts) on the local output.
- * Administrators can "Prepare (AI)" a track in this browser (stems/prepare.ts).
+ * Administrators can "Prepare (AI)" a track: on the server when it can separate, else in this browser (stems/prepare.ts).
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { StemsStatus, TrackStems } from '@mediamax/shared';
@@ -127,6 +127,12 @@ export function KaraokeProvider({ children }: { children: ReactNode }) {
       abort.current = null;
     }
   }, [trackId, preparing]);
+
+  // A server job for this track already queued / running (another tab, a reload): follow it.
+  useEffect(() => {
+    if (stems?.job && stems.itemId === trackId && !preparing && status?.canPrepare) void prepare();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stems?.job, status?.canPrepare]);
 
   const value = useMemo<KaraokeApi>(() => ({
     enabled, setEnabled: (on) => {

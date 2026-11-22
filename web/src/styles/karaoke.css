@@ -132,3 +132,7 @@ html.tv .np-foot { padding: 1vh 6vw 5vh; }
   .karaoke-view .karaoke-current, .karaoke-view .karaoke-dots { animation: none; }
   .np-backdrop { transform: none; }
 }
+
+/* Admin → Karaoke & lyrics: status cards (".card" alone is the fixed-width poster card). */
+.card.karaoke-model-card { width: auto; flex: none; gap: 6px; padding: 12px 14px; border: 1px solid var(--c-border); border-radius: 12px; background: var(--c-surface-alt); }
+.karaoke-model-card .karaoke-error { max-width: none; }
