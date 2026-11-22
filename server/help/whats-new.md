@@ -1,19 +1,12 @@
 ---
 title: What's new in {{product}} {{version}}
-version: 0.1.0
+version: 0.2.0
 ---
 
-- **Help Centre**: step-by-step help for everything in {{product}}. Open **Help** in the sidebar, or press the **?** next to a page title. Press <kbd>?</kbd> for keyboard shortcuts.
-- **Smarter audio**: Dolby Atmos, DTS:X and DTS-HD are detected and passed to your receiver when it can play them, with clean conversions when it can't. New **Night mode**, **Dialogue boost**, **Normalise volume** and per-device **lip-sync** in **Settings → Playback → Audio**.
-- **HDR and Dolby Vision**: each device gets real Dolby Vision, its HDR10 version or a natural-looking SDR picture, depending on what it supports.
-- **Automatic quality**: playback adapts to your connection and switches between the original file and a converted stream without stopping.
-- **Subtitles everywhere**: the player draws subtitles itself on every device, with styling, positioning and sync controls.
-- **Play to** TVs, Chromecast, AirPlay, Sonos and Kodi, and **watch together** with friends.
-- **Live TV**: catch-up, multiview with up to four channels, and better guide matching.
-- **DJ mode and AI DJ**: describe a mix in plain words and let the DJ do the rest.
-- **Requests**: ask for movies, shows, music and books, with quotas and status updates.
-- **Ask**: search in your own words, in English or Romanian ("something funny under 90 minutes we haven't seen"), and remove what doesn't fit. See [Ask and recaps](help:ask-and-recaps).
-- **Previously on…**: a spoiler-free recap when you come back to a series.
-- **Auto-generated subtitles**: when no subtitle can be found online, your server can make one from the dialogue.
+- **AI karaoke prepared by your server**: press **Prepare (AI)** and the server separates the vocals itself, on its graphics card when it has a suitable one, otherwise on the processor. You can start it from the web app, a phone or a TV and close the app while it works; afterwards every device can play the karaoke version. Servers on platforms without the native AI runtime still prepare tracks in an administrator's browser.
+- **Move from Emby, Jellyfin or Plex**: the import now also brings over metadata and artwork of the titles it matches (overviews, cast, ratings, posters, backgrounds and more), without touching fields you locked.
+- **Cleaner music libraries**: Emby and Kodi theme-media folders (backdrops, theme music) are no longer scanned as content.
+- **Menu**: *Issues* moved under **You**, and the menu can be pinned open.
+- A faster, up-to-date web app (React 19, Vite 8) and many library updates.
 
 See [What is {{product}}?](help:welcome) for a tour.
