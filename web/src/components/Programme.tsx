@@ -79,15 +79,15 @@ function FeatureStory({ items, style }: { items: Item[]; style: HeroStyle }) {
         {item.tagline && <span className="feature-caption">{item.tagline}</span>}
       </Link>
       <div className="feature-bottom">
-        <p className="feature-description">{item.overview || 'Find your next story in your own collection.'}</p>
         <div className="feature-actions">
           <button className="btn programme-play" onClick={() => play(item)} data-nav><Icon name="play" size={16} />{isResumable(item) ? 'Resume screening' : 'Start screening'}</button>
           <Link to={itemLink(item)} className="programme-text-link" data-nav>Details</Link>
           {canWatchlist(item) && <WatchlistButton key={item.id} item={item} variant="detail" />}
         </div>
+        <p className="feature-description">{item.overview || 'Find your next story in your own collection.'}</p>
       </div>
       {list.length > 1 && <div className="feature-switcher" role="group" aria-label="Choose a featured title">{list.map((entry, index) => (
-        <button key={entry.id} type="button" aria-pressed={index === Math.min(selected, list.length - 1)} onClick={() => setSelected(index)} data-nav><span>{entry.title}</span><small>{entry.year}</small></button>
+        <button key={entry.id} type="button" aria-pressed={index === Math.min(selected, list.length - 1)} onClick={() => setSelected(index)} data-nav><Img src={landscapeFor(entry)} width={140} alt="" /><span>{entry.title}</span><small>{entry.year}</small></button>
       ))}</div>}
     </section>
   );
@@ -129,7 +129,7 @@ export function Programme({ rows, heroStyle, renderRow, linkFor }: { rows: HomeR
     <div className={`programme ${viewingFirst ? 'viewing-first' : ''}`}>
       <header className="programme-masthead">
         <div><span className="programme-kicker">A private picture house</span><h1>The programme<span>.</span></h1></div>
-        <div className="programme-introduction"><p>Good stories deserve<br />your undivided attention.</p><small>{user?.displayName ? `Selected for ${user.displayName}.` : 'Your collection, at your pace.'}</small><button className="programme-text-link" aria-label="Prioritize my viewing" aria-pressed={viewingFirst} onClick={toggleOrder} data-nav>{viewingFirst ? 'Feature first' : 'Put my viewing first'}</button></div>
+        <div className="programme-introduction"><p>Your collection.<br />A little more considered.</p><small>{user?.displayName ? `Welcome back, ${user.displayName}.` : 'Your own home cinema.'}</small><button className="programme-text-link" aria-label="Prioritize my viewing" aria-pressed={viewingFirst} onClick={toggleOrder} data-nav><Icon name="sort" size={15} />{viewingFirst ? 'Feature first' : 'Put my viewing first'}</button></div>
       </header>
       <div className={`programme-spread ${!featured?.items.length || heroStyle === 'none' ? 'without-feature' : ''}`}>
         {featured && heroStyle !== 'none' && <FeatureStory items={featured.items} style={heroStyle} />}
