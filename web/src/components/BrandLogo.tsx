@@ -5,7 +5,7 @@ import { LEGACY_PRODUCT_NAME, PRODUCT_NAME } from '../brand/product';
 import { MARK_ASPECT, MARK_FULL, MARK_SIMPLE, MARK_VIEWBOX, NAME, NAME_GRADIENT } from '../brand/art';
 
 /**
- * The Kinora mark (a K whose arms are two beams of projector light), inlined so it is crisp at any size.
+ * The Kinora film-strip K, inlined so it is crisp at any size.
  * `size` is the height; below 28 px the simplified flat version is used.
  */
 export function BrandMark({ size = 32, simple }: { size?: number; simple?: boolean }) {

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { HomeResponse, HomeRow, ItemSort } from '@mediamax/shared';
 import { api } from '../api/endpoints';
@@ -74,6 +74,13 @@ let lastHome: { userId: string; data: HomeResponse } | null = null;
 
 export function Home() {
   const { theme, user, libraries, features } = useApp();
+  const [resumeFirst, setResumeFirst] = useState(() => {
+    try { return localStorage.getItem('mm.home.resumeFirst') !== '0'; } catch { return true; }
+  });
+  const toggleHomeOrder = () => setResumeFirst((current) => {
+    try { localStorage.setItem('mm.home.resumeFirst', current ? '0' : '1'); } catch { /* per-session fallback */ }
+    return !current;
+  });
   const userId = user?.id ?? '';
   const home = useAsync(() => api.items.home().then((d) => {
     // Keep the featured titles the viewer is already looking at (the server picks new random ones each time), so the
@@ -129,6 +136,10 @@ export function Home() {
   const rows = homeData?.rows ?? [];
   const heroRow = rows.find((r) => r.type === 'hero');
   const rest = rows.filter((r) => r.type !== 'hero');
+  // Ongoing viewing comes first; retain the server's order within each group and its TV presentation.
+  const watching = rest.filter((r) => r.type === 'continue' || r.type === 'nextup');
+  const browse = rest.filter((r) => r.type !== 'continue' && r.type !== 'nextup');
+  const tv = document.documentElement.classList.contains('tv');
   const hasContent = rows.some((r) => r.items.length || r.channels?.length);
 
   if (!hasContent) {
@@ -159,11 +170,13 @@ export function Home() {
     <div className={`home ${heroRow && theme.heroStyle !== 'none' && heroRow.items.length ? 'has-hero' : 'no-hero'}`}>
       <div className="home-intro">
         <div>
-          <p className="home-eyebrow">YOUR COLLECTION. YOUR CINEMA.</p>
-          <h1>Make time for a great story.</h1>
-          <p className="home-welcome">Welcome back{user?.displayName ? `, ${user.displayName}` : ''}. Pick up where you left off, or find a new favourite.</p>
+          <p className="home-eyebrow">YOUR OWN HOME CINEMA</p>
+          <h1>Welcome back{user?.displayName ? `, ${user.displayName}` : ''}.</h1>
         </div>
-        <Link to="/my-list" className="btn home-list-link"><Icon name="plus" size={18} /> My List</Link>
+        <div className="home-view-actions">
+          <button type="button" className="btn home-view-toggle" aria-label="Show Continue Watching first" aria-pressed={resumeFirst} onClick={toggleHomeOrder} data-nav><Icon name={resumeFirst ? 'play' : 'film'} size={16} />{resumeFirst ? 'Resume first' : 'Browse first'}</button>
+          <Link to="/my-list" className="btn home-list-link"><Icon name="plus" size={18} /> My List</Link>
+        </div>
       </div>
       <nav className="home-libraries" aria-label="Browse your libraries">
         <span className="home-library-current"><Icon name="home" size={17} /> For you</span>
@@ -171,14 +184,11 @@ export function Home() {
           <Link key={l.id} to={`/library/${l.id}`} data-nav><Icon name={libraryIcon(l.type)} size={17} />{l.name}</Link>
         ))}
       </nav>
+      {!tv && resumeFirst && watching.length > 0 && <div className="home-rows home-watching">{watching.map((r) => <HomeRowView key={r.id} row={r} />)}</div>}
       {heroRow && theme.heroStyle !== 'none' && heroRow.items.length > 0 && <Hero items={heroRow.items} style={theme.heroStyle} />}
       <div className="home-rows">
-        {rest.slice(0, 1).map((r) => <HomeRowView key={r.id} row={r} />)}
-        <div className="home-discovery">
-          <div><span className="home-eyebrow">A LITTLE INSPIRATION</span><h2>Something everyone will love.</h2><p>Let chance choose, or find your next watch together.</p></div>
-          <DecideBar className="home-decide" />
-        </div>
-        {rest.slice(1).map((r) => <HomeRowView key={r.id} row={r} />)}
+        {(tv || !resumeFirst ? rest : browse).map((r) => <HomeRowView key={r.id} row={r} />)}
+        <DecideBar className="home-decide" />
       </div>
     </div>
   );

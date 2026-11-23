@@ -43,7 +43,7 @@ const DEFAULTS: StoredBranding = {
   loginMessage: '',
   footerText: '',
   supportUrl: null,
-  splash: { backgroundColor: '#0D0C1D', logoUrl: null },
+  splash: { backgroundColor: '#101416', logoUrl: null },
   tvBannerUrl: null,
   topShelfUrl: null,
   defaultThemeId: DEFAULT_THEME_ID,

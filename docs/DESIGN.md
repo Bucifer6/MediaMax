@@ -1,5 +1,7 @@
 # Lumen: the Kinora design language
 
+> **Review-branch proposal, November 2026:** see [UI research and Screenlight identity](UI_RESEARCH.md) for the proposed graphite/mint palette, film-strip K, quieter Home and remembered Resume first / Browse first layout. The following documents the original Lumen foundation; the proposal retains its theme and accessibility mechanisms while changing Home presentation and the stock brand.
+
 > The interface is lit by the films.
 
 Lumen is the look of the Kinora web app (and the TV app, which is the same app in TV mode). The picture on

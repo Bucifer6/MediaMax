@@ -104,9 +104,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   // Every build registers the stock schemes: kinora:// (primary: OIDC redirects, pairing links) and the legacy
   // mediamax://, so links made by older servers or web clients still open the app. A brand's own scheme comes first.
   const schemes = [...new Set([brand.scheme, DEFAULTS.scheme, ...DEFAULTS.legacySchemes].filter((x): x is string => !!x))];
-  // Stock Kinora: dark ground #0D0C1D (light-mode splash #F7F6FF). A brand's splash colour is used for both.
-  const splashBg = brand.splashBackgroundColor ?? '#0D0C1D';
-  const splashBgLight = brand.splashBackgroundColor ?? '#F7F6FF';
+  // Stock Kinora: dark ground #101416 (light-mode splash #F4F8F6). A brand's splash colour is used for both.
+  const splashBg = brand.splashBackgroundColor ?? '#101416';
+  const splashBgLight = brand.splashBackgroundColor ?? '#F4F8F6';
   const icon = asset('icon.png', './assets/icon.png');
   const splash = asset('splash.png', './assets/splash-icon.png');
 
@@ -212,7 +212,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       brand: brandName ?? null,
       defaultServerUrl: brand.serverUrl ?? env('SERVER_URL') ?? null,
       lockServer: brand.lockServer ?? env('LOCK_SERVER') === '1',
-      fallbackPrimaryColor: brand.primaryColor ?? '#9198FF',
+      fallbackPrimaryColor: brand.primaryColor ?? '#63DEC5',
       ...(brand.easProjectId ? { eas: { projectId: brand.easProjectId } } : {}),
     },
   };

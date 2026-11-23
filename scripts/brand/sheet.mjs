@@ -26,12 +26,12 @@ const uri = (file) => {
 const png = (rel) => uri(path.join(repo, rel));
 
 const css = `
-body{margin:0;background:#1b1f2e;color:#cfd6ee;font:13px/1.4 system-ui,sans-serif;padding:28px;width:1700px}
-h2{font-size:14px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#8d97b8;margin:26px 0 10px}
+body{margin:0;background:#191f22;color:#f2f6f4;font:13px/1.4 system-ui,sans-serif;padding:28px;width:1700px}
+h2{font-size:14px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#a7b6b1;margin:26px 0 10px}
 .row{display:flex;gap:22px;align-items:flex-end;flex-wrap:wrap}
 .cell{display:flex;flex-direction:column;align-items:center;gap:6px}
-.cell small{color:#8d97b8}
-.dark{background:#0D0C1D;padding:16px;border-radius:10px}
+.cell small{color:#a7b6b1}
+.dark{background:#101416;padding:16px;border-radius:10px}
 .light{background:#ffffff;padding:16px;border-radius:10px}
 .pix{image-rendering:pixelated}
 .ios{border-radius:22.37%;overflow:hidden}
@@ -107,9 +107,9 @@ await page.screenshot({ path: out, fullPage: true });
 
 {
   const sizes = [256, 128, 64, 48, 32, 24, 16];
-  const row = (bg, src, cls = '') => `<div style="background:${bg};padding:20px;display:flex;gap:20px;align-items:flex-end">${sizes.map((s) => `<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><img class="${cls}" src="${src}" width="${s}" height="${s}"><small style="color:#8d97b8;font:11px system-ui">${s}</small></div>`).join('')}</div>`;
+  const row = (bg, src, cls = '') => `<div style="background:${bg};padding:20px;display:flex;gap:20px;align-items:flex-end">${sizes.map((s) => `<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><img class="${cls}" src="${src}" width="${s}" height="${s}"><small style="color:#a7b6b1;font:11px system-ui">${s}</small></div>`).join('')}</div>`;
   await page.setViewportSize({ width: 900, height: 400 });
-  await page.setContent(`<!doctype html><style>${css} body{width:auto;padding:0;display:inline-block} .ios{border-radius:22.37%}</style>${row('#0D0C1D', uri('app-icon-dark.svg'), 'ios')}${row('#ffffff', uri('app-icon-light.svg'), 'ios')}${row('#0D0C1D', uri('favicon.svg'))}${row('#ffffff', uri('mark-simple.svg'))}`);
+  await page.setContent(`<!doctype html><style>${css} body{width:auto;padding:0;display:inline-block} .ios{border-radius:22.37%}</style>${row('#101416', uri('app-icon-dark.svg'), 'ios')}${row('#ffffff', uri('app-icon-light.svg'), 'ios')}${row('#101416', uri('favicon.svg'))}${row('#ffffff', uri('mark-simple.svg'))}`);
   await page.waitForTimeout(300);
   await page.locator('body').screenshot({ path: path.join(B, 'png/icon-sizes.png') });
 }

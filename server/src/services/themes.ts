@@ -14,15 +14,15 @@ export const DEFAULT_THEME_ID = 'mediamax';
 
 /** Built-in theme presets. Admins can duplicate and edit them in the Branding Studio. */
 export const BUILTIN_THEMES: Theme[] = [
-  // The Kinora brand themes (default for new installs): primary from the logo's stem, accent from its beams, the
+  // The Kinora brand themes (default for new installs): mint/teal primary, warm sand accent, the
   // Lumen type pairing. The ids stay 'mediamax' / 'mediamax-light' so existing settings and preferences keep working.
   {
     ...base, id: 'mediamax', name: 'Kinora', mode: 'dark', radius: 14,
-    colors: { primary: '#9198FF', primaryText: '#0B0A1F', background: '#0D0C1D', surface: '#17152E', surfaceAlt: '#211E3D', text: '#F4F3FF', textMuted: '#A6A3CC', accent: '#FFA45C', border: '#2E2A52', success: '#2FD07F', warning: '#F5B014', danger: '#FF5C7A', overlay: '#0D0C1D' },
+    colors: { primary: '#63DEC5', primaryText: '#09251F', background: '#101416', surface: '#191F22', surfaceAlt: '#222B2E', text: '#F2F6F4', textMuted: '#A7B6B1', accent: '#DFBF86', border: '#34423F', success: '#65D39B', warning: '#E9BF6F', danger: '#FF8596', overlay: '#101416' },
   },
   {
     ...base, id: 'mediamax-light', name: 'Kinora Light', mode: 'light', radius: 14,
-    colors: { primary: '#4F3FE0', primaryText: '#FFFFFF', background: '#F7F6FF', surface: '#FFFFFF', surfaceAlt: '#EEECFB', text: '#14122B', textMuted: '#55527A', accent: '#C2410C', border: '#E0DDF3', success: '#15803D', warning: '#B45309', danger: '#D12A4A', overlay: '#F7F6FF' },
+    colors: { primary: '#137665', primaryText: '#FFFFFF', background: '#F4F8F6', surface: '#FFFFFF', surfaceAlt: '#E5EFEB', text: '#162321', textMuted: '#52655F', accent: '#836126', border: '#D0DFD9', success: '#15803D', warning: '#B45309', danger: '#BF2948', overlay: '#F4F8F6' },
   },
   {
     ...base, id: 'midnight', name: 'Midnight', mode: 'dark',

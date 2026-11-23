@@ -1,8 +1,16 @@
 /* Cinema layout. Theme and white-label colours remain owned by applyTheme. */
+.brand-mark { --brand-mark-color: #63DEC5; }
+:root[data-mode='light'] .brand-mark { --brand-mark-color: #137665; }
+.home-intro > div:first-child { min-width: 0; }
 .topbar-caption { color: var(--c-text-muted); font-size: .875rem; letter-spacing: .02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.home-intro { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 30px var(--gutter) 24px; }
+.home-intro { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 24px var(--gutter) 16px; }
 .home-eyebrow { font-size: .75rem; font-weight: 750; letter-spacing: .14em; color: var(--c-primary); margin: 0 0 10px; }
-.home-intro h1 { font-family: var(--font-display); font-size: clamp(1.8rem, 3vw, 2.8rem); font-weight: 700; letter-spacing: -.045em; line-height: 1.12; }
+.home-intro h1 { font-family: var(--font-display); font-size: clamp(1.7rem, 2.5vw, 2.3rem); font-weight: 700; letter-spacing: -.035em; line-height: 1.12; }
+.home-view-actions { display: flex; gap: 10px; flex: none; }
+.home-view-toggle { min-height: 44px; border: 1px solid var(--c-line); font-size: .875rem; }
+.home-view-toggle[aria-pressed='true'] { color: var(--c-primary); background: var(--c-primary-soft); }
+.app-shell:has(.home) .ambient { opacity: .18; }
+.home-watching .row { margin-bottom: 26px; }
 .home-welcome { color: var(--c-text-muted); margin-top: 12px; font-size: 1rem; line-height: 1.5; }
 .home-list-link { flex: none; border: 1px solid var(--c-line); background: var(--c-surface); }
 .home-libraries { display: flex; align-items: stretch; gap: 28px; overflow-x: auto; margin: 0 var(--gutter) 24px; border-bottom: 1px solid var(--c-line); scrollbar-width: thin; }
@@ -16,13 +24,13 @@
 .home-discovery .chip { min-height: 44px; font-size: .875rem; background: var(--c-surface); border: 1px solid var(--c-line); }
 
 /* A contained feature makes the collection visible without a full-screen scroll. */
-html:not(.tv) .home .hero { margin: 0 var(--gutter) 34px; height: auto; min-height: 480px; border-radius: calc(var(--radius-lg) + 4px); border: 1px solid var(--glass-border); background: var(--c-surface); color: #fff; }
+html:not(.tv) .home .hero { margin: 0 var(--gutter) 30px; height: auto; min-height: 380px; border-radius: calc(var(--radius-lg) + 4px); border: 1px solid var(--glass-border); background: var(--c-surface); color: #fff; }
 html:not(.tv) .home .hero-stage { transform: none; }
 html:not(.tv) .home .hero-bg .img { object-position: 65% center; }
 html:not(.tv) .home .hero-shade { background: linear-gradient(90deg, rgb(7 8 17 / .93), rgb(7 8 17 / .65) 42%, rgb(7 8 17 / .08) 75%), linear-gradient(0deg, rgb(7 8 17 / .8), transparent 65%); }
-html:not(.tv) .home .hero-content { width: 66%; max-width: 750px; padding: 44px 40px; opacity: 1; transform: none; }
-.hero-eyebrow { display: flex; gap: 8px; align-items: center; text-transform: uppercase; font-size: .75rem; font-weight: 750; letter-spacing: .14em; color: #e3d5ff; margin-bottom: 26px; }
-html:not(.tv) .home .hero-title { font-size: clamp(2.6rem, 4vw, 4.3rem); line-height: 1; }
+html:not(.tv) .home .hero-content { width: 66%; max-width: 750px; padding: 32px; opacity: 1; transform: none; }
+.hero-eyebrow { display: flex; gap: 8px; align-items: center; text-transform: uppercase; font-size: .75rem; font-weight: 750; letter-spacing: .14em; color: #c1eee1; margin-bottom: 18px; }
+html:not(.tv) .home .hero-title { font-size: clamp(2.2rem, 3.5vw, 3.7rem); line-height: 1; }
 html:not(.tv) .home .hero-logo { max-height: 110px; max-width: 90%; margin-bottom: 20px; }
 html:not(.tv) .home .hero-meta { font-size: .875rem; color: #eeeaf7; gap: 8px 12px; }
 html:not(.tv) .home .hero-rating { color: #ffd27a; }
@@ -33,13 +41,13 @@ html:not(.tv) .home .hero-actions { gap: 10px; }
 html:not(.tv) .home .hero-actions .btn { min-height: 46px; font-size: .9rem; padding: 0 18px; }
 html:not(.tv) .home .hero-actions .btn-glass { color: #fff; background: rgb(255 255 255 / .12); border-color: rgb(255 255 255 / .25); }
 html:not(.tv) .home .hero-play { min-width: 120px; }
-html:not(.tv) .home .hero-reel { right: 24px; bottom: 24px; left: auto; width: 220px; max-height: 82%; align-items: stretch; gap: 10px; color: #fff; }
+html:not(.tv) .home .hero-reel { right: 24px; bottom: 20px; left: auto; width: 220px; max-height: calc(100% - 40px); align-items: stretch; gap: 10px; color: #fff; }
 .reel-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: .75rem; font-weight: 650; letter-spacing: .04em; }
 .reel-pause { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: rgb(0 0 0 / .35); }
 html:not(.tv) .home .reel-frames { flex-direction: column; overflow-y: auto; padding: 0; border: 0; background: transparent; gap: 8px; border-radius: 0; scrollbar-width: thin; }
 html:not(.tv) .home .reel-frames::before, html:not(.tv) .home .reel-frames::after { display: none; }
 html:not(.tv) .home .reel-frame { width: 100%; height: 62px; display: flex; align-items: center; gap: 10px; padding: 8px; text-align: left; opacity: .8; transform: none; border-radius: 10px; background: rgb(9 10 20 / .72); border: 1px solid rgb(255 255 255 / .14); }
-html:not(.tv) .home .reel-frame.active { opacity: 1; border-color: #d3c9ff; background: rgb(43 39 69 / .88); box-shadow: none; }
+html:not(.tv) .home .reel-frame.active { opacity: 1; border-color: #a4f0de; background: rgb(26 56 49 / .9); box-shadow: none; }
 html:not(.tv) .home .reel-frame > .img, html:not(.tv) .home .reel-frame > .img-fallback { position: static; width: 64px; height: 40px; flex: none; border-radius: 5px; }
 .reel-caption { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .reel-caption strong { font-size: .875rem; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -72,6 +80,9 @@ html:not(.tv) .home .card-continue { width: clamp(250px, 25vw, 350px); }
 @media (max-width: 900px) {
   .topbar-caption { display: none; }
   .home-intro { padding-top: 24px; }
+  .home-intro { gap: 12px; }
+  .home-view-toggle { font-size: .8125rem; padding: 0 10px; }
+  .home-view-toggle .icon { display: none; }
   .home-list-link { display: none; }
   .home-libraries { gap: 22px; margin-bottom: 20px; }
   html:not(.tv) .home .hero { min-height: 510px; margin-bottom: 28px; }
