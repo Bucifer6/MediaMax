@@ -81,10 +81,11 @@ const RAIL_PINNED_KEY = 'mm.rail.pinned';
 /** Pinned: the rail stays open with labels and the page makes room for it. Remembered per device. */
 function useRailPinned(): [boolean, () => void] {
   const [pinned, setPinned] = useState(() => {
+    if (document.documentElement.classList.contains('tv')) return false;
     try {
-      return localStorage.getItem(RAIL_PINNED_KEY) === '1';
+      return localStorage.getItem(RAIL_PINNED_KEY) !== '0';
     } catch {
-      return false;
+      return true;
     }
   });
   const toggle = useCallback(() => {
@@ -201,6 +202,14 @@ export function Layout() {
   const closePalette = useCallback(() => setPalette((p) => ({ ...p, open: false })), []);
 
   useEffect(() => setDrawer(false), [loc.pathname]);
+  useEffect(() => {
+    if (!drawer) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDrawer(false);
+    };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [drawer]);
   // Every page starts in the theme's own light; pages with artwork (home hero, title pages) relight it in their effects.
   useLayoutEffect(() => setAmbient(null), [loc.pathname]);
   useEffect(() => {
@@ -251,7 +260,9 @@ export function Layout() {
           <Link to="/" className="rail-brand sidebar-brand" aria-label={`${branding.serverName || 'Kinora'} home`}>
             <BrandLogo height={30} />
           </Link>
-          <nav className="rail-nav">
+          <nav className="rail-nav" onClick={(event) => {
+            if ((event.target as HTMLElement).closest('a')) setDrawer(false);
+          }}>
             <NavItem to="/" end icon="home" label="Home" />
             <NavItem to="/search" icon="search" label="Search" />
             {features.requests && !kidsNoRequests && <NavItem to="/discover" icon="compass" label="Discover" />}
@@ -334,6 +345,7 @@ export function Layout() {
           <Link to="/" className="topbar-brand" aria-label={`${branding.serverName || 'Kinora'} home`}>
             <BrandLogo height={26} />
           </Link>
+          <span className="topbar-caption">{branding.tagline || 'Your own home cinema'}</span>
           <div className="topbar-spacer" />
           <button className="cmd-trigger" onClick={openPalette} aria-label="Search or jump to" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K /" data-nav>
             <Icon name="search" size={18} />

@@ -11,6 +11,7 @@ import { EmptyState, ErrorState } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { DecideBar } from '../components/decide/DecideBar';
 import { prefetchCommonPagesWhenIdle } from '../utils/prefetch';
+import { isIptvLibrary, libraryIcon } from '../utils/items';
 
 function rowLink(row: HomeRow): string | undefined {
   const l = row.link;
@@ -72,7 +73,7 @@ function HomeRowView({ row }: { row: HomeRow }) {
 let lastHome: { userId: string; data: HomeResponse } | null = null;
 
 export function Home() {
-  const { theme, user, libraries } = useApp();
+  const { theme, user, libraries, features } = useApp();
   const userId = user?.id ?? '';
   const home = useAsync(() => api.items.home().then((d) => {
     // Keep the featured titles the viewer is already looking at (the server picks new random ones each time), so the
@@ -156,12 +157,28 @@ export function Home() {
 
   return (
     <div className={`home ${heroRow && theme.heroStyle !== 'none' && heroRow.items.length ? 'has-hero' : 'no-hero'}`}>
+      <div className="home-intro">
+        <div>
+          <p className="home-eyebrow">YOUR COLLECTION. YOUR CINEMA.</p>
+          <h1>Make time for a great story.</h1>
+          <p className="home-welcome">Welcome back{user?.displayName ? `, ${user.displayName}` : ''}. Pick up where you left off, or find a new favourite.</p>
+        </div>
+        <Link to="/my-list" className="btn home-list-link"><Icon name="plus" size={18} /> My List</Link>
+      </div>
+      <nav className="home-libraries" aria-label="Browse your libraries">
+        <span className="home-library-current"><Icon name="home" size={17} /> For you</span>
+        {libraries.filter((l) => !isIptvLibrary(l.type) && (features.music || l.type !== 'music') && (features.photos || l.type !== 'photos')).map((l) => (
+          <Link key={l.id} to={`/library/${l.id}`} data-nav><Icon name={libraryIcon(l.type)} size={17} />{l.name}</Link>
+        ))}
+      </nav>
       {heroRow && theme.heroStyle !== 'none' && heroRow.items.length > 0 && <Hero items={heroRow.items} style={theme.heroStyle} />}
       <div className="home-rows">
-        <DecideBar className="home-decide" />
-        {rest.map((r) => (
-          <HomeRowView key={r.id} row={r} />
-        ))}
+        {rest.slice(0, 1).map((r) => <HomeRowView key={r.id} row={r} />)}
+        <div className="home-discovery">
+          <div><span className="home-eyebrow">A LITTLE INSPIRATION</span><h2>Something everyone will love.</h2><p>Let chance choose, or find your next watch together.</p></div>
+          <DecideBar className="home-decide" />
+        </div>
+        {rest.slice(1).map((r) => <HomeRowView key={r.id} row={r} />)}
       </div>
     </div>
   );

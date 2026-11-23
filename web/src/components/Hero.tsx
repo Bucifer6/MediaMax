@@ -47,6 +47,7 @@ const PREVIEW_DELAY_MS = 3000;
 export function Hero({ items, style = 'carousel' }: { items: Item[]; style?: HeroStyle }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [userPaused, setUserPaused] = useState(false);
   const play = usePlayItem();
   const list = style === 'static' ? items.slice(0, 1) : items.slice(0, 8);
   const previews = usePreviewsEnabled();
@@ -69,15 +70,15 @@ export function Hero({ items, style = 'carousel' }: { items: Item[]; style?: Her
   }, [current?.id, previews]);
 
   useEffect(() => {
-    if (style !== 'carousel' || paused || previewing || list.length < 2) return;
+    if (style !== 'carousel' || paused || userPaused || previewing || list.length < 2) return;
     const t = window.setTimeout(() => setIndex((i) => (i + 1) % list.length), SLIDE_MS);
     return () => window.clearTimeout(t);
-  }, [index, paused, previewing, list.length, style]);
+  }, [index, paused, userPaused, previewing, list.length, style]);
 
   if (!list.length || style === 'none') return null;
   const item = list[Math.min(index, list.length - 1)];
 
-  const running = style === 'carousel' && !paused && !previewing && list.length > 1;
+  const running = style === 'carousel' && !paused && !userPaused && !previewing && list.length > 1;
   return (
     <section
       ref={ref}
@@ -120,6 +121,7 @@ export function Hero({ items, style = 'carousel' }: { items: Item[]; style?: Her
         </button>
       )}
       <div className="hero-content" key={item.id} aria-live="polite">
+        <p className="hero-eyebrow"><Icon name="sparkles" size={16} /> In the spotlight</p>
         <div className="hero-logo-layer">
           {item.logoUrl ? (
             <Img src={item.logoUrl} width={600} className="hero-logo" alt={item.title} fallback={<h1 className="hero-title">{item.title}</h1>} />
@@ -158,9 +160,7 @@ export function Hero({ items, style = 'carousel' }: { items: Item[]; style?: Her
       {list.length > 1 && (
         // The reel: one frame per featured title; the current one fills as the slide's time runs out.
         <div className="hero-reel" role="group" aria-label="Featured titles">
-          <span className="reel-count" aria-hidden="true">
-            <b>{String(index + 1).padStart(2, '0')}</b> / {String(list.length).padStart(2, '0')}
-          </span>
+          <div className="reel-heading"><span>Featured collection</span><button type="button" className="reel-pause" onClick={() => setUserPaused((p) => !p)} aria-label={userPaused ? 'Play featured carousel' : 'Pause featured carousel'} aria-pressed={userPaused}><Icon name={userPaused ? 'play' : 'pause'} size={16} /></button></div>
           <div className="reel-frames">
             {list.map((it, i) => (
               <button
@@ -169,9 +169,10 @@ export function Hero({ items, style = 'carousel' }: { items: Item[]; style?: Her
                 onClick={() => setIndex(i)}
                 aria-label={`Show ${it.title}`}
                 aria-current={i === index ? 'true' : undefined}
-                tabIndex={-1}
+                data-nav
               >
                 <Img src={it.backdropUrl ?? it.thumbUrl ?? it.posterUrl} width={160} alt="" />
+                <span className="reel-caption"><strong>{it.title}</strong><small>{[it.year, it.genres[0]].filter(Boolean).join(' · ')}</small></span>
                 <span className="reel-progress">{i === index && <span className={`reel-fill ${running ? 'run' : ''}`} key={`${it.id}-${running}`} />}</span>
               </button>
             ))}
