@@ -1,0 +1,26 @@
+{
+  "results": [
+    "Desktop uses masthead and directory rather than persistent sidebar",
+    "Manual feature selection updates the story",
+    "Featured watchlist adds and removes through the real API",
+    "Programme order persists after reload",
+    "Directory focus is contained and Escape returns to the masthead",
+    "Global search remains available",
+    "Search shortcut closes the directory without competing focus traps",
+    "Title index / cover view works and persists",
+    "Genre filtering returns matching titles in the index",
+    "Catalogue opens the working title detail route",
+    "Start screening plays actual local H.264 video",
+    "Home and catalogue fit 360px",
+    "Phone directory opens and closes",
+    "Home and catalogue fit 390px",
+    "Home and catalogue fit 768px",
+    "Home and catalogue fit 1024px",
+    "Home and catalogue fit 1440px",
+    "Light theme uses the same editorial structure",
+    "No-feature themes retain a full-width programme board",
+    "TV retains the remote-first interface",
+    "No browser runtime errors"
+  ],
+  "errors": []
+}

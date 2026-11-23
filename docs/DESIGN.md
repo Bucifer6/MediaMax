@@ -1,6 +1,10 @@
-# Lumen: the Kinora design language
+# The Programme: Kinora's picture-house interface
 
-> **Review-branch proposal, November 2026:** see [UI research and Screenlight identity](UI_RESEARCH.md) for the proposed graphite/mint palette, film-strip K, quieter Home and remembered Resume first / Browse first layout. The following documents the original Lumen foundation; the proposal retains its theme and accessibility mechanisms while changing Home presentation and the stock brand.
+The proposed desktop/phone interface uses an editorial programme instead of a carousel and poster rails: a typographic masthead, manually selected feature story, a personal viewing board, an asymmetric collection spread and a readable library index. Global navigation lives in a masthead and keyboard-accessible directory. The stock graphite/mint identity remains; all colours still derive from server themes. See [UI research and rationale](UI_RESEARCH.md).
+
+Implementation: `components/Programme.tsx`, `styles/programme.css`, `components/Layout.tsx` and the title-index mode in `pages/Library.tsx`. Both programme order and library presentation can be changed and are remembered per device. Every configured home row remains available; collection sections expand to reveal all returned titles. Featured artwork is still linked to details; playback and watchlist buttons use the existing actions. Feature selection is manual, with no automatic rotation or trailer start. Title pages use a separate photograph and text composition.
+
+TV retains the previous remote-first presentation. The following describes that Lumen foundation and mechanisms still used elsewhere, rather than the new desktop/phone geometry.
 
 > The interface is lit by the films.
 

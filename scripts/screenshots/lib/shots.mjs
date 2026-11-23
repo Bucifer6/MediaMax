@@ -359,8 +359,10 @@ export const SHOTS = {
   // Lumen: a poster's peek card (hover dwell) and the ⌘K command palette.
   async peek(s) {
     const { ctx, page } = await s.context();
-    await s.goto(page, '/', 2000);
-    const card = page.locator('.row:not(.row-wide):not(.row-top10) a.card-poster').nth(1);
+    const movie = await s.state.admin.get(`/items/${s.state.M['neon-meridian']}`);
+    await s.goto(page, `/library/${movie.libraryId}`, 2000);
+    await page.getByRole('button', { name: 'Cover view', exact: true }).click();
+    const card = page.locator('.grid a.card-poster').nth(1);
     await card.scrollIntoViewIfNeeded();
     await page.evaluate(() => window.scrollBy(0, 160));
     await sleep(500);

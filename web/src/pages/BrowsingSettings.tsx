@@ -26,7 +26,7 @@ export function BrowsingSettings() {
           checked={user.preferences.autoplayPreviews !== false}
           onChange={(v) => void save({ autoplayPreviews: v })}
           label="Autoplay previews"
-          hint="Play trailers silently in the home banner and when you hover over a poster. Always off when your device asks for reduced motion."
+          hint="Play silent previews over artwork and TV banners where available. Always off when your device asks for reduced motion."
         />
       </div>
     </div>

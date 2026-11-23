@@ -198,17 +198,40 @@ export function Layout() {
   useSpatialNav();
   useCardLight();
 
-  const openPalette = useCallback(() => setPalette({ open: true, loaded: true }), []);
+  const openPalette = useCallback(() => {
+    setDrawer(false);
+    setPalette({ open: true, loaded: true });
+  }, []);
   const closePalette = useCallback(() => setPalette((p) => ({ ...p, open: false })), []);
 
   useEffect(() => setDrawer(false), [loc.pathname]);
   useEffect(() => {
     if (!drawer) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const rail = document.querySelector<HTMLElement>('.rail');
+    const frame = window.setTimeout(() => rail?.querySelector<HTMLElement>('.directory-close')?.focus(), 50);
     const close = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setDrawer(false);
+      if (event.key === 'Tab' && rail) {
+        const stops = [...rail.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex="0"]')].filter((element) => element.offsetParent !== null);
+        const first = stops[0];
+        const last = stops[stops.length - 1];
+        if (!first) return;
+        if (!rail.contains(document.activeElement) || (event.shiftKey && document.activeElement === first)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
     };
     window.addEventListener('keydown', close);
-    return () => window.removeEventListener('keydown', close);
+    return () => {
+      window.clearTimeout(frame);
+      window.removeEventListener('keydown', close);
+      if (previous?.isConnected) previous.focus();
+    };
   }, [drawer]);
   // Every page starts in the theme's own light; pages with artwork (home hero, title pages) relight it in their effects.
   useLayoutEffect(() => setAmbient(null), [loc.pathname]);
@@ -252,11 +275,14 @@ export function Layout() {
   const paletteCtx: PaletteContext = { local, iptv, liveTv, dvr, manager, showRequests, showIssues, discover: features.requests && !kidsNoRequests, hasProfiles };
 
   return (
-    <div className={`app-shell ${drawer ? 'drawer-open' : ''} ${pinned ? 'rail-pinned' : ''} ${music.current ? 'has-mini' : ''}`}>
+    <div className={`app-shell ${document.documentElement.classList.contains('tv') ? '' : 'edition'} ${drawer ? 'drawer-open' : ''} ${pinned ? 'rail-pinned' : ''} ${music.current ? 'has-mini' : ''}`}>
       <AmbientLight />
       <a href="#main" className="skip-link">Skip to content</a>
-      <aside className="rail sidebar" aria-label="Main navigation">
+      <aside className="rail sidebar" aria-label="Main navigation" onClick={(event) => {
+        if ((event.target as HTMLElement).closest('a')) setDrawer(false);
+      }}>
         <div className="rail-panel">
+          <button type="button" className="directory-close" onClick={() => setDrawer(false)} aria-label="Close directory"><Icon name="x" size={20} /></button>
           <Link to="/" className="rail-brand sidebar-brand" aria-label={`${branding.serverName || 'Kinora'} home`}>
             <BrandLogo height={30} />
           </Link>
@@ -343,10 +369,17 @@ export function Layout() {
       <div className="main-col">
         <header className={`topbar cmdbar ${scrolled ? 'scrolled' : ''}`}>
           <Link to="/" className="topbar-brand" aria-label={`${branding.serverName || 'Kinora'} home`}>
-            <BrandLogo height={26} />
+            <BrandLogo height={32} />
           </Link>
+          <nav className="masthead-nav" aria-label="Primary navigation">
+            <NavLink to="/" end>The programme</NavLink>
+            {local.length > 0 && <NavLink to={`/library/${local[0].id}`}>The collection</NavLink>}
+            <NavLink to="/my-list">Saved</NavLink>
+            {liveTv && <NavLink to="/livetv">On air</NavLink>}
+          </nav>
           <span className="topbar-caption">{branding.tagline || 'Your own home cinema'}</span>
           <div className="topbar-spacer" />
+          <button className="directory-trigger" type="button" onClick={() => setDrawer((value) => !value)} aria-expanded={drawer} aria-label="Open directory"><Icon name="menu" size={18} /><span>Directory</span></button>
           <button className="cmd-trigger" onClick={openPalette} aria-label="Search or jump to" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K /" data-nav>
             <Icon name="search" size={18} />
             <span className="cmd-trigger-text">Search titles, pages, actions…</span>

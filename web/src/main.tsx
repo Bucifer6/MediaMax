@@ -18,6 +18,7 @@ import './styles/karaoke.css';
 import './styles/ai.css';
 import './styles/lumen.css';
 import './styles/cinema.css';
+import './styles/programme.css';
 import { detectTv, installTvMode } from './tv/spatial';
 import { installFx } from './theme/fx';
 import { initCapabilities } from './player/capabilities';

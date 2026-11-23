@@ -55,11 +55,12 @@ async function newPage() {
     try {
       localStorage.setItem('mm.token', token);
       localStorage.setItem('mm.whatsNewSeen', '999');
+      localStorage.setItem('mm.library.presentation', 'covers'); // keep the grid benchmark comparable
     } catch { /* ignore */ }
     window.__lt = [];
     window.__seen = {};
     try {
-      const sels = ['.splash', '.home .skeleton', '.home-rows a.card[href^="/item/"]', '.grid a.card[href^="/item/"]', '.guide-row .guide-prog', '.detail-actions button', '.player .player-video-host'];
+      const sels = ['.splash', '.home .skeleton, .programme .skeleton', '.programme .story-title, .home-rows a.card[href^="/item/"]', '.grid a.card[href^="/item/"]', '.guide-row .guide-prog', '.detail-actions button', '.player .player-video-host'];
       new MutationObserver(() => {
         for (const sel of sels) if (!(sel in window.__seen) && document.querySelector(sel)) window.__seen[sel] = Math.round(performance.now());
       }).observe(document, { childList: true, subtree: true });
@@ -135,8 +136,8 @@ try {
       await page.goto(`${server.base}/`, { waitUntil: 'commit' });
       // Real title cards (the loading skeleton uses .card too). The time comes from a MutationObserver in the page, so
       // it doesn't depend on how often Playwright polls a busy, throttled main thread.
-      await page.waitForSelector('.home-rows a.card[href^="/item/"]', { timeout: 60000, state: 'attached' });
-      const rowsAt = await page.evaluate(() => window.__seen['.home-rows a.card[href^="/item/"]'] ?? performance.now());
+      await page.waitForSelector('.programme .story-title, .home-rows a.card[href^="/item/"]', { timeout: 60000, state: 'attached' });
+      const rowsAt = await page.evaluate(() => window.__seen['.programme .story-title, .home-rows a.card[href^="/item/"]'] ?? performance.now());
       const fcp = await page.evaluate(() => performance.getEntriesByName('first-contentful-paint')[0]?.startTime ?? null);
       await page.waitForLoadState('networkidle').catch(() => {});
       const lt = await longTasks(page);
@@ -147,7 +148,7 @@ try {
       /* ------------------------ Home → item → play ----------------------- */
       const t0 = await page.evaluate(() => performance.now());
       // A poster row (cards in Continue Watching / Next Up start playback instead of opening the title).
-      await page.locator('.home-rows .row:not(.row-wide):not(.row-channels) .card[href^="/item/"]').first().click();
+      await page.locator('.programme .story-title, .home-rows .row:not(.row-wide):not(.row-channels) .card[href^="/item/"]').first().click();
       try {
         await page.waitForSelector('.detail-actions button', { timeout: 60000, state: 'attached' });
       } catch (e) {

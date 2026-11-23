@@ -11,6 +11,7 @@ import { Icon } from '../components/Icon';
 import { isIptvLibrary, libraryIcon, libraryItemTypes } from '../utils/items';
 import { ListenBrainzRow } from '../components/ListenBrainz';
 import { LibraryDecideButtons } from '../components/decide/DecideBar';
+import { CatalogueEntry } from '../components/Programme';
 
 const PAGE = 60;
 const LETTERS = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
@@ -27,6 +28,14 @@ const SORTS: { value: ItemSort; label: string }[] = [
 export function LibraryPage() {
   const { libraryId = '' } = useParams();
   const { libraries, user } = useApp();
+  const tv = document.documentElement.classList.contains('tv');
+  const [presentation, setPresentation] = useState(() => {
+    try { return localStorage.getItem('mm.library.presentation') === 'covers' ? 'covers' : 'index'; } catch { return 'index'; }
+  });
+  const changePresentation = (next: string) => {
+    setPresentation(next);
+    try { localStorage.setItem('mm.library.presentation', next); } catch { /* session only */ }
+  };
   const toast = useToast();
   const library = libraries.find((l) => l.id === libraryId);
   const [params, setParams] = useSearchParams();
@@ -154,6 +163,11 @@ export function LibraryPage() {
         )}
       </header>
 
+      {!tv && <div className="library-presentation" role="group" aria-label="Library presentation">
+        <button aria-pressed={presentation === 'index'} onClick={() => changePresentation('index')}>Title index</button>
+        <button aria-pressed={presentation === 'covers'} onClick={() => changePresentation('covers')}>Cover view</button>
+      </div>}
+
       <div className="filter-bar">
         {series && (
           <span className="chip active series-chip">
@@ -217,7 +231,10 @@ export function LibraryPage() {
           ) : !loading && !items.length ? (
             <EmptyState icon="filter" title="No matches" message={letter || genre || year || played || fav ? 'Try clearing some filters.' : 'This library is empty. Items appear here once a scan finds them.'} />
           ) : (
-            <div className={`grid grid-${shape}`}>
+            !tv && presentation === 'index' ? <div className="catalogue-list">
+              {items.map((item) => <CatalogueEntry key={item.id} item={item} />)}
+              {loading && <div className="skeleton" style={{ height: 140 }} />}
+            </div> : <div className={`grid grid-${shape}`}>
               {items.map((it) => (
                 <PosterCard key={it.id} item={it} shape={shape} width="100%" />
               ))}

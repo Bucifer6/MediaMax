@@ -2,6 +2,12 @@
 
 Review date: 23 November 2026. Proposed on the UI review branch; not approved for main or deployment.
 
+## Current proposal: The Programme
+
+The current owner-directed design takes a more distinctive editorial picture-house direction than the initial conventional media layout discussed below. A large typographic masthead and manual feature story sit beside a compact viewing board. Collections use asymmetric spreads, and libraries open as readable title indexes with visible playback/save actions. A cover view remains available. The directory retains the full navigation, including administration, music, live TV and account tools. The viewing-first setting now moves the programme board before the feature (first on phones, left on desktop); this preference and the catalogue view are remembered per device. TV keeps its existing remote interface.
+
+This is a creative response to the owner's request for differentiation, not a claim that the research proves viewers prefer serif typography or magazine layouts. Resume, search, filtering and saving are still checked as working interactions. Feature selection is manual and motion is quieter. Initial findings and the colour rationale below remain useful context; their earlier home-layout response has been superseded by this proposal.
+
 ## Method and limits
 
 Desk research across first-hand Plex community feedback, Plex support documentation, Jellyfin release notes, a Jellyfin enhancement project and WCAG guidance. These are qualitative signals, not interviews with Kinora users, a representative survey, or evidence of market-wide preference. Complaints in support forums are especially prone to selection bias. No popularity percentages or conversion claims are inferred.
