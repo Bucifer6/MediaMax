@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { VideoPlayerScreen, type IntroChain } from '@/player/VideoPlayerScreen';
 import { Loading } from '@/components/States';
 import { useApi, useSession } from '@/state/session';

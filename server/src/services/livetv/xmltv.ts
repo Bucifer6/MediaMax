@@ -125,13 +125,6 @@ export async function openXmltv(input: string, opts: { userAgent?: string | null
  * Streams an XMLTV document (optionally gzipped) and calls back per channel/programme.
  * Memory use stays flat even for very large guides.
  */
-export async function parseXmltvStream(
-  url: string,
-  opts: { userAgent?: string | null; onChannel: (c: XmltvChannel) => void; onProgramme: (p: XmltvProgramme) => void; timeoutMs?: number; timezone?: string | null },
-): Promise<{ channels: number; programmes: number }> {
-  return parseXmltvReadable(await openXmltv(url, opts), opts);
-}
-
 export function parseXmltvReadable(stream: NodeJS.ReadableStream, opts: { onChannel: (c: XmltvChannel) => void; onProgramme: (p: XmltvProgramme) => void; timezone?: string | null }): Promise<{ channels: number; programmes: number }> {
   return new Promise((resolve, reject) => {
     const parser = sax.createStream(false, { lowercase: true, trim: true });

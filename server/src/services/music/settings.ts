@@ -44,5 +44,3 @@ export function updateMusicSettings(patch: Partial<MusicSettings>): MusicSetting
   cache = next;
   return next;
 }
-
-export const resetMusicSettingsCache = () => (cache = null);

@@ -1,8 +1,7 @@
 import type { Item, Paged, SmartFilter, SmartRule, User } from '@mediamax/shared';
 import type { Param } from '../db.js';
-import { db } from '../db.js';
 import { badRequest } from '../util/errors.js';
-import { parseJson, toInt } from '../util/misc.js';
+import { toInt } from '../util/misc.js';
 import { queryWhere, smartHooks } from './items.js';
 
 /** Item types a smart list returns when no `type` rule is given. */
@@ -128,5 +127,3 @@ export function evaluateSmart(user: User, filter: SmartFilter, limit = 100, offs
 }
 
 smartHooks.evaluate = (user, filter, limit, offset) => evaluateSmart(user, filter as SmartFilter, limit, offset);
-
-export const smartFilterOf = (itemId: string): SmartFilter | null => parseJson<SmartFilter | null>(db.get<{ smart: string | null }>('SELECT smart FROM items WHERE id = ?', itemId)?.smart, null);

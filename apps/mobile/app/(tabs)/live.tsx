@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, ScrollView, View } from 'react-native';
 import type { Channel } from '@/api/types';
 import { useQuery } from '@/api/useQuery';

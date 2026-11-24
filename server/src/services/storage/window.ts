@@ -10,8 +10,6 @@ export function parseHm(v: string | null | undefined): number | null {
   return h * 60 + min;
 }
 
-export const formatHm = (mins: number) => `${String(Math.floor(mins / 60) % 24).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
-
 /**
  * Is `date` inside the daily window [start, end)? Windows may wrap midnight (23:00–04:00).
  * start === end means "all day" (no restriction).

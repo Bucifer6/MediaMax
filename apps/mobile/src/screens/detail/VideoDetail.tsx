@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import type { Item, UserItemData } from '@/api/types';
 import { useQuery } from '@/api/useQuery';

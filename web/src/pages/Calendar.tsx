@@ -10,7 +10,6 @@ import { Badge, EmptyState, ErrorState, Img, Skeleton } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { itemLink, posterFor } from '../utils/items';
 
-const DAY = 86_400_000;
 const pad = (n: number) => String(n).padStart(2, '0');
 /** Local YYYY-MM-DD. */
 const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;

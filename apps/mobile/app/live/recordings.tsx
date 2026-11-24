@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 import type { Recording, RecordingRule, RecordingStatus } from '@/api/types';
 import { useQuery } from '@/api/useQuery';

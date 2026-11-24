@@ -1,5 +1,4 @@
 import { useLocalSearchParams } from 'expo-router';
-import React from 'react';
 import { VideoPlayerScreen } from '@/player/VideoPlayerScreen';
 
 export default function LivePlayerRoute() {

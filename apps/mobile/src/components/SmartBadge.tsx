@@ -1,5 +1,4 @@
 /** "Smart" marker for smart collections / playlists (items whose `smart` filter is set). */
-import React from 'react';
 import { View } from 'react-native';
 import type { Item } from '@/api/types';
 import { useTheme } from '@/theme';

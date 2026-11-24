@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from 'react';
+import type { CSSProperties } from 'react';
 import type { SubtitleStyle } from '@mediamax/shared';
 
 export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = { size: 'medium', color: 'white', background: 'shadow', font: 'default', position: 'bottom', verticalOffset: 0, edge: 'outline', assStyles: 'auto' };
@@ -91,10 +91,6 @@ export function subtitleDeclarations(s: SubtitleStyle, base = 'clamp(16px, 2.6vw
   };
 }
 
-function toCssText(decl: Record<string, string>) {
-  return Object.entries(decl).map(([k, v]) => `${k}: ${v};`).join(' ');
-}
-
 /** React inline style (camelCased) for the settings preview. */
 export function subtitlePreviewStyle(s: SubtitleStyle, basePx: number): CSSProperties {
   const d = subtitleDeclarations(s, `${basePx}px`);
@@ -107,31 +103,11 @@ export function subtitlePreviewStyle(s: SubtitleStyle, basePx: number): CSSPrope
 /** Class that every player <video> carries so the user's subtitle style reaches its `::cue`s. */
 export const SUBTITLE_CLASS = 'mm-subs';
 
-/** Inject (and keep updated) a stylesheet styling `video.mm-subs::cue` with the user's subtitle style. */
-export function useSubtitleStyleSheet(style: SubtitleStyle) {
-  const key = JSON.stringify(style);
-  useEffect(() => {
-    let el = document.getElementById('mm-subtitle-style') as HTMLStyleElement | null;
-    if (!el) {
-      el = document.createElement('style');
-      el.id = 'mm-subtitle-style';
-      document.head.appendChild(el);
-    }
-    el.textContent = `video.${SUBTITLE_CLASS}::cue { ${toCssText(subtitleDeclarations(style))} }`;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-}
-
 /** Lines from the bottom for the "raised" position (WebVTT negative line numbers count from the bottom). */
 const RAISED_LINE = -4;
 const origLine = new WeakMap<VTTCue, VTTCue['line']>();
 
-/** Apply the vertical position to every cue of a track (cues that set their own line are left alone). */
-export function positionCues(track: TextTrack, position: SubtitleStyle['position']) {
-  positionCueList(track.cues, position);
-}
-
-/** Same for a list of cues (e.g. a live caption track's `activeCues`). */
+/** Apply the vertical position to a list of cues (cues that set their own line are left alone), e.g. a live caption track's `activeCues`. */
 export function positionCueList(cues: TextTrackCueList | null, position: SubtitleStyle['position']) {
   if (!cues) return;
   for (const c of Array.from(cues)) {

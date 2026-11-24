@@ -1,5 +1,5 @@
 /** "Play on…": pick another of your online devices and send it an item or channel (remote control). */
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import type { RemoteTarget, Renderer, RendererState } from '@/api/types';
 import { discoverRenderers, listRenderers, playOnRenderer, rendererCommand, RENDERER_ICON, RENDERER_KIND_LABEL } from '@/cast/renderers';

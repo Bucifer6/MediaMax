@@ -3,7 +3,7 @@
  * a status filter, Approve and Decline with a note).
  */
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { FlatList, RefreshControl, ScrollView, View } from 'react-native';
 import type { MediaRequest, RequestStatus } from '@/api/types';
 import { invalidate, useQuery } from '@/api/useQuery';

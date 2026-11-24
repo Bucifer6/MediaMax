@@ -7,7 +7,7 @@
  */
 import type { RouletteFilters, RouletteMood, RouletteMoodPreset, User } from '@mediamax/shared';
 import type { Param } from '../../db.js';
-import { accessClause, allowedLibraryIds } from '../items.js';
+import { accessClause } from '../items.js';
 import { ratingLevel } from '../../util/misc.js';
 
 /** mulberry32: small, fast, deterministic PRNG in [0, 1). */
@@ -55,17 +55,6 @@ export function groupAccess(users: User[], alias = 'i'): { sql: string; params: 
     params.push(...a.params);
   }
   return { sql: parts.length ? parts.join(' AND ') : '0', params };
-}
-
-/** Libraries every user in the group may open. */
-export function groupLibraryIds(users: User[]): string[] {
-  if (!users.length) return [];
-  let ids = allowedLibraryIds(users[0]);
-  for (const u of users.slice(1)) {
-    const mine = new Set(allowedLibraryIds(u));
-    ids = ids.filter((id) => mine.has(id));
-  }
-  return ids;
 }
 
 interface MoodDef extends RouletteMoodPreset {

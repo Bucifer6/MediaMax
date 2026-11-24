@@ -3,7 +3,7 @@
  * that accelerates and decelerates onto the pick (native-driver transform; reduced motion = fade), then a reveal
  * with Play, Spin again, Not this one and Marathon (random titles back to back).
  */
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Alert, Animated, Easing, ScrollView, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 import type { RouletteFilters, RouletteMood, RouletteSpinResponse } from '@/api/types';

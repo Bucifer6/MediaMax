@@ -144,7 +144,6 @@ const PENDING_SQL = `FROM items i JOIN media m ON m.item_id = i.id
 const NEEDS_FULL = `(a.item_id IS NULL OR a.media_mtime IS NOT m.mtime)`;
 
 let running = false;
-export const analysisRunning = () => running;
 
 export function analysisStatus() {
   const total = db.get<{ n: number }>("SELECT COUNT(*) n FROM items i WHERE i.type = 'track' AND EXISTS (SELECT 1 FROM media m WHERE m.item_id = i.id AND m.path IS NOT NULL)")?.n ?? 0;

@@ -34,9 +34,7 @@ export function AiDjSettingsPanel({ value, onChange }: { value: AiDjSettings; on
   const toast = useToast();
   const [testing, setTesting] = useState<'llm' | 'tts' | null>(null);
   const v = value;
-  const setLlm = (p: Partial<AiDjSettings['llm']>) => onChange({ ...v, llm: { ...v.llm, ...p } });
   const setTts = (p: Partial<AiDjSettings['tts']>) => onChange({ ...v, tts: { ...v.tts, ...p } });
-  const llmPreset = LLM_PRESETS.find((p) => p.provider === v.llm.provider && (p.provider === 'none' || p.url === v.llm.url))?.id ?? 'custom';
   const ttsPreset = TTS_PRESETS.find((p) => p.patch.provider === v.tts.provider && (p.patch.provider !== 'openai' || p.patch.url === v.tts.url))?.id ?? 'custom';
 
   const test = async (kind: 'llm' | 'tts') => {
@@ -56,7 +54,6 @@ export function AiDjSettingsPanel({ value, onChange }: { value: AiDjSettings; on
   };
 
   const tag = (t: string) => <span className={`ai-tag ai-tag-${t.replace(' ', '-')}`}>{t}</span>;
-  const curLlm = LLM_PRESETS.find((p) => p.id === llmPreset);
   const curTts = TTS_PRESETS.find((p) => p.id === ttsPreset);
 
   return (

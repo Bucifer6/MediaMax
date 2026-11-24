@@ -566,8 +566,6 @@ export function refreshEpgSource(id: string, opts: RefreshOpts = {}): Promise<vo
   return p;
 }
 
-export const isRefreshing = (id: string) => refreshing.has(id);
-
 async function doRefresh(id: string, opts: RefreshOpts) {
   const g = getEpgSourceRow(id);
   if (!g.enabled) return;

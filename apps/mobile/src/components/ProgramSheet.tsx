@@ -1,5 +1,5 @@
 /** Programme details + actions (watch live, catch-up, record, record series). */
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Channel, Program } from '@/api/types';
@@ -123,7 +123,6 @@ export function ProgramSheet({
 }
 
 function Badge({ label, color }: { label: string; color: string }) {
-  const t = useTheme();
   return (
     <View style={{ borderWidth: 1, borderColor: color, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}>
       <T variant="caption" color={color}>

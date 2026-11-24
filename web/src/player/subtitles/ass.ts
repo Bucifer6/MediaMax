@@ -332,6 +332,3 @@ export function assOpacity(l: AssLayout, t: number, dur: number): number {
   if (l.fade.out > 0 && t > dur - l.fade.out) return Math.max(0, (dur - t) / l.fade.out);
   return 1;
 }
-
-/** Whether a cue changes appearance over time (needs per-frame updates). */
-export const assAnimated = (c: TextCue) => !!c.ass && (!!c.ass.move || !!c.ass.fade || c.runs.some((r) => r.karaoke));

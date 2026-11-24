@@ -287,11 +287,6 @@ export function loadHelp(dir = config.helpDir): Loaded {
 
 let cache: Loaded | null = null;
 const loaded = () => (cache ??= loadHelp());
-/** Load (or reload, for tests and the docs workflow) the articles from disk. */
-export function reloadHelp(dir?: string) {
-  cache = loadHelp(dir);
-  return cache;
-}
 
 /* ------------------------------- queries ------------------------------- */
 

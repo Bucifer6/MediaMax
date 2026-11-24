@@ -166,17 +166,6 @@ export const cachedPalette = (url: string | null | undefined): Palette | null =>
 
 export interface ThemeTone { mode: 'dark' | 'light'; bg: Rgb; text: Rgb; muted: Rgb }
 
-function readTone(): ThemeTone {
-  const cs = getComputedStyle(document.documentElement);
-  const mode = document.documentElement.dataset.mode === 'light' ? 'light' : 'dark';
-  return {
-    mode,
-    bg: parseColor(cs.getPropertyValue('--c-bg')) ?? (mode === 'light' ? [245, 247, 255] : [10, 15, 34]),
-    text: parseColor(cs.getPropertyValue('--c-text')) ?? (mode === 'light' ? [11, 16, 38] : [242, 245, 255]),
-    muted: parseColor(cs.getPropertyValue('--c-text-muted')) ?? (mode === 'light' ? [79, 90, 126] : [154, 166, 204]),
-  };
-}
-
 /**
  * Fit artwork colours to the theme so the light never costs readability: in a dark theme each colour is darkened
  * until the theme's *muted* text still has ≥ 4.5:1 on it (so body text has far more); in a light theme it is
@@ -232,10 +221,6 @@ export function useAmbientState() {
     },
     () => current,
   );
-}
-
-export function fittedPalette(p: Palette): Palette {
-  return fitToTheme(p, readTone());
 }
 
 /**

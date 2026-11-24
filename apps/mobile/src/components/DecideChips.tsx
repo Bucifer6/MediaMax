@@ -1,5 +1,4 @@
 /** Home entry points for Roulette ("Can't decide? Spin") and Movie Match. */
-import React from 'react';
 import { View } from 'react-native';
 import { router } from 'expo-router';
 import { useTheme } from '@/theme';

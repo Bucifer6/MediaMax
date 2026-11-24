@@ -8,7 +8,7 @@ import { stableId } from '../util/ids.js';
 import { nowIso, parseJson, pool, sortTitle } from '../util/misc.js';
 import { logger } from '../util/log.js';
 import { displayName, isValidUtf8Name } from '../util/fsnames.js';
-import { probe, normLang, type ProbeResult } from './probe.js';
+import { probe, type ProbeResult } from './probe.js';
 import { registerImage } from './images.js';
 import { readNfo, type NfoData } from './metadata/nfo.js';
 import { importSidecarEdl } from './edl.js';
@@ -891,13 +891,6 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     events.toAdmins({ type: 'library.scan', libraryId: libId, status: 'finished', progress: 100 });
     events.broadcast({ type: 'library.updated', libraryId: libId });
   }
-}
-
-/** Scan a single file path into whichever library contains it (used by DVR + file watcher). */
-export async function scanPath(filePath: string) {
-  const libs = db.all('SELECT * FROM libraries');
-  const lib = libs.find((l) => parseJson<string[]>(l.paths, []).some((p) => filePath.startsWith(p + path.sep) || filePath === p));
-  if (lib) await scanLibrary(lib.id);
 }
 
 export function toLibrary(r: Row): Library {

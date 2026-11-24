@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, ScrollView, View } from 'react-native';
 import { appVersion } from '@/api/device';
 import { Button } from '@/components/Button';

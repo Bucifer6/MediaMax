@@ -1,5 +1,5 @@
 /** Settings → Connected services → Trakt (device-code sign-in, scrobble toggle, disconnect). */
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, ScrollView, View } from 'react-native';
 import type { TraktDeviceCode, TraktStatus } from '@/api/types';
 import { Button } from '@/components/Button';

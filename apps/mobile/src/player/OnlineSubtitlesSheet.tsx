@@ -1,5 +1,5 @@
 /** "Search online…" from the player's subtitle menu: OpenSubtitles search + download. */
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import type { Item, RemoteSubtitle } from '@/api/types';
 import { Button } from '@/components/Button';

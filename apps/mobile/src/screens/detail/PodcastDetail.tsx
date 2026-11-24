@@ -1,6 +1,6 @@
 /** Podcast show: header + episodes newest first (date, duration, played state). */
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ActivityIndicator, FlatList, View } from 'react-native';
 import type { Item, UserItemData } from '@/api/types';
 import { useQuery } from '@/api/useQuery';

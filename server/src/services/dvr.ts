@@ -16,7 +16,7 @@ import { accessibleChannelRow, channelInputArgs, channelStreamUrl, trackUpstream
 import { effEpg } from './livetv/epg/epg.js';
 import { scanLibrary } from './scanner.js';
 import { ffprobeJson } from './probe.js';
-import { homeHooks, getItem, itemsByIds } from './items.js';
+import { homeHooks, itemsByIds } from './items.js';
 import { getBranding } from './branding.js';
 
 const log = logger('dvr');

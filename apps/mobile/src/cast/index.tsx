@@ -153,8 +153,6 @@ export function isOurMedia(status: MediaStatus | null, url: string | null): bool
   return mi.contentUrl === url || mi.contentId === url;
 }
 
-export const isCastPlaying = (status: MediaStatus | null) => status?.playerState === 'playing' || status?.playerState === 'buffering' || status?.playerState === 'loading';
-
 /** Text tracks for the receiver, ids 1..n in `info.subtitles` order. */
 export function castSubtitleTracks(api: MediaMaxClient, subs: SubtitleTrack[]): MediaTrack[] {
   return subs.map((s, i) => ({

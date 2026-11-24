@@ -103,9 +103,6 @@ export function updateMetadataSettings(patch: Partial<MetadataSettings>): Metada
   return next;
 }
 
-/** Forget the in-memory copy (tests, backup restore). */
-export const resetMetadataSettingsCache = () => (cache = null);
-
 export function providerConfig(id: BuiltinProviderId): MetadataProviderConfig {
   return getMetadataSettings().providers[id];
 }

@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCapabilities, useSession } from '@/state/session';
-import { useDownloads } from '@/state/downloads';
 import { useTheme } from '@/theme';
 import { formatTime } from '@/utils/format';
 import { Focusable } from './Focusable';

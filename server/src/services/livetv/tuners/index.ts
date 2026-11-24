@@ -25,8 +25,6 @@ export const TUNER_TYPES = ['tvheadend', 'satip', 'enigma2'] as const;
 export type TunerType = (typeof TUNER_TYPES)[number];
 export const isTunerType = (t: string | null | undefined): t is TunerType => !!t && (TUNER_TYPES as readonly string[]).includes(t);
 
-export const TUNER_LABELS: Record<TunerType, string> = { tvheadend: 'TVHeadend', satip: 'SAT>IP', enigma2: 'Enigma2' };
-
 export interface TunerSourceIn {
   type: string;
   url: string;

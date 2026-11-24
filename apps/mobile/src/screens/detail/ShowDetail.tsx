@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FlatList, ScrollView, View } from 'react-native';
 import type { Item, UserItemData } from '@/api/types';
 import { useQuery } from '@/api/useQuery';

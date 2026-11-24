@@ -9,7 +9,7 @@
  *
  * Counters and the sleep timer live at module level so they survive the player remounting for the next title.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, View } from 'react-native';
 import { router } from 'expo-router';
 import type { Item } from '@/api/types';

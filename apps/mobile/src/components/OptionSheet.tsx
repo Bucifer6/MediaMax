@@ -1,5 +1,4 @@
 /** Picker sheet (bottom sheet on phones, centred panel on TV). */
-import React from 'react';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/theme';

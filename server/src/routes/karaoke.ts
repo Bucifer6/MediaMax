@@ -43,12 +43,6 @@ let store: StemStore | null = null;
 export function stemStore(): StemStore {
   return (store ??= createStemStore());
 }
-/** Tests: use another store (e.g. with a mock fetch). */
-export function setStemStore(s: StemStore | null) {
-  setSeparationQueue(null);
-  store?.close();
-  store = s;
-}
 
 let queue: SeparationQueue | null = null;
 /** The process-wide server separation queue. */

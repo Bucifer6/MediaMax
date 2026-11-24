@@ -5,7 +5,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import * as RN from 'react-native';
-import { BackHandler, Platform, View, type ViewProps } from 'react-native';
+import { BackHandler, Platform, type ViewProps } from 'react-native';
 
 export interface TVRemoteEvent {
   eventType:
@@ -91,12 +91,4 @@ export function useBackHandler(handler: () => boolean, enabled = true) {
       sub.remove();
     };
   }, [enabled]);
-}
-
-/** Focus guide (keeps D-pad focus inside a region); plain View off TV. */
-export function FocusGuide(props: ViewProps & { autoFocus?: boolean; trapFocusUp?: boolean; trapFocusDown?: boolean; trapFocusLeft?: boolean; trapFocusRight?: boolean }) {
-  const Guide = isTV ? tv.TVFocusGuideView : undefined;
-  if (Guide) return <Guide {...props} />;
-  const { autoFocus: _a, trapFocusUp: _u, trapFocusDown: _d, trapFocusLeft: _l, trapFocusRight: _r, ...rest } = props;
-  return <View {...rest} />;
 }

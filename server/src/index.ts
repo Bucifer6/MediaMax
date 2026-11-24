@@ -18,6 +18,7 @@ import { startRenderers, stopRenderers } from './services/renderers/index.js';
 import { helpArticleCount } from './services/help.js';
 import { stopAllSessions } from './services/playback.js';
 import { stopActiveRecordings } from './services/dvr.js';
+import { stopNetwork } from './services/network.js';
 
 const log = logger('main');
 
@@ -55,6 +56,7 @@ async function main() {
     await stopHomeAssistant().catch(() => {});
     await stopRenderers();
     await stopRemoteAccess();
+    await stopNetwork();
     await app.close();
     cleanupTranscodeDir();
     process.exit(0);

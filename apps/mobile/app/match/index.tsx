@@ -1,5 +1,5 @@
 /** Movie Match: start a session (phone or TV) or join one with the code shown on the host's screen. */
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import type { MatchContentKind, MatchRule } from '@/api/types';

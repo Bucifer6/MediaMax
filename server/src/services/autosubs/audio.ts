@@ -5,7 +5,6 @@
 import fs from 'node:fs';
 import type { AudioStream } from '@mediamax/shared';
 import { config } from '../../config.js';
-import { normLang } from '../probe.js';
 import { lang2 } from '../subtitleProviders/lang.js';
 import { runLowPriority } from './engine.js';
 import { parseSilences, type Silence } from './srt.js';
@@ -25,8 +24,6 @@ export function pickAudioStream(streams: AudioStream[], prefer?: string | null):
   const pick = (prefer && usable.find(({ s }) => tagged(s.language) === lang2(prefer))) || usable.find(({ s }) => s.default) || usable[0];
   return { ordinal: pick.ordinal, language: tagged(pick.s.language) };
 }
-
-export const audioLanguageCode = (l: string | null | undefined) => (l ? normLang(l) : null);
 
 /** 16 kHz mono 16-bit WAV of one audio track. */
 export async function extractAudio(input: string, ordinal: number, out: string, signal?: AbortSignal): Promise<void> {

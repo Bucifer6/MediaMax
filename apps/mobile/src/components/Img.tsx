@@ -1,5 +1,4 @@
 import { Image, type ImageContentFit } from 'expo-image';
-import React from 'react';
 import { PixelRatio, type StyleProp, type ImageStyle } from 'react-native';
 import { useSession } from '@/state/session';
 

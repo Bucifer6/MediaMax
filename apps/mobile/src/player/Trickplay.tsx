@@ -9,7 +9,7 @@
  * - Downloads keep their sheets next to the video (state/downloads.tsx), so previews work offline.
  */
 import { Image } from 'expo-image';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { getJSON, setJSON } from '@/api/storage';
 import type { Chapter, TrickplayInfo } from '@/api/types';

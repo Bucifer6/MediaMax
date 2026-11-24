@@ -1,4 +1,3 @@
-import React from 'react';
 import { useTheme } from '@/theme';
 import { Focusable } from './Focusable';
 import { Icon, type IconName } from './Icon';
