@@ -190,3 +190,10 @@ export function nextBarMs(posMs: number, bpm: number | null | undefined, anchorM
 export function transitionProgress(now: number, start: number, len: number): number {
   return Math.max(0, Math.min(1, (now - start) / Math.max(1, len)));
 }
+
+/** Can this browser time-stretch an <audio> element without changing pitch? */
+export function nativeKeyLock(): boolean {
+  if (typeof HTMLMediaElement === 'undefined') return false;
+  const p = HTMLMediaElement.prototype as unknown as Record<string, unknown>;
+  return 'preservesPitch' in p || 'webkitPreservesPitch' in p || 'mozPreservesPitch' in p;
+}

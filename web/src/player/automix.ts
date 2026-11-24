@@ -125,8 +125,8 @@ export function planAutomix(
   let bars = BLEND_BARS[style];
   const fits = (n: number) => {
     const len = n * barA;
-    // At most ~30 s and 40 % of either track (the incoming one covers len × ratio of its own time).
-    return len <= 30000 && len <= durA * 0.4 && (durB <= 0 || len * ratio <= (durB - mixIn) * 0.6);
+    // At most ~34 s (16 bars down to ~113 BPM) and 40 % of either track (the incoming one covers len × ratio of its own time).
+    return len <= 34000 && len <= durA * 0.4 && (durB <= 0 || len * ratio <= (durB - mixIn) * 0.6);
   };
   while (bars > 2 && !fits(bars)) bars /= 2;
   if (!fits(bars)) return fixedFade(a, aa, b, ab, style);

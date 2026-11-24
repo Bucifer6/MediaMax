@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Chapter, DjMixRequest, Item, PlaybackInfo } from '@mediamax/shared';
+import type { Chapter, DjMixRequest, DjOrderRequest, DjOrderSource, DjTransition, DjTransitionPreference, Item, PlaybackInfo, TrackAnalysis, UserPreferences } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { errorMessage, withToken } from '../api/client';
 import { attachStream } from './engine';
@@ -8,6 +8,11 @@ import { profileWithBitrate } from './deviceProfile';
 import { absoluteUrl, CAST_OWNER_EVENT, castContentType, castDeviceProfile, castOwner, claimCast, useCast, type CastHandle, type CastOwner } from './cast';
 import { isAlbumInOrder, MusicOutput, replayGainFactor, SUSPENDS_WEB_AUDIO_IN_BACKGROUND, type Deck } from './musicOutput';
 import { useApp } from '../state/app';
+import {
+  AUTOMIX_DEFAULT, AUTOMIX_MAX_STRETCH, automixApplies, automixLabel, FIXED_FADE_MS, isGaplessJoin, phaseNudge, planAutomix, sanitizePlan,
+} from './automix';
+import { glideMs, matchRates, nativeKeyLock, transitionPoints } from './djMixer';
+import { echoDelaySec } from './djStrip';
 import { useToast } from '../state/toast';
 import { findNextEpisode, shuffled, tracksFor } from '../utils/playback';
 import { hasAudioResume, isAudio, isResumable, isVideo, playLink } from '../utils/items';
@@ -30,6 +35,30 @@ const HANDOVER_WINDOW_MS = 600;
 const HANDOVER_LEAD_MS = 8;
 /** Radio: fetch more tracks when fewer than this many are left after the current one. */
 const RADIO_LOW_WATER = 5;
+/** Play as mix: page size for big sources (a whole library streams in batches). */
+const MIX_PAGE = 50;
+
+/** What "Play as mix" plays. */
+export interface MixSource {
+  /** "Mix: <label>" in the player. */
+  label: string;
+  /** Tracks in the source's own order (album, playlist, folder, My List, the queue). */
+  items?: Item[];
+  start?: number;
+  /** Smart order (tempo, key, energy flow) from the server: a library, genre or artist, paged in batches. */
+  source?: DjOrderSource;
+  /** Put `items` in smart order instead of their own (Shuffle + Mix). */
+  smart?: boolean;
+}
+
+/** A running Automix blend, for Now Playing ("Mixing into …"). */
+export interface BlendState {
+  into: Item;
+  /** "Bass swap", "Filter fade", "Echo out", "Crossfade"… */
+  label: string;
+  /** 0–1. */
+  progress: number;
+}
 
 /** Song / album / artist radio: an endless DJ-style mix seeded from one item, played through the normal queue. */
 export interface RadioState {
@@ -85,6 +114,22 @@ interface MusicApi {
   output: MusicOutputApi;
   /** The live deck plays an alternative source (karaoke stem mix) instead of the track's own stream. */
   altSource: string | null;
+  /** Automix (lite DJ) is on: tracks blend like one continuous mix. The preference, or forced on by "Play as mix". */
+  automix: boolean;
+  /** Turn Automix on/off (saved as the listener's preference; off also ends a "Play as mix" session). */
+  setAutomix: (on: boolean) => void;
+  /** Automix transition feel (saved preference). */
+  mixStyle: DjTransitionPreference;
+  setMixStyle: (s: DjTransitionPreference) => void;
+  /** "Play as mix" session, if one is running. */
+  mix: { label: string } | null;
+  /** Play a music source as a continuous mix (Automix on for the session, Endless on). */
+  playAsMix: (source: MixSource) => Promise<void>;
+  /** Endless: when the mix runs out, keep going with similar tracks from the library (server only, no AI). */
+  endless: boolean;
+  setEndless: (on: boolean) => void;
+  /** The running blend ("Mixing into …"), null between transitions. */
+  blend: BlendState | null;
 }
 
 export interface MusicOutputApi {
@@ -170,18 +215,27 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const handoverRef = useRef<{ timer: number | null; fromDeck: 0 | 1 } | null>(null);
   /** Sleep-timer fade factor (0–1) applied on top of the volume. */
   const sleepFactorRef = useRef(1);
-  const { system, user } = useApp();
+  const { system, user, setUser } = useApp();
   const crossfadeSec = Math.max(0, Math.min(12, user?.preferences.musicCrossfadeSec ?? 0));
   const rgMode = user?.preferences.replayGain ?? 'auto';
+  /* Automix (lite DJ) */
+  const automixPref = user?.preferences.automix ?? AUTOMIX_DEFAULT;
+  const mixStyle: DjTransitionPreference = user?.preferences.automixStyle ?? 'auto';
+  const [mixSession, setMixSession] = useState<{ label: string } | null>(null);
+  const automixOn = !!mixSession || automixPref;
+  const [endless, setEndless] = useState(true);
+  const [blend, setBlend] = useState<BlendState | null>(null);
   const current = index >= 0 ? queue[index] ?? null : null;
-  const stateRef = useRef({ queue, index, repeat, durationMs, positionMs, chapters, volume, muted, sleep, shuffle, crossfadeSec, rgMode, radio });
-  stateRef.current = { queue, index, repeat, durationMs, positionMs, chapters, volume, muted, sleep, shuffle, crossfadeSec, rgMode, radio };
+  const stateRef = useRef({ queue, index, repeat, durationMs, positionMs, chapters, volume, muted, sleep, shuffle, crossfadeSec, rgMode, radio, automixOn, mixStyle, endless });
+  stateRef.current = { queue, index, repeat, durationMs, positionMs, chapters, volume, muted, sleep, shuffle, crossfadeSec, rgMode, radio, automixOn, mixStyle, endless };
   const playingRef = useRef(playing);
   playingRef.current = playing;
   /** Karaoke: the live deck plays this URL instead of the track's stream. */
   const altRef = useRef<{ itemId: string; url: string } | null>(null);
   const [altSource, setAltSourceState] = useState<string | null>(null);
 
+  /** Music decks whose playback rate an Automix blend or tempo glide controls right now. */
+  const rateHoldRef = useRef(new Set<0 | 1>());
   /** Route audio through Web Audio (gain ramps, ReplayGain boost) — except on iOS unless crossfade is on. */
   const wantGraph = () => !SUSPENDS_WEB_AUDIO_IN_BACKGROUND || stateRef.current.crossfadeSec > 0;
   /** The live deck's element (null during SSR). */
@@ -193,6 +247,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const r = spoken ? rate : 1;
     for (const d of out?.decks ?? []) {
       d.el.defaultPlaybackRate = r;
+      // An Automix blend / tempo glide owns a music deck's rate until it ends.
+      if (!spoken && rateHoldRef.current.has(d.id)) continue;
       d.el.playbackRate = r;
     }
   }, [out, rate, spoken, current?.id]);
@@ -279,6 +335,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   /** Stop a deck: end its server session and detach its stream. `report` = it was heard (send a final progress). */
   const releaseDeck = useCallback((d: Deck, keepalive = false) => {
     d.token++;
+    if (rateHoldRef.current.delete(d.id)) d.el.playbackRate = d.el.defaultPlaybackRate || 1;
     const sid = d.sessionId;
     if (sid) {
       // Only a deck that actually played reports progress; a preloaded one never started.
@@ -299,8 +356,83 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     if (out) releaseDeck(out.active, keepalive);
   }, [out, releaseDeck]);
 
+  /* ---------------- Automix blends ---------------- */
+  const blendRef = useRef<{
+    from: Deck; to: Deck; n: number; into: Item; label: string; tr: DjTransition; inRate: number; outRate: number;
+    token: number; durMs: number; startedAt: number; timers: number[];
+  } | null>(null);
+  const glideRef = useRef<number | null>(null);
+  const clearBlendTimers = (b: { timers: number[] }) => b.timers.forEach((t) => window.clearTimeout(t));
+
+  /** Glide a tempo-matched deck back to its own tempo over `ms` (the key stays: preservesPitch). */
+  const glideHome = useCallback((d: Deck, ms: number) => {
+    const stop = () => {
+      if (glideRef.current != null) window.clearInterval(glideRef.current);
+      glideRef.current = null;
+    };
+    stop();
+    const from = d.el.playbackRate;
+    const tok = d.token;
+    const t0 = performance.now();
+    glideRef.current = window.setInterval(() => {
+      if (d.token !== tok) return stop();
+      const x = Math.min(1, (performance.now() - t0) / Math.max(500, ms));
+      d.el.playbackRate = from + (1 - from) * x;
+      if (x >= 1) {
+        rateHoldRef.current.delete(d.id);
+        stop();
+      }
+    }, 250);
+  }, []);
+
+  /** Cut a blend (seek, pause, track change): the outgoing deck stays at full level, the incoming one is dropped. */
+  const abortBlend = useCallback(() => {
+    const b = blendRef.current;
+    if (!b || !out) return;
+    blendRef.current = null;
+    clearBlendTimers(b);
+    setBlend(null);
+    if (handoverRef.current?.fromDeck === b.from.id) handoverRef.current = null;
+    out.endBlend();
+    out.setFade(b.from.id, 1);
+    if (rateHoldRef.current.delete(b.from.id)) b.from.el.playbackRate = 1;
+    if (b.to.token === b.token && out.active !== b.to) {
+      b.to.el.pause();
+      releaseDeck(b.to);
+      out.setFade(b.to.id, 0);
+    }
+  }, [out, releaseDeck]);
+
+  /** Finish a blend now (it ran its course, or the listener skipped): the incoming track takes over. */
+  const completeBlend = useCallback(() => {
+    const b = blendRef.current;
+    if (!b || !out) return;
+    blendRef.current = null;
+    clearBlendTimers(b);
+    setBlend(null);
+    handoverRef.current = null;
+    out.endBlend();
+    if (b.to.token !== b.token) return; // the incoming deck was reloaded meanwhile
+    b.from.el.pause();
+    releaseDeck(b.from);
+    out.setFade(b.from.id, 1);
+    if (out.active === b.from) out.swap();
+    b.to.queueIndex = b.n;
+    adoptRef.current = { itemId: b.into.id, index: b.n };
+    setIndex(b.n);
+    setInfo(b.to.info);
+    setPosition(b.to.offsetMs + b.to.el.currentTime * 1000);
+    setDuration(b.to.info?.durationMs ?? b.into.durationMs ?? 0);
+    // Back to its own tempo over 16 bars (its bpm = the outgoing beat's bpm / the ratio).
+    if (Math.abs(b.to.el.playbackRate - 1) > 0.001) {
+      const bpmIn = b.tr.beatMs ? 60000 / b.tr.beatMs / (b.tr.tempoRatio || 1) : null;
+      glideHome(b.to, glideMs(16, bpmIn, b.to.el.playbackRate));
+    } else rateHoldRef.current.delete(b.to.id);
+  }, [out, releaseDeck, glideHome]);
+
   /** Cancel a scheduled handover and silence the deck that is fading out, if any. */
   const cancelHandover = useCallback(() => {
+    if (blendRef.current) abortBlend();
     const h = handoverRef.current;
     if (!h || !out) return;
     if (h.timer != null) window.clearTimeout(h.timer);
@@ -311,7 +443,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       releaseDeck(from);
       out.setFade(from.id, 1);
     }
-  }, [out, releaseDeck]);
+  }, [out, releaseDeck, abortBlend]);
 
   /** Attach `item` to deck `d`. Returns false when superseded or failed. */
   const loadDeck = useCallback(async (d: Deck, item: Item, queueIndex: number, startMs: number, onFatal: (msg: string) => void): Promise<boolean> => {
@@ -547,6 +679,11 @@ export function MusicProvider({ children }: { children: ReactNode }) {
 
   const next = useCallback(() => {
     out?.prime(wantGraph());
+    // Skipping during an Automix blend completes it: the incoming track simply takes over.
+    if (blendRef.current) {
+      completeBlend();
+      return;
+    }
     const n = nextIndexOf();
     const { queue: q, index: i } = stateRef.current;
     if (n >= 0 && n === i && q[n]) {
@@ -562,7 +699,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       liveEl()?.pause();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextIndexOf, cancelHandover, out]);
+  }, [nextIndexOf, cancelHandover, completeBlend, out]);
 
   const prev = useCallback(() => {
     out?.prime(wantGraph());
@@ -589,11 +726,73 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   /** Should the move from `a` to `b` crossfade (vs. a plain gapless join)? Albums played in order stay gapless. */
   const fadeSecFor = useCallback((a: Item | undefined, b: Item | undefined) => {
     const st = stateRef.current;
+    // Automix plans its own blends (or a gapless join); the fixed crossfade setting applies when it's off.
+    if (automixActive() && automixApplies(a, b)) return 0;
     if (!st.crossfadeSec || !a || !b || a.type !== 'track' || b.type !== 'track') return 0;
     if (!st.shuffle && a.parentId && a.parentId === b.parentId) return 0;
     const shortest = Math.min(a.durationMs || Infinity, b.durationMs || Infinity) / 1000;
     return Math.max(0, Math.min(st.crossfadeSec, shortest / 3));
   }, []);
+
+  /* ---------------- Automix plans ---------------- */
+  /** Automix runs on Web Audio (it needs gain automation); on iOS only where the graph is in use (see wantGraph). */
+  const automixActive = () => stateRef.current.automixOn && (!SUSPENDS_WEB_AUDIO_IN_BACKGROUND || !!out?.webAudio);
+  /** Track analysis per item (server's own API; on-demand analysis there), shared by planning and gapless checks. */
+  const analysesRef = useRef(new Map<string, Promise<TrackAnalysis | null>>());
+  const analysisFor = useCallback((id: string) => {
+    const m = analysesRef.current;
+    let p = m.get(id);
+    if (!p) {
+      p = api.dj.analysis(id).catch(() => null);
+      m.set(id, p);
+      if (m.size > 500) m.delete(m.keys().next().value!);
+    }
+    return p;
+  }, []);
+  const seedAnalyses = useCallback((list: Record<string, TrackAnalysis | null> | { item: Item; analysis: TrackAnalysis | null }[]) => {
+    const m = analysesRef.current;
+    const entries = Array.isArray(list) ? list.map((t) => [t.item.id, t.analysis] as const) : Object.entries(list);
+    for (const [id, a] of entries) if (a) m.set(id, Promise.resolve(a));
+  }, []);
+  /** The plan for the move from the current track to the next: tr = null means a gapless join. */
+  const planRef = useRef<{ key: string; ready: boolean; tr: DjTransition | null } | null>(null);
+  const serverPlansRef = useRef(true);
+  const planKey = (a: Item, b: Item) => `${a.id}>${b.id}>${stateRef.current.mixStyle}>${stateRef.current.shuffle ? 1 : 0}`;
+  const planFor = (a: Item | undefined, b: Item | undefined) => {
+    const p = planRef.current;
+    return a && b && p?.key === planKey(a, b) ? p : null;
+  };
+  const nextId = queue[nextIndexOf()]?.id;
+  useEffect(() => {
+    const a = queue[index];
+    const b = queue[nextIndexOf()];
+    if (!automixOn || !a || !b || !automixApplies(a, b) || repeat === 'one') {
+      planRef.current = null;
+      return;
+    }
+    const key = planKey(a, b);
+    if (planRef.current?.key === key) return;
+    planRef.current = { key, ready: false, tr: null };
+    const style = mixStyle;
+    void (async () => {
+      const [aa, ab] = await Promise.all([analysisFor(a.id), analysisFor(b.id)]);
+      let tr: DjTransition | null = null;
+      if (!isGaplessJoin(a, b, aa, ab, shuffle)) {
+        // The server's planner (same per-pair logic as advanced DJ mixes); the local one if that isn't available.
+        if (serverPlansRef.current) {
+          tr = await api.dj.transitions({ pairs: [{ from: a.id, to: b.id }], transitions: style, maxStretchPct: AUTOMIX_MAX_STRETCH * 100 })
+            .then((r) => r.transitions[0] ?? null)
+            .catch((e: { status?: number }) => {
+              if (e?.status === 404) serverPlansRef.current = false;
+              return null;
+            });
+        }
+        tr = sanitizePlan(tr ?? planAutomix(a, aa, b, ab, style), a, aa, b, ab, style);
+      }
+      if (planRef.current?.key === key) planRef.current = { key, ready: true, tr };
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id, nextId, automixOn, mixStyle, shuffle, repeat]);
 
   const preloadingRef = useRef(false);
   /** Prepare the next queue entry on the standby deck (music only, local playback). */
@@ -609,10 +808,20 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     if (sb.itemId === item.id && (sb.ready || sb.sessionId)) return;
     const d = out.active;
     const remaining = (d.el.duration - d.el.currentTime) * 1000;
-    if (!Number.isFinite(remaining) || remaining > PRELOAD_LEAD_MS + fadeSecFor(cur, item) * 1000) return;
+    if (!Number.isFinite(remaining)) return;
+    let startMs = 0;
+    if (automixActive() && automixApplies(cur, item)) {
+      // Automix: prepared ahead of the planned mix-out point, already at the incoming track's mix-in point.
+      const plan = planFor(cur, item);
+      const tr = plan?.ready ? plan.tr : null;
+      if (tr) {
+        if (tr.mixOutMs - (d.offsetMs + d.el.currentTime * 1000) > PRELOAD_LEAD_MS) return;
+        startMs = tr.mixInMs;
+      } else if (remaining > PRELOAD_LEAD_MS) return;
+    } else if (remaining > PRELOAD_LEAD_MS + fadeSecFor(cur, item) * 1000) return;
     preloadingRef.current = true;
     out.setFade(sb.id, 0);
-    loadDeck(sb, item, n, 0, () => releaseDeck(sb))
+    loadDeck(sb, item, n, startMs, () => releaseDeck(sb))
       .then((ok) => {
         if (ok) out.setReplayGain(sb.id, deckGain(sb));
       })
@@ -665,6 +874,86 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     return true;
   }, [out, nextIndexOf, deckGain, releaseDeck]);
 
+  /**
+   * Start an Automix blend into the prepared standby deck. The outgoing deck stays the "current" track until the
+   * blend ends (Now Playing shows "Mixing into …"). Every level and effect is scheduled on the audio clock.
+   */
+  const startBlend = useCallback((planned: DjTransition) => {
+    if (!out) return false;
+    const from = out.active;
+    const to = out.standby;
+    const n = nextIndexOf();
+    const st = stateRef.current;
+    const into = st.queue[n];
+    if (n < 0 || !into || !to.ready || to.itemId !== into.id) return false;
+    let tr = planned;
+    const rate0 = from.el.playbackRate || 1;
+    const pos = from.offsetMs + from.el.currentTime * 1000;
+    const endMs = Number.isFinite(from.el.duration) ? from.offsetMs + from.el.duration * 1000 : pos + tr.crossfadeMs;
+    const leftWall = Math.max(0, (endMs - pos) / rate0);
+    const late = (pos - tr.mixOutMs) / rate0;
+    const keepPitch = nativeKeyLock();
+    if (late > 4000 || (tr.style === 'blend' && !keepPitch && Math.abs((tr.tempoRatio || 1) - 1) > 0.002)) {
+      // Far past the planned point (after a seek), or no pitch-preserving playback for the tempo match: a short plain blend.
+      tr = { ...tr, style: 'fade', tempoRatio: 1, fx: 'none', crossfadeMs: Math.min(late > 4000 ? 3000 : FIXED_FADE_MS[st.mixStyle], leftWall * rate0) };
+    }
+    const beat = tr.style === 'blend';
+    const rates = beat ? matchRates(tr.tempoRatio, rate0, AUTOMIX_MAX_STRETCH) : { inRate: 1, outRate: rate0 };
+    for (const d of [from, to]) {
+      const el = d.el as HTMLAudioElement & { webkitPreservesPitch?: boolean };
+      el.preservesPitch = true;
+      el.webkitPreservesPitch = true;
+      rateHoldRef.current.add(d.id);
+    }
+    if (Math.abs(rates.outRate - rate0) > 1e-4) from.el.playbackRate = rates.outRate;
+    to.el.playbackRate = rates.inRate;
+    // Exactly on the planned mix-in (plus however late the start is, so the beats still meet).
+    const wantIn = tr.mixInMs + (beat && late > 0 ? late * rates.inRate : 0);
+    if (Math.abs(to.offsetMs + to.el.currentTime * 1000 - wantIn) > 25 && wantIn >= to.offsetMs) {
+      to.pendingSeek = null;
+      to.el.currentTime = (wantIn - to.offsetMs) / 1000;
+    }
+    const durMs = Math.max(200, Math.min(tr.crossfadeMs / rates.outRate, leftWall));
+    const { kSwap, kCut } = transitionPoints(tr, rates.outRate);
+    out.resume();
+    out.setReplayGain(to.id, deckGain(to));
+    out.blend(from.id, to.id, tr.fx ?? 'none', durMs / 1000, kSwap, kCut, echoDelaySec(tr.beatMs, rates.outRate));
+    handoverRef.current = { timer: null, fromDeck: from.id };
+    const label = automixLabel(tr);
+    const b = { from, to, n, into, label, tr, inRate: rates.inRate, outRate: rates.outRate, token: to.token, durMs, startedAt: performance.now(), timers: [] as number[] };
+    blendRef.current = b;
+    void to.el.play().catch(() => {
+      if (blendRef.current === b) abortBlend();
+    });
+    b.timers.push(window.setTimeout(() => {
+      if (blendRef.current === b) completeBlend();
+    }, durMs + 60));
+    const dbg = window as unknown as { vibeAutomix?: Record<string, unknown> };
+    dbg.vibeAutomix = { tr, rates, durMs, late, from: st.queue[st.index]?.id, to: into.id };
+    if (beat && keepPitch) {
+      // Beat-phase check once playback has settled: nudge the incoming deck's rate briefly if it's off the beat.
+      b.timers.push(window.setTimeout(() => {
+        if (blendRef.current !== b) return;
+        const pa = b.from.offsetMs + b.from.el.currentTime * 1000;
+        const pb = b.to.offsetMs + b.to.el.currentTime * 1000;
+        const err = pb - (tr.mixInMs + (pa - tr.mixOutMs) * (b.inRate / b.outRate));
+        (dbg.vibeAutomix ??= {}).phaseErrMs = Math.round(err);
+        const nudge = phaseNudge(err, b.inRate);
+        if (!nudge) return;
+        b.to.el.playbackRate = nudge.rate;
+        b.timers.push(window.setTimeout(() => {
+          if (blendRef.current === b) b.to.el.playbackRate = b.inRate;
+        }, nudge.holdMs));
+      }, 700));
+    }
+    setBlend({ into, label, progress: 0 });
+    b.timers.push(window.setInterval(() => {
+      if (blendRef.current !== b) return;
+      setBlend({ into, label, progress: out.blendProgress() ?? Math.min(1, (performance.now() - b.startedAt) / b.durMs) });
+    }, 250));
+    return true;
+  }, [out, nextIndexOf, deckGain, abortBlend, completeBlend]);
+
   /** Called on every timeupdate of the live deck: preload, then start the next track on time. */
   const checkTransition = useCallback(() => {
     if (!out || castingRef.current || handoverRef.current) return;
@@ -675,7 +964,24 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     if (!to.ready || d.el.paused) return;
     const remainingMs = ((d.el.duration - d.el.currentTime) * 1000) / (d.el.playbackRate || 1);
     if (!Number.isFinite(remainingMs)) return;
-    const fade = fadeSecFor(st.queue[st.index], st.queue[nextIndexOf()]);
+    const cur = st.queue[st.index];
+    const nx = st.queue[nextIndexOf()];
+    const plan = automixActive() && automixApplies(cur, nx) ? planFor(cur, nx) : null;
+    if (plan?.tr && to.itemId === nx?.id) {
+      // Automix: start the blend exactly on the planned mix-out point (a timer closes the gap between timeupdates).
+      const tr = plan.tr;
+      const wait = (tr.mixOutMs - (d.offsetMs + d.el.currentTime * 1000)) / (d.el.playbackRate || 1);
+      if (wait <= HANDOVER_WINDOW_MS) {
+        const timer = window.setTimeout(() => {
+          if (handoverRef.current?.timer !== timer) return;
+          handoverRef.current = null;
+          if (!startBlend(tr)) handover(0);
+        }, Math.max(0, wait - HANDOVER_LEAD_MS));
+        handoverRef.current = { timer, fromDeck: d.id };
+      }
+      return;
+    }
+    const fade = fadeSecFor(cur, nx);
     if (fade > 0) {
       if (remainingMs <= fade * 1000) handover(Math.min(fade, remainingMs / 1000));
       return;
@@ -690,7 +996,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       }, wait);
       handoverRef.current = { timer, fromDeck: d.id };
     }
-  }, [out, maybePreload, fadeSecFor, nextIndexOf, handover]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [out, maybePreload, fadeSecFor, nextIndexOf, handover, startBlend]);
 
   // A stale preload (queue edited, repeat/shuffle changed): drop it so the right track is prepared.
   useEffect(() => {
@@ -723,7 +1030,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         d.pendingSeek = null;
         if (target == null) return;
         const local = (target - d.offsetMs) / 1000;
-        if (local > 0.5) a.currentTime = local;
+        // Exact: Automix preloads the next track at its mix-in point, which can be a fraction of a second in.
+        if (local > 0.02) a.currentTime = local;
       };
       const onPlay = () => {
         out.resume();
@@ -733,6 +1041,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       };
       const onPause = () => {
         if (!live()) return;
+        // Paused from outside (headset, OS media controls) mid-blend: cut it so the incoming track doesn't play on alone.
+        if (blendRef.current && !a.ended) abortBlend();
         setPlaying(false);
         if (!a.ended) report('paused');
       };
@@ -755,6 +1065,11 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         if (r === 'one') {
           a.currentTime = 0;
           void a.play();
+          return;
+        }
+        // The outgoing track ran out during an Automix blend: the incoming one takes over.
+        if (blendRef.current) {
+          completeBlend();
           return;
         }
         // Gapless fallback when the timer didn't get there first.
@@ -791,7 +1106,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       window.clearInterval(iv);
       window.removeEventListener('pagehide', unload);
     };
-  }, [out, next, report, stopSession, releaseDeck, checkTransition, handover, applyMaster]);
+  }, [out, next, report, stopSession, releaseDeck, checkTransition, handover, applyMaster, completeBlend, abortBlend]);
 
   useEffect(() => {
     if (castingRef.current) castRef.current.setVolume(volume);
@@ -1080,6 +1395,88 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       });
   }, [radio, queue, index]);
 
+  /* ---------------- Play as mix ---------------- */
+  /** Smart-ordered source still being paged in (a whole library streams in batches). */
+  const mixSourceRef = useRef<{ base: DjOrderRequest; remaining: number } | null>(null);
+  const mixFetching = useRef(false);
+  const playAsMix = useCallback(async (src: MixSource) => {
+    out?.prime(true);
+    try {
+      let tracks: Item[];
+      let start = src.start ?? 0;
+      mixSourceRef.current = null;
+      if (src.source || src.smart) {
+        const base: DjOrderRequest = src.source ? { source: src.source, harmonic: true } : { itemIds: (src.items ?? []).map((i) => i.id).slice(0, 5000), harmonic: true };
+        const r = await api.dj.order({ ...base, limit: src.source ? MIX_PAGE : 500 });
+        seedAnalyses(r.analyses);
+        tracks = r.items.filter(isAudio);
+        mixSourceRef.current = r.remaining > 0 ? { base, remaining: r.remaining } : null;
+        start = 0;
+      } else tracks = (src.items ?? []).filter(isAudio);
+      if (!tracks.length) {
+        toast.show('Nothing to mix here yet');
+        return;
+      }
+      setRadio(null);
+      setShuffleState(false);
+      setRepeat('off');
+      setMixSession({ label: src.label });
+      setEndless(true);
+      startAtRef.current = null;
+      setQueue(tracks);
+      setIndex(-1);
+      window.setTimeout(() => setIndex(Math.max(0, Math.min(start, tracks.length - 1))), 0);
+    } catch (e) {
+      toast.error(e);
+    }
+  }, [out, toast, seedAnalyses]);
+
+  // Keep a mix going: the next page of a big source, then (Endless) similar tracks from the library.
+  useEffect(() => {
+    if (!mixSession || mixFetching.current || index < 0) return;
+    if (queue.length - index - 1 >= RADIO_LOW_WATER) return;
+    const src = mixSourceRef.current;
+    const ids = queue.map((q) => q.id);
+    let more: Promise<Item[]>;
+    if (src && src.remaining > 0) {
+      more = api.dj.order({ ...src.base, history: ids.slice(-5000), limit: MIX_PAGE }).then((r) => {
+        seedAnalyses(r.analyses);
+        src.remaining = r.remaining;
+        return r.items;
+      });
+    } else if (endless) {
+      // Seeded from the last played tracks; local scoring only (no prompt, so no AI).
+      more = api.dj.mix({ history: ids.slice(-200), count: 10, harmonic: true, curve: 'steady', transitions: mixStyle, maxStretchPct: AUTOMIX_MAX_STRETCH * 100 }).then((m) => {
+        seedAnalyses(m.tracks);
+        return m.tracks.map((t) => t.item);
+      });
+    } else return;
+    mixFetching.current = true;
+    const session = mixSession;
+    more
+      .then((list) => {
+        if (stateRef.current.queue.length === 0) return;
+        const seen = new Set(stateRef.current.queue.map((q) => q.id));
+        const add = list.filter((t) => isAudio(t) && !seen.has(t.id));
+        if (add.length && session) setQueue((q) => [...q, ...add]);
+      })
+      .catch(() => {})
+      .finally(() => {
+        mixFetching.current = false;
+      });
+  }, [mixSession, endless, queue, index, mixStyle, seedAnalyses]);
+
+  /** Save a music preference for this listener (optimistic). */
+  const savePref = useCallback((patch: Partial<UserPreferences>) => {
+    if (!user) return;
+    const prev = user;
+    setUser({ ...user, preferences: { ...user.preferences, ...patch } });
+    api.auth.updateMe({ preferences: patch }).then(setUser).catch((e) => {
+      setUser(prev);
+      toast.error(e);
+    });
+  }, [user, setUser, toast]);
+
   // Release the audio graph on unmount.
   useEffect(() => () => out?.close(), [out]);
 
@@ -1090,6 +1487,9 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         if (!items.length) return;
         out?.prime(wantGraph());
         setRadio(null);
+        // Normal Play follows the Automix preference ("Play as mix" sessions end here).
+        setMixSession(null);
+        mixSourceRef.current = null;
         startAtRef.current = startMs != null && items[start] ? { id: items[start]!.id, ms: startMs } : null;
         const list = shuffle && !hasAudioResume(items[start]!) ? [items[start]!, ...shuffled(items.filter((_, i) => i !== start))] : items;
         setQueue(list);
@@ -1139,6 +1539,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         liveEl()?.pause();
         if (castingRef.current) castRef.current.stop();
         setRadio(null);
+        setMixSession(null);
+        mixSourceRef.current = null;
         setQueue([]);
         setIndex(-1);
       },
@@ -1177,9 +1579,25 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       },
       output: outputApi,
       altSource,
+      automix: automixOn,
+      setAutomix: (on) => {
+        if (!on) {
+          setMixSession(null);
+          if (blendRef.current) completeBlend();
+        }
+        if (on !== automixPref || user?.preferences.automix === undefined) savePref({ automix: on });
+      },
+      mixStyle,
+      setMixStyle: (st) => savePref({ automixStyle: st }),
+      mix: mixSession,
+      playAsMix,
+      endless,
+      setEndless,
+      blend,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto, togglePlayback, pausePlayback, cast, casting, sleep, setSleep, radio, startRadio, cancelHandover, outputApi, altSource, rate],
+    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto, togglePlayback, pausePlayback, cast, casting, sleep, setSleep, radio, startRadio, cancelHandover, outputApi, altSource, rate,
+      automixOn, automixPref, mixStyle, mixSession, playAsMix, endless, blend, savePref, completeBlend, user?.preferences.automix],
   );
 
   const latest = useRef(value);

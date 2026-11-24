@@ -78,6 +78,7 @@ export class MusicOutput {
   /** Automix effect strips (EQ bass swap, filters, echo send), built the first time Automix needs them. */
   private strips: [FxStrip | null, FxStrip | null] = [null, null];
   private echo: EchoBus | null = null;
+  private limiter: DynamicsCompressorNode | null = null;
   /** A scheduled Automix blend owns both deck gains until it ends (ReplayGain changes wait). */
   private blending: { from: 0 | 1; to: 0 | 1; t0: number; dur: number } | null = null;
 
@@ -201,6 +202,19 @@ export class MusicOutput {
     if (!ctx || !this.master) return false;
     if (this.strips[0] && this.strips[1]) return true;
     try {
+      if (!this.limiter && this.vocal) {
+        // Two tracks overlapping at full level (a bass swap's middle) can pass 0 dBFS: a brick-wall safety limiter.
+        // Threshold 0 dB, so the compressor's automatic make-up gain is 0 dB and nothing below full scale changes.
+        const lim = ctx.createDynamicsCompressor();
+        lim.threshold.value = 0;
+        lim.knee.value = 0;
+        lim.ratio.value = 20;
+        lim.attack.value = 0.002;
+        lim.release.value = 0.2;
+        this.master.disconnect(this.vocal.input);
+        this.master.connect(lim).connect(this.vocal.input);
+        this.limiter = lim;
+      }
       this.echo ??= buildEcho(ctx, this.master);
       for (const d of this.decks) {
         const src = this.srcs[d.id];

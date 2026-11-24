@@ -21,7 +21,7 @@ import { attachStream, type Attached } from './engine';
 import { profileWithBitrate } from './deviceProfile';
 import { djLive } from './djLive';
 import {
-  glideMs, levelsAt, matchRates, nextBarMs, resolveKeyLock, transitionLabel, transitionPoints, transitionProgress,
+  glideMs, levelsAt, matchRates, nativeKeyLock, nextBarMs, resolveKeyLock, transitionLabel, transitionPoints, transitionProgress,
   type KeyLockMode,
 } from './djMixer';
 import { buildEcho, buildStrip, echoDelaySec, restStrip, scheduleTransition, type EchoBus, type FxStrip } from './djStrip';
@@ -110,12 +110,7 @@ function loadOptions(): DjOptions {
   }
 }
 
-/** Can this browser time-stretch an <audio> element without changing pitch? */
-export function nativeKeyLock(): boolean {
-  if (typeof HTMLMediaElement === 'undefined') return false;
-  const p = HTMLMediaElement.prototype as unknown as Record<string, unknown>;
-  return 'preservesPitch' in p || 'webkitPreservesPitch' in p || 'mozPreservesPitch' in p;
-}
+export { nativeKeyLock } from './djMixer';
 
 export class DjEngine {
   private ctx: AudioContext | null = null;

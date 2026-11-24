@@ -157,7 +157,9 @@ export function estimateTempo(env: Float64Array, fps: number, low?: Float64Array
   if (env.length < fps * 8) return { bpm: null, confidence: 0, beatOffsetMs: null };
   // Remove the slow trend so loud sections don't dominate.
   const x = detrend(env, fps);
-  const maxLag = Math.ceil((60 / 50) * fps) + 2;
+  // Up to 4 beats at 60 BPM: every candidate tempo gets its 2× and 4× lag terms (a 1.2 s cap silently dropped them
+  // below 100 BPM, which biased slow grooves such as 85 BPM hip hop to double time).
+  const maxLag = Math.ceil(4 * fps) + 2;
   const ac = new Float64Array(maxLag + 1);
   for (let lag = 1; lag <= maxLag; lag++) {
     let s = 0;
@@ -297,7 +299,8 @@ export function chroma(pcm: Float32Array, rate: number, n = 4096, hop = 2048): F
     }
     if (e < 1e-6) continue; // silence
     magnitudes(frame, mag, re, im);
-    for (let k = lo; k <= hi; k++) if (pc[k] >= 0) out[pc[k]] += Math.sqrt(mag[k]);
+    // Spectral peaks only: tonal partials are sharp peaks, while kick-drum sweeps and noise spread across bins.
+    for (let k = lo; k <= hi; k++) if (pc[k] >= 0 && mag[k] >= mag[k - 1] && mag[k] >= mag[k + 1]) out[pc[k]] += Math.sqrt(mag[k]);
   }
   return out;
 }
