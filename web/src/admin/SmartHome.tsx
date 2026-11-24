@@ -117,7 +117,7 @@ export function SmartHomeAdmin() {
     <div>
       <AdminHeader help="admin-home-assistant"
         title="Smart home"
-        subtitle="Connect Kinora to Home Assistant: now-playing sensors, a “someone is watching” switch for your lights, and playback events."
+        subtitle="Connect Vibe to Home Assistant: now-playing sensors, a “someone is watching” switch for your lights, and playback events."
         actions={<button className="btn btn-primary" onClick={save} disabled={!dirty || busy === 'save'}>{busy === 'save' ? <Spinner size={18} /> : 'Save changes'}</button>}
       />
 
@@ -151,7 +151,7 @@ export function SmartHomeAdmin() {
                 </Field>
               </div>
               <div className="form-row">
-                <Field label="Base topic" hint="Kinora publishes its states under this topic.">
+                <Field label="Base topic" hint="Vibe publishes its states under this topic.">
                   <input className="input mono" value={m.baseTopic} onChange={(e) => setM({ baseTopic: e.target.value })} placeholder="mediamax" />
                 </Field>
                 <Field label="Discovery prefix" hint="Home Assistant’s default is homeassistant.">
@@ -174,7 +174,7 @@ export function SmartHomeAdmin() {
                 <li><strong>Binary sensor:</strong> Someone is watching (on while anything plays; off when paused or idle).</li>
                 <li><strong>Per device:</strong> a Now playing sensor for each client, e.g. <code>sensor.living_room_tv_alice_now_playing</code>.</li>
                 <li><strong>Button:</strong> Scan libraries. <strong>Event:</strong> Playback (started, paused, resumed, stopped, ended).</li>
-                <li>Everything goes unavailable when Kinora stops (MQTT last will).</li>
+                <li>Everything goes unavailable when Vibe stops (MQTT last will).</li>
               </ul>
             </details>
           </>
@@ -207,7 +207,7 @@ export function SmartHomeAdmin() {
         <p className="muted">For Home Assistant’s REST sensor, Homepage or Homarr widgets: <code>GET {st?.restPath ?? '/api/v1/status/now-playing'}</code> with an API key (header <code>X-Api-Key</code>). Create a key under Settings → Security → API keys; an admin’s key sees every stream, other users only their own.</p>
         <pre className="code-block"><code>{`sensor:
   - platform: rest
-    name: Kinora streams
+    name: Vibe streams
     resource: ${location.origin}${st?.restPath ?? '/api/v1/status/now-playing'}
     headers: { X-Api-Key: !secret kinora_api_key }
     value_template: "{{ value_json.activeStreams }}"

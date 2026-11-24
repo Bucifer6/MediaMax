@@ -141,10 +141,10 @@ export default async function systemRoutes(app: FastifyInstance) {
   app.post('/admin/backups/restore-upload', async (req) => {
     const a = requireAdmin(req);
     const file = await req.file({ limits: { fileSize: 4 * 1024 * 1024 * 1024 } });
-    if (!file) throw badRequest('Upload a Kinora backup (.tar.gz)');
+    if (!file) throw badRequest('Upload a Vibe backup (.tar.gz)');
     return backup.stageRestore(await file.toBuffer(), a.user);
   });
-  /** Exit so the supervisor (Docker restart policy / systemd) starts Kinora again. */
+  /** Exit so the supervisor (Docker restart policy / systemd) starts Vibe again. */
   app.post('/admin/restart', async (req) => {
     const a = requireAdmin(req);
     logActivity('server', 'Restart requested', { userId: a.user.id, userName: a.user.displayName, severity: 'warning' });

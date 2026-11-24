@@ -33,8 +33,8 @@ interface StoredBranding extends Omit<Branding, 'themes' | 'features' | 'revisio
 }
 
 const DEFAULTS: StoredBranding = {
-  serverName: 'Kinora',
-  tagline: 'Your movies, shows, music and live TV. Everywhere.',
+  serverName: 'Vibe',
+  tagline: 'Your media. Your vibe.',
   logoUrl: null,
   logoWideUrl: null,
   faviconUrl: null,
@@ -43,7 +43,7 @@ const DEFAULTS: StoredBranding = {
   loginMessage: '',
   footerText: '',
   supportUrl: null,
-  splash: { backgroundColor: '#0D0C1D', logoUrl: null },
+  splash: { backgroundColor: '#0C0C10', logoUrl: null },
   tvBannerUrl: null,
   topShelfUrl: null,
   defaultThemeId: DEFAULT_THEME_ID,
@@ -61,8 +61,8 @@ const DEFAULT_FEATURES: Branding['features'] = {
 };
 
 /**
- * The Kinora theme became the default in branding v2. Installs that were already set up keep the
- * theme they had (Midnight, the old default) unless an admin had picked one; new installs get Kinora.
+ * The Vibe theme became the default in branding v2. Installs that were already set up keep the
+ * theme they had (Midnight, the old default) unless an admin had picked one; new installs get Vibe.
  * Runs once per database: the marker is written on the first look.
  */
 let defaultsChecked = false;
@@ -172,6 +172,7 @@ function validateTheme(t: Theme): Theme {
     posterShape: (['rounded', 'square', 'pill'] as const).includes(t.posterShape) ? t.posterShape : 'rounded',
     cardSize: (['small', 'medium', 'large'] as const).includes(t.cardSize) ? t.cardSize : 'medium',
     heroStyle: (['carousel', 'static', 'none'] as const).includes(t.heroStyle) ? t.heroStyle : 'carousel',
+    brandGradient: Array.isArray(t.brandGradient) && t.brandGradient.length === 3 && t.brandGradient.every((c) => typeof c === 'string' && HEX.test(c)) ? [t.brandGradient[0], t.brandGradient[1], t.brandGradient[2]] : null,
     builtIn: false,
   };
 }
@@ -261,7 +262,7 @@ export function brandingCss(): string {
 
 /**
  * PWA manifest that follows the branding: the server's name and theme colours, and the uploaded app
- * icon when there is one (else the stock Kinora icons in the web client, including a maskable one).
+ * icon when there is one (else the stock Vibe icons in the web client, including a maskable one).
  */
 export function webManifest() {
   const b = getBranding();

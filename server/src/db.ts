@@ -517,7 +517,7 @@ const MIGRATIONS: string[] = [
   /* Public sign-in screen: only users an admin opts in are ever listed (default hidden) */ `
   ALTER TABLE users ADD COLUMN show_on_signin INTEGER NOT NULL DEFAULT 0;
   `,
-  /* Emby migration: one-time set-password links, Emby id → Kinora id map (re-runs) */ `
+  /* Emby migration: one-time set-password links, Emby id → Vibe id map (re-runs) */ `
   CREATE TABLE password_links (
     token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, purpose TEXT NOT NULL,
     created_by TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT
@@ -528,7 +528,7 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (kind, emby_id)
   );
   `,
-  /* Subtitle providers: every downloaded subtitle file (data folder or sidecar), so sidecars Kinora wrote can be listed and deleted */ `
+  /* Subtitle providers: every downloaded subtitle file (data folder or sidecar), so sidecars Vibe wrote can be listed and deleted */ `
   CREATE TABLE IF NOT EXISTS subtitle_downloads (
     path TEXT PRIMARY KEY, media_id TEXT NOT NULL, provider TEXT NOT NULL, provider_file_id TEXT, language TEXT, release TEXT,
     score INTEGER, synced INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL

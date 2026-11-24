@@ -124,7 +124,7 @@ export function IdentifyBySound({ item, onDone, onCancel }: { item: Item; onDone
     <div className="fm-panel identify-panel">
       <div className="fm-head">
         <button className="btn btn-sm btn-ghost" onClick={onCancel}><Icon name="arrowLeft" size={14} /> Back</button>
-        <span className="muted small">Listens to the first two minutes (Chromaprint) and looks the sound up on AcoustID. The match is saved in Kinora only — your file is never changed.</span>
+        <span className="muted small">Listens to the first two minutes (Chromaprint) and looks the sound up on AcoustID. The match is saved in Vibe only — your file is never changed.</span>
       </div>
       {res && !res.available ? (
         <div className="service-note"><Icon name="info" size={18} /> <span>{res.reason}</span></div>

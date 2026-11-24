@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds the Kinora Roku channel into apps/roku/dist/Kinora.zip and optionally sideloads it.
+// Builds the Vibe Roku channel into apps/roku/dist/Kinora.zip and optionally sideloads it.
 //
 //   node apps/roku/build.mjs                                  # zip only
 //   node apps/roku/build.mjs --images                         # re-render icons / splash from tv/shared/brand first
@@ -46,7 +46,7 @@ function parseArgs(argv) {
 
 /* ------------------------------------------------------------ images */
 
-const BG = '0x0D0C1D';
+const BG = '0x0C0C10';
 const ffmpeg = (args) => execFileSync('ffmpeg', ['-v', 'error', '-y', ...args], { stdio: 'inherit' });
 
 /** Logo + wordmark cut out of the stock splash, letterboxed onto the brand background. */

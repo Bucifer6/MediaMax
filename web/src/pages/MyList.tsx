@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom';
 import { api } from '../api/endpoints';
 import { useAsync, useServerEvent } from '../hooks';
-import { PosterCard } from '../components/Cards';
-import { EmptyState, ErrorState, Skeleton } from '../components/ui';
+import { CardSkeleton, PosterCard } from '../components/Cards';
+import { EmptyState, ErrorState, PageHeader } from '../components/ui';
 import { Icon } from '../components/Icon';
+import '../styles/screens-browse.css';
 
 export default function MyListPage() {
   const list = useAsync(() => api.discovery.watchlist({ limit: 500 }), []);
@@ -16,15 +17,12 @@ export default function MyListPage() {
   const items = list.data?.items ?? [];
   return (
     <div className="page mylist-page">
-      <header className="page-head">
-        <div className="page-title-wrap">
-          <Icon name="plus" size={28} className="page-icon" />
-          <h1>My List</h1>
-          {list.data && list.data.total > 0 && <span className="muted">{list.data.total} title{list.data.total === 1 ? '' : 's'}</span>}
-        </div>
-      </header>
+      <PageHeader
+        title="My List"
+        subtitle={list.data && list.data.total > 0 ? <span className="tabular">{list.data.total} title{list.data.total === 1 ? '' : 's'} saved for later</span> : 'Saved for later'}
+      />
       {list.loading && !list.data ? (
-        <div className="grid grid-poster">{Array.from({ length: 12 }).map((_, i) => <Skeleton key={i} className="grid-skeleton" h={260} />)}</div>
+        <div className="grid grid-poster" aria-busy="true">{Array.from({ length: 12 }).map((_, i) => <CardSkeleton key={i} />)}</div>
       ) : list.error && !list.data ? (
         <ErrorState message={list.error} onRetry={list.reload} />
       ) : !items.length ? (

@@ -46,7 +46,7 @@ const pending = new Map<string, Pending>();
 const b64url = (b: Buffer) => b.toString('base64url');
 
 /**
- * Only send tokens to the server's own origin or the Kinora app scheme. `serverOrigin` must be the
+ * Only send tokens to the server's own origin or the Vibe app scheme. `serverOrigin` must be the
  * same origin used for the IdP redirect_uri (publicUrl when configured), so a forged Host header
  * either fails here or produces a redirect_uri the provider rejects.
  */
@@ -141,7 +141,7 @@ export async function finishLogin(state: string, code: string, cookieState: stri
     const isAdmin = !!o.adminGroup && groups.includes(o.adminGroup);
     let row = db.get('SELECT * FROM users WHERE oidc_sub = ?', sub);
     if (!row) {
-      if (!o.autoCreateUsers) return fail('No Kinora account is linked to this sign-in. Ask your administrator.');
+      if (!o.autoCreateUsers) return fail('No Vibe account is linked to this sign-in. Ask your administrator.');
       const username = uniqueUsername(claims.preferred_username || claims.email?.split('@')[0] || claims.name || 'user');
       const u = await createUser({ username, displayName: claims.name || claims.preferred_username || username, isAdmin, allowDvr: isAdmin });
       db.run('UPDATE users SET oidc_sub = ? WHERE id = ?', sub, u.id);

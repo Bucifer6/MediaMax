@@ -28,7 +28,7 @@ sub onParams()
     if p <> invalid and isNonEmptyString(p.error) then m.error.text = p.error
     features = m.global.features
     if getOr(features, "linkCodes", true) = true
-        m.linkHint.text = "On your phone or computer, sign in to Kinora, open " + m.global.serverUrl + "/link (or choose Link a device in the menu) and enter this code:"
+        m.linkHint.text = "On your phone or computer, sign in to Vibe, open " + m.global.serverUrl + "/link (or choose Link a device in the menu) and enter this code:"
         requestCode()
     else
         m.linkHint.text = "Device linking is turned off on this server. Sign in with your username and password instead."

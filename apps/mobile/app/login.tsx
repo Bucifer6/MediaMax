@@ -174,7 +174,7 @@ export default function LoginScreen() {
 
   const logo = branding?.logoWideUrl ?? branding?.logoUrl;
   const panelWidth = t.isTV ? t.s(760) : Math.min(t.width - 32, 480);
-  const serverName = branding?.serverName ?? info?.name ?? server?.name ?? 'Kinora';
+  const serverName = branding?.serverName ?? info?.name ?? server?.name ?? 'Vibe';
 
   const modes: { key: Mode; label: string; icon: React.ComponentProps<typeof Chip>['icon'] }[] = [];
   if (profiles?.length) modes.push({ key: 'profiles', label: 'Profiles', icon: 'people-outline' });

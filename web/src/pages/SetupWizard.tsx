@@ -4,7 +4,7 @@ import { useApp } from '../state/app';
 import { api } from '../api/endpoints';
 import { errorMessage, setToken } from '../api/client';
 import { Icon, type IconName } from '../components/Icon';
-import { BrandMark } from '../components/BrandLogo';
+import { BrandLogo } from '../components/BrandLogo';
 import { LightField } from '../components/LightField';
 import { Field, Spinner } from '../components/ui';
 import { LibraryForm } from '../components/LibraryForm';
@@ -21,7 +21,7 @@ const STEPS: { label: string; icon: IconName }[] = [
 export function SetupWizard() {
   const { system, login, refreshSystem, refreshBranding, refreshLibraries } = useApp();
   const [step, setStep] = useState(0);
-  const [serverName, setServerName] = useState(system?.name && system.name !== 'Kinora' ? system.name : 'Kinora');
+  const [serverName, setServerName] = useState(system?.name && system.name !== 'Vibe' ? system.name : 'Vibe');
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -37,7 +37,7 @@ export function SetupWizard() {
     setBusy(true);
     setError(null);
     try {
-      const res = await api.system.setup({ serverName: serverName.trim() || 'Kinora', username: username.trim(), password });
+      const res = await api.system.setup({ serverName: serverName.trim() || 'Vibe', username: username.trim(), password });
       // Keep the wizard on screen: store the token now, sign in for real at the end.
       setToken(res.token);
       setAuth(res);
@@ -55,12 +55,13 @@ export function SetupWizard() {
   };
 
   return (
-    <div className="setup">
+    <div className="setup vibe-auth">
       <LightField />
-      <div className="setup-card glass">
-        <ol className="setup-steps">
+      <div className="setup-brand"><BrandLogo height={40} /></div>
+      <div className="setup-card">
+        <ol className="setup-steps" aria-label={`Step ${step + 1} of ${STEPS.length}`}>
           {STEPS.map((s, i) => (
-            <li key={s.label} className={i === step ? 'active' : i < step ? 'done' : ''}>
+            <li key={s.label} className={i === step ? 'active' : i < step ? 'done' : ''} aria-current={i === step ? 'step' : undefined}>
               <span className="step-dot">{i < step ? <Icon name="check" size={14} /> : <Icon name={s.icon} size={14} />}</span>
               <span className="step-label">{s.label}</span>
             </li>
@@ -69,8 +70,7 @@ export function SetupWizard() {
 
         {step === 0 && (
           <div className="setup-body fade-in">
-            <BrandMark size={60} />
-            <h1>Welcome to Kinora</h1>
+            <h1>Welcome to Vibe</h1>
             <p className="muted">Movies, shows, music, photos, live TV, IPTV and DVR — all on your own server, styled your way. Let's get you set up in under a minute.</p>
             <Field label="Server name" hint="Shown on every device and the login screen. You can change it any time in Branding.">
               <input className="input input-lg" value={serverName} onChange={(e) => setServerName(e.target.value)} autoFocus />
@@ -109,7 +109,7 @@ export function SetupWizard() {
         {step === 2 && (
           <div className="setup-body fade-in">
             <h1>Add your first library</h1>
-            <p className="muted">Point Kinora at a folder of movies, shows, music or photos. You can add more later.</p>
+            <p className="muted">Point Vibe at a folder of movies, shows, music or photos. You can add more later.</p>
             {added.length > 0 && (
               <div className="added-list">
                 {added.map((a) => (

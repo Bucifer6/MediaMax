@@ -99,8 +99,8 @@ interface KnownPlayer { user: string; device: string; platform: string; lastSeen
 export function discoveryConfigs(s: HomeAssistantSettings['mqtt'], players: Record<string, KnownPlayer>, sid = serverId()): { topic: string; payload: Record<string, unknown> }[] {
   const t = topics(s, sid);
   const serverName = getSettings().serverName;
-  const device = { identifiers: [t.node], name: serverName, manufacturer: 'Kinora', model: 'Media server', sw_version: config.version, ...(getSettings().publicUrl ? { configuration_url: getSettings().publicUrl } : {}) };
-  const origin = { name: 'Kinora', sw: config.version, url: 'https://github.com/' };
+  const device = { identifiers: [t.node], name: serverName, manufacturer: 'Vibe', model: 'Media server', sw_version: config.version, ...(getSettings().publicUrl ? { configuration_url: getSettings().publicUrl } : {}) };
+  const origin = { name: 'Vibe', sw: config.version, url: 'https://github.com/' };
   const base = (object: string, name: string, extra: Record<string, unknown>) => ({
     topic: '',
     object,
@@ -131,7 +131,7 @@ export function discoveryConfigs(s: HomeAssistantSettings['mqtt'], players: Reco
           name: 'Now playing', unique_id: `${t.node}_${object}`,
           state_topic: t.player(pid), value_template: '{{ value_json.state }}', json_attributes_topic: t.player(pid),
           availability_topic: t.availability, payload_available: 'online', payload_not_available: 'offline', icon: 'mdi:television-play',
-          device: { identifiers: [`${t.node}_${slug(pid)}`], name: `${p.device} (${p.user})`, manufacturer: 'Kinora', model: p.platform, via_device: t.node },
+          device: { identifiers: [`${t.node}_${slug(pid)}`], name: `${p.device} (${p.user})`, manufacturer: 'Vibe', model: p.platform, via_device: t.node },
           origin,
         },
       });

@@ -18,6 +18,7 @@ const GLOBAL: Group = {
   rows: [
     [['/'], 'Search and commands'],
     [['Ctrl', 'K'], 'Search and commands (⌘K on a Mac)'],
+    [['['], 'Collapse or expand the sidebar'],
     [['?'], 'Show this list'],
     [['Esc'], 'Close a dialog or menu'],
   ],

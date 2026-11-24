@@ -13,17 +13,12 @@
 .profile-picker .pp h1 { margin: 0; }
 .pp-grid { gap: clamp(16px, 3vw, 36px); max-width: 1100px; }
 .pp-tile { gap: 14px; outline: none; }
-.pp-tile .avatar { border: 3px solid transparent; transition: transform 0.25s var(--ease), border-color 0.2s, box-shadow 0.25s; box-shadow: var(--shadow); font-size: 2.8rem !important; }
-.pp-tile:hover .avatar, .pp-tile:focus-visible .avatar, .pp-tile:focus .avatar { transform: scale(1.07); border-color: var(--c-text); box-shadow: 0 16px 40px -10px var(--c-primary-glow); }
-.pp-tile:focus .profile-name, .pp-tile:hover .profile-name { color: var(--c-text); }
-.pp-tile.current .profile-name::after { content: ' ·  current'; font-weight: 500; opacity: 0.7; font-size: 0.85em; }
 .pp-actions { justify-content: center; flex-wrap: wrap; }
 .login-card.pp-pin { align-items: center; text-align: center; }
 .pp-pin .profile-avatar { margin-bottom: 4px; align-self: center; }
 
 @media (max-width: 520px) {
   .pp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); justify-items: center; gap: 22px 12px; }
-  .pp-tile .profile-avatar { width: 112px !important; height: 112px !important; }
   .profile-picker .pp h1 { font-size: 1.7rem; }
 }
 
@@ -31,7 +26,7 @@
 html.tv .pp-grid { gap: 48px; max-width: none; }
 html.tv .pp-tile .profile-avatar { width: 180px !important; height: 180px !important; }
 html.tv .pp-tile .profile-name { font-size: 1.5rem; }
-html.tv .pp-tile:focus .avatar { transform: scale(1.12); border-color: var(--c-primary); border-width: 5px; }
+html.tv .vibe-auth .pp-tile:focus .avatar { transform: scale(1.08); box-shadow: 0 0 0 4px var(--bg), 0 0 0 8px var(--focus) !important; }
 html.tv .profile-picker .pp h1 { font-size: 3.2rem; }
 
 /* Editor */
@@ -78,7 +73,7 @@ html.tv .profile-picker .pp h1 { font-size: 3.2rem; }
 .ps-add { border-style: dashed; color: var(--c-text-muted); justify-content: center; min-height: 180px; }
 .ps-add-icon { width: 88px; height: 88px; border-radius: 22%; display: grid; place-items: center; background: var(--c-surface); }
 .ps-foot { margin: 0; }
-.ps-link { background: none; border: 0; padding: 0; color: var(--c-primary); cursor: pointer; font: inherit; text-decoration: underline; }
+.ps-link { background: none; border: 0; padding: 0; color: var(--accent-ink); cursor: pointer; font: inherit; text-decoration: underline; }
 
 /* Header: profile badge in the user menu */
 .user-btn .profile-avatar > .avatar { border-radius: 30%; }

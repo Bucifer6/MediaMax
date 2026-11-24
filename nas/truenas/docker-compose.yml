@@ -1,4 +1,4 @@
-# Kinora on TrueNAS SCALE 24.10 (Electric Eel) or newer: Apps -> Discover Apps -> ⋮ -> Install via YAML,
+# Vibe on TrueNAS SCALE 24.10 (Electric Eel) or newer: Apps -> Discover Apps -> ⋮ -> Install via YAML,
 # name it "kinora" and paste this file. Guide: docs/INSTALL.md#truenas-scale
 #
 # Before you start:

@@ -151,10 +151,11 @@ export default function RoulettePage() {
 
   return (
     <div className="page roulette-page">
-      <header className="page-head roulette-head">
-        <div>
-          <h1><Icon name="shuffle" size={28} className="page-icon" /> Can't decide? Spin</h1>
-          <p className="muted">Let {branding.serverName} pick something from your library.</p>
+      <header className="page-header roulette-head">
+        <div className="page-header-text">
+          <span className="page-header-eyebrow">Help me decide</span>
+          <h1 className="page-header-title">Can't decide? Spin</h1>
+          <p className="page-header-sub">Let {branding.serverName} pick something from your library.</p>
         </div>
         <div className="segmented" role="tablist" aria-label="What to spin for">
           <button role="tab" aria-selected={filters.kind === 'movie'} className={filters.kind === 'movie' ? 'active' : ''} onClick={() => setFilters({ kind: 'movie', libraryIds: [] })}><Icon name="film" size={16} /> Movie</button>

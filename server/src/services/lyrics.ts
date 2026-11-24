@@ -2,7 +2,7 @@
  * Lyrics for music tracks.
  *
  * Sources, in priority order (a synced hit wins at once; a plain hit keeps looking for a synced one further down):
- *   1. edits saved in Kinora (admins, `lyrics_edits`)
+ *   1. edits saved in Vibe (admins, `lyrics_edits`)
  *   2. a sidecar next to the audio file: Song.lrc, Song.LRC, Song.mp3.lrc, then Song.txt
  *   3. embedded tags: ID3 SYLT (synced, read from the tag ourselves; FFmpeg drops it), ID3 USLT / `lyrics-<lang>`,
  *      Vorbis/FLAC LYRICS / UNSYNCEDLYRICS, MP4 ©lyr (FFmpeg `lyrics`)

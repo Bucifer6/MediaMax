@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Extract the glyph outlines the Kinora logo needs into branding/kinora/source/glyphs.json, so the logo can be
+Extract the glyph outlines the Vibe logo needs into branding/vibe/source/glyphs.json, so the logo can be
 rebuilt as plain SVG paths without the fonts installed and without any runtime dependency.
 
-  name     "Kinora" in Bricolage Grotesque ExtraBold (wght 800, opsz 96)  -- the Lumen display face
-  tagline  "YOUR OWN HOME CINEMA." in Figtree Bold (wght 700)             -- the Lumen text face
+  name     "vibe" in Outfit Bold (wght 700)                     -- the Vibe display face
+  tagline  "Your media. Your vibe." in Figtree Bold (wght 700)  -- the Vibe text face
 
-Both fonts are SIL OFL 1.1 and already in the repo's node_modules (the web app self-hosts them from
-@fontsource-variable/*). They are variable WOFF2 files, so they are instanced at the weights above first.
+Both fonts are SIL OFL 1.1 and come from @fontsource-variable/* (the web app self-hosts them). The script looks
+for them in the repo's node_modules and web/node_modules; set OUTFIT_WOFF2 / FIGTREE_WOFF2 to point at a file
+elsewhere. They are variable WOFF2 files, so they are instanced at the weights above first.
 
 Only needed when changing the typeface or the text:
 
@@ -27,19 +28,31 @@ from fontTools.ttLib import TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-FS = os.path.join(REPO, 'node_modules', '@fontsource-variable')
+
+
+def font_file(env, pkg, name):
+    """First existing copy of @fontsource-variable/<pkg>/files/<name> (or the path in $env)."""
+    cands = [os.environ.get(env, '')] + [
+        os.path.join(REPO, d, 'node_modules', '@fontsource-variable', pkg, 'files', name) for d in ('.', 'web')
+    ]
+    for c in cands:
+        if c and os.path.exists(c):
+            return c
+    raise SystemExit(f'{pkg}: font file not found; npm install @fontsource-variable/{pkg} or set {env}')
+
+
 ROLES = {
     'name': {
-        'file': os.path.join(FS, 'bricolage-grotesque', 'files', 'bricolage-grotesque-latin-standard-normal.woff2'),
-        'font': 'Bricolage Grotesque',
-        'axes': {'wght': 800, 'opsz': 96, 'wdth': 100},
-        'text': 'Kinora',
+        'file': font_file('OUTFIT_WOFF2', 'outfit', 'outfit-latin-wght-normal.woff2'),
+        'font': 'Outfit',
+        'axes': {'wght': 700},
+        'text': 'vibe',
     },
     'tagline': {
-        'file': os.path.join(FS, 'figtree', 'files', 'figtree-latin-wght-normal.woff2'),
+        'file': font_file('FIGTREE_WOFF2', 'figtree', 'figtree-latin-wght-normal.woff2'),
         'font': 'Figtree',
         'axes': {'wght': 700},
-        'text': 'YOUR OWN HOME CINEMA.',
+        'text': 'Your media. Your vibe.',
     },
 }
 
@@ -74,11 +87,6 @@ def contours(rec, scale):
     return out
 
 
-def top_of(contour):
-    nums = [float(n) for n in __import__('re').findall(r'-?\d*\.?\d+', contour)]
-    return min(nums[1::2])
-
-
 out = {'licence': 'SIL Open Font License 1.1', 'roles': {}}
 for role, spec in ROLES.items():
     vf = TTFont(spec['file'])
@@ -108,11 +116,6 @@ for role, spec in ROLES.items():
         gs[name].draw(rec)
         cs = contours(rec, scale)
         g = {'adv': round(gs[name].width * scale, 2), 'd': ''.join(cs)}
-        if c == 'i' and len(cs) == 2:
-            # Keep the tittle separate: the wordmark lights it in the beam colours.
-            cs.sort(key=top_of)
-            g['d'] = cs[1]
-            g['dot'] = cs[0]
         glyphs[c] = g
     kern = {}
     text = spec['text']
@@ -128,11 +131,12 @@ for role, spec in ROLES.items():
         'capHeight': round(os2.sCapHeight * scale),
         'xHeight': round(os2.sxHeight * scale),
         'ascender': round(font['hhea'].ascent * scale),
+        'descender': round(font['hhea'].descent * scale),
         'glyphs': glyphs,
         'kern': dict(sorted(kern.items())),
     }
 
-dest = os.path.join(REPO, 'branding', 'kinora', 'source', 'glyphs.json')
+dest = os.path.join(REPO, 'branding', 'vibe', 'source', 'glyphs.json')
 os.makedirs(os.path.dirname(dest), exist_ok=True)
 with open(dest, 'w') as fh:
     json.dump(out, fh, indent=1)

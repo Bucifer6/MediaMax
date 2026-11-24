@@ -19,6 +19,23 @@ export function DecideBar({ className = '' }: { className?: string }) {
   );
 }
 
+/**
+ * The same two entries as quiet ghost buttons for a page header (Home's tools): icon + short label, icon-only on
+ * phones (the label stays as the accessible name).
+ */
+export function DecideLinks() {
+  return (
+    <>
+      <Link to="/roulette" className="btn btn-ghost btn-sm decide-link" title="Can't decide? Spin" aria-label="Can't decide? Spin" data-nav>
+        <Icon name="shuffle" size={14} /> <span className="decide-link-label">Can't decide?</span>
+      </Link>
+      <Link to="/match" className="btn btn-ghost btn-sm decide-link" title="Movie Match" aria-label="Movie Match" data-nav>
+        <Icon name="together" size={14} /> <span className="decide-link-label">Movie Match</span>
+      </Link>
+    </>
+  );
+}
+
 /** Roulette + Shuffle play (Random marathon) for a movie or TV library, keeping the page's genre filter. */
 export function LibraryDecideButtons({ library, genre }: { library: Library | undefined; genre?: string }) {
   const navigate = useNavigate();

@@ -1,5 +1,5 @@
 /**
- * Kinora's own subtitle renderer, used by every web player (desktop, mobile web, TV mode on Tizen/webOS).
+ * Vibe's own subtitle renderer, used by every web player (desktop, mobile web, TV mode on Tizen/webOS).
  * Never uses <track>/native text tracks or the platform's subtitle parser: the track is fetched from the server in its
  * original format and drawn on an overlay above the video.
  *

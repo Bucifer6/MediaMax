@@ -4,7 +4,7 @@
 
 # ---- build ----
 # Runs on the build machine's own architecture: the output (JavaScript, the web app and pure-JS
-# dependencies; Kinora uses no native addons) is the same for every target, so arm64 images don't
+# dependencies; Vibe uses no native addons) is the same for every target, so arm64 images don't
 # need to run npm and Vite under emulation.
 FROM --platform=$BUILDPLATFORM node:26-bookworm-slim AS build
 WORKDIR /src

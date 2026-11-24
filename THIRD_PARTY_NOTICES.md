@@ -1,6 +1,6 @@
 # Third-party notices
 
-Kinora includes code adapted from the following projects. Their licences are reproduced or referenced below.
+Vibe includes code adapted from the following projects. Their licences are reproduced or referenced below.
 Packages installed from npm carry their own licence files in `node_modules`.
 
 ## OpenDJ
@@ -29,7 +29,7 @@ Packages installed from npm carry their own licence files in `node_modules`.
 
 ## Lyrics, karaoke and visualisers
 
-Kinora itself is MIT licensed (see [LICENSE](LICENSE)). This file lists third-party code and models used by the
+Vibe itself is MIT licensed (see [LICENSE](LICENSE)). This file lists third-party code and models used by the
 lyrics, karaoke and visualiser features. Other dependencies are listed in each workspace's `package.json` and carry
 their own licences; FFmpeg is run as a separate program (LGPL/GPL).
 
@@ -58,7 +58,7 @@ their own licences; FFmpeg is run as a separate program (LGPL/GPL).
 ### ONNX Runtime for Node.js (`onnxruntime-node` and `onnxruntime-common` 1.31.1)
 
 - Used by the server to run the AI stem-separation model natively (CPU; DirectML / Core ML / CUDA GPUs). Not shipped
-  with Kinora: the server downloads the pinned npm tarballs the first time a track is separated on the server, verifies
+  with Vibe: the server downloads the pinned npm tarballs the first time a track is separated on the server, verifies
   their SHA-512 integrity and keeps only `package.json`, the `dist/` JavaScript and this platform's
   `bin/napi-v6/<platform>/<arch>/` binaries (on Windows these include Microsoft's DirectML runtime, `DirectML.dll`).
   Its install-script dependencies (`adm-zip`, `global-agent`) are not downloaded.
@@ -66,7 +66,7 @@ their own licences; FFmpeg is run as a separate program (LGPL/GPL).
 
 ### ONNX Runtime Web (`onnxruntime-web` 1.23.2)
 
-- Used to run the AI stem-separation model in the browser (WebGPU / WebAssembly). Not shipped with Kinora: the
+- Used to run the AI stem-separation model in the browser (WebGPU / WebAssembly). Not shipped with Vibe: the
   server downloads the pinned npm tarball the first time AI separation is used, verifies its SHA-512 integrity, keeps
   only `dist/ort*.mjs` / `ort*.wasm` and serves them same-origin (`/api/v1/stems/ort/…`). Not bundled into the web app.
 - MIT License, © Microsoft Corporation — <https://github.com/microsoft/onnxruntime>.

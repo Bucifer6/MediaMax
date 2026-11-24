@@ -108,7 +108,7 @@ export function RemoteAccessAdmin() {
             <Field label="Public URL" hint="The address people use from outside, e.g. your reverse proxy’s HTTPS address. Used for invite links, apps, casting and webhooks.">
               <input className="input" value={publicUrl} onChange={(e) => setPublicUrl(e.target.value)} placeholder="https://media.example.com" spellCheck={false} autoCapitalize="none" />
             </Field>
-            <Switch checked={ra.upnp} onChange={(v) => setRa({ ...ra, upnp: v })} label="Forward a port automatically (UPnP)" hint="Asks your router to open a port to Kinora. Many routers have UPnP off by default." />
+            <Switch checked={ra.upnp} onChange={(v) => setRa({ ...ra, upnp: v })} label="Forward a port automatically (UPnP)" hint="Asks your router to open a port to Vibe. Many routers have UPnP off by default." />
             <Field label="External port" hint={`Leave empty to use the same port as the server${st ? ` (${st.port})` : ''}.`}>
               <input className="input" type="number" min={1} max={65535} value={ra.externalPort ?? ''} placeholder={st ? String(st.port) : 'Same as server'} disabled={!ra.upnp}
                 onChange={(e) => setRa({ ...ra, externalPort: e.target.value === '' ? null : Math.min(65535, Math.max(1, Math.floor(Number(e.target.value)) || 1)) })} />
@@ -119,7 +119,7 @@ export function RemoteAccessAdmin() {
 
       <div className="settings-card guidance">
         <h2><Icon name="shield" size={18} /> Use HTTPS</h2>
-        <p>UPnP exposes Kinora over plain HTTP, so passwords and streams travel unencrypted. For anything beyond a quick test, put Kinora behind a reverse proxy that handles HTTPS, then set the Public URL above to its address. With <a href="https://caddyserver.com" target="_blank" rel="noreferrer" className="link-strong">Caddy <Icon name="external" size={12} /></a> this is a two-line config and certificates are automatic:</p>
+        <p>UPnP exposes Vibe over plain HTTP, so passwords and streams travel unencrypted. For anything beyond a quick test, put Vibe behind a reverse proxy that handles HTTPS, then set the Public URL above to its address. With <a href="https://caddyserver.com" target="_blank" rel="noreferrer" className="link-strong">Caddy <Icon name="external" size={12} /></a> this is a two-line config and certificates are automatic:</p>
         <pre className="code-block"><code>{`media.example.com {
   reverse_proxy 127.0.0.1:${st?.port ?? 8484}
 }`}</code></pre>

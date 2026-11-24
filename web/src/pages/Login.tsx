@@ -274,7 +274,7 @@ export function Login() {
 
   const bg = branding.loginBackgroundUrl;
   return (
-    <div className="login">
+    <div className="login vibe-auth">
       <LightField image={bg ? mediaUrl(bg, 1920) : null} />
       <div className="login-inner">
         <div className="login-brand">
@@ -291,14 +291,16 @@ export function Login() {
             <h1>Who's watching?</h1>
             <div className={`profile-grid ${chosen ? 'choosing' : ''}`}>
               {profiles.map((p, i) => (
-                <button key={p.id} className={`profile ${chosen === p.id ? 'chosen' : ''}`} style={{ '--i': i } as React.CSSProperties} onClick={() => pickProfile(p)} disabled={busy} aria-disabled={!!chosen || undefined}>
-                  <Avatar name={p.displayName} url={p.avatarUrl} size={112} />
+                <button key={p.id} className={`profile ${chosen === p.id ? 'chosen' : ''}`} style={{ '--i': i } as React.CSSProperties} onClick={() => pickProfile(p)} disabled={busy} aria-disabled={!!chosen || undefined} aria-label={`${p.displayName}${p.hasPin ? ', PIN protected' : p.requiresPassword ? ', password required' : ''}`}>
+                  <span className="pp-art">
+                    <Avatar name={p.displayName} url={p.avatarUrl} size={124} />
+                    {(p.hasPin || p.requiresPassword) && (
+                      <span className="profile-lock" title={p.hasPin ? 'PIN' : 'Password'}>
+                        <Icon name={p.hasPin ? 'lock' : 'key'} size={14} />
+                      </span>
+                    )}
+                  </span>
                   <span className="profile-name">{p.displayName}</span>
-                  {(p.hasPin || p.requiresPassword) && (
-                    <span className="profile-lock">
-                      <Icon name="lock" size={12} />
-                    </span>
-                  )}
                 </button>
               ))}
             </div>

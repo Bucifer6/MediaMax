@@ -40,8 +40,8 @@ export default function DiscoverPersonPage() {
           <header className="person-head">
             <div className="person-photo"><Img src={p.profileUrl} width={320} alt={p.name} fallback={<Icon name="user" size={40} />} /></div>
             <div className="person-bio">
-              <h1 style={{ marginTop: 0 }}>{p.name}</h1>
-              <p className="muted" style={{ margin: 0 }}>{[p.knownFor, p.birthday && `Born ${p.birthday}${p.placeOfBirth ? ` in ${p.placeOfBirth}` : ''}`, p.deathday && `Died ${p.deathday}`].filter(Boolean).join(' · ')}</p>
+              <h1 className="dp-name">{p.name}</h1>
+              <p className="dp-facts">{[p.knownFor, p.birthday && `Born ${p.birthday}${p.placeOfBirth ? ` in ${p.placeOfBirth}` : ''}`, p.deathday && `Died ${p.deathday}`].filter(Boolean).join(' · ')}</p>
               {p.biography && <p>{p.biography}</p>}
             </div>
           </header>

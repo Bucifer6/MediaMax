@@ -1,7 +1,7 @@
 /**
- * The MediaMax -> Kinora rename keeps old names working: KINORA_* environment variables override their MEDIAMAX_*
- * twins (both work), X-Kinora-* and X-MediaMax-* request headers are both accepted, the legacy stock server name
- * shows as "Kinora", standalone installs keep an existing MediaMax data folder, and both app URL schemes are valid
+ * The MediaMax -> Kinora -> Vibe renames keep old names working: KINORA_* environment variables override their
+ * MEDIAMAX_* twins (both work), X-Kinora-* and X-MediaMax-* request headers are both accepted, the former stock server
+ * names show as "Vibe", standalone installs keep an existing MediaMax data folder, and both app URL schemes are valid
  * sign-in redirects.
  */
 import { test, after } from 'node:test';
@@ -94,15 +94,18 @@ test('sign-in records the device from either header family', async () => {
   }
 });
 
-test('the stock name is Kinora; a server still named MediaMax shows Kinora, a renamed one keeps its name', () => {
-  assert.equal(PRODUCT_NAME, 'Kinora');
-  assert.equal(productName('MediaMax'), 'Kinora');
-  assert.equal(productName(''), 'Kinora');
+test('the stock name is Vibe; a server still named Kinora or MediaMax shows Vibe, a renamed one keeps its name', () => {
+  assert.equal(PRODUCT_NAME, 'Vibe');
+  assert.equal(productName('MediaMax'), 'Vibe');
+  assert.equal(productName('Kinora'), 'Vibe');
+  assert.equal(productName(''), 'Vibe');
   assert.equal(productName('Acme Cinema'), 'Acme Cinema');
-  assert.equal(branding.getBranding().serverName, 'Kinora');
+  assert.equal(branding.getBranding().serverName, 'Vibe');
   const before = getKv<Record<string, unknown>>('branding', {});
   setKv('branding', { ...before, serverName: 'MediaMax' });
-  assert.equal(branding.getBranding().serverName, 'Kinora');
+  assert.equal(branding.getBranding().serverName, 'Vibe');
+  setKv('branding', { ...before, serverName: 'Kinora' });
+  assert.equal(branding.getBranding().serverName, 'Vibe');
   assert.equal(branding.updateBranding({ serverName: 'Acme Cinema' }).serverName, 'Acme Cinema');
   assert.equal(branding.getBranding().serverName, 'Acme Cinema');
 });

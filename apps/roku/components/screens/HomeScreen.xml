@@ -8,7 +8,7 @@
   <script type="text/brightscript" uri="pkg:/components/screens/HomeScreen.brs" />
   <children>
     <Poster id="backdrop" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.35" />
-    <Rectangle width="1920" height="1080" color="0x0D0C1D99" />
+    <Rectangle width="1920" height="1080" color="0x0C0C1099" />
 
     <Poster uri="pkg:/images/logo.png" translation="[96,36]" width="72" height="72" />
     <Label id="serverName" translation="[186,52]" width="420" color="0xFFFFFFFF" font="font:MediumBoldSystemFont" />

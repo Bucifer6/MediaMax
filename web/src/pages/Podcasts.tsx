@@ -6,9 +6,10 @@ import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync } from '../hooks';
 import { usePlayItem } from '../player/music';
-import { Badge, Dropdown, EmptyState, ErrorState, Img, Skeleton, Spinner, useConfirm } from '../components/ui';
+import { Dropdown, EmptyState, ErrorState, Img, Input, PageHeader, Skeleton, Spinner, Switch, useConfirm } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { relativeTime } from '../utils/format';
+import '../styles/listen.css';
 
 const looksLikeUrl = (s: string) => /^https?:\/\//i.test(s.trim());
 
@@ -112,30 +113,15 @@ export default function PodcastsPage() {
 
   const list = [...(subs.data ?? [])].sort((a, b) => a.title.localeCompare(b.title));
 
-  return (
-    <div className="page podcasts-page">
-      <header className="page-head">
-        <div className="page-title-wrap"><Icon name="podcast" size={28} className="page-icon" /><h1>Podcasts</h1></div>
-        <div className="row-gap">
-          <button className="btn" onClick={() => fileInput.current?.click()} disabled={importing}>
-            {importing ? <Spinner size={16} /> : <Icon name="upload" size={16} />} Import OPML
-          </button>
-          <input ref={fileInput} type="file" accept=".opml,.xml,text/xml,application/xml,text/x-opml" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importOpml(f); }} />
-        </div>
-      </header>
-
-      <section className="settings-card pod-search">
-        <h2>Add a podcast</h2>
-        <form className="pod-search-form" onSubmit={search} role="search">
-          <div className="input-icon">
-            <Icon name="search" size={18} />
-            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search podcasts or paste a feed URL" aria-label="Search podcasts or paste a feed URL" />
-          </div>
-          <button className="btn btn-primary" disabled={searching || !q.trim()}>{searching ? <Spinner size={16} /> : looksLikeUrl(q) ? 'Look up feed' : 'Search'}</button>
-        </form>
-        <label className="check-inline">
-          <input type="checkbox" checked={autoDownload} onChange={(e) => setAutoDownload(e.target.checked)} /> Download new episodes to the server automatically
-        </label>
+  const addCard = (
+    <section className="pod-add" aria-labelledby="pod-add-title">
+      <h2 id="pod-add-title">Add a podcast</h2>
+      <form className="pod-search-form" onSubmit={search} role="search">
+        <Input icon="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search podcasts or paste a feed URL" aria-label="Search podcasts or paste a feed URL" />
+        <button className="btn btn-primary" disabled={searching || !q.trim()}>{searching ? <Spinner size={16} /> : looksLikeUrl(q) ? 'Look up feed' : 'Search'}</button>
+      </form>
+      <Switch checked={autoDownload} onChange={setAutoDownload} label="Download new episodes to the server automatically" />
+      <div aria-live="polite">
         {searchError && <p className="form-error">{searchError}</p>}
         {results && (results.length === 0 ? <p className="muted">No podcasts found for “{q}”.</p> : (
           <ul className="pod-results">
@@ -156,34 +142,57 @@ export default function PodcastsPage() {
             })}
           </ul>
         ))}
-      </section>
+      </div>
+    </section>
+  );
 
-      <h2 className="section-title pod-subs-title">Subscriptions {list.length > 0 && <Badge tone="muted">{list.length}</Badge>}</h2>
-      {subs.loading && !subs.data ? (
-        <div className="pod-grid">{[0, 1, 2, 3].map((i) => <Skeleton key={i} h={120} />)}</div>
-      ) : subs.error ? (
-        <ErrorState message={subs.error} onRetry={subs.reload} />
-      ) : !list.length ? (
-        <EmptyState icon="podcast" title="No podcasts yet" message="Search above or import an OPML file from your old podcast app." />
-      ) : (
-        <ul className="pod-grid">
-          {list.map((s) => (
-            <li key={s.id} className="pod-sub">
-              <Link to={`/item/${s.itemId}`} className="pod-art pod-art-lg" aria-label={s.title}>
-                <Img src={s.imageUrl} width={200} alt="" fallback={<Icon name="podcast" size={28} />} />
-              </Link>
-              <div className="pod-sub-body">
-                <Link to={`/item/${s.itemId}`} className="pod-sub-title">{s.title}</Link>
-                <span className="muted pod-sub-meta">{s.episodeCount} episode{s.episodeCount === 1 ? '' : 's'} · updated {relativeTime(s.lastRefreshAt)}</span>
-                {s.lastError && <span className="form-error pod-sub-error" title={s.lastError}><Icon name="alert" size={13} /> {s.lastError}</span>}
+  return (
+    <div className="page podcasts-page">
+      <PageHeader
+        title="Podcasts"
+        subtitle={list.length ? `${list.length} subscription${list.length === 1 ? '' : 's'}` : undefined}
+        actions={(
+          <>
+            <button className="btn" onClick={() => fileInput.current?.click()} disabled={importing}>
+              {importing ? <Spinner size={16} /> : <Icon name="upload" size={16} />} Import OPML
+            </button>
+            <input ref={fileInput} type="file" accept=".opml,.xml,text/xml,application/xml,text/x-opml" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importOpml(f); }} />
+          </>
+        )}
+      />
+
+      {!list.length && !subs.loading && !subs.error && addCard}
+
+      <section className="pod-subs" aria-labelledby="pod-subs-title">
+        <h2 className="pod-section-title" id="pod-subs-title">Subscriptions</h2>
+        {subs.loading && !subs.data ? (
+          <div className="pod-grid">{[0, 1, 2, 3].map((i) => <Skeleton key={i} h={260} r={14} />)}</div>
+        ) : subs.error ? (
+          <ErrorState message={subs.error} onRetry={subs.reload} />
+        ) : !list.length ? (
+          <EmptyState compact icon="podcast" title="No podcasts yet" message="Search above or import an OPML file from your old podcast app." />
+        ) : (
+          <ul className="pod-grid">
+            {list.map((s) => (
+              <li key={s.id} className="pod-sub">
+                <div className="pod-cover-wrap">
+                  <Link to={`/item/${s.itemId}`} className="pod-cover" aria-label={s.title}>
+                    <Img src={s.imageUrl} width={360} alt="" fallback={<Icon name="podcast" size={36} />} />
+                  </Link>
+                  <button className="pod-play" onClick={() => play({ id: s.itemId, type: 'podcast' } as never)} aria-label={`Play the latest episode of ${s.title}`} title="Play latest"><Icon name="play" size={18} /></button>
+                </div>
+                <div className="pod-sub-body">
+                  <Link to={`/item/${s.itemId}`} className="pod-sub-title">{s.title}</Link>
+                  <span className="pod-sub-meta">{s.episodeCount} episode{s.episodeCount === 1 ? '' : 's'} · updated {relativeTime(s.lastRefreshAt)}</span>
+                  {s.lastError && <span className="pod-sub-error" title={s.lastError}><Icon name="alert" size={13} /> {s.lastError}</span>}
+                </div>
                 <div className="pod-sub-actions">
-                  <button className="btn btn-sm" onClick={() => play({ id: s.itemId, type: 'podcast' } as never)}><Icon name="play" size={14} /> Play latest</button>
-                  <label className="check-inline pod-auto" title="Download new episodes to the server">
+                  <label className="pod-auto" title="Download new episodes to the server">
                     <input type="checkbox" className="switch" checked={s.autoDownload} onChange={() => toggleAuto(s)} aria-label={`Auto-download ${s.title}`} />
                     <span>Auto-download</span>
                   </label>
                   <Dropdown
-                    trigger={({ onClick }) => <button className="btn-icon" onClick={onClick} aria-label={`More for ${s.title}`}>{busy === s.id ? <Spinner size={16} /> : <Icon name="more" size={18} />}</button>}
+                    trigger={({ onClick }) => <button className="btn-icon btn-icon-sm" onClick={onClick} aria-label={`More for ${s.title}`}>{busy === s.id ? <Spinner size={16} /> : <Icon name="more" size={18} />}</button>}
                     items={[
                       { label: 'Refresh feed', icon: 'refresh', onClick: () => void refresh(s) },
                       { label: 'Copy feed URL', icon: 'copy', onClick: () => { void navigator.clipboard?.writeText(s.feedUrl); toast.success('Feed URL copied'); } },
@@ -192,11 +201,13 @@ export default function PodcastsPage() {
                     ]}
                   />
                 </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {(list.length > 0 || subs.loading || !!subs.error) && addCard}
     </div>
   );
 }

@@ -3,7 +3,7 @@
   "name": "Discord Notifications",
   "version": "1.0.0",
   "description": "Posts new media, playback and request activity to a Discord channel via a webhook.",
-  "author": "Kinora",
+  "author": "Vibe",
   "homepage": "https://github.com/Bucifer6/MediaMax/tree/main/plugins/examples/discord-notify",
   "main": "index.js",
   "minServerVersion": "0.1.0",
@@ -14,6 +14,6 @@
     { "key": "newMedia", "label": "Announce new media", "type": "boolean", "default": true },
     { "key": "playback", "label": "Announce when someone starts watching", "type": "boolean", "default": false },
     { "key": "requests", "label": "Announce new requests", "type": "boolean", "default": true },
-    { "key": "username", "label": "Bot name", "type": "string", "default": "Kinora" }
+    { "key": "username", "label": "Bot name", "type": "string", "default": "Vibe" }
   ]
 }

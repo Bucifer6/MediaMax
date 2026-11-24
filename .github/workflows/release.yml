@@ -218,7 +218,7 @@ jobs:
           tag_name: v${{ needs.version.outputs.version }}
           # Manual runs: tag the commit that was built (GitHub would otherwise tag the default branch).
           target_commitish: ${{ github.sha }}
-          name: Kinora ${{ needs.version.outputs.version }}
+          name: Vibe ${{ needs.version.outputs.version }}
           prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
           generate_release_notes: true
           body: |
@@ -330,7 +330,7 @@ jobs:
           push: true
           tags: ${{ env.TAGS }}
           labels: |
-            org.opencontainers.image.title=Kinora
+            org.opencontainers.image.title=Vibe
             org.opencontainers.image.description=Self-hosted media server with IPTV, live TV, DVR and server-driven branding
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ env.VERSION }}

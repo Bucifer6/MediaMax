@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import type { Branding, FeatureFlags, Theme } from '@/api/types';
 
-const primary = (Constants.expoConfig?.extra?.fallbackPrimaryColor as string | undefined) ?? '#9198FF';
+const primary = (Constants.expoConfig?.extra?.fallbackPrimaryColor as string | undefined) ?? '#D23A72';
 
 /** Dark or white button text, whichever reads better on `hex` (#rrggbb). */
 function onColor(hex: string): string {
@@ -12,25 +12,26 @@ function onColor(hex: string): string {
   return 1.05 / (l + 0.05) >= (l + 0.05) / 0.05 ? '#FFFFFF' : '#0B0A1F';
 }
 
-/** Used until /branding arrives (and when the server's theme is malformed): the Kinora brand theme. */
+/** Used until /branding arrives (and when the server's theme is malformed): the Vibe brand theme. */
 export const FALLBACK_THEME: Theme = {
   id: 'mediamax',
-  name: 'Kinora',
+  name: 'Vibe Rose',
   mode: 'dark',
+  brandGradient: ['#FF8A5C', '#E2498A', '#7C5CFF'],
   colors: {
     primary,
     primaryText: onColor(primary),
-    background: '#0D0C1D',
-    surface: '#17152E',
-    surfaceAlt: '#211E3D',
-    text: '#F4F3FF',
-    textMuted: '#A6A3CC',
-    accent: '#FFA45C',
-    border: '#2E2A52',
-    success: '#2FD07F',
-    warning: '#F5B014',
-    danger: '#FF5C7A',
-    overlay: '#0D0C1D',
+    background: '#0C0C10',
+    surface: '#15151B',
+    surfaceAlt: '#1D1D25',
+    text: '#F2F1F6',
+    textMuted: '#B4B2C2',
+    accent: '#8C6BFF',
+    border: '#2A2A33',
+    success: '#3DD68C',
+    warning: '#F5B53D',
+    danger: '#FF5D6C',
+    overlay: '#0C0C10',
   },
   radius: 14,
   fontFamily: 'System',

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.3.0",
   "license": "MIT",
-  "description": "Kinora - all-in-one self-hosted media server with Xtream IPTV, live TV, DVR and fully server-driven branding.",
+  "description": "Vibe - all-in-one self-hosted media server with Xtream IPTV, live TV, DVR and fully server-driven branding.",
   "workspaces": [
     "shared",
     "server",

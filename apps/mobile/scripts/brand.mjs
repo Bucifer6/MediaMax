@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Produce a white-label brand folder from a running Kinora server.
+ * Produce a white-label brand folder from a running Vibe server.
  *
  *   npm run brand -- https://media.example.com acme [--bundle-id com.acme.media] [--lock]
  *

@@ -10,6 +10,17 @@ import { Icon, type IconName } from '../components/Icon';
 import { formatBitrate, formatBytes, formatClock, formatUptime, relativeTime } from '../utils/format';
 import { AdminHeader } from './AdminRoutes';
 
+function Health({ icon, label, value, sub, tone, to }: { icon: IconName; label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: 'ok' | 'warn' | 'err'; to?: string }) {
+  const body = (
+    <>
+      <span className="health-top"><Icon name={icon} size={16} /> {label}<span className="health-dot" role="img" aria-label={tone === 'ok' ? 'Healthy' : tone === 'warn' ? 'Needs attention' : tone === 'err' ? 'Problem' : 'Status'} /></span>
+      <span className="health-value">{value}</span>
+      {sub && <span className="health-sub">{sub}</span>}
+    </>
+  );
+  return to ? <Link to={to} className={`health ${tone ?? ''}`}>{body}</Link> : <div className={`health ${tone ?? ''}`}>{body}</div>;
+}
+
 function Stat({ icon, label, value, to }: { icon: IconName; label: string; value: React.ReactNode; to?: string }) {
   const body = (
     <>
@@ -170,6 +181,7 @@ export function Overview() {
   const stats = useAsync(() => api.system.stats(), []);
   const [sessions, setSessions] = useState<ActiveSession[] | null>(null);
   const activity = useAsync(() => api.admin.activity(8, 0), []);
+  const tasks = useAsync(() => api.admin.tasks(), []);
 
   useEffect(() => {
     api.playback.sessions().then(setSessions).catch(() => setSessions([]));
@@ -204,23 +216,43 @@ export function Overview() {
   const st = stats.data;
   return (
     <div>
-      <AdminHeader help="admin-setup" title="Overview" subtitle={st ? `Kinora ${st.version} · up ${formatUptime(st.uptimeSeconds)}` : undefined} />
-      <div className="stat-grid">
-        {!st ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} h={104} />) : (
-          <>
-            <Stat icon="film" label="Movies" value={st.movies.toLocaleString()} to="/admin/libraries" />
-            <Stat icon="shows" label="Shows" value={st.shows.toLocaleString()} to="/admin/libraries" />
-            <Stat icon="layers" label="Episodes" value={st.episodes.toLocaleString()} />
-            <Stat icon="music" label="Tracks" value={st.tracks.toLocaleString()} />
-            <Stat icon="tv" label="Channels" value={st.channels.toLocaleString()} to="/admin/channels" />
-            <Stat icon="users" label="Users" value={st.users} to="/admin/users" />
-            <Stat icon="play" label="Streams / transcodes" value={`${sessions?.length ?? st.activeSessions} / ${sessions ? sessions.filter((s) => s.method === 'transcode').length : st.transcodes}`} />
-            <Stat icon="recordOutline" label="Recordings scheduled" value={st.recordingsScheduled} />
-            <Stat icon="database" label="Free disk" value={formatBytes(st.diskFreeBytes)} />
-            <Stat icon="server" label="Libraries" value={st.libraries} to="/admin/libraries" />
-          </>
-        )}
+      <AdminHeader help="admin-setup" title="Overview" subtitle={st ? `Vibe ${st.version} · up ${formatUptime(st.uptimeSeconds)}` : undefined} />
+      <h2 className="sr-only">Server health</h2>
+      <div className="health-grid">
+        {!st ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} h={112} />) : (() => {
+          const streams = sessions?.length ?? st.activeSessions;
+          const transcodes = sessions ? sessions.filter((x) => x.method === 'transcode').length : st.transcodes;
+          const failed = (tasks.data ?? []).filter((t) => t.lastResult === 'error');
+          const running = (tasks.data ?? []).filter((t) => t.running);
+          const lowDisk = st.diskFreeBytes != null && st.diskFreeBytes < 10 * 1024 ** 3;
+          return (
+            <>
+              <Health icon="server" label="Server" value="Running" sub={`Vibe ${st.version} · up ${formatUptime(st.uptimeSeconds)}`} tone="ok" to="/admin/activity" />
+              <Health icon="play" label="Streams" value={streams} sub={streams ? `${transcodes} transcoding` : 'Nobody is watching'} tone={transcodes > 0 ? 'warn' : 'ok'} to="/admin/settings?tab=transcoding" />
+              <Health icon="database" label="Free disk" value={formatBytes(st.diskFreeBytes)} sub={lowDisk ? 'Running low' : 'Space for recordings and caches'} tone={st.diskFreeBytes == null ? undefined : lowDisk ? 'warn' : 'ok'} to="/admin/storage" />
+              <Health icon="clock" label="Scheduled tasks" value={tasks.data ? (failed.length ? `${failed.length} failed` : running.length ? `${running.length} running` : 'All good') : '…'} sub={failed[0]?.name ?? (running[0] ? running[0].name : tasks.data ? `${tasks.data.length} tasks` : undefined)} tone={!tasks.data ? undefined : failed.length ? 'err' : 'ok'} to="/admin/tasks" />
+            </>
+          );
+        })()}
       </div>
+
+      <section className="admin-section">
+        <h2 className="section-title">Library</h2>
+        <div className="stat-grid">
+          {!st ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} h={96} />) : (
+            <>
+              <Stat icon="film" label="Movies" value={st.movies.toLocaleString()} to="/admin/libraries" />
+              <Stat icon="shows" label="Shows" value={st.shows.toLocaleString()} to="/admin/libraries" />
+              <Stat icon="layers" label="Episodes" value={st.episodes.toLocaleString()} />
+              <Stat icon="music" label="Tracks" value={st.tracks.toLocaleString()} />
+              <Stat icon="tv" label="Channels" value={st.channels.toLocaleString()} to="/admin/channels" />
+              <Stat icon="users" label="Users" value={st.users} to="/admin/users" />
+              <Stat icon="recordOutline" label="Recordings scheduled" value={st.recordingsScheduled} />
+              <Stat icon="server" label="Libraries" value={st.libraries} to="/admin/libraries" />
+            </>
+          )}
+        </div>
+      </section>
       {stats.error && <p className="form-error">{stats.error}</p>}
 
       <section className="admin-section">

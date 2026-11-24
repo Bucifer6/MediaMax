@@ -1,6 +1,6 @@
 # Performance
 
-How fast Kinora is on a big install, how to measure it, what was changed to make it faster, and what is left.
+How fast Vibe is on a big install, how to measure it, what was changed to make it faster, and what is left.
 
 The target is one home server with about 10 drives, 20,000 movies, 2,000 shows (60,000 episodes), a few thousand IPTV
 channels with a large XMLTV guide, 80 users and up to 10 streams at once. The web app is also the Samsung and LG TV

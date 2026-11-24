@@ -1,8 +1,10 @@
 import {
-  createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState,
-  type CSSProperties, type ReactNode,
+  createContext, forwardRef, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState,
+  type ButtonHTMLAttributes, type CSSProperties, type InputHTMLAttributes, type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
+import type { MediaSource } from '@mediamax/shared';
 import { mediaUrl } from '../api/client';
 import { hashColor, initials } from '../utils/format';
 import { Icon, type IconName } from './Icon';
@@ -56,9 +58,9 @@ export function Skeleton({ w, h, r, className, style }: { w?: number | string; h
   return <div className={`skeleton ${className ?? ''}`} style={{ width: w, height: h, borderRadius: r, ...style }} />;
 }
 
-export function EmptyState({ icon = 'sparkles', title, message, action }: { icon?: IconName; title: string; message?: ReactNode; action?: ReactNode }) {
+export function EmptyState({ icon = 'sparkles', title, message, action, compact }: { icon?: IconName; title: string; message?: ReactNode; action?: ReactNode; compact?: boolean }) {
   return (
-    <div className="empty-state">
+    <div className={`empty-state ${compact ? 'compact' : ''}`}>
       <div className="empty-icon">
         <Icon name={icon} size={34} />
       </div>
@@ -84,9 +86,10 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   );
 }
 
-export function ProgressBar({ value, className }: { value: number; className?: string }) {
+export function ProgressBar({ value, className, size, label }: { value: number; className?: string; size?: 'md' | 'lg'; label?: string }) {
+  const v = Math.round(Math.max(0, Math.min(100, value)));
   return (
-    <div className={`progress ${className ?? ''}`}>
+    <div className={`progress ${size === 'lg' ? 'progress-lg' : ''} ${className ?? ''}`} role={label ? 'progressbar' : undefined} aria-label={label} aria-valuenow={label ? v : undefined} aria-valuemin={label ? 0 : undefined} aria-valuemax={label ? 100 : undefined}>
       <div className="progress-fill" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
     </div>
   );
@@ -169,9 +172,13 @@ export function Field({ label, hint, children, className }: { label: ReactNode; 
 
 /* ---------------- Modal ---------------- */
 export function Modal({
-  open, onClose, title, children, footer, size = 'md', className, container,
+  open, onClose, title, children, footer, size = 'md', className, container, variant = 'dialog', ariaLabel,
 }: {
   open: boolean; onClose: () => void; title?: ReactNode; children: ReactNode; footer?: ReactNode; size?: 'sm' | 'md' | 'lg' | 'xl'; className?: string;
+  /** Accessible name when the dialog has no visible `title` (the title heading labels it otherwise). */
+  ariaLabel?: string;
+  /** dialog (centred; a bottom sheet on phones) or sheet (docked to the right edge). */
+  variant?: 'dialog' | 'sheet';
   /** Portal target (defaults to document.body) — e.g. the fullscreen player element. */
   container?: Element | null;
 }) {
@@ -219,8 +226,8 @@ export function Modal({
   }, [open]);
   if (!open) return null;
   return createPortal(
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal modal-${size} ${className ?? ''}`} ref={ref} role="dialog" aria-modal="true" aria-labelledby={title !== undefined ? titleId : undefined} tabIndex={-1}>
+    <div className={`modal-backdrop ${variant === 'sheet' ? 'is-sheet' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className={`modal modal-${size} ${variant === 'sheet' ? 'modal-sheet' : ''} ${className ?? ''}`} ref={ref} role="dialog" aria-modal="true" aria-labelledby={title !== undefined ? titleId : undefined} aria-label={title === undefined ? ariaLabel : undefined} tabIndex={-1}>
         {title !== undefined && (
           <div className="modal-head">
             <h2 id={titleId}>{title}</h2>
@@ -343,9 +350,9 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
 export const useConfirm = () => useContext(ConfirmCtx);
 
 /* ---------------- Tabs ---------------- */
-export function Tabs<T extends string>({ value, onChange, tabs, className }: { value: T; onChange: (v: T) => void; tabs: { value: T; label: ReactNode }[]; className?: string }) {
+export function Tabs<T extends string>({ value, onChange, tabs, className, variant = 'underline' }: { value: T; onChange: (v: T) => void; tabs: { value: T; label: ReactNode }[]; className?: string; variant?: 'underline' | 'pills' }) {
   return (
-    <div className={`tabs ${className ?? ''}`} role="tablist">
+    <div className={`tabs ${variant === 'pills' ? 'pills' : ''} ${className ?? ''}`} role="tablist">
       {tabs.map((t) => (
         <button key={t.value} role="tab" aria-selected={t.value === value} className={`tab ${t.value === value ? 'active' : ''}`} onClick={() => onChange(t.value)}>
           {t.label}
@@ -355,8 +362,220 @@ export function Tabs<T extends string>({ value, onChange, tabs, className }: { v
   );
 }
 
-export function Badge({ children, tone, className }: { children: ReactNode; tone?: 'primary' | 'success' | 'warning' | 'danger' | 'accent' | 'muted'; className?: string }) {
-  return <span className={`badge ${tone ? 'badge-' + tone : ''} ${className ?? ''}`}>{children}</span>;
+export type BadgeTone = 'primary' | 'success' | 'warning' | 'danger' | 'accent' | 'muted' | 'outline' | 'quality' | 'new' | 'live';
+
+export function Badge({ children, tone, className, title }: { children: ReactNode; tone?: BadgeTone; className?: string; title?: string }) {
+  return <span className={`badge ${tone ? 'badge-' + tone : ''} ${className ?? ''}`} title={title}>{children}</span>;
+}
+
+/** Quality tags derived from an item's media: 4K, HDR / DV, Atmos. Empty when nothing notable (or no media info). */
+export function qualityTags(media: MediaSource[] | null | undefined): { label: string; title: string }[] {
+  const m = media?.[0];
+  if (!m) return [];
+  const tags: { label: string; title: string }[] = [];
+  const h = m.height ?? 0;
+  const w = m.width ?? 0;
+  if (m.resolutionLabel === '4K' || h >= 2000 || w >= 3800) tags.push({ label: '4K', title: 'Ultra HD 4K' });
+  const range = m.videoRange?.hdrFormat;
+  if (range === 'dolbyvision') tags.push({ label: 'DV', title: 'Dolby Vision' });
+  else if (m.hdr || (range && range !== 'sdr')) tags.push({ label: 'HDR', title: 'High dynamic range' });
+  if (m.audioStreams?.some((a) => a.atmos || /atmos/i.test(`${a.title ?? ''} ${a.profile ?? ''}`))) tags.push({ label: 'ATMOS', title: 'Dolby Atmos' });
+  return tags;
+}
+
+/** 4K / HDR / DV / ATMOS badges for an item's media (renders nothing without media info). */
+export function QualityBadges({ media, className }: { media: MediaSource[] | null | undefined; className?: string }) {
+  const tags = qualityTags(media);
+  if (!tags.length) return null;
+  return (
+    <span className={`badge-row ${className ?? ''}`}>
+      {tags.map((t) => <Badge key={t.label} tone="quality" title={t.title}>{t.label}</Badge>)}
+    </span>
+  );
+}
+
+/** "LIVE" pill with a pulsing dot. */
+export function LiveBadge({ small }: { small?: boolean }) {
+  return <span className={`live-pill ${small ? 'small' : ''}`}><span className="live-dot" /> LIVE</span>;
+}
+
+/* ---------------- Buttons ---------------- */
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'glass' | 'danger' | 'play';
+export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg';
+
+type ButtonOwnProps = {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  /** Leading icon. */
+  icon?: IconName;
+  /** Trailing icon. */
+  iconRight?: IconName;
+  block?: boolean;
+  /** Shows a spinner and disables the button. */
+  loading?: boolean;
+  /** Render as a router link instead of a button. */
+  to?: string;
+};
+
+export function buttonClass({ variant = 'secondary', size = 'md', block }: Pick<ButtonOwnProps, 'variant' | 'size' | 'block'> = {}): string {
+  return ['btn', variant !== 'secondary' && `btn-${variant}`, size !== 'md' && `btn-${size}`, block && 'btn-block'].filter(Boolean).join(' ');
+}
+
+/**
+ * The Vibe button. `<Button variant="primary" icon="play">Play</Button>`; `to` renders a router link with the same look.
+ * Plain `className="btn btn-primary"` markup is equivalent and still fine.
+ */
+export const Button = forwardRef<HTMLButtonElement, ButtonOwnProps & ButtonHTMLAttributes<HTMLButtonElement>>(function Button(
+  { variant, size, icon, iconRight, block, loading, to, className, children, disabled, type = 'button', ...rest },
+  ref,
+) {
+  const cls = `${buttonClass({ variant, size, block })} ${className ?? ''}`;
+  const iconSize = size === 'lg' ? 20 : size === 'sm' || size === 'xs' ? 14 : 16;
+  const inner = (
+    <>
+      {loading ? <Spinner size={iconSize} /> : icon ? <Icon name={icon} size={iconSize} /> : null}
+      {children}
+      {iconRight && <Icon name={iconRight} size={iconSize} />}
+    </>
+  );
+  if (to) return <Link to={to} className={cls} aria-disabled={disabled || undefined} data-nav>{inner}</Link>;
+  return (
+    <button ref={ref} type={type} className={cls} disabled={disabled || loading} aria-busy={loading || undefined} {...rest}>
+      {inner}
+    </button>
+  );
+});
+
+/** Round icon-only button. `label` is required (it becomes aria-label and the tooltip). */
+export const IconButton = forwardRef<HTMLButtonElement, { icon: IconName; label: string; size?: 'sm' | 'md' | 'lg'; filled?: boolean; active?: boolean; iconSize?: number } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'>>(
+  function IconButton({ icon, label, size = 'md', filled, active, iconSize, className, type = 'button', title, ...rest }, ref) {
+    const cls = ['btn-icon', size !== 'md' && `btn-icon-${size}`, filled && 'filled', active && 'active', className].filter(Boolean).join(' ');
+    return (
+      <button ref={ref} type={type} className={cls} aria-label={label} title={title ?? label} aria-pressed={active === undefined ? undefined : active} {...rest}>
+        <Icon name={icon} size={iconSize ?? (size === 'lg' ? 22 : size === 'sm' ? 16 : 20)} />
+      </button>
+    );
+  },
+);
+
+/* ---------------- Inputs ---------------- */
+/** Text input with an optional leading icon. Pass any <input> props. */
+export const Input = forwardRef<HTMLInputElement, { icon?: IconName; inputSize?: 'sm' | 'md' | 'lg' } & InputHTMLAttributes<HTMLInputElement>>(function Input(
+  { icon, inputSize = 'md', className, ...rest },
+  ref,
+) {
+  const input = <input ref={ref} className={`input ${inputSize !== 'md' ? `input-${inputSize}` : ''} ${className ?? ''}`} {...rest} />;
+  if (!icon) return input;
+  return (
+    <span className="input-wrap">
+      <Icon name={icon} size={16} />
+      {input}
+    </span>
+  );
+});
+
+/** Filter / toggle chip. `active` marks it pressed; `onRemove` adds an × (for applied filters). */
+export function Chip({ children, active, onClick, icon, onRemove, size, className, title }: { children: ReactNode; active?: boolean; onClick?: () => void; icon?: IconName; onRemove?: () => void; size?: 'sm' | 'md'; className?: string; title?: string }) {
+  return (
+    <button type="button" className={`chip ${size === 'sm' ? 'chip-sm' : ''} ${active ? 'active' : ''} ${className ?? ''}`} aria-pressed={active === undefined ? undefined : active} onClick={onRemove && !onClick ? onRemove : onClick} title={title}>
+      {icon && <Icon name={icon} size={14} />}
+      {children}
+      {onRemove && <Icon name="x" size={14} className="chip-x" />}
+    </button>
+  );
+}
+
+/** Segmented control: one of a few options (view mode, density…). An `iconOnly` option shows just its icon; its
+ *  label stays as the accessible name (visually hidden) and as the hover tooltip unless `title` says otherwise. */
+export function Segmented<T extends string>({ value, onChange, options, label, className }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode; icon?: IconName; title?: string; iconOnly?: boolean }[]; label: string; className?: string }) {
+  return (
+    <div className={`segmented ${className ?? ''}`} role="radiogroup" aria-label={label}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={o.value === value}
+          className={`${o.value === value ? 'active' : ''} ${o.iconOnly && o.icon ? 'seg-icon' : ''}`.trim() || undefined}
+          onClick={() => onChange(o.value)}
+          title={o.title ?? (o.iconOnly && typeof o.label === 'string' ? o.label : undefined)}
+        >
+          {o.icon && <Icon name={o.icon} size={15} />}
+          {o.iconOnly && o.icon ? <span className="sr-only">{o.label}</span> : o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------- Popover ---------------- */
+/** A small anchored panel (filters, quick settings). Closes on outside click and Esc. */
+export function Popover({ trigger, children, align = 'right', className, label }: { trigger: (p: { onClick: () => void; open: boolean }) => ReactNode; children: ReactNode | ((close: () => void) => ReactNode); align?: 'left' | 'right'; className?: string; label?: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc, true);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', esc, true);
+    };
+  }, [open]);
+  const close = () => setOpen(false);
+  return (
+    <div className={`dropdown ${className ?? ''}`} ref={ref}>
+      {trigger({ onClick: () => setOpen((o) => !o), open })}
+      {open && (
+        <div className={`popover-panel align-${align}`} role="dialog" aria-label={label}>
+          {typeof children === 'function' ? children(close) : children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Page & section headers ---------------- */
+/** Page title with optional eyebrow / subtitle / icon and right-aligned actions. Use once at the top of a page. */
+export function PageHeader({ title, subtitle, eyebrow, icon, actions, children, className }: { title: ReactNode; subtitle?: ReactNode; eyebrow?: ReactNode; icon?: IconName; actions?: ReactNode; children?: ReactNode; className?: string }) {
+  return (
+    <header className={`page-header ${className ?? ''}`}>
+      <div className="page-header-text">
+        {eyebrow && <span className="page-header-eyebrow">{eyebrow}</span>}
+        <h1 className="page-header-title">{icon && <Icon name={icon} size={26} />}{title}</h1>
+        {subtitle && <p className="page-header-sub">{subtitle}</p>}
+        {children}
+      </div>
+      {actions && <div className="page-header-actions">{actions}</div>}
+    </header>
+  );
+}
+
+/** Section title with an optional "See all" link and actions. `flush` drops the page gutter (inside padded pages). */
+export function SectionHeader({ title, subtitle, link, linkLabel = 'See all', actions, flush, as: Tag = 'h2', id }: { title: ReactNode; subtitle?: ReactNode; link?: string; linkLabel?: string; actions?: ReactNode; flush?: boolean; as?: 'h2' | 'h3'; id?: string }) {
+  return (
+    <div className={`section-header ${flush ? 'flush' : ''}`}>
+      <Tag className="section-header-title" id={id}>{title}</Tag>
+      {subtitle && <span className="section-header-sub">{subtitle}</span>}
+      {(actions || link) && (
+        <div className="section-header-actions">
+          {actions}
+          {link && (
+            <Link to={link} className="see-all" data-nav>
+              {linkLabel} <Icon name="chevronRight" size={16} />
+            </Link>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function StarRating({ value, onChange, size = 22 }: { value: number | null; onChange?: (v: number | null) => void; size?: number }) {

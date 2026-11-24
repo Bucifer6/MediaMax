@@ -1,6 +1,6 @@
-# Installing Kinora
+# Installing Vibe
 
-Kinora is one server program that serves the web app, the API and the streams on **port 8484**. Install it
+Vibe is one server program that serves the web app, the API and the streams on **port 8484**. Install it
 on the machine that holds (or can reach) your media, open `http://<that machine>:8484` in a browser and the
 setup wizard creates the first administrator.
 
@@ -27,7 +27,7 @@ Contents: [Docker](#docker) · [Windows](#windows) · [Linux](#linux) · [Synolo
 
 ## Docker
 
-> **Exposing Kinora to the internet?** `deploy/install.sh` sets up all of this plus HTTPS (Caddy or Nginx),
+> **Exposing Vibe to the internet?** `deploy/install.sh` sets up all of this plus HTTPS (Caddy or Nginx),
 > CrowdSec or fail2ban and hardened defaults in one command; see **[DEPLOY.md](DEPLOY.md)**:
 > `curl -fsSL https://raw.githubusercontent.com/Bucifer6/MediaMax/main/deploy/install.sh | sudo bash`
 
@@ -41,7 +41,7 @@ services:
     ports:
       - "8484:8484"
     environment:
-      - PUID=1000            # user and group Kinora runs as (see below)
+      - PUID=1000            # user and group Vibe runs as (see below)
       - PGID=1000
       - TZ=Europe/London
     volumes:
@@ -70,9 +70,9 @@ docker run -d --name kinora --restart unless-stopped -p 8484:8484 \
   ghcr.io/bucifer6/kinora:latest
 ```
 
-When you add a library in Kinora, use the path **inside** the container (`/media/movies`), not the host path.
+When you add a library in Vibe, use the path **inside** the container (`/media/movies`), not the host path.
 
-**PUID / PGID.** With both set, Kinora runs as that user and group instead of root, so files it creates on
+**PUID / PGID.** With both set, Vibe runs as that user and group instead of root, so files it creates on
 your shares (database, artwork, DVR recordings) belong to you, and it reads media with that user's rights. Find
 the numbers with `id <username>` on the host. On start, the container gives `/config` to that user (once, when
 the owner differs) and the top folder of `/recordings` and `/transcode`; it never changes the owner of your
@@ -103,7 +103,7 @@ Windows 10/11 or Server 2019+ (x64).
 
 1. Download `kinora-<version>-windows-x64.zip` from [Releases](https://github.com/Bucifer6/MediaMax/releases/latest)
    and extract it (right-click → Extract All).
-2. **Try it:** double-click `Kinora.cmd`. It starts Kinora in a minimised window and opens your browser.
+2. **Try it:** double-click `Kinora.cmd`. It starts Vibe in a minimised window and opens your browser.
    SmartScreen may warn about an unrecognised app the first time: **More info → Run anyway**.
 3. **Run at boot** (recommended for a home server): open PowerShell **as Administrator** in the extracted folder and run
 
@@ -111,9 +111,9 @@ Windows 10/11 or Server 2019+ (x64).
    powershell -ExecutionPolicy Bypass -File .\install-service.ps1
    ```
 
-   This copies Kinora to `C:\Program Files\Kinora` (a folder only administrators can change), registers a
-   **Kinora** task in Task Scheduler that starts at boot as SYSTEM without anyone signing in, opens TCP 8484 (and
-   UDP 1900 for DLNA) in Windows Firewall for Private/Domain networks, and starts it. If Kinora ever exits,
+   This copies Vibe to `C:\Program Files\Kinora` (a folder only administrators can change), registers a
+   **Kinora** task (the name is kept from before the rename to Vibe) in Task Scheduler that starts at boot as SYSTEM without anyone signing in, opens TCP 8484 (and
+   UDP 1900 for DLNA) in Windows Firewall for Private/Domain networks, and starts it. If Vibe ever exits,
    the task starts it again within 5 minutes. Options: `-Port 9000`, `-AllNetworkProfiles` (also open the
    firewall on networks Windows calls Public).
 
@@ -126,11 +126,11 @@ Windows 10/11 or Server 2019+ (x64).
    | Start | `Enable-ScheduledTask Kinora; Start-ScheduledTask Kinora` |
    | Uninstall | `.\install-service.ps1 -Uninstall` (keeps your data; add `-RemoveData` to delete it) |
 
-**Network shares.** Running as SYSTEM, Kinora can't see drive letters a user mapped. Add NAS folders as UNC
+**Network shares.** Running as SYSTEM, Vibe can't see drive letters a user mapped. Add NAS folders as UNC
 paths (`\\nas\media\movies`); the share must allow this computer's account (`DOMAIN\PCNAME$`) or guests to read.
 
 **Upgrade.** Back up (Admin → Backups), extract the new zip and run `install-service.ps1` from it again: it
-stops Kinora, replaces the program files and starts it. Without the task, close Kinora and replace the files.
+stops Vibe, replaces the program files and starts it. Without the task, close Vibe and replace the files.
 
 **Data:** `C:\ProgramData\Kinora` (`%ProgramData%\Kinora`), whether started by hand or by the task.
 
@@ -234,10 +234,10 @@ kinora → ⋮ → Recreate** with "pull latest image" ticked (or edit the YAML 
 
 Template: [`nas/unraid/kinora.xml`](../nas/unraid/kinora.xml) (Community Applications format).
 
-1. Until Kinora is listed in **Apps**, copy the template to the flash drive as
+1. Until Vibe is listed in **Apps**, copy the template to the flash drive as
    `/boot/config/plugins/dockerMan/templates-user/my-Kinora.xml` (for example with
    `wget -O /boot/config/plugins/dockerMan/templates-user/my-Kinora.xml https://raw.githubusercontent.com/Bucifer6/MediaMax/main/nas/unraid/kinora.xml`).
-2. **Docker → Add Container → Template: Kinora**.
+2. **Docker → Add Container → Template: Vibe**.
 3. Check the paths: `/config` → `/mnt/user/appdata/kinora` (cache pool), `/media` → your media share,
    `/recordings`, and `/transcode` → `/tmp/kinora` (RAM). `PUID 99` / `PGID 100` (nobody/users) match Unraid's
    share permissions.
@@ -283,25 +283,25 @@ Upgrade: select the file and press **Pull**, then **Up**. Hardware transcoding: 
 
 ### NAS & disk spin-down
 
-Kinora can leave NAS hard drives asleep while nobody is watching. Settings live in **Admin → Storage & disks**.
+Vibe can leave NAS hard drives asleep while nobody is watching. Settings live in **Admin → Storage & disks**.
 
-1. **Put Kinora's own files on an SSD.** The data folder (database, artwork cache, thumbnails, scrub previews, downloaded subtitles, backups) and the transcode folder are written all the time; keep them off the spinning array.
+1. **Put Vibe's own files on an SSD.** The data folder (database, artwork cache, thumbnails, scrub previews, downloaded subtitles, backups) and the transcode folder are written all the time; keep them off the spinning array.
    * **Synology:** map `/config` (and `KINORA_TRANSCODE_DIR`) to a folder on an SSD volume, or at least a different volume from the media.
    * **Unraid:** use the cache pool — `/mnt/cache/appdata/kinora`, *not* `/mnt/user/appdata` (the FUSE user share can wake array disks). Set the appdata share to *Use cache pool: Only/Prefer*.
    * **TrueNAS SCALE:** put the app's config/transcode datasets on an SSD pool (or the apps pool), and media on the HDD pool.
    * **QNAP / OMV:** the same idea — config on the system SSD / cache volume.
 2. **Don't poll.** File-change detection uses inotify on directories (no per-file watches, no polling) and never touches a sleeping disk. Only choose *Poll folder timestamps* for NFS/SMB mounts whose changes inotify cannot see, and keep the interval long (minimum 60 minutes). If inotify runs out of watches (very large libraries), raise `fs.inotify.max_user_watches` on the host (e.g. `sysctl fs.inotify.max_user_watches=524288`); the Storage page shows the error.
 3. **Turn on disk-friendly mode** and pick a maintenance window (e.g. 02:00–05:00, server time — set `TZ` on Docker containers). Scheduled library scans, thumbnail and scrub-preview generation, intro detection, DJ analysis, OpenSubtitles matching and HDR detection then only start in the window (one at a time, scan first). Manual *Run now*, playback, the Home Assistant *Scan libraries* button and scans triggered by real file changes are never held back.
-4. **Piggybacking** (on by default): when someone starts playing a file from a disk — or files change on it — Kinora runs that disk's share of the postponed work while the disk is spinning anyway. With disk-state checks, a disk something else woke up counts too.
-5. **Disk-state awareness (Linux, optional):** Kinora maps each library folder to its block devices via `/proc/self/mountinfo` and `/sys` (partitions, md/Unraid array devices, LVM/LUKS). If `hdparm` or `smartctl` is installed and allowed (root, or `--device /dev/sdX` + `--cap-add SYS_RAWIO` in Docker), it asks `hdparm -C` / `smartctl -n standby`, which answer **without waking** the drive. Outside disk-friendly mode, scheduled work then skips sleeping disks and catches up when they wake. Without those tools the Storage page shows *Idle* (no I/O for 10 minutes, read from `/sys`) or *Unknown*; nothing breaks. ZFS pools, mergerfs/Unraid user shares and network shares are shown as one "disk" each with unknown state.
+4. **Piggybacking** (on by default): when someone starts playing a file from a disk — or files change on it — Vibe runs that disk's share of the postponed work while the disk is spinning anyway. With disk-state checks, a disk something else woke up counts too.
+5. **Disk-state awareness (Linux, optional):** Vibe maps each library folder to its block devices via `/proc/self/mountinfo` and `/sys` (partitions, md/Unraid array devices, LVM/LUKS). If `hdparm` or `smartctl` is installed and allowed (root, or `--device /dev/sdX` + `--cap-add SYS_RAWIO` in Docker), it asks `hdparm -C` / `smartctl -n standby`, which answer **without waking** the drive. Outside disk-friendly mode, scheduled work then skips sleeping disks and catches up when they wake. Without those tools the Storage page shows *Idle* (no I/O for 10 minutes, read from `/sys`) or *Unknown*; nothing breaks. ZFS pools, mergerfs/Unraid user shares and network shares are shown as one "disk" each with unknown state.
 6. **Artwork next to media** (`poster.jpg`, `folder.jpg`…) is copied into the data folder the first time it is shown, so browsing never reads the media disk; rescans refresh the copy when the original changes.
 
 Limits: a library scan walks the whole library (all of its folders), so on an Unraid user share a scan in the window spins up every disk the share spans — point libraries at `/mnt/user/...` only if you accept that, or use per-disk paths. Background jobs that are already running when the window ends are allowed to finish. Plugin tasks are not held to the window.
 
 ## Hardware transcoding
 
-Software transcoding works everywhere. To use the GPU, give Kinora the device (see your platform below), then
-open **Admin → Settings → Transcoding** and press **Detect hardware**. Kinora lists the GPUs it can see and the
+Software transcoding works everywhere. To use the GPU, give Vibe the device (see your platform below), then
+open **Admin → Settings → Transcoding** and press **Detect hardware**. Vibe lists the GPUs it can see and the
 encoders in its FFmpeg build, then runs a 2-second test transcode with every method: H.264, HEVC and AV1 encoding,
 hardware decoding, 10-bit HEVC decoding and HDR → SDR tone mapping. Each card says what works (with the speed in fps)
 or shows FFmpeg's error. Press **Use this** on the recommended card and **Save changes**. Results are saved
@@ -341,7 +341,7 @@ sources prefer libplacebo, which applies the Dolby Vision reshaping. The detect 
 (`deinterlace_vaapi`, `vpp_qsv`, `yadif_cuda`) or with `bwdif` on the CPU. This needs the file's field order,
 which is recorded when a file is scanned, so rescan older interlaced recordings.
 
-**Automatic fallback.** If a hardware transcode fails to start or dies in the first seconds, Kinora retries step by
+**Automatic fallback.** If a hardware transcode fails to start or dies in the first seconds, Vibe retries step by
 step and logs why: CPU tone mapping instead of GPU tone mapping; H.264 instead of HEVC/AV1 on the same GPU (only
 before anything was sent to the player); CPU decoding with the same GPU encoder; and finally fully in software. The
 admin dashboard shows the reason on the session.
@@ -428,7 +428,7 @@ Pi 4: `v4l2m2m` (H.264 encode, about one 1080p30 stream). In Docker add `--devic
 
 `KINORA_DATA` overrides all of these. **Upgrading from MediaMax** (the product's former name): a standalone install
 keeps using its existing folder (`C:\ProgramData\MediaMax`, `~/.local/share/mediamax`, or `/var/lib/mediamax` when
-the Kinora folder holds no database yet) as long as the new Kinora folder doesn't exist, so nothing has to be moved;
+the Kinora folder holds no database yet) as long as the Kinora folder doesn't exist, so nothing has to be moved;
 Docker and source installs use the folder you mapped / `./data` as before. The data folder holds the database (`mediamax.db`), artwork and branding
 assets, avatars, subtitles, plugins, logs and `backups/`. Caches (`cache/`), streaming segments (`transcodes/`)
 and your media are not needed for a restore. DVR recordings are wherever `KINORA_RECORDINGS` / `/recordings` points.
@@ -437,12 +437,12 @@ and your media are not needed for a restore. DVR recordings are wherever `KINORA
 one `.tar.gz` in `<data>/backups/` with a consistent snapshot of the database plus artwork, branding, avatars,
 subtitles and plugins; you can download it from the same page. Copy backups off the machine (Hyper Backup,
 a NAS snapshot task, or any file backup of the `backups/` folder). To restore, upload or pick a backup on the same
-page, then restart Kinora (`docker restart kinora`, `sudo systemctl restart kinora`, or on Windows
+page, then restart Vibe (`docker restart kinora`, `sudo systemctl restart kinora`, or on Windows
 `Stop-ScheduledTask Kinora; Start-ScheduledTask Kinora`). The restore is applied as it starts, and a
 "pre-restore" backup of what it replaced is kept.
 
 **Moving to another machine or install type** (for example from Windows to a NAS): create a backup, install
-Kinora on the new machine, restore the backup there and restart it. If the media lives at different paths
+Vibe on the new machine, restore the backup there and restart it. If the media lives at different paths
 on the new machine, edit the libraries' folders in the admin dashboard.
 
 ## Settings
@@ -467,11 +467,11 @@ Each variable also works under its original `MEDIAMAX_*` name (e.g. `MEDIAMAX_PO
 ## Play to devices
 
 Every player's cast menu lists Chromecast, AirPlay (Safari / iOS) and the TVs, AV receivers, Sonos speakers and Kodi boxes on your
-network. Pick one and Kinora streams straight to it: the original file when the device supports it, otherwise a converted
+network. Pick one and Vibe streams straight to it: the original file when the device supports it, otherwise a converted
 stream (H.264/AAC MPEG-TS for video, FLAC or MP3 for music). Your browser or phone becomes a remote (pause, seek, volume, stop),
 and progress is saved as usual. Configure it in **Admin → Play to devices**.
 
-* **Discovery** uses SSDP (UPnP) and mDNS on the local network, so in Docker use `network_mode: host`, like DLNA. If Kinora has
+* **Discovery** uses SSDP (UPnP) and mDNS on the local network, so in Docker use `network_mode: host`, like DLNA. If Vibe has
   several network cards or runs behind port mapping, set *Stream address for devices* to the URL devices should fetch from.
 * **Kodi**: enable *Settings → Services → Control → Allow remote control via HTTP*. It is found automatically (mDNS) or can be
   added by host, port and the username/password set there.
@@ -500,7 +500,7 @@ Live TV needs a programme guide (EPG). Open **Admin → TV guide**:
 Channels without guide data get a **Missing guide** badge under Admin → Channels. Details: [EPG.md](EPG.md).
 
 ## Requests (replacing Overseerr / Jellyseerr)
-Kinora has request management built in — you don't need a separate Overseerr or Jellyseerr.
+Vibe has request management built in — you don't need a separate Overseerr or Jellyseerr.
 
 1. **Admin → Server settings → General**: add a TMDB API key (movies/shows). **Media automation (*arr)**: add Radarr/Sonarr
    (and Lidarr/Readarr for music/books), press **Test**, pick quality profile and root folder. Mark a second Radarr/Sonarr as
@@ -509,7 +509,7 @@ Kinora has request management built in — you don't need a separate Overseerr o
    *Auto* — and the default quota (e.g. 5 movies / 7 days, 6 seasons / 14 days). Change existing users individually or select
    several and use **Edit permissions**. Give trusted people **Manage requests** so they can approve without being admins.
 3. **Admin → Server settings → Notifications**: add Discord, Telegram, ntfy, Gotify, Pushover, Slack, email or a JSON webhook,
-   tick the events, press **Test**, then **Save changes**. Set the *Public URL* (General tab) so messages link back to Kinora.
+   tick the events, press **Test**, then **Save changes**. Set the *Public URL* (General tab) so messages link back to Vibe.
 4. People use **Discover** to request; managers approve on **Requests** (with **Edit** to change the server, profile, folder,
    tags or seasons first). Problems with a title are reported with the flag button on its page and handled under **Issues**.
 
@@ -555,7 +555,7 @@ Then:
 
 **No spare CPU?** Use a hosted free tier instead (Groq, Google Gemini, OpenRouter's `:free` models, Mistral or Cerebras). Paste the API key and keep the **Daily limit** on, so you stay inside the free allowance. If you hit the limit, the DJ falls back to its built-in brain for the rest of the day.
 
-**Piper** (another free, offline voice) runs inside the Kinora container:
+**Piper** (another free, offline voice) runs inside the Vibe container:
 
 1. Download the `piper` release for your CPU and a voice (`.onnx` plus `.onnx.json`) into `/config/voices/`.
 2. Choose **Piper** in the AI DJ settings.

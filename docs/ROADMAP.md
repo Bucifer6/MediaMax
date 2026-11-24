@@ -47,7 +47,7 @@ database optimise · notification agents (Discord ✅ via plugin; Telegram, emai
 
 **Integrations:** API keys · \*arr "Connect" rescans and Bazarr · Simkl/AniList scrobbling · Discord rich presence.
 
-## Where Kinora is weaker today (honest list)
+## Where Vibe is weaker today (honest list)
 - **DVR rules** are title-substring only. There are no priorities, conflicts or comskip.
 - **Transcode output** is H.264/AAC only. Dolby Vision is folded into a single HDR flag.
 - **PGS subtitles** can only be burned in, and ASS is flattened to WebVTT.

@@ -73,9 +73,9 @@ export async function csBan(cfg: CsConfig, ip: string, duration: string, reason:
   const now = new Date().toISOString();
   const scope = ip.includes('/') ? 'Range' : 'Ip';
   await call(cfg, 'POST', '/v1/alerts', [{
-    scenario: `manual 'ban' from Kinora: ${reason}`.slice(0, 200), scenario_hash: '', scenario_version: '', message: `manual ban from the Kinora dashboard: ${reason}`.slice(0, 300),
+    scenario: `manual 'ban' from Vibe: ${reason}`.slice(0, 200), scenario_hash: '', scenario_version: '', message: `manual ban from the Vibe dashboard: ${reason}`.slice(0, 300),
     events_count: 1, start_at: now, stop_at: now, capacity: 0, leakspeed: '0', simulated: false, events: [],
     source: { scope, value: ip }, remediation: true,
-    decisions: [{ duration, type: 'ban', scope, value: ip, origin: 'cscli', scenario: `Kinora dashboard: ${reason}`.slice(0, 200) }],
+    decisions: [{ duration, type: 'ban', scope, value: ip, origin: 'cscli', scenario: `Vibe dashboard: ${reason}`.slice(0, 200) }],
   }]);
 }

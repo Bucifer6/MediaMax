@@ -1,7 +1,7 @@
 # Metadata providers
 
-Kinora reads local metadata first (NFO files, embedded tags, `cover.jpg`/`poster.jpg`/`fanart.jpg`, `.lrc` files), then
-asks online services for what is still missing. **TMDB** is the main source for movies and shows; on top of that Kinora
+Vibe reads local metadata first (NFO files, embedded tags, `cover.jpg`/`poster.jpg`/`fanart.jpg`, `.lrc` files), then
+asks online services for what is still missing. **TMDB** is the main source for movies and shows; on top of that Vibe
 ships nine **built-in providers**, so you get rich metadata without installing plugins.
 
 Configure them in **Admin → Server settings → Metadata**:
@@ -60,7 +60,7 @@ Env var: `FANART_API_KEY`.
 Restrict it to the Books API. Env var: `GOOGLE_BOOKS_API_KEY`.
 
 **OMDb.** Request a free key at <https://www.omdbapi.com/apikey.aspx> (it is e-mailed to you and needs one click to
-activate). The free key allows 1,000 requests a day. Kinora stops calling OMDb for the rest of the day once that is used
+activate). The free key allows 1,000 requests a day. Vibe stops calling OMDb for the rest of the day once that is used
 up, and the cache avoids repeat lookups. Env var: `OMDB_API_KEY`.
 
 **Audnexus, Open Library, LRCLIB and MusicBrainz** need no key.
@@ -83,14 +83,14 @@ titles, overviews, air dates and thumbnails replace the unlocked episode fields.
 
 ## Audiobooks and ASINs
 
-Audnexus looks books up by **Audible ASIN** only; it has no title search. Kinora finds the ASIN, in this order:
+Audnexus looks books up by **Audible ASIN** only; it has no title search. Vibe finds the ASIN, in this order:
 
 1. an ASIN already on the item (set by **Fix match**);
 2. the folder or file name: `Project Hail Mary [B08G9PRS1K]`, `Project Hail Mary (B08G9PRS1K).m4b`, or
    `B08G9PRS1K - Project Hail Mary` (10-digit ISBN-style ASINs of older books must be in brackets);
 3. the first file's `ASIN` / `AUDIBLE_ASIN` tag (as written by tools such as Libation, OpenAudible or Mp3tag).
 
-Kinora does **not** use Audible's undocumented catalogue search. When no ASIN is found, **Google Books** and
+Vibe does **not** use Audible's undocumented catalogue search. When no ASIN is found, **Google Books** and
 **Open Library** fill the description, cover, year, ISBN and subjects by title + author ("(Unabridged)" and similar noise is
 stripped). To pin a book to the exact Audible edition, open it, choose **Edit metadata → Fix match**, pick *Audnexus (ASIN)*
 and paste the ASIN from the book's Audible URL (`audible.com/pd/…/B08G9PRS1K`).
@@ -102,13 +102,13 @@ folder layout and tags don't name one.
 
 For movies, shows, artists, albums and audiobooks: **Edit metadata → Fix match…**. Search the provider for the item's type
 (TMDB or TheTVDB for shows; MusicBrainz for music; Audnexus by ASIN, Google Books or Open Library for audiobooks) and pick
-the right entry. Kinora drops the old match's ids and downloaded artwork, then re-fetches everything in *replace* mode:
+the right entry. Vibe drops the old match's ids and downloaded artwork, then re-fetches everything in *replace* mode:
 unlocked fields take the new match's values. Locked fields and local or uploaded artwork stay. Seasons and episodes follow
 their show.
 
 ## Lyrics (LRCLIB)
 
-When a track has no `.lrc`/`.txt` file next to it and no embedded lyrics, Kinora asks LRCLIB by track title, artist, album
+When a track has no `.lrc`/`.txt` file next to it and no embedded lyrics, Vibe asks LRCLIB by track title, artist, album
 and duration. Synced lyrics are preferred, then plain lyrics. Hits and misses are cached, so each track is looked up at most
 once per cache period. Turn the LRCLIB toggle off to stop all lookups.
 
@@ -119,10 +119,10 @@ badges next to the star rating.
 
 ## MusicBrainz, AcoustID and ListenBrainz
 
-### Tags Kinora reads (MusicBrainz Picard)
+### Tags Vibe reads (MusicBrainz Picard)
 
 The best way to get exact music metadata is to tag your files with [MusicBrainz Picard](https://picard.musicbrainz.org)
-(or beets / foobar2000 with the MusicBrainz plugin). Kinora reads the ids and never writes to your files:
+(or beets / foobar2000 with the MusicBrainz plugin). Vibe reads the ids and never writes to your files:
 
 | Vorbis (FLAC, Ogg, Opus) | ID3 (MP3) | MP4 (M4A/ALAC) | Stored as |
 |---|---|---|---|
@@ -166,13 +166,13 @@ are also read directly for those.
 
 ### AcoustID: identify by sound
 
-For files with no tags (or wrong ones) Kinora can fingerprint the first two minutes with Chromaprint and look the sound up
+For files with no tags (or wrong ones) Vibe can fingerprint the first two minutes with Chromaprint and look the sound up
 on [AcoustID](https://acoustid.org):
 
 1. **Fingerprinter.** `fpcalc` (Debian/Ubuntu package `libchromaprint-tools`, included in the Docker image) on the
    `PATH` or at `KINORA_FPCALC`; otherwise an ffmpeg built with `--enable-chromaprint` (`ffmpeg -muxers | grep chromaprint`).
 2. **Key.** AcoustID needs a free *application* key: sign in at acoustid.org, open
-   [acoustid.org/new-application](https://acoustid.org/new-application), register "Kinora" (any version / website) and
+   [acoustid.org/new-application](https://acoustid.org/new-application), register "Vibe" (any version / website) and
    paste the API key under Server settings → Metadata → Music identification (write-only, shown as ••••).
 3. **Use.** Edit a track → **Identify by sound…** shows the matches with their score; picking one stores the title,
    credits, recording MBID and AcoustID id **in the database only** (your files are never modified, and a rescan keeps it).
@@ -190,10 +190,10 @@ admins may use a local-network address).
 
 * **Listens.** "Playing now" when a track starts and a listen once half of it or 4 minutes were played (whichever is less),
   with `recording_mbid`, `release_mbid`, `release_group_mbid`, `artist_mbids`, `track_mbid`, `work_mbids`, `tracknumber`,
-  `duration_ms`, `media_player`/`submission_client` "Kinora" and versions. The same events reach Last.fm: players, the DJ mix
+  `duration_ms`, `media_player`/`submission_client` "Vibe" and versions. The same events reach Last.fm: players, the DJ mix
   player and Subsonic apps' `scrobble` calls all go through one dispatcher.
 * **Offline queue.** Listens that can't be sent (network down, 5xx, rate limit) are kept in the database and sent later as
-  `import` batches (oldest first, every 5 minutes, after the next successful listen, or with **Send now**). Kinora follows
+  `import` batches (oldest first, every 5 minutes, after the next successful listen, or with **Send now**). Vibe follows
   `X-RateLimit-Remaining` / `X-RateLimit-Reset-In`; rejected (400) listens are dropped one by one so they don't block the rest.
 * **Loves and hates** (optional): favourites and ratings of 4★ or more send `love`, 1★ sends `hate` for tracks with a
   recording MBID.

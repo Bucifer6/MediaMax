@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Builds a standalone Kinora server: one executable (a Node single executable application, "SEA")
+ * Builds a standalone Vibe server: one executable (a Node single executable application, "SEA")
  * plus the web app, packed into a release archive.
  *
  *   npm run build                      # shared + server + web (web/dist must exist)

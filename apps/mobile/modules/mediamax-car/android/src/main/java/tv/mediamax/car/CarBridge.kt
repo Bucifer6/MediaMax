@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * is bound to it). Either can exist without the other.
  */
 internal object CarBridge {
-  const val NOT_READY_MESSAGE = "Open Kinora on your phone to start listening"
+  const val NOT_READY_MESSAGE = "Open Vibe on your phone to start listening"
   const val TIMEOUT_MESSAGE = "Couldn't reach your media server"
   private const val TIMEOUT_MS = 20_000L
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Kinora fail2ban bridge.
+Vibe fail2ban bridge.
 
 fail2ban's control socket is root-only (it sets umask 077). This tiny relay runs next to fail2ban, listens on a
-socket that only Kinora's group can use, and forwards a strict allow-list of commands:
+socket that only Vibe's group can use, and forwards a strict allow-list of commands:
 
     ["ping"]                         health check
     ["status"]                       jail list
@@ -11,7 +11,7 @@ socket that only Kinora's group can use, and forwards a strict allow-list of com
     ["set", <jail>, "banip"|"unbanip", <ip or CIDR>]
 
 Requests are decoded with an unpickler that refuses every class (plain lists of strings only), so a compromised
-Kinora can't use the bridge for anything beyond these commands.
+Vibe can't use the bridge for anything beyond these commands.
 """
 import io
 import ipaddress
@@ -46,8 +46,8 @@ def allowed(cmd):
             net = ipaddress.ip_network(cmd[3], strict=False)
         except ValueError:
             return False
-        # Same floor as Kinora's own check: never a range wider than /8 (IPv4) or /16 (IPv6), so a compromised
-        # Kinora can't ban the whole internet (0.0.0.0/0) and lock everyone out, the operator included.
+        # Same floor as Vibe's own check: never a range wider than /8 (IPv4) or /16 (IPv6), so a compromised
+        # Vibe can't ban the whole internet (0.0.0.0/0) and lock everyone out, the operator included.
         return net.prefixlen >= (8 if net.version == 4 else 16)
     return False
 
@@ -84,7 +84,7 @@ class Handler(socketserver.StreamRequestHandler):
         except Exception:
             cmd = None
         if not allowed(cmd):
-            reply = pickle.dumps((1, "ERROR: command not allowed by the Kinora bridge"), 2)
+            reply = pickle.dumps((1, "ERROR: command not allowed by the Vibe bridge"), 2)
         elif cmd == ["ping"]:
             reply = pickle.dumps((0, "pong"), 2)
         else:

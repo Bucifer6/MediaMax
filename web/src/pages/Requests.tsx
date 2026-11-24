@@ -8,7 +8,7 @@ import { seerrApi } from '../api/seerr';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync } from '../hooks';
-import { Badge, EmptyState, ErrorState, Field, Img, Modal, ProgressBar, Skeleton, Spinner, Switch, Tabs } from '../components/ui';
+import { Badge, EmptyState, ErrorState, Field, Img, Modal, PageHeader, ProgressBar, Skeleton, Spinner, Switch, Tabs } from '../components/ui';
 import { Icon, type IconName } from '../components/Icon';
 import '../styles/arr.css';
 import '../styles/requests.css';
@@ -290,7 +290,7 @@ function RequestDetail({ id, onClose, onChanged }: { id: string | null; onClose:
                 <li key={a.id} className={a.kind === 'comment' ? 'tl-comment' : ''}>
                   <span className={`tl-dot k-${a.kind}`}><Icon name={ACT_ICON[a.kind] ?? 'info'} size={13} /></span>
                   <div className="tl-body">
-                    <div><strong>{a.user?.displayName ?? (a.kind === 'processing' || a.kind === 'failed' || a.kind === 'available' ? '' : 'Kinora')}</strong> {a.user ? ACT_TEXT[a.kind] : ACT_TEXT[a.kind]} <span className="muted" title={formatDateTime(a.createdAt)}>· {relativeTime(a.createdAt)}</span></div>
+                    <div><strong>{a.user?.displayName ?? (a.kind === 'processing' || a.kind === 'failed' || a.kind === 'available' ? '' : 'Vibe')}</strong> {a.user ? ACT_TEXT[a.kind] : ACT_TEXT[a.kind]} <span className="muted" title={formatDateTime(a.createdAt)}>· {relativeTime(a.createdAt)}</span></div>
                     {a.body && <p>{a.body}</p>}
                   </div>
                 </li>
@@ -455,16 +455,14 @@ export default function RequestsPage() {
 
   return (
     <div className="page requests-page">
-      <header className="page-head">
-        <div className="page-title-wrap">
-          <Icon name="inbox" size={28} className="page-icon" />
-          <h1>{manager ? 'Requests' : 'My requests'} <HelpLink slug="requesting" label="Requests" /></h1>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <PageHeader
+        title={<>{manager ? 'Requests' : 'My requests'} <HelpLink slug="requesting" label="Requests" /></>}
+        subtitle={manager ? 'Approve, edit or decline what people ask for.' : 'Titles you asked for and where they are.'}
+        actions={<>
           {(manager || user?.requestPermissions?.reportIssues !== false) && <Link to="/issues" className="btn"><Icon name="flag" size={16} /> Issues</Link>}
           {features.requests && canRequest && <Link to="/discover" className="btn btn-primary"><Icon name="compass" size={16} /> Discover</Link>}
-        </div>
-      </header>
+        </>}
+      />
 
       {manager && <Tabs value={view} onChange={setView} tabs={[{ value: 'requests', label: 'Requests' }, { value: 'blacklist', label: 'Blacklist' }]} className="arr-tabs" />}
       {view === 'blacklist' && manager ? <BlacklistPanel /> : (

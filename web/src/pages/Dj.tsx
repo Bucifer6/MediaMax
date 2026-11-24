@@ -9,9 +9,10 @@ import { useMusic } from '../player/music';
 import { djEngine, type DeckState, type DjOptions, type DjState } from '../player/djEngine';
 import { transitionLabel, type KeyLockMode } from '../player/djMixer';
 import { Icon } from '../components/Icon';
-import { Badge, Field, Img, Spinner, Switch } from '../components/ui';
+import { Badge, Field, Img, PageHeader, Spinner, Switch } from '../components/ui';
 import { formatClock, formatDuration } from '../utils/format';
 import { HelpLink } from '../components/HelpLink';
+import '../styles/dj.css';
 
 const CURVES: { value: DjEnergyCurve; label: string; hint: string }[] = [
   { value: 'steady', label: 'Steady', hint: 'Holds the vibe of the first track' },
@@ -371,18 +372,16 @@ export default function DjPage() {
 
   return (
     <div className="page dj-page">
-      <header className="page-head">
-        <div className="page-title-wrap">
-          <Icon name="music" size={28} className="page-icon" />
-          <h1>DJ <HelpLink slug="dj-mode" label="DJ mode" /></h1>
-        </div>
-        {active && (
-          <div className="row-gap">
+      <PageHeader
+        title={<>DJ <HelpLink slug="dj-mode" label="DJ mode" /></>}
+        subtitle={active ? undefined : 'Beat-matched mixes from your own music library'}
+        actions={active ? (
+          <>
             <button className="btn" onClick={() => void saveAsPlaylist()}><Icon name="playlist" size={16} /> Save as playlist</button>
             <button className="btn btn-ghost" onClick={() => engine.stop()}><Icon name="x" size={16} /> End mix</button>
-          </div>
-        )}
-      </header>
+          </>
+        ) : undefined}
+      />
 
       {analysed < 1 && status.data && (
         <p className="dj-analysis-note muted">
@@ -396,7 +395,7 @@ export default function DjPage() {
           {s.status === 'ended' && <p className="muted">That mix has finished. Start another below.</p>}
           {s.status === 'error' && <p className="form-error">{s.error}</p>}
           {ai?.enabled && <AskTheDj ai={ai} nowArtist={nowArtist} onAsk={(prompt) => start({ prompt }, false)} />}
-          {ai?.enabled && <Switch checked={voice} onChange={setVoice} label={`DJ voice — ${ai.hostName} talks between songs`} hint={ai.serverVoice ? 'Uses the server\'s DJ voice.' : 'Uses your browser\'s built-in voice.'} />}
+          {ai?.enabled && <div className="dj-voice"><Switch checked={voice} onChange={setVoice} label={`DJ voice — ${ai.hostName} talks between songs`} hint={ai.serverVoice ? 'Uses the server\'s DJ voice.' : 'Uses your browser\'s built-in voice.'} /></div>}
           {ai?.enabled && <h2 className="section-title dj-or">Or set it up yourself</h2>}
           <Setup onStart={start} seed={seed.data ?? null} />
         </>

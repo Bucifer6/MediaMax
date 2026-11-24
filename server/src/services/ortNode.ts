@@ -1,5 +1,5 @@
 /**
- * onnxruntime-node (the native AI runtime the server's stem separation uses) is not installed with Kinora: the npm
+ * onnxruntime-node (the native AI runtime the server's stem separation uses) is not installed with Vibe: the npm
  * package is ~300 MB with the binaries of every platform, and only servers that turn AI karaoke on need it. The first
  * time it is needed, the server downloads the pinned npm tarballs of onnxruntime-node and its only runtime dependency
  * onnxruntime-common, checks each against the SHA-512 integrity hash from the npm registry, and keeps only the
@@ -9,7 +9,7 @@
  *
  * Builds exist for Windows x64 / arm64 (with DirectML for the GPU), Linux x64 / arm64 (glibc) and macOS arm64
  * (CoreML). Elsewhere the browser separates instead (web/src/stems/). MEDIAMAX_ORT_NODE_DIR may point at a folder
- * holding node_modules/onnxruntime-node (air-gapped servers), and an onnxruntime-node installed next to Kinora by hand
+ * holding node_modules/onnxruntime-node (air-gapped servers), and an onnxruntime-node installed next to Vibe by hand
  * is used too.
  */
 import fs from 'node:fs';
@@ -193,7 +193,7 @@ export const ortNodeRuntime = () => (runtime ??= createOrtNodeRuntime());
 
 /**
  * Where to load onnxruntime-node from: MEDIAMAX_ORT_NODE_DIR (a folder with node_modules/onnxruntime-node), the
- * downloaded copy, or a package installed by hand next to Kinora. Returns the module path to `require()` (the
+ * downloaded copy, or a package installed by hand next to Vibe. Returns the module path to `require()` (the
  * separation process loads it) and its version, or null when none is there.
  */
 export function findOrtNode(explicit = process.env.MEDIAMAX_ORT_NODE_DIR, dataDir = config.dataDir): { module: string; version: string } | null {

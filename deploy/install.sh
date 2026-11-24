@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Kinora installer for Linux hosts with Docker.
+# Vibe installer for Linux hosts with Docker.
 #
 #   curl -fsSL https://raw.githubusercontent.com/Bucifer6/MediaMax/main/deploy/install.sh | sudo bash
 #
@@ -12,7 +12,7 @@
 # It asks a few questions (domain, reverse proxy, CrowdSec/fail2ban, media folders, ...), writes .env and a
 # docker-compose.yml into the install folder (default /opt/kinora, or /opt/mediamax when an install made before
 # the rename is there), starts everything and waits until
-# Kinora answers. Re-running it reconfigures or upgrades without touching your data. See docs/DEPLOY.md.
+# Vibe answers. Re-running it reconfigures or upgrades without touching your data. See docs/DEPLOY.md.
 #
 #   install.sh                 install, or reconfigure an existing install (answers default to the current ones)
 #   install.sh --upgrade       pull new images, refresh the deploy files, restart
@@ -45,7 +45,7 @@ die()  { printf '%serror:%s %s\n' "$C_R" "$C_0" "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-Kinora installer
+Vibe installer
 
 Usage: install.sh [action] [options]
 
@@ -64,7 +64,7 @@ Options (each can also be given as the environment variable in brackets; the ori
   --security KIND         crowdsec | fail2ban | both | none (KINORA_SECURITY, default crowdsec)
   --media PATH[:rw]       media folder to mount read-only (repeat; add :rw for read-write)
                           (KINORA_MEDIA, comma separated)
-  --puid N --pgid N       user/group Kinora runs as (KINORA_PUID / KINORA_PGID, auto-detected)
+  --puid N --pgid N       user/group Vibe runs as (KINORA_PUID / KINORA_PGID, auto-detected)
   --tz ZONE               time zone, e.g. Europe/London (KINORA_TZ, auto-detected)
   --builtin-https         with --proxy none: also publish ports 80/443 so Admin → Network → Built-in HTTPS
                           can get a certificate (KINORA_BUILTIN_HTTPS=yes)
@@ -75,7 +75,7 @@ Options (each can also be given as the environment variable in brackets; the ori
   --proxy-ip IP           with --proxy existing on another machine: that proxy's address
   --firewall-bouncer      also install the CrowdSec firewall bouncer on this host (nginx/none/existing)
   --auto-upgrade          add a weekly cron job running install.sh --upgrade
-  --image IMAGE           Kinora image (KINORA_IMAGE, default ghcr.io/bucifer6/kinora:latest)
+  --image IMAGE           Vibe image (KINORA_IMAGE, default ghcr.io/bucifer6/kinora:latest)
   --ref REF               git branch/tag the deploy files come from (KINORA_REF, default main)
   --staging               use Let's Encrypt's staging CA (testing; certificates are not trusted)
   --no-start              write the files only; don't pull or start anything
@@ -489,7 +489,7 @@ configure() {
 
   if interactive; then
     say ""
-    say "${C_B}Kinora installer $INSTALLER_VERSION${C_0}  (install folder: $DIR)"
+    say "${C_B}Vibe installer $INSTALLER_VERSION${C_0}  (install folder: $DIR)"
     [ "$first_run" = 0 ] && say "Existing install found: press Enter to keep each current answer."
     say ""
   fi
@@ -510,8 +510,8 @@ configure() {
 
   # Reverse proxy
   if [ -z "$OPT_PROXY" ]; then
-    choose PROXY "Reverse proxy (HTTPS, compression, security headers in front of Kinora):" "$PROXY" \
-      "none|None: Kinora on port $HTTP_PORT (turn on built-in HTTPS later in Admin → Network)" \
+    choose PROXY "Reverse proxy (HTTPS, compression, security headers in front of Vibe):" "$PROXY" \
+      "none|None: Vibe on port $HTTP_PORT (turn on built-in HTTPS later in Admin → Network)" \
       "caddy|Caddy container (automatic HTTPS)" \
       "nginx|Nginx + Certbot" \
       "existing|I already have one (Nginx, NPM, Traefik, ...): show me the settings" \
@@ -546,7 +546,7 @@ configure() {
   # Existing proxy: where is it?
   if [ "$PROXY" = existing ]; then
     if [ -z "$OPT_PROXY_IP" ] && interactive; then
-      say "Kinora will listen on 127.0.0.1:$HTTP_PORT for a proxy on this server (or one in Docker joined to the"
+      say "Vibe will listen on 127.0.0.1:$HTTP_PORT for a proxy on this server (or one in Docker joined to the"
       say "'mediamax' network). If your proxy runs on another machine, enter its IP address."
       ask PROXY_IP "IP of a proxy on another machine (empty if it is on this server)" "$PROXY_IP"
     fi
@@ -569,10 +569,10 @@ configure() {
   if [ -z "$OPT_SECURITY" ]; then
     [ "$PROXY" = tunnel ] && interactive && say "(Behind Cloudflare Tunnel, firewall bans can't see visitors' addresses: use Cloudflare's WAF instead.)"
     choose SECURITY "Block password guessing and scanners:" "$def" \
-      "crowdsec|CrowdSec (recommended: community blocklist + Kinora scenarios)" \
-      "fail2ban|fail2ban (local bans from the Kinora security log)" \
+      "crowdsec|CrowdSec (recommended: community blocklist + Vibe scenarios)" \
+      "fail2ban|fail2ban (local bans from the Vibe security log)" \
       "both|Both" \
-      "none|None (Kinora still locks accounts after repeated failures)"
+      "none|None (Vibe still locks accounts after repeated failures)"
   else
     SECURITY="$def"
   fi
@@ -604,7 +604,7 @@ configure() {
       say "Media folders now mounted:"; media_print
       confirm "Keep these?" y || MEDIA=""
     fi
-    say "Media folders to make available to Kinora, mounted read-only under /media/<name>."
+    say "Media folders to make available to Vibe, mounted read-only under /media/<name>."
     say "Enter one host path per line (add :rw for read-write, e.g. for DVR or photo uploads); empty line to finish."
     while :; do
       ask entry "Media folder" ""
@@ -616,7 +616,7 @@ configure() {
   # PUID / PGID
   cur="${PUID:-$(detect_uid)}"
   if [ -z "$OPT_PUID" ] && interactive; then
-    say "Kinora runs as a normal user so files it creates belong to you (find yours with: id <username>)."
+    say "Vibe runs as a normal user so files it creates belong to you (find yours with: id <username>)."
     ask PUID "PUID (user id)" "$cur"
   else
     PUID="$cur"
@@ -675,12 +675,12 @@ derive() {
   TRANSCODE_SIZE="$(env_get MEDIAMAX_TRANSCODE_SIZE)"; : "${TRANSCODE_SIZE:=4g}"
   LAPI_PORT="$(env_get CROWDSEC_LAPI_PORT)"; : "${LAPI_PORT:=8090}"
   BOUNCER_KEY="$(env_get CROWDSEC_BOUNCER_KEY)"
-  # Login for Kinora's Security dashboard on CrowdSec's Local API (a "machine", like cscli).
+  # Login for Vibe's Security dashboard on CrowdSec's Local API (a "machine", like cscli).
   DASH_PW="$(env_get CROWDSEC_DASHBOARD_PASSWORD)"
   if [ -z "$DASH_PW" ] && has_crowdsec; then DASH_PW="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"; fi
   case "$PROXY" in
     caddy|nginx)
-      # Only the proxy is reachable from outside; Kinora is on the internal network (and on loopback
+      # Only the proxy is reachable from outside; Vibe is on the internal network (and on loopback
       # when the proxy doesn't need port 8484 itself).
       TRUSTED="loopback,$SUBNET"
       if [ -n "$DOMAIN" ]; then BIND="127.0.0.1"; else BIND=""; fi ;;
@@ -729,9 +729,9 @@ write_env() {
   local tmp key
   tmp="$(mktemp "$DIR/.env.XXXXXX")"
   {
-    say "# Kinora deployment settings, written by deploy/install.sh $INSTALLER_VERSION."
+    say "# Vibe deployment settings, written by deploy/install.sh $INSTALLER_VERSION."
     say "# Re-run the installer to change them, or edit and run: docker compose up -d"
-    say "# Extra Kinora settings (TMDB_API_KEY, ...) go in mediamax.env."
+    say "# Extra Vibe settings (TMDB_API_KEY, ...) go in mediamax.env."
     say "COMPOSE_PROJECT_NAME=mediamax"
     say "COMPOSE_PROFILES=$(env_quote "$PROFILES")"
     say "MEDIAMAX_IMAGE=$(env_quote "$IMAGE")"
@@ -785,15 +785,15 @@ write_compose() {
   tmp="$(mktemp "$DIR/.compose.XXXXXX")"
   {
     cat <<'EOF'
-# Kinora: generated by deploy/install.sh from the answers in .env.
+# Vibe: generated by deploy/install.sh from the answers in .env.
 # Re-run the installer to change it; manual edits are replaced (the previous file is kept as
 # docker-compose.yml.bak). Put your own additions in docker-compose.override.yml (kept, and merged by
-# docker compose automatically). Settings for Kinora itself go in mediamax.env.
+# docker compose automatically). Settings for Vibe itself go in mediamax.env.
 #
 # Optional services are switched on by COMPOSE_PROFILES in .env (caddy, nginx, crowdsec, fail2ban, tunnel).
 # Pin versions by adding e.g. MEDIAMAX_IMAGE=ghcr.io/bucifer6/kinora:0.3.0, CADDY_IMAGE=caddy:2.11,
 # NGINX_IMAGE, CERTBOT_IMAGE, CROWDSEC_IMAGE, FAIL2BAN_IMAGE or CLOUDFLARED_IMAGE to .env.
-# Backups: Kinora makes its own (Admin → Backups), stored in ./config/backups. Copy that folder off this
+# Backups: Vibe makes its own (Admin → Backups), stored in ./config/backups. Copy that folder off this
 # machine now and then.
 name: mediamax
 
@@ -834,7 +834,7 @@ EOF
       - "80:80"
       - "443:443"
     sysctls:
-      net.ipv4.ip_unprivileged_port_start: "0"   # Kinora runs unprivileged and still binds 80/443
+      net.ipv4.ip_unprivileged_port_start: "0"   # Vibe runs unprivileged and still binds 80/443
 EOF
       fi
     fi
@@ -848,7 +848,7 @@ EOF
       MEDIAMAX_TRUSTED_PROXIES: ${MEDIAMAX_TRUSTED_PROXIES:-}
       MEDIAMAX_HWACCEL: ${MEDIAMAX_HWACCEL:-none}
 EOF
-    # Admin → Security dashboard: where Kinora finds the proxy log, the certificate, CrowdSec and fail2ban.
+    # Admin → Security dashboard: where Vibe finds the proxy log, the certificate, CrowdSec and fail2ban.
     case "$PROXY" in
       caddy) say "      MEDIAMAX_PROXY_KIND: caddy"; say "      MEDIAMAX_PROXY_LOG: /var/log/proxy/caddy/access.log" ;;
       nginx) say "      MEDIAMAX_PROXY_KIND: nginx"; say "      MEDIAMAX_PROXY_LOG: /var/log/proxy/nginx/mediamax.access.log" ;;
@@ -1116,8 +1116,8 @@ EOF
       - no-new-privileges:true
     logging: *logging
 
-  # fail2ban's control socket is root-only. This relay lets Kinora's Security dashboard read jails and
-  # ban/unban through a socket only Kinora's group can open, and allows nothing else (fail2ban/bridge.py).
+  # fail2ban's control socket is root-only. This relay lets Vibe's Security dashboard read jails and
+  # ban/unban through a socket only Vibe's group can open, and allows nothing else (fail2ban/bridge.py).
   fail2ban-bridge:
     image: ${FAIL2BAN_IMAGE:-crazymax/fail2ban:latest}
     container_name: mediamax-fail2ban-bridge
@@ -1179,7 +1179,7 @@ install_files() {
     chown "$(stat -c %u:%g "$DIR/config")" "$DIR/config/logs" "$DIR/config/logs/security.log"
   fi
   [ -f "$DIR/mediamax.env" ] || cat >"$DIR/mediamax.env" <<'EOF'
-# Extra settings for the Kinora container (KEY=value, one per line), for example:
+# Extra settings for the Vibe container (KEY=value, one per line), for example:
 # TMDB_API_KEY=your_tmdb_key
 # MEDIAMAX_EXTRA_GIDS=1001
 EOF
@@ -1335,7 +1335,7 @@ setup_caddy_bouncer() {
   ok "CrowdSec bouncer connected to Caddy"
 }
 
-# Kinora's Security dashboard logs in to CrowdSec's Local API as a machine (read alerts, ban/unban).
+# Vibe's Security dashboard logs in to CrowdSec's Local API as a machine (read alerts, ban/unban).
 setup_dashboard_machine() {
   has_crowdsec || return 0
   wait_healthy mediamax-crowdsec 240 || { warn "CrowdSec isn't healthy yet; the Security dashboard will connect after you run the installer again"; return 0; }
@@ -1387,7 +1387,7 @@ CRON_FILE=/etc/cron.d/mediamax-upgrade
 setup_cron() {
   if [ "$AUTO_UPGRADE" = yes ] && [ -d /etc/cron.d ]; then
     cat >"$CRON_FILE" <<EOF
-# Kinora weekly upgrade (deploy/install.sh). Remove this file, or re-run the installer, to stop it.
+# Vibe weekly upgrade (deploy/install.sh). Remove this file, or re-run the installer, to stop it.
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 17 4 * * 0 root $DIR/install.sh --dir $DIR --upgrade --yes >>$DIR/logs/upgrade.log 2>&1
@@ -1436,13 +1436,13 @@ start_stack() {
     fi
   fi
   nginx_dummy_cert
-  info "Starting Kinora"
+  info "Starting Vibe"
   dc up -d --remove-orphans || die "starting the containers failed (see the message above); fix it and run the installer again"
   apply_changes
-  info "Waiting for Kinora to answer /health"
-  if wait_healthy mediamax 240; then ok "Kinora is up"
+  info "Waiting for Vibe to answer /health"
+  if wait_healthy mediamax 240; then ok "Vibe is up"
   else
-    warn "Kinora didn't report healthy in time. Recent log lines:"
+    warn "Vibe didn't report healthy in time. Recent log lines:"
     docker logs --tail 30 mediamax 2>&1 | sed 's/^/    /' >&2 || true
     die "see 'docker logs mediamax'; fix the cause and run the installer again (your answers are kept)"
   fi
@@ -1479,7 +1479,7 @@ long-lived streams open. Ready-made settings:
                         client_max_body_size 64m; proxy_read_timeout 1h;
   Traefik               labels: see docs/DEPLOY.md ("Existing reverse proxy")
 
-Kinora believes X-Forwarded-For only from: $TRUSTED
+Vibe believes X-Forwarded-For only from: $TRUSTED
 (change MEDIAMAX_TRUSTED_PROXIES in $DIR/.env if your proxy connects from elsewhere, then: docker compose up -d)
 EOF
 }
@@ -1488,7 +1488,7 @@ print_done() {
   local url; url="$(public_url)"
   cat <<EOF
 
-${C_G}${C_B}Kinora is running.${C_0}
+${C_G}${C_B}Vibe is running.${C_0}
 
   Open:  ${C_B}$url${C_0}
          and create the first administrator in the setup wizard. Do this now: until then, anyone who
@@ -1509,7 +1509,7 @@ Next steps
   - Logs:       cd $DIR && docker compose logs -f mediamax
 EOF
   if [ "$PROXY" = none ] && [ -z "$DOMAIN" ]; then
-    say "  - Before exposing Kinora to the internet, re-run the installer with a domain to get HTTPS."
+    say "  - Before exposing Vibe to the internet, re-run the installer with a domain to get HTTPS."
   fi
   if has_crowdsec && [ "$CADDY_BOUNCER" = no ] && [ "$FIREWALL_BOUNCER" != yes ]; then
     say "  - CrowdSec detects attacks but nothing blocks them yet: install a bouncer (docs/DEPLOY.md, CrowdSec)"
@@ -1520,7 +1520,7 @@ EOF
 
 # ----------------------------------------------------------------------------------------------- actions
 load_existing_or_die() {
-  [ -f "$ENV_FILE" ] && [ -f "$DIR/docker-compose.yml" ] || die "no Kinora install in $DIR (use --dir, or run the installer without --upgrade/--status)"
+  [ -f "$ENV_FILE" ] && [ -f "$DIR/docker-compose.yml" ] || die "no Vibe install in $DIR (use --dir, or run the installer without --upgrade/--status)"
 }
 
 load_settings_quietly() {
@@ -1556,7 +1556,7 @@ do_upgrade() {
   load_existing_or_die
   check_docker
   load_settings_quietly
-  info "Upgrading Kinora in $DIR"
+  info "Upgrading Vibe in $DIR"
   fetch_sources
   install_files
   setup_cron
@@ -1569,7 +1569,7 @@ do_upgrade() {
 do_status() {
   load_existing_or_die
   load_settings_quietly
-  say "${C_B}Kinora in $DIR${C_0}  (proxy: $PROXY, security: $SECURITY)"
+  say "${C_B}Vibe in $DIR${C_0}  (proxy: $PROXY, security: $SECURITY)"
   say "Address: $(public_url)"
   say ""
   dc ps --format 'table {{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || dc ps
@@ -1612,9 +1612,9 @@ do_uninstall() {
       die "--purge without a terminal needs --yes"
     fi
   else
-    confirm "Stop and remove the Kinora containers? Your data in $DIR stays." y || die "cancelled"
+    confirm "Stop and remove the Vibe containers? Your data in $DIR stays." y || die "cancelled"
   fi
-  info "Stopping Kinora"
+  info "Stopping Vibe"
   if [ "$PURGE" = 1 ]; then dc down --remove-orphans --volumes || true
   else dc down --remove-orphans || true; fi
   docker image rm mediamax-caddy:crowdsec >/dev/null 2>&1 || true
@@ -1627,9 +1627,9 @@ do_uninstall() {
   if [ "$PURGE" = 1 ]; then
     case "$DIR" in /|/opt|/srv|/home|/root|/var|/usr|/etc) die "refusing to delete $DIR" ;; esac
     rm -rf "$DIR"
-    ok "Kinora removed, including its data"
+    ok "Vibe removed, including its data"
   else
-    ok "Kinora stopped and removed. Data kept in $DIR (config/, recordings/). Reinstall: sudo $DIR/install.sh"
+    ok "Vibe stopped and removed. Data kept in $DIR (config/, recordings/). Reinstall: sudo $DIR/install.sh"
   fi
 }
 

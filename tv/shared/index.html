@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=1920, height=1080" />
-<title>Kinora</title>
+<title>Vibe</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #0D0C1D; color: #F4F3FF; font: 28px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  html, body { margin: 0; height: 100%; background: #0C0C10; color: #F2F1F6; font: 28px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   main { height: 100%; display: grid; place-items: center; align-content: center; gap: 28px; text-align: center; padding: 0 10vw; }
   h1 { margin: 0; font-size: 64px; letter-spacing: -0.02em; }
   p { margin: 0; color: #9AA6CC; max-width: 34em; }
   .logo { display: block; height: 120px; width: auto; }
   input { width: 900px; max-width: 80vw; font: inherit; padding: 18px 24px; border-radius: 14px; border: 3px solid #27315C; background: #121936; color: inherit; }
-  input:focus { outline: none; border-color: #9198FF; }
-  button { font: inherit; font-weight: 700; padding: 16px 48px; border-radius: 14px; border: 0; background: #9198FF; color: #0B0A1F; }
+  input:focus { outline: none; border-color: #F0588C; }
+  button { font: inherit; font-weight: 700; padding: 16px 48px; border-radius: 14px; border: 0; background: #D23A72; color: #FFFFFF; }
   button:focus { outline: 5px solid #fff; outline-offset: 5px; }
   .err { color: #ff8a8a; min-height: 1.4em; }
   .hint { font-size: 22px; }
@@ -20,9 +20,9 @@
 </head>
 <body>
 <main>
-  <!-- tv/build.mjs swaps this for the outlined Kinora wordmark (logo.svg), or keeps the text for a white-label --name. -->
-  <h1 id="brand">Kinora</h1>
-  <p>Enter the address of your Kinora server. You'll find it under Settings → Devices in the web app, for example <b>http://192.168.1.20:8484</b>.</p>
+  <!-- tv/build.mjs swaps this for the outlined Vibe wordmark (logo.svg), or keeps the text for a white-label --name. -->
+  <h1 id="brand">Vibe</h1>
+  <p>Enter the address of your Vibe server. You'll find it under Settings → Devices in the web app, for example <b>http://192.168.1.20:8484</b>.</p>
   <input id="url" type="url" inputmode="url" placeholder="http://192.168.1.20:8484" autocomplete="off" spellcheck="false" />
   <button id="go">Connect</button>
   <div class="err" id="err"></div>
@@ -52,7 +52,7 @@
     if (!/^https?:\/\//i.test(v)) v = 'http://' + v;
     try {
       var u = new URL(v);
-      // Plain http with no port typed: assume Kinora's default port (an explicit :80 parses to port '' too).
+      // Plain http with no port typed: assume Vibe's default port (an explicit :80 parses to port '' too).
       if (u.protocol === 'http:' && !u.port && !/^https?:\/\/(\[[^\]]*\]|[^\/?#]*):\d+/i.test(v)) u.port = '8484';
       return u.origin + (u.pathname === '/' ? '' : u.pathname.replace(/\/+$/, ''));
     } catch (e) { return null; }
@@ -74,7 +74,7 @@
       if (x.status === 200) {
         try { localStorage.setItem(KEY, url); } catch (e) {}
         window.location.replace(url + '/?tv=1');
-      } else err.textContent = 'That address answered, but it is not a Kinora server (HTTP ' + x.status + ').';
+      } else err.textContent = 'That address answered, but it is not a Vibe server (HTTP ' + x.status + ').';
     };
     x.onerror = x.ontimeout = function () { err.textContent = 'Could not reach ' + url + '. Check the address and that the TV is on the same network.'; };
     x.send();

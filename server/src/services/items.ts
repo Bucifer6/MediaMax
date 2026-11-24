@@ -1,5 +1,5 @@
 import type {
-  HomeRow, HomeRowConfig, Item, MusicInfo, SubtitleStream, Chapter, ItemQuery, ItemSort, MediaSource, Marker, Paged, Person, User, UserItemData, UpdateItemRequest, VideoRangeInfo,
+  HomeLayout, HomeRow, HomeRowConfig, Item, MusicInfo, SubtitleStream, Chapter, ItemQuery, ItemSort, MediaSource, Marker, Paged, Person, User, UserItemData, UpdateItemRequest, VideoRangeInfo,
 } from '@mediamax/shared';
 import { db, itemsVersion, type Param, type Row } from '../db.js';
 import { imageUrl } from './images.js';
@@ -796,7 +796,41 @@ export const homeHooks: {
   discoveryRow?: (user: User, cfg: HomeRowConfig) => HomeRow | null;
 } = {};
 
+/** Clean a stored "Customize Home" layout: string ids only, de-duplicated, bounded. */
+function cleanLayout(input: unknown): HomeLayout | null {
+  if (!input || typeof input !== 'object') return null;
+  const ids = (v: unknown) => [...new Set((Array.isArray(v) ? v : []).filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 200))].slice(0, 500);
+  const l = input as Partial<HomeLayout>;
+  return { hidden: ids(l.hidden), order: ids(l.order) };
+}
+
+/**
+ * Apply a profile's "Customize Home" layout to the built rows: hidden rows are dropped, then rows named in `order` come
+ * first in that order and the rest keep their server order after them. A row matches an id exactly, or by its base id
+ * (the part before ':'), so 'lib-recent' covers every 'lib-recent:<libraryId>' row. An exact id wins over a base id.
+ */
+export function applyHomeLayout(rows: HomeRow[], layout: unknown): HomeRow[] {
+  const l = cleanLayout(layout);
+  if (!l || (!l.hidden.length && !l.order.length)) return rows;
+  const base = (id: string) => (id.includes(':') ? id.slice(0, id.indexOf(':')) : id);
+  const hidden = new Set(l.hidden);
+  const visible = rows.filter((r) => !hidden.has(r.id) && !hidden.has(base(r.id)));
+  const rank = new Map(l.order.map((id, i) => [id, i]));
+  const keyed = visible.map((r, i) => ({ r, i, k: rank.get(r.id) ?? rank.get(base(r.id)) }));
+  keyed.sort((a, b) => {
+    if (a.k !== undefined && b.k !== undefined) return a.k - b.k || a.i - b.i;
+    if (a.k !== undefined) return -1;
+    if (b.k !== undefined) return 1;
+    return a.i - b.i;
+  });
+  return keyed.map((x) => x.r);
+}
+
 export function buildHome(user: User): HomeRow[] {
+  return applyHomeLayout(buildHomeRows(user), user.preferences?.homeLayout);
+}
+
+function buildHomeRows(user: User): HomeRow[] {
   const b = getBranding();
   const rows: HomeRow[] = [];
   for (const cfg of b.homeRows) {

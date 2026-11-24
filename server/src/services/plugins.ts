@@ -247,7 +247,7 @@ async function activate(id: string): Promise<void> {
     return;
   }
   if (manifest.minServerVersion && compareVersions(config.version, manifest.minServerVersion) < 0) {
-    errors.set(id, `Needs Kinora ${manifest.minServerVersion} or newer`);
+    errors.set(id, `Needs Vibe ${manifest.minServerVersion} or newer`);
     return;
   }
   itemsApi ??= await import('./items.js');

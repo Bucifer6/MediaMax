@@ -1,6 +1,6 @@
 # TV tuners and set-top boxes
 
-Besides IPTV (Xtream Codes, M3U) and HDHomeRun, Kinora can use your own broadcast hardware as a Live TV source:
+Besides IPTV (Xtream Codes, M3U) and HDHomeRun, Vibe can use your own broadcast hardware as a Live TV source:
 
 | Source | Hardware / software | Channels from | Guide from | Streams |
 |---|---|---|---|---|
@@ -11,7 +11,7 @@ Besides IPTV (Xtream Codes, M3U) and HDHomeRun, Kinora can use your own broadcas
 Add them under **Admin → Live TV sources → Add source**. Every tuner source:
 
 - has a **Test connection** button that checks the address and login and shows the device, the number of tuners and the number of channels (Enigma2: also lists the bouquets to pick);
-- is **always restreamed** through Kinora (device logins and RTSP never reach the clients);
+- is **always restreamed** through Vibe (device logins and RTSP never reach the clients);
 - limits concurrent streams to the **tuner count** the device reports (TVHeadend `/api/status/inputs`, SAT>IP `X_SATIPCAP`, Enigma2 tuner list). Set *Max simultaneous streams* to override it. Viewers of the same channel watching through HLS share one tuner; a viewer who would need one more tuner than the device has gets "All N connection(s) are in use";
 - shows its last error on the source card, and refreshes channels and guide every *Refresh every* hours (or with **Refresh**).
 
@@ -20,22 +20,22 @@ Passwords are write-only: the API returns them masked (`••••••••
 ## TVHeadend
 
 1. URL: the web interface address, e.g. `http://192.168.1.10:9981` (with a webroot: `http://host:9981/tvheadend`).
-2. Username / password of a TVHeadend user. TVHeadend uses **Digest** authentication by default; Kinora answers Digest or plain (Basic) automatically. The user needs *Streaming* and *Web interface* rights; for the channel list and the tuner count also *Admin* or at least read access to channels. A streaming-only user still works: Kinora falls back to `/playlist/channels.m3u` (no channel tags, tuner count unknown).
+2. Username / password of a TVHeadend user. TVHeadend uses **Digest** authentication by default; Vibe answers Digest or plain (Basic) automatically. The user needs *Streaming* and *Web interface* rights; for the channel list and the tuner count also *Admin* or at least read access to channels. A streaming-only user still works: Vibe falls back to `/playlist/channels.m3u` (no channel tags, tuner count unknown).
 3. **Stream profile**: `pass` (default) sends the untouched MPEG-TS; `matroska`, `htsp` or your own transcoding profiles can be picked after a test.
 4. Channel icons come from TVHeadend's image cache (`/imagecache/<id>`) with the same login.
 
 **Guide.** The source gets a *provider guide* (priority 0, like the IPTV provider guides) that reads TVHeadend's EPG grid. Its channel ids are the TVHeadend channel UUIDs, the same ids the channels carry, so every channel matches automatically (method *id*). Add an XMLTV URL to the source, or any guide under **Admin → TV guide**, to override it per channel (higher priority wins).
 
-**Recordings.** For TVHeadend sources the card menu has *Recordings on TVHeadend*: a read-only list of finished recordings (`/api/dvr/entry/grid_finished`) with a download link that goes through Kinora. Kinora's own DVR records from TVHeadend channels like from any other channel.
+**Recordings.** For TVHeadend sources the card menu has *Recordings on TVHeadend*: a read-only list of finished recordings (`/api/dvr/entry/grid_finished`) with a download link that goes through Vibe. Vibe's own DVR records from TVHeadend channels like from any other channel.
 
 ## SAT>IP
 
 1. **Find SAT>IP servers on the network** sends an SSDP search for `urn:ses-com:device:SatIPServer:1` and lists what answers (name, address, tuners, `X_SATIPCAP` such as `DVBS2-2,DVBT-2`). Picking one fills the address and the description URL. Or type the IP address.
 2. **Channel list**
-   - **FRITZ!Box built-in lists**: Kinora reads `http://<fritzbox>/dvb/m3u/tvhd.m3u`, `tvsd.m3u` and optionally `radio.m3u`. Run the cable channel scan in the FRITZ!Box first (*DVB-C → Channel list*). Discovered FRITZ!Boxes select this automatically.
+   - **FRITZ!Box built-in lists**: Vibe reads `http://<fritzbox>/dvb/m3u/tvhd.m3u`, `tvsd.m3u` and optionally `radio.m3u`. Run the cable channel scan in the FRITZ!Box first (*DVB-C → Channel list*). Discovered FRITZ!Boxes select this automatically.
    - **M3U with SAT>IP URLs**: a playlist of `rtsp://<ip>/?src=1&freq=11494&pol=h&msys=dvbs2&sr=22000&pids=0,17,18,5100,5101` or `http://<ip>/?src=…` entries — from your server's web interface, a community list for your satellite, or one you wrote. Entries using the placeholder host `sat.ip` (common in shared lists) or a bare `?src=…` query are pointed at your device. `tvg-id`, `tvg-logo` and `group-title` are used.
-3. **Tuner count** comes from the device description (`<satip:X_SATIPCAP>`, tried at the discovered URL, `:49000/satipdesc.xml` (FRITZ!Box), `:8080/desc.xml` (minisatip) and `/desc.xml`). `DVBS2-2,DVBT-2` counts as four streams in total; Kinora does not track which delivery system each channel needs, so set *Max simultaneous streams* if one system has fewer tuners than you watch at once.
-4. **RTSP transport**: FFmpeg asks for RTP over **TCP** (interleaved) by default, which works through NAT and Docker bridges. The FRITZ!Box only streams over **UDP**, which is the default for FRITZ!Box sources; UDP needs Kinora on the same network as the box (Docker: `network_mode: host`).
+3. **Tuner count** comes from the device description (`<satip:X_SATIPCAP>`, tried at the discovered URL, `:49000/satipdesc.xml` (FRITZ!Box), `:8080/desc.xml` (minisatip) and `/desc.xml`). `DVBS2-2,DVBT-2` counts as four streams in total; Vibe does not track which delivery system each channel needs, so set *Max simultaneous streams* if one system has fewer tuners than you watch at once.
+4. **RTSP transport**: FFmpeg asks for RTP over **TCP** (interleaved) by default, which works through NAT and Docker bridges. The FRITZ!Box only streams over **UDP**, which is the default for FRITZ!Box sources; UDP needs Vibe on the same network as the box (Docker: `network_mode: host`).
 
 **Guide.** SAT>IP has no guide API (the DVB EIT in the stream is not read). Add a guide under **Admin → TV guide** — an iptv-org or epg.pw guide for your country, or Schedules Direct / any XMLTV — and the channels are matched by name (`tvg-id` in your M3U matches exactly). The matching page shows anything that needs a hand.
 
@@ -47,7 +47,7 @@ Passwords are write-only: the API returns them masked (`••••••••
 4. Picons come from `/picon/<service reference with _>.png` on the receiver.
 5. The tuner count is the receiver's tuner list (`/api/deviceinfo`). A twin-tuner box can show two channels from different transponders at once; while it records, one tuner is busy on the box itself — lower *Max simultaneous streams* if that happens often.
 
-**Guide.** Like TVHeadend, the receiver's own EPG is a provider guide keyed by service reference (exact matches). Kinora reads `/api/epgmulti` per bouquet (7 days by default, *Guide days* 1–14) and falls back to `/api/epgservice` per channel on older OpenWebif versions.
+**Guide.** Like TVHeadend, the receiver's own EPG is a provider guide keyed by service reference (exact matches). Vibe reads `/api/epgmulti` per bouquet (7 days by default, *Guide days* 1–14) and falls back to `/api/epgservice` per channel on older OpenWebif versions.
 
 ## HDHomeRun discovery
 
@@ -68,7 +68,7 @@ The *HDHomeRun* source type has **Find HDHomeRun tuners on the network** too (Si
 | *No channel lists on the FRITZ!Box* | Run the DVB-C channel scan in the FRITZ!Box, or the box has no cable tuner. |
 | *Enter the URL of an M3U channel list* | Generic SAT>IP servers have no channel list of their own; give one. |
 | *The tuner refused the stream* / *No free tuner on the device* | The device has no free tuner, the channel is encrypted, or (FRITZ!Box) UDP is blocked — check *RTSP transport* and networking. |
-| *All N connection(s) to "…" are in use* | Kinora's own stream limit (tuner count or *Max simultaneous streams*). |
+| *All N connection(s) to "…" are in use* | Vibe's own stream limit (tuner count or *Max simultaneous streams*). |
 
 ## Limitations
 

@@ -15,7 +15,7 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
 /**
- * Playback capabilities of this Android / Android TV / Google TV / Fire TV device for Kinora's device profile:
+ * Playback capabilities of this Android / Android TV / Google TV / Fire TV device for Vibe's device profile:
  * HDR types of the connected display, hardware decoders (HEVC Main10, AV1, VP9 profile 2, Dolby Vision profiles)
  * and the encoded audio formats the HDMI/eARC sink accepts for passthrough. Also forwards TV remote keys that
  * react-native-tvos doesn't (digits, colour keys, info/guide, track next/previous) as `onRemoteKey` events.

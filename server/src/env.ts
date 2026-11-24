@@ -1,6 +1,7 @@
 /**
- * Environment variable names. The product was renamed MediaMax -> Kinora; every setting can be given under its new
- * name, `KINORA_<NAME>`, or its original one, `MEDIAMAX_<NAME>` (docs list the KINORA_ names). When both are set the
+ * Environment variable names. The product was renamed MediaMax -> Kinora -> Vibe; the variable names did not change
+ * with the move to Vibe (compatibility). Every setting can be given as `KINORA_<NAME>` or as its original
+ * `MEDIAMAX_<NAME>` (docs list the KINORA_ names). When both are set the
  * new name wins. The rest of the server reads the MEDIAMAX_ names, so this module copies each KINORA_ variable over
  * its MEDIAMAX_ twin before anything else looks at the environment (config.ts imports it first).
  */

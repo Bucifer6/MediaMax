@@ -22,9 +22,9 @@ const exeDir = path.dirname(process.execPath);
 const exe = process.platform === 'win32' ? '.exe' : '';
 
 /**
- * The data directory for a standalone install. Kinora's own folder is the default, but a folder left by an earlier
- * Kinora install is used when it exists and the Kinora one does not, so upgrading keeps the library, users and
- * settings without moving anything:
+ * The data directory for a standalone install. The folder names stay `kinora` (the product's previous name) so
+ * existing installs keep working after the rename to Vibe; a folder left by an earlier MediaMax install is used when
+ * it exists and the Kinora one does not, so upgrading keeps the library, users and settings without moving anything:
  *   Windows  %ProgramData%\Kinora              (legacy %ProgramData%\MediaMax)
  *   systemd  STATE_DIRECTORY (/var/lib/kinora)  (legacy /var/lib/mediamax)
  *   Linux    ~/.local/share/kinora               (legacy ~/.local/share/mediamax)

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from './Icon';
@@ -83,10 +83,29 @@ function useDragScroll(ref: React.RefObject<HTMLDivElement | null>) {
   }, [ref]);
 }
 
-export function Row({ title, link, children, className, subtitle }: { title: ReactNode; link?: string; children: ReactNode; className?: string; subtitle?: ReactNode }) {
+/** ←/→ move focus between the row's cards (TV mode has its own spatial navigation). */
+function onRowKey(e: React.KeyboardEvent<HTMLDivElement>) {
+  if ((e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') || e.altKey || e.metaKey || e.ctrlKey || document.documentElement.classList.contains('tv')) return;
+  const scroller = e.currentTarget;
+  const items = [...scroller.children].map((c) => (c.matches('a, button, [tabindex]') ? c : c.querySelector('a[href], button, [tabindex]:not([tabindex="-1"])'))).filter(Boolean) as HTMLElement[];
+  const i = items.findIndex((el) => el === document.activeElement || el.contains(document.activeElement));
+  if (i < 0) return;
+  const next = items[i + (e.key === 'ArrowRight' ? 1 : -1)];
+  if (!next) return;
+  e.preventDefault();
+  next.focus();
+  next.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+}
+
+/**
+ * A titled horizontal row of cards. Header: title (a link when `link` is set), optional subtitle, ‹ › page buttons and
+ * "See all". Scroller: snap, native momentum, mouse drag, ←/→ between cards.
+ */
+export function Row({ title, link, children, className, subtitle, id, actions, linkLabel = 'See all' }: { title: ReactNode; link?: string; children: ReactNode; className?: string; subtitle?: ReactNode; id?: string; actions?: ReactNode; linkLabel?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
+  const headingId = useId();
   useDragScroll(ref);
 
   const update = () => {
@@ -111,34 +130,41 @@ export function Row({ title, link, children, className, subtitle }: { title: Rea
   };
 
   return (
-    <section className={`row ${className ?? ''}`}>
+    <section className={`row ${className ?? ''}`} data-row-id={id} aria-labelledby={headingId}>
       <div className="row-head">
-        <h2 className="row-title">
+        <h2 className="row-title" id={headingId}>
           {link ? (
             <Link to={link}>
-              {title} <Icon name="chevronRight" size={18} />
+              {title} <Icon name="chevronRight" size={20} />
             </Link>
           ) : (
             title
           )}
         </h2>
         {subtitle && <span className="row-sub">{subtitle}</span>}
+        <div className="row-nav">
+          {actions}
+          {(canLeft || canRight) && (
+            <>
+              <button className="row-arrow" onClick={() => scroll(-1)} aria-label="Scroll left" disabled={!canLeft}>
+                <Icon name="chevronLeft" size={18} />
+              </button>
+              <button className="row-arrow" onClick={() => scroll(1)} aria-label="Scroll right" disabled={!canRight}>
+                <Icon name="chevronRight" size={18} />
+              </button>
+            </>
+          )}
+          {link && (
+            <Link to={link} className="see-all hide-sm" tabIndex={-1} aria-hidden="true">
+              {linkLabel}
+            </Link>
+          )}
+        </div>
       </div>
-      {/* Edge fades show there is more to either side (data-left / data-right drive the mask in CSS). */}
       <div className="row-wrap" data-left={canLeft || undefined} data-right={canRight || undefined}>
-        {canLeft && (
-          <button className="row-arrow left" onClick={() => scroll(-1)} aria-label="Scroll left" tabIndex={-1}>
-            <Icon name="chevronLeft" size={26} />
-          </button>
-        )}
-        <div className="row-scroller" ref={ref} onScroll={update}>
+        <div className="row-scroller" ref={ref} onScroll={update} onKeyDown={onRowKey}>
           {children}
         </div>
-        {canRight && (
-          <button className="row-arrow right" onClick={() => scroll(1)} aria-label="Scroll right" tabIndex={-1}>
-            <Icon name="chevronRight" size={26} />
-          </button>
-        )}
       </div>
     </section>
   );

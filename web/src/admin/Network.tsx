@@ -12,12 +12,12 @@ const api = {
 
 type Mode = NetworkSettings['mode'];
 const MODES: { id: Mode; title: string; text: string }[] = [
-  { id: 'direct', title: 'Direct', text: 'Clients connect straight to Kinora on port 8484 (home network, VPN, Tailscale, or a port forward). The default.' },
-  { id: 'proxy', title: 'Behind my reverse proxy', text: 'You already run Nginx, Traefik, Caddy, Nginx Proxy Manager, SWAG or Cloudflare Tunnel. Kinora only needs to trust it.' },
-  { id: 'builtin', title: 'Built-in HTTPS', text: 'Kinora runs Caddy itself and gets a free Let’s Encrypt certificate. Needs ports 80 and 443 and a domain pointing here.' },
+  { id: 'direct', title: 'Direct', text: 'Clients connect straight to Vibe on port 8484 (home network, VPN, Tailscale, or a port forward). The default.' },
+  { id: 'proxy', title: 'Behind my reverse proxy', text: 'You already run Nginx, Traefik, Caddy, Nginx Proxy Manager, SWAG or Cloudflare Tunnel. Vibe only needs to trust it.' },
+  { id: 'builtin', title: 'Built-in HTTPS', text: 'Vibe runs Caddy itself and gets a free Let’s Encrypt certificate. Needs ports 80 and 443 and a domain pointing here.' },
 ];
 
-/** Copy-ready configs for the common proxies. `up` is how the proxy reaches Kinora. */
+/** Copy-ready configs for the common proxies. `up` is how the proxy reaches Vibe. */
 function snippets(domain: string, up: string): { id: string; label: string; code: string }[] {
   return [
     { id: 'nginx', label: 'Nginx', code: `server {
@@ -167,7 +167,7 @@ export function NetworkAdmin() {
     if (draft.mode === 'builtin' && data.settings.mode !== 'builtin') {
       const ok = await confirm({
         title: 'Turn on built-in HTTPS?',
-        message: `Kinora will listen on ports ${draft.builtinHttps.httpPort} and ${draft.builtinHttps.httpsPort} and ask Let's Encrypt for a certificate for ${draft.builtinHttps.domain}. Make sure the domain points at this server and those ports are forwarded, and that no other proxy is already using them.`,
+        message: `Vibe will listen on ports ${draft.builtinHttps.httpPort} and ${draft.builtinHttps.httpsPort} and ask Let's Encrypt for a certificate for ${draft.builtinHttps.domain}. Make sure the domain points at this server and those ports are forwarded, and that no other proxy is already using them.`,
         confirmLabel: 'Turn on',
       });
       if (!ok) return;
@@ -183,18 +183,18 @@ export function NetworkAdmin() {
 
   const forwarded = !!you.forwardedFor;
   const check = forwarded && draft.mode !== 'proxy' && !you.proxyTrusted
-    ? { tone: 'warn', text: `Your request came through a proxy at ${you.socketAddress}. If that's your reverse proxy, choose "Behind my reverse proxy" so Kinora sees visitors' real addresses (now everyone looks like ${you.ip}).` }
+    ? { tone: 'warn', text: `Your request came through a proxy at ${you.socketAddress}. If that's your reverse proxy, choose "Behind my reverse proxy" so Vibe sees visitors' real addresses (now everyone looks like ${you.ip}).` }
     : forwarded
     ? you.proxyTrusted
-      ? { tone: 'good', text: `Your request came through a trusted proxy (${you.socketAddress}); Kinora sees your real address ${you.ip} over ${you.protocol.toUpperCase()}.` }
-      : { tone: 'bad', text: `Your request came through a proxy at ${you.socketAddress}, but it isn't trusted, so Kinora sees every visitor as ${you.ip}. Add ${you.socketAddress} (or its subnet) below.` }
+      ? { tone: 'good', text: `Your request came through a trusted proxy (${you.socketAddress}); Vibe sees your real address ${you.ip} over ${you.protocol.toUpperCase()}.` }
+      : { tone: 'bad', text: `Your request came through a proxy at ${you.socketAddress}, but it isn't trusted, so Vibe sees every visitor as ${you.ip}. Add ${you.socketAddress} (or its subnet) below.` }
     : { tone: draft.mode === 'proxy' ? 'warn' : 'good', text: draft.mode === 'proxy' ? `This request didn't come through a proxy (it came straight from ${you.ip}). Open this page through your proxy's address to check it.` : `You're connected directly from ${you.ip}.` };
 
   return (
     <div className="net-page">
       <AdminHeader help="admin-network"
         title="Network"
-        subtitle="How people reach this server. The built-in reverse proxy is off unless you turn it on here, so Kinora runs happily behind your existing setup."
+        subtitle="How people reach this server. The built-in reverse proxy is off unless you turn it on here, so Vibe runs happily behind your existing setup."
         actions={<button className="btn btn-primary" onClick={() => void save()} disabled={!dirty || saving}>{saving ? <Spinner size={16} /> : 'Save'}</button>}
       />
 
@@ -216,7 +216,7 @@ export function NetworkAdmin() {
         <h2>Connection check</h2>
         <p className={`net-check net-${check.tone}`}>{check.text}</p>
         <dl className="net-facts small">
-          <dt>Address Kinora uses</dt><dd className="mono">{you.ip}</dd>
+          <dt>Address Vibe uses</dt><dd className="mono">{you.ip}</dd>
           <dt>Connected from</dt><dd className="mono">{you.socketAddress}</dd>
           <dt>X-Forwarded-For</dt><dd className="mono">{you.forwardedFor ?? '—'}</dd>
           <dt>Protocol</dt><dd className="mono">{you.protocol}{you.forwardedProto ? ` (X-Forwarded-Proto: ${you.forwardedProto})` : ''}</dd>
@@ -228,7 +228,7 @@ export function NetworkAdmin() {
       {draft.mode === 'proxy' && <section className="sec-card">
         <h2>Trusted proxies</h2>
         <p className="muted small">
-          Kinora believes the X-Forwarded-For and X-Forwarded-Proto headers only from these addresses, so visitors can't fake their IP
+          Vibe believes the X-Forwarded-For and X-Forwarded-Proto headers only from these addresses, so visitors can't fake their IP
           to dodge sign-in limits and bans. <span className="mono">loopback</span>, <span className="mono">linklocal</span> and <span className="mono">uniquelocal</span> cover
           this machine and private networks (Docker networks included), which suits most setups.
         </p>
@@ -245,7 +245,7 @@ export function NetworkAdmin() {
       {draft.mode === 'proxy' && (
         <section className="sec-card">
           <h2>Proxy configuration</h2>
-          <p className="muted small">Point your proxy at Kinora on port 8484 with buffering off and WebSockets on. Ready-made examples for <span className="mono">{domain}</span>:</p>
+          <p className="muted small">Point your proxy at Vibe on port 8484 with buffering off and WebSockets on. Ready-made examples for <span className="mono">{domain}</span>:</p>
           <div className="segmented" role="tablist">
             {list.map((s) => <button key={s.id} role="tab" aria-selected={s.id === shown.id} className={s.id === shown.id ? 'active' : ''} onClick={() => setSnip(s.id)} style={{ textTransform: 'none' }}>{s.label}</button>)}
           </div>

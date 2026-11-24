@@ -1,5 +1,5 @@
 /**
- * Seeds a Kinora data folder with a synthetic large install, straight into SQLite (no media files needed).
+ * Seeds a Vibe data folder with a synthetic large install, straight into SQLite (no media files needed).
  *
  *   node scripts/perf/seed.mjs <dataDir> [--scale=1]
  *

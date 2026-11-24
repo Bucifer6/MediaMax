@@ -7,7 +7,7 @@ import { isMbid, parseMbTags } from './music/tags.js';
 
 /**
  * One dispatcher for scrobbling services (Last.fm, ListenBrainz): every source of "now playing" and "listened"
- * events — Kinora players and the DJ mix player (playback sessions), Subsonic clients (scrobble endpoint) — goes
+ * events — Vibe players and the DJ mix player (playback sessions), Subsonic clients (scrobble endpoint) — goes
  * through here, so each service gets the same events. Services decide themselves whether a listen counts.
  */
 

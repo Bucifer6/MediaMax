@@ -261,7 +261,7 @@ export function UsersAdmin() {
           </div>
         )}
         <div className="table-wrap">
-          <table className="table">
+          <table className="table users-table">
             <thead><tr><th className="td-check"><input type="checkbox" aria-label="Select all non-admin users" checked={allSel} onChange={(e) => setSelected(e.target.checked ? new Set(selectable.map((u) => u.id)) : new Set())} /></th><th>User</th><th>Access</th><th>Rating limit</th><th>Last seen</th><th /></tr></thead>
             <tbody>
               {owners.map((u) => (

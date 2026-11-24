@@ -7,13 +7,14 @@ import { seerrApi } from '../api/seerr';
 import { useApp } from '../state/app';
 import { useAsync, useDebounced, useInfiniteSentinel } from '../hooks';
 import { CardSkeleton } from '../components/Cards';
-import { EmptyState, Img } from '../components/ui';
+import { EmptyState, Img, PageHeader } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { DiscoverCard, keyOf, RequestModal, requestErrorText, useCardActions } from '../components/DiscoverCards';
 import { QuotaPills } from './Requests';
 import { canManageRequests } from '../utils/requests';
 import '../styles/arr.css';
 import '../styles/requests.css';
+import '../styles/screens-browse.css';
 
 type MediaFilter = 'all' | 'movie' | 'show' | 'music' | 'books' | 'people';
 const TAB_LABEL: Record<MediaFilter, string> = { all: 'All', movie: 'Movies', show: 'Shows', music: 'Music', books: 'Books', people: 'People' };
@@ -48,7 +49,7 @@ export default function DiscoverPage() {
   const { user, features } = useApp();
   const [params, setParams] = useSearchParams();
   const listKey = params.get('list');
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(() => params.get('q') ?? '');
   const [type, setType] = useState<MediaFilter>('all');
   const [hideAvailable, setHideAvailable] = useState(readHide);
   const debounced = useDebounced(q.trim(), 350);
@@ -163,25 +164,22 @@ export default function DiscoverPage() {
 
   return (
     <div className="page discover-page">
-      <header className="page-head">
-        <div className="page-title-wrap">
-          <Icon name="compass" size={28} className="page-icon" />
-          <h1>Discover</h1>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Link to="/requests" className="btn"><Icon name="inbox" size={16} /> {manager ? 'Requests' : 'My requests'}</Link>
-        </div>
-      </header>
+      <PageHeader
+        title="Discover"
+        subtitle="Find something new and request it for the library"
+        actions={<Link to="/requests" className="btn"><Icon name="inbox" size={16} /> {manager ? 'Requests' : 'My requests'}</Link>}
+      />
 
       {blocked ?? (
         <>
           {!manager && <QuotaPills quotas={opts?.quotas} />}
           <div className="discover-controls">
-            <div className="search-box discover-search">
-              <Icon name="search" size={22} />
+            <div className="search-field discover-search" role="search">
+              <Icon name="search" size={20} />
               <input
                 ref={input}
-                className="search-input"
+                type="search"
+                className="search-field-input"
                 value={q}
                 onChange={(e) => {
                   setQ(e.target.value);
@@ -192,8 +190,8 @@ export default function DiscoverPage() {
                 onKeyDown={(e) => e.key === 'Escape' && setQ('')}
               />
               {q && (
-                <button className="btn-icon" onClick={() => { setQ(''); input.current?.focus(); }} aria-label="Clear">
-                  <Icon name="x" />
+                <button className="btn-icon btn-icon-sm" onClick={() => { setQ(''); input.current?.focus(); }} aria-label="Clear search">
+                  <Icon name="x" size={16} />
                 </button>
               )}
             </div>

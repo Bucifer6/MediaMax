@@ -1,119 +1,111 @@
 /**
- * Kinora mark geometry: a "K" whose arms are two beams of projector light.
+ * Vibe mark geometry: "Lens", a disc with a V-shaped hole.
  *
- * The stem is the projector (a solid rounded bar); the K's arms are two wedges of light that leave from one point
- * just right of the stem's centre and widen as they travel, ending on an arc centred on that point, like a beam
- * landing on a curved screen. The notch between the beams is the K's crotch. It reads as a K at 16 px and as a beam of
- * light at launcher size, and it is built from three shapes, so the single-colour versions need no tricks.
+ * The disc is a screen, a lens and a record at once; the V cut through it is the vibe. It is one path filled with the
+ * even-odd rule, so the V is a real hole: the background shows through in every version (full colour, simplified,
+ * single colour, notification silhouette) and no version needs a second colour to read.
  *
  * Everything is constructed on a 512 x 512 grid from a handful of numbers:
- *  - the stem is W wide and spans Y0..Y1;
- *  - the apex A sits a hair (APEX_GAP) right of the stem, on the vertical centre of the stem;
- *  - each beam spans the angles A0..A1 above / below the horizontal, out to radius R from A;
- *  - R is solved so the outer edge of each beam ends level with the stem's top / bottom.
+ *  - the disc is centred on (256, 256) with radius R;
+ *  - the V is a stroke along the centreline P1 -> P2 -> P3 with width W, round caps at P1 / P3 and a round outer
+ *    join at P2 (the inner corner stays sharp: the V's crotch);
+ *  - the simplified mark (16-32 px) uses a heavier stroke so the hole stays open once pixels get coarse.
  *
  * Exports SVG fragments; scripts/brand/build-masters.mjs assembles them into the master files.
  */
 
 // ---- grid -------------------------------------------------------------------------------------
-export const G = (() => {
-  const W = 84; // stem width
-  const X0 = 108; // stem left edge
-  const X1 = X0 + W;
-  const Y0 = 88; // stem top
-  const Y1 = 424; // stem bottom
-  const APEX_GAP = 8;
-  const A = [X1 + APEX_GAP, (Y0 + Y1) / 2];
-  const A0 = 20; // inner edge of each beam (degrees from horizontal); the notch is 2 x A0
-  const A1 = 52; // outer edge
-  const R = (A[1] - Y0) / Math.sin((A1 * Math.PI) / 180);
-  return { W, X0, X1, Y0, Y1, A, A0, A1, R, stemR: 22, beamR: 10 };
-})();
-
-const f = (n) => +n.toFixed(2);
-const rad = (d) => (d * Math.PI) / 180;
-/** Point at `deg` degrees above the horizontal (negative = below) and distance r from the apex. */
-const at = (deg, r) => [G.A[0] + r * Math.cos(rad(deg)), G.A[1] - r * Math.sin(rad(deg))];
-const P = ([x, y]) => `${f(x)} ${f(y)}`;
-
-/** Rounded rectangle path (all four corners radius r). */
-function rrect(x, y, w, h, r) {
-  return `M${f(x + r)} ${f(y)}H${f(x + w - r)}A${r} ${r} 0 0 1 ${f(x + w)} ${f(y + r)}V${f(y + h - r)}A${r} ${r} 0 0 1 ${f(x + w - r)} ${f(y + h)}H${f(x + r)}A${r} ${r} 0 0 1 ${f(x)} ${f(y + h - r)}V${f(y + r)}A${r} ${r} 0 0 1 ${f(x + r)} ${f(y)}Z`;
-}
-
-export function stemPath() {
-  return rrect(G.X0, G.Y0, G.W, G.Y1 - G.Y0, G.stemR);
-}
-
-/**
- * One beam: a wedge from the apex between angles a and b (degrees), closed by an arc of radius R about the apex.
- * The two outer corners are filleted with radius rho (a circle tangent to the straight edge and the arc); the apex stays
- * sharp (it is where the light leaves the projector).
- */
-export function beamPath(sign, { R = G.R, rho = G.beamR, a0 = G.A0, a1 = G.A1 } = {}) {
-  const lo = sign * a0;
-  const hi = sign * a1;
-  // Fillet centre sits at distance R - rho from the apex, rotated inwards by delta from the edge.
-  const delta = (Math.asin(rho / (R - rho)) * 180) / Math.PI;
-  const along = (R - rho) * Math.cos(rad(delta)); // tangent point on the straight edge
-  const inward = sign; // rotate towards the beam's middle
-  const t1 = at(lo, along);
-  const u1 = at(lo + inward * delta, R);
-  const u2 = at(hi - inward * delta, R);
-  const t2 = at(hi, along);
-  // Upper beam (sign > 0): going from the low edge outwards, then along the arc anticlockwise on screen (y up) = sweep 0.
-  const sw = sign > 0 ? 0 : 1;
-  return `M${P(G.A)}L${P(t1)}A${f(rho)} ${f(rho)} 0 0 ${sw} ${P(u1)}A${f(R)} ${f(R)} 0 0 ${sw} ${P(u2)}A${f(rho)} ${f(rho)} 0 0 ${sw} ${P(t2)}Z`;
-}
-
-export const COLORS = {
-  ground: '#0D0C1D', // dark background (app icon, splash, default theme)
-  groundGlow: '#1F1C45', // centre of the background's radial light
-  ink: '#14122B', // the name on light backgrounds
-  stem: ['#A9AEFF', '#5B45F0'], // periwinkle -> indigo, top to bottom
-  stemSimple: '#7569FA',
-  beam: ['#FFE6A6', '#FFAA4D', '#F4506E'], // warm light: lamp white-gold -> amber -> rose, from the apex outwards
-  beamSimple: ['#FFC05C', '#F76A5C'],
+export const G = {
+  cx: 256,
+  cy: 256,
+  R: 208, // disc radius
+  P1: [152, 176], // V centreline: top left
+  P2: [256, 366], // bottom (the point of the V)
+  P3: [360, 176], // top right
+  W: 60, // V stroke width
+  W_SIMPLE: 72, // heavier V for 16-32 px
 };
 
+const f = (n) => +n.toFixed(2);
+const P = ([x, y]) => `${f(x)} ${f(y)}`;
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
+const add = (a, b, k = 1) => [a[0] + b[0] * k, a[1] + b[1] * k];
+const unit = (v) => {
+  const l = Math.hypot(v[0], v[1]);
+  return [v[0] / l, v[1] / l];
+};
+const cross = (u, v) => u[0] * v[1] - u[1] * v[0];
+
+/** The disc as a closed path (two half arcs). */
+export function discPath({ cx = G.cx, cy = G.cy, R = G.R } = {}) {
+  return `M${f(cx - R)} ${f(cy)}A${R} ${R} 0 1 0 ${f(cx + R)} ${f(cy)}A${R} ${R} 0 1 0 ${f(cx - R)} ${f(cy)}Z`;
+}
+
+/**
+ * The V as a filled outline: the stroke P1 -> P2 -> P3 of width w with round caps and a round outer join.
+ * The inner side (towards the V's opening) meets at the intersection of the two offset lines.
+ */
+export function vPath({ p1 = G.P1, p2 = G.P2, p3 = G.P3, w = G.W } = {}) {
+  const h = w / 2;
+  const d1 = unit(sub(p2, p1));
+  const d2 = unit(sub(p3, p2));
+  const n1 = [d1[1], -d1[0]]; // normals towards the V's opening
+  const n2 = [d2[1], -d2[0]];
+  const a1 = add(p1, n1, h);
+  const b1 = add(p2, n2, h);
+  const b2 = add(p3, n2, h);
+  const t = cross(sub(b1, a1), d2) / cross(d1, d2);
+  const inner = add(a1, d1, t);
+  const o1 = add(p1, n1, -h);
+  const o2a = add(p2, n1, -h);
+  const o2b = add(p2, n2, -h);
+  const o3 = add(p3, n2, -h);
+  return `M${P(a1)}L${P(inner)}L${P(b2)}A${f(h)} ${f(h)} 0 0 1 ${P(o3)}L${P(o2b)}A${f(h)} ${f(h)} 0 0 1 ${P(o2a)}L${P(o1)}A${f(h)} ${f(h)} 0 0 1 ${P(a1)}Z`;
+}
+
+/** The whole mark as one path (fill-rule evenodd): disc with the V cut out. */
+export const markPath = (o = {}) => `${discPath()}${vPath(o)}`;
+
+export const COLORS = {
+  ground: '#0C0C10', // dark background (app icon, splash, default theme)
+  groundGlow: '#231A33', // centre of the background's soft evening glow
+  groundLight: '#F7F6FA',
+  ink: '#15131C', // the name on light backgrounds
+  // Brand gradient, 135 deg: sunset -> rose -> violet (the evening, from first light to dusk)
+  gradient: ['#FF8A5C', '#E2498A', '#7C5CFF'],
+  gradientStops: [0, 0.55, 1],
+};
+
+/** 135 deg linear gradient across the disc's bounding box (top left -> bottom right), in user space. */
+export function gradientDef(id) {
+  const C = COLORS;
+  const x0 = G.cx - G.R;
+  const x1 = G.cx + G.R;
+  return `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${x0}" y1="${x0}" x2="${x1}" y2="${x1}">${C.gradient
+    .map((c, i) => `<stop offset="${C.gradientStops[i]}" stop-color="${c}"/>`)
+    .join('')}</linearGradient>`;
+}
+
 /** Full-colour mark as an SVG fragment (defs + body). `id` prefixes gradient ids so several marks can share one document. */
-export function markFull(id = 'km') {
-  const C = COLORS;
-  const defs =
-    `<linearGradient id="${id}-stem" gradientUnits="userSpaceOnUse" x1="0" y1="${G.Y0}" x2="0" y2="${G.Y1}"><stop offset="0" stop-color="${C.stem[0]}"/><stop offset="1" stop-color="${C.stem[1]}"/></linearGradient>` +
-    `<radialGradient id="${id}-beam" gradientUnits="userSpaceOnUse" cx="${f(G.A[0])}" cy="${f(G.A[1])}" r="${f(G.R)}"><stop offset="0" stop-color="${C.beam[0]}"/><stop offset="0.5" stop-color="${C.beam[1]}"/><stop offset="1" stop-color="${C.beam[2]}"/></radialGradient>`;
-  const body = `<path d="${stemPath()}" fill="url(#${id}-stem)"/><path d="${beamPath(1)}" fill="url(#${id}-beam)"/><path d="${beamPath(-1)}" fill="url(#${id}-beam)"/>`;
-  return { defs, body };
+export function markFull(id = 'vm') {
+  return { defs: gradientDef(`${id}-g`), body: `<path d="${markPath()}" fill="url(#${id}-g)" fill-rule="evenodd"/>` };
 }
 
-/**
- * Simplified mark for 16-32 px: flat stem, two-stop beams, a slightly wider notch and a bigger apex gap so the
- * beams stay apart from the stem and from each other once pixels get coarse.
- */
-export function markSimple(id = 'kms') {
-  const C = COLORS;
-  const defs = `<linearGradient id="${id}-b" gradientUnits="userSpaceOnUse" x1="${f(G.A[0])}" y1="0" x2="${f(G.A[0] + G.R)}" y2="0"><stop offset="0" stop-color="${C.beamSimple[0]}"/><stop offset="1" stop-color="${C.beamSimple[1]}"/></linearGradient>`;
-  const opts = { a0: G.A0 + 3, rho: 6 };
-  const body = `<path d="${stemPath()}" fill="${C.stemSimple}"/><path d="${beamPath(1, opts)}" fill="url(#${id}-b)"/><path d="${beamPath(-1, opts)}" fill="url(#${id}-b)"/>`;
-  return { defs, body };
+/** Simplified mark for 16-32 px: same disc and gradient, heavier V so the hole stays open. */
+export function markSimple(id = 'vms') {
+  return { defs: gradientDef(`${id}-g`), body: `<path d="${markPath({ w: G.W_SIMPLE })}" fill="url(#${id}-g)" fill-rule="evenodd"/>` };
 }
 
-/** Single-colour mark in `color` (the gap between stem and beams keeps the K readable). */
-export function markMono(color = '#000') {
-  return { defs: '', body: `<path d="${stemPath()}${beamPath(1)}${beamPath(-1)}" fill="${color}"/>` };
+/** Single-colour mark in `color` (the V is a hole, so it works on any background). */
+export function markMono(color = '#000', { simple = false } = {}) {
+  return { defs: '', body: `<path d="${markPath(simple ? { w: G.W_SIMPLE } : {})}" fill="${color}" fill-rule="evenodd"/>` };
 }
 
-/** Bounding box of the mark on the 512 grid. The beams' rightmost point is on the arc at the inner edge angle. */
-export const BBOX = (() => {
-  const right = at(G.A0, G.R)[0];
-  return { x: G.X0, y: G.Y0, w: right - G.X0, h: G.Y1 - G.Y0 };
-})();
+/** Bounding box of the mark on the 512 grid (the disc). */
+export const BBOX = { x: G.cx - G.R, y: G.cy - G.R, w: 2 * G.R, h: 2 * G.R };
 
-/**
- * Translation that centres the mark optically in the 512 square: the beams taper to the right, so the mark carries
- * more weight on the left (the stem) than its bounding box suggests; it sits ~6 px right of the geometric centre.
- */
-export const CENTER = { dx: +(256 - (BBOX.x + BBOX.w / 2) + 6).toFixed(2), dy: +(256 - (BBOX.y + BBOX.h / 2)).toFixed(2) };
+/** The disc is symmetric and the V sits on its centre, so the optical centre is the geometric one. */
+export const CENTER = { dx: 0, dy: 0 };
 
 /** Wrap a fragment in a <g> that centres it, scaled by `scale` around the 512 square's centre. */
 export function centered(frag, scale = 1) {
@@ -121,8 +113,5 @@ export function centered(frag, scale = 1) {
   return { defs: frag.defs, body: `<g transform="${t}">${frag.body}</g>` };
 }
 
-/** Outline extremes (stem corners and beam arc ends), for safe-zone calculations. Rounded corners lie inside these. */
-export function keyPoints() {
-  const { X0, X1, Y0, Y1, A0, A1, R } = G;
-  return [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1], at(A0, R), at(A1, R), at(-A0, R), at(-A1, R)];
-}
+/** Farthest ink from the centre of the 512 square (the disc's edge), for safe-zone calculations. */
+export const RADIUS = G.R;

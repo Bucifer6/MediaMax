@@ -85,7 +85,7 @@ export default function ProfilesSettings() {
     <section className="settings-card profiles-settings">
       <header>
         <div>
-          <h2>Profiles <HelpLink slug="profiles" label="Profiles" /></h2>
+          <h2>Your household <HelpLink slug="profiles" label="Profiles" /></h2>
           <p className="muted ps-intro">Everyone in your household gets their own watch history, My List, recommendations and settings. Profiles sign in through your account and share its stream limit.</p>
         </div>
       </header>

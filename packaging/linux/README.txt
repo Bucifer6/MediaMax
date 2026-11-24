@@ -1,14 +1,14 @@
-Kinora for Linux
+Vibe for Linux
 ================
 Version @VERSION@
 
-This folder holds everything Kinora needs. Nothing else has to be installed.
+This folder holds everything Vibe needs. Nothing else has to be installed.
 
   kinora             the server (a single executable; Node.js is built in)
   web/               the web app it serves (keep it next to the executable)
   ffmpeg, ffprobe    static FFmpeg used for transcoding, thumbnails and live TV
-  kinora.service     systemd unit to run Kinora at boot
-  LICENSE            Kinora licence (MIT). FFmpeg is GPL: see FFMPEG-LICENSE.txt.
+  kinora.service     systemd unit to run Vibe at boot
+  LICENSE            Vibe licence (MIT). FFmpeg is GPL: see FFMPEG-LICENSE.txt.
 
 Full guide (Docker, NAS units, upgrades, backups): https://github.com/Bucifer6/MediaMax/blob/main/docs/INSTALL.md
 

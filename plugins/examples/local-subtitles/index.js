@@ -1,5 +1,5 @@
 // Local subtitle folder — an example subtitle-provider plugin (ctx.subtitles.registerProvider).
-// Kinora scores each result against the media file name, unpacks archives, fixes encoding/diacritics and saves it.
+// Vibe scores each result against the media file name, unpacks archives, fixes encoding/diacritics and saves it.
 import fs from 'node:fs';
 import path from 'node:path';
 

@@ -63,7 +63,7 @@ function Stories({ stats, year, onPickYear }: { stats: UserStats; year: number |
   const scroller = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const [index, setIndex] = useState(0);
   const period = year == null ? 'all time' : String(year);
-  const cards = useMemo(() => buildCards(t, stats, period, user?.displayName ?? '', branding?.serverName ?? 'Kinora'), [t, stats, period, user?.displayName, branding?.serverName]);
+  const cards = useMemo(() => buildCards(t, stats, period, user?.displayName ?? '', branding?.serverName ?? 'Vibe'), [t, stats, period, user?.displayName, branding?.serverName]);
   const W = t.width;
 
   const go = (i: number) => {

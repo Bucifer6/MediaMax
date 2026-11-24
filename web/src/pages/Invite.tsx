@@ -46,7 +46,7 @@ export default function InvitePage() {
   const p = preview.data;
   const serverName = p?.serverName || branding.serverName;
   return (
-    <div className="login">
+    <div className="login vibe-auth">
       <LightField image={bg ? mediaUrl(bg, 1920) : null} />
       <div className="login-inner">
         <div className="login-brand">

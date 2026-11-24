@@ -1,16 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { Item, MediaSource, UserItemData } from '@mediamax/shared';
+import type { ExtraType, Item, MediaSource, UserItemData } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { ApiRequestError, withToken } from '../api/client';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
-import { useAsync, useServerEvent } from '../hooks';
+import { useAsync, useMediaQuery, useServerEvent } from '../hooks';
 import { usePlayItem, useMusic } from '../player/music';
 import { usePlayWarmup } from '../player/warmup';
-import { Icon } from '../components/Icon';
-import { Badge, Dropdown, EmptyState, ErrorState, Img, Modal, ProgressBar, Skeleton, StarRating, Tabs, useConfirm, type MenuItem } from '../components/ui';
+import { Icon, type IconName } from '../components/Icon';
+import { Badge, Button, Dropdown, EmptyState, ErrorState, Img, Modal, Popover, ProgressBar, QualityBadges, Skeleton, StarRating, Tabs, useConfirm, type MenuItem } from '../components/ui';
 import { Row } from '../components/Row';
 import { canWatchlist, PosterCard, WatchlistButton } from '../components/Cards';
 import { SmartListModal } from '../components/SmartListModal';
@@ -22,13 +22,15 @@ import { AudioBadges, audioFormat, channelText } from '../components/AudioBadge'
 import { ArrItemActions } from '../components/ArrItemActions';
 import { AlbumFacts, ArtistCredits, MusicBrainzLinks, ReleaseTypeBadges } from '../components/MusicBits';
 import { ArtistDiscography, RelatedArtists } from '../components/ArtistMusic';
-import { ReportIssueButton } from '../components/ReportIssue';
+import { ReportIssueDialog, useCanReportIssue } from '../components/ReportIssue';
+import { canFixMatch } from '../components/FixMatch';
 import { canSearchSubtitles, SubtitleSearchModal } from '../components/SubtitleSearch';
 import { formatBitrate, formatBytes, formatClock, formatDate, formatDuration, languageName } from '../utils/format';
 import { episodeCode, hasAudioResume, isAudio, isResumable, isVideo, itemLink, playLink, posterFor, progressPct } from '../utils/items';
 import { useAmbientFrom } from '../theme/ambient';
 import { POSTER_VT, previewFromState } from '../utils/viewTransition';
 import { RecapCard } from '../components/RecapCard';
+import '../styles/screens-detail.css';
 
 /* ---------------- Media info ---------------- */
 export function MediaBadges({ media }: { media?: MediaSource[] }) {
@@ -49,52 +51,67 @@ export function MediaBadges({ media }: { media?: MediaSource[] }) {
   );
 }
 
+/** A version's name: its edition ("Director's Cut"), else its quality ("4K HDR"). */
+function versionLabel(m: MediaSource, i: number): string {
+  return m.edition || [m.resolutionLabel, m.videoRange && m.videoRange.hdrFormat !== 'sdr' ? m.videoRange.label : m.hdr ? 'HDR' : null].filter(Boolean).join(' ') || `Version ${i + 1}`;
+}
+
+/** Technical details, with a versions / editions picker when the title has more than one file. */
 function MediaInfo({ media }: { media: MediaSource[] }) {
+  const [sel, setSel] = useState(0);
+  const m = media[Math.min(sel, media.length - 1)]!;
   return (
-    <section className="media-info">
-      <h2 className="section-title">Media info</h2>
-      {media.map((m, i) => (
-        <div key={m.id} className="media-card">
-          {media.length > 1 && <h3>Version {i + 1}</h3>}
-          <dl className="kv">
-            <dt>Container</dt><dd>{m.container?.toUpperCase() ?? '—'}</dd>
-            <dt>Video</dt><dd>{[m.videoCodec?.toUpperCase(), m.width && m.height ? `${m.width}×${m.height}` : null, m.resolutionLabel, m.videoRange && m.videoRange.hdrFormat !== 'sdr' ? null : m.hdr ? 'HDR' : null].filter(Boolean).join(' · ') || '—'}</dd>
-            {m.videoRange && m.videoRange.hdrFormat !== 'sdr' && <><dt>HDR</dt><dd><MediaRangeBadge media={m} /> {rangeDetails(m.videoRange)}</dd></>}
-            <dt>Bitrate</dt><dd>{formatBitrate(m.bitrate)}</dd>
-            <dt>Size</dt><dd>{formatBytes(m.size)}</dd>
-            <dt>Duration</dt><dd>{formatClock(m.durationMs)}</dd>
-          </dl>
-          {m.audioStreams.length > 0 && (
-            <>
-              <h4>Audio</h4>
-              <ul className="stream-list">
-                {m.audioStreams.map((a) => (
-                  <li key={a.index}>
-                    <Icon name="audio" size={14} />
-                    <span>
-                      {[a.title || languageName(a.language), a.title === a.formatLabel ? null : audioFormat(a), channelText(a), a.sampleRate ? `${a.sampleRate / 1000} kHz` : null, a.bitDepth && a.lossless ? `${a.bitDepth}-bit` : null, a.bitrate ? formatBitrate(a.bitrate) : null].filter(Boolean).join(' · ')}
-                    </span>
-                    <AudioBadges stream={a} channels={false} /> {a.default && <Badge tone="muted">Default</Badge>}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {m.subtitleStreams.length > 0 && (
-            <>
-              <h4>Subtitles</h4>
-              <ul className="stream-list">
-                {m.subtitleStreams.map((s) => (
-                  <li key={s.index}>
-                    <Icon name="subtitles" size={14} /> {s.title || languageName(s.language)} · {s.codec.toUpperCase()} {s.forced && <Badge tone="muted">Forced</Badge>} {s.external && <Badge tone="muted">External</Badge>}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
+    <div className="tp-mediainfo">
+      {media.length > 1 && (
+        <div className="tp-versions">
+          <div className="tp-versions-list" role="radiogroup" aria-label="Versions">
+            {media.map((v, i) => (
+              <button key={v.id} type="button" role="radio" aria-checked={i === sel} className={`tp-version ${i === sel ? 'active' : ''}`} onClick={() => setSel(i)}>
+                <span className="tp-version-name">{versionLabel(v, i)}</span>
+                <small>{[v.edition ? v.resolutionLabel : null, v.videoCodec?.toUpperCase(), formatBytes(v.size)].filter(Boolean).join(' · ')}</small>
+              </button>
+            ))}
+          </div>
+          <p className="tp-hint">The player picks the best version for this device.</p>
         </div>
-      ))}
-    </section>
+      )}
+      <dl className="tp-facts">
+        <dt>Container</dt><dd>{m.container?.toUpperCase() ?? '—'}</dd>
+        <dt>Video</dt><dd>{[m.videoCodec?.toUpperCase(), m.width && m.height ? `${m.width}×${m.height}` : null, m.resolutionLabel, m.videoRange && m.videoRange.hdrFormat !== 'sdr' ? null : m.hdr ? 'HDR' : null].filter(Boolean).join(' · ') || '—'}</dd>
+        {m.videoRange && m.videoRange.hdrFormat !== 'sdr' && <><dt>HDR</dt><dd><MediaRangeBadge media={m} /> {rangeDetails(m.videoRange)}</dd></>}
+        <dt>Bitrate</dt><dd>{formatBitrate(m.bitrate)}</dd>
+        <dt>Size</dt><dd>{formatBytes(m.size)}</dd>
+        <dt>Duration</dt><dd className="tabular">{formatClock(m.durationMs)}</dd>
+      </dl>
+      {m.audioStreams.length > 0 && (
+        <div className="tp-streams">
+          <h4>Audio</h4>
+          <ul className="stream-list">
+            {m.audioStreams.map((a) => (
+              <li key={a.index}>
+                <Icon name="audio" size={14} />
+                <span>
+                  {[a.title || languageName(a.language), a.title === a.formatLabel ? null : audioFormat(a), channelText(a), a.sampleRate ? `${a.sampleRate / 1000} kHz` : null, a.bitDepth && a.lossless ? `${a.bitDepth}-bit` : null, a.bitrate ? formatBitrate(a.bitrate) : null].filter(Boolean).join(' · ')}
+                </span>
+                <AudioBadges stream={a} channels={false} /> {a.default && <Badge tone="muted">Default</Badge>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {m.subtitleStreams.length > 0 && (
+        <div className="tp-streams">
+          <h4>Subtitles</h4>
+          <ul className="stream-list">
+            {m.subtitleStreams.map((s) => (
+              <li key={s.index}>
+                <Icon name="subtitles" size={14} /> {s.title || languageName(s.language)} · {s.codec.toUpperCase()} {s.forced && <Badge tone="muted">Forced</Badge>} {s.external && <Badge tone="muted">External</Badge>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -152,7 +169,7 @@ function SeriesRow({ item }: { item: Item }) {
 }
 
 /* ---------------- Episode list ---------------- */
-function EpisodeList({ seasonId }: { seasonId: string }) {
+function EpisodeList({ seasonId, upNextId }: { seasonId: string; upNextId?: string | null }) {
   const play = usePlayItem();
   const warm = usePlayWarmup(useApp().user ?? null);
   const eps = useAsync(() => api.items.children(seasonId, { sort: 'index', order: 'asc', limit: 500 }), [seasonId]);
@@ -160,35 +177,53 @@ function EpisodeList({ seasonId }: { seasonId: string }) {
     if (ev.type === 'userdata.updated') eps.setData((d) => d && { ...d, items: d.items.map((i) => (i.id === ev.itemId ? { ...i, userData: ev.userData } : i)) });
   });
   if (eps.loading && !eps.data) {
-    return <div className="episode-list">{[0, 1, 2, 3].map((i) => <div key={i} className="episode"><Skeleton className="episode-thumb" /><div style={{ flex: 1 }}><Skeleton h={18} w="40%" /><Skeleton h={14} w="90%" style={{ marginTop: 10 }} /></div></div>)}</div>;
+    return (
+      <ol className="tp-episodes" aria-busy="true">
+        {[0, 1, 2, 3].map((i) => (
+          <li key={i} className="tp-ep">
+            <Skeleton className="tp-ep-still" />
+            <div className="tp-ep-body"><Skeleton h={18} w="50%" /><Skeleton h={14} w="90%" style={{ marginTop: 10 }} /><Skeleton h={14} w="70%" style={{ marginTop: 6 }} /></div>
+          </li>
+        ))}
+      </ol>
+    );
   }
   if (eps.error) return <ErrorState message={eps.error} onRetry={eps.reload} />;
-  if (!eps.data?.items.length) return <EmptyState icon="shows" title="No episodes" />;
+  if (!eps.data?.items.length) return <EmptyState icon="shows" title="No episodes" compact />;
   return (
-    <div className="episode-list">
+    <ol className="tp-episodes">
       {eps.data.items.map((ep) => {
         const pct = progressPct(ep);
+        const inProgress = pct > 0 && !ep.userData.played;
+        const left = inProgress && ep.durationMs ? ep.durationMs - ep.userData.positionMs : 0;
+        const upNext = ep.id === upNextId;
         return (
-          <div key={ep.id} className={`episode ${ep.userData.played ? 'played' : ''}`}>
-            <button className="episode-thumb" onClick={() => play(ep)} aria-label={`Play ${ep.title}`} data-nav {...warm.bind(ep)}>
-              <Img src={ep.thumbUrl ?? ep.backdropUrl} width={360} fallback={<Icon name="shows" size={24} />} />
-              <span className="episode-play"><Icon name="play" size={22} /></span>
-              {pct > 0 && !ep.userData.played && <ProgressBar value={pct} className="card-progress" />}
-              {ep.userData.played && <span className="card-badge card-watched"><Icon name="check" size={13} /></span>}
+          <li key={ep.id} className={`tp-ep ${ep.userData.played ? 'played' : ''} ${upNext ? 'up-next' : ''}`}>
+            <button className="tp-ep-still" onClick={() => play(ep)} aria-label={`${inProgress ? 'Resume' : 'Play'} episode ${ep.index ?? ''}: ${ep.title}`} data-nav {...warm.bind(ep)}>
+              <Img src={ep.thumbUrl ?? ep.backdropUrl} width={480} alt="" fallback={<Icon name="shows" size={24} />} />
+              <span className="tp-ep-play" aria-hidden="true"><Icon name="play" size={20} /></span>
+              {ep.durationMs ? <span className="tp-ep-dur tabular">{formatDuration(ep.durationMs)}</span> : null}
+              {inProgress && <ProgressBar value={pct} className="tp-ep-progress" />}
             </button>
-            <div className="episode-body">
-              <Link to={itemLink(ep)} className="episode-title">
-                <span className="episode-num">{ep.index ?? '?'}</span> {ep.title}
-              </Link>
-              <div className="episode-meta muted">
-                {[formatDuration(ep.durationMs), ep.releaseDate ? formatDate(ep.releaseDate) : null].filter(Boolean).join(' · ')}
+            <div className="tp-ep-body">
+              <div className="tp-ep-head">
+                <Link to={itemLink(ep)} className="tp-ep-title">
+                  <span className="tp-ep-num tabular">{ep.index ?? '?'}</span>
+                  <span>{ep.title}</span>
+                </Link>
+                {ep.userData.played && <span className="tp-ep-watched" title="Watched"><Icon name="checkCircle" size={16} /><span className="sr-only">Watched</span></span>}
               </div>
-              {ep.overview && <p className="episode-overview">{ep.overview}</p>}
+              <div className="tp-ep-meta">
+                {upNext && <span className="tp-ep-next">{inProgress ? 'Continue' : 'Up next'}</span>}
+                {inProgress && <span className="tabular">{formatDuration(left)} left</span>}
+                {ep.releaseDate && <span>{formatDate(ep.releaseDate)}</span>}
+              </div>
+              {ep.overview && <p className="tp-ep-overview">{ep.overview}</p>}
             </div>
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ol>
   );
 }
 
@@ -235,34 +270,83 @@ function PodcastEpisodes({ podcast }: { podcast: Item }) {
   );
 }
 
-function SeasonsBody({ show }: { show: Item }) {
+const seasonName = (s: Item) => s.title || (s.index === 0 ? 'Specials' : `Season ${s.index}`);
+
+function SeasonsBody({ show, upNext }: { show: Item; upNext?: Item | null }) {
+  const toast = useToast();
   const seasons = useAsync(() => api.items.children(show.id, { sort: 'index', order: 'asc', limit: 200 }), [show.id]);
   const [active, setActive] = useState<string | null>(null);
+  // Bumped after "Mark season watched" so the episode list re-reads its watched state.
+  const [epsVersion, setEpsVersion] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const chose = useRef(false);
   const list = seasons.data?.items ?? [];
+  const preferred = upNext?.parentId && list.some((s) => s.id === upNext.parentId) ? upNext.parentId : null;
   useEffect(() => {
-    if (!list.length || active) return;
+    if (!list.length || chose.current) return;
+    if (preferred) {
+      setActive(preferred);
+      return;
+    }
+    if (active) return;
     const firstUnplayed = list.find((s) => (s.index ?? 0) > 0 && !s.userData.played) ?? list.find((s) => (s.index ?? 0) > 0) ?? list[0];
     setActive(firstUnplayed!.id);
-  }, [list, active]);
-  if (seasons.loading && !seasons.data) return <Skeleton h={40} w={320} />;
-  if (!list.length) return <EmptyState icon="shows" title="No seasons yet" />;
+  }, [list, active, preferred]);
+  if (seasons.loading && !seasons.data) return <section className="tp-seasons"><Skeleton h={36} w={320} /></section>;
+  if (!list.length) return <EmptyState icon="shows" title="No seasons yet" compact />;
+  const cur = list.find((s) => s.id === active) ?? list[0]!;
+  const pick = (id: string) => {
+    chose.current = true;
+    setActive(id);
+  };
+  const toggleSeason = async () => {
+    setBusy(true);
+    try {
+      const ud = await api.items.setPlayed(cur.id, !cur.userData.played);
+      seasons.setData((d) => d && { ...d, items: d.items.map((s) => (s.id === cur.id ? { ...s, userData: ud } : s)) });
+      setEpsVersion((v) => v + 1);
+      toast.show(ud.played ? `${seasonName(cur)} marked watched` : `${seasonName(cur)} marked unwatched`);
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
-    <section className="seasons">
-      <Tabs
-        className="season-tabs"
-        value={active ?? list[0]!.id}
-        onChange={setActive}
-        tabs={list.map((s) => ({
-          value: s.id,
-          label: (
-            <>
-              {s.title || (s.index === 0 ? 'Specials' : `Season ${s.index}`)}
-              {s.userData.unplayedCount ? <span className="tab-count">{s.userData.unplayedCount}</span> : null}
-            </>
-          ),
-        }))}
-      />
-      {active && <EpisodeList seasonId={active} />}
+    <section className="tp-seasons" aria-labelledby="tp-episodes-h">
+      <div className="tp-section-head">
+        <h2 className="tp-h2" id="tp-episodes-h">Episodes</h2>
+        {list.length > 1 && list.length <= 12 ? (
+          <Tabs
+            className="tp-season-tabs"
+            variant="pills"
+            value={cur.id}
+            onChange={pick}
+            tabs={list.map((s) => ({
+              value: s.id,
+              label: (
+                <>
+                  {seasonName(s)}
+                  {s.userData.unplayedCount ? <span className="tab-count" aria-label={`${s.userData.unplayedCount} unwatched`}>{s.userData.unplayedCount}</span> : s.userData.played ? <Icon name="check" size={14} /> : null}
+                </>
+              ),
+            }))}
+          />
+        ) : list.length > 12 ? (
+          <select className="select tp-season-select" value={cur.id} onChange={(e) => pick(e.target.value)} aria-label="Season">
+            {list.map((s) => <option key={s.id} value={s.id}>{seasonName(s)}{s.userData.unplayedCount ? ` (${s.userData.unplayedCount} unwatched)` : ''}</option>)}
+          </select>
+        ) : (
+          <span className="tp-season-single">{seasonName(cur)}</span>
+        )}
+        <div className="tp-section-actions">
+          <Button size="sm" variant="ghost" icon={cur.userData.played ? 'checkCircle' : 'check'} onClick={() => void toggleSeason()} loading={busy} aria-pressed={cur.userData.played}>
+            {cur.userData.played ? 'Season watched' : 'Mark season watched'}
+          </Button>
+          <Link className="btn btn-ghost btn-sm" to={itemLink(cur)}>Season details</Link>
+        </div>
+      </div>
+      <EpisodeList key={`${cur.id}-${epsVersion}`} seasonId={cur.id} upNextId={upNext?.id} />
     </section>
   );
 }
@@ -390,6 +474,73 @@ function ChaptersSection({ item }: { item: Item }) {
   );
 }
 
+/* ---------------- Extras ---------------- */
+const EXTRA_LABEL: Record<ExtraType, string> = {
+  trailer: 'Trailer', featurette: 'Featurette', behindthescenes: 'Behind the scenes', deleted: 'Deleted scene',
+  interview: 'Interview', scene: 'Scene', short: 'Short', other: 'Extra',
+};
+
+function ExtrasRow({ extras }: { extras: Item[] }) {
+  if (!extras.length) return null;
+  return (
+    <Row title="Extras" className="tp-extras">
+      {extras.map((e) => (
+        <Link key={e.id} to={playLink(e)} className="tp-extra" data-nav>
+          <span className="tp-extra-art">
+            <Img src={e.thumbUrl ?? e.backdropUrl ?? e.posterUrl} width={400} alt="" fallback={<Icon name="video" size={24} />} />
+            <span className="tp-ep-play" aria-hidden="true"><Icon name="play" size={20} /></span>
+            {e.durationMs ? <span className="tp-ep-dur tabular">{formatClock(e.durationMs)}</span> : null}
+          </span>
+          <span className="tp-extra-title">{e.title}</span>
+          <span className="tp-extra-kind">{EXTRA_LABEL[e.extraType ?? 'other']}</span>
+        </Link>
+      ))}
+    </Row>
+  );
+}
+
+/* ---------------- Rating popover ---------------- */
+function RateButton({ item, onRate, onNotInterested }: { item: Item; onRate: (r: number | null) => void; onNotInterested: () => void }) {
+  const r = item.userData.rating;
+  const thumbsUp = r != null && r >= 8;
+  const thumbsDown = r != null && r <= 4;
+  const thumbs = !['photo', 'playlist', 'collection'].includes(item.type);
+  const label = r == null ? 'Rate' : thumbsUp ? 'Liked' : thumbsDown ? 'Not for me' : `Rated ${r / 2}`;
+  return (
+    <Popover
+      align="left"
+      label="Your rating"
+      className="tp-rate"
+      trigger={({ onClick, open }) => (
+        <button className={`btn-round on-media tp-act ${r != null ? 'active' : ''}`} onClick={onClick} aria-expanded={open} aria-haspopup="dialog" aria-label={r == null ? 'Rate this title' : `Your rating: ${label}. Change rating`} title={r == null ? 'Rate' : label} data-nav>
+          <Icon name={thumbsDown ? 'thumbDown' : r != null && !thumbsUp ? 'starFill' : 'thumbUp'} />
+          <span className="tp-act-label">{label}</span>
+        </button>
+      )}
+    >
+      <div className="tp-rate-panel">
+        <div className="tp-rate-title">Your rating</div>
+        {thumbs && (
+          <div className="tp-thumbs" role="group" aria-label="Thumbs rating">
+            <button className={`tp-thumb ${thumbsUp ? 'active' : ''}`} onClick={() => onRate(thumbsUp ? null : 10)} aria-pressed={thumbsUp} data-nav>
+              <Icon name="thumbUp" size={18} /> I like this
+            </button>
+            <button className={`tp-thumb ${thumbsDown ? 'active' : ''}`} onClick={() => onRate(thumbsDown ? null : 2)} aria-pressed={thumbsDown} data-nav>
+              <Icon name="thumbDown" size={18} /> Not for me
+            </button>
+          </div>
+        )}
+        <div className="tp-stars"><StarRating value={r} onChange={onRate} size={24} /></div>
+        {(item.type === 'movie' || item.type === 'show') && (
+          <button className={`btn btn-sm btn-ghost tp-not-interested ${item.userData.notInterested ? 'active' : ''}`} onClick={onNotInterested} aria-pressed={item.userData.notInterested} title="Hide from your recommendations" data-nav>
+            <Icon name={item.userData.notInterested ? 'eye' : 'ban'} size={14} /> {item.userData.notInterested ? 'Show in recommendations' : 'Not interested'}
+          </button>
+        )}
+      </div>
+    </Popover>
+  );
+}
+
 /* ---------------- Page ---------------- */
 export function ItemPage() {
   const { itemId = '' } = useParams();
@@ -398,12 +549,14 @@ export function ItemPage() {
   const confirm = useConfirm();
   const navigate = useNavigate();
   const play = usePlayItem();
+  const phone = useMediaQuery('(max-width: 700px)');
   // A missing (or, for this profile, hidden) title is "not found", not a retryable error.
   const res = useAsync(() => api.items.get(itemId).catch((e) => {
     if (e instanceof ApiRequestError && (e.status === 404 || e.status === 403)) return null;
     throw e;
   }), [itemId]);
-  const [modal, setModal] = useState<null | 'edit' | 'art' | 'playlist' | 'collection' | 'trailer' | 'photo' | 'subs' | 'smart'>(null);
+  const [modal, setModal] = useState<null | 'edit' | 'match' | 'art' | 'playlist' | 'collection' | 'trailer' | 'photo' | 'subs' | 'smart' | 'report'>(null);
+  const [expanded, setExpanded] = useState(false);
   const item = res.data;
   // The card that opened this page handed its item over (utils/viewTransition.ts): draw poster + backdrop at once.
   const preview = previewFromState(useLocation().state, itemId);
@@ -416,6 +569,11 @@ export function ItemPage() {
     async () => ({ forId: itemId, ep: isSeries ? await api.items.next(itemId).catch(() => null) : null }),
     [itemId, isSeries, item?.userData.played, item?.userData.unplayedCount],
   );
+  // Local extras (trailers, featurettes…): an Extras row, and a Trailer button when there's no online trailer.
+  const hasExtras = item?.id === itemId && (item.type === 'movie' || item.type === 'show');
+  const extras = useAsync(async () => (hasExtras ? api.items.extras(itemId).catch(() => [] as Item[]) : [] as Item[]), [itemId, hasExtras]);
+  const canReport = useCanReportIssue(item ?? { type: 'photo' });
+  useEffect(() => setExpanded(false), [itemId]);
 
   useServerEvent((ev) => {
     if (ev.type === 'userdata.updated' && ev.itemId === itemId) res.setData((d) => d && { ...d, userData: ev.userData });
@@ -428,27 +586,23 @@ export function ItemPage() {
   }, [warmTarget?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (res.loading && !item) {
+    const art = preview ? preview.backdropUrl ?? (preview.type === 'episode' ? preview.thumbUrl : null) : null;
     return (
-      <div className="detail detail-loading">
-        {preview?.backdropUrl ? (
-          <div className="detail-backdrop"><Img src={preview.backdropUrl} width={1920} /><div className="detail-shade" /></div>
-        ) : (
-          <div className="detail-backdrop skeleton" />
-        )}
-        <div className="detail-main">
-          {preview && posterFor(preview) ? (
-            <div className="detail-poster" style={{ viewTransitionName: POSTER_VT } as React.CSSProperties}>
-              <Img src={posterFor(preview)} width={260} alt={preview.title} />
-            </div>
-          ) : (
-            <Skeleton className="detail-poster" />
-          )}
-          <div className="detail-info">
-            {preview ? <h1 className="detail-title">{preview.title}</h1> : <Skeleton h={48} w="60%" />}
-            <Skeleton h={18} w="40%" style={{ marginTop: 16 }} />
-            <Skeleton h={80} w="90%" style={{ marginTop: 24 }} />
+      <div className="detail tp tp-loading detail-loading">
+        <section className="tp-hero">
+          <div className={`detail-backdrop tp-backdrop ${art ? '' : 'skeleton'}`} aria-hidden="true">
+            {art && <Img src={art} width={1920} />}
+            <div className="tp-shade" />
           </div>
-        </div>
+          <div className="tp-head">
+            {preview ? <h1 className="tp-title">{preview.title}</h1> : <Skeleton h={52} w="60%" />}
+            <Skeleton h={18} w="40%" style={{ marginTop: 16 }} />
+          </div>
+          <div className="tp-lower">
+            <Skeleton h={48} w={180} r={999} />
+            <Skeleton h={64} w="90%" style={{ marginTop: 20 }} />
+          </div>
+        </section>
       </div>
     );
   }
@@ -534,31 +688,36 @@ export function ItemPage() {
   const playable = isVideo(item) || isAudio(item) || ['show', 'season', 'album', 'artist', 'playlist', 'collection', 'audiobook', 'podcast'].includes(item.type);
   const resumable = (isVideo(item) || hasAudioResume(item)) && isResumable(item);
   const pct = progressPct(item);
-  // Thumbs map onto the 0–10 rating: up = 10, down = 2 (stars still work for people who prefer them).
-  const thumbsUp = item.userData.rating != null && item.userData.rating >= 8;
-  const thumbsDown = item.userData.rating != null && item.userData.rating <= 4;
   const nextEp = nextUp.data?.forId === item.id && ['episode', 'bookpart', 'podcastepisode'].includes(nextUp.data.ep?.type ?? '') ? nextUp.data.ep : null;
   const nextIsAudio = !!nextEp && isAudio(nextEp);
   const nextResumable = !!nextEp && isResumable(nextEp);
   const playLabel = resumable
-    ? `Resume ${formatClock(item.userData.positionMs)}`
+    ? `Resume at ${formatClock(item.userData.positionMs)}`
     : nextEp
       ? item.type === 'audiobook'
         ? nextResumable ? `Resume ${nextEp.title}` : (nextEp.index ?? 1) > 1 ? `Continue · ${nextEp.title}` : 'Start listening'
-        : `${nextResumable ? 'Resume' : 'Play'} ${episodeCode(nextEp) || nextEp.title}`
+        : `${nextResumable ? 'Resume' : 'Play'} ${nextEp.type === 'episode' && nextEp.index != null ? `S${nextEp.parentIndex ?? '?'} E${nextEp.index}` : nextEp.title}`
       : item.type === 'show' || item.type === 'season' ? 'Play next' : 'Play';
-  const downloadItems: MenuItem[] = (['original', '1080p', '720p', '480p'] as const).map((q) => ({
-    label: q === 'original' ? 'Original file' : `${q} (MP4)`,
-    icon: 'download',
-    onClick: () => startDownload(withToken(api.playback.downloadUrl(item.id, q))),
-  }));
   const square = ['album', 'artist', 'track', 'playlist', 'photo', 'audiobook', 'bookpart', 'podcast', 'podcastepisode'].includes(item.type);
   const isAdmin = !!user?.isAdmin;
   const canDownload = features.downloads && user?.allowDownloads && (isVideo(item) || isAudio(item)) && !item.media?.[0]?.remote;
+  const containerOwned = item.type === 'playlist' || (item.type === 'collection' && isAdmin);
+  const canPlaylist = item.type !== 'playlist' && item.type !== 'collection';
+  const canWatched = item.type !== 'photo' && item.type !== 'playlist' && item.type !== 'collection';
+  const localTrailer = !item.trailerUrl ? extras.data?.find((e) => e.extraType === 'trailer') ?? null : null;
+  const watchedLabel = item.type === 'season' ? ' season' : item.type === 'show' ? ' show' : '';
 
+  const downloadItems: MenuItem[] = !canDownload ? [] : isVideo(item)
+    ? (['original', '1080p', '720p', '480p'] as const).map((q) => ({
+        label: q === 'original' ? 'Download original file' : `Download ${q} (MP4)`,
+        icon: 'download',
+        onClick: () => startDownload(withToken(api.playback.downloadUrl(item.id, q))),
+      }))
+    : [{ label: 'Download', icon: 'download', onClick: () => startDownload(withToken(api.playback.downloadUrl(item.id))) }];
   const adminItems: MenuItem[] = isAdmin
     ? [
         { label: 'Edit metadata', icon: 'edit', onClick: () => setModal('edit') },
+        ...(canFixMatch(item) ? [{ label: item.type === 'track' ? 'Identify by sound…' : 'Fix match…', icon: 'search' as const, onClick: () => setModal('match') }] : []),
         { label: 'Upload artwork', icon: 'upload', onClick: () => setModal('art') },
         { label: 'Refresh metadata', icon: 'refresh', onClick: refresh },
         { label: 'Add to collection', icon: 'collection', onClick: () => setModal('collection') },
@@ -566,8 +725,21 @@ export function ItemPage() {
         { label: 'Remove from library', icon: 'trash', danger: true, onClick: remove },
       ]
     : [];
-  const containerOwned = item.type === 'playlist' || (item.type === 'collection' && isAdmin);
-  const subtitleItems: MenuItem[] = canSearchSubtitles(item) ? [{ label: 'Find subtitles online…', icon: 'subtitles', onClick: () => setModal('subs') }] : [];
+  // On phones the quieter actions fold into More, so the action row stays four labelled buttons.
+  const groups: MenuItem[][] = [
+    [
+      ...(phone ? [{ label: item.userData.favorite ? 'Remove from favourites' : 'Add to favourites', icon: (item.userData.favorite ? 'heartFill' : 'heart') as IconName, onClick: toggleFav }] : []),
+      ...(canPlaylist ? [{ label: 'Add to playlist…', icon: 'playlist' as const, onClick: () => setModal('playlist') }] : []),
+      ...(phone ? downloadItems : []),
+    ],
+    [
+      ...(canSearchSubtitles(item) ? [{ label: 'Find subtitles online…', icon: 'subtitles' as const, onClick: () => setModal('subs') }] : []),
+      ...(canReport ? [{ label: 'Report a problem…', icon: 'flag' as const, onClick: () => setModal('report') }] : []),
+    ],
+    containerOwned ? [{ label: `Delete ${item.type}`, icon: 'trash' as const, danger: true, onClick: deleteContainer }] : [],
+    adminItems,
+  ];
+  const moreItems: MenuItem[] = groups.filter((g) => g.length).flatMap((g, i) => (i ? [{ divider: true, label: '' }, ...g] : g));
 
   const crumbs: { label: string; to: string }[] = [];
   if (item.type === 'episode') {
@@ -584,193 +756,193 @@ export function ItemPage() {
     ? Array.from(new Set([...people.filter((p) => /^author$/i.test(p.role ?? '')).map((p) => p.name), ...(people.some((p) => /^author$/i.test(p.role ?? '')) || !item.parentTitle || item.type === 'bookpart' ? [] : [item.parentTitle])]))
     : [];
   const narrators = people.filter((p) => /^narrator$/i.test(p.role ?? '')).map((p) => p.name);
+  const hasCredits = (item.type === 'track' && !!(item.music?.credits?.length || item.music?.displayArtist)) || item.type === 'album' || authors.length > 0 || narrators.length > 0
+    || directors.length > 0 || writers.length > 0 || item.studios.length > 0 || !!item.releaseDate || !!item.userData.lastPlayedAt;
+  const hasMedia = !!item.media && item.media.length > 0;
+
+  // Artwork: a backdrop (an episode's own still first); without one, the poster blurred behind a visible poster.
+  const backdrop = (item.type === 'episode' ? item.thumbUrl ?? item.backdropUrl : item.backdropUrl) ?? null;
+  const showPoster = square || !backdrop;
+  const posterShape = square ? 'square' : item.type === 'episode' || item.type === 'video' ? 'landscape' : 'poster';
+  const metaParts: React.ReactNode[] = [
+    item.type === 'episode' && episodeCode(item) ? <span key="ep">{episodeCode(item)}</span> : null,
+    item.type === 'podcastepisode' && item.releaseDate ? <span key="rd">{formatDate(item.releaseDate)}</span> : item.year ? <span key="y">{item.year}</span> : null,
+    item.contentRating ? <span key="cr" className="tp-cert">{item.contentRating}</span> : null,
+    item.durationMs && item.type !== 'show' && item.type !== 'season' ? <span key="d">{formatDuration(item.durationMs)}</span> : null,
+    item.type === 'show' && item.childCount > 0 ? <span key="s">{item.childCount} season{item.childCount > 1 ? 's' : ''}</span> : null,
+    item.type === 'season' && item.childCount > 0 ? <span key="e">{item.childCount} episode{item.childCount > 1 ? 's' : ''}</span> : null,
+    (item.type === 'album' || item.type === 'playlist' || item.type === 'collection') && item.childCount > 0 ? <span key="n">{item.childCount} {item.type === 'album' ? 'track' : 'item'}{item.childCount === 1 ? '' : 's'}</span> : null,
+    item.type === 'audiobook' && item.childCount > 1 ? <span key="p">{item.childCount} parts</span> : null,
+    item.type === 'podcast' && item.childCount > 0 ? <span key="pe">{item.childCount} episodes</span> : null,
+    item.communityRating != null ? <span key="r" className="tp-score" title="Community rating"><Icon name="starFill" size={13} /> {item.communityRating.toFixed(1)}</span> : null,
+  ].filter(Boolean);
+  const genreLink = (g: string) => (item.libraryId ? `/library/${item.libraryId}?genre=${encodeURIComponent(g)}` : `/search?q=${encodeURIComponent(g)}`);
+
+  const iconAct = (key: string, icon: IconName, label: string, short: string, onClick: () => void, opts: { active?: boolean; pressed?: boolean; fav?: boolean } = {}) => (
+    <button key={key} className={`btn-round on-media tp-act ${opts.active ? 'active' : ''} ${opts.fav ? 'fav' : ''}`} onClick={onClick} aria-pressed={opts.pressed} aria-label={label} title={label} data-nav>
+      <Icon name={icon} />
+      <span className="tp-act-label" aria-hidden="true">{short}</span>
+    </button>
+  );
 
   return (
-    <div className={`detail detail-${item.type} ${preview ? 'from-card' : ''}`}>
-      <div className="detail-backdrop">
-        <Img src={item.backdropUrl ?? (item.type === 'episode' ? item.thumbUrl : null) ?? item.posterUrl} width={1920} className={item.backdropUrl ? '' : 'blurred'} />
-        <div className="detail-shade" />
-      </div>
-      <div className="detail-main">
-        <div className={`detail-poster ${square ? 'square' : item.type === 'episode' || item.type === 'video' ? 'landscape' : ''}`} style={{ viewTransitionName: POSTER_VT } as React.CSSProperties}>
-          {/* 260 px: the same image the poster cards load, so it is already decoded when the page opens. */}
-          <Img src={item.type === 'episode' || item.type === 'video' ? item.thumbUrl ?? item.posterUrl : item.posterUrl ?? item.thumbUrl} width={item.type === 'episode' || item.type === 'video' ? 400 : 260} alt={item.title} fallback={<Icon name={item.type === 'audiobook' || item.type === 'bookpart' ? 'book' : item.type === 'podcast' || item.type === 'podcastepisode' ? 'podcast' : square ? 'music' : item.type === 'show' || item.type === 'season' || item.type === 'episode' ? 'shows' : 'film'} size={40} />} />
-          {item.type === 'photo' && <button className="detail-poster-zoom" onClick={() => setModal('photo')} aria-label="View full size"><Icon name="fullscreen" /></button>}
+    <div className={`detail tp tp-${item.type} ${showPoster ? `tp-has-poster tp-poster-${posterShape}` : ''} ${preview ? 'from-card' : ''}`}>
+      <section className="tp-hero" aria-labelledby="tp-title">
+        <div className="detail-backdrop tp-backdrop" aria-hidden="true">
+          <Img src={backdrop ?? item.posterUrl ?? item.thumbUrl} width={1920} className={backdrop ? '' : 'blurred'} />
+          <div className="tp-shade" />
         </div>
-        <div className="detail-info">
+
+        {showPoster && (
+          <div className={`tp-poster ${posterShape}`} style={{ viewTransitionName: POSTER_VT } as React.CSSProperties}>
+            {/* 260 px: the same image the poster cards load, so it is already decoded when the page opens. */}
+            <Img src={item.type === 'episode' || item.type === 'video' ? item.thumbUrl ?? item.posterUrl : item.posterUrl ?? item.thumbUrl} width={posterShape === 'landscape' ? 400 : 260} alt="" fallback={<Icon name={item.type === 'audiobook' || item.type === 'bookpart' ? 'book' : item.type === 'podcast' || item.type === 'podcastepisode' ? 'podcast' : square ? 'music' : item.type === 'show' || item.type === 'season' || item.type === 'episode' ? 'shows' : 'film'} size={40} />} />
+            {item.type === 'photo' && <button className="tp-poster-zoom" onClick={() => setModal('photo')} aria-label="View full size"><Icon name="fullscreen" /></button>}
+          </div>
+        )}
+
+        <div className="tp-head">
           {crumbs.length > 0 && (
-            <nav className="crumbs">
-              {crumbs.map((c) => (
-                <Link key={c.to} to={c.to}>{c.label}</Link>
-              ))}
+            <nav className="tp-crumbs" aria-label="Breadcrumb">
+              {crumbs.map((c) => <Link key={c.to} to={c.to}>{c.label}</Link>)}
             </nav>
           )}
           {item.logoUrl && item.type !== 'episode' ? (
             // The page keeps its heading when the title is shown as a logo image (screen readers, heading navigation).
             <>
-              <h1 className="sr-only">{item.title}</h1>
-              <Img src={item.logoUrl} width={600} className="detail-logo" fallback={<div className="detail-title" aria-hidden="true">{item.title}</div>} />
+              <h1 className="sr-only" id="tp-title">{item.title}</h1>
+              <Img src={item.logoUrl} width={600} alt="" className="tp-logo" fallback={<div className="tp-title" aria-hidden="true">{item.title}</div>} />
             </>
           ) : (
-            <h1 className="detail-title">{item.title}</h1>
+            <h1 className="tp-title" id="tp-title">{item.title}</h1>
           )}
-          {item.originalTitle && item.originalTitle !== item.title && <p className="muted detail-orig">{item.originalTitle}</p>}
-          <div className="detail-meta">
-            {item.type === 'episode' && <span>{episodeCode(item)}</span>}
-            {item.year && <span>{item.year}</span>}
-            {item.contentRating && <Badge className="badge-outline">{item.contentRating}</Badge>}
-            {item.durationMs && item.type !== 'show' ? <span>{formatDuration(item.durationMs)}</span> : null}
-            {item.type === 'show' && item.childCount > 0 && <span>{item.childCount} season{item.childCount > 1 ? 's' : ''}</span>}
+          {item.originalTitle && item.originalTitle !== item.title && <p className="tp-orig">{item.originalTitle}</p>}
+          <div className="tp-meta">
+            {metaParts.length > 0 && <span className="tp-meta-line">{metaParts}</span>}
             {item.type === 'album' && <ReleaseTypeBadges types={item.music?.releaseTypes} />}
-            {(item.type === 'album' || item.type === 'playlist' || item.type === 'collection') && item.childCount > 0 && <span>{item.childCount} {item.type === 'album' ? 'track' : 'item'}{item.childCount === 1 ? '' : 's'}</span>}
-            {item.type === 'audiobook' && item.childCount > 1 && <span>{item.childCount} parts</span>}
-            {item.type === 'audiobook' && item.series?.name && (
-              <Link className="detail-series" to={seriesLink(item)}>
-                <Icon name="book" size={14} /> {item.series.index != null ? `Book ${item.series.index} of ` : ''}{item.series.name}
-              </Link>
-            )}
-            {item.type === 'podcast' && item.childCount > 0 && <span>{item.childCount} episodes</span>}
-            {item.type === 'podcastepisode' && item.releaseDate && <span>{formatDate(item.releaseDate)}</span>}
             {item.smart && <Badge tone="accent"><Icon name="wand" size={12} /> Smart</Badge>}
-            {item.communityRating != null && (
-              <span className="detail-rating"><Icon name="starFill" size={14} /> {item.communityRating.toFixed(1)}</span>
-            )}
+            <QualityBadges media={item.media} className="tp-quality" />
+            {item.media?.[0]?.remote && <Badge tone="accent">IPTV</Badge>}
             <RatingBadges ratings={item.ratings} />
-            <MediaBadges media={item.media} />
           </div>
           {item.genres.length > 0 && (
-            <div className="genre-chips">
-              {item.genres.map((g) => (
-                <Link key={g} className="chip" to={item.libraryId ? `/library/${item.libraryId}?genre=${encodeURIComponent(g)}` : `/search?q=${encodeURIComponent(g)}`}>{g}</Link>
-              ))}
-            </div>
+            <p className="tp-genres">
+              {item.genres.slice(0, 4).map((g) => <Link key={g} to={genreLink(g)}>{g}</Link>)}
+            </p>
           )}
-
+          {item.type === 'audiobook' && item.series?.name && (
+            <Link className="detail-series tp-series" to={seriesLink(item)}>
+              <Icon name="book" size={14} /> {item.series.index != null ? `Book ${item.series.index} of ` : ''}{item.series.name}
+            </Link>
+          )}
           {(item.type === 'artist' || item.type === 'album' || item.type === 'track') && <MusicBrainzLinks item={item} />}
+        </div>
 
+        <div className="tp-lower">
           {/* "Previously on…" for the episode about to play (this one, or a show's next-up episode). */}
           {(item.type === 'episode' || (nextEp?.type === 'episode' && !nextIsAudio)) && (
             <RecapCard itemId={item.type === 'episode' ? item.id : nextEp!.id} onPlayClip={(c) => navigate(`/play/${encodeURIComponent(c.itemId)}?start=${c.startMs}&keeprecap=1`)} />
           )}
 
-          <div className="detail-actions">
+          <div className="tp-actions">
             {playable && (
-              <button className="btn btn-primary btn-lg" onClick={() => (nextEp && !nextIsAudio ? navigate(playLink(nextEp)) : play(item))} data-nav data-play autoFocus title={nextEp ? nextEp.title : undefined} {...warm.bind(warmTarget)}>
+              <button className="btn btn-play btn-lg tp-play" onClick={() => (nextEp && !nextIsAudio ? navigate(playLink(nextEp)) : play(item))} data-nav data-play autoFocus={document.documentElement.classList.contains('tv')} title={nextEp ? nextEp.title : undefined} {...warm.bind(warmTarget)}>
                 <Icon name="play" size={20} /> {playLabel}
               </button>
             )}
-            {resumable && isVideo(item) && (
-              <button className="btn btn-glass btn-lg" onClick={() => navigate(playLink(item, { fromStart: true }))} data-nav>
-                <Icon name="refresh" size={18} /> From start
-              </button>
-            )}
-            {(item.type === 'album' || item.type === 'artist' || item.type === 'playlist') && (
-              <button className="btn btn-glass btn-lg" onClick={() => play(item, { shuffle: true })} data-nav>
-                <Icon name="shuffle" size={18} /> Shuffle
-              </button>
-            )}
-            {features.music && ['album', 'artist', 'playlist', 'track'].includes(item.type) && (
-              <button className="btn btn-glass btn-lg" onClick={() => navigate(`/dj?seed=${encodeURIComponent(item.id)}`)} data-nav title="An automatic, beat-matched mix starting from this">
-                <Icon name="music" size={18} /> DJ mix
-              </button>
-            )}
-            {item.smart && containerOwned && (
-              <button className="btn btn-glass btn-lg" onClick={() => setModal('smart')} data-nav>
-                <Icon name="wand" size={18} /> Edit rules
-              </button>
-            )}
-            {item.trailerUrl && (
-              <button className="btn btn-glass btn-lg" onClick={() => setModal('trailer')} data-nav>
-                <Icon name="video" size={18} /> Trailer
-              </button>
-            )}
-            {canWatchlist(item) && <WatchlistButton item={item} />}
-            {item.type !== 'photo' && item.type !== 'playlist' && item.type !== 'collection' && (
-              <button className={`btn-round ${item.userData.played ? 'active' : ''}`} onClick={togglePlayed} title={item.userData.played ? 'Mark unwatched' : 'Mark watched'} data-nav>
-                <Icon name="check" />
-              </button>
-            )}
-            <button className={`btn-round ${item.userData.favorite ? 'active fav' : ''}`} onClick={toggleFav} title={item.userData.favorite ? 'Remove from favourites' : 'Add to favourites'} data-nav>
-              <Icon name={item.userData.favorite ? 'heartFill' : 'heart'} />
-            </button>
-            {item.type !== 'playlist' && item.type !== 'collection' && (
-              <button className="btn-round" onClick={() => setModal('playlist')} title="Add to playlist" data-nav>
-                <Icon name="plus" />
-              </button>
-            )}
-            {canDownload && (isVideo(item) ? (
-              <Dropdown
-                trigger={({ onClick }) => <button className="btn-round" onClick={onClick} title="Download" aria-label="Download" data-nav><Icon name="download" /></button>}
-                items={downloadItems}
-              />
-            ) : (
-              <a className="btn-round" href={withToken(api.playback.downloadUrl(item.id))} download title="Download" data-nav>
-                <Icon name="download" />
-              </a>
-            ))}
-            {(adminItems.length > 0 || containerOwned || subtitleItems.length > 0) && (
-              <Dropdown
-                trigger={({ onClick }) => <button className="btn-round" onClick={onClick} title="More" aria-label="More" data-nav><Icon name="more" /></button>}
-                items={[
-                  ...subtitleItems,
-                  ...(subtitleItems.length && (containerOwned || adminItems.length) ? [{ divider: true, label: '' }] : []),
-                  ...(containerOwned ? [{ label: `Delete ${item.type}`, icon: 'trash' as const, danger: true, onClick: deleteContainer }] : []),
-                  ...(containerOwned && adminItems.length ? [{ divider: true, label: '' }] : []),
-                  ...adminItems,
-                ]}
-              />
-            )}
-            <ReportIssueButton item={item} round />
+            {(resumable && isVideo(item)) || item.trailerUrl || localTrailer || ['album', 'artist', 'playlist'].includes(item.type) || (item.smart && containerOwned) ? (
+              <div className="tp-pills">
+                {resumable && isVideo(item) && (
+                  <button className="btn btn-glass on-media btn-lg" onClick={() => navigate(playLink(item, { fromStart: true }))} data-nav>
+                    <Icon name="refresh" size={18} /> Start over
+                  </button>
+                )}
+                {(item.trailerUrl || localTrailer) && (
+                  <button className="btn btn-glass on-media btn-lg" onClick={() => (localTrailer ? navigate(playLink(localTrailer)) : setModal('trailer'))} data-nav>
+                    <Icon name="video" size={18} /> Trailer
+                  </button>
+                )}
+                {(item.type === 'album' || item.type === 'artist' || item.type === 'playlist') && (
+                  <button className="btn btn-glass on-media btn-lg" onClick={() => play(item, { shuffle: true })} data-nav>
+                    <Icon name="shuffle" size={18} /> Shuffle
+                  </button>
+                )}
+                {features.music && ['album', 'artist', 'playlist', 'track'].includes(item.type) && (
+                  <button className="btn btn-glass on-media btn-lg" onClick={() => navigate(`/dj?seed=${encodeURIComponent(item.id)}`)} data-nav title="An automatic, beat-matched mix starting from this">
+                    <Icon name="music" size={18} /> DJ mix
+                  </button>
+                )}
+                {item.smart && containerOwned && (
+                  <button className="btn btn-glass on-media btn-lg" onClick={() => setModal('smart')} data-nav>
+                    <Icon name="wand" size={18} /> Edit rules
+                  </button>
+                )}
+              </div>
+            ) : null}
+            <div className="tp-acts" role="group" aria-label="Actions">
+              {canWatchlist(item) && <WatchlistButton item={item} variant="hero" />}
+              {canWatched && iconAct('watched', item.userData.played ? 'checkCircle' : 'check', `${item.userData.played ? 'Mark' + watchedLabel + ' unwatched' : 'Mark' + watchedLabel + ' watched'}`, 'Watched', togglePlayed, { active: item.userData.played, pressed: item.userData.played })}
+              <RateButton item={item} onRate={(r) => void rate(r)} onNotInterested={() => void notInterested()} />
+              {!phone && iconAct('fav', item.userData.favorite ? 'heartFill' : 'heart', item.userData.favorite ? 'Remove from favourites' : 'Add to favourites', 'Favourite', toggleFav, { pressed: item.userData.favorite, fav: item.userData.favorite })}
+              {!phone && canDownload && (isVideo(item) ? (
+                <Dropdown
+                  align="left"
+                  trigger={({ onClick, open }) => (
+                    <button className="btn-round on-media tp-act" onClick={onClick} aria-label="Download" aria-expanded={open} aria-haspopup="menu" title="Download" data-nav>
+                      <Icon name="download" /><span className="tp-act-label" aria-hidden="true">Download</span>
+                    </button>
+                  )}
+                  items={downloadItems}
+                />
+              ) : (
+                <a className="btn-round on-media tp-act" href={withToken(api.playback.downloadUrl(item.id))} download aria-label="Download" title="Download" data-nav>
+                  <Icon name="download" /><span className="tp-act-label" aria-hidden="true">Download</span>
+                </a>
+              ))}
+              {moreItems.length > 0 && (
+                <Dropdown
+                  align={phone ? 'right' : 'left'}
+                  className="tp-more"
+                  trigger={({ onClick, open }) => (
+                    <button className="btn-round on-media tp-act" onClick={onClick} aria-label="More actions" aria-expanded={open} aria-haspopup="menu" title="More" data-nav>
+                      <Icon name="more" /><span className="tp-act-label" aria-hidden="true">More</span>
+                    </button>
+                  )}
+                  items={moreItems}
+                />
+              )}
+            </div>
           </div>
-          <ArrItemActions item={item} />
 
           {resumable && (
-            <div className="detail-progress">
-              <ProgressBar value={pct} />
-              <span className="muted">{formatDuration((item.durationMs ?? 0) - item.userData.positionMs)} left</span>
+            <div className="tp-progress">
+              <ProgressBar value={pct} label="Watched" />
+              <span className="tabular">{formatDuration((item.durationMs ?? 0) - item.userData.positionMs)} left</span>
             </div>
           )}
 
-          <div className="detail-rate">
-            <span className="muted">Your rating</span>
-            {!['photo', 'playlist', 'collection'].includes(item.type) && (
-              <span className="thumbs" role="group" aria-label="Thumbs rating">
-                <button className={`thumb ${thumbsUp ? 'active' : ''}`} onClick={() => rate(thumbsUp ? null : 10)} aria-pressed={thumbsUp} title={thumbsUp ? 'Remove rating' : 'I like this'} data-nav>
-                  <Icon name="thumbUp" size={18} />
+          {(item.tagline || item.overview) && (
+            <div className={`tp-synopsis ${expanded ? 'expanded' : ''}`}>
+              {item.tagline && <p className="tp-tagline">{item.tagline}</p>}
+              {item.overview && <p className="tp-overview" id="tp-overview">{item.overview}</p>}
+              {item.overview && item.overview.length > 240 && (
+                <button className="tp-more-text" onClick={() => setExpanded((x) => !x)} aria-expanded={expanded} aria-controls="tp-overview">
+                  {expanded ? 'Less' : 'More'}
                 </button>
-                <button className={`thumb down ${thumbsDown ? 'active' : ''}`} onClick={() => rate(thumbsDown ? null : 2)} aria-pressed={thumbsDown} title={thumbsDown ? 'Remove rating' : 'Not for me'} data-nav>
-                  <Icon name="thumbDown" size={18} />
-                </button>
-              </span>
-            )}
-            <StarRating value={item.userData.rating} onChange={rate} size={20} />
-            {(item.type === 'movie' || item.type === 'show') && (
-              <button className={`btn btn-sm not-interested ${item.userData.notInterested ? 'active' : ''}`} onClick={notInterested} aria-pressed={item.userData.notInterested} title="Hide from your recommendations" data-nav>
-                <Icon name={item.userData.notInterested ? 'eye' : 'ban'} size={14} /> {item.userData.notInterested ? 'Show in recommendations' : 'Not interested'}
-              </button>
-            )}
-          </div>
-
-          {item.tagline && <p className="detail-tagline">{item.tagline}</p>}
-          {item.overview && <p className="detail-overview">{item.overview}</p>}
-
-          <dl className="detail-credits">
-            {item.type === 'track' && (item.music?.credits?.length || item.music?.displayArtist) ? (<><dt>Artist</dt><dd><ArtistCredits credits={item.music?.credits} fallback={item.music?.displayArtist} /></dd></>) : null}
-            {item.type === 'album' && <AlbumFacts item={item} />}
-            {authors.length > 0 &&(<><dt>Author</dt><dd>{authors.join(', ')}</dd></>)}
-            {narrators.length > 0 && (<><dt>Narrated by</dt><dd>{narrators.join(', ')}</dd></>)}
-            {directors.length > 0 && (<><dt>Director</dt><dd>{directors.join(', ')}</dd></>)}
-            {writers.length > 0 && (<><dt>Writers</dt><dd>{writers.slice(0, 4).join(', ')}</dd></>)}
-            {item.studios.length > 0 && (<><dt>Studio</dt><dd>{item.studios.slice(0, 3).join(', ')}</dd></>)}
-            {item.releaseDate && (<><dt>Released</dt><dd>{formatDate(item.releaseDate)}</dd></>)}
-            {item.userData.lastPlayedAt && (<><dt>Last played</dt><dd>{formatDate(item.userData.lastPlayedAt)}</dd></>)}
-          </dl>
+              )}
+            </div>
+          )}
         </div>
-      </div>
+      </section>
 
-      <div className="detail-sections">
-        {item.type === 'show' && <SeasonsBody key={item.id} show={item} />}
-        {item.type === 'season' && <EpisodeList seasonId={item.id} />}
+      <div className="tp-body detail-sections">
+        {item.type === 'show' && <SeasonsBody key={item.id} show={item} upNext={nextEp?.type === 'episode' ? nextEp : null} />}
+        {item.type === 'season' && (
+          <section className="tp-seasons" aria-labelledby="tp-episodes-h">
+            <div className="tp-section-head"><h2 className="tp-h2" id="tp-episodes-h">Episodes</h2></div>
+            <EpisodeList key={String(item.userData.played)} seasonId={item.id} upNextId={nextEp?.id} />
+          </section>
+        )}
         {item.type === 'podcast' && <PodcastEpisodes podcast={item} />}
         {item.type === 'audiobook' && item.childCount !== 1 && <TrackList parent={item} />}
         {(item.chapters?.length ?? 0) > 0 && <ChaptersSection item={item} />}
@@ -781,7 +953,35 @@ export function ItemPage() {
         {item.type === 'artist' && <RelatedArtists artist={item} />}
         {item.type === 'collection' && <ChildrenGrid key={item.smart ? JSON.stringify(item.smart) : 'manual'} parent={item} removable={isAdmin && !item.smart} onRemove={removeFromContainer} />}
         <CastRow item={item} />
-        {item.media && item.media.length > 0 && <MediaInfo media={item.media} />}
+        <ExtrasRow extras={extras.data ?? []} />
+        {(hasCredits || hasMedia || isAdmin) && (
+          <section className="tp-details" aria-labelledby="tp-details-h">
+            <h2 className="tp-h2" id="tp-details-h">Details</h2>
+            <div className={`tp-details-grid ${hasMedia ? 'two' : ''}`}>
+              {(hasCredits || item.genres.length > 0) && (
+                <dl className="tp-credits">
+                  {item.type === 'track' && (item.music?.credits?.length || item.music?.displayArtist) ? (<><dt>Artist</dt><dd><ArtistCredits credits={item.music?.credits} fallback={item.music?.displayArtist} /></dd></>) : null}
+                  {item.type === 'album' && <AlbumFacts item={item} />}
+                  {authors.length > 0 && (<><dt>Author</dt><dd>{authors.join(', ')}</dd></>)}
+                  {narrators.length > 0 && (<><dt>Narrated by</dt><dd>{narrators.join(', ')}</dd></>)}
+                  {directors.length > 0 && (<><dt>Director</dt><dd>{directors.join(', ')}</dd></>)}
+                  {writers.length > 0 && (<><dt>Writers</dt><dd>{writers.slice(0, 4).join(', ')}</dd></>)}
+                  {item.studios.length > 0 && (<><dt>Studio</dt><dd>{item.studios.slice(0, 3).join(', ')}</dd></>)}
+                  {item.genres.length > 0 && (<><dt>Genres</dt><dd className="tp-genre-links">{item.genres.map((g) => <Link key={g} to={genreLink(g)}>{g}</Link>)}</dd></>)}
+                  {item.releaseDate && (<><dt>Released</dt><dd>{formatDate(item.releaseDate)}</dd></>)}
+                  {item.userData.lastPlayedAt && (<><dt>Last played</dt><dd>{formatDate(item.userData.lastPlayedAt)}</dd></>)}
+                </dl>
+              )}
+              {hasMedia && (
+                <div className="tp-media">
+                  <h3 className="tp-h3">{item.media!.length > 1 ? 'Versions' : 'Media info'}</h3>
+                  <MediaInfo media={item.media!} />
+                </div>
+              )}
+            </div>
+            <ArrItemActions item={item} />
+          </section>
+        )}
         {!['playlist', 'collection', 'track', 'photo', 'season', 'bookpart', 'podcastepisode'].includes(item.type) && <SimilarRow item={item} />}
       </div>
 
@@ -790,11 +990,12 @@ export function ItemPage() {
       )}
       <AddToContainerModal open={modal === 'playlist'} onClose={() => setModal(null)} items={[item]} kind="playlist" />
       <AddToContainerModal open={modal === 'collection'} onClose={() => setModal(null)} items={[item]} kind="collection" />
-      {isAdmin && <EditMetadataModal open={modal === 'edit'} onClose={() => setModal(null)} item={item} onUpdated={(i) => res.setData({ ...item, ...i })} />}
+      {isAdmin && <EditMetadataModal open={modal === 'edit' || modal === 'match'} initialView={modal === 'match' ? 'match' : 'form'} onClose={() => setModal(null)} item={item} onUpdated={(i) => res.setData({ ...item, ...i })} />}
       {isAdmin && <UploadArtworkModal open={modal === 'art'} onClose={() => setModal(null)} item={item} onUpdated={(i) => res.setData({ ...item, ...i })} />}
       {canSearchSubtitles(item) && (
         <SubtitleSearchModal open={modal === 'subs'} onClose={() => setModal(null)} item={item} onUpdated={(i) => res.setData((d) => (d ? { ...d, ...i, userData: i.userData ?? d.userData } : i))} />
       )}
+      {canReport && <ReportIssueDialog item={item} open={modal === 'report'} onClose={() => setModal(null)} />}
       <Modal open={modal === 'trailer'} onClose={() => setModal(null)} size="xl" className="trailer-modal" title={`${item.title} — Trailer`}>
         {item.trailerUrl && /youtube\.com|youtu\.be/.test(item.trailerUrl) ? (
           <iframe className="trailer-frame" src={youtubeEmbed(item.trailerUrl)} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen title="Trailer" />

@@ -1,7 +1,7 @@
 Pod::Spec.new do |s|
   s.name           = 'MediaMaxCar'
   s.version        = '1.0.0'
-  s.summary        = 'CarPlay audio app support for Kinora'
+  s.summary        = 'CarPlay audio app support for Vibe'
   s.description    = 'CarPlay scene delegate, browse templates and Now Playing configuration driven from JavaScript.'
   s.author         = ''
   s.license        = 'MIT'
@@ -18,7 +18,7 @@ Pod::Spec.new do |s|
   # ExpoAppSceneDelegate / ExpoReactNativeFactoryProvider: the scene delegates start or adopt the
   # React Native window (CarPlay-first cold launch).
   s.dependency 'Expo'
-  # Intents: Siri "Play … in Kinora" (INPlayMediaIntent, SiriIntents.swift).
+  # Intents: Siri "Play … in Vibe" (INPlayMediaIntent, SiriIntents.swift).
   s.frameworks = 'CarPlay', 'MediaPlayer', 'Intents'
 
   # Swift/Objective-C compatibility

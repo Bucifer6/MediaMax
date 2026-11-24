@@ -1,6 +1,6 @@
 import Intents
 
-/// Siri "Play <something> in Kinora" (`INPlayMediaIntent`), handled inside the app (iOS 14+ in-app
+/// Siri "Play <something> in Vibe" (`INPlayMediaIntent`), handled inside the app (iOS 14+ in-app
 /// intent handling, no Intents extension).
 ///
 /// Wiring (plugins/withMediaMaxCar.js):
@@ -38,7 +38,7 @@ final class PlayMediaIntentHandler: NSObject, INPlayMediaIntentHandling {
     let search = intent.mediaSearch
     let title = [search?.mediaName, search?.albumName, search?.artistName]
       .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .first(where: { !$0.isEmpty }) ?? "Kinora"
+      .first(where: { !$0.isEmpty }) ?? "Vibe"
     let item = INMediaItem(identifier: "mediamax.search", title: title, type: search?.mediaType ?? .unknown, artwork: nil)
     completion(INPlayMediaMediaItemResolutionResult.successes(with: [item]))
   }
@@ -54,7 +54,7 @@ final class PlayMediaIntentHandler: NSObject, INPlayMediaIntentHandling {
   /// `CarPlayFromSearch` in modules/mediamax-car/index.ts.
   static func payload(for search: INMediaSearch?) -> [String: Any?] {
     guard let search, search.reference != .currentlyPlaying else {
-      // "Play Kinora" / "resume": JS resumes the queue, or continues listening.
+      // "Play Vibe" / "resume": JS resumes the queue, or continues listening.
       return ["query": "", "source": "siri"]
     }
     return [

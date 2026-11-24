@@ -3,7 +3,7 @@
  * (equal-power crossfade, EQ bass swap, filter fade, echo-out, tempo match with key lock) as one filter graph.
  *
  * Used by GET /dj/transition-preview (hear how two tracks will be mixed — handy for clients without Web Audio,
- * e.g. Cast receivers, and for checking a transition plan). Kinora does not otherwise render whole mixes on
+ * e.g. Cast receivers, and for checking a transition plan). Vibe does not otherwise render whole mixes on
  * the server: the web and mobile apps mix on the device.
  *
  * Tempo/key lock: `rubberband` (pitch-preserving time-stretch, librubberband) when this ffmpeg build has it,

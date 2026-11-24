@@ -1,6 +1,6 @@
 # Home Assistant & smart home
 
-Kinora talks to [Home Assistant](https://www.home-assistant.io) in three ways. Set them up in **Admin → Smart home**.
+Vibe talks to [Home Assistant](https://www.home-assistant.io) in three ways. Set them up in **Admin → Smart home**.
 
 | | Needs | Best for |
 |---|---|---|
@@ -11,14 +11,14 @@ Kinora talks to [Home Assistant](https://www.home-assistant.io) in three ways. S
 ## MQTT
 
 1. Install the **Mosquitto broker** add-on (or use any MQTT broker) and the **MQTT** integration in HA.
-2. In Kinora: Admin → Smart home → enable *Publish to Home Assistant over MQTT*, enter the broker URL (`mqtt://homeassistant.local:1883`, or `mqtts://…:8883` for TLS), username and password (write-only; shown as `••••` once saved), then **Test connection** and **Save**.
+2. In Vibe: Admin → Smart home → enable *Publish to Home Assistant over MQTT*, enter the broker URL (`mqtt://homeassistant.local:1883`, or `mqtts://…:8883` for TLS), username and password (write-only; shown as `••••` once saved), then **Test connection** and **Save**.
 3. A device named after your server appears under Settings → Devices & services → MQTT.
 
-Kinora's MQTT client is built in (MQTT 3.1.1, QoS 0/1, TLS, keep-alive, last will). It reconnects with back-off and re-announces everything when HA restarts (it listens to `homeassistant/status`).
+Vibe's MQTT client is built in (MQTT 3.1.1, QoS 0/1, TLS, keep-alive, last will). It reconnects with back-off and re-announces everything when HA restarts (it listens to `homeassistant/status`).
 
 ### Entities
 
-Entity ids come from the device and entity names. With a server called *Kinora*:
+Entity ids come from the device and entity names. With a server called *Vibe*:
 
 | Entity | State | Attributes |
 |---|---|---|
@@ -34,7 +34,7 @@ Entity ids come from the device and entity names. With a server called *Kinora*:
 
 *Ended* = stopped at 90 % or later. Poster URLs are absolute when a Public URL is set (Admin → Remote access); images are served without login.
 
-Everything goes *unavailable* when Kinora stops: availability topic `mediamax/<server>/availability` is `online`/`offline` (retained, `offline` is the MQTT last will). Nothing is published while the server is idle except keep-alive pings; while something plays, state is refreshed every 15 s (only when it changed).
+Everything goes *unavailable* when Vibe stops: availability topic `mediamax/<server>/availability` is `online`/`offline` (retained, `offline` is the MQTT last will). Nothing is published while the server is idle except keep-alive pings; while something plays, state is refreshed every 15 s (only when it changed).
 
 ### Topics
 
@@ -53,7 +53,7 @@ Everything goes *unavailable* when Kinora stops: availability topic `mediamax/<s
 ```yaml
 # Dim the living-room lights when a video starts on the living-room TV, raise them on pause/stop.
 automation:
-  - alias: "Kinora – movie lights"
+  - alias: "Vibe – movie lights"
     trigger:
       - platform: state
         entity_id: sensor.living_room_tv_alice_now_playing
@@ -73,7 +73,7 @@ automation:
                 data: { brightness_pct: 80, transition: 2 }
 
   # Using the event entity instead (any device):
-  - alias: "Kinora – notify when a movie ends"
+  - alias: "Vibe – notify when a movie ends"
     trigger:
       - platform: state
         entity_id: event.mediamax_playback
@@ -85,7 +85,7 @@ automation:
           message: "{{ trigger.to_state.attributes.user }} finished {{ trigger.to_state.attributes.title }}"
 
   # Don't let the NAS sleep timer / heating schedule kick in while anyone watches.
-  - alias: "Kinora – keep the living room warm while watching"
+  - alias: "Vibe – keep the living room warm while watching"
     trigger:
       - platform: state
         entity_id: binary_sensor.mediamax_someone_is_watching
@@ -99,7 +99,7 @@ automation:
 ## Webhook preset (no MQTT)
 
 1. In HA create an automation with a **Webhook** trigger and copy its webhook ID.
-2. Kinora → Admin → Smart home → *Home Assistant — webhook*: enter your HA URL (`http://homeassistant.local:8123`) and the webhook ID, click **Add Home Assistant webhook**. Kinora sends a test call and adds the webhook (events: play, pause, resume, stop, new media) under Server settings → Webhooks, where you can change events or switch any webhook's payload format between *Kinora JSON* and *Home Assistant (flat JSON)*.
+2. Vibe → Admin → Smart home → *Home Assistant — webhook*: enter your HA URL (`http://homeassistant.local:8123`) and the webhook ID, click **Add Home Assistant webhook**. Vibe sends a test call and adds the webhook (events: play, pause, resume, stop, new media) under Server settings → Webhooks, where you can change events or switch any webhook's payload format between *Vibe JSON* and *Home Assistant (flat JSON)*.
 
 ### Payload
 
@@ -108,7 +108,7 @@ automation:
   "event": "playback.start",
   "action": "started",
   "state": "playing",
-  "server": "Kinora",
+  "server": "Vibe",
   "server_id": "iqMnBNQu2wPjR5ax",
   "at": "2026-11-20T20:15:03.120Z",
   "user": "Alice", "user_id": "u1",
@@ -128,7 +128,7 @@ automation:
 
 ```yaml
 automation:
-  - alias: "Kinora – movie night lights (webhook)"
+  - alias: "Vibe – movie night lights (webhook)"
     trigger:
       - platform: webhook
         webhook_id: mediamax_lights
@@ -149,7 +149,7 @@ automation:
                 data: { brightness_pct: 80, transition: 2 }
 ```
 
-`local_only: true` only accepts calls from your LAN; keep it unless Kinora runs elsewhere.
+`local_only: true` only accepts calls from your LAN; keep it unless Vibe runs elsewhere.
 
 ## REST endpoint
 
@@ -158,7 +158,7 @@ automation:
 ```yaml
 sensor:
   - platform: rest
-    name: Kinora streams
+    name: Vibe streams
     resource: http://mediamax.lan:8484/api/v1/status/now-playing
     headers:
       X-Api-Key: !secret kinora_api_key
@@ -172,7 +172,7 @@ Response (`NowPlayingStatus` in `shared/src/types.ts`): `{ server, watching, act
 Homepage (`services.yaml`) example:
 
 ```yaml
-- Kinora:
+- Vibe:
     href: https://media.example.com
     widget:
       type: customapi

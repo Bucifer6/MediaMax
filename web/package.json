@@ -11,8 +11,8 @@
     "test": "node --import tsx --test test/*.test.ts"
   },
   "devDependencies": {
-    "@fontsource-variable/bricolage-grotesque": "^5.3.0",
     "@fontsource-variable/figtree": "^5.3.0",
+    "@fontsource-variable/outfit": "^5.3.0",
     "@mediamax/shared": "*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

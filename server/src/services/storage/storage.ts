@@ -1,11 +1,11 @@
 /**
- * Disk-friendly mode: keep NAS hard drives asleep when nobody uses Kinora.
+ * Disk-friendly mode: keep NAS hard drives asleep when nobody uses Vibe.
  *
  *  - Background media-disk work (scans, thumbnails, trickplay, intro detection, DJ analysis, subtitle matching,
  *    HDR probing) only starts inside the maintenance window, or "piggybacks" on a disk that is awake anyway
  *    (a stream started from it, a file changed on it, or — with disk-state checks — something else woke it).
  *  - Optional disk-state awareness: disks reported asleep by hdparm/smartctl are skipped by non-window work.
- *  - Everything Kinora generates (artwork cache, thumbnails, trickplay, subtitles, DB) lives in the data dir.
+ *  - Everything Vibe generates (artwork cache, thumbnails, trickplay, subtitles, DB) lives in the data dir.
  */
 import type { DiskPowerState, StorageLibraryInfo, StorageSettings, StorageStatus } from '@mediamax/shared';
 import { db } from '../../db.js';

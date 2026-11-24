@@ -495,7 +495,7 @@ test('ListenBrainz rules: half the track or 4 minutes', () => {
 });
 
 let duetId = '';
-test('listen payload: track_metadata + additional_info with MBIDs, Kinora as player/client, no music_service', () => {
+test('listen payload: track_metadata + additional_info with MBIDs, Vibe as player/client, no music_service', () => {
   duetId = db.get("SELECT id FROM items WHERE library_id = 'lib-scan' AND title = 'Duet'")!.id;
   const t = scrobble.trackForScrobble(duetId)!;
   const l = lb.buildListen(t, 1700000000) as any;
@@ -506,8 +506,8 @@ test('listen payload: track_metadata + additional_info with MBIDs, Kinora as pla
   const ai = l.track_metadata.additional_info;
   assert.equal(ai.recording_mbid, ID.recA);
   assert.deepEqual(ai.artist_mbids, [ID.artA, ID.artB]);
-  assert.equal(ai.media_player, 'Kinora');
-  assert.equal(ai.submission_client, 'Kinora');
+  assert.equal(ai.media_player, 'Vibe');
+  assert.equal(ai.submission_client, 'Vibe');
   assert.ok(ai.submission_client_version);
   assert.ok(ai.duration_ms > 0);
   assert.equal('music_service' in ai, false);

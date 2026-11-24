@@ -69,7 +69,7 @@ export function LibrariesAdmin() {
     }
   };
   const remove = async (l: Library) => {
-    if (!(await confirm({ title: `Delete library "${l.name}"?`, message: 'Items are removed from Kinora. Your files are not touched.', confirmLabel: 'Delete library', danger: true }))) return;
+    if (!(await confirm({ title: `Delete library "${l.name}"?`, message: 'Items are removed from Vibe. Your files are not touched.', confirmLabel: 'Delete library', danger: true }))) return;
     try {
       await api.libraries.remove(l.id);
       libs.setData((d) => (d ?? []).filter((x) => x.id !== l.id));
@@ -99,7 +99,7 @@ export function LibrariesAdmin() {
     <div>
       <AdminHeader help="admin-libraries"
         title="Libraries"
-        subtitle="Folders Kinora watches for media. Xtream VOD & series libraries are created automatically from Live TV sources."
+        subtitle="Folders Vibe watches for media. Xtream VOD & series libraries are created automatically from Live TV sources."
         actions={
           <>
             <button className="btn" onClick={scanAll}><Icon name="refresh" size={16} /> Scan all</button>

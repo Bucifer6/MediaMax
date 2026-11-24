@@ -1,5 +1,5 @@
 /**
- * Kinora brand: new installs default to the Kinora theme, the brand themes pass WCAG AA, and the
+ * Vibe brand: new installs default to the Vibe theme, the brand themes pass WCAG AA, and the
  * shipped logo files are outlines only (no <text>, scripts or external references).
  */
 import { test } from 'node:test';
@@ -12,7 +12,7 @@ const branding = await import('../src/services/branding.ts');
 const { BUILTIN_THEMES, DEFAULT_THEME_ID } = await import('../src/services/themes.ts');
 const auth = await import('../src/services/auth.ts');
 
-test('a new install defaults to the Kinora theme and keeps it once accounts exist', async () => {
+test('a new install defaults to the Vibe theme and keeps it once accounts exist', async () => {
   assert.equal(DEFAULT_THEME_ID, 'mediamax');
   assert.equal(branding.getBranding().defaultThemeId, 'mediamax');
   await auth.createUser({ username: 'admin', password: 'pass1234', isAdmin: true });
@@ -21,7 +21,7 @@ test('a new install defaults to the Kinora theme and keeps it once accounts exis
   assert.equal(branding.updateBranding({ defaultThemeId: 'noir' }).defaultThemeId, 'noir');
 });
 
-test('Kinora themes use the brand colours and meet AA', () => {
+test('Vibe themes use the brand colours and meet AA', () => {
   const lum = (hex: string) => {
     const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
     return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
@@ -30,7 +30,7 @@ test('Kinora themes use the brand colours and meet AA', () => {
     const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
     return (x + 0.05) / (y + 0.05);
   };
-  for (const id of ['mediamax', 'mediamax-light']) {
+  for (const id of ['mediamax', 'mediamax-light', 'vibe-aurora', 'vibe-aurora-light', 'vibe-ember', 'vibe-ember-light']) {
     const t = BUILTIN_THEMES.find((x) => x.id === id)!;
     assert.ok(t, id);
     const c = t.colors;
@@ -42,10 +42,26 @@ test('Kinora themes use the brand colours and meet AA', () => {
   }
 });
 
+test('Vibe skins: each built-in skin has a light sibling and a valid logo gradient', () => {
+  const hex = /^#[0-9a-f]{6}$/i;
+  for (const id of ['mediamax', 'vibe-aurora', 'vibe-ember']) {
+    const dark = BUILTIN_THEMES.find((t) => t.id === id)!;
+    const light = BUILTIN_THEMES.find((t) => t.id === `${id}-light`)!;
+    assert.ok(dark && light, id);
+    assert.equal(dark.mode, 'dark');
+    assert.equal(light.mode, 'light');
+    for (const t of [dark, light]) {
+      assert.equal(t.brandGradient?.length, 3, t.id);
+      assert.ok(t.brandGradient!.every((c) => hex.test(c)), t.id);
+    }
+    assert.deepEqual(dark.brandGradient, light.brandGradient, `${id}: dark and light share the logo colours`);
+  }
+});
+
 test('shipped logo SVGs are pure outlines', () => {
   const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
   const files = [
-    ...fs.readdirSync(path.join(repo, 'branding/kinora')).filter((f) => f.endsWith('.svg')).map((f) => `branding/kinora/${f}`),
+    ...fs.readdirSync(path.join(repo, 'branding/vibe')).filter((f) => f.endsWith('.svg')).map((f) => `branding/vibe/${f}`),
     'web/public/favicon.svg',
   ];
   assert.ok(files.length > 20);
@@ -55,9 +71,9 @@ test('shipped logo SVGs are pure outlines', () => {
   }
 });
 
-test('the brand themes are named Kinora; their ids stay the same for existing settings', () => {
-  assert.equal(BUILTIN_THEMES.find((t) => t.id === 'mediamax')?.name, 'Kinora');
-  assert.equal(BUILTIN_THEMES.find((t) => t.id === 'mediamax-light')?.name, 'Kinora Light');
+test('the brand themes are named Vibe Rose; their ids stay the same for existing settings', () => {
+  assert.equal(BUILTIN_THEMES.find((t) => t.id === 'mediamax')?.name, 'Vibe Rose');
+  assert.equal(BUILTIN_THEMES.find((t) => t.id === 'mediamax-light')?.name, 'Vibe Rose Light');
 });
 
 test('app identifiers come from one family, with kinora:// first and mediamax:// still registered', () => {
@@ -67,6 +83,9 @@ test('app identifiers come from one family, with kinora:// first and mediamax://
   assert.equal(d.androidPackage, 'uk.burdujeni82.kinora');
   assert.equal(d.scheme, 'kinora');
   assert.deepEqual(d.legacySchemes, ['mediamax']);
+  // Renamed to Vibe: only the display name changed; the slug and identifiers stay so existing installs keep working.
+  assert.equal(d.appName, 'Vibe');
+  assert.equal(d.slug, 'kinora');
   assert.equal(JSON.parse(fs.readFileSync(path.join(repo, 'tv/webos/appinfo.json'), 'utf8')).id, d.bundleId);
-  assert.match(fs.readFileSync(path.join(repo, 'apps/roku/manifest'), 'utf8'), /^title=Kinora$/m);
+  assert.match(fs.readFileSync(path.join(repo, 'apps/roku/manifest'), 'utf8'), /^title=Vibe$/m);
 });

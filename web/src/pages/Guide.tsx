@@ -2,12 +2,13 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Channel, Program } from '@mediamax/shared';
 import { api } from '../api/endpoints';
-import { useAsync, useMediaQuery, useNow } from '../hooks';
-import { EmptyState, ErrorState, Img, Spinner } from '../components/ui';
+import { isTypingTarget, useAsync, useMediaQuery, useNow } from '../hooks';
+import { Chip, EmptyState, ErrorState, Img, PageHeader, Spinner } from '../components/ui';
 import { Icon } from '../components/Icon';
-import { ProgramModal } from '../components/ProgramModal';
+import { ProgramModal, ProgramPanel } from '../components/ProgramModal';
 import { formatTime } from '../utils/format';
 import { HelpLink } from '../components/HelpLink';
+import '../styles/epg.css';
 
 const HOURS = 12;
 const PAGE = 60;
@@ -23,17 +24,17 @@ const EMPTY: Program[] = [];
  * One channel's row. Memoised: opening a programme, loading the next page of channels or any other page state change
  * no longer re-renders every row and programme of the grid (thousands of buttons with 500 channels loaded).
  */
-const GuideRow = memo(function GuideRow({ channel: c, list, start, end, now, px: PX, width, onSelect }: {
-  channel: Channel; list: Program[]; start: number; end: number; now: number; px: number; width: number; onSelect: (p: Program, c: Channel) => void;
+const GuideRow = memo(function GuideRow({ channel: c, list, start, end, now, px: PX, width, selectedId, onSelect }: {
+  channel: Channel; list: Program[]; start: number; end: number; now: number; px: number; width: number; selectedId: string | null; onSelect: (p: Program, c: Channel, el: HTMLElement) => void;
 }) {
   const navigate = useNavigate();
   return (
-    <div className="guide-row">
-      <button className="guide-channel" onClick={() => navigate(`/watch/live/${c.id}`)} title={`Watch ${c.name}`}>
+    <div className="guide-row" data-channel-number={c.number ?? undefined}>
+      <button className="guide-channel" onClick={() => navigate(`/watch/live/${c.id}`)} title={`Watch ${c.name}`} aria-label={`Watch ${c.number != null ? `${c.number} ` : ''}${c.name}`}>
         <span className="gc-num">{c.number ?? ''}</span>
-        <span className="gc-logo"><Img src={c.logoUrl} width={120} alt={c.name} fallback={<span className="ch-logo-text">{c.name.slice(0, 4)}</span>} /></span>
+        <span className="gc-logo"><Img src={c.logoUrl} width={120} alt="" fallback={<span className="ch-logo-text">{c.name.slice(0, 4)}</span>} /></span>
         <span className="gc-name">{c.name}</span>
-        {c.favorite && <Icon name="starFill" size={12} className="gc-fav" />}
+        {c.favorite && <Icon name="starFill" size={12} className="gc-fav" title="Favourite" />}
       </button>
       <div className="guide-programs" style={{ width }}>
         {list.length === 0 && <div className="guide-empty">No information</div>}
@@ -45,18 +46,24 @@ const GuideRow = memo(function GuideRow({ channel: c, list, start, end, now, px:
           const w = ((Math.min(e, end) - Math.max(s, start)) / 60000) * PX;
           const live = s <= now && e > now;
           const past = e <= now;
+          const minsLeft = live ? Math.max(1, Math.round((e - now) / 60000)) : 0;
           return (
             <button
               key={p.id}
-              className={`guide-prog ${live ? 'live' : ''} ${past ? 'past' : ''} ${p.recordingId ? 'rec' : ''} ${w < 60 ? 'tiny' : ''}`}
-              style={{ left, width: Math.max(2, w - 3) }}
-              onClick={() => onSelect(p, c)}
+              className={`guide-prog ${live ? 'live' : ''} ${past ? 'past' : ''} ${p.recordingId ? 'rec' : ''} ${w < 60 ? 'tiny' : ''} ${selectedId === p.id ? 'selected' : ''}`}
+              style={{ left, width: Math.max(2, w - 4) }}
+              onClick={(ev) => onSelect(p, c, ev.currentTarget)}
+              aria-label={`${p.title}, ${formatTime(p.start)} to ${formatTime(p.end)}${live ? `, on now, ${minsLeft} minutes left` : ''}${p.recordingId ? ', recording' : ''}`}
               title={`${p.title} · ${formatTime(p.start)}–${formatTime(p.end)}`}
             >
-              <span className="gp-title">
-                {p.recordingId && <Icon name="record" size={10} className="text-danger" />} {p.isNew && <span className="gp-new">NEW</span>} {p.title}
+              <span className="gp-inner">
+                <span className="gp-title">
+                  {p.recordingId && <Icon name="record" size={10} className="gp-rec" />}
+                  {p.isNew && <span className="gp-new">NEW</span>}
+                  <span className="gp-name">{p.title}</span>
+                </span>
+                <span className="gp-time">{formatTime(p.start)} – {formatTime(p.end)}{live && <span className="gp-left"> · {minsLeft} min left</span>}</span>
               </span>
-              <span className="gp-time">{formatTime(p.start)} – {formatTime(p.end)}</span>
               {live && <span className="gp-progress" style={{ width: `${((now - s) / (e - s)) * 100}%` }} />}
             </button>
           );
@@ -69,8 +76,9 @@ const GuideRow = memo(function GuideRow({ channel: c, list, start, end, now, px:
 export default function GuidePage() {
   const [params] = useSearchParams();
   const mobile = useMediaQuery('(max-width: 700px)');
+  const wide = useMediaQuery('(min-width: 1100px)');
   const PX = mobile ? 4 : 6; // px per minute
-  const CH_W = mobile ? 92 : 220;
+  const CH_W = mobile ? 96 : 232;
   const ROW_H = mobile ? 64 : 72;
   const at = params.get('at');
   const [start, setStart] = useState(() => floorHalfHour((at ? new Date(at).getTime() : Date.now()) - HALF));
@@ -82,7 +90,8 @@ export default function GuidePage() {
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<{ p: Program; c: Channel } | null>(null);
+  const [selected, setSelected] = useState<{ p: Program; c: Channel; el?: HTMLElement | null } | null>(null);
+  const [typed, setTyped] = useState('');
   const scroller = useRef<HTMLDivElement>(null);
   const req = useRef(0);
   const now = useNow(30000);
@@ -141,13 +150,40 @@ export default function GuidePage() {
     const target = Math.max(0, ((Math.max(now, start) - start) / 60000 - 20) * PX);
     el.scrollLeft = now >= start && now <= end ? target : 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [start, PX]);
+  }, [start, PX, loading && !channels.length]);
 
   const onScroll = () => {
     const el = scroller.current;
     if (!el || loading || !hasMore) return;
     if (el.scrollTop + el.clientHeight > el.scrollHeight - ROW_H * 6) void load(channels.length);
   };
+
+  // Number keys jump to a channel (type "1", "2" → channel 12), like a remote.
+  useEffect(() => {
+    let timer = 0;
+    let buf = '';
+    const key = (e: KeyboardEvent) => {
+      if (!/^[0-9]$/.test(e.key) || e.ctrlKey || e.metaKey || e.altKey || isTypingTarget(e.target) || document.querySelector('.modal')) return;
+      buf = (buf + e.key).slice(-4);
+      setTyped(buf);
+      clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const row = scroller.current?.querySelector<HTMLElement>(`.guide-row[data-channel-number="${Number(buf)}"]`);
+        if (row) {
+          row.querySelector<HTMLElement>('.guide-channel')?.focus({ preventScroll: true });
+          const el = scroller.current!;
+          el.scrollTo({ top: row.offsetTop - ROW_H, behavior: 'auto' });
+        }
+        buf = '';
+        setTyped('');
+      }, 900);
+    };
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('keydown', key);
+      clearTimeout(timer);
+    };
+  }, [ROW_H]);
 
   const slots = useMemo(() => {
     const s: number[] = [];
@@ -172,8 +208,10 @@ export default function GuidePage() {
   };
   const width = HOURS * 60 * PX;
   const nowX = (now - start) / 60000 * PX;
+  const atNow = now >= start && now < start + 2 * HALF;
 
-  const onSelect = useCallback((p: Program, c: Channel) => setSelected({ p, c }), []);
+  const onSelect = useCallback((p: Program, c: Channel, el: HTMLElement) => setSelected((s) => (s?.p.id === p.id ? null : { p, c, el })), []);
+  const close = useCallback(() => setSelected(null), []);
 
   const replaceProgram = (p: Program) => {
     setPrograms((m) => {
@@ -183,63 +221,83 @@ export default function GuidePage() {
     });
     setSelected((s) => (s ? { ...s, p } : s));
   };
+  const replaceChannel = (c: Channel) => {
+    setChannels((list) => (fav && !c.favorite ? list.filter((x) => x.id !== c.id) : list.map((x) => (x.id === c.id ? { ...x, favorite: c.favorite } : x))));
+    setSelected((s) => (s ? { ...s, c } : s));
+  };
+
+  const visibleCats = (cats.data ?? []).filter((c) => !c.hidden).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+  const filter = (cat: string, f: boolean) => {
+    setCategoryId(cat);
+    setFav(f);
+  };
 
   return (
-    <div className="page guide-page">
-      <header className="page-head guide-head">
-        <div className="page-title-wrap">
-          <Icon name="guide" size={28} className="page-icon" />
-          <h1>TV Guide <HelpLink slug="live-tv" label="TV guide" /></h1>
-        </div>
-        <div className="guide-controls">
-          <select className="select" value={dayOf(start)} onChange={(e) => {
-            const d = Number(e.target.value);
-            setStart(d === dayOf(Date.now()) ? floorHalfHour(Date.now() - HALF) : d + 6 * 3600000);
-          }} aria-label="Day">
-            {days.map((d) => <option key={d.t} value={d.t}>{d.label}</option>)}
-          </select>
-          <div className="segmented">
-            <button onClick={() => setStart((s) => s - 6 * 3600000)} aria-label="Earlier"><Icon name="chevronLeft" size={16} /></button>
-            <button onClick={() => setStart(floorHalfHour(Date.now() - HALF))}>Now</button>
-            <button onClick={() => setStart((s) => s + 6 * 3600000)} aria-label="Later"><Icon name="chevronRight" size={16} /></button>
-          </div>
-          <select className="select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} aria-label="Category">
-            <option value="">All categories</option>
-            {(cats.data ?? []).filter((c) => !c.hidden).sort((a, b) => a.sortOrder - b.sortOrder).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <button className={`chip ${fav ? 'active' : ''}`} onClick={() => setFav((f) => !f)}><Icon name={fav ? 'starFill' : 'star'} size={14} /> Favourites</button>
-        </div>
-      </header>
+    <div className={`page guide-page ${selected && wide ? 'has-panel' : ''}`}>
+      <PageHeader
+        className="guide-header"
+        title={<>Guide <HelpLink slug="live-tv" label="TV guide" /></>}
+        actions={(
+          <>
+            <select className="select" value={dayOf(start)} onChange={(e) => {
+              const d = Number(e.target.value);
+              setStart(d === dayOf(Date.now()) ? floorHalfHour(Date.now() - HALF) : d + 6 * 3600000);
+            }} aria-label="Day">
+              {days.map((d) => <option key={d.t} value={d.t}>{d.label}</option>)}
+            </select>
+            <div className="guide-nav" role="group" aria-label="Time">
+              <button className="btn-icon btn-icon-sm" onClick={() => setStart((s) => s - 6 * 3600000)} aria-label="Earlier" title="Earlier"><Icon name="chevronLeft" size={18} /></button>
+              <button className={`btn btn-sm ${atNow ? 'btn-ghost is-now' : ''}`} onClick={() => setStart(floorHalfHour(Date.now() - HALF))}>Now</button>
+              <button className="btn-icon btn-icon-sm" onClick={() => setStart((s) => s + 6 * 3600000)} aria-label="Later" title="Later"><Icon name="chevronRight" size={18} /></button>
+            </div>
+            <Link to="/livetv" className="btn btn-sm btn-ghost"><Icon name="tv" size={16} /> Channels</Link>
+          </>
+        )}
+      />
+      <div className="chip-scroller guide-filters" role="group" aria-label="Filter channels">
+        <Chip active={!categoryId && !fav} onClick={() => filter('', false)}>All channels</Chip>
+        <Chip active={fav} icon={fav ? 'starFill' : 'star'} onClick={() => filter('', !fav)}>Favourites</Chip>
+        <span className="chip-sep" aria-hidden="true" />
+        {visibleCats.map((c) => (
+          <Chip key={c.id} active={categoryId === c.id} onClick={() => filter(categoryId === c.id ? '' : c.id, false)}>{c.name}</Chip>
+        ))}
+      </div>
 
-      {error && !channels.length ? (
-        <ErrorState message={error} onRetry={() => load(0)} />
-      ) : !loading && !channels.length ? (
-        <EmptyState icon="guide" title="No guide data" message={fav ? 'You have no favourite channels yet.' : 'Add a Live TV source with an EPG to fill the guide.'} action={<Link className="btn" to="/livetv">Browse channels</Link>} />
-      ) : (
-        <div className="guide-grid" ref={scroller} onScroll={onScroll} style={{ ['--px' as string]: `${PX}px`, ['--ch-w' as string]: `${CH_W}px`, ['--row-h' as string]: `${ROW_H}px` }}>
-          <div className="guide-inner" style={{ width: width + CH_W }}>
-            <div className="guide-ruler">
-              <div className="guide-corner">{new Date(start).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}</div>
-              <div className="guide-times" style={{ width }}>
-                {slots.map((t) => (
-                  <span key={t} className="guide-time" style={{ left: ((t - start) / 60000) * PX }}>
-                    {formatTime(new Date(t))}
-                  </span>
+      <div className="guide-shell">
+        {error && !channels.length ? (
+          <ErrorState message={error} onRetry={() => load(0)} />
+        ) : !loading && !channels.length ? (
+          <EmptyState icon="guide" title={fav ? 'No favourite channels yet' : 'No guide data'} message={fav ? 'Open any programme and choose “Add channel to favourites”.' : 'Add a Live TV source with an EPG to fill the guide.'} action={<Link className="btn" to="/livetv">Browse channels</Link>} />
+        ) : (
+          <div className="guide-grid" ref={scroller} onScroll={onScroll} style={{ ['--px' as string]: `${PX}px`, ['--ch-w' as string]: `${CH_W}px`, ['--row-h' as string]: `${ROW_H}px` }}>
+            <div className="guide-inner" style={{ width: width + CH_W }}>
+              <div className="guide-ruler">
+                <div className="guide-corner">{new Date(start).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                <div className="guide-times" style={{ width }}>
+                  {slots.map((t) => (
+                    <span key={t} className="guide-time" style={{ left: ((t - start) / 60000) * PX }}>
+                      {formatTime(new Date(t))}
+                    </span>
+                  ))}
+                  {nowX >= 0 && nowX <= width && <span className="guide-now-head" style={{ left: nowX }}>{formatTime(new Date(now))}</span>}
+                </div>
+              </div>
+              <div className="guide-body">
+                {nowX >= 0 && nowX <= width && <div className="guide-now-line" style={{ left: CH_W + nowX }} aria-hidden="true" />}
+                {channels.map((c) => (
+                  <GuideRow key={c.id} channel={c} list={programs.get(c.id) ?? EMPTY} start={start} end={end} now={now} px={PX} width={width} selectedId={selected?.c.id === c.id ? selected.p.id : null} onSelect={onSelect} />
                 ))}
-                {nowX >= 0 && nowX <= width && <span className="guide-now-head" style={{ left: nowX }}>{formatTime(new Date(now))}</span>}
+                {loading && <div className="guide-loading"><Spinner /></div>}
               </div>
             </div>
-            <div className="guide-body">
-              {nowX >= 0 && nowX <= width && <div className="guide-now-line" style={{ left: CH_W + nowX }} />}
-              {channels.map((c) => (
-                <GuideRow key={c.id} channel={c} list={programs.get(c.id) ?? EMPTY} start={start} end={end} now={now} px={PX} width={width} onSelect={onSelect} />
-              ))}
-              {loading && <div className="guide-loading"><Spinner /></div>}
-            </div>
           </div>
-        </div>
-      )}
-      {selected && <ProgramModal program={selected.p} channel={selected.c} onClose={() => setSelected(null)} onChanged={replaceProgram} />}
+        )}
+        {selected && wide && (
+          <ProgramPanel program={selected.p} channel={selected.c} onClose={close} onChanged={replaceProgram} onChannelChanged={replaceChannel} returnFocus={selected.el} />
+        )}
+      </div>
+      {typed && <div className="guide-typed" role="status" aria-live="polite">Channel {typed}</div>}
+      {selected && !wide && <ProgramModal program={selected.p} channel={selected.c} onClose={close} onChanged={replaceProgram} onChannelChanged={replaceChannel} />}
     </div>
   );
 }

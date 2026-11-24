@@ -1,6 +1,6 @@
 /// <reference types="node" />
 /**
- * Dynamic Expo config for the Kinora white-label apps.
+ * Dynamic Expo config for the Vibe white-label apps.
  *
  * Everything visual inside the app (name shown on screens, logos, colours, fonts,
  * layout, home rows, feature toggles) is fetched from the server at runtime.
@@ -36,7 +36,7 @@ interface BrandFile {
   version?: string;
   easProjectId?: string;
   /**
-   * iOS: Siri "Play … in Kinora" (INPlayMediaIntent + com.apple.developer.siri entitlement).
+   * iOS: Siri "Play … in Vibe" (INPlayMediaIntent + com.apple.developer.siri entitlement).
    * Needs the Siri capability on the App ID; also enabled by KINORA_SIRI=1 (or MEDIAMAX_SIRI=1). See README › Siri.
    */
   siri?: boolean;
@@ -68,7 +68,7 @@ function readBrand(): BrandFile {
   return JSON.parse(fs.readFileSync(file, 'utf8')) as BrandFile;
 }
 
-/** Use the brand's asset if present, else the stock Kinora asset. */
+/** Use the brand's asset if present, else the stock Vibe asset. */
 function asset(name: string, fallback: string): string {
   if (brandDir) {
     const p = path.join(brandDir, name);
@@ -78,8 +78,8 @@ function asset(name: string, fallback: string): string {
 }
 
 /**
- * TV artwork: the brand folder's file, else (stock Kinora builds only) the Kinora artwork in
- * assets/tv, rendered by scripts/brand-export.mjs. A white-label build never falls back to Kinora
+ * TV artwork: the brand folder's file, else (stock Vibe builds only) the Vibe artwork in
+ * assets/tv, rendered by scripts/brand-export.mjs. A white-label build never falls back to Vibe
  * TV artwork; without its own it gets the platform defaults derived from its icon.
  */
 function optionalAsset(name: string): string | undefined {
@@ -104,9 +104,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   // Every build registers the stock schemes: kinora:// (primary: OIDC redirects, pairing links) and the legacy
   // mediamax://, so links made by older servers or web clients still open the app. A brand's own scheme comes first.
   const schemes = [...new Set([brand.scheme, DEFAULTS.scheme, ...DEFAULTS.legacySchemes].filter((x): x is string => !!x))];
-  // Stock Kinora: dark ground #0D0C1D (light-mode splash #F7F6FF). A brand's splash colour is used for both.
-  const splashBg = brand.splashBackgroundColor ?? '#0D0C1D';
-  const splashBgLight = brand.splashBackgroundColor ?? '#F7F6FF';
+  // Stock Vibe: dark ground #0C0C10 (light-mode splash #F7F6FA). A brand's splash colour is used for both.
+  const splashBg = brand.splashBackgroundColor ?? '#0C0C10';
+  const splashBgLight = brand.splashBackgroundColor ?? '#F7F6FA';
   const icon = asset('icon.png', './assets/icon.png');
   const splash = asset('splash.png', './assets/splash-icon.png');
 
@@ -212,7 +212,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       brand: brandName ?? null,
       defaultServerUrl: brand.serverUrl ?? env('SERVER_URL') ?? null,
       lockServer: brand.lockServer ?? env('LOCK_SERVER') === '1',
-      fallbackPrimaryColor: brand.primaryColor ?? '#9198FF',
+      fallbackPrimaryColor: brand.primaryColor ?? '#D23A72',
       ...(brand.easProjectId ? { eas: { projectId: brand.easProjectId } } : {}),
     },
   };

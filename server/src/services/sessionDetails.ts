@@ -15,8 +15,8 @@ export interface ClientHints {
 }
 
 const APP_NAMES: Record<Platform, string> = {
-  web: 'Kinora Web', ios: 'Kinora for iOS', android: 'Kinora for Android', tvos: 'Kinora for Apple TV',
-  androidtv: 'Kinora for Android TV', roku: 'Kinora for Roku', other: 'Kinora',
+  web: 'Vibe Web', ios: 'Vibe for iOS', android: 'Vibe for Android', tvos: 'Vibe for Apple TV',
+  androidtv: 'Vibe for Android TV', roku: 'Vibe for Roku', other: 'Vibe',
 };
 
 /** "Chrome 131 on Windows", "Samsung TV (Tizen 6.5)", "Hisense TV (VIDAA)", "Safari 18 on iPhone" … (null when unknown). */
@@ -31,7 +31,7 @@ export function describeUserAgent(ua: string | null | undefined): string | null 
   if (tizen) return `Samsung TV${tizen[1] ? ` (Tizen ${tizen[1]})` : ''}`;
   const webos = /Web0S|webOS/i.test(ua);
   if (webos) return 'LG TV (webOS)';
-  if (/^Kinora|okhttp|Expo|CFNetwork|Dalvik/i.test(ua)) return null;
+  if (/^(Vibe|Kinora)|okhttp|Expo|CFNetwork|Dalvik/i.test(ua)) return null;
   const os = /Windows NT/.test(ua) ? 'Windows' : /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Mac OS X|Macintosh/.test(ua) ? 'macOS'
     : /Android/.test(ua) ? (/AFT\w+/.test(ua) ? 'Fire TV' : 'Android') : /CrOS/.test(ua) ? 'ChromeOS' : /Linux/.test(ua) ? 'Linux' : null;
   const browsers: [string, RegExp][] = [
@@ -117,7 +117,7 @@ const fmtKbps = (k: number) => (k >= 1000 ? `${(k / 1000).toFixed(k >= 10000 ? 0
 function clientOf(platform: Platform, appVersion: string | undefined, hints: ClientHints | undefined, local: boolean): SessionDetails['client'] {
   const v = hints?.httpVersion;
   return {
-    app: APP_NAMES[platform] ?? 'Kinora',
+    app: APP_NAMES[platform] ?? 'Vibe',
     version: appVersion ?? null,
     browser: describeUserAgent(hints?.userAgent),
     protocol: v ? (v.startsWith('2') ? 'HTTP/2' : v.startsWith('3') ? 'HTTP/3' : `HTTP/${v}`) : null,

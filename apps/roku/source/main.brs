@@ -1,4 +1,4 @@
-' Kinora for Roku - channel entry point.
+' Vibe for Roku - channel entry point.
 ' Creates the SceneGraph screen, hands launch / roInput deep links to the scene and keeps the main thread alive.
 
 sub Main(args as dynamic)

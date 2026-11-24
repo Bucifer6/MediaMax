@@ -160,7 +160,7 @@ export default function CommandPalette({ open, onClose, ctx }: { open: boolean; 
   }, [debounced, open, features.requests]);
 
   const results = useMemo<Result[]>(() => {
-    const admin: PaletteEntry[] = isAdmin ? ADMIN_NAV.map((n) => ({ id: `admin-${n.to}`, label: n.label, icon: n.icon, to: n.to, group: 'Admin', keywords: 'admin server' })) : [];
+    const admin: PaletteEntry[] = isAdmin ? ADMIN_NAV.map((n) => ({ id: `admin-${n.to}`, label: n.label, icon: n.icon, to: n.to, group: 'Admin', keywords: `admin server ${n.group} ${n.keywords ?? ''}` })) : [];
     const entries = [...destinations, ...admin, ...actions];
     if (!query) {
       const top = destinations.filter((d) => d.group !== 'Settings').slice(0, 9);

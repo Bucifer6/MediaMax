@@ -222,7 +222,7 @@ class MediaMaxCarService : MediaLibraryService() {
   private fun notReadyException(): PlaybackException {
     val extras = Bundle()
     launchIntent()?.let {
-      extras.putString(MediaConstants.EXTRAS_KEY_ERROR_RESOLUTION_ACTION_LABEL_COMPAT, "Open Kinora")
+      extras.putString(MediaConstants.EXTRAS_KEY_ERROR_RESOLUTION_ACTION_LABEL_COMPAT, "Open Vibe")
       extras.putParcelable(MediaConstants.EXTRAS_KEY_ERROR_RESOLUTION_ACTION_INTENT_COMPAT, it)
     }
     return PlaybackException(CarBridge.NOT_READY_MESSAGE, null, PlaybackException.ERROR_CODE_SETUP_REQUIRED, extras)
@@ -241,7 +241,7 @@ class MediaMaxCarService : MediaLibraryService() {
     }
   }
 
-  private fun rootItem(): MediaItem = folder(ROOT_ID, "Kinora")
+  private fun rootItem(): MediaItem = folder(ROOT_ID, "Vibe")
 
   private fun folder(id: String, title: String): MediaItem =
     MediaItem.Builder()

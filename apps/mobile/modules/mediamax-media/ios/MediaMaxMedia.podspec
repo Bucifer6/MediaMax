@@ -1,7 +1,7 @@
 Pod::Spec.new do |s|
   s.name           = 'MediaMaxMedia'
   s.version        = '1.0.0'
-  s.summary        = 'Playback capability detection for Kinora'
+  s.summary        = 'Playback capability detection for Vibe'
   s.description    = 'Reports HDR10 / HLG / Dolby Vision playback support, hardware codecs and Apple TV display matching (AVDisplayCriteria).'
   s.author         = ''
   s.license        = 'MIT'

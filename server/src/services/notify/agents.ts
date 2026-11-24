@@ -43,7 +43,7 @@ const COLORS: Partial<Record<NotifyEvent, number>> = {
 const plain = (m: NotifyMessage) => [m.body, ...(m.fields ?? []).map((f) => `${f.name}: ${f.value}`), m.url ?? ''].filter(Boolean).join('\n');
 const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** The server's app icon (uploaded in Branding, else the stock Kinora icon) as an absolute URL, when the public URL is known. */
+/** The server's app icon (uploaded in Branding, else the stock Vibe icon) as an absolute URL, when the public URL is known. */
 function avatarUrl(): string | null {
   const base = getSettings().publicUrl?.replace(/\/+$/, '');
   if (!base) return null;
@@ -57,10 +57,10 @@ export async function sendWith(agent: NotificationAgent, m: NotifyMessage): Prom
   switch (agent.kind) {
     case 'discord':
       return post(c.webhookUrl, {
-        username: c.username || getSettings().serverName || 'Kinora',
+        username: c.username || getSettings().serverName || 'Vibe',
         ...(avatarUrl() ? { avatar_url: avatarUrl() } : {}),
         embeds: [{
-          title: m.title, description: m.body, url: m.url || undefined, color: COLORS[m.event] ?? 0x9198ff,
+          title: m.title, description: m.body, url: m.url || undefined, color: COLORS[m.event] ?? 0xd23a72,
           fields: (m.fields ?? []).slice(0, 10).map((f) => ({ name: f.name, value: f.value.slice(0, 1000) || '—', inline: true })),
           ...(m.imageUrl ? { thumbnail: { url: m.imageUrl } } : {}), timestamp: new Date().toISOString(),
         }],
@@ -105,7 +105,7 @@ export function dispatch(m: NotifyMessage): Promise<{ id: string; ok: boolean; e
 export async function testAgent(agent: NotificationAgent): Promise<NotificationTestResult> {
   try {
     await sendWith(agent, {
-      event: 'test', title: `Test from ${getSettings().serverName || 'Kinora'}`, body: 'Notifications from Kinora work. 🎬',
+      event: 'test', title: `Test from ${getSettings().serverName || 'Vibe'}`, body: 'Notifications from Vibe work. 🎬',
       fields: [{ name: 'Agent', value: agent.name || agent.kind }],
     });
     return { ok: true, message: 'Sent' };

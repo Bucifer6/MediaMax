@@ -3,6 +3,7 @@ import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import { Icon } from '../components/Icon';
 import { Spinner } from '../components/ui';
+import '../styles/screens-account.css';
 
 export function LinkDeviceForm() {
   const [code, setCode] = useState('');
@@ -40,7 +41,7 @@ export function LinkDeviceForm() {
 
   return (
     <form onSubmit={submit} className="link-form">
-      <p className="muted">Open Kinora on your TV, phone or streaming box and choose <strong>Link with code</strong>. Type the code it shows below.</p>
+      <p className="muted">Open Vibe on your TV, phone or streaming box and choose <strong>Link with code</strong>. Type the code it shows below.</p>
       <input
         className="input code-input"
         value={code}
@@ -62,7 +63,7 @@ export function LinkDeviceForm() {
 export function LinkDevicePage() {
   return (
     <div className="page page-narrow">
-      <div className="link-page glass">
+      <div className="link-page vibe-link">
         <div className="link-hero">
           <Icon name="monitor" size={40} />
           <Icon name="link" size={22} />

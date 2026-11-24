@@ -4,7 +4,7 @@
  *
  *   npm run build && node scripts/e2e-journeys.mjs
  *
- * Boots a fresh Kinora (server/dist + web/dist) on --port (default 18770) with an empty data folder, then walks
+ * Boots a fresh Vibe (server/dist + web/dist) on --port (default 18770) with an empty data folder, then walks
  * through what people actually do, as different personas, in Chromium:
  *
  *   first-run  setup wizard → admin → five libraries → scan → home; Network page in Direct mode
@@ -350,7 +350,7 @@ async function firstRun() {
   const page = await open({ label: 'setup' });
   await step('wizard appears on a fresh server', async () => {
     await go(page, '/');
-    await page.getByRole('heading', { name: 'Welcome to Kinora' }).waitFor();
+    await page.getByRole('heading', { name: 'Welcome to Vibe' }).waitFor();
     await shot(page, 'first-run-welcome');
   });
   await step('create the admin account', async () => {
@@ -1605,7 +1605,7 @@ async function main() {
   let exit = 0;
   try {
     await server.start({ fresh: true });
-    log(`Kinora on ${BASE} (data ${server.data})`);
+    log(`Vibe on ${BASE} (data ${server.data})`);
     await journey('first-run', firstRun);
     if (results[0].steps.every((s) => s.ok)) {
       for (const [name, fn] of Object.entries(JOURNEYS)) await journey(name, fn);

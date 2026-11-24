@@ -41,7 +41,7 @@ export interface OfflineBrand {
 /** What the offline page (web/sw/offline.js) needs to look like this server: name, logo URL and theme colours. */
 export function offlineBrand(b: Branding, t: Theme): OfflineBrand {
   return {
-    name: b.serverName || 'Kinora',
+    name: b.serverName || 'Vibe',
     logo: b.logoWideUrl ?? b.logoUrl ?? b.splash?.logoUrl ?? null,
     mode: t.mode === 'light' ? 'light' : 'dark',
     colors: { bg: t.colors.background, text: t.colors.text, muted: t.colors.textMuted, accent: t.colors.accent, primary: t.colors.primary, primaryText: t.colors.primaryText },

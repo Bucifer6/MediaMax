@@ -70,7 +70,7 @@ export default function ProfilePicker() {
   const isProfileSession = !!user?.parentUserId;
   const bg = branding.loginBackgroundUrl;
   return (
-    <div className="login profile-picker">
+    <div className="login vibe-auth profile-picker">
       <LightField image={bg} />
       <div className="login-inner">
         <div className="login-brand"><BrandLogo height={44} wide={!branding.logoUrl || !!branding.logoWideUrl} /></div>
@@ -91,10 +91,14 @@ export default function ProfilePicker() {
             <h1>Who's watching?</h1>
             <div className={`profile-grid pp-grid ${chosen ? 'choosing' : ''}`} ref={grid}>
               {(list ?? []).map((p, i) => (
-                <button key={p.id} className={`profile pp-tile ${p.current ? 'current' : ''} ${chosen === p.id ? 'chosen' : ''}`} style={{ '--i': i } as React.CSSProperties} data-nav onClick={() => void enter(p)} disabled={busy} aria-disabled={!!chosen || undefined} aria-label={`${p.displayName}${p.isKids ? ' (kids)' : ''}${p.hasPin ? ', PIN protected' : ''}`}>
-                  <ProfileAvatar name={p.displayName} url={p.avatarUrl} color={p.color} size={132} kids={p.isKids} />
+                <button key={p.id} className={`profile pp-tile ${p.current ? 'current' : ''} ${chosen === p.id ? 'chosen' : ''}`} style={{ '--i': i } as React.CSSProperties} data-nav onClick={() => void enter(p)} disabled={busy} aria-disabled={!!chosen || undefined} aria-label={`${p.displayName}${p.isKids ? ' (kids)' : ''}${p.hasPin ? ', PIN protected' : ''}${p.current ? ', signed in' : ''}`}>
+                  <span className="pp-art">
+                    <ProfileAvatar name={p.displayName} url={p.avatarUrl} color={p.color} size={132} kids={p.isKids} />
+                    {p.current && <span className="profile-current" aria-hidden="true"><Icon name="check" size={14} /></span>}
+                    {p.hasPin && !p.current && <span className="profile-lock" title="PIN protected"><Icon name="lock" size={14} /></span>}
+                  </span>
                   <span className="profile-name">{p.displayName}</span>
-                  {p.hasPin && !p.current && <span className="profile-lock"><Icon name="lock" size={12} /></span>}
+                  <span className="profile-sub">{p.current ? 'Signed in' : ''}</span>
                 </button>
               ))}
             </div>

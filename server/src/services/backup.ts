@@ -76,7 +76,7 @@ export function stageRestore(archive: Buffer, actor: User): { restartRequired: t
   try {
     extractTarGz(archive, check, { maxFiles: 200000, maxBytes: 8 * 1024 * 1024 * 1024 });
     const mf = path.join(check, 'backup.json');
-    if (!fs.existsSync(mf) || !fs.existsSync(path.join(check, 'mediamax.db'))) throw badRequest('That file is not a Kinora backup');
+    if (!fs.existsSync(mf) || !fs.existsSync(path.join(check, 'mediamax.db'))) throw badRequest('That file is not a Vibe backup');
     const m = JSON.parse(fs.readFileSync(mf, 'utf8'));
     if (m.format !== 1) throw badRequest('Unsupported backup format');
   } finally {
@@ -84,7 +84,7 @@ export function stageRestore(archive: Buffer, actor: User): { restartRequired: t
   }
   createBackup('pre-restore', actor);
   fs.writeFileSync(path.join(config.dataDir, 'restore-pending.tar.gz'), archive);
-  logActivity('backup', 'Restore staged — it will be applied when Kinora restarts', { userId: actor.id, userName: actor.displayName, severity: 'warning' });
-  log.warn('Restore staged; restart Kinora to apply it');
+  logActivity('backup', 'Restore staged — it will be applied when Vibe restarts', { userId: actor.id, userName: actor.displayName, severity: 'warning' });
+  log.warn('Restore staged; restart Vibe to apply it');
   return { restartRequired: true };
 }
