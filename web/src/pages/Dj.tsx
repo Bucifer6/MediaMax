@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { DjEnergyCurve, DjMixRequest, DjMixTrack, DjPhrase, DjPhraseType, DjStatus, DjTransitionPreference, Item } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
@@ -12,6 +12,7 @@ import { Icon } from '../components/Icon';
 import { Badge, Field, Img, PageHeader, Spinner, Switch } from '../components/ui';
 import { formatClock, formatDuration } from '../utils/format';
 import { HelpLink } from '../components/HelpLink';
+import { advancedDjEnabled } from '../player/djAccess';
 import '../styles/dj.css';
 
 const CURVES: { value: DjEnergyCurve; label: string; hint: string }[] = [
@@ -263,7 +264,7 @@ function MixerSettings() {
   const keyLockHint = !support.native && !support.worklet
     ? 'This browser can\'t change tempo without changing pitch, so tracks play at their own tempo (plain crossfades).'
     : o.keyLock === 'worklet' || (!support.native && support.worklet)
-      ? 'Kinora\'s own WSOLA time-stretch (AudioWorklet).'
+      ? 'Vibe\'s own WSOLA time-stretch (AudioWorklet).'
       : 'The browser\'s built-in pitch-preserving playback.';
   return (
     <section className="dj-options dj-mixer-settings">
@@ -327,7 +328,9 @@ export default function DjPage() {
   const upcoming = useMemo(() => s.queue.slice(s.index + 1), [s.queue, s.index]);
 
   const [voice, setVoiceState] = useState(readVoice);
-  const ai = status.data?.ai ?? null;
+  // The AI DJ (prompt, spoken host: may use a language model / speech service) is part of the opt-in Advanced DJ.
+  const advanced = advancedDjEnabled(user);
+  const ai = advanced ? status.data?.ai ?? null : null;
   useEffect(() => engine.setVoice(voice, ai), [voice, ai, engine]);
   const setVoice = (v: boolean) => {
     setVoiceState(v);
@@ -394,6 +397,11 @@ export default function DjPage() {
         <>
           {s.status === 'ended' && <p className="muted">That mix has finished. Start another below.</p>}
           {s.status === 'error' && <p className="form-error">{s.error}</p>}
+          {!advanced && (
+            <p className="dj-analysis-note muted">
+              <Icon name="info" size={14} /> Every album and playlist can already play as a continuous mix: turn on Automix in the player, or press Mix. The AI DJ appears here when Advanced DJ is on in <Link to="/settings/playback">Settings → Playback</Link>.
+            </p>
+          )}
           {ai?.enabled && <AskTheDj ai={ai} nowArtist={nowArtist} onAsk={(prompt) => start({ prompt }, false)} />}
           {ai?.enabled && <div className="dj-voice"><Switch checked={voice} onChange={setVoice} label={`DJ voice — ${ai.hostName} talks between songs`} hint={ai.serverVoice ? 'Uses the server\'s DJ voice.' : 'Uses your browser\'s built-in voice.'} /></div>}
           {ai?.enabled && <h2 className="section-title dj-or">Or set it up yourself</h2>}

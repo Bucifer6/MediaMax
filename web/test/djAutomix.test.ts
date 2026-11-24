@@ -172,3 +172,18 @@ test('gain staging: equal-power fades, one bassline at a time, bounded overlap (
     if (fx === 'none') assert.ok(peak <= Math.SQRT2 + 1e-9, 'plain crossfade ≤ +3 dB');
   }
 });
+
+test('server cue points (analysis.cues) steer the plan when present', () => {
+  const a = item('a');
+  const b = item('b');
+  const bar = 240000 / 128;
+  const aa = ana('a', 128, { cues: { mixInMs: 120, introEndMs: null, mixOutMs: 120 + 100 * bar, endMs: 236000, source: 'phrase' } });
+  const ab = ana('b', 128, { cues: { mixInMs: 120 + bar, introEndMs: 120 + 9 * bar, mixOutMs: 200000, endMs: 238000, source: 'outro' } });
+  const tr = planAutomix(a, aa, b, ab);
+  assert.equal(tr.mixInMs, 120 + bar);
+  assert.ok(Math.abs(tr.mixOutMs - (120 + 100 * bar)) < 1);
+  assert.equal(tr.phraseAligned, true);
+  const f = fixedFade(a, aa, b, ab);
+  assert.equal(f.mixOutMs, 236000 - 6000, 'fade ends at the last audible moment');
+  assert.equal(f.mixInMs, 120 + bar);
+});

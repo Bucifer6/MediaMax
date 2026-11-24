@@ -7,7 +7,8 @@ import { ApiRequestError, withToken } from '../api/client';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync, useMediaQuery, useServerEvent } from '../hooks';
-import { usePlayItem, useMusic } from '../player/music';
+import { usePlayAsMix, usePlayItem, useMusic } from '../player/music';
+import { advancedDjEnabled } from '../player/djAccess';
 import { usePlayWarmup } from '../player/warmup';
 import { Icon, type IconName } from '../components/Icon';
 import { Badge, Button, Dropdown, EmptyState, ErrorState, Img, Modal, Popover, ProgressBar, QualityBadges, Skeleton, StarRating, Tabs, useConfirm, type MenuItem } from '../components/ui';
@@ -545,6 +546,8 @@ function RateButton({ item, onRate, onNotInterested }: { item: Item; onRate: (r:
 export function ItemPage() {
   const { itemId = '' } = useParams();
   const { user, features } = useApp();
+  const playAsMix = usePlayAsMix();
+  const advancedDj = advancedDjEnabled(user);
   const toast = useToast();
   const confirm = useConfirm();
   const navigate = useNavigate();
@@ -867,7 +870,12 @@ export function ItemPage() {
                     <Icon name="shuffle" size={18} /> Shuffle
                   </button>
                 )}
-                {features.music && ['album', 'artist', 'playlist', 'track'].includes(item.type) && (
+                {features.music && ['album', 'artist', 'playlist'].includes(item.type) && (
+                  <button className="btn btn-glass on-media btn-lg" onClick={() => void playAsMix(item)} data-nav title="Play it as one continuous mix: every song blends into the next">
+                    <Icon name="music" size={18} /> Mix
+                  </button>
+                )}
+                {features.music && advancedDj && ['album', 'artist', 'playlist', 'track'].includes(item.type) && (
                   <button className="btn btn-glass on-media btn-lg" onClick={() => navigate(`/dj?seed=${encodeURIComponent(item.id)}`)} data-nav title="An automatic, beat-matched mix starting from this">
                     <Icon name="music" size={18} /> DJ mix
                   </button>

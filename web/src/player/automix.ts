@@ -85,7 +85,8 @@ const gridOf = (x: TrackAnalysis) => x.downbeatMs ?? x.beatOffsetMs;
 export function fixedFade(a: Item, aa: TrackAnalysis | null, b: Item, ab: TrackAnalysis | null, style: DjTransitionPreference = 'auto'): DjTransition {
   const durA = aa?.durationMs || a.durationMs || 0;
   const durB = ab?.durationMs || b.durationMs || 0;
-  const cueOut = aa?.cueOutMs && aa.cueOutMs > 0 ? Math.min(aa.cueOutMs, durA || Infinity) : durA;
+  const end = aa?.cues?.endMs ?? aa?.cueOutMs;
+  const cueOut = end && end > 0 ? Math.min(end, durA || Infinity) : durA;
   let len = FIXED_FADE_MS[style];
   // Never more than a third of either track.
   if (durA > 0) len = Math.min(len, durA / 3);
@@ -94,7 +95,7 @@ export function fixedFade(a: Item, aa: TrackAnalysis | null, b: Item, ab: TrackA
   const beatMs = aa?.bpm ? 60000 / aa.bpm : null;
   const fx = pickFx(style, (ab?.energy ?? 0.5) - (aa?.energy ?? 0.5), camelotMatch(aa?.camelot, ab?.camelot), false);
   return {
-    mixOutMs: Math.max(0, Math.round(cueOut - len)), mixInMs: Math.round(ab?.cueInMs ?? 0), crossfadeMs: len, tempoRatio: 1,
+    mixOutMs: Math.max(0, Math.round(cueOut - len)), mixInMs: Math.round(ab?.cues?.mixInMs ?? ab?.cueInMs ?? 0), crossfadeMs: len, tempoRatio: 1,
     style: 'fade', keyMatch: camelotMatch(aa?.camelot, ab?.camelot), bpmDelta: null, fx: fx === 'echo' && !beatMs ? 'none' : fx, beatMs,
     reason: aa && ab ? 'Tempos too far apart: crossfade' : 'Not analysed yet: crossfade',
   };
@@ -118,10 +119,10 @@ export function planAutomix(
   const beatA = 60000 / aa.bpm;
   const barA = beatA * 4;
   const gridA = gridOf(aa)!;
-  const cueOutA = Math.min(aa.cueOutMs || durA, durA || Infinity);
-  // Incoming: its first bar line at or after the audible start (phrase-aligned when B has an intro phrase).
+  const cueOutA = Math.min(aa.cues?.endMs ?? (aa.cueOutMs || durA), durA || Infinity);
+  // Incoming: the server's mix-in cue (first downbeat after the leading silence), else the intro phrase / first bar line.
   const introB = ab.phrases?.find((p) => p.type === 'intro');
-  const mixIn = introB && introB.startMs >= ab.cueInMs - 50 ? introB.startMs : nextBarMs(ab.cueInMs - 1, ab.bpm, gridOf(ab)) ?? ab.cueInMs;
+  const mixIn = ab.cues?.mixInMs ?? (introB && introB.startMs >= ab.cueInMs - 50 ? introB.startMs : nextBarMs(ab.cueInMs - 1, ab.bpm, gridOf(ab)) ?? ab.cueInMs);
   let bars = BLEND_BARS[style];
   const fits = (n: number) => {
     const len = n * barA;
@@ -132,13 +133,16 @@ export function planAutomix(
   if (!fits(bars)) return fixedFade(a, aa, b, ab, style);
   const len = bars * barA;
   // Outgoing: the outro phrase when it leaves room for the blend; else the last bar line that still fits.
-  const outro = aa.phrases?.find((p) => p.type === 'outro' && p.startMs + len <= cueOutA + barA) ?? null;
-  const outroStart = outro?.startMs ?? (aa.outroStartMs != null && aa.outroStartMs + len <= cueOutA + barA ? aa.outroStartMs : null);
+  const room = (ms: number | null | undefined) => ms != null && ms + len <= cueOutA + barA;
+  const outro = aa.phrases?.find((p) => p.type === 'outro' && room(p.startMs)) ?? null;
+  // The server's phrase-based mix-out cue, then the outro phrase, then the loudness outro.
+  const cueOut = aa.cues && (aa.cues.source === 'outro' || aa.cues.source === 'phrase') && room(aa.cues.mixOutMs) ? aa.cues.mixOutMs : null;
+  const outroStart = cueOut ?? outro?.startMs ?? (room(aa.outroStartMs) ? aa.outroStartMs : null);
   let mixOut: number;
   let phraseAligned = false;
   if (outroStart != null && outroStart >= durA * 0.5) {
     mixOut = nextBarMs(outroStart - 1, aa.bpm, gridA) ?? outroStart;
-    phraseAligned = !!outro;
+    phraseAligned = cueOut != null || !!outro;
   } else {
     const latest = cueOutA - len;
     const bar = nextBarMs(latest, aa.bpm, gridA) ?? latest;

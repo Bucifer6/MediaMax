@@ -13,6 +13,7 @@ import { formatDuration } from '../utils/format';
 import { ListenBrainzRow } from '../components/ListenBrainz';
 import { LibraryDecideButtons } from '../components/decide/DecideBar';
 import { peekHandlers } from '../components/Peek';
+import { useMusicActions } from '../player/music';
 import '../styles/screens-browse.css';
 
 const PAGE = 60;
@@ -134,6 +135,7 @@ export function LibraryPage() {
 
   const isPhotos = library?.type === 'photos';
   const isMusic = library?.type === 'music';
+  const music = useMusicActions();
   const rawView = params.get('layout') as View | null;
   const view: View = isPhotos ? 'grid' : rawView === 'list' || rawView === 'az' ? rawView : 'grid';
   const az = view === 'az';
@@ -323,6 +325,12 @@ export function LibraryPage() {
         </div>
         <div className="page-header-actions">
           <LibraryDecideButtons library={library} genre={genre} />
+          {isMusic && library && (
+            <Button variant="secondary" icon="music" title="Play this library as one continuous mix, in a smart order (tempo, key, energy)"
+              onClick={() => void music.playAsMix(genre ? { label: genre, source: { type: 'genre', id: genre, libraryId: library.id } } : { label: library.name, source: { type: 'library', id: library.id } })}>
+              Mix
+            </Button>
+          )}
           {user?.isAdmin && (
             <Button variant="ghost" icon="refresh" onClick={scan} disabled={scanProgress != null} title="Scan this library for new files">
               {scanProgress != null ? `Scanning ${Math.round(scanProgress)}%` : 'Scan'}

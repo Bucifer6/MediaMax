@@ -153,7 +153,7 @@ const Ctx = createContext<MusicApi | null>(null);
  * usePlayItem). The full context changes on every timeupdate while something plays, which re-rendered each card on
  * screen four times a second; this one never changes.
  */
-type MusicActions = Pick<MusicApi, 'playQueue'>;
+type MusicActions = Pick<MusicApi, 'playQueue' | 'playAsMix'>;
 const ActionsCtx = createContext<MusicActions | null>(null);
 export function useMusic(): MusicApi {
   const v = useContext(Ctx);
@@ -1602,7 +1602,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
 
   const latest = useRef(value);
   latest.current = value;
-  const actions = useMemo<MusicActions>(() => ({ playQueue: (...a) => latest.current.playQueue(...a) }), []);
+  const actions = useMemo<MusicActions>(() => ({ playQueue: (...a) => latest.current.playQueue(...a), playAsMix: (...a) => latest.current.playAsMix(...a) }), []);
 
   return (
     <Ctx.Provider value={value}>
@@ -1691,4 +1691,36 @@ export function usePlayItem() {
     },
     [navigate, music, toast],
   );
+}
+
+/**
+ * "Mix" next to Play and Shuffle: play a music item as a continuous Automix mix. Albums and playlists keep their
+ * own order (Shuffle + Mix = smart order); artists use the server's smart order, paged in batches.
+ */
+/** Stable playback actions (never re-render the caller while music plays). */
+export function useMusicActions(): MusicActions {
+  const v = useContext(ActionsCtx);
+  if (!v) throw new Error('useMusicActions outside MusicProvider');
+  return v;
+}
+
+export function usePlayAsMix() {
+  const music = useContext(ActionsCtx);
+  const toast = useToast();
+  return useCallback(async (item: Item, opts: { shuffle?: boolean } = {}) => {
+    if (!music) return;
+    try {
+      const label = item.title;
+      if (item.type === 'artist') return music.playAsMix({ label, source: { type: 'artist', id: item.id } });
+      if (opts.shuffle && (item.type === 'album' || item.type === 'playlist')) return music.playAsMix({ label, source: { type: item.type, id: item.id } });
+      const tracks = await tracksFor(item);
+      if (!tracks.length) {
+        toast.show('Nothing to mix here yet');
+        return;
+      }
+      return music.playAsMix({ label, items: tracks });
+    } catch (e) {
+      toast.error(e);
+    }
+  }, [music, toast]);
 }

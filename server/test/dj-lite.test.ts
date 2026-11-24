@@ -230,3 +230,33 @@ test('POST /dj/mix without a prompt never reaches the language model or the spee
   assert.ok(fetches.some((u) => u.includes('llm.invalid')), `prompt path used the model: ${fetches.join()}`);
   assert.equal(ai.json().understoodBy, 'rules', 'the model failed, so the built-in parser took over');
 });
+
+test('a mix of N minutes plays for N minutes (mix-in to mix-out), not N minutes of whole tracks', async () => {
+  const L = 'djl-dur';
+  db.run('INSERT INTO libraries (id, name, type, paths, created_at) VALUES (?, ?, ?, ?, ?)', L, 'Dur', 'music', '[]', now);
+  const { ensureAnalysisColumns } = await import('../src/services/dj/analysis.ts');
+  ensureAnalysisColumns();
+  for (let i = 0; i < 40; i++) {
+    const id = `djl-d${i}`;
+    db.insert('items', { id, library_id: L, type: 'track', title: id, sort_title: id, genres: '["House"]', duration_ms: 240000, added_at: now, updated_at: now });
+    db.insert('media', { id: `${id}-m`, item_id: id, path: `/nowhere/${id}.mp3`, container: 'mp3', duration_ms: 240000, size: 1, mtime: 1 });
+    // 124 BPM, 8 × 16-bar phrases from 0.1 s, the last one an outro.
+    const bar = 240000 / 124;
+    const phrases = Array.from({ length: 8 }, (_, k) => ({ startMs: Math.round(100 + k * 16 * bar), endMs: Math.round(100 + (k + 1) * 16 * bar), type: k === 0 ? 'intro' : k === 7 ? 'outro' : 'verse', energy: 0.8, bars: 16 }));
+    db.run(`INSERT INTO track_analysis (item_id, media_mtime, version, bpm, bpm_confidence, beat_offset_ms, key_name, camelot, energy, loudness_db, cue_in_ms, cue_out_ms, intro_end_ms, outro_start_ms, duration_ms, analyzed_at, phrases, downbeat_ms)
+      VALUES (?, 1, 3, 124, 0.9, 100, 'A minor', '8A', ?, -9, 0, 239000, NULL, NULL, 240000, ?, ?, 100)`, id, 0.5 + (i % 5) / 20, now, JSON.stringify(phrases));
+  }
+  const r = await app.inject({ method: 'POST', url: '/api/v1/dj/mix', headers: A, payload: { libraryId: L, durationMin: 20, artistGap: 0 } });
+  assert.equal(r.statusCode, 200, r.body);
+  const mix = r.json();
+  // Played length: each track from its mix-in to the next track's start (its mix-out); the last to its end.
+  let played = 0;
+  mix.tracks.forEach((t: any, i: number) => {
+    const inMs = t.transition?.mixInMs ?? 0;
+    const next = mix.tracks[i + 1];
+    played += (next ? next.transition.mixOutMs : t.item.durationMs ?? 240000) - inMs;
+  });
+  assert.ok(Math.abs(played - mix.durationMs) < 2000, `durationMs ${mix.durationMs} vs played ${played}`);
+  assert.ok(mix.durationMs >= 20 * 60000 && mix.durationMs < 20 * 60000 + 240000, `20 min requested, got ${(mix.durationMs / 60000).toFixed(1)}`);
+  assert.equal(new Set(mix.tracks.map((t: any) => t.item.id)).size, mix.tracks.length, 'no repeats');
+});

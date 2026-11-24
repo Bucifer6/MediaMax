@@ -13,6 +13,8 @@ import { getDensity, setDensity, themeStyle, type Density } from '../theme/apply
 import { DEFAULT_PREFERENCES } from '../theme/defaults';
 import { autoLiteReason, getFxPref, isLite, onFxChange, setFxPref, type FxPref } from '../theme/fx';
 import { QUALITY_OPTIONS } from '../player/deviceProfile';
+import { AUTOMIX_DEFAULT } from '../player/automix';
+import { advancedDjEnabled } from '../player/djAccess';
 import { DEFAULT_SUBTITLE_STYLE, SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitlePreviewStyle, subtitleStyleOf } from '../player/subtitleStyle';
 import { relativeTime } from '../utils/format';
 import { LinkDeviceForm } from './LinkDevice';
@@ -396,14 +398,38 @@ function SubtitleSettings() {
 /** Music playback: crossfade and loudness levelling. */
 function MusicSettings() {
   const { prefs, save } = usePrefs();
+  const { user } = useApp();
   const xf = prefs.musicCrossfadeSec ?? 0;
   const [draft, setDraft] = useState(xf);
   useEffect(() => setDraft(xf), [xf]);
+  const automix = prefs.automix ?? AUTOMIX_DEFAULT;
   return (
     <div className="settings-card" id="music">
       <h2>Music <HelpLink slug="music" label="Music" /></h2>
+      <Switch
+        checked={automix}
+        onChange={(v) => void save({ automix: v })}
+        label="Automix"
+        hint="Albums, playlists, queues and radio blend from one song into the next like a continuous DJ mix: beat-matched when the tempos are close, a smooth crossfade otherwise. Albums that play straight through stay gapless. Audiobooks and podcasts never mix."
+      />
       <div className="form-row">
-        <Field label={`Crossfade · ${draft ? `${draft} s` : 'off (gapless)'}`} hint="Blend the end of one song into the next. Albums played in order stay gapless.">
+        <Field label="Automix transitions" hint="Auto picks per pair of songs (mostly an EQ bass swap); Smooth uses long blends and filter fades; Energetic bass swaps and echo-outs; Minimal short crossfades.">
+          <select className="select" value={prefs.automixStyle ?? 'auto'} disabled={!automix} onChange={(e) => void save({ automixStyle: e.target.value as NonNullable<UserPreferences['automixStyle']> })}>
+            <option value="auto">Auto</option>
+            <option value="smooth">Smooth</option>
+            <option value="energetic">Energetic</option>
+            <option value="minimal">Minimal</option>
+          </select>
+        </Field>
+      </div>
+      <Switch
+        checked={advancedDjEnabled(user)}
+        onChange={(v) => void save({ advancedDj: v })}
+        label="Advanced DJ"
+        hint="Show the DJ page with decks, mix settings, the AI DJ prompt and its voice host (which can use an AI model or speech service your admin configures)."
+      />
+      <div className="form-row">
+        <Field label={`Crossfade · ${draft ? `${draft} s` : 'off (gapless)'}`} hint={automix ? 'Used when Automix is off.' : 'Blend the end of one song into the next. Albums played in order stay gapless.'}>
           <input
             className="range"
             type="range"
