@@ -69,6 +69,19 @@ export default function NowPlaying() {
         <Focusable onPress={() => cur.grandparentId && router.push(`/item/${cur.grandparentId}` as never)} focusScale={1}>
           <T color="rgba(255,255,255,0.75)" numberOfLines={1}>{[cur.grandparentTitle, cur.parentTitle].filter(Boolean).join(' — ')}</T>
         </Focusable>
+        {m.blend ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }} accessibilityLiveRegion="polite">
+            <Icon name="infinite-outline" size={14} color={t.colors.primary} />
+            <T variant="small" weight="700" color={t.colors.primary} numberOfLines={1} style={{ flexShrink: 1 }}>
+              Mixing into {m.blend.into.title}
+            </T>
+            <T variant="caption" color="rgba(255,255,255,0.6)" numberOfLines={1}>· {m.blend.label}</T>
+          </View>
+        ) : m.mix ? (
+          <T variant="caption" color="rgba(255,255,255,0.6)" numberOfLines={1} style={{ marginTop: 2 }}>
+            Mix · {m.mix.label}{m.endless ? ' · Endless' : ''}
+          </T>
+        ) : null}
       </View>
       <Scrubber positionMs={m.positionMs} durationMs={m.durationMs} onSeek={m.seek} />
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -115,6 +128,8 @@ export default function NowPlaying() {
         {m.spoken ? <PanelChip icon="bookmark-outline" label="Bookmarks" active={panel === 'bookmarks'} onPress={() => setPanel(panel === 'bookmarks' ? 'queue' : 'bookmarks')} /> : null}
         {m.spoken ? <PanelChip icon="speedometer-outline" label={speedLabel(m.rate)} active={m.rate !== 1} onPress={() => setSpeedSheet(true)} /> : null}
         <PanelChip icon={m.sleep ? 'moon' : 'moon-outline'} label={sleepLabel} active={!!m.sleep} onPress={() => setSleepSheet(true)} />
+        {isTrack && !m.castingTo ? <PanelChip icon="infinite-outline" label="Automix" active={m.automix} onPress={() => m.setAutomix(!m.automix)} /> : null}
+        {m.mix && !m.castingTo ? <PanelChip icon="sync-outline" label="Endless" active={m.endless} onPress={() => m.setEndless(!m.endless)} /> : null}
         {isTrack && !m.castingTo && advancedDj ? <PanelChip icon="disc-outline" label="DJ mix" active={false} onPress={() => openDj(cur)} /> : null}
         {canPlayOn && t.isTV ? <PanelChip icon="phone-portrait-outline" label="Play on…" active={false} onPress={() => setPlayOn(true)} /> : null}
       </View>

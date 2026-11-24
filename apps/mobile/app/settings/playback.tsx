@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { QUALITY_OPTIONS } from '@/api/profiles';
-import type { UserPreferences } from '@/api/types';
+import type { DjTransitionPreference, UserPreferences } from '@/api/types';
 import { OptionSheet } from '@/components/OptionSheet';
 import { Screen, ScreenHeader } from '@/components/Screen';
 import { SettingRow, SettingSection } from '@/components/SettingRow';
@@ -12,6 +12,7 @@ import { languageName } from '@/utils/format';
 import { LIP_SYNC_OPTIONS, formatDelay } from '@/api/audio';
 import { deviceInfoSync } from '@/api/device';
 import { setTrickplayMode, useTrickplayMode, type TrickplayMode } from '@/player/Trickplay';
+import { AUTOMIX_DEFAULT } from '@/player/automix';
 
 const TRICKPLAY_MODES: { key: TrickplayMode; label: string; description: string }[] = [
   { key: 'always', label: 'Always', description: 'Load preview images when a video starts (data saver kicks in on slow connections)' },
@@ -34,7 +35,15 @@ const RG_MODES: { key: NonNullable<UserPreferences['replayGain']>; label: string
   { key: 'off', label: 'Off', description: 'Play files at their own level' },
 ];
 
-type Sheet = 'quality' | 'subMode' | 'audioLang' | 'subLang' | 'rg' | 'lipSync' | 'trickplay' | null;
+/** Automix transition feel: the same choices (and preference) as the web app. */
+const MIX_STYLES: { key: DjTransitionPreference; label: string; description: string }[] = [
+  { key: 'auto', label: 'Automatic', description: 'Picks per pair: beat-matched blends when tempos are close, else a crossfade' },
+  { key: 'smooth', label: 'Smooth', description: 'Long, gentle blends' },
+  { key: 'energetic', label: 'Energetic', description: 'Short blends and quick swaps' },
+  { key: 'minimal', label: 'Minimal', description: 'Short, plain crossfades' },
+];
+
+type Sheet = 'quality' | 'subMode' | 'audioLang' | 'subLang' | 'rg' | 'lipSync' | 'trickplay' | 'mixStyle' | null;
 
 export default function PlaybackSettings() {
   const t = useTheme();
@@ -86,7 +95,16 @@ export default function PlaybackSettings() {
           </SettingSection>
           <SettingSection title="Music">
             <SettingRow icon="volume-medium-outline" label="Volume levelling (ReplayGain)" value={RG_MODES.find((m) => m.key === (p.replayGain ?? 'auto'))?.label} onPress={() => setSheet('rg')} />
+            <SettingRow icon="infinite-outline" label="Automix (blend tracks like a DJ)" toggle={p.automix ?? AUTOMIX_DEFAULT} onToggle={(v) => set({ automix: v })} />
+            {p.automix ?? AUTOMIX_DEFAULT ? (
+              <SettingRow icon="git-merge-outline" label="Transition style" value={MIX_STYLES.find((m) => m.key === (p.automixStyle ?? 'auto'))?.label} onPress={() => setSheet('mixStyle')} />
+            ) : null}
             <SettingRow icon="disc-outline" label="Advanced DJ (DJ screen, AI DJ and its voice)" toggle={!!p.advancedDj} onToggle={(v) => set({ advancedDj: v })} />
+            <T tone="muted" style={{ marginTop: t.space.xs, marginHorizontal: t.space.sm }}>
+              Automix plays albums, playlists and your library as one continuous mix: beat-matched blends when tempos are close,
+              smooth crossfades otherwise. Albums that run straight on stay gapless. On the phone the DJ effects (bass swap,
+              filter, echo) play as volume fades. Everything comes from your Vibe server.
+            </T>
           </SettingSection>
           <SettingSection title="Languages">
             <SettingRow icon="musical-note-outline" label="Audio language" value={p.audioLanguage ? languageName(p.audioLanguage) : 'Default'} onPress={() => setSheet('audioLang')} />
@@ -98,6 +116,7 @@ export default function PlaybackSettings() {
       <OptionSheet visible={sheet === 'quality'} title="Maximum quality" options={QUALITY_OPTIONS.map((q) => ({ key: String(q.kbps ?? 'orig'), label: q.label, selected: q.kbps === p.maxBitrate }))} onSelect={(k) => set({ maxBitrate: k === 'orig' ? null : Number(k) })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'lipSync'} title="Lip-sync on this device" options={LIP_SYNC_OPTIONS.map((ms) => ({ key: String(ms), label: formatDelay(ms), selected: ms === lipSync }))} onSelect={(k) => deviceId && set({ audioDevices: { [deviceId]: Number(k) ? { delayMs: Number(k) } : {} } })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'trickplay'} title="Scrub previews" options={TRICKPLAY_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === trickMode }))} onSelect={(k) => { setSheet(null); void setTrickplayMode(k as TrickplayMode); }} onClose={() => setSheet(null)} />
+      <OptionSheet visible={sheet === 'mixStyle'} title="Transition style" options={MIX_STYLES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === (p.automixStyle ?? 'auto') }))} onSelect={(k) => set({ automixStyle: k as DjTransitionPreference })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'rg'} title="Volume levelling" options={RG_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === (p.replayGain ?? 'auto') }))} onSelect={(k) => set({ replayGain: k })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'subMode'} title="Subtitles" options={SUB_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === p.subtitleMode }))} onSelect={(k) => set({ subtitleMode: k })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'audioLang'} title="Audio language" options={langOptions(p.audioLanguage)} onSelect={(k) => set({ audioLanguage: k === '__none' ? null : k })} onClose={() => setSheet(null)} />

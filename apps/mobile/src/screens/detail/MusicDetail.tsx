@@ -170,6 +170,17 @@ export function TrackListDetail({ item, onUserData, onItem }: { item: Item; onUs
     }
   };
 
+  /** Mix: the album / playlist in its own order as one continuous Automix mix, Endless after the last track. */
+  const [mixing, setMixing] = useState(false);
+  const mixAll = async () => {
+    setMixing(true);
+    try {
+      await music.playAsMix({ label: item.title, items: audio.filter((x) => x.type === 'track') });
+    } finally {
+      setMixing(false);
+    }
+  };
+
   const playAt = (i: number, shuffle = false) => {
     const tr = tracks[i];
     if (!tr) return;
@@ -191,6 +202,7 @@ export function TrackListDetail({ item, onUserData, onItem }: { item: Item; onUs
               <Button label="Play" icon="play" onPress={() => playAt(0)} disabled={!tracks.length} hasTVPreferredFocus />
             )}
             {audio.length > 1 && !isBook ? <Button label="Shuffle" icon="shuffle" variant="secondary" onPress={() => playAt(Math.floor(Math.random() * tracks.length), true)} /> : null}
+            {caps.music && (item.type === 'album' || isPlaylist) && audio.some((x) => x.type === 'track') ? <Button label="Mix" icon="infinite-outline" variant="secondary" loading={mixing} onPress={() => void mixAll()} accessibilityLabel="Play as a continuous mix" /> : null}
             {caps.music && advancedDj && (item.type === 'album' || isPlaylist) && audio.some((x) => x.type === 'track') ? <Button label="Start DJ mix" icon="disc-outline" variant="secondary" onPress={() => openDj(item)} /> : null}
             <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" onPress={toggleFavorite} accessibilityLabel="Favourite" />
             {caps.downloads && downloads.supported && audio.length ? <Button icon="arrow-down-circle-outline" variant="secondary" onPress={() => downloads.download(audio, 'original')} accessibilityLabel="Download all" /> : null}
@@ -265,6 +277,17 @@ export function ArtistDetail({ item, onUserData }: { item: Item; onUserData: (ud
     if (tracks.length) music.playQueue(tracks, shuffle ? Math.floor(Math.random() * tracks.length) : 0, { shuffle });
   };
 
+  /** Mix: every track of the artist in the server's smart order (tempo, key, energy), paged in as it plays. */
+  const [mixing, setMixing] = useState(false);
+  const mixArtist = async () => {
+    setMixing(true);
+    try {
+      await music.playAsMix({ label: item.title, source: { type: 'artist', id: item.id } });
+    } finally {
+      setMixing(false);
+    }
+  };
+
   const cols = t.isTV ? 6 : t.wide ? 4 : 2;
   const w = Math.floor((t.width - t.space.gutter * 2 - t.card.gap * (cols - 1)) / cols);
   return (
@@ -273,6 +296,7 @@ export function ArtistDetail({ item, onUserData }: { item: Item; onUserData: (ud
         <View style={{ flexDirection: 'row', gap: t.space.sm, marginTop: t.space.sm, flexWrap: 'wrap', justifyContent: t.isTV ? 'flex-start' : 'center' }}>
           <Button label="Play" icon="play" onPress={() => playAll(false)} disabled={!list.length} hasTVPreferredFocus />
           <Button label="Shuffle" icon="shuffle" variant="secondary" onPress={() => playAll(true)} disabled={!list.length} />
+          <Button label="Mix" icon="infinite-outline" variant="secondary" loading={mixing} onPress={() => void mixArtist()} disabled={!list.length} accessibilityLabel="Play as a continuous mix" />
           {advancedDj ? <Button label="Start DJ mix" icon="disc-outline" variant="secondary" onPress={() => openDj(item)} disabled={!list.length} /> : null}
           <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" onPress={toggleFavorite} accessibilityLabel="Favourite" />
         </View>

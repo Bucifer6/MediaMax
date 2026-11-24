@@ -38,6 +38,7 @@
  * Phone and TV only: CarPlay / Android Auto keep driving src/state/music.tsx.
  */
 import { useAudioPlayer, type AudioPlayer } from 'expo-audio';
+import { fxGains } from '@/player/automix';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, type MediaMaxClient } from '@/api/client';
 import { audioDeviceProfile } from '@/api/profiles';
@@ -182,29 +183,11 @@ interface DeckRt {
 }
 
 /**
- * Volume shape of a transition effect (the server picks bass swap / filter fade / echo-out per pair). expo-audio
- * has no EQ, filters or delay, so on phone/TV each effect is approximated with the two deck volumes, timed like
- * the web mixer (web/src/player/djMixer.ts): bass swap = the new track comes up to the phrase line, then the old
- * one leaves; filter fade = old track holds, then fades over the second half while the new one eases in;
- * echo-out = the new track sneaks in, the old one drops out on the beat at ~3/4 (no echo tail).
+ * Volume shape of a transition effect (the server picks bass swap / filter fade / echo-out per pair): expo-audio
+ * has no EQ, filters or delay, so each effect is approximated with the two deck volumes. Shared with Automix
+ * (src/player/automix.ts), so both play transitions the same way.
  */
-export function fxGains(fx: DjTransition['fx'], p: number, kSwap = 0.5, kCut = 0.75): { out: number; inc: number } {
-  const c = (x: number) => Math.max(0, Math.min(1, x));
-  const ease = (x: number) => x * x * (3 - 2 * x);
-  p = c(p);
-  switch (fx) {
-    case 'bassSwap': {
-      const k = Math.max(0.05, Math.min(0.95, kSwap));
-      return { inc: Math.sin((c(p / k) * Math.PI) / 2), out: p < k ? 1 : Math.cos((c((p - k) / (1 - k)) * Math.PI) / 2) };
-    }
-    case 'filter':
-      return { inc: ease(c(p / 0.66)), out: p < 0.5 ? 1 : Math.cos((c((p - 0.5) / 0.5) * Math.PI) / 2) };
-    case 'echo':
-      return { inc: p < kCut ? 0.35 * ease(c(p / kCut)) : 1, out: p < kCut ? 1 : Math.max(0, 1 - (p - kCut) / 0.08) };
-    default:
-      return { inc: Math.sin((p * Math.PI) / 2), out: Math.cos((p * Math.PI) / 2) };
-  }
-}
+export { fxGains };
 
 interface Fade {
   from: DeckId;
