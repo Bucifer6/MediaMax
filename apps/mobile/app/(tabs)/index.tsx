@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { HomeRow, Item } from '@/api/types';
@@ -16,6 +16,7 @@ import { ChannelRow, ItemRow } from '@/components/Row';
 import { EmptyState, ErrorState, Loading } from '@/components/States';
 import { useTabBarSpace } from '@/components/TabBar';
 import { T } from '@/components/Text';
+import { YourDjCard } from '@/components/YourDjCard';
 import { useCapabilities, useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 import { on } from '@/utils/events';
@@ -94,6 +95,10 @@ function PhoneHome({ rows, refreshing, onRefresh }: { rows: HomeRow[]; refreshin
   const heroStyle = t.theme.heroStyle;
   const hero = heroStyle !== 'none' ? rows.find((r) => r.type === 'hero') : undefined;
   const logo = branding?.logoWideUrl ?? branding?.logoUrl;
+  const bodyRows = rows.filter((r) => r !== hero && r.type !== 'hero');
+  // Your DJ sits right below Continue Watching / Listening and Next Up.
+  let djAt = 0;
+  while (djAt < bodyRows.length && (bodyRows[djAt]!.type === 'continue' || bodyRows[djAt]!.type === 'nextup' || /listen/i.test(bodyRows[djAt]!.id))) djAt++;
 
   return (
     <View style={{ flex: 1 }}>
@@ -104,15 +109,17 @@ function PhoneHome({ rows, refreshing, onRefresh }: { rows: HomeRow[]; refreshin
       >
         {hero ? <HeroCarousel items={hero.items} style={heroStyle === 'static' ? 'static' : 'carousel'} /> : null}
         <DecideChips />
-        {rows
-          .filter((r) => r !== hero && r.type !== 'hero')
-          .map((row) =>
-            row.type === 'live-now' || row.type === 'favorite-channels' ? (
-              <ChannelRow key={row.id} title={row.title || DEFAULT_TITLES[row.type]} channels={row.channels ?? []} onSeeAll={() => router.push('/(tabs)/live')} />
+        {bodyRows.map((row, i) => (
+          <Fragment key={row.id}>
+            {i === djAt ? <YourDjCard /> : null}
+            {row.type === 'live-now' || row.type === 'favorite-channels' ? (
+              <ChannelRow title={row.title || DEFAULT_TITLES[row.type]} channels={row.channels ?? []} onSeeAll={() => router.push('/(tabs)/live')} />
             ) : (
-              <ItemRow key={row.id} title={row.title || DEFAULT_TITLES[row.type] || ''} items={row.items} variant={variantFor(row)} onSeeAll={seeAllFor(row)} />
-            ),
-          )}
+              <ItemRow title={row.title || DEFAULT_TITLES[row.type] || ''} items={row.items} variant={variantFor(row)} onSeeAll={seeAllFor(row)} />
+            )}
+          </Fragment>
+        ))}
+        {djAt >= bodyRows.length ? <YourDjCard /> : null}
       </ScrollView>
       {/* Floating translucent header */}
       <LinearGradient colors={[t.alpha(t.colors.background, 0.85), 'transparent']} pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top + 6, paddingBottom: 18, paddingHorizontal: t.space.gutter, flexDirection: 'row', alignItems: 'center' }}>

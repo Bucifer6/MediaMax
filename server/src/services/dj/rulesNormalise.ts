@@ -96,6 +96,6 @@ export function normaliseHostPrefs(prefs: Partial<UserPreferences>) {
   }
   if (prefs.yourDj !== undefined) {
     const y = prefs.yourDj as { commentary?: unknown } | null;
-    prefs.yourDj = { commentary: COMMENTARY.includes(y?.commentary as YourDjCommentary) ? (y!.commentary as YourDjCommentary) : 'full' };
+    prefs.yourDj = { commentary: COMMENTARY.includes(y?.commentary as YourDjCommentary) ? (y!.commentary as YourDjCommentary) : 'intros' };
   }
 }

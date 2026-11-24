@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { FlatList, View } from 'react-native';
+import { FlatList, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CastButton } from '@/cast';
 import { Focusable } from '@/components/Focusable';
@@ -14,6 +14,7 @@ import { T } from '@/components/Text';
 import { BookmarksPanel } from '@/player/Bookmarks';
 import { LyricsView, useLyrics } from '@/player/Lyrics';
 import { Scrubber } from '@/player/Scrubber';
+import { HostCaption, YourDjPanel, YourDjStrip } from '@/player/YourDjPanel';
 import { SKIP_BACK_MS, SKIP_FORWARD_MS } from '@/car/policy';
 import { SPEEDS, useMusic, type SleepOption } from '@/state/music';
 import { useRemote } from '@/state/remote';
@@ -24,7 +25,7 @@ import { useTVRemote } from '@/tv';
 import { formatClock } from '@/utils/format';
 import { openDj } from '@/utils/nav';
 
-type Panel = 'queue' | 'lyrics' | 'chapters' | 'bookmarks';
+type Panel = 'queue' | 'lyrics' | 'chapters' | 'bookmarks' | 'yourdj';
 const speedLabel = (r: number) => `${r}x`;
 const SLEEP_MINUTES = [5, 15, 30, 45, 60];
 
@@ -46,8 +47,8 @@ export default function NowPlaying() {
   const lyrics = useLyrics(isTrack && panel === 'lyrics' ? cur.id : null);
   // A panel that no longer applies (track ↔ episode) falls back to the queue.
   useEffect(() => {
-    if ((panel === 'lyrics' && !isTrack) || (panel === 'chapters' && !m.chapters.length) || (panel === 'bookmarks' && !m.spoken)) setPanel('queue');
-  }, [panel, isTrack, m.chapters.length, m.spoken]);
+    if ((panel === 'lyrics' && !isTrack) || (panel === 'chapters' && !m.chapters.length) || (panel === 'bookmarks' && !m.spoken) || (panel === 'yourdj' && !m.yourDj)) setPanel('queue');
+  }, [panel, isTrack, m.chapters.length, m.spoken, m.yourDj]);
   useTVRemote((e) => {
     if (e.eventType === 'playPause') m.toggle();
     if (e.eventType === 'fastForward') (m.spoken || m.longTrack ? m.skip(SKIP_FORWARD_MS) : m.next());
@@ -83,6 +84,7 @@ export default function NowPlaying() {
           </T>
         ) : null}
       </View>
+      {m.yourDj ? <YourDjStrip /> : <HostCaption variant="np" />}
       <Scrubber positionMs={m.positionMs} durationMs={m.durationMs} onSeek={m.seek} />
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         {intervalSkip ? (
@@ -120,6 +122,7 @@ export default function NowPlaying() {
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.space.sm, justifyContent: 'center' }}>
         <PanelChip icon="list" label="Up next" active={panel === 'queue'} onPress={() => setPanel('queue')} />
+        {m.yourDj ? <PanelChip icon="disc-outline" label="Your DJ" active={panel === 'yourdj'} onPress={() => setPanel(panel === 'yourdj' ? 'queue' : 'yourdj')} /> : null}
         {isTrack ? <PanelChip icon="chatbubble-ellipses-outline" label="Lyrics" active={panel === 'lyrics'} onPress={() => setPanel(panel === 'lyrics' ? 'queue' : 'lyrics')} /> : null}
         {m.chapters.length ? <PanelChip icon="bookmarks-outline" label="Chapters" active={panel === 'chapters'} onPress={() => setPanel(panel === 'chapters' ? 'queue' : 'chapters')} /> : null}
         {/* Long music: the ±15/30 s buttons took the shuffle / repeat places on the transport row. */}
@@ -155,7 +158,12 @@ export default function NowPlaying() {
     />
   );
   const lyricsPanel = <LyricsView lyrics={lyrics} positionMs={m.positionMs} onSeek={m.seek} />;
-  const sidePanel = panel === 'lyrics' ? lyricsPanel : panel === 'chapters' ? chapterList : panel === 'bookmarks' ? <BookmarksPanel /> : null;
+  const djPanel = (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + t.space.lg }} keyboardShouldPersistTaps="handled">
+      <YourDjPanel />
+    </ScrollView>
+  );
+  const sidePanel = panel === 'lyrics' ? lyricsPanel : panel === 'chapters' ? chapterList : panel === 'bookmarks' ? <BookmarksPanel /> : panel === 'yourdj' && m.yourDj ? djPanel : null;
 
   const queue = (
     <FlatList

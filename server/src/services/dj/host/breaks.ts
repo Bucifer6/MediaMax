@@ -24,7 +24,7 @@ const log = logger('dj-host');
 
 export const DEFAULT_RADIO_HOST: RadioHostPrefs = {
   enabled: false, chattiness: 'light',
-  categories: { announce: true, facts: true, jokes: true, weather: true, time: true, stats: true },
+  categories: { announce: true, facts: true, jokes: false, weather: true, time: true, stats: true },
   voice: null,
 };
 
