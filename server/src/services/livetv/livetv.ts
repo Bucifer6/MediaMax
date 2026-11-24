@@ -677,8 +677,8 @@ export function searchLive(user: User, q: string, limit = 20): { channels: Chann
   const channels = listChannels(user, { search: q, limit }).items;
   const now = nowIso();
   const rows = db.all(
-    `SELECT p.*, c.id cid FROM programs p JOIN channels c ON (${epg.EFF_EPG_SQL}) = p.epg_channel_id JOIN live_sources s ON s.id = c.source_id
-     WHERE s.enabled = 1 AND c.hidden = 0 AND COALESCE((SELECT hidden FROM channel_categories x WHERE x.id = c.category_id), 0) = 0 AND p.title LIKE ? AND p.end > ? GROUP BY p.id ORDER BY p.start LIMIT ?`, `%${q}%`, now, limit);
+    `SELECT p.*, MIN(c.id) cid FROM programs p JOIN channels c ON (${epg.EFF_EPG_SQL}) = p.epg_channel_id JOIN live_sources s ON s.id = c.source_id
+     WHERE s.enabled = 1 AND c.hidden = 0 AND COALESCE((SELECT hidden FROM channel_categories x WHERE x.id = c.category_id), 0) = 0 AND p.title LIKE ? AND p.end > ? GROUP BY p.id ORDER BY p.start, p.id LIMIT ?`, `%${q}%`, now, limit);
   return { channels, programs: rows.map((r) => toProgram(r, r.cid)) };
 }
 
@@ -693,7 +693,22 @@ interface SharedLive {
 const sharedLive = new Map<string, SharedLive>();
 const upstreamCounts = new Map<string, number>();
 
-export const activeUpstreams = (sourceId: string) => (upstreamCounts.get(sourceId) ?? 0) + [...sharedLive.values()].filter((s) => s.sourceId === sourceId).length;
+/** The channel's shared job, dropping one whose ffmpeg has stopped (upstream dropped): nothing restarts it, so the next viewer gets a fresh one. */
+function liveShared(key: string): SharedLive | undefined {
+  const sh = sharedLive.get(key);
+  if (sh && (sh.job.exited || sh.job.failed)) {
+    sharedLive.delete(key);
+    // Viewers still on it stop it when they leave (onStop); with none left it goes now.
+    if (sh.refs <= 0) sh.job.stop();
+    return undefined;
+  }
+  return sh;
+}
+
+export const activeUpstreams = (sourceId: string) => (upstreamCounts.get(sourceId) ?? 0) + [...sharedLive.keys()].filter((k) => liveShared(k)?.sourceId === sourceId).length;
+
+/** Transcode job ids (directories) of live remuxes in use: shared channel jobs and the jobs viewers still hold. */
+export const liveJobIds = (): string[] => [...new Set([...[...sharedLive.values()].map((s) => s.job.id), ...[...liveJobBySession.values()].map((j) => j.id)])];
 
 export function checkConnectionLimit(src: Row) {
   const max = src.max_connections;
@@ -795,7 +810,7 @@ export async function playChannel(ctx: AuthContext, channelId: string, req: Live
   }
   // 3) Remux to HLS (shared between viewers of the same live channel).
   const key = catchup ? `${channelId}@${catchup.start.getTime()}@${ctx.deviceRowId}` : channelId;
-  let shared = sharedLive.get(key);
+  let shared = liveShared(key);
   if (!shared) {
     checkConnectionLimit(src);
     const job = new TranscodeJob(newId(), {
@@ -819,7 +834,10 @@ export async function playChannel(ctx: AuthContext, channelId: string, req: Live
     ...base, method: 'live', job: null, details: det('HLS (remux)', 'Remuxed to HLS, shared with other viewers of this channel'),
     onStop: () => {
       sh.refs--;
-      if (sh.refs <= 0) {
+      if (sh.refs <= 0 && sharedLive.get(key) !== sh) {
+        // Dropped after its ffmpeg stopped (a fresh job serves the channel now): nothing to keep warm.
+        sh.job.stop();
+      } else if (sh.refs <= 0) {
         // Keep the tuner warm briefly so channel-flipping back is instant.
         setTimeout(() => {
           if (sh.refs <= 0 && sharedLive.get(key) === sh) {

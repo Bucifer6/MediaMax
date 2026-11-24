@@ -22,7 +22,7 @@ import { isLocalAddress } from './dlna.js';
 import { outputRange, rangeDecision, type RangeDecision } from './hdr.js';
 import { doviCodecStyle, doviMuxCapability, doviMuxSupported, doviSignal, type DoviSignal } from './dovi.js';
 import { refreshVideoRange } from './hdrBackfill.js';
-import { subtitleTrackList } from './subtitles.js';
+import { sidecarStamp, subtitleTrackList } from './subtitles.js';
 import { anyComfort, decisionInfo, masterAudioFor, normalizeComforts, planAudio, refreshAudioStreams, type AudioPlan } from './audio.js';
 import { mediaDetails, withJob, withSubtitle, type ClientHints } from './sessionDetails.js';
 import { bitrateCaps, buildLadder, createRenditionManager, pickStartRendition, streamingSettings, type RenditionManager } from './abr.js';
@@ -93,6 +93,21 @@ function toActive(s: PlaySession): ActiveSession {
 }
 
 export const listSessions = (): ActiveSession[] => [...sessions.values()].filter((s) => !s.preview).map(toActive);
+/**
+ * Transcode directories (named by job id under transcodeDir) in use by sessions and warm jobs. An adaptive session's
+ * renditions are "<its id>-r<rendition>-<n>", matched by prefix. Live remuxes: livetv's liveJobIds().
+ */
+export function transcodeDirInUse(): (name: string) => boolean {
+  const ids = new Set<string>();
+  const prefixes: string[] = [];
+  const add = (job: { id: string } | null | undefined, abr: RenditionManager | null | undefined) => {
+    if (job) ids.add(job.id);
+    if (abr) prefixes.push(`${abr.o.sessionId}-r`);
+  };
+  for (const s of sessions.values()) add(s.job, s.abr);
+  for (const e of warmSlots.entries()) add(e.job.spawned.job, e.job.spawned.abr);
+  return (name) => ids.has(name) || prefixes.some((p) => name.startsWith(p));
+}
 export const transcodeCount = () => [...sessions.values()].filter((s) => s.job && s.method === 'transcode').length;
 
 let broadcastTimer: NodeJS.Timeout | null = null;
@@ -874,7 +889,7 @@ export async function subtitleVtt(mediaId: string, index: number): Promise<strin
   if (!TEXT_SUB_CODECS.has(s.codec)) throw badRequest('Image subtitles must be burned in');
   const dir = path.join(config.cacheDir, 'subs');
   fs.mkdirSync(dir, { recursive: true });
-  const out = path.join(dir, `${mediaId}_${index}_${m.mtime ?? 0}.vtt`);
+  const out = path.join(dir, `${mediaId}_${index}_${m.mtime ?? 0}${sidecarStamp(s)}.vtt`);
   if (fs.existsSync(out)) return out;
   let p = subInflight.get(out);
   if (!p) {
@@ -888,10 +903,14 @@ export async function subtitleVtt(mediaId: string, index: number): Promise<strin
       proc.stderr.on('data', (d) => (err += d));
       proc.on('error', reject);
       proc.on('exit', (code) => {
-        if (code === 0) {
+        if (code !== 0) return reject(new Error(err.trim() || 'Subtitle conversion failed'));
+        try {
           fs.renameSync(out + '.tmp', out);
           resolve(out);
-        } else reject(new Error(err.trim() || 'Subtitle conversion failed'));
+        } catch (e) {
+          fs.rmSync(out + '.tmp', { force: true });
+          reject(e);
+        }
       });
     }).finally(() => subInflight.delete(out));
     subInflight.set(out, p);
