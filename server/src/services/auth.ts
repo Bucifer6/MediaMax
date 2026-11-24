@@ -7,7 +7,7 @@ import type {
 import { db, type Row } from '../db.js';
 import { newId, newToken, sha256, shortCode } from '../util/ids.js';
 import { badRequest, conflict, forbidden, HttpError, notFound, unauthorized } from '../util/errors.js';
-import { newTotpSecret, otpauthUrl, verifyTotp } from '../util/totp.js';
+import { base32Decode, hotp, newTotpSecret, otpauthUrl } from '../util/totp.js';
 import { nowIso, parseJson, ratingLevel } from '../util/misc.js';
 import { getSettings, signInScreenOf } from './settings.js';
 import { isLocalAddress } from '../util/net.js';
@@ -268,13 +268,17 @@ export function createUserHashed(req: CreateUserRequest, hashes: UserSecretHashe
 }
 
 export async function updateUser(id: string, req: UpdateUserRequest, actorId: string): Promise<User> {
+  // Same rules as createUser, checked before the (slow) hashing.
+  if (req.password != null && typeof req.password !== 'string') throw badRequest('Password must be a string');
+  if (req.password && req.password.length < 8) throw badRequest('Password must be at least 8 characters');
+  if (req.pin) validatePin(req.pin);
   const hashes = await hashUserSecrets(req);
   const cur = getUserRow(id);
   if (cur.parent_user_id && (req.isAdmin || req.password || req.username !== undefined)) throw badRequest('Profiles cannot be administrators, have a password or a username; edit them under the owner\'s profiles');
   const patch: Row = {};
   if (req.username !== undefined) {
-    const u = req.username.trim();
-    if (!u) throw badRequest('Invalid username');
+    const u = String(req.username ?? '').trim();
+    if (!/^[\w.@ -]{1,64}$/.test(u)) throw badRequest('Invalid username');
     if (db.get('SELECT 1 FROM users WHERE username = ? AND id != ?', u, id)) throw conflict('Username already exists');
     patch.username = u;
   }
@@ -298,7 +302,11 @@ export async function updateUser(id: string, req: UpdateUserRequest, actorId: st
   if (req.maxStreams !== undefined) patch.max_streams = req.maxStreams && req.maxStreams > 0 ? Math.min(100, Math.trunc(req.maxStreams)) : null;
   Object.assign(patch, requestPermsPatch(cur, req));
   if (patch.disabled && id === actorId) throw badRequest('You cannot disable yourself');
+  // An empty password removes it (passwordless sign-in, see passwordlessAllowed), which administrators never get.
+  const adminAfter = patch.is_admin !== undefined ? !!patch.is_admin : !!cur.is_admin;
+  if (req.password !== undefined && !req.password && adminAfter && !cur.oidc_sub) throw badRequest('Administrators must keep a password');
   db.update('users', id, patch);
+  if (patch.pin_hash !== undefined) clearFailures(`p:${id}`);
   if (patch.disabled || patch.password_hash !== undefined) {
     // Signs the account out everywhere, including its profiles' sessions.
     db.run('DELETE FROM devices WHERE user_id IN (SELECT id FROM users WHERE id = ? OR parent_user_id = ?)', id, id);
@@ -344,6 +352,9 @@ export function deleteUser(id: string, actorId: string) {
   });
 }
 
+/** Cap on a user's stored preferences (serialized JSON, characters). */
+export const MAX_PREFERENCES_BYTES = 64 * 1024;
+
 /** `keepDeviceRowId`: the session making the change, which stays signed in when the password changes. */
 export async function updateMe(userId: string, req: UpdateMeRequest, keepDeviceRowId?: string): Promise<User> {
   const before = getUserRow(userId);
@@ -377,12 +388,19 @@ export async function updateMe(userId: string, req: UpdateMeRequest, keepDeviceR
     if (req.profileColor !== null && !/^#[0-9a-f]{6}$/i.test(req.profileColor)) throw badRequest('Colour must be a #rrggbb value');
     patch.profile_color = req.profileColor;
   }
-  if (req.preferences) {
+  if (req.preferences !== undefined && req.preferences !== null) {
+    if (typeof req.preferences !== 'object' || Array.isArray(req.preferences)) throw badRequest('preferences must be an object');
     const prefs = mergePrefs(parseJson<Partial<UserPreferences>>(cur.preferences, {}), req.preferences);
     if (prefs.themeId && !getBranding().themes.some((t) => t.id === prefs.themeId)) prefs.themeId = null;
-    patch.preferences = JSON.stringify(prefs);
+    const json = JSON.stringify(prefs);
+    // Parsed on every authenticated request (toUser): keep it small. A blob already over the cap may still shrink.
+    if (json.length > MAX_PREFERENCES_BYTES && json.length > String(cur.preferences ?? '').length) {
+      throw new HttpError(400, `Preferences are too large (over ${MAX_PREFERENCES_BYTES / 1024} KB)`, 'preferences_too_large');
+    }
+    patch.preferences = json;
   }
   db.update('users', userId, patch);
+  if (patch.pin_hash !== undefined) clearFailures(`p:${userId}`);
   if (patch.password_hash !== undefined) {
     // A new password signs every other device out (the account's profiles included), like an admin reset does,
     // so a stolen session doesn't outlive the password change.
@@ -436,6 +454,7 @@ const lastTouch = new Map<string, number>();
 
 export function authenticate(token: string | undefined | null): AuthContext | null {
   if (!token) return null;
+  if (token.startsWith(API_URL_TOKEN_PREFIX)) return authenticateApiUrlToken(token);
   const row = db.get(
     `SELECT d.id did, d.device_id, d.device_name, d.platform, d.app_version, d.last_seen_at dlast, u.*
      FROM devices d JOIN users u ON u.id = d.user_id WHERE d.token_hash = ?`, sha256(token));
@@ -463,16 +482,21 @@ export function authenticate(token: string | undefined | null): AuthContext | nu
   };
 }
 
-/* Per-account lockout: 5 failures → 15 minutes, independent of client IP (which can't be trusted). */
+/*
+ * Per-account lockout: 5 failures → 15 minutes, independent of client IP (which can't be trusted). Keys: `u:<username>`
+ * (password sign-in) and `p:<userId>` (PIN). The PIN budget is shared by every way of entering a PIN (sign-in screen
+ * here, profile switching in profiles.ts), so each path can't be guessed against separately.
+ */
 const failures = new Map<string, Failure>();
 /** Attempts still being checked count as failures until they finish (the hash compare runs off-thread). */
 const pending = new Pending();
-function assertNotLocked(key: string, ip?: string) {
+function assertNotLocked(key: string, ip?: string, error?: (minutes: number) => Error) {
   const f = failures.get(key);
   const live = f && f.until > Date.now() ? f.n : 0;
   if (live + pending.count(key) >= 5) {
     securityEvent('AUTH_LOCKED', ip, { account: key });
-    throw Object.assign(unauthorized(`Too many failed attempts. Try again in ${Math.ceil(((live ? f!.until : Date.now() + 15 * 60000) - Date.now()) / 60000)} minute(s).`), { statusCode: 429 });
+    const minutes = Math.ceil(((live ? f!.until : Date.now() + 15 * 60000) - Date.now()) / 60000);
+    throw error ? error(minutes) : Object.assign(unauthorized(`Too many failed attempts. Try again in ${minutes} minute(s).`), { statusCode: 429 });
   }
 }
 function recordFailure(key: string) {
@@ -483,6 +507,10 @@ function recordFailure(key: string) {
   } else f.n++;
 }
 const clearFailures = (key: string) => failures.delete(key);
+/** The shared sign-in lockout, for the other PIN entry points (profiles.ts). */
+export const signInLockout = { assertNotLocked, recordFailure, clear: clearFailures, pending, pinKey: (userId: string) => `p:${userId}` };
+/** Tests only. */
+export const _resetSignInLockouts = () => failures.clear();
 
 /**
  * Accounts that may sign in without any secret: Plex-Home style kids/family profiles only.
@@ -522,7 +550,7 @@ export async function login(username: string, password: string, device: Partial<
 async function checkSecondFactor(row: Row, code: string | undefined, key: string, ip?: string) {
   if (!row.totp_enabled) return;
   if (!code) throw new HttpError(401, 'Enter the 6-digit code from your authenticator app', 'totp_required');
-  if (row.totp_secret && verifyTotp(row.totp_secret, code)) return;
+  if (row.totp_secret && acceptTotp(row.id, row.totp_secret, code)) return;
   // Recovery codes are single-use.
   const codes = parseJson<string[]>(row.recovery_codes, []);
   const norm = String(code).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -544,6 +572,37 @@ async function checkSecondFactor(row: Row, code: string | undefined, key: string
 
 /* ------------------------------ two-factor --------------------------- */
 
+/**
+ * Replay protection: the last time step whose code each user had accepted. A code is only accepted for a later step,
+ * so one seen (shoulder-surfed, phished, logged) can't be used again within its ±30 s window. In memory: the server is
+ * a single process, and after a restart the window has long passed.
+ */
+const lastTotpStep = new Map<string, number>();
+/** Tests only. */
+export const _resetTotpReplay = () => lastTotpStep.clear();
+
+/** The time step (current, or one either side for clock drift) whose code matches, or null. */
+function totpStep(secretB32: string, code: string, at = Date.now()): number | null {
+  const c = String(code ?? '').replace(/\s/g, '');
+  if (!/^\d{6}$/.test(c)) return null;
+  const key = base32Decode(secretB32);
+  const counter = Math.floor(at / 1000 / 30);
+  let hit: number | null = null;
+  // Check every candidate (no early exit), and prefer the latest matching step.
+  for (const d of [-1, 0, 1]) if (crypto.timingSafeEqual(Buffer.from(hotp(key, counter + d)), Buffer.from(c))) hit = counter + d;
+  return hit;
+}
+
+/** Verify a TOTP code and consume its time step (synchronous: no await between the check and the write). */
+function acceptTotp(userId: string, secretB32: string, code: string): boolean {
+  const step = totpStep(secretB32, code);
+  if (step === null) return false;
+  const last = lastTotpStep.get(userId);
+  if (last !== undefined && step <= last) return false;
+  lastTotpStep.set(userId, step);
+  return true;
+}
+
 export function totpSetup(userId: string): TotpSetup {
   const row = getUserRow(userId);
   if (row.totp_enabled) throw badRequest('Two-factor authentication is already on');
@@ -555,7 +614,7 @@ export function totpSetup(userId: string): TotpSetup {
 export async function totpEnable(userId: string, code: string): Promise<TotpEnabled> {
   const row = getUserRow(userId);
   if (!row.totp_secret) throw badRequest('Start two-factor setup first');
-  if (!verifyTotp(row.totp_secret, code)) throw badRequest('That code is not valid. Check the time on your phone and try again.');
+  if (!acceptTotp(userId, row.totp_secret, code)) throw badRequest('That code is not valid. Check the time on your phone and try again.');
   const recoveryCodes = Array.from({ length: 8 }, () => crypto.randomBytes(5).toString('hex'));
   const hashed = await Promise.all(recoveryCodes.map((c) => hashSecret(c)));
   db.run('UPDATE users SET totp_enabled = 1, recovery_codes = ? WHERE id = ?', JSON.stringify(hashed), userId);
@@ -566,7 +625,7 @@ export async function totpEnable(userId: string, code: string): Promise<TotpEnab
 export function totpDisable(userId: string, code: string, actorIsAdmin = false) {
   const row = getUserRow(userId);
   if (!row.totp_enabled) return;
-  if (!actorIsAdmin && !(row.totp_secret && verifyTotp(row.totp_secret, code))) throw badRequest('That code is not valid');
+  if (!actorIsAdmin && !(row.totp_secret && acceptTotp(userId, row.totp_secret, code))) throw badRequest('That code is not valid');
   db.run("UPDATE users SET totp_enabled = 0, totp_secret = NULL, recovery_codes = '[]' WHERE id = ?", userId);
   logActivity('user.2fa', `Two-factor authentication turned off for ${row.display_name}`, { userId, severity: 'warning' });
 }
@@ -600,9 +659,38 @@ export function deleteApiKey(userId: string, id: string, isAdmin: boolean) {
 export function authenticateApiKey(key: string | null | undefined): AuthContext | null {
   if (!key || !key.startsWith('mmk_')) return null;
   const row = db.get('SELECT k.id kid, k.name kname, k.last_used_at klast, u.* FROM api_keys k JOIN users u ON u.id = k.user_id WHERE k.key_hash = ?', sha256(key));
+  return apiKeyContext(row);
+}
+
+function apiKeyContext(row: Row | undefined): AuthContext | null {
   if (!row || row.disabled) return null;
+  const user = toUser(row);
+  if (user.disabled) return null;
   if (!row.klast || Date.now() - Date.parse(row.klast) > 60000) db.run('UPDATE api_keys SET last_used_at = ? WHERE id = ?', nowIso(), row.kid);
-  return { user: toUser(row), deviceRowId: `apikey:${row.kid}`, token: key, device: { deviceId: `apikey:${row.kid}`, deviceName: `API: ${row.kname}`, platform: 'other' } };
+  // `token` ends up in media URLs (`?token=` on HLS, trickplay, subtitles…): never the long-lived key itself, but a
+  // signed token naming the key that expires and dies with the key.
+  return { user, deviceRowId: `apikey:${row.kid}`, token: apiUrlToken(row.kid), device: { deviceId: `apikey:${row.kid}`, deviceName: `API: ${row.kname}`, platform: 'other' } };
+}
+
+/*
+ * URL tokens for API-key sessions: `mmu_<keyId>.<expiry (unix s, base36)>.<HMAC>`. Signed with a per-process secret,
+ * so a restart invalidates outstanding URLs (clients ask for fresh ones, as after any session change). Long enough for
+ * a film with pauses; the key being deleted or its user disabled ends it at once (checked on every use).
+ */
+export const API_URL_TOKEN_PREFIX = 'mmu_';
+export const API_URL_TOKEN_TTL_MS = 24 * 3600_000;
+const urlTokenSecret = crypto.randomBytes(32);
+const urlTokenSig = (body: string) => crypto.createHmac('sha256', urlTokenSecret).update(body).digest('base64url');
+export function apiUrlToken(keyId: string, now = Date.now()): string {
+  const body = `${keyId}.${Math.floor((now + API_URL_TOKEN_TTL_MS) / 1000).toString(36)}`;
+  return `${API_URL_TOKEN_PREFIX}${body}.${urlTokenSig(body)}`;
+}
+function authenticateApiUrlToken(token: string): AuthContext | null {
+  const m = /^mmu_([^.]{1,64})\.([0-9a-z]{1,10})\.([\w-]{43})$/.exec(token);
+  if (!m) return null;
+  const expected = Buffer.from(urlTokenSig(`${m[1]}.${m[2]}`));
+  if (!crypto.timingSafeEqual(expected, Buffer.from(m[3])) || parseInt(m[2], 36) * 1000 < Date.now()) return null;
+  return apiKeyContext(db.get('SELECT k.id kid, k.name kname, k.last_used_at klast, u.* FROM api_keys k JOIN users u ON u.id = k.user_id WHERE k.id = ?', m[1]));
 }
 
 /**

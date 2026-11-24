@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import type { CreateCollectionRequest, CreateLibraryRequest, CreatePlaylistRequest, ItemQuery, ItemSort, SearchResponse, UpdateItemRequest, UpdateLibraryRequest } from '@mediamax/shared';
+import type { User, CreateCollectionRequest, CreateLibraryRequest, CreatePlaylistRequest, ItemQuery, ItemSort, SearchResponse, UpdateItemRequest, UpdateLibraryRequest } from '@mediamax/shared';
 import { db } from '../db.js';
 import { config } from '../config.js';
 import { requireAdmin, requireUser } from '../http.js';
-import { allowedLibraryIds, addToContainer, buildHome, createContainer, genres, getChildren, getContainer, getItem, listContainers, nextItem, queryItems, removeFromContainer, searchItems, setFavorite, setPlayed, setRating, similarItems, updateItem, reportProgress } from '../services/items.js';
+import { allowedLibraryIds, assertCanSee, addToContainer, buildHome, createContainer, genres, getChildren, getContainer, getItem, listContainers, nextItem, queryItems, removeFromContainer, searchItems, setFavorite, setPlayed, setRating, similarItems, updateItem, reportProgress } from '../services/items.js';
 import { isDateAddedSource, recalculateDateAdded, scanLibrary, toLibrary } from '../services/scanner.js';
 import { getSettings } from '../services/settings.js';
 import { refreshItem } from '../services/metadata/index.js';
@@ -19,6 +19,15 @@ import { detectSeason } from '../services/introdetect.js';
 import { similarTo } from '../services/recommend.js';
 
 const LIB_TYPES = ['movies', 'shows', 'music', 'photos', 'videos', 'audiobooks'];
+
+/**
+ * Lazily fetch an IPTV item's details (provider request + DB write) only for a user whose libraries include it. The
+ * rating limits are left to getItem/getChildren afterwards: an IPTV title's rating is only known once fetched.
+ */
+async function iptvDetailsFor(user: User, id: string) {
+  assertCanSee({ ...user, maxContentRating: null, hideUnrated: false }, id);
+  await ensureIptvDetails(id);
+}
 
 export default async function libraryRoutes(app: FastifyInstance) {
   /* ------------------------------ libraries ------------------------- */
@@ -118,13 +127,13 @@ export default async function libraryRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string } }>('/items/:id', async (req) => {
     const { user } = requireUser(req);
-    await ensureIptvDetails(req.params.id);
+    await iptvDetailsFor(user, req.params.id);
     return getItem(user, req.params.id, true);
   });
 
   app.get<{ Params: { id: string }; Querystring: { sort?: ItemSort; order?: 'asc' | 'desc'; limit?: string; offset?: string } }>('/items/:id/children', async (req) => {
     const { user } = requireUser(req);
-    await ensureIptvDetails(req.params.id);
+    await iptvDetailsFor(user, req.params.id);
     return getChildren(user, req.params.id, { sort: req.query.sort, order: req.query.order, limit: toInt(req.query.limit, 500, 1, 2000), offset: toInt(req.query.offset, 0, 0) });
   });
 
