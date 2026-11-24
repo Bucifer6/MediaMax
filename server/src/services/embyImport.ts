@@ -10,7 +10,6 @@ import * as imp from './import/index.js';
 
 export { mapPath, safeUsername } from './import/common.js';
 export { embyRating } from './import/emby.js';
-export const LINK_PURPOSE = 'emby-import';
 
 export const getImportConfig = (): ImportConfig => imp.getImportConfig('emby');
 export const saveImportConfig = (patch: Partial<ImportConfig>, admin?: User): ImportConfig => imp.saveImportConfig('emby', patch, admin);

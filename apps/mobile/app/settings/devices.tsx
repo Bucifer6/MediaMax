@@ -1,4 +1,3 @@
-import React from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { useQuery } from '@/api/useQuery';
 import { Button } from '@/components/Button';

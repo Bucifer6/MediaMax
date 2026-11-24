@@ -123,8 +123,6 @@ export function parseMbTags(tags: Record<string, string | undefined | null>): Mb
   };
 }
 
-export const hasAnyMbid = (t: MbTags) => !!(t.recording || t.release || t.releaseGroup || t.artists.length || t.albumArtists.length);
-
 /* ------------------------------ raw ID3v2 ------------------------------ */
 
 /**

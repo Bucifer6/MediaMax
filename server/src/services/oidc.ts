@@ -160,8 +160,3 @@ export async function finishLogin(state: string, code: string, cookieState: stri
     return fail((e as Error).message || 'Single sign-on failed');
   }
 }
-
-/** Admin: link an existing local account to an SSO identity (by the provider's subject). */
-export function linkUser(userId: string, subject: string | null) {
-  db.run('UPDATE users SET oidc_sub = ? WHERE id = ?', subject, userId);
-}

@@ -3,7 +3,7 @@
  * room's current item opens in the player as soon as it is known (on join, or
  * when the host sends `load`); the SyncPlay provider does the navigation.
  */
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { Button } from '@/components/Button';
 import { Icon } from '@/components/Icon';

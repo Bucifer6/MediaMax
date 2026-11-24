@@ -67,11 +67,6 @@ export function itemSubtitle(item: Item): string {
   }
 }
 
-/** Card title — episodes show their own title, others their title. */
-export function cardTitle(item: Item): string {
-  return item.title;
-}
-
 export function posterFor(item: Item): string | null {
   return item.posterUrl ?? item.thumbUrl ?? item.backdropUrl ?? null;
 }

@@ -25,8 +25,6 @@ export const mbGet = (path: string, params: Record<string, string | number>, ttl
 
 /* --------------------------- release → tracks --------------------------- */
 
-export const fetchRelease = (mbid: string) => mbGet(`/release/${encodeURIComponent(mbid)}`, { inc: 'recordings artist-credits release-groups labels' });
-
 /** Word-overlap similarity of two titles, 0..1 (ignores case, accents, punctuation). */
 export function titleSimilarity(a: string, b: string): number {
   const x = norm(a), y = norm(b);

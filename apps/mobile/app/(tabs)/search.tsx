@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Keyboard, ScrollView, View } from 'react-native';
 import { getJSON, setJSON } from '@/api/storage';
 import type { Channel, Item, Program, SearchResponse } from '@/api/types';

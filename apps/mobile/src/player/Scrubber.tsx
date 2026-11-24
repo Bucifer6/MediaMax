@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { PanResponder, View, type LayoutChangeEvent } from 'react-native';
 import type { Chapter, Marker, TrickplayInfo } from '@/api/types';
 import { Focusable } from '@/components/Focusable';

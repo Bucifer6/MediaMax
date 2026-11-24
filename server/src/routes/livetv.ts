@@ -1,7 +1,6 @@
 import { Readable } from 'node:stream';
 import type { FastifyInstance } from 'fastify';
 import type { ChannelQuery, CreateLiveSourceRequest, CreateRecordingRequest, CreateRecordingRuleRequest, LivePlayRequest, UpdateLiveSourceRequest } from '@mediamax/shared';
-import { db } from '../db.js';
 import { clientHints, requireAdmin, requireUser, remoteAddr } from '../http.js';
 import * as live from '../services/livetv/livetv.js';
 import * as dvr from '../services/dvr.js';

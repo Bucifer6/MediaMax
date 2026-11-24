@@ -68,7 +68,6 @@ const GuideRow = memo(function GuideRow({ channel: c, list, start, end, now, px:
 
 export default function GuidePage() {
   const [params] = useSearchParams();
-  const navigate = useNavigate();
   const mobile = useMediaQuery('(max-width: 700px)');
   const PX = mobile ? 4 : 6; // px per minute
   const CH_W = mobile ? 92 : 220;

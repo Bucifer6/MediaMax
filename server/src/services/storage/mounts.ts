@@ -251,7 +251,3 @@ export function mounts(): MountEntry[] {
   mountCache = { at: Date.now(), mounts: list };
   return list;
 }
-
-export const resetMountCache = () => {
-  mountCache = null;
-};

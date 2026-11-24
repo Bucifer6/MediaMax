@@ -17,7 +17,7 @@
  * "passthrough" for DV that has to be remuxed means real Dolby Vision through HLS: playback.ts decide() adds the
  * DV signalling from dovi.ts (DV box + codec strings), or falls back to these rules without DV when FFmpeg can't.
  */
-import type { DeviceProfile, DolbyVisionInfo, HdrFormat, VideoRangeCapabilities, VideoRangeDelivery, VideoRangeInfo } from '@mediamax/shared';
+import type { DolbyVisionInfo, HdrFormat, VideoRangeCapabilities, VideoRangeDelivery, VideoRangeInfo } from '@mediamax/shared';
 
 const num = (v: unknown): number | null => {
   if (v == null || v === '') return null;
@@ -194,9 +194,6 @@ export function rangeDecision(range: VideoRangeInfo | null | undefined, hdrFlag:
   }
   return { ...OK('passthrough'), legacy: false };
 }
-
-/** Normalise DeviceProfile range caps (accepts legacy profiles without the field). */
-export const rangeCaps = (p: DeviceProfile | undefined): VideoRangeCapabilities | undefined => p?.videoRange ?? undefined;
 
 /** The range a client's display ends up showing for a delivery decision (for display-mode matching). */
 export function outputRange(range: VideoRangeInfo | null | undefined, hdrFlag: boolean, delivery: VideoRangeDelivery): 'sdr' | 'hdr10' | 'hlg' | 'dolbyvision' {

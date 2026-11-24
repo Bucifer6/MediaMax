@@ -4,7 +4,7 @@
  * one at the current position with an optional note.
  * API: GET/POST /items/:id/bookmarks, DELETE /items/:id/bookmarks/:bookmarkId.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Bookmark, Item } from '@/api/types';

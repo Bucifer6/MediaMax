@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Pressable, ScrollView, Vibration, View } from 'react-native';
 import type { Item, PairedTarget, RemoteAction, RemoteKey, RemotePlayerState, RemoteTarget, SecondScreenInfo, SongIdResponse } from '@/api/types';
 import { Button } from '@/components/Button';

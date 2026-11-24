@@ -1,6 +1,6 @@
 /** Podcasts: directory search (or paste a feed URL), subscribe, and manage subscriptions. */
 import { router } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Keyboard, RefreshControl, ScrollView, View } from 'react-native';
 import type { PodcastSearchResult, PodcastSubscription } from '@/api/types';
 import { invalidate } from '@/api/useQuery';

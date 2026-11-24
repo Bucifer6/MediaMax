@@ -194,10 +194,6 @@ export const qualifiedName = (u: Pick<User, 'displayName' | 'ownerName' | 'paren
 /** The account (owner) user id of a user or profile. */
 export const accountIdOf = (u: Pick<User, 'id' | 'parentUserId'>) => u.parentUserId || u.id;
 
-/** Ids of every user on an account: the owner and its profiles. */
-export const accountMemberIds = (accountId: string): string[] =>
-  db.all<{ id: string }>('SELECT id FROM users WHERE id = ? OR parent_user_id = ?', accountId, accountId).map((r) => r.id);
-
 export const userCount = () => db.get<{ n: number }>('SELECT COUNT(*) n FROM users')!.n;
 
 export function getUserRow(id: string): Row {

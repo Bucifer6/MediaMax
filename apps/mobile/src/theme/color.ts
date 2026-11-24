@@ -33,10 +33,6 @@ export function luminance(color: string): number {
   return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
 }
 
-export function isLight(color: string): boolean {
-  return luminance(color) > 0.5;
-}
-
 /** Mix two colours (t=0 -> a, t=1 -> b). */
 export function mix(a: string, b: string, t: number): string {
   const ca = parse(a);

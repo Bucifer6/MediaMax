@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import type { Item, UserItemData } from '@/api/types';
 import { useQuery } from '@/api/useQuery';
 import { Screen } from '@/components/Screen';

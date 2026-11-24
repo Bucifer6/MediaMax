@@ -38,7 +38,6 @@ export function MetaLine({ item, center }: { item: Item; center?: boolean }) {
 }
 
 function TitleOrLogo({ item, maxWidth, maxHeight, center }: { item: Item; maxWidth: number; maxHeight: number; center?: boolean }) {
-  const t = useTheme();
   if (item.logoUrl) {
     return <Img path={item.logoUrl} width={maxWidth} contentFit="contain" style={{ width: maxWidth, height: maxHeight, alignSelf: center ? 'center' : 'flex-start' }} transition={400} />;
   }

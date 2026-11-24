@@ -72,13 +72,6 @@ const codes = new Map<string, PendingCode>(); // by token hash
 const requests = new Map<string, PendingRequest>();
 const hits = new Map<string, number[]>();
 
-/** Tests only. */
-export function _resetPairing() {
-  codes.clear();
-  requests.clear();
-  hits.clear();
-}
-
 function sweep() {
   const now = Date.now();
   for (const [k, c] of codes) if (c.expiresAt < now) codes.delete(k);

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { QUALITY_OPTIONS } from '@/api/profiles';
 import type { UserPreferences } from '@/api/types';

@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { DownloadQuality, PlaybackPrepareRequest, PlaybackRequest, ProgressReport } from '@mediamax/shared';
 import { db } from '../db.js';
 import { clientHints, requireAdmin, requireUser, remoteAddr } from '../http.js';
-import { assertRemoteAllowed, preparePlayback, reclaimWarmTranscodes, transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, subtitleVtt, touchSession } from '../services/playback.js';
+import { assertRemoteAllowed, preparePlayback, reclaimWarmTranscodes, transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, touchSession } from '../services/playback.js';
 import { assertCanSee } from '../services/items.js';
 import { liveJobBySession } from '../services/livetv/livetv.js';
 import { badRequest, forbidden, notFound, HttpError } from '../util/errors.js';

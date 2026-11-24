@@ -4,7 +4,7 @@
  * Shown only when the server enables `features.requests`.
  */
 import { router } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Keyboard, View } from 'react-native';
 import type { DiscoverResult, MediaRequest, RequestMediaType } from '@/api/types';
 import { Button } from '@/components/Button';

@@ -5,7 +5,6 @@
  */
 import Constants from 'expo-constants';
 import { Image } from 'expo-image';
-import React from 'react';
 import { View } from 'react-native';
 import { useTheme } from '@/theme';
 import { Icon } from './Icon';

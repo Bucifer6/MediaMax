@@ -1,5 +1,5 @@
 import { useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, ScrollView } from 'react-native';
 import type { Item, ItemQuery, ItemSort } from '@/api/types';
 import { useQuery } from '@/api/useQuery';

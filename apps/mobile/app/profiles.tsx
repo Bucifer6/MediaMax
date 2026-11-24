@@ -2,7 +2,7 @@
  * "Who's watching?" — shown after signing in to an account that has profiles, and from Settings → Switch profile.
  * Large focusable tiles for the TV remote; PIN-protected profiles ask for their PIN. Same API as the web app.
  */
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ApiError } from '@/api/client';

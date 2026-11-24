@@ -4,7 +4,7 @@
  * splash colour + logo and fade into the app.
  */
 import * as SplashScreen from 'expo-splash-screen';
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, StyleSheet } from 'react-native';
 import { useSession } from '@/state/session';
 import { isValidColor, useTheme } from '@/theme';

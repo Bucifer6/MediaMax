@@ -175,7 +175,7 @@ export class CarTree {
     }
     if (recent.length) {
       const ctx = this.context(recent);
-      recent.forEach((t, i) => nodes.push({ ...this.trackNode(ctx, recent, i), group: 'Recently played' }));
+      recent.forEach((_, i) => nodes.push({ ...this.trackNode(ctx, recent, i), group: 'Recently played' }));
     }
     if (!nodes.length) nodes.push(message('home-empty', 'Nothing in progress', 'Pick something from the other tabs'));
     return nodes;

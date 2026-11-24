@@ -4,7 +4,7 @@
  * Saves with POST /smart (kind "playlist"), or PUT /smart/:id when editing.
  * Every control is a Focusable / Input so it works with the TV remote too.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, View } from 'react-native';
 import type { Item, ItemSort, SmartFilter, SmartRule, SmartRuleField, SmartRuleOp } from '@/api/types';
 import { invalidate } from '@/api/useQuery';

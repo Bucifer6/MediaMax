@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type { AcceptInviteRequest, AuthResponse, CreateInviteRequest, Invite, InvitePreview, InviteTemplate, User } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
-import { badRequest, forbidden, notFound } from '../util/errors.js';
+import { badRequest, forbidden } from '../util/errors.js';
 import { nowIso, parseJson } from '../util/misc.js';
 import { getSettings } from './settings.js';
 import { getBranding } from './branding.js';
@@ -77,6 +77,3 @@ export function acceptInvite(code: string, req: AcceptInviteRequest, remoteAddr?
   logActivity('invite.accept', `${user.displayName} joined with an invite link`, { userId: user.id, userName: user.displayName });
   return issueToken(user.id, req, remoteAddr);
 }
-
-export const inviteExists = (code: string) => !!db.get('SELECT 1 FROM invites WHERE code = ?', code);
-void notFound;

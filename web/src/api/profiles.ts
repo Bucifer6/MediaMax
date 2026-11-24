@@ -35,6 +35,3 @@ export const RATING_CHOICES: { value: string; label: string }[] = [
   { value: 'R', label: 'R · 17+' },
   { value: 'TV-MA', label: 'TV-MA · mature' },
 ];
-
-/** Signal to refresh profile-dependent UI after a switch or edit. */
-export const PROFILES_CHANGED = 'mm:profiles-changed';

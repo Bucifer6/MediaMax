@@ -1,5 +1,5 @@
 /** Media requests (Discover): status chips, Discover poster cards and the request sheet. */
-import React, { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { ApiError } from '@/api/client';
 import type { DiscoverResult, MediaRequest, RequestOptions, RequestStatus, RequestTvInfo } from '@/api/types';

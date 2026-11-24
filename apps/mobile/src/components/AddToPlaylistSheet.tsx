@@ -1,5 +1,5 @@
 /** Add items to one of the user's playlists, or to a new one. */
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import type { Item } from '@/api/types';
 import { invalidate } from '@/api/useQuery';

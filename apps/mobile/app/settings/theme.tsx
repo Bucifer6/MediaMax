@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import type { Theme } from '@/api/types';
 import { Focusable } from '@/components/Focusable';

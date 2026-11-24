@@ -1,5 +1,4 @@
 import { router } from 'expo-router';
-import React from 'react';
 import { Alert, FlatList, View } from 'react-native';
 import { Button } from '@/components/Button';
 import { Focusable } from '@/components/Focusable';

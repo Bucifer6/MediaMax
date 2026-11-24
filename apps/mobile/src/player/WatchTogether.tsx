@@ -1,5 +1,5 @@
 /** Watch-together UI: room code + members, or start / join a room. */
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { View } from 'react-native';
 import type { SyncPlayRoom } from '@/api/types';
 import { Button } from '@/components/Button';

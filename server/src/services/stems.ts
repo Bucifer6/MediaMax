@@ -187,25 +187,6 @@ export async function extractTar(readable: AsyncIterable<Buffer>, pick: (name: s
   }
 }
 
-/** Minimal 16-bit PCM WAV header. */
-export function wavHeader(dataBytes: number, sampleRate = STEM_RATE, channels = 2): Buffer {
-  const h = Buffer.alloc(44);
-  h.write('RIFF', 0);
-  h.writeUInt32LE(36 + dataBytes, 4);
-  h.write('WAVE', 8);
-  h.write('fmt ', 12);
-  h.writeUInt32LE(16, 16);
-  h.writeUInt16LE(1, 20);
-  h.writeUInt16LE(channels, 22);
-  h.writeUInt32LE(sampleRate, 24);
-  h.writeUInt32LE(sampleRate * channels * 2, 28);
-  h.writeUInt16LE(channels * 2, 32);
-  h.writeUInt16LE(16, 34);
-  h.write('data', 36);
-  h.writeUInt32LE(dataBytes, 40);
-  return h;
-}
-
 /**
  * onnxruntime-web's browser files: MEDIAMAX_ORT_DIR, else the copy downloaded on first use into the data dir
  * (ortRuntime.ts), else an onnxruntime-web package installed by hand (development). Null when none is there yet.

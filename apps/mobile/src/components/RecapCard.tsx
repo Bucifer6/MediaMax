@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { getRecap } from '@/api/ai';
 import type { RecapResponse } from '@/api/types';

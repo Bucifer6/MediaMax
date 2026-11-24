@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import type { Item, Library } from '@/api/types';
 import { useQuery } from '@/api/useQuery';

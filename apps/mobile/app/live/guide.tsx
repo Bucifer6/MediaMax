@@ -9,7 +9,7 @@
  * both axes to keep the focused programme on screen.
  */
 import { useLocalSearchParams } from 'expo-router';
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, FlatList, View, type LayoutChangeEvent } from 'react-native';
 import type { Channel, Program } from '@/api/types';
 import { Chip } from '@/components/Chip';

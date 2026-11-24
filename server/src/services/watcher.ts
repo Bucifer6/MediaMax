@@ -97,11 +97,3 @@ export function watchInfo(libId: string): StorageLibraryInfo['watch'] {
   const w = watched.get(libId);
   return w ? { mode: w.mode, directories: w.directories, error: w.error } : { mode: getStorageSettings().watchMode, directories: 0, error: null };
 }
-
-export function stopWatchers() {
-  for (const w of watched.values()) w.watchers.forEach((x) => x.close());
-  watched.clear();
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = null;
-  pollEvery = 0;
-}

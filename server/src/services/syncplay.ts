@@ -1,6 +1,6 @@
 import type { ClientEvent, SyncPlayRoom } from '@mediamax/shared';
 import { newId, shortCode } from '../util/ids.js';
-import { events, type WsClient } from './events.js';
+import type { WsClient } from './events.js';
 import { db } from '../db.js';
 
 /** Watch-together rooms. Any member can play/pause/seek; commands are broadcast with a server timestamp. */
@@ -82,6 +82,3 @@ export function handleSyncPlay(c: WsClient, ev: ClientEvent) {
     }
   }
 }
-
-export const listRooms = () => [...rooms.values()];
-void events;
