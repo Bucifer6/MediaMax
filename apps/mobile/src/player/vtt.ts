@@ -38,7 +38,24 @@ export function parseVtt(src: string): Cue[] {
   return cues.sort((x, y) => x.start - y.start);
 }
 
-/** Active cues at `ms`: binary-search the last cue starting before `ms`, then scan back a little for overlaps. */
+/** Per cue list: prefixEnd[i] = the latest end among cues[0..i] (non-decreasing). */
+const prefixEnds = new WeakMap<Cue[], Float64Array>();
+function prefixEnd(cues: Cue[]): Float64Array {
+  let p = prefixEnds.get(cues);
+  if (!p || p.length !== cues.length) {
+    p = new Float64Array(cues.length);
+    let max = -Infinity;
+    for (let i = 0; i < cues.length; i++) p[i] = max = Math.max(max, cues[i].end);
+    prefixEnds.set(cues, p);
+  }
+  return p;
+}
+
+/**
+ * Active cues at `ms` (cues sorted by start): binary-search the last cue starting at or before `ms`, then walk back
+ * while some earlier cue still ends after `ms` (prefix maximum of end times), so a long cue stays on screen however
+ * many shorter cues start after it.
+ */
 export function activeCues(cues: Cue[], ms: number): Cue[] {
   let lo = 0;
   let hi = cues.length - 1;
@@ -51,7 +68,9 @@ export function activeCues(cues: Cue[], ms: number): Cue[] {
     } else hi = mid - 1;
   }
   const out: Cue[] = [];
-  for (let i = last; i >= 0 && i > last - 20; i--) {
+  if (last < 0) return out;
+  const ends = prefixEnd(cues);
+  for (let i = last; i >= 0 && ends[i] > ms; i--) {
     if (cues[i].end > ms) out.unshift(cues[i]);
   }
   return out;

@@ -98,7 +98,15 @@ export async function autoDecompress(src: Readable): Promise<Readable> {
     xz.on('error', () => out.destroy(new Error('This guide is .xz compressed and the xz tool is not installed')));
     xz.on('close', (code) => code && out.destroy(new Error(`xz failed (exit ${code})`)));
     xz.stdin.on('error', () => undefined);
-    rest.on('error', (e) => out.destroy(e));
+    // A download that fails mid-way (or a reader that gives up) never ends xz's stdin: stop xz rather than leave it waiting.
+    rest.on('error', (e) => {
+      xz.kill();
+      out.destroy(e);
+    });
+    out.on('close', () => {
+      if (xz.exitCode === null && xz.signalCode === null) xz.kill();
+      rest.destroy();
+    });
     rest.pipe(xz.stdin);
     xz.stdout.pipe(out);
     return out;

@@ -190,7 +190,7 @@ inside Caddy does, because it checks the client address.
 
 What they do: `proxy_buffering off` and `proxy_request_buffering off`, 1-hour idle timeouts for streams and a
 day for the WebSocket, WebSocket upgrade, `client_max_body_size 64m` (4 GB for the backup restore upload),
-rate limits on sign-in (`/api/v1/auth/login`, `profile-login`, `link/approve`, `me/2fa/*`: 10 per minute per
+rate limits on sign-in (`/api/v1/auth/login`, `profile-login`, `profiles/:id/switch`, `link/approve`, `me/2fa/*`: 10 per minute per
 address with bursts of 10; the rest of `/api/v1/auth/`: 5 per second, bursts of 40), answer 429 when exceeded,
 the same "fill in, never override" security headers as Caddy, `X-Forwarded-For` set to the client address (not
 appended, so it can't be spoofed), and an access log in the combined format with secrets redacted.
@@ -452,7 +452,7 @@ sudo systemctl restart fail2ban && sudo fail2ban-client status mediamax
 
 Start fail2ban after Docker (the `DOCKER-USER` chain must exist): `systemctl edit fail2ban` and add
 `After=docker.service`. With the Windows or Linux builds of Kinora (no Docker), remove the `DOCKER-USER`
-action line and use `/var/lib/mediamax/logs/security.log` (or wherever your data folder is).
+action line and use `/var/lib/kinora/logs/security.log` (or wherever your data folder is).
 
 ## Unbanning an address
 

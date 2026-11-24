@@ -534,14 +534,22 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       return;
     }
     let alive = true;
+    // An error reply (404, 401, a failed conversion…) is not a subtitle file: never parse its body as VTT.
     fetch(api.withAuthQuery(sub.track.url), { headers: api.headers(false) })
-      .then((r) => r.text())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.text();
+      })
       .then((txt) => alive && setCues(parseVtt(txt)))
-      .catch(() => alive && setCues([]));
+      .catch(() => {
+        if (!alive) return;
+        setCues([]);
+        flash('Subtitles could not be loaded');
+      });
     return () => {
       alive = false;
     };
-  }, [sub, api, player]);
+  }, [sub, api, player, flash]);
 
   // Live: channel details + zapping list.
   useEffect(() => {

@@ -4,7 +4,8 @@ import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { DjFeedback, DjHostRequest, DjMixRequest, DjStatus, DjTransitionPreference } from '@mediamax/shared';
 import { db } from '../db.js';
-import { requireAdmin, requireUser } from '../http.js';
+import { remoteAddr, requireAdmin, requireUser } from '../http.js';
+import { assertRemoteAllowed } from '../services/playback.js';
 import { assertCanSee } from '../services/items.js';
 import { analyseTrack, analysisOutdated, analysisStatus, getAnalysis, upgradeLazily } from '../services/dj/analysis.js';
 import { buildMix, planTransition } from '../services/dj/mix.js';
@@ -114,6 +115,8 @@ export default async function djRoutes(app: FastifyInstance) {
    */
   app.get<{ Querystring: { from?: string; to?: string; transitions?: string; maxStretchPct?: string } }>('/dj/transition-preview', async (req, reply) => {
     const { user } = requireUser(req);
+    // Rendered audio of library tracks: media bytes, so "home network only" accounts get none remotely.
+    assertRemoteAllowed(user, remoteAddr(req));
     const { from, to } = req.query;
     if (!from || !to) throw badRequest('from and to are required');
     const file = (id: string) => {

@@ -292,7 +292,7 @@ export function ActionBar({
   );
 }
 
-export function CastRow({ people }: { people: Person[] }) {
+export function CastRow({ people }: { people: Person[] | undefined }) {
   const t = useTheme();
   if (!people?.length) return null;
   const size = t.isTV ? t.s(96) : 72;

@@ -571,6 +571,9 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     loadedId.current = null;
     setQueue(list);
     setIndex(start);
+    // Replaying the same track at the same index (e.g. after the queue ended) leaves `current` unchanged, so the load
+    // effect would not run: force it.
+    setReloadTick((n) => n + 1);
   }, []);
 
   const value = useMemo<MusicValue>(

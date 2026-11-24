@@ -173,7 +173,8 @@ export function rowToItem(r: Row): Item {
     durationMs: r.duration_ms ?? null,
     genres: parseJson<string[]>(r.genres, []),
     studios: parseJson<string[]>(r.studios, []),
-    people: parseJson<Person[]>(r.people, []),
+    // Cast & crew is detail-only (getItem): lists (Home rows, library pages, search…) left it at a third of their payload
+    // and no list view shows it.
     posterUrl: imageUrl(poster),
     backdropUrl: imageUrl(backdrop),
     logoUrl: imageUrl(r.logo ?? r.p_logo ?? r.g_logo ?? null),
@@ -378,6 +379,7 @@ export function getItem(user: User, id: string, withMedia = true): Item {
   const items = selectItems(user, 'i.id = ?', [id]);
   if (!items.length) throw notFound('Item not found');
   const item = items[0];
+  item.people = parseJson<Person[]>(db.get<{ people: string | null }>('SELECT people FROM items WHERE id = ?', id)?.people, []);
   if (item.type === 'track') withCredits([item]);
   if (item.smart && smartHooks.evaluate) item.childCount = smartHooks.evaluate(user, item.smart, 1, 0).total;
   if (withMedia) {
@@ -413,7 +415,8 @@ export function getChildren(user: User, id: string, q: { sort?: ItemSort; order?
     const rows = db.all(
       `${SELECT()} JOIN collection_items ci ON ci.item_id = i.id AND ci.collection_id = ? WHERE ${a.sql} ORDER BY ci.sort, i.sort_title LIMIT ? OFFSET ?`,
       ...userParams(user), id, ...a.params, limit, offset);
-    const total = db.get<{ n: number }>('SELECT COUNT(*) n FROM collection_items WHERE collection_id = ?', id)!.n;
+    // Count only what the viewer may see: a raw COUNT(*) told them how many hidden titles the collection holds.
+    const total = db.get<{ n: number }>(`SELECT COUNT(*) n FROM collection_items ci JOIN items i ON i.id = ci.item_id WHERE ci.collection_id = ? AND ${a.sql}`, id, ...a.params)!.n;
     return { items: withCredits(rows.map(rowToItem)), total, limit, offset };
   }
   const res = queryItems(user, { parentId: id, sort: q.sort ?? 'index', order: q.order, limit, offset, type: undefined });

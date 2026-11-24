@@ -112,7 +112,8 @@ export default async function authRoutes(app: FastifyInstance) {
     noCache(reply);
     return requireUser(req).user;
   });
-  app.patch<{ Body: UpdateMeRequest }>('/auth/me', async (req) => {
+  // Small bodies only (preferences are capped at auth.MAX_PREFERENCES_BYTES): not the server-wide upload limit.
+  app.patch<{ Body: UpdateMeRequest }>('/auth/me', { bodyLimit: 4 * auth.MAX_PREFERENCES_BYTES }, async (req) => {
     const ctx = requireUser(req);
     // Changing sign-in secrets needs a signed-in device; an API key can still edit the profile's name, avatar, etc.
     if (ctx.deviceRowId.startsWith('apikey:') && (req.body?.password !== undefined || req.body?.pin !== undefined)) requireDeviceSession(req);

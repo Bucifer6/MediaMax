@@ -632,7 +632,11 @@ export interface Item {
   durationMs: number | null;
   genres: string[];
   studios: string[];
-  people: Person[];
+  /**
+   * Cast & crew. Only on full detail responses (GET /items/:id and other single-item replies); list responses (Home
+   * rows, library pages, children, search, watchlist…) leave it out to keep them small.
+   */
+  people?: Person[];
   posterUrl: string | null;
   backdropUrl: string | null;
   logoUrl: string | null;

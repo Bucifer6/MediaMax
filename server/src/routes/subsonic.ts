@@ -144,13 +144,15 @@ async function authenticate(req: FastifyRequest): Promise<User> {
   const secret = p;
   const row = await pending.run(key, () => pending.run(ipKey(req), async () => {
     const row = db.get('SELECT * FROM users WHERE username = ? AND disabled = 0', u);
-    if (!row || !row.password_hash || !(await verifyCached(row.id, secret, row.password_hash)) || row.totp_enabled) {
+    const passwordOk = !!row?.password_hash && (await verifyCached(row.id, secret, row.password_hash));
+    if (!passwordOk || row!.totp_enabled) {
       const cur = failures.get(key);
       if (!cur || cur.until < Date.now()) sweepExpired(failures);
       failures.set(key, !cur || cur.until < Date.now() ? { n: 1, until: Date.now() + 15 * 60000 } : { ...cur, n: cur.n + 1 });
       recordIpFailure(req);
       securityEvent('AUTH_FAIL', req.ip, { user: u, reason: 'subsonic' });
-      throw new SubsonicError(40, row?.totp_enabled ? 'This account uses two-factor sign-in; create an API key and use the apiKey parameter' : 'Wrong username or password');
+      // Two-factor status is only revealed to someone who already knows the password.
+      throw new SubsonicError(40, passwordOk ? 'This account uses two-factor sign-in; create an API key and use the apiKey parameter' : 'Wrong username or password');
     }
     return row;
   }));

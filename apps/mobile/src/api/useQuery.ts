@@ -40,22 +40,28 @@ export function useQuery<T>(
   const fnRef = useRef(fn);
   fnRef.current = fn;
   const stale = opts.staleMs ?? 30000;
+  // Every fetch takes a generation; only the latest one may write state. A pull-to-refresh that resolves after the
+  // key changed (or after a newer fetch started) must not put old data into the new view.
+  const genRef = useRef(0);
+  const refreshCtrlRef = useRef<AbortController | null>(null);
 
   const run = useCallback(
     async (signal: AbortSignal, isRefresh: boolean) => {
       if (!fullKey || !api) return;
+      const gen = ++genRef.current;
+      const current = () => !signal.aborted && gen === genRef.current;
       if (isRefresh) setRefreshing(true);
       try {
         const result = await fnRef.current(api, signal);
-        if (signal.aborted) return;
+        if (!current()) return;
         cache.set(fullKey, { data: result, at: Date.now() });
         setDataState(result);
         setError(null);
       } catch (e) {
-        if (signal.aborted) return;
+        if (!current()) return;
         setError(e instanceof Error ? e : new Error(String(e)));
       } finally {
-        if (!signal.aborted) {
+        if (current()) {
           setLoading(false);
           setRefreshing(false);
         }
@@ -65,6 +71,11 @@ export function useQuery<T>(
   );
 
   useEffect(() => {
+    // A new key (or unmount) supersedes whatever was in flight, refreshes included.
+    genRef.current++;
+    refreshCtrlRef.current?.abort();
+    refreshCtrlRef.current = null;
+    setRefreshing(false);
     if (!fullKey) {
       setLoading(false);
       return;
@@ -78,8 +89,11 @@ export function useQuery<T>(
   }, [fullKey, run, stale]);
 
   const refresh = useCallback(async () => {
+    refreshCtrlRef.current?.abort();
     const ctrl = new AbortController();
+    refreshCtrlRef.current = ctrl;
     await run(ctrl.signal, true);
+    if (refreshCtrlRef.current === ctrl) refreshCtrlRef.current = null;
   }, [run]);
 
   const setData = useCallback(

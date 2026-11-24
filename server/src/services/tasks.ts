@@ -8,12 +8,14 @@ import { getKv, setKv, getSettings } from './settings.js';
 import { events } from './events.js';
 import { logger } from '../util/log.js';
 import { notFound } from '../util/errors.js';
+import { parseJson } from '../util/misc.js';
+import { sidecarStamp } from './subtitles.js';
 import { checkThemeSchedule } from './branding.js';
 import { recalculateDateAdded, scanLibrary } from './scanner.js';
-import { refreshDueSources, refreshSource, pruneOldPrograms } from './livetv/livetv.js';
+import { refreshDueSources, refreshSource, pruneOldPrograms, liveJobIds } from './livetv/livetv.js';
 import { pruneActivity } from './activity.js';
 import { pruneImageCache, registerImage } from './images.js';
-import { reapSessions, listSessions } from './playback.js';
+import { reapSessions, transcodeDirInUse } from './playback.js';
 import { tick as dvrTick, applyRules } from './dvr.js';
 import { detectAll } from './introdetect.js';
 import { enrichLibrary } from './metadata/index.js';
@@ -257,28 +259,51 @@ const DEFS: TaskDef[] = [
       pruneOrphanStems((id) => !!db.get('SELECT 1 FROM items WHERE id = ?', id));
       pruneSubtitleCache();
       pruneRecaps();
-      const active = new Set(listSessions().map((s) => s.id));
-      for (const d of fs.readdirSync(config.transcodeDir)) {
-        const p = path.join(config.transcodeDir, d);
-        try {
-          if (Date.now() - fs.statSync(p).mtimeMs > 6 * 3600000 && !active.has(d)) fs.rmSync(p, { recursive: true, force: true });
-        } catch {
-          /* ignore */
-        }
-      }
+      sweepTranscodeDir();
       db.exec('PRAGMA optimize');
     },
   },
 ];
 
+/** Transcode directories (named by job id) untouched for 6 hours whose job is no longer running. */
+export function sweepTranscodeDir(dir = config.transcodeDir, maxAgeMs = 6 * 3600000): number {
+  const inUse = transcodeDirInUse();
+  const live = new Set(liveJobIds());
+  let n = 0;
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return 0;
+  }
+  for (const d of names) {
+    const p = path.join(dir, d);
+    try {
+      if (Date.now() - fs.statSync(p).mtimeMs > maxAgeMs && !inUse(d) && !live.has(d)) {
+        fs.rmSync(p, { recursive: true, force: true });
+        n++;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return n;
+}
+
 /**
- * Converted subtitles (cache/subs/<mediaId>_<index>_<mtime>.<ext>) and extracted fonts (cache/subfonts/<mediaId>_<mtime>)
+ * Converted subtitles (cache/subs/<mediaId>_<index>_<mtime>[.s<sidecar mtime>x<size>].<ext>) and extracted fonts (cache/subfonts/<mediaId>_<mtime>)
  * of media that is gone or has changed since (a new mtime gets a new cache entry, the old one is never read again).
  */
 export function pruneSubtitleCache(cacheDir = config.cacheDir): number {
   const mtimeOf = (id: string) => db.get<{ mtime: number | null }>('SELECT mtime FROM media WHERE id = ?', id);
   let n = 0;
-  for (const [sub, re] of [['subs', /^(.+)_\d+_(-?\d+)\.[\w.]+$/], ['subfonts', /^(.+)_(-?\d+)$/]] as const) {
+  // A converted sidecar (<mtime>.s<sidecar mtime>x<size>) also goes once the sidecar itself has changed.
+  const sidecarChanged = (id: string, index: string, stamp: string) => {
+    const subs = parseJson<{ index: number; external?: boolean; path?: string }[]>(db.get<{ subs: string | null }>('SELECT subs FROM media WHERE id = ?', id)?.subs, []);
+    const s = subs.find((x) => x.index === Number(index));
+    return !s || sidecarStamp(s) !== stamp;
+  };
+  for (const [sub, re] of [['subs', /^(.+)_(\d+)_(-?\d+)(\.s\d+x\d+)?\.[\w.]+$/], ['subfonts', /^(.+)_()(-?\d+)()$/]] as const) {
     const dir = path.join(cacheDir, sub);
     let names: string[] = [];
     try {
@@ -290,7 +315,7 @@ export function pruneSubtitleCache(cacheDir = config.cacheDir): number {
       const m = re.exec(name);
       if (!m) continue;
       const row = mtimeOf(m[1]);
-      if (row && String(row.mtime ?? 0) === m[2]) continue;
+      if (row && String(row.mtime ?? 0) === m[3] && !(m[4] && sidecarChanged(m[1], m[2], m[4]))) continue;
       fs.rmSync(path.join(dir, name), { recursive: true, force: true });
       n++;
     }

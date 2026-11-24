@@ -109,6 +109,30 @@ function mediaRow(mediaId: string): MediaRowLite {
   return m;
 }
 
+/**
+ * Cache-name stamp of a sidecar's own version (".s<mtime>x<size>", empty for embedded tracks or a missing file): the
+ * converted copies are keyed by the media file's mtime, which doesn't change when a sidecar .srt is replaced.
+ */
+/**
+ * Cache file name for a media row's subtitle: built from the database row's own id (never the request's value) and
+ * checked to be a plain id, so it can't reach outside the cache directory.
+ */
+export function subtitleCacheName(mediaRowId: unknown, index: number, mtime: unknown, stamp: string, ext: string): string {
+  const id = String(mediaRowId);
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || !Number.isInteger(index)) throw badRequest('Invalid subtitle reference');
+  return `${id}_${index}_${Number(mtime) || 0}${stamp}.${ext}`;
+}
+
+export function sidecarStamp(s: { external?: boolean; path?: string }): string {
+  if (!s.external || !s.path) return '';
+  try {
+    const st = fs.statSync(s.path);
+    return `.s${Math.floor(st.mtimeMs)}x${st.size}`;
+  } catch {
+    return '';
+  }
+}
+
 function findSub(m: MediaRowLite, index: number): StoredSub {
   const s = parseJson<StoredSub[]>(m.subs, []).find((x) => x.index === index);
   if (!s) throw notFound('Subtitle not found');
@@ -150,7 +174,8 @@ export function extractArgs(input: string, streamIndex: number | null, ext: RawE
 
 /**
  * Extract (or reuse) one subtitle track as `ext`. Returns immediately; `done` resolves with the final file.
- * Concurrent requests for the same track share one ffmpeg run, and finished files are cached by media mtime.
+ * Concurrent requests for the same track share one ffmpeg run, and finished files are cached by media mtime (and a
+ * sidecar's own mtime and size).
  */
 export function extractSubtitle(mediaId: string, index: number, ext: RawExt): Extraction {
   const m = mediaRow(mediaId);
@@ -161,7 +186,7 @@ export function extractSubtitle(mediaId: string, index: number, ext: RawExt): Ex
   }
   const dir = cacheDir();
   fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `${mediaId}_${index}_${m.mtime ?? 0}.${ext}`);
+  const file = path.join(dir, subtitleCacheName(m.id, index, m.mtime, sidecarStamp(s), ext));
   const existing = extractions.get(file);
   if (existing && !existing.failed) return existing;
   // A sidecar already in the wanted format is served as is.
@@ -200,7 +225,13 @@ export function extractSubtitle(mediaId: string, index: number, ext: RawExt): Ex
     });
     proc.on('exit', (code) => {
       if (code === 0 && fs.existsSync(part)) {
-        fs.renameSync(part, file);
+        try {
+          fs.renameSync(part, file);
+        } catch (e) {
+          ex.failed = (e as Error).message;
+          fs.rmSync(part, { force: true });
+          return reject(e);
+        }
         ex.part = file;
         ex.complete = true;
         ex.progress = 1;

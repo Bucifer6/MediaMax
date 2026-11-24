@@ -18,8 +18,7 @@ import { imageUrl } from './images.js';
 import { logActivity } from './activity.js';
 import { getBranding } from './branding.js';
 import { avatarColor, builtinAvatarUrl, isBuiltinAvatar } from './avatars.js';
-import { getUser, getUserRow, hashUserSecrets, issueToken, profileSettings, qualifiedName, toUser, verifySecret, type AuthContext } from './auth.js';
-import { Pending, sweepExpired, type Failure } from '../util/lockout.js';
+import { getUser, getUserRow, hashUserSecrets, issueToken, profileSettings, qualifiedName, signInLockout, _resetSignInLockouts, toUser, verifySecret, type AuthContext } from './auth.js';
 import { capPermissions, NO_REQUEST_PERMISSIONS, normalizePermissions, normalizeQuotas, defaultQuotas, ownerPermissions } from './requestPerms.js';
 import { allowedLibraryIds } from './items.js';
 
@@ -248,7 +247,7 @@ export async function updateProfile(actor: User, profileId: string, req: UpdateP
   }
   if (req.isKids === false && row.profile_kids) patch.allow_dvr = true;
   db.update('users', profileId, patch);
-  if (patch.pin_hash !== undefined) clearFailures(`p:${profileId}`);
+  if (patch.pin_hash !== undefined) signInLockout.clear(signInLockout.pinKey(profileId));
   return toProfile(getUserRow(profileId), owner);
 }
 
@@ -269,28 +268,15 @@ export function assertProfileManaged(actor: User, profileId: string) {
 
 /* ------------------------------ switching ------------------------------ */
 
-/* Same lockout as the PIN sign-in: 5 wrong PINs → 15 minutes, per target profile. */
-const failures = new Map<string, Failure>();
-/** PIN checks still running count as failures until they finish (the hash compare runs off-thread). */
-const pending = new Pending();
-function assertNotLocked(key: string, ip?: string) {
-  const f = failures.get(key);
-  const live = f && f.until > Date.now() ? f.n : 0;
-  if (live + pending.count(key) >= 5) {
-    securityEvent('AUTH_LOCKED', ip, { account: key });
-    throw new HttpError(429, `Too many wrong PINs. Try again in ${Math.ceil(((live ? f!.until : Date.now() + 15 * 60000) - Date.now()) / 60000)} minute(s).`, 'pin_locked');
-  }
-}
-function recordFailure(key: string) {
-  const f = failures.get(key);
-  if (!f || f.until < Date.now()) {
-    sweepExpired(failures);
-    failures.set(key, { n: 1, until: Date.now() + 15 * 60000 });
-  } else f.n++;
-}
-const clearFailures = (key: string) => failures.delete(key);
-/** Tests only. */
-export const _resetProfileLockouts = () => failures.clear();
+/*
+ * The PIN sign-in's lockout (auth.ts), shared: 5 wrong PINs → 15 minutes per target, counted together with wrong PINs
+ * entered on the sign-in screen, so the two entry points don't each get their own guessing budget.
+ */
+const { pending, recordFailure, clear: clearFailures } = signInLockout;
+const pinLocked = (minutes: number) => new HttpError(429, `Too many wrong PINs. Try again in ${minutes} minute(s).`, 'pin_locked');
+const assertNotLocked = (key: string, ip?: string) => signInLockout.assertNotLocked(key, ip, pinLocked);
+/** Tests only (clears the shared sign-in lockouts). */
+export const _resetProfileLockouts = _resetSignInLockouts;
 
 /**
  * Switch the current device to another profile of the same account. Works from the owner's session and from any
@@ -304,7 +290,7 @@ export async function switchProfile(ctx: AuthContext, targetId: string, pin: str
   if (!target || (target.id !== owner.id && target.parent_user_id !== owner.id)) throw notFound('Profile not found');
   if (target.disabled || owner.disabled) throw forbidden('This profile is disabled');
   if (target.parent_user_id && !profileSettings().enabled) throw forbidden('Profiles are turned off on this server');
-  const key = `p:${target.id}`;
+  const key = signInLockout.pinKey(target.id);
   if (target.pin_hash && target.id !== ctx.user.id) {
     assertNotLocked(key, remoteAddr);
     // No PIN sent: the client is asking whether one is needed; that is not a failed attempt.

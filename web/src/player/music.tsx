@@ -525,7 +525,15 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const next = useCallback(() => {
     out?.prime(wantGraph());
     const n = nextIndexOf();
-    if (n >= 0) setIndex(n);
+    const { queue: q, index: i } = stateRef.current;
+    if (n >= 0 && n === i && q[n]) {
+      // One-track queue on repeat "all": the index doesn't change, so the load effect wouldn't run. Restart it here.
+      if (castingRef.current) void castTrackRef.current(q[n]!, 0).catch(() => undefined);
+      else {
+        seekRef.current(0);
+        void liveEl()?.play().catch(() => setPlaying(false));
+      }
+    } else if (n >= 0) setIndex(n);
     else {
       cancelHandover();
       liveEl()?.pause();

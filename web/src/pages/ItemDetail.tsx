@@ -100,7 +100,7 @@ function MediaInfo({ media }: { media: MediaSource[] }) {
 
 function CastRow({ item }: { item: Item }) {
   const navigate = useNavigate();
-  if (!item.people.length) return null;
+  if (!item.people?.length) return null;
   return (
     <Row title="Cast & crew" className="row-cast">
       {item.people.slice(0, 40).map((p, i) => (
@@ -577,12 +577,13 @@ export function ItemPage() {
   else if ((item.type === 'album' || item.type === 'track') && item.parentId) crumbs.push({ label: item.parentTitle ?? 'Artist', to: `/item/${item.parentId}` });
   else if ((item.type === 'bookpart' || item.type === 'podcastepisode') && item.parentId) crumbs.push({ label: item.parentTitle ?? (item.type === 'bookpart' ? 'Audiobook' : 'Podcast'), to: `/item/${item.parentId}` });
 
-  const directors = item.people.filter((p) => p.kind === 'director').map((p) => p.name);
-  const writers = item.people.filter((p) => p.kind === 'writer' && !/^(author|narrator)$/i.test(p.role ?? '')).map((p) => p.name);
+  const people = item.people ?? [];
+  const directors = people.filter((p) => p.kind === 'director').map((p) => p.name);
+  const writers = people.filter((p) => p.kind === 'writer' && !/^(author|narrator)$/i.test(p.role ?? '')).map((p) => p.name);
   const authors = item.type === 'audiobook' || item.type === 'bookpart'
-    ? Array.from(new Set([...item.people.filter((p) => /^author$/i.test(p.role ?? '')).map((p) => p.name), ...(item.people.some((p) => /^author$/i.test(p.role ?? '')) || !item.parentTitle || item.type === 'bookpart' ? [] : [item.parentTitle])]))
+    ? Array.from(new Set([...people.filter((p) => /^author$/i.test(p.role ?? '')).map((p) => p.name), ...(people.some((p) => /^author$/i.test(p.role ?? '')) || !item.parentTitle || item.type === 'bookpart' ? [] : [item.parentTitle])]))
     : [];
-  const narrators = item.people.filter((p) => /^narrator$/i.test(p.role ?? '')).map((p) => p.name);
+  const narrators = people.filter((p) => /^narrator$/i.test(p.role ?? '')).map((p) => p.name);
 
   return (
     <div className={`detail detail-${item.type} ${preview ? 'from-card' : ''}`}>
