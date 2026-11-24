@@ -242,7 +242,8 @@ export async function planBreak(ctx: PlanContext): Promise<Plan | null> {
   if (req.mode === 'yourdj') {
     const c = yourDjCommentary(user);
     if (c === 'off') return null;
-    cats = { ...radioHostPrefs(user).categories, weather: radioHostPrefs(user).categories.weather };
+    // Your DJ talks with the listener's Radio Host topic choices (all on by default).
+    cats = radioHostPrefs(user).categories;
     // A new segment: introduce it (both "intros" and "full").
     if (ctx.segmentStart) {
       const seg = ctx.segmentStart;
@@ -318,8 +319,10 @@ export async function planBreak(ctx: PlanContext): Promise<Plan | null> {
   }
 
   // Short break: over the intro if it is long enough, else in the gap / over the outro.
-  const placement: DjBreak['placement'] = intro ? 'over-intro' : prev ? 'over-outro' : 'gap';
-  const maxMs = intro ?? (prev ? 8000 : 10000);
+  // Time and weather go together (one "extra"), and get a little more room in the gap.
+  const clock = extras.filter((x) => x.slot === 'time' || x.slot === 'weather');
+  const placement: DjBreak['placement'] = intro ? 'over-intro' : clock.length ? 'gap' : prev ? 'over-outro' : 'gap';
+  const maxMs = intro ?? (clock.length ? 15000 : prev ? 8000 : 10000);
   const budget = Math.floor((maxMs / 1000) * WORDS_PER_SEC);
   let words = 0;
   const fit = (p: Piece | null) => {
@@ -334,7 +337,7 @@ export async function planBreak(ctx: PlanContext): Promise<Plan | null> {
   else if (front) return null;
   const chosen: Piece[] = [];
   if (back && fit(back)) chosen.push(back);
-  for (const x of extras.slice(0, f.extras)) if (fit(x)) chosen.push(x);
+  for (const x of extras.slice(0, f.extras + (clock.length > 1 ? 1 : 0))) if (fit(x)) chosen.push(x);
   if (front) chosen.push(front);
   if (!chosen.length) return null;
   const kind: DjBreakKind = chosen.length === 1 && front ? 'frontsell' : back && chosen.includes(back) && chosen.length === 2 ? 'link' : back && !front ? 'backsell' : 'link';

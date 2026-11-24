@@ -136,7 +136,10 @@
 
 /* ------------------------------ menu & popover ------------------------------ */
 .dropdown { position: relative; display: inline-flex; }
-.menu { position: absolute; top: calc(100% + 6px); z-index: 900; min-width: 220px; padding: 6px; border-radius: var(--r); background: var(--surface-overlay); border: 1px solid var(--line-strong); box-shadow: var(--shadow-lg); -webkit-backdrop-filter: blur(24px) saturate(1.3); backdrop-filter: blur(24px) saturate(1.3); transform-origin: top right; animation: menuIn var(--dur-enter) var(--ease) both; }
+.menu { position: absolute; top: calc(100% + 6px); z-index: 900; min-width: 220px; padding: 6px; border-radius: var(--r);
+  /* Opaque: the overlay tint on a solid surface, so text behind never shows through (even where the blur can't run:
+     lite mode, nested backdrop roots such as the full-screen player). */
+  background-color: var(--surface-1); background-image: linear-gradient(var(--surface-overlay), var(--surface-overlay)); border: 1px solid var(--line-strong); box-shadow: var(--shadow-lg); -webkit-backdrop-filter: blur(24px) saturate(1.3); backdrop-filter: blur(24px) saturate(1.3); transform-origin: top right; animation: menuIn var(--dur-enter) var(--ease) both; }
 @keyframes menuIn { from { opacity: 0; transform: translateY(-4px) scale(0.98); } to { opacity: 1; transform: none; } }
 .menu-right { right: 0; }
 .menu-left { left: 0; transform-origin: top left; }
@@ -145,9 +148,12 @@
 .menu-item .icon { color: var(--text-2); }
 .menu-item:hover:not(:disabled), .menu-item:focus-visible { background: var(--hover-strong); outline: none; box-shadow: none; }
 .menu-item:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
-.menu-item:disabled { opacity: 1; cursor: default; }
+.menu-item:disabled { opacity: 1; cursor: default; color: var(--text-3); }
+.menu-item:disabled .icon { color: var(--text-3); }
+.menu-item.is-checked { font-weight: 600; }
+.menu-item.is-checked .menu-check .icon { color: var(--accent-ink); }
 .menu-item.danger, .menu-item.danger .icon { color: var(--err); }
-.menu-check { width: 16px; }
+.menu-check { width: 16px; height: 16px; flex: none; display: inline-grid; place-items: center; }
 .menu-divider { height: 1px; background: var(--line); margin: 5px 4px; }
 .menu-label { padding: 8px 10px 4px; font-size: var(--t-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
 /* Generic anchored panel (<Popover>). Player popovers (.popover) are styled in player.css / below. */

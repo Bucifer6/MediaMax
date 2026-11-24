@@ -143,6 +143,7 @@ export default function NowPlaying() {
   /** Phones: what the stage shows instead of the view (queue, chapters, bookmarks). */
   const [phonePanel, setPhonePanel] = useState<Panel | null>(null);
   const wide = useMediaQuery('(min-width: 1000px)');
+  const xwide = useMediaQuery('(min-width: 1800px)');
   const stage = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const tv = isTvMode();
@@ -253,7 +254,10 @@ export default function NowPlaying() {
     setPanels(next);
     savePanels(p === 'dj' && !next.includes('dj') ? [...next, '-dj' as Panel] : next);
   };
-  const sideOpen = wide && !immersive && !tv ? available.filter((p) => panels.includes(p) && !(p === 'lyrics' && view === 'lyrics')) : [];
+  const sideAll = wide && !immersive && !tv ? available.filter((p) => panels.includes(p) && !(p === 'lyrics' && view === 'lyrics')) : [];
+  // Three panels only on very wide screens; otherwise the Your DJ panel takes the lyrics' place.
+  const sideOpen = sideAll.length > 2 && !xwide ? sideAll.filter((p) => p !== 'lyrics') : sideAll;
+  const djStripShown = !!m.yourDj && view === 'cover' && !phonePanel;
   const views = VIEWS.filter((v) => !spoken || v.id === 'cover' || v.id === 'visualizer');
   const phoneTabs: Panel[] = !wide && !tv ? available.filter((p) => p !== 'lyrics') : [];
 
@@ -398,7 +402,7 @@ export default function NowPlaying() {
       </div>
 
       <footer className="np-foot">
-        {!np.screensaver && <HostCaption variant="np" />}
+        {!np.screensaver && !djStripShown && <HostCaption variant="np" />}
         <div className="np-seek-row">
           <span className="np-time">{formatClock(m.positionMs)}</span>
           <SeekBar className="np-seek" positionMs={m.positionMs} durationMs={m.durationMs} onSeek={m.seek} chapters={spoken && m.chapters.length ? m.chapters : null} />
@@ -447,7 +451,7 @@ export default function NowPlaying() {
                     items={SPEEDS.map((r) => ({ label: `${r}×${r === 1 ? ' (normal)' : ''}`, checked: m.rate === r, onClick: () => m.setRate(r) }))}
                   />
                 )}
-                {!spoken && t.type === 'track' && m.yourDj && <DjButton />}
+                {!spoken && t.type === 'track' && m.yourDj && !djStripShown && <DjButton />}
                 {!spoken && t.type === 'track' && <AutomixMenu />}
                 <SleepTimerButton />
                 {t.type === 'track' && view !== 'karaoke' && (

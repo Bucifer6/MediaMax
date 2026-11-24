@@ -1,6 +1,6 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { CreateUserRequest, Library, RequestPermissions, RequestQuotas, User } from '@mediamax/shared';
+import type { CreateUserRequest, DjRules, Library, RequestPermissions, RequestQuotas, User } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
@@ -12,6 +12,8 @@ import { relativeTime } from '../utils/format';
 import { AdminHeader } from './AdminRoutes';
 import { DEFAULT_QUOTAS, DEFAULT_REQUEST_PERMISSIONS, permissionSummary, QuotaEditor, RequestPermissionsEditor } from './RequestPermissionsEditor';
 import { seerrApi } from '../api/seerr';
+import { aiApi } from '../api/ai';
+import { DjRestrictionsEditor } from './AiDjRestrictions';
 import type { Profile, ProfileSettings } from '@mediamax/shared';
 import { profilesApi, RATING_CHOICES } from '../api/profiles';
 import { ProfileAvatar, ProfileEditor } from '../components/ProfileEditor';
@@ -76,6 +78,12 @@ function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged, defa
     showOnSignIn: initial?.showOnSignIn ?? false,
   });
   const [busy, setBusy] = useState(false);
+  // Admin-enforced DJ restrictions (own endpoint; saved with the form).
+  const [djr, setDjr] = useState<DjRules | null>(null);
+  const [djrDirty, setDjrDirty] = useState(false);
+  useEffect(() => {
+    if (initial) aiApi.djRestrictions(initial.id).then(setDjr).catch(() => setDjr({}));
+  }, [initial]);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
   const toggleLib = (id: string) => {
     const cur = f.libraryIds ?? libraries.map((l) => l.id);
@@ -99,6 +107,7 @@ function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged, defa
       if (!body.password) delete body.password;
       if (!body.pin) delete body.pin;
       const u = initial ? await api.users.update(initial.id, body) : await api.users.create(body);
+      if (initial && djr && djrDirty) await aiApi.setDjRestrictions(initial.id, djr);
       toast.success(initial ? 'User updated' : 'User created');
       onSaved(u);
     } catch (e) {
@@ -183,6 +192,7 @@ function UserForm({ initial, libraries, onSaved, onCancel, onAvatarChanged, defa
           <Switch checked={!!f.showOnSignIn} onChange={(v) => set('showOnSignIn', v)} label="Show on sign-in screen" hint="List this user on the “Who’s watching?” picker before anyone signs in (home network only by default, see Server settings). Off: they type their username." />
           {initial && <Switch checked={!!f.disabled} onChange={(v) => set('disabled', v)} label="Disabled" hint="Blocks sign-in and revokes access." disabled={isSelf} />}
         </div>
+        {initial && djr && <DjRestrictionsEditor value={djr} onChange={(r) => { setDjr(r); setDjrDirty(true); }} />}
         <RequestAccessSection perms={f.requestPermissions} onPerms={(p) => set('requestPermissions', p)} quotas={f.requestQuotas} onQuotas={(q) => set('requestQuotas', q)} defaults={defaults?.quotas ?? null} isAdmin={!!f.isAdmin} />
       </div>
       <div className="modal-foot inline">

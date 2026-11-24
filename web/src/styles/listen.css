@@ -13,7 +13,7 @@
   --surface-1: #17161d;
   --surface-2: #201f28;
   --surface-3: #2a2933;
-  --surface-overlay: rgb(28 27 35 / 0.94);
+  --surface-overlay: rgb(28 27 35 / 0.97);
   --accent-ink: color-mix(in srgb, var(--accent) 62%, #fff);
   --np-pad: clamp(16px, 3vw, 40px);
   position: fixed;

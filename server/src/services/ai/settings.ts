@@ -134,6 +134,7 @@ function normaliseLocation(v: unknown): AiWeatherLocation | null {
   const lat = Number(x.lat);
   const lon = Number(x.lon);
   if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  if (lat === 0 && lon === 0) return null; // a name typed without coordinates yet
   // Two decimals (~1 km) is plenty for weather and keeps the exact address off the wire.
   return { name: str(x.name, 80) ?? 'Here', lat: Math.round(lat * 100) / 100, lon: Math.round(lon * 100) / 100 };
 }

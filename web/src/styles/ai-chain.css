@@ -1,0 +1,27 @@
+/* Admin → AI: provider chains (language models, voices), health dots, fallback log, DJ restrictions. */
+.ai-chain { display: flex; flex-direction: column; gap: 10px; }
+.ai-chain-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ai-chain-item { border: 1px solid var(--c-line); border-radius: 10px; background: var(--c-surface-alt, var(--c-surface)); padding: 6px 10px; }
+.ai-chain-item.off { opacity: 0.65; }
+.ai-chain-item.dragging { outline: 2px dashed var(--c-primary); }
+.ai-chain-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ai-chain-row .switch-row { flex: none; margin: 0; }
+.ai-chain-grip { cursor: grab; color: var(--c-muted, inherit); display: inline-flex; }
+.ai-chain-pos { flex: none; width: 1.4em; text-align: center; font-weight: 700; color: var(--c-muted, inherit); }
+.ai-chain-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; background: none; border: 0; padding: 6px 0; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ai-chain-name .muted { overflow: hidden; text-overflow: ellipsis; }
+.ai-chain-stats { flex: none; font-size: 0.8rem; }
+.ai-chain-error { margin: 2px 0 4px 3.2em; font-size: 0.82rem; color: var(--c-danger, #f87171); overflow-wrap: anywhere; }
+.ai-chain-body { padding: 8px 0 6px; border-top: 1px solid var(--c-line); margin-top: 4px; }
+.ai-chain-keyrm { display: flex; align-items: flex-end; padding-bottom: 4px; }
+.ai-chain-add { display: flex; flex-direction: column; gap: 8px; }
+.ai-chain-add h4 { margin: 4px 0; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--c-muted, inherit); }
+.ai-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #6b7280; }
+.ai-dot-ok { background: #22c55e; }
+.ai-dot-cooling { background: #f59e0b; }
+.ai-dot-error { background: #ef4444; }
+.ai-fallback-log td { vertical-align: top; font-size: 0.85rem; }
+.dj-restrictions { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--c-line); padding-top: 10px; }
+@media (max-width: 640px) {
+  .ai-chain-stats { display: none; }
+}

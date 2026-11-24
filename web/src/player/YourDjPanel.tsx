@@ -12,12 +12,13 @@ import { useApp } from '../state/app';
 import { Icon } from '../components/Icon';
 import { Segmented, Spinner } from '../components/ui';
 import { openPlayRules, useDjPrefsSave, useRulePresets } from '../components/PlayRules';
+import { VoiceBars } from './HostCaptions';
 import '../styles/yourdj.css';
 
 /** The Your DJ mark: a disc with a spark, in a ring that carries the brand gradient. */
 export function DjMark({ size = 26 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true" className="dj-mark">
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true" className="yd-mark">
       <circle cx="16" cy="16" r="11.5" stroke="currentColor" strokeWidth="2.2" opacity="0.9" />
       <circle cx="16" cy="16" r="3.2" fill="currentColor" />
       <path d="M24.5 3.5l1.1 2.6 2.6 1.1-2.6 1.1-1.1 2.6-1.1-2.6-2.6-1.1 2.6-1.1z" fill="currentColor" />
@@ -32,15 +33,15 @@ export function DjButton({ size = 'md', withLabel = false }: { size?: 'md' | 'lg
   return (
     <button
       type="button"
-      className={`dj-button dj-button-${size} ${busy ? 'busy' : ''} ${withLabel ? 'with-label' : ''}`}
+      className={`yd-button yd-button-${size} ${busy ? 'busy' : ''} ${withLabel ? 'with-label' : ''}`}
       onClick={() => void m.djSwitch()}
       disabled={!m.yourDj || busy}
       aria-label="Switch it up: Your DJ plays something different"
       title="Switch it up"
     >
-      <span className="dj-ring" aria-hidden="true" />
-      <span className="dj-core">{busy ? <Spinner size={size === 'lg' ? 22 : 18} /> : <DjMark size={size === 'lg' ? 28 : 22} />}</span>
-      {withLabel && <span className="dj-button-label">Switch it up</span>}
+      <span className="yd-ring" aria-hidden="true" />
+      <span className="yd-core">{busy ? <Spinner size={size === 'lg' ? 22 : 18} /> : <DjMark size={size === 'lg' ? 28 : 22} />}</span>
+      {withLabel && <span className="yd-button-label">Switch it up</span>}
     </button>
   );
 }
@@ -61,15 +62,22 @@ export function YourDjStrip() {
   const t = m.current;
   const isLoved = !!t && (loved === t.id || !!t.userData?.favorite);
   return (
-    <section className="dj-strip" aria-label="Your DJ">
-      <div className="dj-strip-text">
-        <span className="dj-eyebrow"><DjMark size={14} /> Your DJ · {segmentKindLabel(seg.kind)}</span>
-        <h2 className="dj-segment">{seg.title}</h2>
-        {reason && <p className="dj-reason">{reason}</p>}
+    <section className="yd-strip" aria-label="Your DJ">
+      <div className="yd-strip-text">
+        <span className="yd-eyebrow"><DjMark size={14} /> Your DJ · {segmentKindLabel(seg.kind)}</span>
+        <h2 className="yd-segment">{seg.title}</h2>
+        {m.host.caption ? (
+          // The DJ talking: its words right here, next to its button (captions).
+          <p className="yd-says" role="status" aria-live="polite">
+            <VoiceBars live={m.host.speaking} />
+            <span>{m.host.caption}</span>
+            {m.host.speaking && <button type="button" className="btn btn-xs yd-skip" onClick={m.host.skip}>Skip talk</button>}
+          </p>
+        ) : reason && <p className="yd-reason">{reason}</p>}
       </div>
-      <div className="dj-strip-actions">
+      <div className="yd-strip-actions">
         {t && (
-          <button type="button" className={`btn-icon dj-love ${isLoved ? 'active' : ''}`} aria-pressed={isLoved} aria-label={isLoved ? 'Liked' : 'Like this song'} title="More like this"
+          <button type="button" className={`btn-icon yd-love ${isLoved ? 'active' : ''}`} aria-pressed={isLoved} aria-label={isLoved ? 'Liked' : 'Like this song'} title="More like this"
             onClick={() => {
               if (isLoved) return;
               setLoved(t.id);
@@ -124,7 +132,7 @@ export function YourDjPanel() {
   const input = useRef<HTMLInputElement>(null);
   const dj = m.yourDj;
   if (!dj) return null;
-  const seg = dj.segments[dj.segmentId];
+  const seg = segmentOf(dj, m.current?.id) ?? dj.segments[dj.segmentId];
   const busy = dj.busy === 'request';
   const submit = (e?: FormEvent, value = text) => {
     e?.preventDefault();
@@ -134,17 +142,17 @@ export function YourDjPanel() {
     setText('');
   };
   return (
-    <div className="dj-panel">
+    <div className="yd-panel">
       <div className="np-panel-head">
         <h2>Your DJ</h2>
         {seg && <span className="np-panel-sub">{seg.title}</span>}
       </div>
-      <div className="np-panel-scroll dj-panel-body">
-        <form className="dj-request" onSubmit={submit} role="search" aria-label="Ask Your DJ">
-          <Icon name="sparkles" size={16} className="dj-request-icon" />
+      <div className="np-panel-scroll yd-panel-body">
+        <form className="yd-request" onSubmit={submit} role="search" aria-label="Ask Your DJ">
+          <Icon name="sparkles" size={16} className="yd-request-icon" />
           <input
             ref={input}
-            className="dj-request-input"
+            className="yd-request-input"
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Ask for something… “90s hip hop”, “something calmer”"
@@ -152,32 +160,32 @@ export function YourDjPanel() {
             disabled={busy}
             enterKeyHint="go"
           />
-          <button type="submit" className="btn-icon btn-icon-sm dj-request-go" disabled={!text.trim() || busy} aria-label="Ask">
+          <button type="submit" className="btn-icon btn-icon-sm yd-request-go" disabled={!text.trim() || busy} aria-label="Ask">
             {busy ? <Spinner size={16} /> : <Icon name="chevronRight" size={18} />}
           </button>
         </form>
         {chips.length > 0 && (
-          <div className="dj-chips" role="group" aria-label="Suggestions">
+          <div className="yd-chips" role="group" aria-label="Suggestions">
             {chips.map((c) => (
-              <button key={c} type="button" className="chip chip-sm dj-chip" disabled={!!dj.busy} onClick={() => submit(undefined, c)}>{c}</button>
+              <button key={c} type="button" className="chip chip-sm yd-chip" disabled={!!dj.busy} onClick={() => submit(undefined, c)}>{c}</button>
             ))}
           </div>
         )}
         {dj.message && (
-          <p className="dj-message" role="status">
+          <p className="yd-message" role="status">
             <span>{dj.message}</span>
             <button type="button" className="btn-icon btn-icon-sm" onClick={m.djDismiss} aria-label="Dismiss"><Icon name="x" size={14} /></button>
           </p>
         )}
 
-        <div className="dj-setting">
-          <span className="dj-setting-label">DJ commentary</span>
+        <div className="yd-setting">
+          <span className="yd-setting-label">DJ commentary</span>
           <Segmented label="DJ commentary" value={commentary} onChange={(v) => void save({ yourDj: { commentary: v } })} options={COMMENTARY} />
         </div>
 
-        <div className="dj-setting">
-          <span className="dj-setting-label">Play rules</span>
-          <div className="dj-rules-row">
+        <div className="yd-setting">
+          <span className="yd-setting-label">Play rules</span>
+          <div className="yd-rules-row">
             <select
               className="select select-sm"
               value={prefs.activePresetId ?? ''}
@@ -189,11 +197,11 @@ export function YourDjPanel() {
             </select>
             <button type="button" className="btn btn-sm btn-ghost on-media" onClick={() => openPlayRules()}><Icon name="filter" size={14} /> Edit</button>
           </div>
-          <small className="dj-setting-hint">{active ? rulesSummary(active.rules, 3) : 'Your whole library'}. Changes apply from the next song.</small>
+          <small className="yd-setting-hint">{active ? rulesSummary(active.rules, 3) : 'Your whole library'}. Changes apply from the next song.</small>
         </div>
 
-        <div className="dj-setting dj-setting-row">
-          <span className="dj-setting-label">DJ voice</span>
+        <div className="yd-setting yd-setting-row">
+          <span className="yd-setting-label">DJ voice</span>
           <button type="button" className={`btn btn-sm ${m.host.muted ? '' : 'btn-ghost'} on-media`} onClick={() => m.host.setMuted(!m.host.muted)} aria-pressed={m.host.muted}>
             <Icon name={m.host.muted ? 'mute' : 'volume'} size={14} /> {m.host.muted ? 'Muted on this device' : 'Mute'}
           </button>

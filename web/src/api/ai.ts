@@ -1,4 +1,4 @@
-import type { AiStatus, AskFilter, AskResponse, AutoSubtitleJob, AutoSubtitleStatus, RecapResponse, WhisperModelSize } from '@mediamax/shared';
+import type { AiHealthResponse, AiProviderTestResponse, AiStatus, AskFilter, DjRules, AskResponse, AutoSubtitleJob, AutoSubtitleStatus, RecapResponse, WhisperModelSize } from '@mediamax/shared';
 import { http, request } from './client';
 
 const enc = encodeURIComponent;
@@ -22,5 +22,11 @@ export const aiApi = {
   buildEmbeddings: () => http.post<Ok>('/ai/embeddings/build'),
   ask: (q: string, opts: { filter?: AskFilter; remove?: string[]; limit?: number } = {}, signal?: AbortSignal) =>
     request<AskResponse>('POST', '/ask', { body: { q, ...opts }, signal }),
+  /** Provider chains: health and the fallback log (admin). */
+  health: () => http.get<AiHealthResponse>('/ai/health'),
+  testProvider: (kind: 'llm' | 'tts', providerId: string) => http.post<AiProviderTestResponse>('/ai/providers/test', { kind, providerId }),
+  /** Admin-enforced DJ restrictions for one user ({} = none). */
+  djRestrictions: (userId: string) => http.get<DjRules>(`/users/${enc(userId)}/dj-restrictions`),
+  setDjRestrictions: (userId: string, rules: DjRules) => http.put<DjRules>(`/users/${enc(userId)}/dj-restrictions`, rules),
   recap: (itemId: string, force = false) => http.get<RecapResponse>(`/items/${enc(itemId)}/recap`, force ? { force: 1 } : undefined),
 };

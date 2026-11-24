@@ -25,6 +25,7 @@ import { SectionNav, type SectionNavGroup } from '../components/SectionNav';
 import ProfilesSettings from './ProfilesSettings';
 import { HelpLink } from '../components/HelpLink';
 import { ListenBrainzCard } from '../components/ListenBrainz';
+import { RadioHostSettings, YourDjSettings } from './RadioHostSettings';
 
 const LANGS = [
   ['', 'Default'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'],
@@ -805,7 +806,7 @@ export default function SettingsPage() {
   const prefsGroup: Section[] = [
     { to: 'display', label: 'Display', icon: 'monitor', keywords: 'theme dark light mode density compact comfortable trailer previews autoplay motion effects lite', subtitle: 'Theme mode, density, previews and effects.' },
     { to: 'appearance', label: 'Themes', icon: 'palette', keywords: 'appearance colours colors look theme', subtitle: `Pick how ${branding.serverName} looks for you.` },
-    { to: 'playback', label: 'Playback', icon: 'play', keywords: 'quality bitrate audio subtitles language captions autoplay next skip intro music crossfade replaygain lyrics karaoke visualiser night mode dialogue device codecs', subtitle: 'Quality, languages, subtitles, audio and music.' },
+    { to: 'playback', label: 'Playback', icon: 'play', keywords: 'quality bitrate audio subtitles language captions autoplay next skip intro music crossfade replaygain lyrics karaoke visualiser night mode dialogue device codecs radio host dj your dj voice commentary play rules', subtitle: 'Quality, languages, subtitles, audio and music.' },
     ...(features.downloads && (user?.allowDownloads || user?.isAdmin) ? [{ to: 'downloads', label: 'Downloads', icon: 'download' as IconName, keywords: 'offline sync auto download rules', subtitle: 'Keep titles on your devices for offline viewing.' }] : []),
   ];
   const connected: Section[] = [
@@ -853,7 +854,7 @@ export default function SettingsPage() {
             <Route path="display" element={<Display />} />
             <Route path="appearance" element={<Appearance />} />
             <Route path="browsing" element={<Navigate to="/settings/display" replace />} />
-            <Route path="playback" element={<><Playback /><SubtitleSettings /><AudioSettingsCard /><MusicSettings /><DeviceCapabilitiesCard /></>} />
+            <Route path="playback" element={<><Playback /><SubtitleSettings /><AudioSettingsCard /><MusicSettings /><RadioHostSettings /><YourDjSettings /><DeviceCapabilitiesCard /></>} />
             <Route path="devices" element={<Devices />} />
             <Route path="downloads" element={<DownloadRulesSettings />} />
             <Route path="services" element={<Services />} />

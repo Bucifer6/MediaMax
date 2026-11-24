@@ -1713,6 +1713,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setYourDjStarting(true);
     try {
       const presetId = stateRef.current.activePresetId ?? undefined;
+      djPresetRef.current = presetId ?? null;
       const session = await api.dj.session(presetId ? { presetId } : {});
       const tracks = session.items.filter(isAudio);
       if (!tracks.length) {
@@ -1823,12 +1824,11 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, [current?.id, host]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Play rules changed during Your DJ: what's coming up is re-picked within the new rules (the current song plays on).
-  const djPresetRef = useRef(activePresetId);
+  const djPresetRef = useRef<string | null>(null);
   useEffect(() => {
-    const prevPreset = djPresetRef.current;
-    djPresetRef.current = activePresetId;
     const dj = yourDjRef.current;
-    if (!dj || prevPreset === activePresetId) return;
+    if (!dj || djPresetRef.current === activePresetId) return;
+    djPresetRef.current = activePresetId;
     api.dj.session(activePresetId ? { presetId: activePresetId } : {})
       .then((session) => {
         if (yourDjRef.current?.sessionId !== dj.sessionId) return;
@@ -1869,7 +1869,12 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       seek: (ms: number) => seekRef.current(ms),
       blending: () => !!blendRef.current,
     };
-  }, [out]);
+    // Radio Host / Your DJ voice (tests and screenshots): what it is doing, and a caption on demand.
+    (window as unknown as { vibeHostDebug?: unknown }).vibeHostDebug = {
+      state: () => ({ ...host?.state, current: host?.current, stats: host?.stats() }),
+      caption: (text: string, ms = 60000) => host?.caption(text, ms),
+    };
+  }, [out, host]);
 
   // Release the audio graph on unmount.
   useEffect(() => () => out?.close(), [out]);

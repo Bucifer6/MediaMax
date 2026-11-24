@@ -269,6 +269,8 @@ export class RadioHost {
   /** Ask for a break before the transition `key` (once per key). `transitionAt` is on the deps.now() clock. */
   ask(key: string, req: DjBreakRequest, transitionAt: number, introMs: number | null) {
     if (this.muted || this.slot?.key === key) return;
+    // Never cut the host off mid-sentence for the next break (e.g. a Your DJ intro on a short song).
+    if (this.slot?.state === 'speaking') return;
     this.cancel();
     const s: Slot = { key, state: 'fetching', abort: new AbortController(), timers: [], transitionAt, introMs };
     this.slot = s;
@@ -476,9 +478,14 @@ const hasSpeech = () => typeof window !== 'undefined' && 'speechSynthesis' in wi
 /** The device voice to use for a "device:<name>" preference (or the first English voice). */
 function pickDeviceVoice(pref: string | null | undefined): SpeechSynthesisVoice | null {
   try {
-    const voices = window.speechSynthesis.getVoices();
+    const all = window.speechSynthesis.getVoices();
     const name = pref?.startsWith(`${DEVICE_VOICE}:`) ? pref.slice(DEVICE_VOICE.length + 1) : null;
-    return (name && voices.find((v) => v.name === name)) || voices.find((v) => v.lang?.startsWith(navigator.language?.slice(0, 2) || 'en') && v.default) || voices.find((v) => v.lang?.startsWith('en')) || null;
+    const chosen = name ? all.find((v) => v.name === name) : null;
+    if (chosen) return chosen;
+    // Automatic: on-device voices only (some browsers offer online voices that send the text to a speech service).
+    const voices = all.filter((v) => v.localService !== false);
+    const lang = navigator.language?.slice(0, 2) || 'en';
+    return voices.find((v) => v.lang?.startsWith(lang) && v.default) || voices.find((v) => v.lang?.startsWith(lang)) || voices.find((v) => v.lang?.startsWith('en')) || voices[0] || null;
   } catch {
     return null;
   }
@@ -495,6 +502,11 @@ function deviceVoice(text: string, pref: string | null | undefined): HostVoice |
         const u = new SpeechSynthesisUtterance(text);
         const v = pickDeviceVoice(pref);
         if (v) u.voice = v;
+        else if (window.speechSynthesis.getVoices().some((x) => x.localService === false) && !window.speechSynthesis.getVoices().some((x) => x.localService !== false)) {
+          // Only online voices here: stay quiet rather than send the text off the device.
+          reject(new Error('no on-device voice'));
+          return;
+        }
         u.volume = Math.max(0, Math.min(1, volume));
         u.rate = 1.02;
         u.onend = () => resolve();
@@ -582,7 +594,7 @@ export async function createHostVoice(brk: DjBreak, pref: string | null | undefi
 export function deviceVoices(): { id: string; name: string }[] {
   if (!hasSpeech()) return [];
   try {
-    return window.speechSynthesis.getVoices().map((v) => ({ id: `${DEVICE_VOICE}:${v.name}`, name: `${v.name}${v.lang ? ` (${v.lang})` : ''}` }));
+    return window.speechSynthesis.getVoices().map((v) => ({ id: `${DEVICE_VOICE}:${v.name}`, name: `${v.name}${v.lang ? ` (${v.lang})` : ''}${v.localService === false ? ' · online' : ''}` }));
   } catch {
     return [];
   }

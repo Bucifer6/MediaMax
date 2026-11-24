@@ -53,7 +53,7 @@ export function YourDjCard({ compact = false }: { compact?: boolean }) {
   return (
     <section className={`yourdj-card ${live ? 'is-live' : ''} ${compact ? 'is-compact' : ''}`} aria-label="Your DJ">
       <div className="yourdj-card-glow" aria-hidden="true" />
-      <div className="yourdj-card-mark" aria-hidden="true"><span className="dj-ring" /><span className="dj-core"><DjMark size={compact ? 24 : 30} /></span></div>
+      <div className="yourdj-card-mark" aria-hidden="true"><span className="yd-ring" /><span className="yd-core"><DjMark size={compact ? 24 : 30} /></span></div>
       <div className="yourdj-card-text">
         <span className="yourdj-card-eyebrow">{live ? <><span className="live-dot" aria-hidden /> Playing now</> : 'Made for you'}</span>
         <h2 className="yourdj-card-title">Your DJ</h2>

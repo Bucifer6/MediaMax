@@ -86,6 +86,8 @@ interface Ctx {
   /** Tracks the DJ played within the cooldown (excluded first; relaxed when a small library runs dry). */
   cooldownDays: number;
   hour: number;
+  /** Cooldown relaxation (small libraries): every segment kind is tried at a level before relaxing further. */
+  relax?: number;
 }
 
 /** Base WHERE on alias i: playable tracks the user may see, within the rules, not in history, not cooling down, not often skipped. */
@@ -114,16 +116,10 @@ function baseWhere(ctx: Ctx, relax: number): { where: string[]; params: Param[] 
   return { where, params };
 }
 
-/** Run a builder query with progressively relaxed cooldowns until it yields at least `min` tracks. */
-function query(ctx: Ctx, select: (w: string, p: Param[]) => Row[], min = 4): Row[] {
-  let best: Row[] = [];
-  for (const relax of [0, 1, 2]) {
-    const b = baseWhere(ctx, relax);
-    const rows = select(b.where.join(' AND '), b.params);
-    if (rows.length >= min) return rows;
-    if (rows.length > best.length) best = rows;
-  }
-  return best;
+/** Run a builder query at the context's relax level (0 = full cooldown, 1 = a day, 2 = only this session's tracks). */
+function query(ctx: Ctx, select: (w: string, p: Param[]) => Row[]): Row[] {
+  const b = baseWhere(ctx, ctx.relax ?? 0);
+  return select(b.where.join(' AND '), b.params);
 }
 
 const ago = (d: number) => new Date(Date.now() - d * DAY).toISOString();
@@ -252,7 +248,7 @@ function mood(ctx: Ctx): Built | null {
 
 /** Last resort inside the rules: anything playable. */
 function anything(ctx: Ctx): Built | null {
-  const rows = query(ctx, (w, p) => db.all<Row>(`SELECT i.id, i.grandparent_id artist_id FROM items i LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ? WHERE ${w} ORDER BY COALESCE(ud.favorite, 0) DESC, RANDOM() LIMIT ${LIMIT}`, ctx.user.id, ...p), 1);
+  const rows = query(ctx, (w, p) => db.all<Row>(`SELECT i.id, i.grandparent_id artist_id FROM items i LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ? WHERE ${w} ORDER BY COALESCE(ud.favorite, 0) DESC, RANDOM() LIMIT ${LIMIT}`, ctx.user.id, ...p));
   if (!rows.length) return null;
   return { segment: { kind: 'mood', title: 'From your library', reason: 'A mix from your library' }, rows, reason: () => 'From your library' };
 }
@@ -345,17 +341,23 @@ async function nextSegment(user: User, s: Sess, history: string[], hour: number,
   const order = [...(opts.prefer ?? []), ...ROTATION.filter((k) => !recent.includes(k)), ...ROTATION.filter((k) => recent.includes(k))]
     .filter((k, i, a) => a.indexOf(k) === i && !(opts.avoid ?? []).includes(k));
   let built: Built | null = null;
-  for (const k of order) {
-    built = build(k, ctx, usedParams);
+  let note: string | null = null;
+  // Every kind with the full cooldown first; only then relax it (small libraries), never the rules.
+  for (const relax of [0, 1, 2]) {
+    ctx.relax = relax;
+    for (const k of order) if ((built = build(k, ctx, usedParams))) break;
     if (built) break;
   }
-  let note: string | null = null;
   if (!built && opts.avoid?.length) {
     // Nothing else fits: stay with what works rather than go outside the rules.
-    for (const k of opts.avoid) if ((built = build(k, ctx, usedParams))) break;
+    for (const relax of [0, 2]) {
+      ctx.relax = relax;
+      for (const k of opts.avoid) if ((built = build(k, ctx, usedParams))) break;
+      if (built) break;
+    }
     if (built) note = 'Not much else fits your DJ rules right now, so here\'s more of the same.';
   }
-  if (!built) built = anything(ctx);
+  if (!built) for (const relax of [0, 2]) if (!built) built = anything({ ...ctx, relax });
   if (!built) {
     const seg: Segment = { id: crypto.randomUUID(), kind: 'mood', title: 'Your DJ', reason: 'Nothing to play', batches: 1 };
     s.segment = seg;
