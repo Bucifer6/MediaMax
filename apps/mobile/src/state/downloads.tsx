@@ -158,7 +158,20 @@ function dirFor(serverId: string): Directory {
   return dir;
 }
 
+/** Where a record's media is written while it transfers (fileUri is only set once it completes). */
+const transferFile = (r: Pick<DownloadRecord, 'id' | 'serverId' | 'item' | 'quality'>) => new File(dirFor(r.serverId), `${r.id}.${extFor(r.item, r.quality ?? 'original')}`);
+
+const deleteQuietly = (f: File) => {
+  try {
+    if (f.exists) f.delete();
+  } catch {
+    /* ignore */
+  }
+};
+
 const deleteFiles = (r: DownloadRecord) => {
+  // A cancelled or failed transfer leaves a partial file at its destination.
+  if (!r.fileUri) deleteQuietly(transferFile(r));
   for (const uri of [r.fileUri, r.posterUri, r.backdropUri, ...(r.trickplay?.sheets ?? [])]) {
     if (!uri) continue;
     try {
@@ -277,7 +290,7 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
       const dir = dirFor(server.id);
       const quality = nextRec.quality ?? 'original';
       const converted = isConverted(nextRec);
-      const dest = new File(dir, `${id}.${extFor(nextRec.item, quality)}`);
+      const dest = transferFile(nextRec);
       let task = pausedTasks.current.get(id);
       pausedTasks.current.delete(id);
       if (!task) {
@@ -348,7 +361,9 @@ export function DownloadsProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (e) {
       tasks.current.delete(id);
-      update(id, { state: 'error', error: e instanceof Error ? e.message : 'Download failed' });
+      // Cancelling makes the transfer reject; if the record was removed meanwhile, drop its partial file.
+      if (!recordsRef.current.find((r) => r.id === id)) deleteQuietly(transferFile(nextRec));
+      else update(id, { state: 'error', error: e instanceof Error ? e.message : 'Download failed' });
     } finally {
       running.current = null;
       setTimeout(() => void pump(), 50);

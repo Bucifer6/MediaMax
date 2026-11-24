@@ -107,6 +107,10 @@ function shuffled<T>(arr: T[]): T[] {
 export function MusicProvider({ children }: { children: React.ReactNode }) {
   const { api, user } = useSession();
   const downloads = useDownloads();
+  // Read through a ref: the downloads value changes every progress tick, which would otherwise
+  // re-run (and cancel) the track load and reset the progress timer.
+  const downloadsRef = useRef(downloads);
+  downloadsRef.current = downloads;
   const player = useAudioPlayer(null, { updateInterval: 500 });
   const status = useAudioPlayerStatus(player);
   const [queue, setQueue] = useState<Item[]>([]);
@@ -203,13 +207,13 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       const durationMs = remote ? currentRef.current?.durationMs ?? undefined : Math.round(player.duration * 1000) || undefined;
       // Offline spoken audio: keep the resume position locally, like offline video.
       const cur = currentRef.current;
-      if (!s && cur && spokenRef.current && positionMs > 0) downloads.updateLocalPosition(cur.id, positionMs);
+      if (!s && cur && spokenRef.current && positionMs > 0) downloadsRef.current.updateLocalPosition(cur.id, positionMs);
       if (!api || !s) return;
       const body = { positionMs, durationMs, state, sessionId: s.sessionId };
       api.sessionProgress(s.sessionId, body).catch(() => undefined);
       if (state === 'stopped') api.stopSession(s.sessionId).catch(() => undefined);
     },
-    [api, player, downloads],
+    [api, player],
   );
 
   // Cast connected / disconnected: hand the current item over at the same position.
@@ -238,7 +242,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       if (session.current) report('stopped');
       session.current = null;
       castModeRef.current = castOn;
-      const local = downloads.get(current.id);
+      const local = downloadsRef.current.get(current.id);
       const isSpoken = isSpokenAudio(current.type);
       // Spoken audio resumes; music always starts at the top.
       const override = startOverride.current?.id === current.id ? startOverride.current.ms : null;
@@ -274,7 +278,10 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
         try {
           const info = await api.playback(current.id, { deviceProfile: castDeviceProfile('audio'), startMs: startMs > 0 ? Math.round(startMs) : undefined });
           await applySavedSpeed();
-          if (!alive) return;
+          if (!alive) {
+            api.stopSession(info.sessionId).catch(() => undefined);
+            return;
+          }
           session.current = info;
           const from = info.startMs || startMs;
           const mediaInfo = castMediaInfo(api, info, { audio: true, title: current.title, subtitle: current.grandparentTitle ?? current.parentTitle, posterPath: current.posterUrl ?? current.thumbUrl });
@@ -286,6 +293,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       let uri: string;
+      let mine: string | null = null;
       if (altRef.current && altRef.current.itemId !== current.id) {
         altRef.current = null;
         setAltSourceState(null);
@@ -297,8 +305,12 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       } else {
         try {
           const info = await api.playback(current.id, { deviceProfile: audioDeviceProfile(), startMs: startMs > 0 ? Math.round(startMs) : undefined });
-          if (!alive) return;
+          if (!alive) {
+            api.stopSession(info.sessionId).catch(() => undefined);
+            return;
+          }
           session.current = info;
+          mine = info.sessionId;
           if (isSpoken && info.startMs) startMs = info.startMs;
           uri = api.absolute(info.url);
         } catch (e) {
@@ -307,7 +319,11 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
         }
       }
       await applySavedSpeed();
-      if (!alive) return;
+      if (!alive) {
+        if (mine) api.stopSession(mine).catch(() => undefined);
+        if (session.current?.sessionId === mine) session.current = null;
+        return;
+      }
       player.replace({ uri, headers: api.headers(false) });
       try {
         player.volume = volumeRef.current * gainRef.current;
@@ -340,7 +356,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current, api, player, downloads, report, castOn, reloadTick]);
+  }, [current, api, player, report, castOn, reloadTick]);
 
   // Apply the resume position once the new source is ready.
   useEffect(() => {

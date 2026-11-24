@@ -43,8 +43,9 @@ class MediaMaxMediaModule : Module() {
     }
 
     // Apple TV only (AVDisplayCriteria). On Android, Media3 switches the refresh rate when seamless; see docs/HDR.md.
-    Function("matchDisplay") { _: Double, _: String -> false }
-    Function("resetDisplay") { }
+    // AsyncFunction like iOS: JS awaits both (index.ts types them as Promises).
+    AsyncFunction("matchDisplay") { _: Double, _: String -> false }
+    AsyncFunction("resetDisplay") { }
   }
 
   private fun capabilities(ctx: Context): Map<String, Any?> {
