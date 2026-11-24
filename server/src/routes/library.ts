@@ -104,7 +104,8 @@ export default async function libraryRoutes(app: FastifyInstance) {
   /* -------------------------------- items --------------------------- */
   app.get<{ Querystring: ItemQuery & Record<string, string> }>('/items', async (req) => {
     const { user } = requireUser(req);
-    const q = req.query;
+    // A repeated parameter arrives as an array: every filter here is a single value, so ignore anything else.
+    const q = Object.fromEntries(Object.entries(req.query ?? {}).filter(([, v]) => typeof v === 'string')) as typeof req.query;
     return queryItems(user, {
       ...q,
       played: q.played === undefined ? undefined : String(q.played) === 'true',

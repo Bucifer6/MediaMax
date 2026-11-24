@@ -58,7 +58,8 @@ export function acceptInvite(code: string, req: AcceptInviteRequest, remoteAddr?
   const r = db.get('SELECT * FROM invites WHERE code = ?', String(code ?? '').toLowerCase());
   const problem = usable(r);
   if (problem) throw forbidden(problem);
-  if (!req.password || req.password.length < 8) throw badRequest('Choose a password of at least 8 characters');
+  if (typeof req.username !== 'string' || (req.displayName != null && typeof req.displayName !== 'string')) throw badRequest('Invalid username');
+  if (typeof req.password !== 'string' || req.password.length < 8) throw badRequest('Choose a password of at least 8 characters');
   const t = { ...DEFAULT_TEMPLATE, ...parseJson<Partial<InviteTemplate>>(r!.template, {}) };
   // Validate library ids still exist.
   const libIds = t.libraryIds ? t.libraryIds.filter((id) => db.get('SELECT 1 FROM libraries WHERE id = ?', id)) : null;

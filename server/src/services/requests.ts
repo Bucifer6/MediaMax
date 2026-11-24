@@ -369,7 +369,7 @@ export async function listRequests(user: User, filter: RequestListQuery): Promis
     if (filter.mediaType === 'artist' || filter.mediaType === 'album') where.push("m.media_type IN ('artist','album')");
     else where.push('m.media_type = ?'), params.push(String(filter.mediaType));
   }
-  const sort = SORTS[filter.sort as keyof typeof SORTS] ?? SORTS.requested;
+  const sort = (filter.sort && Object.hasOwn(SORTS, filter.sort) ? SORTS[filter.sort as keyof typeof SORTS] : null) ?? SORTS.requested;
   const order = filter.order === 'asc' ? 'ASC' : filter.order === 'desc' ? 'DESC' : filter.sort === 'title' ? 'ASC' : 'DESC';
   const list = db.all(`${SELECT_REQ} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${sort} ${order} LIMIT 500`, ...(params as any[])).map((r) => toRequest(r, user));
   return withDownloads(list);

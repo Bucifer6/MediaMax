@@ -34,7 +34,10 @@ export function extractToken(req: FastifyRequest): string | null {
 }
 
 export async function authHook(req: FastifyRequest) {
-  const apiKey = (req.headers['x-api-key'] as string | undefined) ?? ((req.query as Record<string, unknown> | undefined)?.api_key as string | undefined);
+  // Repeated headers/params arrive as arrays: only a single string is a key (anything else falls back to token auth).
+  const h = req.headers['x-api-key'];
+  const q = (req.query as Record<string, unknown> | undefined)?.api_key;
+  const apiKey = typeof h === 'string' && h ? h : typeof q === 'string' && q ? q : undefined;
   req.auth = apiKey ? authenticateApiKey(apiKey) : authenticate(extractToken(req));
   // A wrong API key is a guessing attempt worth banning for; expired session tokens are normal and are not logged.
   if (apiKey && !req.auth) securityEvent('AUTH_FAIL', req.ip, { reason: 'api_key' });
@@ -55,6 +58,17 @@ export function requireAccountOwner(req: FastifyRequest): AuthContext {
   return a;
 }
 
+/**
+ * Credential-level actions (approving device links, two-factor, API keys, password/PIN): the account owner signed in
+ * on a real device. An API key acts as its owner for integrations, but must never mint sessions, manage keys or lock
+ * the owner out with 2FA.
+ */
+export function requireDeviceSession(req: FastifyRequest): AuthContext {
+  const a = requireAccountOwner(req);
+  if (a.deviceRowId.startsWith('apikey:')) throw new HttpError(403, 'API keys cannot do this; sign in on a device', 'api_key_not_allowed');
+  return a;
+}
+
 export function requireAdmin(req: FastifyRequest): AuthContext {
   const a = requireUser(req);
   if (!a.user.isAdmin) throw forbidden('Administrator access required');
@@ -64,6 +78,8 @@ export function requireAdmin(req: FastifyRequest): AuthContext {
 export function deviceFromRequest(req: FastifyRequest, body: Partial<DeviceInfo> = {}): Partial<DeviceInfo> {
   const h = req.headers;
   const ua = String(h['user-agent'] ?? '');
+  // Body fields are untyped JSON: only strings count (an object would otherwise reach the database).
+  body = Object.fromEntries(Object.entries(body ?? {}).filter(([k, v]) => !['deviceId', 'deviceName', 'platform', 'appVersion'].includes(k) || typeof v === 'string'));
   return {
     deviceId: body.deviceId ?? clientHeader(req, 'device-id'),
     deviceName: body.deviceName ?? clientHeader(req, 'device-name') ?? guessDevice(ua),

@@ -462,6 +462,10 @@ const dummyHash = () => (dummy ??= hashSecret(crypto.randomBytes(16).toString('h
 export const passwordlessAllowed = (r: Row) => !r.parent_user_id && !r.password_hash && !r.pin_hash && !r.is_admin && !r.oidc_sub && getSettings().allowPasswordlessProfiles;
 
 export function login(username: string, password: string, device: Partial<DeviceInfo>, remoteAddr?: string, totpCode?: string): AuthResponse {
+  // Request bodies are untyped JSON: anything but a string is a malformed request, not a failed sign-in.
+  if ((username != null && typeof username !== 'string') || (password != null && typeof password !== 'string') || (totpCode != null && typeof totpCode !== 'string')) {
+    throw badRequest('username and password must be strings');
+  }
   const key = `u:${String(username ?? '').trim().toLowerCase()}`;
   assertNotLocked(key, remoteAddr);
   const row = db.get('SELECT * FROM users WHERE username = ?', (username ?? '').trim());
@@ -589,6 +593,7 @@ export function publicProfiles(remoteAddr?: string | null): PublicProfile[] {
 /** Profile-picker sign in: allowed with a PIN, or with nothing if the profile has neither password nor PIN. */
 export function profileLogin(userId: string, pin: string | undefined, device: Partial<DeviceInfo>, remoteAddr?: string, totpCode?: string): AuthResponse {
   if (!getBranding().features.profilePicker) throw forbidden('Profile sign-in is disabled');
+  if (typeof userId !== 'string' || (pin != null && typeof pin !== 'string') || (totpCode != null && typeof totpCode !== 'string')) throw badRequest('userId and pin must be strings');
   const row = getUserRow(userId);
   if (row.parent_user_id) throw unauthorized('Sign in with the account this profile belongs to');
   // Only users the sign-in screen lists to this client can be entered from it (PIN-only / passwordless sign-in).

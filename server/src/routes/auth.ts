@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { CreateUserRequest, LoginRequest, PinLoginRequest, UpdateMeRequest, UpdateUserRequest } from '@mediamax/shared';
-import { requireAccountOwner, requireAdmin, requireUser, deviceFromRequest, remoteAddr, noCache } from '../http.js';
+import { requireAccountOwner, requireAdmin, requireDeviceSession, requireUser, deviceFromRequest, remoteAddr, noCache } from '../http.js';
 import * as auth from '../services/auth.js';
 import * as oidc from '../services/oidc.js';
 import * as invites from '../services/invites.js';
@@ -62,7 +62,7 @@ export default async function authRoutes(app: FastifyInstance) {
   app.post<{ Body: PinLoginRequest }>('/auth/profile-login', async (req) => {
     const ip = remoteAddr(req);
     rateLimit(ip);
-    if (!req.body?.userId) throw badRequest('userId required');
+    if (!req.body?.userId || typeof req.body.userId !== 'string') throw badRequest('userId required');
     try {
       return auth.profileLogin(req.body.userId, req.body.pin, deviceFromRequest(req, req.body), ip ?? undefined, req.body.totpCode);
     } catch (e) {
@@ -96,7 +96,7 @@ export default async function authRoutes(app: FastifyInstance) {
     noCache(reply);
     return auth.pollLinkCode(req.query.pollToken);
   });
-  app.post<{ Body: { code: string } }>('/auth/link/approve', async (req) => auth.approveLinkCode(requireAccountOwner(req), req.body?.code, remoteAddr(req) ?? undefined));
+  app.post<{ Body: { code: string } }>('/auth/link/approve', async (req) => auth.approveLinkCode(requireDeviceSession(req), req.body?.code, remoteAddr(req) ?? undefined));
 
   app.post('/auth/logout', async (req) => {
     auth.logout(requireUser(req));
@@ -108,6 +108,8 @@ export default async function authRoutes(app: FastifyInstance) {
   });
   app.patch<{ Body: UpdateMeRequest }>('/auth/me', async (req) => {
     const ctx = requireUser(req);
+    // Changing sign-in secrets needs a signed-in device; an API key can still edit the profile's name, avatar, etc.
+    if (ctx.deviceRowId.startsWith('apikey:') && (req.body?.password !== undefined || req.body?.pin !== undefined)) requireDeviceSession(req);
     return auth.updateMe(ctx.user.id, req.body ?? {}, ctx.deviceRowId);
   });
   app.post('/auth/me/avatar', async (req) => {
@@ -125,10 +127,10 @@ export default async function authRoutes(app: FastifyInstance) {
     return auth.setAvatar(req.params.id, null);
   });
   /* Two-factor (TOTP) */
-  app.post('/auth/me/2fa/setup', async (req) => auth.totpSetup(requireAccountOwner(req).user.id));
-  app.post<{ Body: { code: string } }>('/auth/me/2fa/enable', async (req) => auth.totpEnable(requireAccountOwner(req).user.id, req.body?.code));
+  app.post('/auth/me/2fa/setup', async (req) => auth.totpSetup(requireDeviceSession(req).user.id));
+  app.post<{ Body: { code: string } }>('/auth/me/2fa/enable', async (req) => auth.totpEnable(requireDeviceSession(req).user.id, req.body?.code));
   app.post<{ Body: { code: string } }>('/auth/me/2fa/disable', async (req) => {
-    const { user } = requireAccountOwner(req);
+    const { user } = requireDeviceSession(req);
     auth.totpDisable(user.id, req.body?.code);
     return auth.getUser(user.id);
   });
@@ -140,14 +142,13 @@ export default async function authRoutes(app: FastifyInstance) {
   });
 
   /* API keys (act as the owning user) */
-  app.get('/auth/api-keys', async (req) => auth.listApiKeys(requireAccountOwner(req).user.id));
+  app.get('/auth/api-keys', async (req) => auth.listApiKeys(requireDeviceSession(req).user.id));
   app.post<{ Body: { name: string } }>('/auth/api-keys', async (req) => {
-    const a = requireAccountOwner(req);
-    if (a.deviceRowId.startsWith('apikey:')) throw badRequest('API keys cannot create other API keys');
+    const a = requireDeviceSession(req);
     return auth.createApiKey(a.user.id, req.body?.name);
   });
   app.delete<{ Params: { id: string } }>('/auth/api-keys/:id', async (req) => {
-    const { user } = requireAccountOwner(req);
+    const { user } = requireDeviceSession(req);
     auth.deleteApiKey(user.id, req.params.id, user.isAdmin);
     return { ok: true };
   });

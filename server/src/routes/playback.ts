@@ -5,14 +5,15 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { DownloadQuality, PlaybackPrepareRequest, PlaybackRequest, ProgressReport } from '@mediamax/shared';
 import { db } from '../db.js';
 import { clientHints, requireAdmin, requireUser, remoteAddr } from '../http.js';
-import { assertRemoteAllowed, preparePlayback, reclaimWarmTranscodes, transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, touchSession } from '../services/playback.js';
+import { assertRemoteAllowed, preparePlayback, remoteInputArgs, reclaimWarmTranscodes, transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, touchSession } from '../services/playback.js';
 import { assertCanSee } from '../services/items.js';
 import { liveJobBySession } from '../services/livetv/livetv.js';
 import { badRequest, forbidden, notFound, HttpError } from '../util/errors.js';
 import { getSettings } from '../services/settings.js';
 import { spawn } from 'node:child_process';
 import { config } from '../config.js';
-import { safeFetch } from '../util/net.js';
+import { assertPublicUrl, safeFetch } from '../util/net.js';
+import { REMOTE_PROTOCOLS } from '../util/misc.js';
 import { logActivity } from '../services/activity.js';
 import { events } from '../services/events.js';
 import { renditionRequest } from '../services/abr.js';
@@ -85,8 +86,13 @@ const QUALITY: Record<string, { height: number; bitrate: number }> = {
 export const activeConversions = new Map<string, number>();
 const conversionTotal = () => [...activeConversions.values()].reduce((a, b) => a + b, 0);
 
-function convertedDownload(req: FastifyRequest, reply: FastifyReply, m: Record<string, any>, baseName: string, quality: string, userId: string) {
+async function convertedDownload(req: FastifyRequest, reply: FastifyReply, m: Record<string, any>, baseName: string, quality: string, userId: string) {
   const q = QUALITY[quality];
+  const input: string = m.path ?? m.remote_url;
+  // Remote input: same rules as streaming it (network protocols only, never file:/concat: from a playlist), and
+  // podcast feeds are user-supplied, so their URLs must not point at the server's own network.
+  if (!m.path && isUntrustedMedia(m.item_id)) await assertPublicUrl(input);
+  const inputArgs = m.path ? ['-i', input] : [...remoteInputArgs(m), ...REMOTE_PROTOCOLS, '-i', input];
   const max = getSettings().transcoding.maxConcurrent;
   reclaimWarmTranscodes(transcodeCount() + conversionTotal() + 1);
   if (transcodeCount() + conversionTotal() >= max) throw new HttpError(503, 'The server is busy converting other media. Try again shortly or download the original file.', 'transcoder_busy');
@@ -100,9 +106,8 @@ function convertedDownload(req: FastifyRequest, reply: FastifyReply, m: Record<s
     if (n <= 0) activeConversions.delete(userId);
     else activeConversions.set(userId, n);
   };
-  const input = m.path ?? m.remote_url;
   const isAudio = !m.video_codec;
-  const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-i', input, '-map', '0:v:0?', '-map', '0:a:0?', '-sn', '-map_metadata', '0'];
+  const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', ...inputArgs, '-map', '0:v:0?', '-map', '0:a:0?', '-sn', '-map_metadata', '0'];
   if (!isAudio) {
     const copyVideo = m.video_codec === 'h264' && (m.height ?? 0) <= q.height && (m.bitrate ?? Infinity) <= q.bitrate * 1.5;
     if (copyVideo) args.push('-c:v', 'copy');

@@ -293,7 +293,8 @@ export function queryItems(user: User, q: ItemQuery): Paged<Item> {
   // `ud.x = 1` (not COALESCE(ud.x,0) = 1, same rows) lets SQLite start from the viewer's user_data rows.
   if (q.played !== undefined) where.push(String(q.played) === 'true' ? 'ud.played = 1' : 'COALESCE(ud.played,0) = 0');
   if (q.favorite !== undefined && String(q.favorite) === 'true') where.push('ud.favorite = 1');
-  let sort = SORTS[q.sort as ItemSort] ?? (q.parentId || q.ancestorId ? SORTS.index : SORTS.title);
+  // Own keys only: `sort=constructor` must not pick up Object.prototype members.
+  let sort = (q.sort && Object.hasOwn(SORTS, q.sort) ? SORTS[q.sort as ItemSort] : null) ?? (q.parentId || q.ancestorId ? SORTS.index : SORTS.title);
   if (q.series && !q.sort) sort = ["COALESCE(json_extract(i.extra, '$.series.index'), 9999)", 'i.year'];
   // Across several parents (an artist's albums, a show's seasons), keep each parent's children together.
   if (q.ancestorId && sort === SORTS.index) {
@@ -314,7 +315,7 @@ export function queryWhere(user: User, whereSql: string, params: Param[], sort: 
   if (maxTotal) total = Math.min(total, maxTotal);
   const lim = Math.max(0, Math.min(limit, total - offset));
   if (lim <= 0) return { items: [], total, limit, offset };
-  const s = SORTS[sort] ?? SORTS.title;
+  const s = (Object.hasOwn(SORTS, sort) ? SORTS[sort] : null) ?? SORTS.title;
   const dir = order === 'desc' ? 'DESC' : 'ASC';
   const rows = pagedRows(user, where, [...a.params, ...params], `ORDER BY ${orderBy(s, dir)} LIMIT ? OFFSET ?`, [lim, offset]);
   return { items: rows.map(rowToItem), total, limit, offset };
