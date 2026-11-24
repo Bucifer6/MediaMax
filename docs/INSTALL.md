@@ -13,7 +13,8 @@ setup wizard creates the first administrator.
 | Linux without Docker (x64, or arm64 such as a Raspberry Pi 4/5 with a 64-bit OS) | the Linux archive | [Linux](#linux) |
 
 Downloads are on the [Releases page](https://github.com/Bucifer6/MediaMax/releases/latest). The Windows and
-Linux archives include FFmpeg; the Docker image includes FFmpeg with Intel/AMD GPU drivers. The image is
+Linux archives include FFmpeg; the Docker image includes [jellyfin-ffmpeg](https://github.com/jellyfin/jellyfin-ffmpeg)
+(FFmpeg with the extra GPU tone-mapping and Rockchip support the hardware paths use) and Intel/AMD GPU drivers. The image is
 `ghcr.io/bucifer6/kinora` for both `linux/amd64` and `linux/arm64`, tagged `latest` and with each version
 (for example `0.2.0`).
 
@@ -320,7 +321,7 @@ Lake, Alder Lake-N / N100, Arc) are retried with `-low_power 1`; when that works
 | `amf` | Windows | AMD Radeon | `h264_amf` / `hevc_amf` / `av1_amf` with D3D11 decoding. |
 | `videotoolbox` | macOS | Apple Silicon / Intel Macs | |
 | `v4l2m2m` | Linux ARM | Raspberry Pi 4 | H.264 only, about one 1080p stream. The Pi 5 has **no** hardware encoder: use software. |
-| `rkmpp` | Linux ARM | Rockchip RK3588/RK3568 | Needs an FFmpeg built with rkmpp/RGA ([ffmpeg-rockchip](https://github.com/nyanmisaka/ffmpeg-rockchip) or jellyfin-ffmpeg); stock FFmpeg is detect-only. |
+| `rkmpp` | Linux ARM | Rockchip RK3588/RK3568 | Needs an FFmpeg built with rkmpp/RGA (the Docker image's jellyfin-ffmpeg, or [ffmpeg-rockchip](https://github.com/nyanmisaka/ffmpeg-rockchip)); stock FFmpeg is detect-only. |
 
 **HEVC and AV1 output.** With a hardware encoder, clients that can play HEVC (Safari, Chrome/Edge with HEVC
 decoding, the iOS and Android apps) or AV1 get it instead of H.264, at about 65% (HEVC) / 60% (AV1) of the H.264
