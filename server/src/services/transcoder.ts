@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import type { HwAccel, HwDetectReport, HwMethodResult, ToneMapPath, TranscodeVideoCodec } from '@mediamax/shared';
+import type { HwAccel, HwDetectReport, HwMethodResult, ToneMapPath, TranscodeVideoCodec, VideoRangeInfo } from '@mediamax/shared';
 import {
-  TONEMAP_FILTERS, buildVideoPipeline, codecBitrate, encoderArgs, encoderFor, isHwToneMap, needsFmp4, rateArgs, toneMapCandidates, type VideoPipeline,
+  TONEMAP_FILTERS, buildVideoPipeline, codecBitrate, encoderArgs, encoderFor, isHwToneMap, isInterlacedFieldOrder, keyframeArgs, needsFmp4, outputHeight, rateArgs, toneMapCandidates,
+  type DeinterlaceMode, type FfmpegFeatures, type VideoPipeline,
 } from './hwaccel.js';
 import { doviMuxArgs, type DoviRemux } from './dovi.js';
 import { config } from '../config.js';
@@ -19,7 +20,7 @@ const log = logger('transcoder');
 let filterCache: Set<string> | null = null;
 let encoderCache: Set<string> | null = null;
 
-export function listCaps(kind: '-filters' | '-encoders'): Set<string> {
+export function listCaps(kind: '-filters' | '-encoders' | '-pix_fmts'): Set<string> {
   try {
     const r = spawnSync(config.ffmpeg, ['-hide_banner', kind], { encoding: 'utf8', timeout: 10000 });
     const set = new Set<string>();
@@ -34,6 +35,39 @@ export function listCaps(kind: '-filters' | '-encoders'): Set<string> {
 }
 export const hasFilter = (f: string) => (filterCache ??= listCaps('-filters')).has(f);
 export const hasEncoder = (e: string) => (encoderCache ??= listCaps('-encoders')).has(e);
+
+/** Whether `ffmpeg -h filter=tonemap_opencl` lists tonemap=bt2390 (jellyfin-ffmpeg; stock FFmpeg 5.1 … 7.x does not). */
+export const parseOpenclBt2390 = (help: string | null | undefined) => !!help && /^\s*bt2390\b/m.test(help);
+
+let featureCache: { openclBt2390: boolean } | null = null;
+/** Build-dependent filter options (observed from this ffmpeg build, never assumed from its name). Cached per process. */
+export function ffmpegFeatures(): Required<FfmpegFeatures> {
+  if (!featureCache) {
+    let help = '';
+    if (hasFilter('tonemap_opencl')) {
+      try {
+        const r = spawnSync(config.ffmpeg, ['-hide_banner', '-h', 'filter=tonemap_opencl'], { encoding: 'utf8', timeout: 10000 });
+        help = `${r.stdout ?? ''}`;
+      } catch { /* ignore */ }
+    }
+    featureCache = { openclBt2390: parseOpenclBt2390(help) };
+  }
+  return { ...featureCache, hasFilter };
+}
+
+let versionCache: string | null | undefined;
+/** First line of `ffmpeg -version` (null when ffmpeg is missing); part of the detect cache key. */
+export function ffmpegVersionString(): string | null {
+  if (versionCache === undefined) {
+    try {
+      const r = spawnSync(config.ffmpeg, ['-hide_banner', '-version'], { encoding: 'utf8', timeout: 5000 });
+      versionCache = r.status === 0 ? (r.stdout ?? '').split('\n')[0].trim() || null : null;
+    } catch {
+      versionCache = null;
+    }
+  }
+  return versionCache;
+}
 
 export function ffmpegAvailable(): boolean {
   try {
@@ -79,6 +113,15 @@ export interface TranscodeOptions {
   dolbyVision?: DoviRemux | null;
   /** Audio delivery from the audio decision (audio.ts): codec, channels, downmix and comfort filters, DTS core copy. */
   audioPlan?: AudioPlan | null;
+  /**
+   * The source's probed video range (media.videoRange): frame rate (GOP length, H.264 level), Dolby Vision profile
+   * (profile 5 prefers libplacebo) and, for files scanned since field order was recorded, `fieldOrder` (deinterlacing).
+   */
+  videoRange?: (VideoRangeInfo & { fieldOrder?: string | null }) | null;
+  /** ffprobe field_order of the source (overrides videoRange.fieldOrder): tt/bb/tb/bt = interlaced. */
+  fieldOrder?: string | null;
+  /** Source frame rate (overrides videoRange.frameRate). */
+  frameRate?: number | null;
 }
 
 export interface TranscodeInfo {
@@ -107,6 +150,8 @@ export interface BuildContext {
   /** 'auto' picks the best working path; a value forces it; null disables tone-mapping. */
   toneMap?: ToneMapPath | null | 'auto';
   segmentType?: SegmentType;
+  /** false: decode on the CPU even with a hardware encoder (fallback after a hardware decode failure). */
+  decode?: boolean;
 }
 
 /**
@@ -129,12 +174,84 @@ export function targetHeight(bitrate: number, sourceHeight: number | null, maxHe
 
 /* ----------------------- detection results cache ---------------------- */
 
+/**
+ * The last hardware detect report, persisted as JSON in <cacheDir>/hwdetect/report.json so a restart does not assume
+ * every encoder works. It is valid for the hwAccel/device settings and the exact ffmpeg build (`ffmpeg -version`) it
+ * ran with; when those change, or no report exists, detection re-runs in the background (never in tests or without ffmpeg).
+ */
+const reportFile = () => path.join(config.cacheDir, 'hwdetect', 'report.json');
 let detectReport: HwDetectReport | null = null;
-export const getDetectReport = () => detectReport;
-export const setDetectReport = (r: HwDetectReport | null) => { detectReport = r; };
+let detectKey: string | null = null;
+let reportLoaded = false;
+let autoDetectFor: string | null = null;
 
-/** The detect result for the configured accelerator/device, if detection has run this session. */
+export function detectCacheKey(): string {
+  const s = getSettings().transcoding;
+  return JSON.stringify({ hwAccel: s.hwAccel, vaapiDevice: s.vaapiDevice, gpuIndex: s.gpuIndex ?? 0, ffmpeg: ffmpegVersionString() });
+}
+
+/** Background detection is skipped under `node --test`, with KINORA_NO_HWDETECT=1 (MEDIAMAX_ alias), and without ffmpeg. */
+export const autoDetectEnabled = () => !process.env.NODE_TEST_CONTEXT && process.env.MEDIAMAX_NO_HWDETECT !== '1' && ffmpegVersionString() != null;
+
+function scheduleDetection(key: string, why: string) {
+  if (autoDetectFor === key || !autoDetectEnabled()) return;
+  autoDetectFor = key;
+  log.info(`Hardware detection will run in the background (${why})`);
+  setTimeout(() => {
+    import('./hwdetect.js').then((m) => m.detectHardware()).catch((e) => log.warn(`Background hardware detection failed: ${(e as Error).message}`));
+  }, 5000).unref();
+}
+
+/** (Re)read the persisted report from disk (startup; exported for tests). */
+export function loadDetectReport() {
+  reportLoaded = true;
+  detectReport = null;
+  detectKey = null;
+  try {
+    const j = JSON.parse(fs.readFileSync(reportFile(), 'utf8')) as { key?: string; report?: HwDetectReport };
+    if (j?.report?.methods && typeof j.key === 'string') {
+      detectReport = j.report;
+      detectKey = j.key;
+    }
+  } catch { /* no cache yet */ }
+}
+
+/** The detect report for the current settings and ffmpeg build (loads the persisted one on first use), else null. */
+export function getDetectReport(): HwDetectReport | null {
+  if (!reportLoaded) loadDetectReport();
+  const key = detectCacheKey();
+  if (detectReport && detectKey !== key) {
+    log.info('Cached hardware detect report is stale (transcoding device settings or ffmpeg build changed)');
+    detectReport = null;
+    detectKey = null;
+  }
+  if (!detectReport) scheduleDetection(key, 'no valid cached report');
+  return detectReport;
+}
+
+export function setDetectReport(r: HwDetectReport | null) {
+  reportLoaded = true;
+  detectReport = r;
+  detectKey = r ? detectCacheKey() : null;
+  try {
+    if (r) {
+      fs.mkdirSync(path.dirname(reportFile()), { recursive: true });
+      fs.writeFileSync(reportFile() + '.tmp', JSON.stringify({ key: detectKey, report: r }));
+      fs.renameSync(reportFile() + '.tmp', reportFile());
+    } else fs.rmSync(reportFile(), { force: true });
+  } catch (e) {
+    log.warn(`Could not save the hardware detect report: ${(e as Error).message}`);
+  }
+}
+
+/** Load the persisted report and, when none is valid, start detection in the background. Call once at startup. */
+export function initDetectReport() {
+  getDetectReport();
+}
+
+/** The detect result for the configured accelerator/device, if detection has run (or a valid report was cached). */
 export function detectedMethod(hw: HwAccel): HwMethodResult | null {
+  const detectReport = getDetectReport();
   if (!detectReport || hw === 'none') return null;
   const s = getSettings().transcoding;
   const win = process.platform === 'win32';
@@ -151,16 +268,27 @@ export function encoderWorks(hw: HwAccel, codec: TranscodeVideoCodec): boolean {
   return m ? m.encode[codec].works : true;
 }
 
-/** Best tone-mapping path for an accelerator: detect results first, then whatever filters the build has. */
-export function pickToneMap(hw: HwAccel, platform: string, gpuPathsPossible: boolean): ToneMapPath | null {
+/** The detect step found this VA-API encoder only works with -low_power 1 (VDEnc-only GPUs). */
+export function encoderLowPower(hw: HwAccel, codec: TranscodeVideoCodec): boolean {
+  if (hw !== 'vaapi') return false;
+  return !!(detectedMethod(hw)?.encode[codec] as { lowPower?: boolean } | undefined)?.lowPower;
+}
+
+/**
+ * Best tone-mapping path for an accelerator: detect results first, then whatever filters the build has.
+ * `preferPlacebo` (Dolby Vision profile 5: only libplacebo applies the RPU reshaping) puts libplacebo first when the
+ * detect step saw it work; otherwise the order is unchanged.
+ */
+export function pickToneMap(hw: HwAccel, platform: string, gpuPathsPossible: boolean, preferPlacebo = false): ToneMapPath | null {
   const s = getSettings().transcoding;
-  const m = hw === 'none' ? detectReport?.methods.find((x) => x.hwAccel === 'none') ?? null : detectedMethod(hw);
+  const m = hw === 'none' ? getDetectReport()?.methods.find((x) => x.hwAccel === 'none') ?? null : detectedMethod(hw);
   let cands = toneMapCandidates(hw, platform, s.hardwareToneMapping && gpuPathsPossible);
   if (m) {
     const failed = new Set(m.toneMapping.tried.filter((t) => !t.works && !t.skipped).map((t) => t.path));
     cands = cands.filter((c) => !failed.has(c));
     if (m.toneMapping.path && cands.includes(m.toneMapping.path)) cands = [m.toneMapping.path, ...cands.filter((c) => c !== m.toneMapping.path)];
   }
+  if (preferPlacebo && cands.includes('libplacebo')) cands = ['libplacebo', ...cands.filter((c) => c !== 'libplacebo')];
   // libplacebo needs a working Vulkan device: only use it once the detect step has seen it work.
   const confirmed = (c: ToneMapPath) => c !== 'libplacebo' || !!m?.toneMapping.tried.some((t) => t.path === 'libplacebo' && t.works);
   return cands.find((c) => TONEMAP_FILTERS[c].every(hasFilter) && confirmed(c)) ?? null;
@@ -208,13 +336,18 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
   const seekSec = o.startSec > 0 && o.mode !== 'live' ? o.startSec.toFixed(3) : null;
   if (subFilter) swFilters.push(...(seekSec ? [`setpts=PTS+${seekSec}/TB`, subFilter, `setpts=PTS-${seekSec}/TB`] : [subFilter]));
   let pipeline: VideoPipeline | null = null;
+  const fieldOrder = o.fieldOrder ?? o.videoRange?.fieldOrder ?? null;
+  // Probed interlaced → deinterlace; live inputs with unknown field order → CPU bwdif that only touches interlaced frames.
+  const deinterlace: DeinterlaceMode = isInterlacedFieldOrder(fieldOrder) ? 'interlaced' : o.mode === 'live' && !fieldOrder ? 'auto' : null;
+  const srcFps = o.frameRate ?? o.videoRange?.frameRate ?? null;
   if (encodeVideo) {
     const wantToneMap = shouldToneMap(o, s.toneMapHdr);
     const gpuPossible = !overlay && swFilters.length === 0;
-    const toneMap = !wantToneMap ? null : ctx.toneMap === undefined || ctx.toneMap === 'auto' ? pickToneMap(hw, platform, gpuPossible) : ctx.toneMap;
+    const dv5 = o.videoRange?.dolbyVision?.profile === 5;
+    const toneMap = !wantToneMap ? null : ctx.toneMap === undefined || ctx.toneMap === 'auto' ? pickToneMap(hw, platform, gpuPossible, dv5) : ctx.toneMap;
     const target = { hw, platform, vaapiDevice: s.vaapiDevice, gpuIndex: s.gpuIndex ?? 0 };
-    // Image subtitles are overlaid on the CPU, so that pipeline never decodes to GPU surfaces; its filters follow the overlay.
-    pipeline = buildVideoPipeline({ target, codec, height: h, sourceHeight: o.sourceHeight, toneMap, swFilters, decode: !overlay });
+    // Image subtitles are overlaid on the CPU (hybrid pipeline): the hardware decoder still decodes, into system memory.
+    pipeline = buildVideoPipeline({ target, codec, height: h, sourceHeight: o.sourceHeight, toneMap, swFilters, cpuFrames: overlay, decode: ctx.decode ?? true, deinterlace, features: ffmpegFeatures() });
   }
 
   if (o.mode === 'live') args.push('-fflags', '+genpts+discardcorrupt', ...httpReconnectArgs(o.input, 5));
@@ -226,7 +359,13 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
 
   // Stream mapping
   const audioMap = o.audioIndex != null ? `0:${o.audioIndex}` : '0:a:0?';
-  if (pipeline && overlay) args.push('-filter_complex', `[0:v:0][0:${o.burnSubtitle!.streamIndex}]overlay=eof_action=pass,${pipeline.filters.join(',')}[v]`, '-map', '[v]');
+  if (pipeline && overlay) {
+    // Deinterlace the video before the (progressive) subtitle bitmap is drawn on it.
+    const [first, ...rest] = pipeline.filters;
+    const pre = first?.startsWith('bwdif=') ? `[0:v:0]${first}[dv];[dv]` : '[0:v:0]';
+    const post = pre === '[0:v:0]' ? pipeline.filters : rest;
+    args.push('-filter_complex', `${pre}[0:${o.burnSubtitle!.streamIndex}]overlay=eof_action=pass${post.length ? `,${post.join(',')}` : ''}[v]`, '-map', '[v]');
+  }
   else if (o.hasVideo) args.push('-map', '0:v:0');
   args.push('-map', audioMap, '-sn', '-dn', '-map_metadata', '-1', '-map_chapters', '-1');
 
@@ -240,9 +379,12 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
     } else {
       if (!overlay && pipeline.filters.length) args.push('-vf', pipeline.filters.join(','));
       videoBitrate = codecBitrate(o.bitrate, codec);
-      args.push(...encoderArgs(pipeline.encoder, { bitrate: videoBitrate, preset: s.preset, threads: s.threads }), ...rateArgs(videoBitrate));
-      if (o.mode !== 'live') args.push('-force_key_frames', `expr:gte(t,n_forced*${seg})`, '-sc_threshold', '0');
-      else args.push('-g', String(seg * 25));
+      const fps = srcFps ? srcFps * (pipeline.fieldRate ? 2 : 1) : null;
+      args.push(...encoderArgs(pipeline.encoder, {
+        bitrate: videoBitrate, preset: s.preset, threads: s.threads, live: o.mode === 'live', height: outputHeight(h, o.sourceHeight), fps, lowPower: encoderLowPower(hw, codec),
+      }), ...rateArgs(videoBitrate));
+      // Time-based keyframes at segment boundaries for VOD and live alike (live used to assume 25 fps with -g seg*25).
+      args.push(...keyframeArgs(seg, fps));
     }
   }
   let audioCodec = 'copy';
@@ -300,6 +442,10 @@ export class TranscodeJob {
   private hw: HwAccel;
   private codec: TranscodeVideoCodec;
   private toneMapOverride: ToneMapPath | null | 'auto' = 'auto';
+  /** false after a failure with hardware decoding: keep the hardware encoder, decode on the CPU. */
+  private decodeOverride: boolean | undefined;
+  /** The last run's command used hardware decoding (-hwaccel). */
+  private usedHwDecode = false;
   private runStartedAt = 0;
   private initServed = false;
   /** Instant-play warm job: pause ffmpeg once segments up to this number exist, until released (see hold()). */
@@ -352,8 +498,9 @@ export class TranscodeJob {
     const seg = this.segmentSeconds;
     const opts = { ...this.opts, startSec: this.opts.mode === 'transcode' ? this.opts.startSec + fromSegment * seg : this.opts.startSec };
     const { args, info } = buildArgs(opts, this.dir, this.opts.mode === 'transcode' ? fromSegment : 0, {
-      hw: this.hw, codec: this.codec, toneMap: this.toneMapOverride, segmentType: this.segmentType,
+      hw: this.hw, codec: this.codec, toneMap: this.toneMapOverride, segmentType: this.segmentType, decode: this.decodeOverride,
     });
+    this.usedHwDecode = args.includes('-hwaccel');
     const changed = !!this.info && (this.info.videoCodec !== info.videoCodec || this.info.toneMap !== info.toneMap);
     this.info = { ...info, hwFallback: this.fallbackReason };
     if (changed) this.onInfoChange?.();
@@ -380,8 +527,13 @@ export class TranscodeJob {
   }
 
   /**
-   * Hardware transcodes that fail to start (or die in the first seconds) are retried: first with CPU
-   * tone-mapping if the GPU tone-mapper was in use, then fully in software. Returns true when restarted.
+   * Hardware transcodes that fail to start (or die in the first seconds) are retried, one step at a time, staying on
+   * the hardware as long as possible:
+   *  1. GPU tone-mapping → CPU tone-mapping;
+   *  2. HEVC/AV1 → H.264 on the same hardware (only while nothing of the stream has been served);
+   *  3. hardware decoding → CPU decoding with the same hardware encoder (same codec, so also after segments were served);
+   *  4. fully in software (H.264 on the CPU).
+   * Returns true when restarted.
    */
   private tryFallback(fromSegment: number, msg: string): boolean {
     if (this.hw === 'none' || !this.info || this.info.hwAccel === 'none') return false;
@@ -389,21 +541,36 @@ export class TranscodeJob {
     const early = Date.now() - this.runStartedAt < 10000;
     if (produced && !early) return false;
     const resumeAt = produced ? this.latestSegment() + 1 : fromSegment;
-    const gpuToneMap = isHwToneMap((this.info.toneMap ?? null) as ToneMapPath | null, this.hw, process.platform);
-    if (gpuToneMap && this.toneMapOverride === 'auto') {
-      this.toneMapOverride = 'software';
-      this.fallbackReason = `${this.hw} ${this.info.toneMap} tone-mapping failed, used CPU tone-mapping: ${msg}`.slice(0, 300);
+    const retry = (reason: string) => {
+      this.fallbackReason = `${reason}: ${msg}`.slice(0, 300);
       log.warn(`Transcode ${this.id}: ${this.fallbackReason}`);
       this.start(resumeAt);
       return true;
+    };
+    const gpuToneMap = isHwToneMap((this.info.toneMap ?? null) as ToneMapPath | null, this.hw, process.platform);
+    if (gpuToneMap && this.toneMapOverride === 'auto') {
+      this.toneMapOverride = 'software';
+      return retry(`${this.hw} ${this.info.toneMap} tone-mapping failed, used CPU tone-mapping`);
     }
     // Switching codec mid-stream would not match segments/init the player already has.
-    if (this.codec !== 'h264' && (produced || this.initServed)) return false;
+    const codecSwitchOk = !produced && !this.initServed;
+    if (this.codec !== 'h264' && codecSwitchOk && encoderWorks(this.hw, 'h264')) {
+      const failedCodec = this.codec;
+      this.codec = 'h264';
+      fs.rmSync(path.join(this.dir, 'init.mp4'), { force: true });
+      return retry(`${this.hw} ${failedCodec.toUpperCase()} encoding failed, used ${this.hw} H.264`);
+    }
+    if (this.usedHwDecode && this.decodeOverride !== false) {
+      this.decodeOverride = false;
+      return retry(`${this.hw} hardware decoding failed, decoded on the CPU and encoded with ${this.hw}`);
+    }
+    if (this.codec !== 'h264' && !codecSwitchOk) return false;
     log.warn(`Hardware transcode (${this.hw}) failed, retrying in software: ${msg}`);
     this.fallbackReason = `${this.hw} failed, used software: ${msg}`.slice(0, 300);
     this.hw = 'none';
     this.codec = 'h264';
     this.toneMapOverride = 'auto';
+    this.decodeOverride = undefined;
     if (!this.initServed) fs.rmSync(path.join(this.dir, 'init.mp4'), { force: true });
     this.start(resumeAt);
     return true;

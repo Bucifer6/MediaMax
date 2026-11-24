@@ -2,8 +2,9 @@
  * Hardware transcoding detection: what the ffmpeg build supports, which GPUs/devices exist, and — for each
  * method — real 2-second test transcodes built with the same pipeline builders playback uses.
  *
- * POST /api/v1/admin/transcoding/detect runs it; the last report is kept in memory for the server's lifetime
- * and also steers playback (failed encoders and tone-mappers are skipped).
+ * POST /api/v1/admin/transcoding/detect runs it; the last report is persisted (transcoder.ts setDetectReport: JSON in
+ * <cacheDir>/hwdetect/report.json, valid for the device settings and ffmpeg build it ran with), re-run in the background
+ * at startup when there is no valid one, and steers playback (failed encoders and tone-mappers are skipped).
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -13,8 +14,8 @@ import type { HwAccel, HwDetectReport, HwDevice, HwMethodResult, HwTestResult, T
 import { config } from '../config.js';
 import { logger } from '../util/log.js';
 import { getSettings } from './settings.js';
-import { listCaps, setDetectReport, getDetectReport } from './transcoder.js';
-import { HW_LABELS, TONEMAP_FILTERS, buildVideoPipeline, encoderArgs, encoderFor, rateArgs, toneMapCandidates, type HwTarget } from './hwaccel.js';
+import { ffmpegFeatures, initDetectReport, listCaps, setDetectReport, getDetectReport } from './transcoder.js';
+import { HW_LABELS, TONEMAP_FILTERS, buildVideoPipeline, encoderArgs, encoderFor, hwInputArgs, rateArgs, toneMapCandidates, type FfmpegFeatures, type HwTarget } from './hwaccel.js';
 
 const log = logger('hwdetect');
 const CODECS: TranscodeVideoCodec[] = ['h264', 'hevc', 'av1'];
@@ -82,7 +83,7 @@ export function parseHwaccels(out: string): string[] {
 }
 
 const RELEVANT_ENCODER = /^(h264|hevc|av1)_(vaapi|nvenc|qsv|videotoolbox|v4l2m2m|amf|rkmpp|mf)$|^(libx264|libx265|libsvtav1|libaom-av1)$/;
-const RELEVANT_FILTER = /^(scale_(vaapi|cuda|qsv|rkrga|vt|npp)|vpp_qsv|tonemap(_vaapi|_opencl|_cuda|_videotoolbox)?|libplacebo|zscale|hwupload(_cuda)?|hwmap|hwdownload|overlay_(vaapi|cuda|qsv))$/;
+const RELEVANT_FILTER = /^(scale_(vaapi|cuda|qsv|rkrga|vt|npp)|vpp_qsv|tonemap(_vaapi|_opencl|_cuda|_videotoolbox)?|libplacebo|zscale|hwupload(_cuda)?|hwmap|hwdownload|overlay_(vaapi|cuda|qsv)|deinterlace_vaapi|yadif_cuda|bwdif(_cuda)?)$/;
 
 /* ------------------------------ devices ------------------------------ */
 
@@ -259,13 +260,34 @@ async function ensureSamples(encoders: Set<string>): Promise<{ h264: string | nu
 }
 
 /** The ffmpeg command for one test, built with the playback pipeline builders. Exported for tests. */
-export function testArgs(t: HwTarget, o: { codec: TranscodeVideoCodec; input: string | 'testsrc'; toneMap: ToneMapPath | null; decode: boolean }): string[] {
-  const pipe = buildVideoPipeline({ target: t, codec: o.codec, height: 720, sourceHeight: 1080, toneMap: o.toneMap, decode: o.decode && o.input !== 'testsrc' });
+export function testArgs(t: HwTarget, o: { codec: TranscodeVideoCodec; input: string | 'testsrc'; toneMap: ToneMapPath | null; decode: boolean; lowPower?: boolean; features?: FfmpegFeatures }): string[] {
+  const pipe = buildVideoPipeline({ target: t, codec: o.codec, height: 720, sourceHeight: 1080, toneMap: o.toneMap, decode: o.decode && o.input !== 'testsrc', features: o.features });
   const input = o.input === 'testsrc' ? ['-f', 'lavfi', '-i', 'testsrc2=size=1920x1080:rate=30'] : ['-i', o.input];
-  return ['-y', ...pipe.inputArgs, ...input, '-t', '2', '-an', '-vf', pipe.filters.join(','), ...encoderArgs(pipe.encoder, { bitrate: 4000, preset: 'veryfast', threads: 0 }), ...rateArgs(4000), '-f', 'null', '-'];
+  return ['-y', ...pipe.inputArgs, ...input, '-t', '2', '-an', '-vf', pipe.filters.join(','), ...encoderArgs(pipe.encoder, { bitrate: 4000, preset: 'veryfast', threads: 0, lowPower: o.lowPower }), ...rateArgs(4000), '-f', 'null', '-'];
 }
 
-async function testMethod(cand: Candidate, ctx: { platform: string; encoders: Set<string>; filters: Set<string>; samples: { h264: string | null; hdr: string | null } }): Promise<HwMethodResult> {
+/**
+ * Hardware-decode-only test command. ffmpeg silently falls back to software decoding when the hardware decoder can't
+ * set up, and the playback pipeline's `format=…|vaapi,hwupload` prefix would upload those frames anyway, so a full
+ * pipeline test passes either way. Here the decoder must output hardware frames (-hwaccel_output_format) and
+ * `hwdownload` rejects software frames, so the test only passes when the GPU really decoded. null = the method has no
+ * hardware decoding (V4L2 M2M, software). `swFormats`: extra download formats this build has (e.g. Rockchip's nv15).
+ */
+export function decodeTestArgs(t: HwTarget, input: string, swFormats: string[] = []): string[] | null {
+  let inArgs: string[];
+  switch (t.hw) {
+    case 'vaapi': case 'qsv': case 'nvenc': case 'rkmpp': inArgs = hwInputArgs(t, 'full', true); break;
+    case 'amf': inArgs = ['-hwaccel', 'd3d11va', '-hwaccel_device', String(t.gpuIndex ?? 0), '-hwaccel_output_format', 'd3d11']; break;
+    case 'videotoolbox': inArgs = ['-hwaccel', 'videotoolbox', '-hwaccel_output_format', 'videotoolbox_vld']; break;
+    default: return null;
+  }
+  return ['-y', ...inArgs, '-i', input, '-t', '2', '-an', '-vf', `hwdownload,format=${['nv12', 'p010le', ...swFormats].join('|')}`, '-f', 'null', '-'];
+}
+
+/** VA-API encoders that only expose the low-power (VDEnc) entrypoint fail without -low_power 1 (Jasper Lake, N100, Arc). */
+const LOW_POWER_RETRY: Partial<Record<HwAccel, true>> = { vaapi: true };
+
+async function testMethod(cand: Candidate, ctx: { platform: string; encoders: Set<string>; filters: Set<string>; pixFmts: Set<string>; features: FfmpegFeatures; samples: { h264: string | null; hdr: string | null } }): Promise<HwMethodResult> {
   const id = `${cand.hwAccel}:${cand.device ?? cand.gpuIndex ?? 'default'}`;
   const emptyEncode = Object.fromEntries(CODECS.map((c) => [c, { ...skipped('not tested'), encoder: encoderFor(cand.hwAccel, c) }])) as HwMethodResult['encode'];
   const base: HwMethodResult = {
@@ -284,7 +306,18 @@ async function testMethod(cand: Candidate, ctx: { platform: string; encoders: Se
     if (sw && codec !== 'h264') { base.encode[codec] = { ...skipped('HEVC/AV1 are only encoded with hardware'), encoder: enc }; continue; }
     if (!ctx.encoders.has(enc)) { base.encode[codec] = { ...skipped(`${enc} is not in this ffmpeg build`), encoder: enc }; continue; }
     if (codec !== 'h264' && !base.encode.h264.works) { base.encode[codec] = { ...skipped('H.264 encoding failed, so this was not tried'), encoder: enc }; continue; }
-    base.encode[codec] = { ...fromRun(await runFfmpeg(testArgs(target, { codec, input: 'testsrc', toneMap: null, decode: false }))), encoder: enc };
+    let r = await runFfmpeg(testArgs(target, { codec, input: 'testsrc', toneMap: null, decode: false, features: ctx.features }));
+    let lowPower = false;
+    if (!r.ok && LOW_POWER_RETRY[cand.hwAccel]) {
+      const lp = await runFfmpeg(testArgs(target, { codec, input: 'testsrc', toneMap: null, decode: false, lowPower: true, features: ctx.features }));
+      if (lp.ok) { r = lp; lowPower = true; }
+    }
+    base.encode[codec] = { ...fromRun(r), encoder: enc };
+    if (lowPower) {
+      // Read by transcoder.ts encoderLowPower(): playback adds -low_power 1 for this encoder.
+      Object.assign(base.encode[codec], { lowPower: true });
+      base.notes.push(`${enc} only works in low-power mode (-low_power 1).`);
+    }
   }
   base.works = base.encode.h264.works;
   base.fps = base.encode.h264.fps;
@@ -292,19 +325,28 @@ async function testMethod(cand: Candidate, ctx: { platform: string; encoders: Se
     base.error = base.encode.h264.error;
     return base;
   }
+  const h264LowPower = !!(base.encode.h264 as { lowPower?: boolean }).lowPower;
 
-  // 2) Decode → scale → encode (full GPU pipeline where the method has one).
-  base.decode = ctx.samples.h264 ? fromRun(await runFfmpeg(testArgs(target, { codec: 'h264', input: ctx.samples.h264, toneMap: null, decode: true }))) : skipped('No H.264 test clip');
+  // 2) Hardware decode of H.264 (decode-only: the frames must come out of the GPU decoder, see decodeTestArgs).
+  const swFormats = ctx.pixFmts.has('nv15') ? ['nv15'] : [];
+  const decodeTest = async (input: string | null, missing: string) => {
+    if (!input) return skipped(missing);
+    const a = decodeTestArgs(target, input, swFormats);
+    return a ? fromRun(await runFfmpeg(a)) : skipped(`${cand.label} decodes on the CPU`);
+  };
+  base.decode = await decodeTest(ctx.samples.h264, 'No H.264 test clip');
   // 3) 10-bit HEVC decode.
-  base.tenBit = ctx.samples.hdr ? fromRun(await runFfmpeg(testArgs(target, { codec: 'h264', input: ctx.samples.hdr, toneMap: null, decode: true }))) : skipped('No 10-bit test clip (needs libx265)');
-  // 4) HDR → SDR tone-mapping: first path that works.
+  base.tenBit = await decodeTest(ctx.samples.hdr, 'No 10-bit test clip (needs libx265)');
+  // 4) HDR → SDR tone-mapping: the first path that works is the default. libplacebo is still tested after a GPU path
+  //    won, because Dolby Vision profile 5 sources prefer it (only it applies the RPU reshaping).
   for (const path of toneMapCandidates(cand.hwAccel, ctx.platform)) {
+    if (base.toneMapping.path && path !== 'libplacebo') continue;
     const missing = TONEMAP_FILTERS[path].filter((f) => !ctx.filters.has(f));
     if (missing.length) { base.toneMapping.tried.push({ path, ...skipped(`ffmpeg has no ${missing.join(', ')} filter`) }); continue; }
     if (!ctx.samples.hdr) { base.toneMapping.tried.push({ path, ...skipped('No HDR test clip (needs libx265)') }); continue; }
-    const r = fromRun(await runFfmpeg(testArgs(target, { codec: 'h264', input: ctx.samples.hdr, toneMap: path, decode: true })));
+    const r = fromRun(await runFfmpeg(testArgs(target, { codec: 'h264', input: ctx.samples.hdr, toneMap: path, decode: true, lowPower: h264LowPower, features: ctx.features })));
     base.toneMapping.tried.push({ path, ...r });
-    if (r.works) { base.toneMapping.path = path; break; }
+    if (r.works && !base.toneMapping.path) base.toneMapping.path = path;
   }
   if (base.decode && !base.decode.works && !base.decode.skipped) base.notes.push('Hardware decoding failed; encoding still works (frames are decoded on the CPU).');
   if (base.tenBit && !base.tenBit.works && !base.tenBit.skipped) base.notes.push('10-bit HEVC could not be decoded on this device.');
@@ -318,6 +360,19 @@ async function testMethod(cand: Candidate, ctx: { platform: string; encoders: Se
 let inflight: Promise<HwDetectReport> | null = null;
 
 export const cachedReport = () => getDetectReport();
+
+/**
+ * Startup hook: load the persisted report and, when none is valid for the current settings and ffmpeg build, run
+ * detection in the background (skipped under `node --test`, with MEDIAMAX_NO_HWDETECT=1, and without ffmpeg).
+ * Never blocks; transcoder.ts also does this lazily on the first playback decision.
+ */
+export function initHardwareDetection(): void {
+  try {
+    initDetectReport();
+  } catch (e) {
+    log.warn(`Hardware detect cache: ${(e as Error).message}`);
+  }
+}
 
 /** Run detection (concurrent callers share one run). The result is cached until the next run. */
 export function detectHardware(): Promise<HwDetectReport> {
@@ -333,13 +388,15 @@ async function runDetection(): Promise<HwDetectReport> {
   const hwaccels = parseHwaccels(cmd(config.ffmpeg, ['-hide_banner', '-hwaccels']) ?? '');
   const encoders = listCaps('-encoders');
   const filters = listCaps('-filters');
+  const pixFmts = listCaps('-pix_fmts');
+  const features: FfmpegFeatures = { openclBt2390: ffmpegFeatures().openclBt2390, hasFilter: (f) => filters.has(f) };
   const devices = findDevices(platform);
   const candidates = planCandidates(platform, devices, encoders);
   const samples = versionOut ? await ensureSamples(encoders) : { h264: null, hdr: null, notes: ['ffmpeg was not found.'] };
   const methods: HwMethodResult[] = [];
   for (const cand of candidates) {
     if (!versionOut) cand.unavailable = `ffmpeg not found at ${config.ffmpeg}`;
-    methods.push(await testMethod(cand, { platform, encoders, filters, samples }));
+    methods.push(await testMethod(cand, { platform, encoders, filters, pixFmts, features, samples }));
   }
   const recommendation = recommend(methods);
   for (const m of methods) m.recommended = m.id === recommendation.id;
@@ -349,6 +406,8 @@ async function runDetection(): Promise<HwDetectReport> {
     ffmpeg: { path: config.ffmpeg, version, hwaccels, encoders: [...encoders].filter((e) => RELEVANT_ENCODER.test(e)).sort(), filters: [...filters].filter((f) => RELEVANT_FILTER.test(f)).sort() },
     devices, methods, recommendation,
   };
+  // Observed build features (not part of the shared type; kept in the persisted report for diagnostics).
+  Object.assign(report.ffmpeg, { features: { openclBt2390: !!features.openclBt2390 } });
   setDetectReport(report);
   log.info(`Hardware detection: ${methods.filter((m) => m.works).map((m) => m.id).join(', ') || 'nothing works'} — recommend ${recommendation.hwAccel} (${report.durationMs} ms)`);
   return report;

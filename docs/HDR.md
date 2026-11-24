@@ -68,8 +68,13 @@ profile 8.x plays its base layer, and profile 5 is tone-mapped.
 | any HDR | SDR only | transcode + tone-map to SDR |
 
 When HDR is transcoded for another reason (bitrate, burned-in subtitles), it is tone-mapped too. The transcoder
-outputs 8-bit SDR. The hardware tone-mapping path (VA-API, QSV, CUDA, OpenCL, libplacebo, or the CPU fallback) is
-chosen by the transcoder; see the hardware transcoding settings.
+outputs 8-bit SDR. The tone-mapping path is chosen by the transcoder from what **Detect hardware** saw work: the
+accelerator's GPU tone-mapper (VA-API, QSV, CUDA, OpenCL), then libplacebo (Vulkan), then the CPU (`zscale` + `tonemap`
+Hable, which downscales first, so the expensive float conversion runs at the output size). OpenCL uses the BT.2390
+curve on FFmpeg builds that have it (jellyfin-ffmpeg; detected from `ffmpeg -h filter=tonemap_opencl`) and Hable on
+stock FFmpeg, which rejects `tonemap=bt2390`. **Dolby Vision profile 5** prefers libplacebo whenever detection saw it
+work, even over a GPU tone-mapper, because only libplacebo applies the RPU reshaping; without it, profile 5 is tone-mapped
+by the usual path and colours will be off.
 
 Older apps that don't send `videoRange` keep the previous behaviour: the server's HDR tone-mapping setting (`transcoding.toneMapHdr`) decides.
 

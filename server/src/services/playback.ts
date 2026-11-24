@@ -520,6 +520,8 @@ export async function planPlayback(ctx: AuthContext, itemId: string, req: Playba
       audioIndex: audio?.index ?? null, audioCopy: decision.audioCopy, videoCopy: decision.videoCopy,
       bitrate: Math.round(target), maxHeight: outputMaxHeight(p, media.width, media.height), sourceHeight: media.height,
       // Decoding Dolby Vision 8.2 / 9 gives its SDR base layer: nothing to tone-map.
+      // Frame rate (GOP, H.264 level), Dolby Vision profile (tone-map choice) and field order (deinterlacing).
+      videoRange: media.videoRange ?? null,
       sourceCodec: media.videoCodec, hdr: media.hdr && !(media.videoRange?.dolbyVision && media.videoRange.fallback === 'sdr'), audioChannels: audio?.channels, hasVideo: !isAudioOnly,
       burnSubtitle: effectiveBurn
         ? effectiveBurn.external

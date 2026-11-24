@@ -19,6 +19,7 @@ import { helpArticleCount } from './services/help.js';
 import { stopAllSessions } from './services/playback.js';
 import { stopActiveRecordings } from './services/dvr.js';
 import { stopNetwork } from './services/network.js';
+import { initHardwareDetection } from './services/hwdetect.js';
 
 const log = logger('main');
 
@@ -40,6 +41,7 @@ async function main() {
   startRemoteAccess();
   initHomeAssistant();
   startRenderers();
+  initHardwareDetection(); // loads the cached GPU report, or re-detects in the background
   await loadPlugins().catch((e) => log.error('Plugin loading failed', e));
   let shuttingDown = false;
   const shutdown = async (sig: string) => {

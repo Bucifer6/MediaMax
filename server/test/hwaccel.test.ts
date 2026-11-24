@@ -4,7 +4,8 @@ import type { HwAccel, HwDevice, HwMethodResult, ToneMapPath, TranscodeVideoCode
 
 const hwa = await import('../src/services/hwaccel.ts');
 const { buildVideoPipeline, encoderArgs, chooseVideoCodec, codecBitrate, toneMapCandidates, hwInputArgs, ENCODERS, softwareToneMap } = hwa;
-const { buildArgs, shouldToneMap, hasEncoder } = await import('../src/services/transcoder.ts');
+const transcoderMod = await import('../src/services/transcoder.ts');
+const { buildArgs, shouldToneMap, hasEncoder } = transcoderMod;
 const det = await import('../src/services/hwdetect.ts');
 const { transcodeCodecFor } = await import('../src/services/playback.ts');
 const { updateSettings } = await import('../src/services/settings.ts');
@@ -12,9 +13,11 @@ const { updateSettings } = await import('../src/services/settings.ts');
 const DEV = '/dev/dri/renderD128';
 const T = (hw: HwAccel, platform = 'linux', gpuIndex = 0) => ({ hw, platform, vaapiDevice: DEV, gpuIndex });
 const SW_TM = softwareToneMap('software');
+/** CPU tone-mapping that downscales in its first zscale (no separate scale filter). */
+const SW_TM_H = (h: number) => [`zscale=w=-2:h=${h}:f=bilinear:t=linear:npl=100`, ...SW_TM.slice(1)];
 const PLACEBO = 'libplacebo=tonemapping=bt.2390:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv:format=yuv420p';
 const OPENCL = (back: string, fmt: string) => [
-  'hwmap=derive_device=opencl:mode=read', 'tonemap_opencl=format=nv12:p=bt709:t=bt709:m=bt709:tonemap=bt2390:desat=0',
+  'hwmap=derive_device=opencl:mode=read', 'tonemap_opencl=format=nv12:p=bt709:t=bt709:m=bt709:tonemap=hable:desat=0',
   `hwmap=derive_device=${back}:mode=write:reverse=1`, `format=${fmt}`,
 ];
 const ALL_HW: HwAccel[] = ['none', 'vaapi', 'nvenc', 'qsv', 'videotoolbox', 'v4l2m2m', 'amf', 'rkmpp'];
@@ -53,16 +56,17 @@ type Exp = { mode: 'full' | 'hybrid' | 'software'; filters: string[]; toneMap: T
 function expected(hw: HwAccel, platform: string, tm: ToneMapPath | null): Exp {
   const hybrid = (): Exp => {
     const etm: ToneMapPath | null = tm ? (tm === 'libplacebo' ? 'libplacebo' : 'software') : null;
-    const pre = etm === 'libplacebo' ? [PLACEBO] : etm ? SW_TM : [];
+    const pre = etm === 'libplacebo' ? [PLACEBO, `scale=-2:${H}`] : etm ? SW_TM_H(H) : [`scale=-2:${H}`];
+    const yuv = etm === 'software' ? [] : ['format=yuv420p']; // the CPU tone-map chain already ends in yuv420p
     const tail: Record<string, string[]> = {
       vaapi: ['format=nv12', 'hwupload'], nvenc: ['format=nv12', 'hwupload'], qsv: ['format=nv12', 'hwupload=extra_hw_frames=64'],
-      videotoolbox: ['format=yuv420p'], v4l2m2m: ['format=yuv420p'], amf: ['format=nv12'], rkmpp: ['format=nv12'],
+      videotoolbox: yuv, v4l2m2m: yuv, amf: ['format=nv12'], rkmpp: ['format=nv12'],
     };
-    return { mode: 'hybrid', filters: [...pre, `scale=-2:${H}`, ...tail[hw]], toneMap: etm };
+    return { mode: 'hybrid', filters: [...pre, ...tail[hw]], toneMap: etm };
   };
   if (hw === 'none') {
     const etm: ToneMapPath | null = tm ? (tm === 'libplacebo' ? 'libplacebo' : 'software') : null;
-    return { mode: 'software', filters: [...(etm === 'libplacebo' ? [PLACEBO] : etm ? SW_TM : []), `scale=-2:${H}`, 'format=yuv420p'], toneMap: etm };
+    return { mode: 'software', filters: etm === 'software' ? SW_TM_H(H) : [...(etm === 'libplacebo' ? [PLACEBO] : []), `scale=-2:${H}`, 'format=yuv420p'], toneMap: etm };
   }
   const win = platform === 'win32';
   switch (hw) {
@@ -77,7 +81,7 @@ function expected(hw: HwAccel, platform: string, tm: ToneMapPath | null): Exp {
       const pre = tm === 'vaapi' ? ['tonemap_vaapi=format=nv12:p=bt709:t=bt709:m=bt709'] : tm === 'opencl' ? OPENCL('vaapi', 'vaapi') : [];
       return {
         mode: 'full', toneMap: tm,
-        filters: [`format=nv12|p010le|${win ? 'd3d11' : 'vaapi'}`, 'hwupload', ...pre, 'hwmap=derive_device=qsv', 'format=qsv', ...(tm === 'qsv' ? ['vpp_qsv=tonemap=1:format=nv12'] : []), `scale_qsv=w=-1:h=${H}:format=nv12`],
+        filters: [`format=nv12|p010le|${win ? 'd3d11' : 'vaapi'}`, 'hwupload', ...pre, 'hwmap=derive_device=qsv', 'format=qsv', ...(tm === 'qsv' ? ['vpp_qsv=tonemap=1:format=nv12'] : []), `scale_qsv=w=round(iw*${H}/ih/2)*2:h=${H}:format=nv12`],
       };
     }
     case 'nvenc':
@@ -123,7 +127,7 @@ test('pipeline: burn-in subtitles force the hybrid path and keep the hardware en
   const sub = "subtitles='/m/a.srt'";
   const p = buildVideoPipeline({ target: T('vaapi'), codec: 'hevc', height: 720, sourceHeight: 1080, toneMap: 'vaapi', swFilters: [sub], decode: true });
   assert.equal(p.mode, 'hybrid');
-  assert.deepEqual(p.filters, [...SW_TM, 'scale=-2:720', sub, 'format=nv12', 'hwupload']);
+  assert.deepEqual(p.filters, [...SW_TM_H(720), sub, 'format=nv12', 'hwupload']);
   assert.equal(p.encoder, 'hevc_vaapi');
   assert.equal(p.toneMap, 'software');
   const sw = buildVideoPipeline({ target: T('none'), codec: 'h264', height: 720, sourceHeight: 1080, toneMap: null, swFilters: [sub], decode: true });
@@ -145,7 +149,7 @@ test('pipeline: no upscaling, and GPU scalers without a height', () => {
 test('encoder args for every encoder', () => {
   const o = { bitrate: 5000, preset: 'veryfast', threads: 0 };
   const exp: Record<string, string[]> = {
-    libx264: ['-preset', 'veryfast', '-profile:v', 'high', '-level', '4.1', '-tune', 'zerolatency'],
+    libx264: ['-preset', 'veryfast', '-profile:v', 'high', '-level', '4.1'],
     libx265: ['-preset', 'veryfast', '-x265-params', 'log-level=error', '-tag:v', 'hvc1'],
     libsvtav1: ['-preset', '10'],
     h264_nvenc: ['-preset', 'p4', '-forced-idr', '1'], hevc_nvenc: ['-preset', 'p4', '-forced-idr', '1', '-tag:v', 'hvc1'], av1_nvenc: ['-preset', 'p4', '-forced-idr', '1'],
@@ -162,20 +166,88 @@ test('encoder args for every encoder', () => {
   assert.deepEqual(encoderArgs('libx264', { ...o, threads: 4 }).slice(-2), ['-threads', '4']);
 });
 
+test('libx264: zerolatency only for live, H.264 level from output size and frame rate; VA-API low-power', () => {
+  const o = { bitrate: 5000, preset: 'veryfast', threads: 0 };
+  assert.deepEqual(encoderArgs('libx264', { ...o, live: true }), ['-c:v', 'libx264', '-preset', 'veryfast', '-profile:v', 'high', '-level', '4.1', '-tune', 'zerolatency']);
+  const level = (height: number | null, fps: number | null) => { const a = encoderArgs('libx264', { ...o, height, fps }); return a[a.indexOf('-level') + 1]; };
+  assert.equal(level(2160, 24), '5.1');
+  assert.equal(level(1440, null), '5.1');
+  assert.equal(level(1080, 24), '4.1');
+  assert.equal(level(1080, 50), '4.2');
+  assert.equal(level(720, 60), '4.1');
+  assert.equal(level(null, null), '4.1');
+  assert.deepEqual(encoderArgs('h264_vaapi', { ...o, lowPower: true }), ['-c:v', 'h264_vaapi', '-low_power', '1']);
+  assert.deepEqual(encoderArgs('hevc_vaapi', { ...o, lowPower: true }), ['-c:v', 'hevc_vaapi', '-low_power', '1', '-tag:v', 'hvc1']);
+  assert.deepEqual(encoderArgs('h264_qsv', { ...o, lowPower: true }), ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-forced_idr', '1']);
+});
+
+test('keyframes: time-based at segment boundaries, GOP of one segment when the frame rate is known', () => {
+  assert.deepEqual(hwa.keyframeArgs(4, null), ['-force_key_frames', 'expr:gte(t,n_forced*4)', '-sc_threshold', '0']);
+  assert.deepEqual(hwa.keyframeArgs(4, 23.976), ['-force_key_frames', 'expr:gte(t,n_forced*4)', '-sc_threshold', '0', '-g', '96', '-keyint_min', '96']);
+  assert.deepEqual(hwa.keyframeArgs(6, 50), ['-force_key_frames', 'expr:gte(t,n_forced*6)', '-sc_threshold', '0', '-g', '300', '-keyint_min', '300']);
+});
+
+test('OpenCL tone-mapping uses bt2390 only when the build has it (jellyfin-ffmpeg), else hable', () => {
+  const tm = (features: any) => buildVideoPipeline({ target: T('vaapi'), codec: 'h264', height: 1080, sourceHeight: 2160, toneMap: 'opencl', decode: true, features }).filters[3];
+  assert.equal(tm(undefined), 'tonemap_opencl=format=nv12:p=bt709:t=bt709:m=bt709:tonemap=hable:desat=0');
+  assert.equal(tm({ openclBt2390: true }), 'tonemap_opencl=format=nv12:p=bt709:t=bt709:m=bt709:tonemap=bt2390:desat=0');
+  assert.equal(det.decodeTestArgs(T('v4l2m2m'), '/s.mp4'), null);
+  const { parseOpenclBt2390 } = transcoderMod;
+  assert.equal(parseOpenclBt2390('   tonemap  <int> ..FV...\n     none 0\n     hable 5\n     mobius 6\n'), false);
+  assert.equal(parseOpenclBt2390('   tonemap  <int> ..FV...\n     hable 5\n     mobius 6\n     bt2390 7  ..FV...\n'), true);
+});
+
+/* ----------------------------- deinterlacing ---------------------------- */
+
+test('deinterlacing: GPU deinterlacers in full pipelines, bwdif on the CPU, auto mode only on CPU paths', () => {
+  const p = (hw: HwAccel, o: any = {}) => buildVideoPipeline({ target: T(hw, o.platform ?? 'linux'), codec: 'h264', height: 720, sourceHeight: 1080, toneMap: null, decode: true, deinterlace: 'interlaced', ...o });
+  const BW = 'bwdif=mode=send_field:parity=auto:deint=interlaced';
+  const BW_AUTO = 'bwdif=mode=send_frame:parity=auto:deint=interlaced';
+  assert.deepEqual(p('vaapi').filters, ['format=nv12|p010le|vaapi', 'hwupload', 'deinterlace_vaapi=rate=field', 'scale_vaapi=w=-2:h=720:format=nv12']);
+  assert.equal(p('vaapi').fieldRate, true);
+  assert.deepEqual(p('nvenc').filters, ['format=nv12|p010le|cuda', 'hwupload', 'yadif_cuda=mode=send_field:parity=auto:deint=interlaced', 'scale_cuda=w=-2:h=720:format=nv12']);
+  assert.deepEqual(p('qsv').filters, ['format=nv12|p010le|vaapi', 'hwupload', 'hwmap=derive_device=qsv', 'format=qsv', 'vpp_qsv=deinterlace=2', 'scale_qsv=w=round(iw*720/ih/2)*2:h=720:format=nv12']);
+  assert.equal(p('qsv').fieldRate, false);
+  // Merged into the tone-mapping vpp_qsv.
+  assert.deepEqual(p('qsv', { toneMap: 'qsv' }).filters.slice(4), ['vpp_qsv=deinterlace=2:tonemap=1:format=nv12', 'scale_qsv=w=round(iw*720/ih/2)*2:h=720:format=nv12']);
+  assert.deepEqual(p('vaapi', { toneMap: 'vaapi' }).filters.slice(2, 4), ['deinterlace_vaapi=rate=field', 'tonemap_vaapi=format=nv12:p=bt709:t=bt709:m=bt709']);
+  // No GPU deinterlacer (RKMPP) or not in this build → hybrid with bwdif first.
+  const rk = p('rkmpp');
+  assert.equal(rk.mode, 'hybrid');
+  assert.deepEqual(rk.filters, [BW, 'scale=-2:720', 'format=nv12']);
+  const noYadif = p('nvenc', { features: { hasFilter: (f: string) => f !== 'yadif_cuda' } });
+  assert.equal(noYadif.mode, 'hybrid');
+  assert.deepEqual(noYadif.filters, [BW, 'scale=-2:720', 'format=nv12', 'hwupload']);
+  // CPU: deinterlace before tone-mapping/scaling.
+  assert.deepEqual(p('none', { toneMap: 'software' }).filters, [BW, ...SW_TM_H(720)]);
+  assert.deepEqual(p('none').filters, [BW, 'scale=-2:720', 'format=yuv420p']);
+  // Unknown field order (live): no-op-for-progressive bwdif on CPU/hybrid, nothing in the full GPU pipeline.
+  assert.deepEqual(p('none', { deinterlace: 'auto' }).filters, [BW_AUTO, 'scale=-2:720', 'format=yuv420p']);
+  assert.equal(p('none', { deinterlace: 'auto' }).fieldRate, false);
+  assert.deepEqual(p('vaapi', { deinterlace: 'auto' }).filters, ['format=nv12|p010le|vaapi', 'hwupload', 'scale_vaapi=w=-2:h=720:format=nv12']);
+  assert.deepEqual(p('vaapi', { deinterlace: 'auto', swFilters: ['subtitles=x'] }).filters, [BW_AUTO, 'scale=-2:720', 'subtitles=x', 'format=nv12', 'hwupload']);
+  // Progressive: nothing.
+  assert.deepEqual(p('none', { deinterlace: null }).filters, ['scale=-2:720', 'format=yuv420p']);
+  assert.equal(hwa.isInterlacedFieldOrder('tt'), true);
+  assert.equal(hwa.isInterlacedFieldOrder('bt'), true);
+  assert.equal(hwa.isInterlacedFieldOrder('progressive'), false);
+  assert.equal(hwa.isInterlacedFieldOrder(null), false);
+});
+
 test('HEVC/AV1 bitrate is ~60-70% of H.264', () => {
   assert.equal(codecBitrate(8000, 'h264'), 8000);
   assert.equal(codecBitrate(8000, 'hevc'), 5200);
   assert.equal(codecBitrate(8000, 'av1'), 4800);
 });
 
-test('tone-mapping candidates per accelerator', () => {
-  assert.deepEqual(toneMapCandidates('vaapi', 'linux'), ['vaapi', 'opencl', 'software', 'libplacebo']);
-  assert.deepEqual(toneMapCandidates('qsv', 'linux'), ['qsv', 'vaapi', 'opencl', 'software', 'libplacebo']);
-  assert.deepEqual(toneMapCandidates('qsv', 'win32'), ['qsv', 'software', 'libplacebo']);
-  assert.deepEqual(toneMapCandidates('nvenc', 'linux'), ['cuda', 'software', 'libplacebo']);
-  assert.deepEqual(toneMapCandidates('rkmpp', 'linux'), ['opencl', 'software', 'libplacebo']);
-  for (const hw of ['none', 'amf', 'videotoolbox', 'v4l2m2m'] as HwAccel[]) assert.deepEqual(toneMapCandidates(hw, 'linux'), ['software', 'libplacebo']);
-  assert.deepEqual(toneMapCandidates('vaapi', 'linux', false), ['software', 'libplacebo']);
+test('tone-mapping candidates per accelerator (libplacebo before the CPU zscale path)', () => {
+  assert.deepEqual(toneMapCandidates('vaapi', 'linux'), ['vaapi', 'opencl', 'libplacebo', 'software']);
+  assert.deepEqual(toneMapCandidates('qsv', 'linux'), ['qsv', 'vaapi', 'opencl', 'libplacebo', 'software']);
+  assert.deepEqual(toneMapCandidates('qsv', 'win32'), ['qsv', 'libplacebo', 'software']);
+  assert.deepEqual(toneMapCandidates('nvenc', 'linux'), ['cuda', 'libplacebo', 'software']);
+  assert.deepEqual(toneMapCandidates('rkmpp', 'linux'), ['opencl', 'libplacebo', 'software']);
+  for (const hw of ['none', 'amf', 'videotoolbox', 'v4l2m2m'] as HwAccel[]) assert.deepEqual(toneMapCandidates(hw, 'linux'), ['libplacebo', 'software']);
+  assert.deepEqual(toneMapCandidates('vaapi', 'linux', false), ['libplacebo', 'software']);
 });
 
 /* ---------------------------- codec choice ----------------------------- */
@@ -226,7 +298,7 @@ test('buildArgs: software H.264 on MPEG-TS (unchanged default path)', () => {
     '-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-i', '/media/movie.mkv',
     '-map', '0:v:0', '-map', '0:1', '-sn', '-dn', '-map_metadata', '-1', '-map_chapters', '-1',
     '-vf', 'scale=-2:1080,format=yuv420p',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-profile:v', 'high', '-level', '4.1', '-tune', 'zerolatency',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-profile:v', 'high', '-level', '4.1',
     '-b:v', '8000k', '-maxrate', '8000k', '-bufsize', '16000k', '-force_key_frames', 'expr:gte(t,n_forced*4)', '-sc_threshold', '0',
     '-c:a', 'aac', '-ac', '2', '-b:a', '192k', '-max_muxing_queue_size', '2048',
     '-f', 'hls', '-hls_time', '4', '-hls_segment_type', 'mpegts', '-start_number', '0', '-hls_segment_filename', '/t/seg%d.ts',
@@ -258,9 +330,16 @@ test('buildArgs: image subtitle overlay with NVENC, Windows QSV, AMF', () => {
   assert.deepEqual(ov.args.slice(5, 9), ['-init_hw_device', 'cuda=cu:0', '-filter_hw_device', 'cu']);
   const i = ov.args.indexOf('-filter_complex');
   assert.equal(ov.args[i + 1], '[0:v:0][0:3]overlay=eof_action=pass,scale=-2:1080,format=nv12,hwupload[v]');
-  assert.ok(!ov.args.includes('-hwaccel'));
+  // The hybrid path keeps hardware decoding; without -hwaccel_output_format the frames arrive in system memory.
+  assert.deepEqual(ov.args.slice(9, 13), ['-hwaccel', 'cuda', '-hwaccel_device', 'cu']);
+  assert.ok(!ov.args.includes('-hwaccel_output_format'));
+  // Deinterlacing runs before the overlay; the decode:false fallback drops -hwaccel.
+  const ovi = buildArgs(opts({ burnSubtitle: { kind: 'embedded-image', streamIndex: 3 }, fieldOrder: 'tt' }) as any, '/t', 0, { hw: 'nvenc', codec: 'h264', toneMap: null });
+  assert.equal(ovi.args[ovi.args.indexOf('-filter_complex') + 1], '[0:v:0]bwdif=mode=send_field:parity=auto:deint=interlaced[dv];[dv][0:3]overlay=eof_action=pass,scale=-2:1080,format=nv12,hwupload[v]');
+  const ovsw = buildArgs(opts({ burnSubtitle: { kind: 'embedded-image', streamIndex: 3 } }) as any, '/t', 0, { hw: 'nvenc', codec: 'h264', toneMap: null, decode: false });
+  assert.ok(!ovsw.args.includes('-hwaccel'));
   const q = buildArgs(opts() as any, '/t', 0, { hw: 'qsv', codec: 'h264', toneMap: null, platform: 'win32' });
-  assert.equal(q.args[q.args.indexOf('-vf') + 1], 'format=nv12|p010le|d3d11,hwupload,hwmap=derive_device=qsv,format=qsv,scale_qsv=w=-1:h=1080:format=nv12');
+  assert.equal(q.args[q.args.indexOf('-vf') + 1], 'format=nv12|p010le|d3d11,hwupload,hwmap=derive_device=qsv,format=qsv,scale_qsv=w=round(iw*1080/ih/2)*2:h=1080:format=nv12');
   const a = buildArgs(opts() as any, '/t', 0, { hw: 'amf', codec: 'av1', toneMap: null, platform: 'win32' });
   assert.deepEqual(a.args.slice(5, 9), ['-hwaccel', 'd3d11va', '-hwaccel_device', '0']);
   assert.equal(a.args[a.args.indexOf('-c:v') + 1], 'av1_amf');
@@ -382,6 +461,7 @@ const fs = await import('node:fs');
 const os = await import('node:os');
 const pathMod = await import('node:path');
 const tmp = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'mm-hw-'));
+const { config: { cacheDir: transcoderCacheDir } } = await import('../src/config.ts');
 const src = pathMod.join(tmp, 'src.mkv');
 execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=24', '-f', 'lavfi', '-i', 'sine', '-t', '10',
   '-c:v', has('libx265') ? 'libx265' : 'libx264', '-preset', 'ultrafast', ...(has('libx265') ? ['-x265-params', 'log-level=error'] : []), '-c:a', 'aac', src]);
@@ -391,6 +471,10 @@ test('job: VA-API without a device falls back to software and reports why', asyn
   updateSettings({ transcoding: { hwAccel: 'vaapi', vaapiDevice: '/dev/dri/renderD999', segmentSeconds: 4, allowHevcEncoding: true, preferredCodecs: ['hevc', 'h264'] } as any });
   const job = new TranscodeJob('hwfb-' + process.pid, jobOpts({ videoCodec: 'hevc' }) as any);
   let changed = 0;
+  // Fallback ladder: each restart's reason, in order.
+  const reasons: string[] = [];
+  const start = job.start.bind(job);
+  job.start = (n?: number) => { start(n); reasons.push(job.info?.hwFallback ?? ''); };
   job.onInfoChange = () => changed++;
   job.start(0);
   try {
@@ -400,6 +484,10 @@ test('job: VA-API without a device falls back to software and reports why', asyn
     assert.match(job.info!.hwFallback ?? '', /vaapi failed, used software/);
     assert.ok(changed >= 1);
     if (hasEncoder('hevc_vaapi')) {
+      // HEVC → H.264 on VA-API → VA-API encode with CPU decode → software.
+      assert.match(reasons[1], /vaapi HEVC encoding failed, used vaapi H\.264/);
+      assert.match(reasons[2], /vaapi hardware decoding failed, decoded on the CPU and encoded with vaapi/);
+      assert.match(reasons[3], /vaapi failed, used software/);
       // HEVC was requested, so segments are fMP4 — the software H.264 fallback keeps that container.
       assert.equal(job.segmentType, 'fmp4');
       const init = await job.initSegment(10000);
@@ -438,4 +526,164 @@ test('per-rendition video args (adaptive streaming) and encoder session limits',
   assert.equal(hwa.maxEncoderSessions('nvenc', 'NVIDIA GeForce RTX 3060'), 8);
   assert.equal(hwa.maxEncoderSessions('nvenc', 'Quadro P2000'), null);
   assert.equal(hwa.maxEncoderSessions('vaapi'), null);
+});
+
+/* ------------------ live / VOD keyframes, levels, DV 5 ------------------ */
+
+test('buildArgs: live encodes use time-based keyframes (no 25 fps assumption), zerolatency and CPU auto-deinterlace', () => {
+  updateSettings({ transcoding: { hwAccel: 'none', segmentSeconds: 4, preset: 'veryfast', threads: 0, toneMapHdr: true } as any });
+  const live = buildArgs(opts({ mode: 'live', input: 'http://x/y.ts', sourceHeight: 1080 }) as any, '/t', 0, 'none');
+  assert.ok(!live.args.includes('-g'));
+  const k = live.args.indexOf('-force_key_frames');
+  assert.deepEqual(live.args.slice(k, k + 4), ['-force_key_frames', 'expr:gte(t,n_forced*4)', '-sc_threshold', '0']);
+  assert.ok(live.args.includes('zerolatency'));
+  assert.equal(live.args[live.args.indexOf('-vf') + 1], 'bwdif=mode=send_frame:parity=auto:deint=interlaced,format=yuv420p');
+  // A live input known to be progressive: no deinterlacer.
+  const prog = buildArgs(opts({ mode: 'live', input: 'http://x/y.ts', sourceHeight: 1080, fieldOrder: 'progressive' }) as any, '/t', 0, 'none');
+  assert.equal(prog.args[prog.args.indexOf('-vf') + 1], 'format=yuv420p');
+});
+
+test('buildArgs: VOD GOP from the probed frame rate (doubled by field-rate deinterlacing), level 5.1 above 1080p', () => {
+  const vr = (o: any = {}) => ({ hdrFormat: 'sdr', fallback: null, label: 'SDR', bitDepth: 8, pixFmt: 'yuv420p', codecProfile: null, colorTransfer: null, colorPrimaries: null, colorSpace: null, frameRate: 25, dolbyVision: null, masteringDisplay: null, contentLight: null, ...o });
+  const a = buildArgs(opts({ videoRange: vr(), sourceHeight: 1080 }) as any, '/t', 0, 'none').args;
+  assert.deepEqual(a.slice(a.indexOf('-g'), a.indexOf('-g') + 4), ['-g', '100', '-keyint_min', '100']);
+  assert.ok(!a.includes('zerolatency'));
+  const i = buildArgs(opts({ videoRange: vr({ fieldOrder: 'tt' }), sourceHeight: 1080 }) as any, '/t', 0, 'none').args;
+  assert.equal(i[i.indexOf('-g') + 1], '200');
+  assert.equal(i[i.indexOf('-level') + 1], '4.2'); // 1080p50 after deinterlacing
+  assert.match(i[i.indexOf('-vf') + 1], /^bwdif=mode=send_field:parity=auto:deint=interlaced,/);
+  const uhd = buildArgs(opts({ bitrate: 40000, sourceHeight: 2160 }) as any, '/t', 0, 'none').args;
+  assert.equal(uhd[uhd.indexOf('-level') + 1], '5.1');
+  // VA-API with a probed interlaced source: GPU deinterlacing before the scaler.
+  const va = buildArgs(opts({ videoRange: vr({ fieldOrder: 'bb' }) }) as any, '/t', 0, { hw: 'vaapi', codec: 'h264', toneMap: null, platform: 'linux' }).args;
+  assert.equal(va[va.indexOf('-vf') + 1], 'format=nv12|p010le|vaapi,hwupload,deinterlace_vaapi=rate=field,scale_vaapi=w=-2:h=1080:format=nv12');
+});
+
+const fakeReport = (m: Partial<HwMethodResult>[]) => ({
+  ranAt: new Date().toISOString(), durationMs: 1, platform: 'linux', arch: 'x64',
+  ffmpeg: { path: 'ffmpeg', version: 'x', hwaccels: [], encoders: [], filters: [] }, devices: [],
+  methods: m.map((x) => method(x)), recommendation: { id: 'none:default', hwAccel: 'none' as HwAccel, device: null, gpuIndex: null, reason: '' },
+});
+
+test('detect report: Dolby Vision 5 prefers libplacebo once detection saw it work; VA-API low-power flag reaches the encoder', () => {
+  const { setDetectReport, pickToneMap, hasFilter: hf } = transcoderMod;
+  updateSettings({ transcoding: { hwAccel: 'vaapi', vaapiDevice: DEV, hardwareToneMapping: true, toneMapHdr: true } as any });
+  const enc = (works: boolean, extra: any = {}) => ({ works, error: null, fps: 100, encoder: 'x', ...extra });
+  setDetectReport(fakeReport([{
+    id: 'vaapi:' + DEV, hwAccel: 'vaapi', device: DEV,
+    encode: { h264: enc(true, { lowPower: true }), hevc: enc(true), av1: enc(false) } as any,
+    toneMapping: { path: 'vaapi', tried: [{ path: 'vaapi', works: true, error: null, fps: 1 }, { path: 'libplacebo', works: true, error: null, fps: 1 }] },
+  }]) as any);
+  try {
+    if (hf('tonemap_vaapi')) assert.equal(pickToneMap('vaapi', 'linux', true), 'vaapi');
+    if (hf('libplacebo')) assert.equal(pickToneMap('vaapi', 'linux', true, true), 'libplacebo');
+    const a = buildArgs(opts() as any, '/t', 0, { hw: 'vaapi', codec: 'h264', toneMap: null, platform: 'linux' }).args;
+    assert.deepEqual(a.slice(a.indexOf('-c:v'), a.indexOf('-c:v') + 4), ['-c:v', 'h264_vaapi', '-low_power', '1']);
+    const h = buildArgs(opts() as any, '/t', 0, { hw: 'vaapi', codec: 'hevc', toneMap: null, platform: 'linux' }).args;
+    assert.ok(!h.includes('-low_power'));
+    if (hf('libplacebo')) {
+      const dv = { hdrFormat: 'dolbyvision', fallback: 'none', label: 'Dolby Vision 5', bitDepth: 10, pixFmt: 'yuv420p10le', codecProfile: null, colorTransfer: null, colorPrimaries: null, colorSpace: null, frameRate: 24, masteringDisplay: null, contentLight: null, dolbyVision: { profile: 5, level: 6, blCompatId: 0, rpu: true, el: false, bl: true } };
+      const d = buildArgs(opts({ hdr: true, toneMap: true, videoRange: dv }) as any, '/t', 0, { hw: 'vaapi', codec: 'h264', platform: 'linux' });
+      assert.equal(d.info.toneMap, 'libplacebo');
+      assert.match(d.args[d.args.indexOf('-vf') + 1], /^libplacebo=/);
+    }
+  } finally {
+    setDetectReport(null);
+    updateSettings({ transcoding: { hwAccel: 'none' } as any });
+  }
+});
+
+test('detect report is persisted, keyed on device settings + ffmpeg build, and never auto-runs under node --test', () => {
+  const { setDetectReport, getDetectReport, loadDetectReport, autoDetectEnabled, detectCacheKey } = transcoderMod;
+  assert.equal(autoDetectEnabled(), false);
+  updateSettings({ transcoding: { hwAccel: 'vaapi', vaapiDevice: DEV } as any });
+  const file = pathMod.join(transcoderCacheDir, 'hwdetect', 'report.json');
+  try {
+    const r = fakeReport([{ id: 'vaapi:' + DEV, hwAccel: 'vaapi', device: DEV }]);
+    setDetectReport(r as any);
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(saved.key, detectCacheKey());
+    assert.match(saved.key, /"ffmpeg":"ffmpeg version /);
+    loadDetectReport(); // as after a restart
+    assert.equal(getDetectReport()?.ranAt, r.ranAt);
+    updateSettings({ transcoding: { vaapiDevice: '/dev/dri/renderD129' } as any });
+    assert.equal(getDetectReport(), null); // device changed → stale
+    updateSettings({ transcoding: { vaapiDevice: DEV } as any });
+    loadDetectReport();
+    assert.equal(getDetectReport()?.ranAt, r.ranAt);
+    fs.writeFileSync(file, JSON.stringify({ key: saved.key.replace(/ffmpeg version [^"]*/, 'ffmpeg version 0.0'), report: r }));
+    loadDetectReport();
+    assert.equal(getDetectReport(), null); // other ffmpeg build → stale
+  } finally {
+    setDetectReport(null);
+    updateSettings({ transcoding: { hwAccel: 'none' } as any });
+  }
+});
+
+test('hdr: interlaced field order is kept with the video range', async () => {
+  const { parseVideoRange } = await import('../src/services/hdr.ts');
+  assert.equal(parseVideoRange({ codec_type: 'video', field_order: 'tt' })!.fieldOrder, 'tt');
+  assert.equal('fieldOrder' in parseVideoRange({ codec_type: 'video', field_order: 'progressive' })!, false);
+});
+
+/* --------------- detection commands and local ffmpeg syntax --------------- */
+
+test('detect: decode-only tests need real hardware frames; low-power retry args', async () => {
+  assert.deepEqual(det.decodeTestArgs(T('vaapi'), '/s.mp4'), ['-y', ...hwInputArgs(T('vaapi'), 'full', true), '-i', '/s.mp4', '-t', '2', '-an', '-vf', 'hwdownload,format=nv12|p010le', '-f', 'null', '-']);
+  assert.deepEqual(det.decodeTestArgs(T('rkmpp'), '/s.mp4', ['nv15'])!.slice(-5), ['-vf', 'hwdownload,format=nv12|p010le|nv15', '-f', 'null', '-']);
+  assert.deepEqual(det.decodeTestArgs(T('videotoolbox', 'darwin'), '/s.mp4')!.slice(1, 5), ['-hwaccel', 'videotoolbox', '-hwaccel_output_format', 'videotoolbox_vld']);
+  assert.deepEqual(det.decodeTestArgs(T('amf', 'win32', 1), '/s.mp4')!.slice(1, 7), ['-hwaccel', 'd3d11va', '-hwaccel_device', '1', '-hwaccel_output_format', 'd3d11']);
+  const lp = det.testArgs(T('vaapi'), { codec: 'h264', input: 'testsrc', toneMap: null, decode: false, lowPower: true });
+  assert.deepEqual(lp.slice(lp.indexOf('-c:v'), lp.indexOf('-c:v') + 4), ['-c:v', 'h264_vaapi', '-low_power', '1']);
+  // The premise: hwdownload rejects software frames, so a silent fallback to CPU decoding fails the test.
+  const swFrames = await det.runFfmpeg(['-y', '-i', src, '-t', '1', '-an', '-vf', 'hwdownload,format=nv12|p010le', '-f', 'null', '-'], 15000);
+  assert.equal(swFrames.ok, false);
+  const missingDev = await det.runFfmpeg(det.decodeTestArgs({ ...T('vaapi'), vaapiDevice: '/dev/dri/renderD999' }, src)!, 15000);
+  assert.equal(missingDev.ok, false);
+  assert.match(missingDev.error!, /renderD999|vaapi|Device creation failed/i);
+});
+
+test('local ffmpeg accepts the new CPU chains (tone-map with scaling in zscale, bwdif) with identical output size', { skip: !transcoderMod.hasFilter('zscale') && 'no zscale' }, async () => {
+  const { hasFilter: hf } = transcoderMod;
+  const hdr = pathMod.join(tmp, 'hdr.mkv');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=1998x1080:rate=25', '-t', '0.4', '-pix_fmt', 'yuv420p10le',
+    '-color_primaries', 'bt2020', '-color_trc', 'smpte2084', '-colorspace', 'bt2020nc', '-c:v', 'ffv1', hdr]);
+  const p = buildVideoPipeline({ target: T('none'), codec: 'h264', height: 720, sourceHeight: 1080, toneMap: 'software', decode: true, deinterlace: 'interlaced' });
+  const out = pathMod.join(tmp, 'tm.nut');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', hdr, '-vf', p.filters.join(','), '-c:v', 'rawvideo', out]);
+  const dims = (f: string) => execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=width,height,pix_fmt', '-of', 'csv=p=0', f]).toString().trim();
+  const ref = pathMod.join(tmp, 'ref.nut');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', hdr, '-vf', 'scale=-2:720', '-c:v', 'rawvideo', ref]);
+  assert.equal(dims(ref).split(',').slice(0, 2).join(','), '1332,720');
+  assert.equal(dims(out), '1332,720,yuv420p'); // same size as the old tone-map → scale=-2:720 chain
+  // The QSV width expression gives the same width as -2 (checked with the software scaler, same expression evaluator).
+  const q = pathMod.join(tmp, 'q.nut');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', hdr, '-vf', 'scale=w=round(iw*720/ih/2)*2:h=720', '-c:v', 'rawvideo', q]);
+  assert.equal(dims(q).split(',').slice(0, 2).join(','), '1332,720');
+  if (hf('bwdif')) {
+    // Live "auto" deinterlacing passes progressive frames through: same frame count and rate.
+    const n = (vf: string) => execFileSync('ffprobe', ['-v', 'error', '-f', 'lavfi', '-i', `movie=${src.replace(/[\\':]/g, '\\$&')},${vf}`, '-count_frames', '-show_entries', 'stream=nb_read_frames,r_frame_rate', '-of', 'csv=p=0']).toString().trim();
+    assert.equal(n(hwa.cpuDeinterlace('auto')), n('null'));
+  }
+});
+
+test('local ffmpeg parses every GPU filter the pipelines build (only missing-device/format errors, no option errors)', async () => {
+  const { hasFilter: hf, ffmpegFeatures } = transcoderMod;
+  const chains = new Set<string>();
+  for (const hw of ['vaapi', 'qsv', 'nvenc'] as HwAccel[]) {
+    for (const tm of [null, ...hwa.hwToneMapPaths(hw, 'linux')]) {
+      for (const deinterlace of [null, 'interlaced'] as const) {
+        const p = buildVideoPipeline({ target: T(hw), codec: 'h264', height: 720, sourceHeight: 1080, toneMap: tm, decode: true, deinterlace, features: ffmpegFeatures() });
+        for (const f of p.filters) if (!/^(format|hwupload|hwmap)=?/.test(f) && f !== 'hwupload') chains.add(f);
+      }
+    }
+  }
+  let checked = 0;
+  for (const f of chains) {
+    if (!hf(f.split('=')[0])) continue;
+    const r = await det.runFfmpeg(['-f', 'lavfi', '-i', 'testsrc2=size=1920x1080:rate=25', '-t', '0.1', '-vf', f, '-f', 'null', '-'], 15000);
+    assert.doesNotMatch(r.error ?? '', /Option not found|Unable to parse option|Invalid argument.*option|Undefined constant/i, f);
+    checked++;
+  }
+  assert.ok(checked > 0 || !hf('scale_vaapi'));
 });
