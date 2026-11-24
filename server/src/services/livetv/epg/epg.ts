@@ -31,6 +31,12 @@ const log = logger('epg');
 export const guideKey = (sourceId: string, channelId: string) => `${sourceId}:${channelId}`;
 /** Guides with more channels than this only store programmes for channels that are (or may be) matched. */
 const STORE_ALL_LIMIT = 3000;
+/**
+ * Programme rows (old + new) swapped per commit transaction; the event loop is released between chunks. ~10k rows
+ * keeps each transaction under ~200 ms, and the extra commits cost less than the single-transaction rename did.
+ */
+const COMMIT_CHUNK_ROWS = 10000;
+const PROGRAM_COLS = 'id, source_id, epg_channel_id, title, subtitle, description, start, end, category, icon, episode_num, is_new';
 const KEEP_BACK_MS = 8 * 86400000;
 const KEEP_AHEAD_MS = 14 * 86400000;
 const SD_MIN_HOURS = 12;
@@ -440,7 +446,7 @@ export function matchAllGuides() {
   for (const g of db.all<{ id: string }>('SELECT id FROM epg_sources WHERE channel_count > 0')) matchGuide(g.id);
 }
 
-/** Collects one guide's channels and programmes into staging rows, then swaps them in atomically. */
+/** Collects one guide's channels and programmes into staging rows, then swaps them in channel by channel. */
 class GuideWriter {
   readonly channels = new Map<string, GuideChannelRec>();
   readonly counts = new Map<string, number>();
@@ -491,7 +497,7 @@ class GuideWriter {
     this.filledNow.add(p.channel);
     const id = stableId(this.g.id, p.channel, p.start);
     this.batch.push({
-      id: `tmp:${id}`, source_id: this.g.id, epg_channel_id: `tmp:${guideKey(this.g.id, p.channel)}`, title: p.title, subtitle: p.subtitle ?? null,
+      id, source_id: this.g.id, epg_channel_id: guideKey(this.g.id, p.channel), title: p.title, subtitle: p.subtitle ?? null,
       description: p.description ?? null, start: p.start, end: p.end, category: p.category ?? null, icon: p.icon ?? null, episode_num: p.episodeNum ?? null, is_new: !!p.isNew,
     });
     this.counts.set(p.channel, (this.counts.get(p.channel) ?? 0) + 1);
@@ -511,7 +517,7 @@ class GuideWriter {
   discardInput() {
     this.batch.length = 0;
     for (const c of this.filledNow) {
-      db.run('DELETE FROM programs WHERE epg_channel_id = ?', `tmp:${guideKey(this.g.id, c)}`);
+      db.run('DELETE FROM programs_staging WHERE source_id = ? AND epg_channel_id = ?', this.g.id, guideKey(this.g.id, c));
       this.programmes -= this.counts.get(c) ?? 0;
       this.counts.delete(c);
     }
@@ -521,23 +527,64 @@ class GuideWriter {
   flush() {
     if (!this.batch.length) return;
     db.tx(() => {
-      for (const p of this.batch) db.upsert('programs', p);
+      // Plain inserts: a programme listed twice is merged when it moves into programs (INSERT OR REPLACE, last wins).
+      for (const p of this.batch) db.insert('programs_staging', p);
     });
     this.batch.length = 0;
   }
 
   abort() {
     this.batch.length = 0;
-    db.run("DELETE FROM programs WHERE source_id = ? AND id >= 'tmp:' AND id < 'tmp;'", this.g.id);
+    db.run('DELETE FROM programs_staging WHERE source_id = ?', this.g.id);
   }
 
-  commit(extra: { warnings: string[]; durationMs: number }) {
+  /**
+   * Move the staged programmes in. Done per channel, in chunks of about COMMIT_CHUNK_ROWS programme rows (old + new),
+   * each chunk in its own transaction with the event loop free in between: the old single transaction (delete every
+   * old programme, then rename every staged "tmp:" row in place) blocked the server for ~2.3 s on a 200k-programme
+   * guide. Every channel switches atomically; while the commit runs, some channels show the new guide and others still
+   * the old one. The channel list and stats are written last, so an interrupted commit is redone by the next refresh
+   * (its previous channels are still listed, so their old programmes are still cleared).
+   */
+  async commit(extra: { warnings: string[]; durationMs: number }) {
     this.flush();
     this.decide();
     const id = this.g.id;
+    // Channels whose old programmes go (the previous refresh's list) and channels with new programmes.
+    const sizes = new Map<string, number>();
+    for (const r of db.all<{ id: string; programmes: number | null }>('SELECT id, programmes FROM epg_channels WHERE epg_source_id = ?', id)) sizes.set(r.id, r.programmes ?? 0);
+    for (const [c, n] of this.counts) sizes.set(c, (sizes.get(c) ?? 0) + n);
+    let chunk: string[] = [];
+    let rows = 0;
+    const swap = () => {
+      if (!chunk.length) return;
+      const keys = chunk;
+      db.tx(() => {
+        for (const c of keys) {
+          const key = guideKey(id, c);
+          db.run('DELETE FROM programs WHERE epg_channel_id = ?', key);
+          if (!this.counts.has(c)) continue;
+          db.run(`INSERT OR REPLACE INTO programs (${PROGRAM_COLS}) SELECT ${PROGRAM_COLS} FROM programs_staging WHERE source_id = ? AND epg_channel_id = ?`, id, key);
+          db.run('DELETE FROM programs_staging WHERE source_id = ? AND epg_channel_id = ?', id, key);
+        }
+      });
+      chunk = [];
+      rows = 0;
+    };
+    for (const [c, n] of sizes) {
+      chunk.push(c);
+      rows += n;
+      if (rows >= COMMIT_CHUNK_ROWS) {
+        swap();
+        await new Promise<void>((r) => setImmediate(r));
+      }
+    }
+    swap();
     db.tx(() => {
-      db.run("DELETE FROM programs WHERE source_id = ? AND NOT (id >= 'tmp:' AND id < 'tmp;')", id);
-      db.run("UPDATE programs SET id = substr(id, 5), epg_channel_id = substr(epg_channel_id, 5) WHERE source_id = ? AND id >= 'tmp:' AND id < 'tmp;'", id);
+      // Time-shifted copies of this guide's programmes (rebuilt by materializeShifts after the refresh). "+source_id"
+      // keeps SQLite on the primary key's short 'sh:' range instead of walking every programme of the source.
+      db.run("DELETE FROM programs WHERE id >= 'sh:' AND id < 'sh;' AND +source_id = ?", id);
+      db.run('DELETE FROM programs_staging WHERE source_id = ?', id);
       db.run('DELETE FROM epg_channels WHERE epg_source_id = ?', id);
       for (const c of this.channels.values()) {
         db.run('INSERT INTO epg_channels (epg_source_id, id, name, alt_names, callsign, number, icon, programmes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -579,7 +626,7 @@ async function doRefresh(id: string, opts: RefreshOpts) {
     else if (g.kind === 'schedulesdirect') await loadSchedulesDirect(g, w, warnings);
     else if (g.kind === 'hdhomerun') await loadHdhomerun(g, w);
     else throw new Error(`Unknown guide kind ${g.kind}`);
-    w.commit({ warnings, durationMs: Date.now() - t0 });
+    await w.commit({ warnings, durationMs: Date.now() - t0 });
     log.info(`Guide "${g.name}": ${w.channels.size} channels, ${w.programmes} programmes in ${Date.now() - t0} ms`);
     if (!opts.skipResolve) resolveMatches();
     bus.emit('epg.refreshed', g.owner_source_id ?? id);

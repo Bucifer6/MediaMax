@@ -611,6 +611,17 @@ const MIGRATIONS: string[] = [
      walks an index instead of sorting the whole library. Oldest-first sorts only the titles within each year. */ `
   CREATE INDEX IF NOT EXISTS items_lib_type_year ON items(library_id, type, COALESCE(year, 0) DESC, sort_title);
   `,
+  /* Guide refreshes stage programmes here (final ids, one index, no key: duplicates are merged by programs' primary key on the way in) and move them into programs channel by channel,
+     instead of staging "tmp:" rows inside programs and renaming them all in one long transaction. Leftover staging
+     rows from an older version's interrupted refresh are cleared. */ `
+  CREATE TABLE IF NOT EXISTS programs_staging (
+    id TEXT NOT NULL, source_id TEXT NOT NULL, epg_channel_id TEXT NOT NULL,
+    title TEXT NOT NULL, subtitle TEXT, description TEXT, start TEXT NOT NULL, end TEXT NOT NULL,
+    category TEXT, icon TEXT, episode_num TEXT, is_new INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS programs_staging_channel ON programs_staging(source_id, epg_channel_id);
+  DELETE FROM programs WHERE id >= 'tmp:' AND id < 'tmp;';
+  `,
 ];
 
 function migrate(db: Database) {

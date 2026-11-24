@@ -397,6 +397,41 @@ test('global xz guide, priority changes, local file with time-zone override', { 
   await assert.rejects(epg.createEpgSource({ name: 'rel', kind: 'xmltv', config: { path: 'relative.xml' } }), /absolute/);
 });
 
+test('large guide refresh swaps channel by channel: old programmes replaced, dropped channels cleared, no staging rows left', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-epg-chunk-'));
+  const file = path.join(dir, 'big.xml');
+  // 150 channels × 32 programmes ≈ 4800 rows: several commit chunks (old + new rows per chunk).
+  const chans = Array.from({ length: 150 }, (_, i) => ({ id: `big${i}.chunk`, name: `Chunk Channel ${i}` }));
+  fs.writeFileSync(file, xmltv(chans, 'OLD'));
+  const g = await epg.createEpgSource({ name: 'Chunked', kind: 'xmltv', config: { path: file } });
+  await epg.refreshEpgSource(g.id, { throwOnError: true });
+  const count = (sql: string, ...a: unknown[]) => db.get<{ n: number }>(sql, ...a)!.n;
+  const before = count('SELECT COUNT(*) n FROM programs WHERE source_id = ?', g.id);
+  assert.equal(before, 150 * 32);
+  const otherBefore = count('SELECT COUNT(*) n FROM programs WHERE source_id != ?', g.id);
+
+  // Next refresh: channel 0 is gone, channel 1 is listed but has no programmes any more, the rest get new titles.
+  let x = xmltv(chans.slice(2), 'NEW');
+  x = x.replace('<tv>\n', `<tv>\n<channel id="big1.chunk"><display-name>Chunk Channel 1</display-name></channel>\n`);
+  // A programme listed twice: merged into one row, the later listing wins.
+  x = x.replace('</tv>\n', `<programme start="${xt(hourStart)}" stop="${xt(hourStart + H)}" channel="big5.chunk"><title>DUP</title></programme>\n</tv>\n`);
+  fs.writeFileSync(file, x);
+  await epg.refreshEpgSource(g.id, { throwOnError: true });
+  assert.equal(count('SELECT COUNT(*) n FROM programs WHERE source_id = ?', g.id), 148 * 32);
+  assert.equal(count("SELECT COUNT(*) n FROM programs WHERE source_id = ? AND title LIKE 'OLD %'", g.id), 0, 'no old programme survives');
+  assert.equal(count('SELECT COUNT(*) n FROM programs WHERE epg_channel_id = ?', epg.guideKey(g.id, 'big0.chunk')), 0, 'dropped channel cleared');
+  assert.equal(count('SELECT COUNT(*) n FROM programs WHERE epg_channel_id = ?', epg.guideKey(g.id, 'big1.chunk')), 0, 'emptied channel cleared');
+  assert.equal(count("SELECT COUNT(*) n FROM programs WHERE id >= 'tmp:' AND id < 'tmp;'") + count('SELECT COUNT(*) n FROM programs_staging'), 0, 'no staging rows left');
+  assert.equal(count('SELECT COUNT(*) n FROM programs WHERE source_id != ?', g.id), otherBefore, 'other guides untouched');
+  const ch = db.all<{ id: string; programmes: number }>('SELECT id, programmes FROM epg_channels WHERE epg_source_id = ? ORDER BY id', g.id);
+  assert.equal(ch.length, 149);
+  assert.equal(ch.find((c) => c.id === 'big1.chunk')?.programmes, 0);
+  assert.equal(count('SELECT COUNT(*) n FROM programs WHERE epg_channel_id = ?', epg.guideKey(g.id, 'big5.chunk')), 32, 'duplicate merged');
+  assert.equal(db.get<{ title: string }>('SELECT title FROM programs WHERE epg_channel_id = ? AND start = ?', epg.guideKey(g.id, 'big5.chunk'), new Date(hourStart).toISOString())?.title, 'DUP');
+  epg.deleteEpgSource(g.id);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('manual match, time shift and accept-all survive a refresh', async () => {
   const sky = ch(iptvId, 'Sky Sports');
   const g1 = epg.listEpgSources().find((g) => g.managedBy === 'epgUrl')!;
