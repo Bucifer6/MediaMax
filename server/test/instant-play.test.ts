@@ -158,7 +158,7 @@ const { listSessions, getSession, warmSlots, planCache, stopAllSessions, warmTun
 const { getSettings, updateSettings } = await import('../src/services/settings.ts');
 const { buildApp } = await import('../src/app.ts');
 
-const user = createUser({ username: 'warmuser', password: 'pw-123456' });
+const user = await createUser({ username: 'warmuser', password: 'pw-123456' });
 warmTuning.minIntervalMs = 0;
 const tokA = issueToken(user.id, { deviceId: 'warm-a', deviceName: 'A', platform: 'web' }).token;
 const tokB = issueToken(user.id, { deviceId: 'warm-b', deviceName: 'B', platform: 'web' }).token;

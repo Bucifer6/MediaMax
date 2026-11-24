@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const settings = await import('../src/services/settings.ts');
 const auth = await import('../src/services/auth.ts');
 // State of an older server: an account and saved branding without a theme choice.
-auth.createUser({ username: 'admin', password: 'pass1234', isAdmin: true });
+await auth.createUser({ username: 'admin', password: 'pass1234', isAdmin: true });
 settings.setKv('branding', { serverName: 'Home Cinema' });
 const branding = await import('../src/services/branding.ts');
 

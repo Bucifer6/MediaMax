@@ -61,10 +61,10 @@ item('sc1', { lib: 'shows', type: 'episode', title: 'Pilot', parent: 's2', grand
 // A trailer extra must never show up in recommendations or charts.
 item('trailer', { type: 'video', title: 'Star Voyage trailer', parent: 'scifi1', genres: ['Science Fiction'] });
 
-const alice = createUser({ username: 'alice', password: 'pass1234' });
-const bob = createUser({ username: 'bob', password: 'pass1234' });
-const kid = createUser({ username: 'kid', password: 'pass1234', maxContentRating: 'PG-13', libraryIds: ['movies', 'shows'] });
-const carol = createUser({ username: 'carol', password: 'pass1234' });
+const alice = await createUser({ username: 'alice', password: 'pass1234' });
+const bob = await createUser({ username: 'bob', password: 'pass1234' });
+const kid = await createUser({ username: 'kid', password: 'pass1234', maxContentRating: 'PG-13', libraryIds: ['movies', 'shows'] });
+const carol = await createUser({ username: 'carol', password: 'pass1234' });
 
 /* --------------------------- pure scoring ---------------------------- */
 
@@ -258,7 +258,7 @@ test('calendar range: defaults, validation and clamping', () => {
   assert.equal(cal.calendarRange('nonsense', null, ref).from, '2026-05-03');
 });
 
-test('calendar: upcoming episodes from the stored schedule plus recently added episodes, access-filtered', () => {
+test('calendar: upcoming episodes from the stored schedule plus recently added episodes, access-filtered', async () => {
   const soon = cal.ymd(new Date(Date.now() + 3 * D));
   saveSchedule('show1', { status: 'Returning Series', inProduction: true, lastAirDate: '2026-01-01', next: { airDate: soon, season: 2, episode: 1, title: 'Return', overview: null } });
   saveSchedule('show2', { status: 'Ended', inProduction: false, lastAirDate: '2010-01-01', next: null });
@@ -276,7 +276,7 @@ test('calendar: upcoming episodes from the stored schedule plus recently added e
   // Sorted by date (agenda order).
   assert.deepEqual(res.entries.map((e) => e.date), [...res.entries.map((e) => e.date)].sort());
   // A viewer without access to the shows library sees nothing.
-  const outsider = createUser({ username: 'outsider', password: 'pass1234', libraryIds: ['movies'] });
+  const outsider = await createUser({ username: 'outsider', password: 'pass1234', libraryIds: ['movies'] });
   assert.equal(cal.calendarFor(outsider).entries.length, 0);
   // Home row.
   const row = cal.upcomingRow(carol, { id: 'u', type: 'upcoming', enabled: true, title: 'Coming soon', limit: 10 });

@@ -136,9 +136,9 @@ item('e-bb2', 'lib-tv', 'episode', 'Cat in the Bag', { parent_id: 'se-bb1', gran
 db.insert('media', { id: 'md-matrix', item_id: 'm-matrix', path: '/mnt/d/Movies/The Matrix (1999)/The Matrix.mkv' });
 db.insert('media', { id: 'md-heat', item_id: 'm-heat', path: '/mnt/d/Movies/Heat (1995)/Heat.mkv' });
 
-const admin = auth.createUser({ username: 'mmadmin', password: 'pass1234', isAdmin: true });
-const viewer = auth.createUser({ username: 'viewer', password: 'pass1234' });
-const dave = auth.createUser({ username: 'dave', password: 'davepass1' });
+const admin = await auth.createUser({ username: 'mmadmin', password: 'pass1234', isAdmin: true });
+const viewer = await auth.createUser({ username: 'viewer', password: 'pass1234' });
+const dave = await auth.createUser({ username: 'dave', password: 'davepass1' });
 db.run('INSERT INTO user_data (user_id, item_id, played, play_count, last_played_at) VALUES (?, ?, 1, 5, ?)', dave.id, 'm-heat', '2026-01-01T00:00:00.000Z');
 const dev = (id: string) => ({ deviceId: id, deviceName: 'test', platform: 'web' as const });
 const adminTok = auth.issueToken(admin.id, dev('a')).token;
@@ -352,7 +352,7 @@ test('set-password link: preview, choose a password, sign in; single use', async
   const ok = await app.inject({ method: 'POST', url: `/api/v1/auth/password-link/${token}`, headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ password: 'alice-new-pass' }) });
   assert.equal(ok.statusCode, 200, ok.body);
   assert.ok(ok.json().token);
-  assert.equal(auth.login('Alice', 'alice-new-pass', dev('x')).user.username, 'Alice');
+  assert.equal((await auth.login('Alice', 'alice-new-pass', dev('x'))).user.username, 'Alice');
   const again = await app.inject({ method: 'POST', url: `/api/v1/auth/password-link/${token}`, headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ password: 'another-pass' }) });
   assert.equal(again.statusCode, 403);
   assert.equal(links.previewPasswordLink(token).valid, false);

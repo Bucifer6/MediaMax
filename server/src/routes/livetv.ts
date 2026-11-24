@@ -5,7 +5,7 @@ import { clientHints, requireAdmin, requireUser, remoteAddr } from '../http.js';
 import * as live from '../services/livetv/livetv.js';
 import * as dvr from '../services/dvr.js';
 import { assertRemoteAllowed, touchSession, getSession } from '../services/playback.js';
-import { forbidden, notFound } from '../util/errors.js';
+import { forbidden, HttpError, notFound } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
 import { getSettings } from '../services/settings.js';
 import epgRoutes from './epg.js';
@@ -102,14 +102,14 @@ export default async function liveRoutes(app: FastifyInstance) {
     if (req.query.catchupStart && !r.has_archive) throw forbidden('This channel does not support catch-up');
     const src = live.getSourceRow(r.source_id);
     if (!src.proxy_streams) throw forbidden('This source is not restreamed by the server');
-    live.checkConnectionLimit(src);
     const start = req.query.catchupStart ? new Date(req.query.catchupStart) : null;
     if (start && (Number.isNaN(start.getTime()) || start.getTime() > Date.now())) throw forbidden('Invalid catch-up time');
     const url = live.channelStreamUrl(r, start ? { start, durationMin: toInt(req.query.duration, 60, 1, 600) } : undefined);
-    const ctrl = new AbortController();
-    const body = await live.openChannelStream(r, url, ctrl.signal);
+    // Check and reserve in one step (no await in between), so concurrent requests can't all pass the limit.
+    live.checkConnectionLimit(src);
     live.trackUpstream(r.source_id, 1);
-    const keepAlive = req.query.session ? setInterval(() => touchSession(req.query.session!), 20000) : null;
+    const ctrl = new AbortController();
+    let keepAlive: ReturnType<typeof setInterval> | null = null;
     let released = false;
     const release = () => {
       if (released) return;
@@ -118,7 +118,21 @@ export default async function liveRoutes(app: FastifyInstance) {
       if (keepAlive) clearInterval(keepAlive);
       ctrl.abort();
     };
+    // Registered before opening: a client that leaves while the provider is still connecting frees the slot.
     req.raw.on('close', release);
+    let body: Awaited<ReturnType<typeof live.openChannelStream>>;
+    try {
+      body = await live.openChannelStream(r, url, ctrl.signal);
+    } catch (e) {
+      release();
+      // An unreachable provider is a bad gateway, not a server error.
+      throw e instanceof HttpError ? e : new HttpError(502, `Could not reach the provider: ${(e as Error).message}`, 'stream_failed');
+    }
+    if (released) {
+      body.destroy();
+      return reply;
+    }
+    keepAlive = req.query.session ? setInterval(() => touchSession(req.query.session!), 20000) : null;
     body.on('end', release);
     body.on('error', release);
     reply.header('Content-Type', 'video/mp2t').header('Cache-Control', 'no-store');

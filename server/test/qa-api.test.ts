@@ -13,8 +13,8 @@ const { scanLibrary } = await import('../src/services/scanner.ts');
 const { listSessions } = await import('../src/services/playback.ts');
 const { buildApp } = await import('../src/app.ts');
 
-const admin = createUser({ username: 'qaadmin', password: 'pw-123456', isAdmin: true });
-const viewer = createUser({ username: 'qaviewer', password: 'pw-123456' });
+const admin = await createUser({ username: 'qaadmin', password: 'pw-123456', isAdmin: true });
+const viewer = await createUser({ username: 'qaviewer', password: 'pw-123456' });
 const atok = issueToken(admin.id, { deviceId: 'qa-a', deviceName: 'test', platform: 'web' }).token;
 const vtok = issueToken(viewer.id, { deviceId: 'qa-v', deviceName: 'test', platform: 'web' }).token;
 const app = await buildApp();

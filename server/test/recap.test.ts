@@ -35,8 +35,8 @@ db.insert('items', { id: 'rc-hidden-show', library_id: 'rc-secret', type: 'show'
 ep('rc-hidden-e1', 1, 1, 'rc-secret', 'rc-hidden-show');
 ep('rc-hidden-e2', 1, 2, 'rc-secret', 'rc-hidden-show');
 
-const viewer = getUser(createUser({ username: 'rc-viewer', password: 'pass1234', libraryIds: ['rc-shows'] }).id);
-const other = getUser(createUser({ username: 'rc-other', password: 'pass1234' }).id);
+const viewer = getUser((await createUser({ username: 'rc-viewer', password: 'pass1234', libraryIds: ['rc-shows'] })).id);
+const other = getUser((await createUser({ username: 'rc-other', password: 'pass1234' })).id);
 const watch = (u: string, id: string, at: string) => db.run('INSERT INTO user_data (user_id, item_id, played, last_played_at) VALUES (?, ?, 1, ?) ON CONFLICT(user_id, item_id) DO UPDATE SET played = 1, last_played_at = excluded.last_played_at', u, id, at);
 // The viewer watched S1E1-E3 ten days ago, and (out of order) peeked at S2E1.
 watch(viewer.id, 'rc-s1e1', daysAgo(12));
@@ -100,7 +100,7 @@ test('without a language model: a tidy list of the watched episodes', async () =
 });
 
 test('no recap after a short break; the "Recap" button forces one; a new season always offers one', async () => {
-  const u = getUser(createUser({ username: 'rc-binger', password: 'pass1234', libraryIds: ['rc-shows'] }).id);
+  const u = getUser((await createUser({ username: 'rc-binger', password: 'pass1234', libraryIds: ['rc-shows'] })).id);
   watch(u.id, 'rc-s1e1', daysAgo(2));
   watch(u.id, 'rc-s1e2', daysAgo(1));
   const r = await getRecap(u, 'rc-s1e3', { now });

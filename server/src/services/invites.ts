@@ -5,7 +5,7 @@ import { badRequest, forbidden } from '../util/errors.js';
 import { nowIso, parseJson } from '../util/misc.js';
 import { getSettings } from './settings.js';
 import { getBranding } from './branding.js';
-import { createUser, issueToken } from './auth.js';
+import { createUserHashed, hashUserSecrets, issueToken } from './auth.js';
 import { logActivity } from './activity.js';
 
 const DEFAULT_TEMPLATE: InviteTemplate = {
@@ -54,21 +54,24 @@ export function previewInvite(code: string): InvitePreview {
   return { valid: !problem, serverName: getBranding().serverName, message: problem };
 }
 
-export function acceptInvite(code: string, req: AcceptInviteRequest, remoteAddr?: string): AuthResponse {
+export async function acceptInvite(code: string, req: AcceptInviteRequest, remoteAddr?: string): Promise<AuthResponse> {
   const r = db.get('SELECT * FROM invites WHERE code = ?', String(code ?? '').toLowerCase());
   const problem = usable(r);
   if (problem) throw forbidden(problem);
-  if (!req.password || req.password.length < 8) throw badRequest('Choose a password of at least 8 characters');
+  if (typeof req.username !== 'string' || (req.displayName != null && typeof req.displayName !== 'string')) throw badRequest('Invalid username');
+  if (typeof req.password !== 'string' || req.password.length < 8) throw badRequest('Choose a password of at least 8 characters');
+  // Hashed before the transaction (which is synchronous); the use counter below still guards a revoked or used-up invite.
+  const hashes = await hashUserSecrets({ password: req.password });
   const t = { ...DEFAULT_TEMPLATE, ...parseJson<Partial<InviteTemplate>>(r!.template, {}) };
   // Validate library ids still exist.
   const libIds = t.libraryIds ? t.libraryIds.filter((id) => db.get('SELECT 1 FROM libraries WHERE id = ?', id)) : null;
   const user = db.tx(() => {
-    const u = createUser({
+    const u = createUserHashed({
       username: req.username, displayName: req.displayName, password: req.password, isAdmin: false,
       libraryIds: libIds, maxContentRating: t.maxContentRating, allowLiveTv: t.allowLiveTv, allowDownloads: t.allowDownloads,
       allowTranscode: t.allowTranscode, allowDvr: t.allowDvr, allowRemote: t.allowRemote, maxStreams: t.maxStreams,
       ...(t.requestPermissions ? { requestPermissions: t.requestPermissions } : {}),
-    });
+    }, hashes);
     // Atomic use counter (guards against two people racing the last use).
     const upd = db.run('UPDATE invites SET uses = uses + 1 WHERE code = ? AND (max_uses IS NULL OR uses < max_uses)', r!.code);
     if (!upd.changes) throw forbidden('This invite link has already been used.');

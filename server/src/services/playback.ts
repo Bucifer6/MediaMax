@@ -9,7 +9,7 @@ import { db, type Row } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
 import { HttpError, badRequest, forbidden, notFound } from '../util/errors.js';
-import { nowIso, parseJson, REMOTE_PROTOCOLS } from '../util/misc.js';
+import { httpReconnectArgs, nowIso, parseJson, REMOTE_PROTOCOLS } from '../util/misc.js';
 import { logger } from '../util/log.js';
 import { TranscodeJob, encoderWorks, hasEncoder, type TranscodeOptions } from './transcoder.js';
 import { chooseVideoCodec } from './hwaccel.js';
@@ -520,6 +520,8 @@ export async function planPlayback(ctx: AuthContext, itemId: string, req: Playba
       audioIndex: audio?.index ?? null, audioCopy: decision.audioCopy, videoCopy: decision.videoCopy,
       bitrate: Math.round(target), maxHeight: outputMaxHeight(p, media.width, media.height), sourceHeight: media.height,
       // Decoding Dolby Vision 8.2 / 9 gives its SDR base layer: nothing to tone-map.
+      // Frame rate (GOP, H.264 level), Dolby Vision profile (tone-map choice) and field order (deinterlacing).
+      videoRange: media.videoRange ?? null,
       sourceCodec: media.videoCodec, hdr: media.hdr && !(media.videoRange?.dolbyVision && media.videoRange.fallback === 'sdr'), audioChannels: audio?.channels, hasVideo: !isAudioOnly,
       burnSubtitle: effectiveBurn
         ? effectiveBurn.external
@@ -856,7 +858,7 @@ export function dolbyVisionPlayback(media: MediaSource, d: Decision): PlaybackIn
 export function remoteInputArgs(mediaRow: Row): string[] {
   const ua = mediaRow.remote_url ? db.get<{ user_agent: string | null }>(
     `SELECT s.user_agent FROM live_sources s JOIN libraries l ON l.source_id = s.id JOIN items i ON i.library_id = l.id WHERE i.id = ?`, mediaRow.item_id)?.user_agent : null;
-  return ['-user_agent', ua || 'Kinora/1.0', '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5'];
+  return ['-user_agent', ua || 'Kinora/1.0', ...httpReconnectArgs(mediaRow.remote_url, 5)];
 }
 
 /* ------------------------------ subtitles --------------------------- */

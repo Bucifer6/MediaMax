@@ -8,8 +8,8 @@ const { createUser, issueToken } = await import('../src/services/auth.ts');
 const { buildWrapped, filmPersonality } = await import('../src/services/wrapped.ts');
 const { buildApp } = await import('../src/app.ts');
 
-const me = createUser({ username: 'wr-me', password: 'pw-123456', displayName: 'Robin' } as any);
-const other = createUser({ username: 'wr-other', password: 'pw-123456' });
+const me = await createUser({ username: 'wr-me', password: 'pw-123456', displayName: 'Robin' } as any);
+const other = await createUser({ username: 'wr-other', password: 'pw-123456' });
 const now = '2025-01-01T00:00:00.000Z';
 db.run("INSERT INTO libraries (id, name, type, paths, fetch_metadata, created_at) VALUES ('w-lib', 'All', 'movies', '[]', 0, ?)", now);
 const item = (id: string, type: string, title: string, extra: Record<string, unknown> = {}) =>

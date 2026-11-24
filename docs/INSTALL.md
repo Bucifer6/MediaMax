@@ -13,7 +13,8 @@ setup wizard creates the first administrator.
 | Linux without Docker (x64, or arm64 such as a Raspberry Pi 4/5 with a 64-bit OS) | the Linux archive | [Linux](#linux) |
 
 Downloads are on the [Releases page](https://github.com/Bucifer6/MediaMax/releases/latest). The Windows and
-Linux archives include FFmpeg; the Docker image includes FFmpeg with Intel/AMD GPU drivers. The image is
+Linux archives include FFmpeg; the Docker image includes [jellyfin-ffmpeg](https://github.com/jellyfin/jellyfin-ffmpeg)
+(FFmpeg with the extra GPU tone-mapping and Rockchip support the hardware paths use) and Intel/AMD GPU drivers. The image is
 `ghcr.io/bucifer6/kinora` for both `linux/amd64` and `linux/arm64`, tagged `latest` and with each version
 (for example `0.2.0`).
 
@@ -303,8 +304,14 @@ Software transcoding works everywhere. To use the GPU, give Kinora the device (s
 open **Admin → Settings → Transcoding** and press **Detect hardware**. Kinora lists the GPUs it can see and the
 encoders in its FFmpeg build, then runs a 2-second test transcode with every method: H.264, HEVC and AV1 encoding,
 hardware decoding, 10-bit HEVC decoding and HDR → SDR tone mapping. Each card says what works (with the speed in fps)
-or shows FFmpeg's error. Press **Use this** on the recommended card and **Save changes**. Results are kept until the
-server restarts; press **Re-run detection** after changing drivers or devices.
+or shows FFmpeg's error. Press **Use this** on the recommended card and **Save changes**. Results are saved
+(`<data>/cache/hwdetect/report.json`) and reused after a restart as long as the transcoding device settings and the
+FFmpeg build (`ffmpeg -version`) are unchanged; otherwise detection re-runs by itself in the background shortly after
+start-up (set `KINORA_NO_HWDETECT=1` to turn that off). Press **Re-run detection** after changing drivers or devices.
+
+The decode tests only pass when the GPU itself decoded (frames must come out of the hardware decoder), so
+"Hardware decoding failed" on a card is real, not a guess. Intel GPUs that only have the low-power encoder (Jasper
+Lake, Alder Lake-N / N100, Arc) are retried with `-low_power 1`; when that works, playback uses it too.
 
 | Method | Platform | Hardware | Notes |
 |---|---|---|---|
@@ -314,7 +321,7 @@ server restarts; press **Re-run detection** after changing drivers or devices.
 | `amf` | Windows | AMD Radeon | `h264_amf` / `hevc_amf` / `av1_amf` with D3D11 decoding. |
 | `videotoolbox` | macOS | Apple Silicon / Intel Macs | |
 | `v4l2m2m` | Linux ARM | Raspberry Pi 4 | H.264 only, about one 1080p stream. The Pi 5 has **no** hardware encoder: use software. |
-| `rkmpp` | Linux ARM | Rockchip RK3588/RK3568 | Needs an FFmpeg built with rkmpp/RGA ([ffmpeg-rockchip](https://github.com/nyanmisaka/ffmpeg-rockchip) or jellyfin-ffmpeg); stock FFmpeg is detect-only. |
+| `rkmpp` | Linux ARM | Rockchip RK3588/RK3568 | Needs an FFmpeg built with rkmpp/RGA (the Docker image's jellyfin-ffmpeg, or [ffmpeg-rockchip](https://github.com/nyanmisaka/ffmpeg-rockchip)); stock FFmpeg is detect-only. |
 
 **HEVC and AV1 output.** With a hardware encoder, clients that can play HEVC (Safari, Chrome/Edge with HEVC
 decoding, the iOS and Android apps) or AV1 get it instead of H.264, at about 65% (HEVC) / 60% (AV1) of the H.264
@@ -325,11 +332,19 @@ Intel Arc, NVIDIA RTX 40 or AMD RX 7000).
 
 **HDR tone mapping on the GPU.** HDR sources are tone-mapped with `tonemap_vaapi` (VA-API, Intel only),
 `vpp_qsv` (Quick Sync), `tonemap_cuda` (NVIDIA, jellyfin-ffmpeg builds) or `tonemap_opencl`, when the FFmpeg build
-and driver support it, otherwise on the CPU (`zscale` + `tonemap`). The detect step shows which path works.
+and driver support it; then with `libplacebo` (Vulkan) when the detect step saw it work; otherwise on the CPU
+(`zscale` + `tonemap`, downscaling before the tone-map so 4K → 1080p stays real-time). `tonemap_opencl` uses the
+BT.2390 curve only on builds that offer it (jellyfin-ffmpeg) and Hable on stock FFmpeg. Dolby Vision profile 5
+sources prefer libplacebo, which applies the Dolby Vision reshaping. The detect step shows which path works.
 
-**Automatic fallback.** If a hardware transcode fails to start or dies in the first seconds, Kinora retries once,
-first with CPU tone mapping (if GPU tone mapping was used) and then fully in software, and logs why. The session
-shows "Hardware transcoding failed, used software" on the admin dashboard.
+**Interlaced sources** (1080i/576i TV recordings) are deinterlaced to full field rate on the GPU
+(`deinterlace_vaapi`, `vpp_qsv`, `yadif_cuda`) or with `bwdif` on the CPU. This needs the file's field order,
+which is recorded when a file is scanned, so rescan older interlaced recordings.
+
+**Automatic fallback.** If a hardware transcode fails to start or dies in the first seconds, Kinora retries step by
+step and logs why: CPU tone mapping instead of GPU tone mapping; H.264 instead of HEVC/AV1 on the same GPU (only
+before anything was sent to the player); CPU decoding with the same GPU encoder; and finally fully in software. The
+admin dashboard shows the reason on the session.
 
 ### Docker (Intel / AMD)
 
@@ -363,11 +378,12 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu, video]
+              capabilities: [gpu, compute, video, utility]
 ```
 
-(`docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all …` with plain Docker.) `nvidia-smi` must work inside the
-container for detection to find the GPU; the `video` capability is what enables NVENC/NVDEC.
+(`docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video,utility …` with plain Docker.) `video` enables
+NVENC/NVDEC, `compute` the CUDA filters (`scale_cuda`, `yadif_cuda`, `tonemap_cuda`) and OpenCL, and `utility` provides
+`nvidia-smi`, which must work inside the container for detection to find the GPU.
 
 ### Linux service
 

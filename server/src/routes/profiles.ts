@@ -7,9 +7,10 @@ import { avatarSvg, listAvatars } from '../services/avatars.js';
 import { HttpError, notFound } from '../util/errors.js';
 import { saveAvatar } from './auth.js';
 import { stopUserSessions } from '../services/playback.js';
+import { sweepExpired, type Failure } from '../util/lockout.js';
 
 /* Per-IP limit on PIN guesses across all profiles (the per-profile lockout lives in the service). */
-const attempts = new Map<string, { n: number; until: number }>();
+const attempts = new Map<string, Failure>();
 function ipLimit(ip: string | null) {
   const a = attempts.get(ip ?? '?');
   if (a && a.until > Date.now() && a.n >= 20) throw new HttpError(429, 'Too many attempts. Try again in a few minutes.', 'rate_limited');
@@ -17,8 +18,10 @@ function ipLimit(ip: string | null) {
 function ipFail(ip: string | null) {
   const k = ip ?? '?';
   const a = attempts.get(k);
-  if (!a || a.until < Date.now()) attempts.set(k, { n: 1, until: Date.now() + 10 * 60000 });
-  else a.n++;
+  if (!a || a.until < Date.now()) {
+    sweepExpired(attempts);
+    attempts.set(k, { n: 1, until: Date.now() + 10 * 60000 });
+  } else a.n++;
 }
 
 export default async function profileRoutes(app: FastifyInstance) {
@@ -41,7 +44,7 @@ export default async function profileRoutes(app: FastifyInstance) {
     const ip = remoteAddr(req);
     ipLimit(ip);
     try {
-      return profiles.switchProfile(ctx, req.params.id, req.body?.pin, ip ?? undefined);
+      return await profiles.switchProfile(ctx, req.params.id, req.body?.pin, ip ?? undefined);
     } catch (e) {
       if (e instanceof HttpError && e.statusCode === 401) ipFail(ip);
       throw e;

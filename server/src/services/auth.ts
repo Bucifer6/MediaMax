@@ -18,23 +18,40 @@ import { imageUrl, registerImage } from './images.js';
 import { defaultPermissions, defaultQuotas, normalizePermissions, normalizeQuotas, storedPermissions, storedQuotas } from './requestPerms.js';
 import { builtinAvatarUrl, isBuiltinAvatar } from './avatars.js';
 import { normalizeComforts } from './audio.js';
+import { Pending, sweepExpired, type Failure } from '../util/lockout.js';
 
 /* ----------------------------- hashing ----------------------------- */
 
-export function hashSecret(secret: string): string {
+const SCRYPT = { N: 16384, r: 8, p: 1 };
+/** crypto.scrypt on the libuv pool: ~40 ms of CPU per call, which must not block the event loop. */
+const scrypt = (secret: string, salt: Buffer, len: number) =>
+  new Promise<Buffer>((resolve, reject) => crypto.scrypt(secret, salt, len, SCRYPT, (err, key) => (err ? reject(err) : resolve(key))));
+
+export async function hashSecret(secret: string): Promise<string> {
   const salt = crypto.randomBytes(16);
-  const key = crypto.scryptSync(secret, salt, 32, { N: 16384, r: 8, p: 1 });
+  const key = await scrypt(secret, salt, 32);
   return `scrypt$${salt.toString('base64')}$${key.toString('base64')}`;
 }
 
-export function verifySecret(secret: string, stored: string | null | undefined): boolean {
+export async function verifySecret(secret: string, stored: string | null | undefined): Promise<boolean> {
   if (!stored) return false;
   const [algo, saltB64, keyB64] = stored.split('$');
   if (algo !== 'scrypt') return false;
   const key = Buffer.from(keyB64, 'base64');
-  const test = crypto.scryptSync(secret, Buffer.from(saltB64, 'base64'), key.length, { N: 16384, r: 8, p: 1 });
+  const test = await scrypt(secret, Buffer.from(saltB64, 'base64'), key.length);
   return crypto.timingSafeEqual(key, test);
 }
+
+/**
+ * Hashes for a request's new password / PIN (`undefined`: not being changed, `null`: being cleared). Computed before
+ * the synchronous read-check-write of a user row, so no await splits it.
+ */
+export async function hashUserSecrets(req: { password?: string | null; pin?: string | null }) {
+  const h = (v: string | null | undefined) => (v === undefined ? undefined : v ? hashSecret(v) : null);
+  const [password_hash, pin_hash] = await Promise.all([h(req.password), h(req.pin)]);
+  return { password_hash, pin_hash };
+}
+export type UserSecretHashes = Awaited<ReturnType<typeof hashUserSecrets>>;
 
 /* ------------------------------ users ------------------------------ */
 
@@ -208,7 +225,12 @@ function validatePin(pin: string) {
   if (!/^\d{4,8}$/.test(pin)) throw badRequest('PIN must be 4-8 digits');
 }
 
-export function createUser(req: CreateUserRequest): User {
+export async function createUser(req: CreateUserRequest): Promise<User> {
+  return createUserHashed(req, await hashUserSecrets(req));
+}
+
+/** createUser with the secrets already hashed (hashUserSecrets), for callers creating the user inside a transaction. */
+export function createUserHashed(req: CreateUserRequest, hashes: UserSecretHashes): User {
   const username = (req.username ?? '').trim();
   if (!/^[\w.@ -]{1,64}$/.test(username)) throw badRequest('Invalid username');
   if (db.get('SELECT 1 FROM users WHERE username = ?', username)) throw conflict('Username already exists');
@@ -223,8 +245,8 @@ export function createUser(req: CreateUserRequest): User {
     id,
     username,
     display_name: req.displayName?.trim() || username,
-    password_hash: req.password ? hashSecret(req.password) : null,
-    pin_hash: req.pin ? hashSecret(req.pin) : null,
+    password_hash: req.password ? hashes.password_hash ?? null : null,
+    pin_hash: req.pin ? hashes.pin_hash ?? null : null,
     pin_length: req.pin ? req.pin.length : null,
     is_admin: !!req.isAdmin,
     max_rating: req.maxContentRating ?? null,
@@ -245,7 +267,8 @@ export function createUser(req: CreateUserRequest): User {
   return getUser(id);
 }
 
-export function updateUser(id: string, req: UpdateUserRequest, actorId: string): User {
+export async function updateUser(id: string, req: UpdateUserRequest, actorId: string): Promise<User> {
+  const hashes = await hashUserSecrets(req);
   const cur = getUserRow(id);
   if (cur.parent_user_id && (req.isAdmin || req.password || req.username !== undefined)) throw badRequest('Profiles cannot be administrators, have a password or a username; edit them under the owner\'s profiles');
   const patch: Row = {};
@@ -256,10 +279,10 @@ export function updateUser(id: string, req: UpdateUserRequest, actorId: string):
     patch.username = u;
   }
   if (req.displayName !== undefined) patch.display_name = req.displayName.trim() || cur.username;
-  if (req.password !== undefined) patch.password_hash = req.password ? hashSecret(req.password) : null;
+  if (req.password !== undefined) patch.password_hash = hashes.password_hash ?? null;
   if (req.pin !== undefined) {
     if (req.pin) validatePin(req.pin);
-    patch.pin_hash = req.pin ? hashSecret(req.pin) : null;
+    patch.pin_hash = hashes.pin_hash ?? null;
     patch.pin_length = req.pin ? req.pin.length : null;
   }
   if (req.isAdmin !== undefined) {
@@ -322,7 +345,10 @@ export function deleteUser(id: string, actorId: string) {
 }
 
 /** `keepDeviceRowId`: the session making the change, which stays signed in when the password changes. */
-export function updateMe(userId: string, req: UpdateMeRequest, keepDeviceRowId?: string): User {
+export async function updateMe(userId: string, req: UpdateMeRequest, keepDeviceRowId?: string): Promise<User> {
+  const before = getUserRow(userId);
+  const currentOk = req.password !== undefined && before.password_hash ? await verifySecret(req.currentPassword ?? '', before.password_hash) : true;
+  const hashes = await hashUserSecrets(req);
   const cur = getUserRow(userId);
   // Profiles have no password; their name and PIN are managed by the account owner (Settings → Profiles).
   if (cur.parent_user_id && (req.password !== undefined || req.pin !== undefined || req.displayName !== undefined)) {
@@ -331,14 +357,15 @@ export function updateMe(userId: string, req: UpdateMeRequest, keepDeviceRowId?:
   const patch: Row = {};
   if (req.displayName !== undefined) patch.display_name = req.displayName.trim() || cur.username;
   if (req.password !== undefined) {
-    if (cur.password_hash && !verifySecret(req.currentPassword ?? '', cur.password_hash)) throw forbidden('Current password is incorrect');
+    // Checked against the hash read before the awaits; a password changed meanwhile must be re-entered.
+    if (cur.password_hash && (!currentOk || cur.password_hash !== before.password_hash)) throw forbidden('Current password is incorrect');
     if (req.password && req.password.length < 8) throw badRequest('Password must be at least 8 characters');
     if (!req.password && cur.is_admin && !cur.oidc_sub) throw badRequest('Administrators must keep a password');
-    patch.password_hash = req.password ? hashSecret(req.password) : null;
+    patch.password_hash = hashes.password_hash ?? null;
   }
   if (req.pin !== undefined) {
     if (req.pin) validatePin(req.pin);
-    patch.pin_hash = req.pin ? hashSecret(req.pin) : null;
+    patch.pin_hash = hashes.pin_hash ?? null;
     patch.pin_length = req.pin ? req.pin.length : null;
   }
   if (req.avatarId !== undefined) {
@@ -437,18 +464,23 @@ export function authenticate(token: string | undefined | null): AuthContext | nu
 }
 
 /* Per-account lockout: 5 failures → 15 minutes, independent of client IP (which can't be trusted). */
-const failures = new Map<string, { n: number; until: number }>();
+const failures = new Map<string, Failure>();
+/** Attempts still being checked count as failures until they finish (the hash compare runs off-thread). */
+const pending = new Pending();
 function assertNotLocked(key: string, ip?: string) {
   const f = failures.get(key);
-  if (f && f.n >= 5 && f.until > Date.now()) {
+  const live = f && f.until > Date.now() ? f.n : 0;
+  if (live + pending.count(key) >= 5) {
     securityEvent('AUTH_LOCKED', ip, { account: key });
-    throw Object.assign(unauthorized(`Too many failed attempts. Try again in ${Math.ceil((f.until - Date.now()) / 60000)} minute(s).`), { statusCode: 429 });
+    throw Object.assign(unauthorized(`Too many failed attempts. Try again in ${Math.ceil(((live ? f!.until : Date.now() + 15 * 60000) - Date.now()) / 60000)} minute(s).`), { statusCode: 429 });
   }
 }
 function recordFailure(key: string) {
   const f = failures.get(key);
-  if (!f || f.until < Date.now()) failures.set(key, { n: 1, until: Date.now() + 15 * 60000 });
-  else f.n++;
+  if (!f || f.until < Date.now()) {
+    sweepExpired(failures);
+    failures.set(key, { n: 1, until: Date.now() + 15 * 60000 });
+  } else f.n++;
 }
 const clearFailures = (key: string) => failures.delete(key);
 
@@ -456,42 +488,53 @@ const clearFailures = (key: string) => failures.delete(key);
  * Accounts that may sign in without any secret: Plex-Home style kids/family profiles only.
  * Never administrators, never SSO-created accounts.
  */
-let dummy: string | null = null;
+let dummy: Promise<string> | null = null;
 const dummyHash = () => (dummy ??= hashSecret(crypto.randomBytes(16).toString('hex')));
 
 export const passwordlessAllowed = (r: Row) => !r.parent_user_id && !r.password_hash && !r.pin_hash && !r.is_admin && !r.oidc_sub && getSettings().allowPasswordlessProfiles;
 
-export function login(username: string, password: string, device: Partial<DeviceInfo>, remoteAddr?: string, totpCode?: string): AuthResponse {
+export async function login(username: string, password: string, device: Partial<DeviceInfo>, remoteAddr?: string, totpCode?: string): Promise<AuthResponse> {
+  // Request bodies are untyped JSON: anything but a string is a malformed request, not a failed sign-in.
+  if ((username != null && typeof username !== 'string') || (password != null && typeof password !== 'string') || (totpCode != null && typeof totpCode !== 'string')) {
+    throw badRequest('username and password must be strings');
+  }
   const key = `u:${String(username ?? '').trim().toLowerCase()}`;
   assertNotLocked(key, remoteAddr);
-  const row = db.get('SELECT * FROM users WHERE username = ?', (username ?? '').trim());
-  // Constant-ish time: always run exactly one hash compare (an unknown user must not take twice as long).
-  const ok = row ? (row.password_hash ? verifySecret(password ?? '', row.password_hash) : !password && passwordlessAllowed(row)) : verifySecret(password ?? '', dummyHash());
-  if (!row || !ok) {
-    recordFailure(key);
-    logActivity('user.login.failed', `Failed sign-in for "${username}" from ${remoteAddr ?? 'unknown'}`, { severity: 'warning' });
-    securityEvent('AUTH_FAIL', remoteAddr, { user: String(username ?? ''), reason: 'password' });
-    throw unauthorized('Invalid username or password');
-  }
-  checkSecondFactor(row, totpCode, key, remoteAddr);
+  const row = await pending.run(key, async () => {
+    const row = db.get('SELECT * FROM users WHERE username = ?', (username ?? '').trim());
+    // Constant-ish time: always run exactly one hash compare (an unknown user must not take twice as long).
+    const ok = row ? (row.password_hash ? await verifySecret(password ?? '', row.password_hash) : !password && passwordlessAllowed(row)) : await verifySecret(password ?? '', await dummyHash());
+    if (!row || !ok) {
+      recordFailure(key);
+      logActivity('user.login.failed', `Failed sign-in for "${username}" from ${remoteAddr ?? 'unknown'}`, { severity: 'warning' });
+      securityEvent('AUTH_FAIL', remoteAddr, { user: String(username ?? ''), reason: 'password' });
+      throw unauthorized('Invalid username or password');
+    }
+    await checkSecondFactor(row, totpCode, key, remoteAddr);
+    return row;
+  });
   clearFailures(key);
   securityEvent('AUTH_OK', remoteAddr, { user: row.username });
   return issueToken(row.id, device, remoteAddr);
 }
 
 /** Second factor for accounts with TOTP enabled. Throws 401 `totp_required` when no code was sent. */
-function checkSecondFactor(row: Row, code: string | undefined, key: string, ip?: string) {
+async function checkSecondFactor(row: Row, code: string | undefined, key: string, ip?: string) {
   if (!row.totp_enabled) return;
   if (!code) throw new HttpError(401, 'Enter the 6-digit code from your authenticator app', 'totp_required');
   if (row.totp_secret && verifyTotp(row.totp_secret, code)) return;
   // Recovery codes are single-use.
   const codes = parseJson<string[]>(row.recovery_codes, []);
   const norm = String(code).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-  const idx = codes.findIndex((h) => verifySecret(norm, h));
+  let hit: string | undefined;
+  for (const h of codes) if (await verifySecret(norm, h)) { hit = h; break; }
+  // Re-read after the awaits: a code used meanwhile by a concurrent sign-in is gone.
+  const fresh = hit ? parseJson<string[]>(db.get('SELECT recovery_codes FROM users WHERE id = ?', row.id)?.recovery_codes, []) : [];
+  const idx = hit ? fresh.indexOf(hit) : -1;
   if (idx >= 0) {
-    codes.splice(idx, 1);
-    db.run('UPDATE users SET recovery_codes = ? WHERE id = ?', JSON.stringify(codes), row.id);
-    logActivity('user.2fa', `${row.display_name} signed in with a recovery code (${codes.length} left)`, { userId: row.id, severity: 'warning' });
+    fresh.splice(idx, 1);
+    db.run('UPDATE users SET recovery_codes = ? WHERE id = ?', JSON.stringify(fresh), row.id);
+    logActivity('user.2fa', `${row.display_name} signed in with a recovery code (${fresh.length} left)`, { userId: row.id, severity: 'warning' });
     return;
   }
   recordFailure(key);
@@ -509,12 +552,13 @@ export function totpSetup(userId: string): TotpSetup {
   return { secret, otpauthUrl: otpauthUrl(secret, row.username, getBranding().serverName || 'Kinora') };
 }
 
-export function totpEnable(userId: string, code: string): TotpEnabled {
+export async function totpEnable(userId: string, code: string): Promise<TotpEnabled> {
   const row = getUserRow(userId);
   if (!row.totp_secret) throw badRequest('Start two-factor setup first');
   if (!verifyTotp(row.totp_secret, code)) throw badRequest('That code is not valid. Check the time on your phone and try again.');
   const recoveryCodes = Array.from({ length: 8 }, () => crypto.randomBytes(5).toString('hex'));
-  db.run('UPDATE users SET totp_enabled = 1, recovery_codes = ? WHERE id = ?', JSON.stringify(recoveryCodes.map((c) => hashSecret(c))), userId);
+  const hashed = await Promise.all(recoveryCodes.map((c) => hashSecret(c)));
+  db.run('UPDATE users SET totp_enabled = 1, recovery_codes = ? WHERE id = ?', JSON.stringify(hashed), userId);
   logActivity('user.2fa', `${row.display_name} turned on two-factor authentication`, { userId });
   return { recoveryCodes: recoveryCodes.map((c) => `${c.slice(0, 5)}-${c.slice(5)}`) };
 }
@@ -587,26 +631,29 @@ export function publicProfiles(remoteAddr?: string | null): PublicProfile[] {
 }
 
 /** Profile-picker sign in: allowed with a PIN, or with nothing if the profile has neither password nor PIN. */
-export function profileLogin(userId: string, pin: string | undefined, device: Partial<DeviceInfo>, remoteAddr?: string, totpCode?: string): AuthResponse {
+export async function profileLogin(userId: string, pin: string | undefined, device: Partial<DeviceInfo>, remoteAddr?: string, totpCode?: string): Promise<AuthResponse> {
   if (!getBranding().features.profilePicker) throw forbidden('Profile sign-in is disabled');
+  if (typeof userId !== 'string' || (pin != null && typeof pin !== 'string') || (totpCode != null && typeof totpCode !== 'string')) throw badRequest('userId and pin must be strings');
   const row = getUserRow(userId);
   if (row.parent_user_id) throw unauthorized('Sign in with the account this profile belongs to');
   // Only users the sign-in screen lists to this client can be entered from it (PIN-only / passwordless sign-in).
   if (!row.show_on_signin || !signInListAllowed(remoteAddr)) throw unauthorized('Sign in with your username and password');
   const key = `p:${userId}`;
   assertNotLocked(key, remoteAddr);
-  if (row.pin_hash) {
-    if (!verifySecret(pin ?? '', row.pin_hash)) {
-      recordFailure(key);
-      logActivity('user.login.failed', `Wrong PIN for ${row.display_name}`, { severity: 'warning' });
-      securityEvent('AUTH_FAIL', remoteAddr, { user: row.username, reason: 'pin' });
-      throw unauthorized('Incorrect PIN');
+  await pending.run(key, async () => {
+    if (row.pin_hash) {
+      if (!(await verifySecret(pin ?? '', row.pin_hash))) {
+        recordFailure(key);
+        logActivity('user.login.failed', `Wrong PIN for ${row.display_name}`, { severity: 'warning' });
+        securityEvent('AUTH_FAIL', remoteAddr, { user: row.username, reason: 'pin' });
+        throw unauthorized('Incorrect PIN');
+      }
+    } else if (!passwordlessAllowed(row)) {
+      throw unauthorized('This profile requires a password');
     }
-  } else if (!passwordlessAllowed(row)) {
-    throw unauthorized('This profile requires a password');
-  }
-  // A PIN never replaces the second factor.
-  checkSecondFactor(row, totpCode, key, remoteAddr);
+    // A PIN never replaces the second factor.
+    await checkSecondFactor(row, totpCode, key, remoteAddr);
+  });
   clearFailures(key);
   return issueToken(userId, device, remoteAddr);
 }

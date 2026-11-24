@@ -23,11 +23,15 @@ services:
     # Intel / AMD hardware transcoding:
     # devices:
     #   - /dev/dri:/dev/dri
-    # NVIDIA hardware transcoding:
+    # Raspberry Pi 4 (V4L2 M2M) instead: the decoder and encoder nodes
+    #   - /dev/video10:/dev/video10
+    #   - /dev/video11:/dev/video11
+    # NVIDIA hardware transcoding (NVIDIA Container Toolkit; compute = CUDA filters/OpenCL, video = NVENC/NVDEC,
+    # utility = nvidia-smi for detection):
     # deploy:
     #   resources:
     #     reservations:
     #       devices:
     #         - driver: nvidia
     #           count: all
-    #           capabilities: [gpu, video]
+    #           capabilities: [gpu, compute, video, utility]

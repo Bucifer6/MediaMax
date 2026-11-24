@@ -6,7 +6,7 @@ import { db, type Row } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
 import { badRequest, forbidden, notFound } from '../util/errors.js';
-import { nowIso, parseJson, REMOTE_PROTOCOLS } from '../util/misc.js';
+import { httpReconnectArgs, nowIso, parseJson, REMOTE_PROTOCOLS } from '../util/misc.js';
 import { logger } from '../util/log.js';
 import { runComskip, edlPathFor } from './edl.js';
 import { getSettings } from './settings.js';
@@ -265,7 +265,7 @@ function startRecording(r: Row) {
   parts.push({ path: file, startedAt: nowIso() });
   const durationSec = Math.max(10, Math.round((Date.parse(r.end) - Date.now()) / 1000));
   const url = channelStreamUrl(ch);
-  const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...channelInputArgs(ch, url), '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '10',
+  const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...channelInputArgs(ch, url), ...httpReconnectArgs(url, 10),
     ...REMOTE_PROTOCOLS, '-i', url, '-map', '0:v?', '-map', '0:a?', '-c', 'copy', '-t', String(durationSec), '-f', 'mpegts', file];
   log.info(`${parts.length > 1 ? `Resuming recording "${r.title}" (part ${parts.length})` : `Recording "${r.title}"`} for ${durationSec}s → ${file}`);
   const p = spawn(config.ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -275,11 +275,17 @@ function startRecording(r: Row) {
   trackUpstream(ch.source_id, 1);
   db.run("UPDATE recordings SET status = 'recording', path = ?, parts = ? WHERE id = ?", file, JSON.stringify(parts), r.id);
   emit(r.id);
-  p.on('exit', (code) => {
+  let ended = false;
+  const end = (code: number | null, error: string) => {
+    if (ended) return;
+    ended = true;
     active.delete(r.id);
     trackUpstream(ch.source_id, -1);
-    void finishRecording(r.id, code, err).catch((e) => log.error(`Saving recording "${r.title}" failed`, e));
-  });
+    void finishRecording(r.id, code, error).catch((e) => log.error(`Saving recording "${r.title}" failed`, e));
+  };
+  p.on('exit', (code) => end(code, err));
+  // ffmpeg could not be started (missing, not executable): finish now, as a failed recording when nothing was written.
+  p.on('error', (e) => end(null, `${err}\nCould not run ffmpeg: ${e.message}`));
 }
 
 /**

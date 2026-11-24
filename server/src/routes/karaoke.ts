@@ -29,6 +29,7 @@ import { badRequest, notFound } from '../util/errors.js';
 import { deleteEdit, getLyrics, saveEdit, setUserOffset } from '../services/lyrics.js';
 import { ortRuntime } from '../services/ortRuntime.js';
 import { createStemStore, findOrtDir, mixLevel, ortVersion, STEM_NAMES, STEM_RATE, type StemStore } from '../services/stems.js';
+import { isSea } from 'node:sea';
 import { createSeparationQueue, type SeparationQueue } from '../services/separation/native.js';
 import { findOrtNode, ORT_NODE_VERSION, ortNodeRuntime, platformUnsupported } from '../services/ortNode.js';
 import { getSettings } from '../services/settings.js';
@@ -55,16 +56,22 @@ export function setSeparationQueue(q: SeparationQueue | null) {
   queue = q;
 }
 
+/**
+ * The standalone (single-executable) build can't fork the separation child: its binary always runs the embedded
+ * server, so a fork would start a second server instance. Separation runs in the browser there instead.
+ */
+const SEA_UNSUPPORTED = isSea() ? 'The standalone build separates in the browser (server-side separation needs the Docker or Node install)' : null;
+
 /** Where "Prepare" separates for these settings: the server when the native runtime can run here (or is forced). */
 export function stemsEngine(k: Partial<KaraokeSettings>): 'server' | 'browser' {
-  if (k.stemsEngine === 'browser') return 'browser';
+  if (k.stemsEngine === 'browser' || SEA_UNSUPPORTED) return 'browser';
   if (k.stemsEngine === 'server') return 'server';
   return platformUnsupported() === null || findOrtNode() ? 'server' : 'browser';
 }
 
 function nativeStatus(isAdmin: boolean): NativeStemsStatus {
-  const found = findOrtNode();
-  const reason = found ? null : platformUnsupported();
+  const found = SEA_UNSUPPORTED ? null : findOrtNode();
+  const reason = SEA_UNSUPPORTED ?? (found ? null : platformUnsupported());
   const d = ortNodeRuntime().status();
   return {
     supported: !reason, reason, ready: !!found, version: found?.version ?? ORT_NODE_VERSION,

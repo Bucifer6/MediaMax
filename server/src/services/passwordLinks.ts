@@ -48,15 +48,19 @@ export function previewPasswordLink(token: string): PasswordLinkPreview {
   return { valid: !problem, serverName: getBranding().serverName, username: problem ? null : user!.username, displayName: problem ? null : user!.display_name, message: problem };
 }
 
-export function usePasswordLink(token: string, req: UsePasswordLinkRequest, remoteAddr?: string): AuthResponse {
+export async function usePasswordLink(token: string, req: UsePasswordLinkRequest, remoteAddr?: string): Promise<AuthResponse> {
   const { row, user, problem } = lookup(token);
   if (problem) throw forbidden(problem);
   if (!req?.password || typeof req.password !== 'string' || req.password.length < 8) throw badRequest('Choose a password of at least 8 characters');
+  const hash = await hashSecret(req.password);
+  // Re-checked after the await (the account may have been disabled or given 2FA meanwhile).
+  const recheck = lookup(token).problem;
+  if (recheck) throw forbidden(recheck);
   db.tx(() => {
     // Atomic: two tabs racing the same link can't both use it.
     const upd = db.run('UPDATE password_links SET used_at = ? WHERE token_hash = ? AND used_at IS NULL', nowIso(), row!.token_hash);
     if (!upd.changes) throw forbidden('This link has already been used.');
-    db.run('UPDATE users SET password_hash = ? WHERE id = ?', hashSecret(req.password), user!.id);
+    db.run('UPDATE users SET password_hash = ? WHERE id = ?', hash, user!.id);
     db.run('DELETE FROM devices WHERE user_id IN (SELECT id FROM users WHERE id = ? OR parent_user_id = ?)', user!.id, user!.id);
   });
   logActivity('user.password', `${user!.display_name} chose a password with a set-password link`, { userId: user!.id, userName: user!.display_name });

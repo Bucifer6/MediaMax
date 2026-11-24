@@ -13,9 +13,9 @@ const { scanLibrary } = await import('../src/services/scanner.ts');
 const { watchedCleanupDue, normalizeRuleInput } = await import('../src/services/smartDownloads.ts');
 const { buildApp } = await import('../src/app.ts');
 
-const user = createUser({ username: 'sdl-user', password: 'pw-123456' });
-const kid = createUser({ username: 'sdl-kid', password: 'pw-123456', maxContentRating: 'TV-PG' } as any);
-const nodl = createUser({ username: 'sdl-nodl', password: 'pw-123456', allowDownloads: false } as any);
+const user = await createUser({ username: 'sdl-user', password: 'pw-123456' });
+const kid = await createUser({ username: 'sdl-kid', password: 'pw-123456', maxContentRating: 'TV-PG' } as any);
+const nodl = await createUser({ username: 'sdl-nodl', password: 'pw-123456', allowDownloads: false } as any);
 const phone = issueToken(user.id, { deviceId: 'phone-1', deviceName: 'Phone', platform: 'ios' }).token;
 const tablet = issueToken(user.id, { deviceId: 'tablet-1', deviceName: 'Tablet', platform: 'android' }).token;
 const kidTok = issueToken(kid.id, { deviceId: 'kid-phone', deviceName: 'Kid phone', platform: 'ios' }).token;

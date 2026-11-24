@@ -16,8 +16,8 @@ const { buildApp } = await import('../src/app.ts');
 const app = await buildApp();
 after(() => app.close());
 
-const admin = createUser({ username: 'help-admin', password: 'pass1234', isAdmin: true });
-const viewer = createUser({ username: 'help-viewer', password: 'pass1234' });
+const admin = await createUser({ username: 'help-admin', password: 'pass1234', isAdmin: true });
+const viewer = await createUser({ username: 'help-viewer', password: 'pass1234' });
 const adminTok = issueToken(admin.id, { deviceId: 'help-a', deviceName: 'test', platform: 'web' }).token;
 const viewerTok = issueToken(viewer.id, { deviceId: 'help-v', deviceName: 'test', platform: 'web' }).token;
 const auth = (t: string) => ({ authorization: `Bearer ${t}` });

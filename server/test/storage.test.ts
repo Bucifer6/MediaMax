@@ -271,9 +271,11 @@ test('directory watcher: no per-file watches, sees new files in new folders, ign
   for (let i = 0; i < 20; i++) fs.writeFileSync(path.join(root, 'Show/Season 1', `e${i}.mkv`), '');
   const seen: string[] = [];
   const w = new DirWatcher(root, (rel) => seen.push(rel));
-  const r = w.start();
+  const r = await w.start();
   if (process.platform === 'linux') assert.equal(r.directories, 4, 'root, Show, Season 1, Movies — files and @eaDir are not watched');
-  const sig1 = folderSignature(root);
+  const sig1 = await folderSignature(root);
+  assert.equal(await folderSignature(root), sig1, 'same tree, same signature');
+  assert.match(sig1!, /^[0-9a-f]{40}$/, 'a digest, not the joined folder list');
   const wait = async (fn: () => boolean) => {
     for (let i = 0; i < 100 && !fn(); i++) await new Promise((res) => setTimeout(res, 20));
     return fn();
@@ -290,8 +292,8 @@ test('directory watcher: no per-file watches, sees new files in new folders, ign
   await new Promise((res) => setTimeout(res, 200));
   assert.deepEqual(seen, [], 'ignored paths');
   w.close();
-  assert.notEqual(folderSignature(root), sig1, 'poll signature changes when folders change');
-  assert.equal(folderSignature(path.join(root, 'missing')), null);
+  assert.notEqual(await folderSignature(root), sig1, 'poll signature changes when folders change');
+  assert.equal(await folderSignature(path.join(root, 'missing')), null);
   fs.rmSync(root, { recursive: true, force: true });
 });
 

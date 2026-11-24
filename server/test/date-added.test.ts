@@ -10,7 +10,7 @@ const { createUser, issueToken } = await import('../src/services/auth.ts');
 const { scanLibrary, fileAddedMs, recalculateDateAdded } = await import('../src/services/scanner.ts');
 const { buildApp } = await import('../src/app.ts');
 
-const admin = createUser({ username: 'daadmin', password: 'pw-123456', isAdmin: true });
+const admin = await createUser({ username: 'daadmin', password: 'pw-123456', isAdmin: true });
 const atok = issueToken(admin.id, { deviceId: 'da-a', deviceName: 'test', platform: 'web' }).token;
 const app = await buildApp();
 after(() => app.close());
@@ -100,7 +100,7 @@ test('Recalculate date added re-applies the rule to items scanned with "scan tim
   assert.equal(r.json().changed, 1);
   assert.equal(Math.round((now - Date.parse(added("library_id = 'da-movies' AND type = 'movie'"))) / DAY), 1000);
   // Admin only.
-  const viewer = createUser({ username: 'daviewer', password: 'pw-123456' });
+  const viewer = await createUser({ username: 'daviewer', password: 'pw-123456' });
   const vtok = issueToken(viewer.id, { deviceId: 'da-v', deviceName: 'test', platform: 'web' }).token;
   r = await app.inject({ method: 'POST', url: '/api/v1/libraries/da-movies/recalculate-date-added', headers: { authorization: `Bearer ${vtok}` } });
   assert.equal(r.statusCode, 403);

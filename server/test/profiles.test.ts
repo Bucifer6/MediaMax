@@ -18,9 +18,9 @@ const { buildApp } = await import('../src/app.ts');
 
 const now = new Date().toISOString();
 // An account that existed before profiles: inserted the way old servers stored users (no profile columns set).
-db.insert('users', { id: 'legacy', username: 'legacy', display_name: 'Legacy', password_hash: auth.hashSecret('pass1234'), is_admin: 0, preferences: '{}', created_at: now });
-const admin = auth.createUser({ username: 'admin', password: 'pass1234', isAdmin: true });
-const owner = auth.createUser({ username: 'mum', displayName: 'Mum', password: 'pass1234', pin: '1111', maxStreams: 2 });
+db.insert('users', { id: 'legacy', username: 'legacy', display_name: 'Legacy', password_hash: await auth.hashSecret('pass1234'), is_admin: 0, preferences: '{}', created_at: now });
+const admin = await auth.createUser({ username: 'admin', password: 'pass1234', isAdmin: true });
+const owner = await auth.createUser({ username: 'mum', displayName: 'Mum', password: 'pass1234', pin: '1111', maxStreams: 2 });
 
 db.insert('libraries', { id: 'lib-m', name: 'Movies', type: 'movies', paths: '[]', created_at: now });
 db.insert('libraries', { id: 'lib-tv', name: 'TV', type: 'shows', paths: '[]', created_at: now });
@@ -107,7 +107,7 @@ test('profile CRUD, built-in avatars and the per-account limit', async () => {
   assert.equal(db.get('SELECT 1 FROM users WHERE id = ?', extra), undefined);
 
   // Other users cannot touch them; admins can.
-  const other = auth.createUser({ username: 'other', password: 'pass1234' });
+  const other = await auth.createUser({ username: 'other', password: 'pass1234' });
   const otherTok = auth.issueToken(other.id, { deviceId: 'o' }).token;
   assert.equal((await call(otherTok, 'PATCH', `/profiles/${dad}`, { displayName: 'x' })).statusCode, 403);
   const adminTok = auth.issueToken(admin.id, { deviceId: 'a' }).token;
@@ -207,7 +207,7 @@ test('watch progress, My List and history are per profile', () => {
   assert.deepEqual(items.nextUp(mum), []);
 });
 
-test('kids profile: rating limit applies to browse, search, next up and item access; unrated hidden', () => {
+test('kids profile: rating limit applies to browse, search, next up and item access; unrated hidden', async () => {
   const k = auth.getUser(kid);
   assert.equal(k.maxContentRating, 'PG');
   assert.equal(k.allowLiveTv, false, 'kids profiles have no Live TV unless the admin allows it');
@@ -222,18 +222,18 @@ test('kids profile: rating limit applies to browse, search, next up and item acc
   db.run("INSERT OR REPLACE INTO user_data (user_id, item_id, played, play_count, position_ms, favorite, last_played_at) VALUES (?, 'e-a1', 1, 1, 0, 0, ?)", kid, now);
   assert.deepEqual(items.nextUp(k).map((i) => i.id), ['e-k2']);
   // The owner's own limit still caps a profile: owner PG-13 + profile R → PG-13.
-  auth.updateUser(owner.id, { maxContentRating: 'PG-13' }, admin.id);
+  await auth.updateUser(owner.id, { maxContentRating: 'PG-13' }, admin.id);
   assert.equal(auth.getUser(dad).maxContentRating, 'PG-13');
-  auth.updateUser(owner.id, { maxContentRating: null }, admin.id);
+  await auth.updateUser(owner.id, { maxContentRating: null }, admin.id);
   assert.equal(auth.getUser(dad).maxContentRating, null);
   settings.updateSettings({ profiles: { ...auth.profileSettings(), kidsLiveTv: true } });
   assert.equal(auth.getUser(kid).allowLiveTv, true);
   settings.updateSettings({ profiles: { ...auth.profileSettings(), kidsLiveTv: false } });
   // Library subset: only the owner's libraries, intersected.
-  auth.updateUser(owner.id, { libraryIds: ['lib-m'] }, admin.id);
-  profiles.updateProfile(auth.getUser(owner.id), dad, { libraryIds: ['lib-m', 'lib-tv'] });
+  await auth.updateUser(owner.id, { libraryIds: ['lib-m'] }, admin.id);
+  await profiles.updateProfile(auth.getUser(owner.id), dad, { libraryIds: ['lib-m', 'lib-tv'] });
   assert.deepEqual(profiles.getProfile(auth.getUser(owner.id), dad).libraryIds, ['lib-m']);
-  auth.updateUser(owner.id, { libraryIds: null }, admin.id);
+  await auth.updateUser(owner.id, { libraryIds: null }, admin.id);
 });
 
 test('the concurrent stream limit is shared by the owner and its profiles', () => {
@@ -251,7 +251,7 @@ test('the concurrent stream limit is shared by the owner and its profiles', () =
 });
 
 test('request permissions: adults inherit the owner, kids get none, owners can only lower; quota is shared', async () => {
-  auth.updateUser(owner.id, { requestPermissions: { movie: 'auto', show: 'request', movie4k: 'none' } }, admin.id);
+  await auth.updateUser(owner.id, { requestPermissions: { movie: 'auto', show: 'request', movie4k: 'none' } }, admin.id);
   const daddy = auth.getUser(dad);
   assert.equal(perms.effectivePermissions(daddy).movie, 'auto');
   assert.equal(perms.effectivePermissions(daddy).manageRequests, false);
@@ -259,11 +259,11 @@ test('request permissions: adults inherit the owner, kids get none, owners can o
   assert.equal(perms.requestLevel(auth.getUser(kid), 'movie'), 'none');
   // Owner can't give more than they have.
   const mum = auth.getUser(owner.id);
-  const p = profiles.updateProfile(mum, dad, { requestPermissions: { movie4k: 'auto', show: 'auto', movie: 'request' } });
+  const p = await profiles.updateProfile(mum, dad, { requestPermissions: { movie4k: 'auto', show: 'auto', movie: 'request' } });
   assert.equal(p.requestPermissions!.movie4k, 'none');
   assert.equal(p.requestPermissions!.show, 'request');
   assert.equal(p.requestPermissions!.movie, 'request');
-  profiles.updateProfile(mum, dad, { requestPermissions: null });
+  await profiles.updateProfile(mum, dad, { requestPermissions: null });
   assert.equal(perms.effectivePermissions(auth.getUser(dad)).movie, 'auto');
   // Admin owner's profiles inherit admin request rights but never manage requests.
   const adminProfile = db.get('SELECT id FROM users WHERE parent_user_id = ?', admin.id)!.id;
@@ -271,14 +271,14 @@ test('request permissions: adults inherit the owner, kids get none, owners can o
   assert.equal(perms.effectivePermissions(auth.getUser(adminProfile)).manageRequests, false);
 
   // Shared quota: owner limit 2 movies/week; one by the owner, one by the profile → both see 0 left.
-  auth.updateUser(owner.id, { requestQuotas: { movie: { limit: 2, days: 7 }, show: { limit: 5, days: 7 }, music: { limit: 5, days: 7 }, book: { limit: 5, days: 7 } } }, admin.id);
+  await auth.updateUser(owner.id, { requestQuotas: { movie: { limit: 2, days: 7 }, show: { limit: 5, days: 7 }, music: { limit: 5, days: 7 }, book: { limit: 5, days: 7 } } }, admin.id);
   const ins = (by: string, id: string) => db.insert('media_requests', { id, media_type: 'movie', tmdb_id: id, title: id, status: 'pending', requested_by: by, requested_at: new Date().toISOString() });
   ins(owner.id, 'rq1');
   ins(dad, 'rq2');
   assert.equal(perms.quotaStatus(auth.getUser(dad), 'movie').remaining, 0);
   assert.equal(perms.quotaStatus(auth.getUser(owner.id), 'movie').remaining, 0);
   // With its own (admin-set) quota the profile counts separately.
-  profiles.updateProfile(auth.getUser(admin.id), dad, { requestQuotas: { movie: { limit: 3, days: 7 }, show: { limit: 1, days: 7 }, music: { limit: 1, days: 7 }, book: { limit: 1, days: 7 } } });
+  await profiles.updateProfile(auth.getUser(admin.id), dad, { requestQuotas: { movie: { limit: 3, days: 7 }, show: { limit: 1, days: 7 }, music: { limit: 1, days: 7 }, book: { limit: 1, days: 7 } } });
   assert.equal(perms.quotaStatus(auth.getUser(dad), 'movie').remaining, 2);
   assert.equal(perms.quotaStatus(auth.getUser(owner.id), 'movie').remaining, 1);
 });
@@ -286,11 +286,11 @@ test('request permissions: adults inherit the owner, kids get none, owners can o
 test('disabling or deleting the owner takes its profiles with it', async () => {
   const dadDev = auth.issueToken(dad, { deviceId: 'phone' }).token;
   assert.equal((await call(dadDev, 'GET', '/auth/me')).statusCode, 200);
-  auth.updateUser(owner.id, { disabled: true }, admin.id);
+  await auth.updateUser(owner.id, { disabled: true }, admin.id);
   assert.equal((await call(dadDev, 'GET', '/auth/me')).statusCode, 401);
-  auth.updateUser(owner.id, { disabled: false }, admin.id);
+  await auth.updateUser(owner.id, { disabled: false }, admin.id);
   // Profiles can't be made admins or given passwords.
-  assert.throws(() => auth.updateUser(dad, { isAdmin: true }, admin.id), /Profiles cannot/);
+  await assert.rejects(auth.updateUser(dad, { isAdmin: true }, admin.id), /Profiles cannot/);
   items.setWatchlist(auth.getUser(kid), 'm-pg', true);
   auth.deleteUser(owner.id, admin.id);
   assert.equal(db.get('SELECT COUNT(*) n FROM users WHERE parent_user_id = ?', owner.id)!.n, 0);

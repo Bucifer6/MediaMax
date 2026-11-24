@@ -43,7 +43,15 @@ function png(out, w, h, pad = 0, stock = null) {
 const useLogo = name === 'Kinora' && fs.existsSync(stockLogo);
 let page = fs.readFileSync(path.join(here, 'shared/index.html'), 'utf8');
 if (useLogo) page = page.replace('<h1 id="brand">Kinora</h1>', '<h1 id="brand"><img class="logo" src="logo.svg" alt="Kinora" /></h1>');
-page = page.replaceAll('Kinora', name);
+// Escape the name for where it lands: markup (HTML), the inline script's string literals (JS), config.xml (XML).
+const htmlName = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+const jsName = JSON.stringify(name).slice(1, -1).replace(/'/g, "\\'").replace(/</g, '\\u003c');
+// The page has one inline <script>…</script> block (our own file): split on it by position, not with an HTML regex.
+const lower = page.toLowerCase();
+const scriptStart = lower.indexOf('<script');
+const scriptEnd = scriptStart < 0 ? -1 : lower.indexOf('</script', scriptStart);
+if (scriptStart < 0 || scriptEnd < 0 || lower.indexOf('<script', scriptStart + 1) >= 0) throw new Error('tv/shared/index.html must contain exactly one <script> block');
+page = page.slice(0, scriptStart).replaceAll('Kinora', htmlName) + page.slice(scriptStart, scriptEnd).replaceAll('Kinora', jsName) + page.slice(scriptEnd).replaceAll('Kinora', htmlName);
 for (const target of ['tizen', 'webos', 'vidaa']) {
   const dir = path.join(dist, target);
   fs.rmSync(dir, { recursive: true, force: true });
@@ -51,7 +59,7 @@ for (const target of ['tizen', 'webos', 'vidaa']) {
   fs.writeFileSync(path.join(dir, 'index.html'), page);
   if (useLogo) fs.copyFileSync(stockLogo, path.join(dir, 'logo.svg'));
   if (target === 'tizen') {
-    fs.writeFileSync(path.join(dir, 'config.xml'), fs.readFileSync(path.join(here, 'tizen/config.xml'), 'utf8').replace(/<name>[^<]*<\/name>/, `<name>${name}</name>`));
+    fs.writeFileSync(path.join(dir, 'config.xml'), fs.readFileSync(path.join(here, 'tizen/config.xml'), 'utf8').replace(/<name>[^<]*<\/name>/, `<name>${htmlName}</name>`));
     png(path.join(dir, 'icon.png'), 512, 512, 0.15, 'icon-512.png');
   } else if (target === 'vidaa') {
     // No vendor package: the folder itself is the app (host it over HTTPS). vidaa-app.json carries the launcher /

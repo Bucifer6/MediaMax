@@ -18,7 +18,8 @@ import { imageUrl } from './images.js';
 import { logActivity } from './activity.js';
 import { getBranding } from './branding.js';
 import { avatarColor, builtinAvatarUrl, isBuiltinAvatar } from './avatars.js';
-import { getUser, getUserRow, hashSecret, issueToken, profileSettings, qualifiedName, toUser, verifySecret, type AuthContext } from './auth.js';
+import { getUser, getUserRow, hashUserSecrets, issueToken, profileSettings, qualifiedName, toUser, verifySecret, type AuthContext } from './auth.js';
+import { Pending, sweepExpired, type Failure } from '../util/lockout.js';
 import { capPermissions, NO_REQUEST_PERMISSIONS, normalizePermissions, normalizeQuotas, defaultQuotas, ownerPermissions } from './requestPerms.js';
 import { allowedLibraryIds } from './items.js';
 
@@ -105,7 +106,7 @@ function uniqueUsername(owner: Row, name: string): string {
 }
 
 /** Columns for the shared create/update fields. */
-function profilePatch(owner: Row, cur: Row | null, req: UpdateProfileRequest, actor: User): Row {
+function profilePatch(owner: Row, cur: Row | null, req: UpdateProfileRequest, actor: User, pinHash: string | null | undefined): Row {
   const patch: Row = {};
   if (req.displayName !== undefined) {
     const n = String(req.displayName ?? '').trim().slice(0, 40);
@@ -123,7 +124,7 @@ function profilePatch(owner: Row, cur: Row | null, req: UpdateProfileRequest, ac
   }
   if (req.pin !== undefined) {
     if (req.pin) validatePin(req.pin);
-    patch.pin_hash = req.pin ? hashSecret(req.pin) : null;
+    patch.pin_hash = req.pin ? pinHash ?? null : null;
     patch.pin_length = req.pin ? req.pin.length : null;
   }
   if (req.isKids !== undefined) patch.profile_kids = !!req.isKids;
@@ -176,7 +177,8 @@ function profilePatch(owner: Row, cur: Row | null, req: UpdateProfileRequest, ac
   return patch;
 }
 
-export function createProfile(actor: User, ownerId: string, req: CreateProfileRequest): Profile {
+export async function createProfile(actor: User, ownerId: string, req: CreateProfileRequest): Promise<Profile> {
+  const { pin_hash } = await hashUserSecrets({ pin: req.pin });
   assertCanManage(actor, ownerId);
   const settings = profileSettings();
   if (!settings.enabled) throw forbidden('Profiles are turned off on this server');
@@ -210,7 +212,7 @@ export function createProfile(actor: User, ownerId: string, req: CreateProfileRe
     preferences: '{}',
     created_at: nowIso(),
   });
-  const patch = profilePatch(owner, getUserRow(id), { ...req, displayName: undefined, kidsTheme: req.kidsTheme ?? kids }, actor);
+  const patch = profilePatch(owner, getUserRow(id), { ...req, displayName: undefined, kidsTheme: req.kidsTheme ?? kids }, actor, pin_hash);
   if (req.color == null && avatar) patch.profile_color = avatarColor(avatar);
   db.update('users', id, patch);
   const p = toProfile(getUserRow(id), owner);
@@ -231,9 +233,11 @@ export function getProfile(actor: User, profileId: string): Profile {
   return toProfile(row, owner);
 }
 
-export function updateProfile(actor: User, profileId: string, req: UpdateProfileRequest): Profile {
+export async function updateProfile(actor: User, profileId: string, req: UpdateProfileRequest): Promise<Profile> {
+  managedRow(actor, profileId);
+  const { pin_hash } = await hashUserSecrets({ pin: req.pin });
   const { row, owner } = managedRow(actor, profileId);
-  const patch = profilePatch(owner, row, req, actor);
+  const patch = profilePatch(owner, row, req, actor, pin_hash);
   // Turning a profile into a kids profile applies the kids defaults the request didn't set.
   if (req.isKids === true && !row.profile_kids) {
     const s = profileSettings();
@@ -266,18 +270,23 @@ export function assertProfileManaged(actor: User, profileId: string) {
 /* ------------------------------ switching ------------------------------ */
 
 /* Same lockout as the PIN sign-in: 5 wrong PINs → 15 minutes, per target profile. */
-const failures = new Map<string, { n: number; until: number }>();
+const failures = new Map<string, Failure>();
+/** PIN checks still running count as failures until they finish (the hash compare runs off-thread). */
+const pending = new Pending();
 function assertNotLocked(key: string, ip?: string) {
   const f = failures.get(key);
-  if (f && f.n >= 5 && f.until > Date.now()) {
+  const live = f && f.until > Date.now() ? f.n : 0;
+  if (live + pending.count(key) >= 5) {
     securityEvent('AUTH_LOCKED', ip, { account: key });
-    throw new HttpError(429, `Too many wrong PINs. Try again in ${Math.ceil((f.until - Date.now()) / 60000)} minute(s).`, 'pin_locked');
+    throw new HttpError(429, `Too many wrong PINs. Try again in ${Math.ceil(((live ? f!.until : Date.now() + 15 * 60000) - Date.now()) / 60000)} minute(s).`, 'pin_locked');
   }
 }
 function recordFailure(key: string) {
   const f = failures.get(key);
-  if (!f || f.until < Date.now()) failures.set(key, { n: 1, until: Date.now() + 15 * 60000 });
-  else f.n++;
+  if (!f || f.until < Date.now()) {
+    sweepExpired(failures);
+    failures.set(key, { n: 1, until: Date.now() + 15 * 60000 });
+  } else f.n++;
 }
 const clearFailures = (key: string) => failures.delete(key);
 /** Tests only. */
@@ -288,7 +297,7 @@ export const _resetProfileLockouts = () => failures.clear();
  * profile session (so a kids profile can only get back to the owner with the owner's PIN when one is set).
  * The previous session on this device ends; a new token for the target profile is returned.
  */
-export function switchProfile(ctx: AuthContext, targetId: string, pin: string | undefined, remoteAddr?: string): AuthResponse {
+export async function switchProfile(ctx: AuthContext, targetId: string, pin: string | undefined, remoteAddr?: string): Promise<AuthResponse> {
   if (ctx.deviceRowId.startsWith('apikey:')) throw forbidden('API keys cannot switch profiles');
   const owner = accountOwnerRow(ctx.user.id);
   const target = db.get('SELECT * FROM users WHERE id = ?', targetId);
@@ -300,12 +309,13 @@ export function switchProfile(ctx: AuthContext, targetId: string, pin: string | 
     assertNotLocked(key, remoteAddr);
     // No PIN sent: the client is asking whether one is needed; that is not a failed attempt.
     if (!pin) throw new HttpError(401, 'Enter the profile PIN', 'pin_required');
-    if (!verifySecret(String(pin), target.pin_hash)) {
+    await pending.run(key, async () => {
+      if (await verifySecret(String(pin), target.pin_hash)) return;
       recordFailure(key);
       logActivity('user.login.failed', `Wrong PIN for the profile ${target.display_name}`, { severity: 'warning', userId: ctx.user.id });
       securityEvent('AUTH_FAIL', remoteAddr, { user: target.username, reason: 'profile_pin' });
       throw new HttpError(401, 'Incorrect PIN', 'pin_invalid');
-    }
+    });
     clearFailures(key);
   }
   const res = issueToken(target.id, ctx.device, remoteAddr, { switched: true });

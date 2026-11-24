@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn } from 'node:child_process';
 import type { DateAddedSource, ExtraType, Library, LibraryType, SubtitleStream } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
@@ -79,10 +80,16 @@ function countMediaBelow(dir: Buffer, accept: (e: string) => boolean, depth = 0)
 async function walk(root: string, accept: (e: string) => boolean, skipped: SkippedName[] = []): Promise<FileEntry[]> {
   const out: FileEntry[] = [];
   const stack = [root];
+  // Real paths of the folders walked so far: symlinked folders are followed, but a link back up the tree ("loop -> .")
+  // or two links to one folder must not import the same files again (or loop until the path gets too long).
+  const visited = new Set<string>();
   while (stack.length) {
     const dir = stack.pop()!;
     let entries: fs.Dirent<Buffer>[];
     try {
+      const real = await fs.promises.realpath(dir);
+      if (visited.has(real)) continue;
+      visited.add(real);
       entries = await fs.promises.readdir(dir, { withFileTypes: true, encoding: 'buffer' });
     } catch (e) {
       log.warn(`Cannot read ${dir}: ${(e as Error).message}`);
@@ -140,14 +147,24 @@ function usableNames(dir: string): string[] {
   return fs.readdirSync(dir, { encoding: 'buffer' }).filter(isValidUtf8Name).map((b) => b.toString('utf8'));
 }
 
+/**
+ * Folder listings for findFile, kept for one scan (artwork lookups list the same folder several times per file).
+ * The scan writes no files into media folders, so a listing can't go stale because of the scan itself.
+ */
+const scanListings = new AsyncLocalStorage<Map<string, Map<string, string> | null>>();
+
 function findFile(dir: string, names: string[]): string | null {
-  let files: string[];
-  try {
-    files = usableNames(dir);
-  } catch {
-    return null;
+  const cache = scanListings.getStore();
+  let lower = cache?.get(dir);
+  if (lower === undefined) {
+    try {
+      lower = new Map(usableNames(dir).map((f) => [f.toLowerCase(), f]));
+    } catch {
+      lower = null;
+    }
+    cache?.set(dir, lower);
   }
-  const lower = new Map(files.map((f) => [f.toLowerCase(), f]));
+  if (!lower) return null;
   for (const n of names) {
     const hit = lower.get(n.toLowerCase());
     if (hit) return path.join(dir, hit);
@@ -220,7 +237,9 @@ async function upsertMedia(itemId: string, f: FileEntry, force = false, preProbe
   if (existing && existing.mtime === f.mtime && existing.size === f.size && !force && existing.probed_at) {
     // Keep sidecar subtitles fresh even when the file itself is unchanged.
     const embedded = parseJson<SubtitleStream[]>(existing.subs, []).filter((s) => !s.external);
-    db.run('UPDATE media SET item_id = ?, subs = ? WHERE id = ?', itemId, JSON.stringify([...embedded, ...subsSide]), id);
+    const subs = JSON.stringify([...embedded, ...subsSide]);
+    // Only when something changed: a no-op rescan must not rewrite every media row.
+    db.run('UPDATE media SET item_id = ?, subs = ? WHERE id = ? AND (item_id IS NOT ? OR subs IS NOT ?)', itemId, subs, id, itemId, subs);
     importSidecarEdl(itemId, f.path);
     return { mediaId: id, probe: null, changed: false };
   }
@@ -266,14 +285,19 @@ async function scanMovies(ctx: ScanCtx, files: FileEntry[]) {
     const fileParse = parseMovieName(path.basename(f.path));
     // Prefer the folder name when it looks like "Title (Year)".
     const p = folderParse?.year ? folderParse : fileParse.year || !folderParse ? fileParse : folderParse;
-    const key = inOwnFolder && folderParse?.title ? dir : `${p.title.toLowerCase()}|${p.year ?? ''}`;
+    // The folder is the movie's own folder (all its files are versions of it) when its name was chosen, or when the
+    // file names the same title ("Avatar/Avatar (2009).mkv"). Otherwise it's a shared folder ("Marvel/Iron Man (2008).mp4",
+    // "Marvel/Thor (2011).mp4"): each title + year is its own movie.
+    const sameTitle = (a: string, b: string) => a.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '') === b.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+    const ownFolder = inOwnFolder && !!folderParse?.title && (p === folderParse || sameTitle(folderParse.title, fileParse.title));
+    const key = ownFolder ? dir : `${p.title.toLowerCase()}|${p.year ?? ''}`;
     const id = stableId(ctx.lib.id, 'movie', key);
-    const nfoPath = findFile(dir, [`${stripExt(path.basename(f.path))}.nfo`, ...(inOwnFolder ? ['movie.nfo'] : [])]);
+    const nfoPath = findFile(dir, [`${stripExt(path.basename(f.path))}.nfo`, ...(ownFolder ? ['movie.nfo'] : [])]);
     const nfo = nfoPath ? readNfo(nfoPath) : null;
     const base = stripExt(path.basename(f.path));
-    const poster = findFile(dir, imgNames([`${base}-poster`, ...(inOwnFolder ? ['poster', 'folder', 'cover', 'movie'] : [])]));
-    const backdrop = findFile(dir, imgNames([`${base}-fanart`, `${base}-backdrop`, ...(inOwnFolder ? ['fanart', 'backdrop', 'background', 'art'] : [])]));
-    const logo = findFile(dir, imgNames([`${base}-logo`, `${base}-clearlogo`, ...(inOwnFolder ? ['logo', 'clearlogo'] : [])]));
+    const poster = findFile(dir, imgNames([`${base}-poster`, ...(ownFolder ? ['poster', 'folder', 'cover', 'movie'] : [])]));
+    const backdrop = findFile(dir, imgNames([`${base}-fanart`, `${base}-backdrop`, ...(ownFolder ? ['fanart', 'backdrop', 'background', 'art'] : [])]));
+    const logo = findFile(dir, imgNames([`${base}-logo`, `${base}-clearlogo`, ...(ownFolder ? ['logo', 'clearlogo'] : [])]));
     const ids = { ...(p.tmdbId ? { tmdb: p.tmdbId } : {}), ...(p.imdbId ? { imdb: p.imdbId } : {}) };
     const existed = !!db.get('SELECT 1 FROM items WHERE id = ?', id);
     ensureItem({
@@ -285,7 +309,7 @@ async function scanMovies(ctx: ScanCtx, files: FileEntry[]) {
     if (!existed) ctx.newItems.push(id);
     const m = await upsertMedia(id, f, ctx.force);
     const edition = fileParse.edition ?? stripExt(path.basename(f.path)).match(/\s-\s(director'?s cut|extended(?: edition| cut)?|theatrical(?: cut)?|unrated|ultimate edition|imax|remastered|final cut)\s*$/i)?.[1] ?? null;
-    db.run('UPDATE media SET edition = ? WHERE id = ?', edition, m.mediaId);
+    db.run('UPDATE media SET edition = ? WHERE id = ? AND edition IS NOT ?', edition, m.mediaId, edition);
     ctx.seenMedia.add(m.mediaId);
     ctx.seenItems.add(id);
     itemDuration(id);
@@ -782,7 +806,7 @@ const ACCEPT: Record<string, (e: string) => boolean> = {
 export function scanLibrary(libId: string, opts: { refreshMetadata?: boolean; force?: boolean } = {}): Promise<void> {
   const running = scanning.get(libId);
   if (running) return running;
-  const p = doScan(libId, opts).finally(() => scanning.delete(libId));
+  const p = scanListings.run(new Map(), () => doScan(libId, opts)).finally(() => scanning.delete(libId));
   scanning.set(libId, p);
   return p;
 }
@@ -843,6 +867,7 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     else if (type === 'audiobooks') await scanAudiobooks(ctx, files);
     else if (type === 'photos') await scanFlat(ctx, files, 'photo');
     else await scanFlat(ctx, files, 'video');
+    scanListings.getStore()?.clear(); // done with artwork lookups: free the folder listings
 
     // Remove vanished media / items — but only if all library roots are reachable (avoid wiping on unmounted drives).
     // An empty root counts as unreachable: an unmounted NAS share usually leaves its empty mount-point folder behind,

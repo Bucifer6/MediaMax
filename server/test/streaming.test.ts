@@ -26,8 +26,8 @@ const hasFfmpeg = spawnSync('ffmpeg', ['-version']).status === 0;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-stream-'));
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-const admin = createUser({ username: 'streamadmin', password: 'pw-123456', isAdmin: true });
-const viewer = createUser({ username: 'streamviewer', password: 'pw-123456' });
+const admin = await createUser({ username: 'streamadmin', password: 'pw-123456', isAdmin: true });
+const viewer = await createUser({ username: 'streamviewer', password: 'pw-123456' });
 const atok = issueToken(admin.id, { deviceId: 'stream-a', deviceName: 'test', platform: 'web' }).token;
 const vtok = issueToken(viewer.id, { deviceId: 'stream-v', deviceName: 'test', platform: 'web' }).token;
 const app = await buildApp();
@@ -146,6 +146,47 @@ test('segment alignment: a rendition started at segment N seeks to N×seg with k
     assert.equal(val(args, '-output_ts_offset'), (n * seg).toFixed(3));
   }
   assert.notEqual(val(a, '-b:v'), val(b, '-b:v'), 'renditions differ in bitrate only');
+});
+
+test('live TV: HTTP-only reconnect options only for http(s) inputs (ffmpeg rejects them for rtsp/udp/rtp/files)', () => {
+  const opts = {
+    startSec: 0, durationSec: null, mode: 'live' as const, audioIndex: null, audioCopy: false, videoCopy: true,
+    bitrate: 4000, maxHeight: null, sourceHeight: 1080, sourceCodec: 'h264', hdr: false, hasVideo: true,
+  };
+  for (const [input, want] of [['http://iptv/1.ts', true], ['HTTPS://iptv/1.m3u8', true], ['rtsp://192.0.2.1/?freq=11494', false], ['udp://239.0.0.1:1234', false], ['rtp://239.0.0.1:5000', false]] as const) {
+    const args = buildArgs({ ...opts, input } as any, '/tmp/live', 0, 'none').args;
+    assert.equal(args.includes('-reconnect'), want, input);
+    assert.ok(args.indexOf('-fflags') < args.indexOf('-i'));
+  }
+});
+
+test('burned-in text subtitles stay in sync after a seek; the burn runs on CPU frames before any hwupload', { skip: !hasFfmpeg && 'ffmpeg not installed' }, () => {
+  // A black clip and one cue at 11–13 s: playing from 10 s, the cue must be on the frame at 11.5 s, not at 21–23 s.
+  const clip = path.join(tmp, 'burn.mp4');
+  const srt = path.join(tmp, 'burn.srt');
+  const mk = spawnSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=black:s=320x240:r=10:d=20', '-c:v', 'libx264', '-g', '10', '-pix_fmt', 'yuv420p', clip]);
+  assert.equal(mk.status, 0, String(mk.stderr));
+  fs.writeFileSync(srt, '1\n00:00:11,000 --> 00:00:13,000\nSUBTITLE CUE\n\n');
+  const opts = {
+    input: clip, startSec: 10, durationSec: 20, mode: 'transcode' as const, audioIndex: null, audioCopy: false, videoCopy: false,
+    bitrate: 4000, maxHeight: null, sourceHeight: 240, sourceCodec: 'h264', hdr: false, hasVideo: true, burnSubtitle: { kind: 'external' as const, file: srt },
+  };
+  const val = (args: string[], k: string) => args[args.indexOf(k) + 1];
+  const vf = val(buildArgs(opts, path.join(tmp, 'burn-out'), 0, 'none').args, '-vf');
+  assert.match(vf, /^setpts=PTS\+10\.000\/TB,subtitles=.*,setpts=PTS-10\.000\/TB,format=yuv420p$/);
+  assert.ok(!val(buildArgs({ ...opts, startSec: 0 }, path.join(tmp, 'burn-out'), 0, 'none').args, '-vf').includes('setpts'), 'no shift without a seek');
+  // Hardware encoders: the shifted burn comes before the upload to the GPU.
+  const hwVf = val(buildArgs(opts, path.join(tmp, 'burn-out'), 0, { hw: 'vaapi', codec: 'h264', toneMap: null }).args, '-vf').split(',');
+  const at = (f: string) => hwVf.findIndex((x) => x.startsWith(f));
+  assert.ok(at('setpts=PTS+') >= 0 && at('setpts=PTS+') < at('subtitles=') && at('subtitles=') < at('setpts=PTS-') && at('setpts=PTS-') < at('hwupload'), hwVf.join(','));
+  // Render it the way the transcode does (input seek, same filters) and look at output frames 1.5 s and 3.5 s in.
+  const lit = (outSec: number) => {
+    const r = spawnSync('ffmpeg', ['-v', 'error', '-ss', '10.000', '-i', clip, '-vf', vf, '-ss', String(outSec), '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'gray', 'pipe:1'], { maxBuffer: 1 << 24 });
+    assert.equal(r.status, 0, String(r.stderr));
+    return (r.stdout as Buffer).filter((b) => b > 128).length;
+  };
+  assert.ok(lit(1.5) > 50, 'the cue at 11–13 s is drawn on the frame at 11.5 s');
+  assert.equal(lit(3.5), 0, 'and gone at 13.5 s');
 });
 
 /* --------------------------- rendition manager --------------------------- */

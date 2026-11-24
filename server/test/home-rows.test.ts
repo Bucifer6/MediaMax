@@ -26,9 +26,9 @@ for (let i = 1; i <= 4; i++) item(`show${i}`, 'hr-shows', 'show', 'TV-PG');
 item('sec1', 'hr-secret', 'movie', 'PG');
 item('ep-x', 'hr-shows', 'episode');
 
-const admin = getUser(createUser({ username: 'hr-admin', password: 'pass1234', isAdmin: true }).id);
+const admin = getUser((await createUser({ username: 'hr-admin', password: 'pass1234', isAdmin: true })).id);
 // A restricted viewer: no access to hr-secret, rating limit PG-13 (so R is hidden).
-const viewer = getUser(createUser({ username: 'hr-viewer', password: 'pass1234', libraryIds: ['hr-movies', 'hr-kids', 'hr-shows'], maxContentRating: 'PG-13' }).id);
+const viewer = getUser((await createUser({ username: 'hr-viewer', password: 'pass1234', libraryIds: ['hr-movies', 'hr-kids', 'hr-shows'], maxContentRating: 'PG-13' })).id);
 
 test('spotlight: only the chosen libraries and item types', () => {
   const kids = spotlightItems(admin, { id: 'k', libraryIds: ['hr-kids'] }, 20);
@@ -79,10 +79,10 @@ test('several spotlight rows on the home screen, each with its own title', () =>
   assert.equal(home[2]!.items.length, 5);
 });
 
-test('top 10: pinned titles first in order, the chart fills the rest, pins the viewer cannot see are skipped', () => {
+test('top 10: pinned titles first in order, the chart fills the rest, pins the viewer cannot see are skipped', async () => {
   // Chart: mov2 (3 viewers) > mov3 (2) > mov4 (1); mov1 is rated R.
-  const u = (n: string) => createUser({ username: `hr-p${n}`, password: 'pass1234' }).id;
-  const [a, b, c] = [u('a'), u('b'), u('c')];
+  const u = async (n: string) => (await createUser({ username: `hr-p${n}`, password: 'pass1234' })).id;
+  const [a, b, c] = [await u('a'), await u('b'), await u('c')];
   for (const x of [a, b, c]) play(x, 'mov2');
   for (const x of [a, b]) play(x, 'mov3');
   play(a, 'mov4');
@@ -104,6 +104,6 @@ test('top 10: pinned titles first in order, the chart fills the rest, pins the v
   const row = buildHome(viewer).find((r) => r.id === 't10');
   assert.deepEqual(row?.items.map((i) => i.id), ['kid2', 'mov2', 'mov3', 'mov4']);
   // One pin is enough to show the row even with a thin chart.
-  const fresh = getUser(createUser({ username: 'hr-fresh', password: 'pass1234', libraryIds: ['hr-kids'] }).id);
+  const fresh = getUser((await createUser({ username: 'hr-fresh', password: 'pass1234', libraryIds: ['hr-kids'] })).id);
   assert.deepEqual(buildHome(fresh).find((r) => r.id === 't10')?.items.map((i) => i.id), ['kid2']);
 });

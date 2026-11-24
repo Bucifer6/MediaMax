@@ -27,12 +27,12 @@ item('show-1', 'lib-tv', 'show', 'TV-PG');
 item('show-1-s1', 'lib-tv', 'season', null, { parent_id: 'show-1', idx: 1 });
 item('show-1-e1', 'lib-tv', 'episode', null, { parent_id: 'show-1-s1', grandparent_id: 'show-1', idx: 1, parent_idx: 1 });
 
-const host = auth.createUser({ username: 'host', password: 'pass1234' });
-const friend = auth.createUser({ username: 'friend', password: 'pass1234' });
-const third = auth.createUser({ username: 'third', password: 'pass1234' });
-const fourth = auth.createUser({ username: 'fourth', password: 'pass1234' });
-const limited = auth.createUser({ username: 'limited', password: 'pass1234', libraryIds: ['lib-m'] });
-const kidProfile = profiles.createProfile(auth.getUser(host.id), host.id, { displayName: 'Kiddo', isKids: true });
+const host = await auth.createUser({ username: 'host', password: 'pass1234' });
+const friend = await auth.createUser({ username: 'friend', password: 'pass1234' });
+const third = await auth.createUser({ username: 'third', password: 'pass1234' });
+const fourth = await auth.createUser({ username: 'fourth', password: 'pass1234' });
+const limited = await auth.createUser({ username: 'limited', password: 'pass1234', libraryIds: ['lib-m'] });
+const kidProfile = await profiles.createProfile(auth.getUser(host.id), host.id, { displayName: 'Kiddo', isKids: true });
 const kid = auth.getUser(kidProfile.id);
 
 const app = await buildApp();

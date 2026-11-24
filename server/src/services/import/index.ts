@@ -5,7 +5,7 @@ import { badRequest, conflict } from '../../util/errors.js';
 import { nowIso } from '../../util/misc.js';
 import { logger } from '../../util/log.js';
 import { getKv, setKv } from '../settings.js';
-import { createUser, updateUser } from '../auth.js';
+import { createUserHashed, hashUserSecrets, updateUser } from '../auth.js';
 import { createPasswordLink, passwordLinkUrl, passwordLinkUsed } from '../passwordLinks.js';
 import { logActivity } from '../activity.js';
 import { events } from '../events.js';
@@ -217,7 +217,7 @@ export function startImport(s: ImportSource, admin: User, options: ImportOptions
 }
 
 /** Create, update or merge the account for one source user, issue a set-password link if needed. */
-function upsertAccount(c: Conn, u: SourceUser, action: ImportPreviewUser['action'], existing: string | null, admin: User, res: ImportUserResult, notes: string[], o: ImportOptions, origin: string): string {
+async function upsertAccount(c: Conn, u: SourceUser, action: ImportPreviewUser['action'], existing: string | null, admin: User, res: ImportUserResult, notes: string[], o: ImportOptions, origin: string): Promise<string> {
   const s = c.source;
   const { disabled, hiddenFromLogin, unmappedFolders, notes: mapNotes, ...req } = u.mapped;
   let userId: string;
@@ -226,7 +226,7 @@ function upsertAccount(c: Conn, u: SourceUser, action: ImportPreviewUser['action
     res.username = db.get<{ username: string }>('SELECT username FROM users WHERE id = ?', existing)!.username;
     if (action === 'update') {
       try {
-        updateUser(existing, { ...req, username: undefined, password: undefined, disabled }, admin.id);
+        await updateUser(existing, { ...req, username: undefined, password: undefined, disabled }, admin.id);
         // Hidden users stay off the public sign-in list; visible ones are listed (if the sign-in screen lists anyone).
         db.run('UPDATE users SET show_on_signin = ? WHERE id = ?', hiddenFromLogin ? 0 : 1, existing);
       } catch (e) {
@@ -237,7 +237,10 @@ function upsertAccount(c: Conn, u: SourceUser, action: ImportPreviewUser['action
     } else res.status = 'merged';
   } else {
     // Nobody knows this password: the user picks their own with the set-password link.
-    const created = createUser({ ...req, username: freeUsername(u.mapped.username), password: crypto.randomBytes(24).toString('base64url'), showOnSignIn: !hiddenFromLogin });
+    const password = crypto.randomBytes(24).toString('base64url');
+    // Hashed first: the free username is picked and taken with no await in between (users import concurrently).
+    const hashes = await hashUserSecrets({ password, pin: req.pin });
+    const created = createUserHashed({ ...req, username: freeUsername(u.mapped.username), password, showOnSignIn: !hiddenFromLogin }, hashes);
     userId = created.id;
     res.username = created.username;
     if (disabled) db.run('UPDATE users SET disabled = 1 WHERE id = ?', userId);
@@ -317,7 +320,7 @@ export async function runImport(c: Conn, admin: User, job: ImportJob, origin: st
       // Read before writing anything, so a source error leaves no half-made account.
       const haul = await session.collectUser(u, w);
       const notes: string[] = [];
-      const userId = upsertAccount(c, u, action, existing, admin, res, notes, o, origin);
+      const userId = await upsertAccount(c, u, action, existing, admin, res, notes, o, origin);
       writeHaul(s, matcher, userId, haul, res);
       res.message = [...notes, ...haul.notes].join(' · ') || null;
     } catch (e) {

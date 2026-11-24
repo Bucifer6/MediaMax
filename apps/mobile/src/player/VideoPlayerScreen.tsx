@@ -77,6 +77,10 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   const caps = useCapabilities();
   const music = useMusic();
   const downloads = useDownloads();
+  // Callbacks read downloads through a ref: its value changes on every progress tick of a running
+  // download, which would otherwise reset the progress and Up Next timers.
+  const downloadsRef = useRef(downloads);
+  downloadsRef.current = downloads;
   const prefs = user?.preferences;
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
@@ -196,14 +200,14 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
     (state: ProgressReport['state']) => {
       const positionMs = Math.round(posRef.current);
       if (target.kind === 'vod' && offlineUri) {
-        downloads.updateLocalPosition(target.itemId, positionMs);
+        downloadsRef.current.updateLocalPosition(target.itemId, positionMs);
         return;
       }
       const pi = infoRef.current;
       if (!pi) return;
       api.sessionProgress(pi.sessionId, { positionMs, durationMs: durRef.current || undefined, state, sessionId: pi.sessionId }).catch(() => undefined);
     },
-    [api, target, offlineUri, downloads],
+    [api, target, offlineUri],
   );
 
   /** Pick subtitles for fresh PlaybackInfo: a just-downloaded track, or the user's defaults on first load. */
@@ -289,9 +293,18 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   };
 
   // ----- loading -----
+  const loadGen = useRef(0);
   const load = useCallback(
     async (startMs: number, opts: { audio?: number; bitrate?: number | null; paused?: boolean; auto?: boolean; burn?: number | null } = {}) => {
       if (castingRef.current) return castLoadRef.current(startMs, opts);
+      // Only the newest load may attach: a slower earlier one (fast zapping, a change while Auto
+      // quality measures, leaving mid-request) stops its own session instead.
+      const gen = ++loadGen.current;
+      const stale = (p: PlaybackInfo | null) => {
+        if (gen === loadGen.current) return false;
+        if (p) api.stopSession(p.sessionId).catch(() => undefined);
+        return true;
+      };
       setLoading(true);
       setError(null);
       try {
@@ -306,16 +319,19 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
           uri = offlineUri;
         } else if (target.kind === 'live') {
           pi = await api.playChannel(channelId, catchup ? { catchupStart: catchup.start, catchupDurationMin: catchup.durationMin } : {});
+          if (stale(pi)) return;
           uri = api.absolute(pi.url);
         } else {
           const auto = opts.auto ?? autoRef.current;
           const burn = opts.burn !== undefined ? opts.burn : burnRef.current;
           const measured = auto ? await measureBandwidth(api) : null;
+          if (stale(null)) return;
           // Same builder as the instant-play warm-up (warmup.ts), so a prepared stream is adopted.
           pi = await api.playback(target.itemId, videoPlaybackRequest({
             mediaId: target.mediaId, startMs, audio: opts.audio, burn: burn ?? null, auto,
             bitrate: opts.bitrate === undefined ? maxBitrate : opts.bitrate, measuredBps: measured, prefs: prefsRef.current,
           }));
+          if (stale(pi)) return;
           uri = api.absolute(pi.url);
         }
         infoRef.current = pi;
@@ -334,6 +350,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
         });
         if (!opts.paused) player.play();
       } catch (e) {
+        if (gen !== loadGen.current) return;
         setError(e instanceof Error ? e.message : 'Playback failed');
         setLoading(false);
       }
@@ -351,6 +368,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   // Stop the server session when leaving.
   useEffect(
     () => () => {
+      loadGen.current++; // a load still in flight stops its own session
       report('stopped');
       const pi = infoRef.current;
       if (pi) api.stopSession(pi.sessionId).catch(() => undefined);
@@ -740,10 +758,17 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   };
 
   // ----- remote control (TV) -----
+  const lastZap = useRef(0);
+  const zapOnce = useCallback((dir: 1 | -1) => {
+    // Channel keys can arrive both from react-native-tvos and from the native key hook.
+    if (Date.now() - lastZap.current < 300) return;
+    lastZap.current = Date.now();
+    zap(dir);
+  }, [zap]);
   useTVRemote((evt) => {
     const type = evt.eventType;
-    if (type === 'channelUp' || type === 'pageUp') return zap(1);
-    if (type === 'channelDown' || type === 'pageDown') return zap(-1);
+    if (type === 'channelUp' || type === 'pageUp') return zapOnce(1);
+    if (type === 'channelDown' || type === 'pageDown') return zapOnce(-1);
     if (type === 'playPause') {
       togglePlay();
       return poke();
@@ -790,13 +815,6 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   });
 
   // ----- extra remote keys (Android TV: digits, colour keys, Info, Guide, channel/track keys) -----
-  const lastZap = useRef(0);
-  const zapOnce = useCallback((dir: 1 | -1) => {
-    // Channel keys can arrive both from react-native-tvos and from the native key hook.
-    if (Date.now() - lastZap.current < 300) return;
-    lastZap.current = Date.now();
-    zap(dir);
-  }, [zap]);
   const numberEntry = useMemo(() => createNumberEntry(
     (num) => {
       const ch = channelList.find((c) => String(c.number) === num);

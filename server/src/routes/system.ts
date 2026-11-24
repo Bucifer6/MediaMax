@@ -7,7 +7,7 @@ import { config } from '../config.js';
 import { requireAdmin, deviceFromRequest, remoteAddr, noCache } from '../http.js';
 import { getSettings, updateSettings, serverId, publicSettings } from '../services/settings.js';
 import { getBranding, updateBranding } from '../services/branding.js';
-import { createUser, issueToken, userCount } from '../services/auth.js';
+import { createUserHashed, hashUserSecrets, issueToken, userCount } from '../services/auth.js';
 import { listSessions, transcodeCount } from '../services/playback.js';
 import { listTasks, runTask } from '../services/tasks.js';
 import { listActivity, logActivity } from '../services/activity.js';
@@ -31,7 +31,11 @@ export default async function systemRoutes(app: FastifyInstance) {
     if (userCount() > 0) throw forbidden('Setup has already been completed');
     const b = req.body ?? ({} as SetupRequest);
     if (!b.username || !b.password) throw badRequest('Username and password are required');
-    const user = createUser({ username: b.username, password: b.password, isAdmin: true, allowDvr: true });
+    const req2 = { username: b.username, password: b.password, isAdmin: true, allowDvr: true };
+    const hashes = await hashUserSecrets(req2);
+    // Re-checked after the await: two racing setup requests must not both create an administrator.
+    if (userCount() > 0) throw forbidden('Setup has already been completed');
+    const user = createUserHashed(req2, hashes);
     if (b.serverName) {
       updateSettings({ serverName: b.serverName });
       updateBranding({ serverName: b.serverName });

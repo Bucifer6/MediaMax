@@ -82,8 +82,8 @@ test('subtitles: burn-in is fixed at start; text subtitles follow what the playe
 });
 
 test('admin can pause, resume and message a session on the playing device only', async () => {
-  const admin = auth.createUser({ username: 'np-admin', password: 'pass1234', isAdmin: true });
-  const viewer = auth.createUser({ username: 'np-viewer', password: 'pass1234' });
+  const admin = await auth.createUser({ username: 'np-admin', password: 'pass1234', isAdmin: true });
+  const viewer = await auth.createUser({ username: 'np-viewer', password: 'pass1234' });
   const adminTok = auth.issueToken(admin.id, { deviceId: 'np-a', deviceName: 'Admin PC', platform: 'web' }).token;
   const viewerTok = auth.issueToken(viewer.id, { deviceId: 'np-tv', deviceName: 'Living room TV', platform: 'androidtv' }).token;
   const ctx = auth.authenticate(viewerTok)!;

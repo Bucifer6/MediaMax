@@ -17,6 +17,7 @@ import { config } from '../../config.js';
 import { logger } from '../../util/log.js';
 import { STEM_RATE, StemsError, type StemStore } from '../stems.js';
 import { findOrtNode, ortNodeRuntime } from '../ortNode.js';
+import { isSea } from 'node:sea';
 import type { InitMessage, JobMessage } from './child.js';
 
 const log = logger('stems');
@@ -107,6 +108,8 @@ export function createSeparationQueue(deps: SeparationDeps): SeparationQueue {
     const key = JSON.stringify(init);
     if (child && childKey === key && ready) return ready;
     stopChild();
+    // A standalone binary would run another full server instead of the child (see routes/karaoke.ts).
+    if (isSea()) throw new Error('Server-side separation is not available in the standalone build');
     const c = fork(childEntry(), [], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'], windowsHide: true });
     child = c;
     childKey = key;

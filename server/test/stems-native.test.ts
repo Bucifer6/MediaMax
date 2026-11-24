@@ -143,8 +143,8 @@ test('server separation: queued job in the child process (stub model) → FLAC s
     db.run('INSERT INTO items (id, library_id, type, title, sort_title, added_at, updated_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, 'lib-n', 'track', `Track ${id}`, id, now, now, 3000);
     db.run('INSERT INTO media (id, item_id, path, container, duration_ms, size, mtime) VALUES (?,?,?,?,?,?,?)', `m-${id}`, id, file, path.extname(file).slice(1), 3000, 1, 0);
   };
-  const admin = createUser({ username: 'nadmin', password: 'pw-123456', isAdmin: true });
-  const user = createUser({ username: 'nuser', password: 'pw-123456', isAdmin: false });
+  const admin = await createUser({ username: 'nadmin', password: 'pw-123456', isAdmin: true });
+  const user = await createUser({ username: 'nuser', password: 'pw-123456', isAdmin: false });
   const A = { authorization: `Bearer ${issueToken(admin.id, { deviceId: 'n-a', deviceName: 'test', platform: 'web' }).token}` };
   const U = { authorization: `Bearer ${issueToken(user.id, { deviceId: 'n-u', deviceName: 'test', platform: 'web' }).token}` };
   const app = await buildApp();

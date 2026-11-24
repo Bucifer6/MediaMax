@@ -20,7 +20,9 @@ player in every browser, to TV mode on Samsung (Tizen) and LG (webOS), and to th
 | Live TV captions (CEA-608/708) | Parsed by the stream engine, drawn by our renderer | Platform player |
 
 **Burn-in** is a last resort: the player only asks the server to draw subtitles into the picture for bitmap formats it
-cannot render. That needs a transcode, so it uses more server CPU.
+cannot render. That needs a transcode, so it uses more server CPU: the bitmap is overlaid on the CPU, but with
+hardware transcoding the GPU still decodes the video (the frames are copied to system memory for the overlay) and
+encodes the result, so a 4K HEVC source is not decoded on the CPU.
 
 ### Changing how subtitles look
 

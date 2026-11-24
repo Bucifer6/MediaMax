@@ -21,19 +21,34 @@ RUN npm run build && npm prune --omit=dev --workspaces --include-workspace-root
 # ---- runtime ----
 FROM node:26-bookworm-slim
 ARG TARGETARCH
-# ffmpeg with VA-API drivers for hardware transcoding: Mesa (AMD, and Intel through Gallium) on every arch,
-# plus Intel's iHD (QSV/VA-API on Broadwell and newer, incl. Synology/QNAP Celerons) and i965 on amd64.
-# For NVIDIA use the nvidia container runtime.
+# jellyfin-ffmpeg: upstream ffmpeg plus the hardware paths the transcoder uses (tonemap_cuda / tonemap_opencl bt2390,
+# Rockchip RKMPP + RGA on arm64, Dolby Vision reshaping) and a bundled Intel iHD + oneVPL runtime, so QSV and
+# VA-API work on current Intel (N100, Arc, Core Ultra). Linked into /usr/local/bin as ffmpeg / ffprobe.
+# Distro VA drivers stay for AMD (Mesa) and pre-Broadwell Intel (i965); intel-opencl-icd enables OpenCL tone-mapping.
+# For NVIDIA use the nvidia container runtime (see docs/INSTALL.md).
+# The signing key is fetched with retries (a single-shot ADD fails the whole build on one network hiccup), and
+# ca-certificates comes from Debian's mirrors first: apt needs it to reach the Jellyfin repo over HTTPS.
 RUN set -eux; \
+    mkdir -p /etc/apt/keyrings; \
+    node -e "const u='https://repo.jellyfin.org/jellyfin_team.gpg.key';(async()=>{for(let i=1;;i++){try{const r=await fetch(u,{signal:AbortSignal.timeout(30000)});if(!r.ok)throw new Error('HTTP '+r.status);require('fs').writeFileSync('/etc/apt/keyrings/jellyfin.asc',await r.text());return}catch(e){if(i>=5)throw e;console.error('key fetch failed ('+e.message+'), retrying');await new Promise(s=>setTimeout(s,i*3000))}}})().catch(e=>{console.error(e);process.exit(1)})"; \
+    printf 'Acquire::Retries "5";\n' > /etc/apt/apt.conf.d/80-retries; \
     if [ "$TARGETARCH" = "amd64" ]; then \
-      sed -i 's/^Components: main$/Components: main non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources; \
-      extra="intel-media-va-driver-non-free i965-va-driver"; \
+      sed -i 's/^Components: main$/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources; \
+      extra="intel-media-va-driver-non-free i965-va-driver intel-opencl-icd"; \
     else \
       extra=""; \
     fi; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ffmpeg libchromaprint-tools ca-certificates tzdata mesa-va-drivers $extra; \
+    apt-get install -y --no-install-recommends ca-certificates; \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/jellyfin.asc] https://repo.jellyfin.org/debian bookworm main" > /etc/apt/sources.list.d/jellyfin.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends jellyfin-ffmpeg7 libchromaprint-tools tzdata mesa-va-drivers $extra; \
+    ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg; \
+    ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe; \
+    ffmpeg -hide_banner -version | head -1; \
     rm -rf /var/lib/apt/lists/*
+# NVIDIA runtime: expose NVENC/NVDEC (video), CUDA (compute: -init_hw_device cuda, tonemap_cuda) and nvidia-smi (utility).
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
 WORKDIR /app
 COPY --from=build /src/node_modules node_modules
 COPY --from=build /src/shared/package.json shared/package.json

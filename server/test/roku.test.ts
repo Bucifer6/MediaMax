@@ -19,7 +19,7 @@ const ROKU_HEADERS = {
 
 test('Roku link-code sign-in keeps platform "roku" on the issued session', async () => {
   _resetLinks();
-  const owner = createUser({ username: 'roku-owner', password: 'pass1234' });
+  const owner = await createUser({ username: 'roku-owner', password: 'pass1234' });
   const ownerTok = issueToken(owner.id, { deviceId: 'phone', deviceName: 'Phone', platform: 'ios' }).token;
   // The channel sends the device fields in the body as well as the headers.
   const req = await app.inject({
@@ -42,7 +42,7 @@ test('Roku link-code sign-in keeps platform "roku" on the issued session', async
 });
 
 test('password sign-in from Roku headers records the platform too', async () => {
-  createUser({ username: 'roku-viewer', password: 'pass1234' });
+  await createUser({ username: 'roku-viewer', password: 'pass1234' });
   const res = await app.inject({
     method: 'POST', url: '/api/v1/auth/login', headers: ROKU_HEADERS,
     payload: { username: 'roku-viewer', password: 'pass1234', deviceId: 'roku-client-id-2', deviceName: 'Bedroom Roku', platform: 'roku' },

@@ -53,8 +53,9 @@ export function matchDisplayFor(info: PlaybackInfo | null): () => void {
   const range = vr.output ?? 'sdr';
   const fps = vr.frameRate ?? 0;
   if (range === 'sdr' && !fps) return () => undefined;
-  void MediaMaxMedia.matchDisplay(fps, range).catch(() => false);
+  // Promise.resolve: an older native build returns a plain value here instead of a Promise.
+  void Promise.resolve(MediaMaxMedia.matchDisplay(fps, range)).catch(() => false);
   return () => {
-    void MediaMaxMedia?.resetDisplay().catch(() => undefined);
+    void Promise.resolve(MediaMaxMedia?.resetDisplay()).catch(() => undefined);
   };
 }

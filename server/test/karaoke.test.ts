@@ -196,8 +196,8 @@ async function setupApp() {
     db.run('INSERT INTO items (id, library_id, type, title, sort_title, added_at, updated_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, 'lib-k', 'track', `Track ${id}`, id, now, now, 3000);
     db.run('INSERT INTO media (id, item_id, path, container, duration_ms, size, mtime) VALUES (?,?,?,?,?,?,?)', `m-${id}`, id, file, path.extname(file).slice(1), 3000, 1, 0);
   };
-  const admin = createUser({ username: 'kadmin', password: 'pw-123456', isAdmin: true });
-  const user = createUser({ username: 'kuser', password: 'pw-123456', isAdmin: false });
+  const admin = await createUser({ username: 'kadmin', password: 'pw-123456', isAdmin: true });
+  const user = await createUser({ username: 'kuser', password: 'pw-123456', isAdmin: false });
   const at = issueToken(admin.id, { deviceId: 'k-a', deviceName: 'test', platform: 'web' }).token;
   const ut = issueToken(user.id, { deviceId: 'k-u', deviceName: 'test', platform: 'web' }).token;
   const app = await buildApp();

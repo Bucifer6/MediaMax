@@ -316,8 +316,12 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
         if (!res.ok) throw new Error(`Playlist download failed: HTTP ${res.status}`);
         const pl = parseM3u(await res.text());
         const groups = [...new Set(pl.entries.map((e) => e.group).filter(Boolean))] as string[];
+        // A tvg-id identifies a channel only when it's unique in the playlist (counted once: playlists can be huge).
+        const idCount = new Map<string, number>();
+        for (const e of pl.entries) if (e.tvgId) idCount.set(e.tvgId, (idCount.get(e.tvgId) ?? 0) + 1);
+        const remoteIdOf = (e: (typeof pl.entries)[number]) => (e.tvgId && idCount.get(e.tvgId) === 1 ? `id:${e.tvgId}` : `url:${e.url}`);
         syncChannels(id, groups.map((g) => ({ remoteId: g, name: g })), pl.entries.map((e, i) => ({
-          remoteId: e.tvgId && pl.entries.filter((x) => x.tvgId === e.tvgId).length === 1 ? `id:${e.tvgId}` : `url:${e.url}`,
+          remoteId: remoteIdOf(e),
           name: e.name, number: e.chno ?? i + 1, logo: e.logo, category: e.group, streamUrl: e.url,
           archive: !!(e.catchup || e.catchupSource), archiveDays: e.catchupDays || (e.catchup ? 7 : 0), epgId: e.tvgId || e.tvgName || null,
           custom: {}, // keep custom for admin overrides
@@ -325,7 +329,7 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
         // Store catch-up templates for each channel.
         for (const e of pl.entries) {
           if (!e.catchup && !e.catchupSource && !e.userAgent) continue;
-          const cid = stableId(id, 'ch', e.tvgId && pl.entries.filter((x) => x.tvgId === e.tvgId).length === 1 ? `id:${e.tvgId}` : `url:${e.url}`);
+          const cid = stableId(id, 'ch', remoteIdOf(e));
           const row = db.get('SELECT custom FROM channels WHERE id = ?', cid);
           if (row) db.run('UPDATE channels SET custom = ? WHERE id = ?', JSON.stringify({ ...parseJson(row.custom, {}), catchup: e.catchup, catchupSource: e.catchupSource, userAgent: e.userAgent }), cid);
         }

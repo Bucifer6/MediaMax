@@ -32,8 +32,8 @@ for (const sn of [1, 2]) {
   db.insert('items', { id: `psh${sn}`, library_id: 'pshows', type: 'season', title: `Season ${sn}`, sort_title: `season ${sn}`, parent_id: 'psh', idx: sn, added_at: now, updated_at: now });
   for (const e of [1, 2, 3]) db.insert('items', { id: `pe${sn}${e}`, library_id: 'pshows', type: 'episode', title: `E${e}`, sort_title: `e${e}`, parent_id: `psh${sn}`, grandparent_id: 'psh', idx: e, parent_idx: sn, added_at: now, updated_at: now });
 }
-const viewer = createUser({ username: 'perfviewer', password: 'password123', isAdmin: false });
-const kid = createUser({ username: 'perfkid', password: 'password123', isAdmin: false, maxContentRating: 'PG' } as any);
+const viewer = await createUser({ username: 'perfviewer', password: 'password123', isAdmin: false });
+const kid = await createUser({ username: 'perfkid', password: 'password123', isAdmin: false, maxContentRating: 'PG' } as any);
 const token = issueToken(viewer.id, { deviceId: 'perf', deviceName: 'perf', platform: 'web' }).token;
 
 const app = await buildApp();

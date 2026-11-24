@@ -52,8 +52,14 @@ function Tile({ channel, focused, onFocus, onRemove, onSwap, onFull }: {
             } else setError(msg);
           },
         });
+        if (cancelled) {
+          // Removed while attaching: the cleanup already stopped the session but saw no stream yet.
+          attached.destroy();
+          return;
+        }
         v.muted = true; // autoplay policy; audio focus unmutes below
         await v.play().catch(() => {});
+        if (cancelled) return; // the cleanup destroyed the stream; don't start a heartbeat it can't clear
         // Keep the session alive; the server reaps silent sessions.
         clearInterval(beat);
         beat = setInterval(() => {

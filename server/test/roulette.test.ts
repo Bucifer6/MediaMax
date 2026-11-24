@@ -39,8 +39,8 @@ item('drama-s1', { library_id: 'lib-tv', type: 'season', parent_id: 'drama', idx
 item('drama-e1', { library_id: 'lib-tv', type: 'episode', parent_id: 'drama-s1', grandparent_id: 'drama', idx: 1, parent_idx: 1, duration_ms: 55 * 60000 });
 item('drama-e2', { library_id: 'lib-tv', type: 'episode', parent_id: 'drama-s1', grandparent_id: 'drama', idx: 2, parent_idx: 1, duration_ms: 55 * 60000 });
 
-const viewer = auth.createUser({ username: 'viewer', password: 'pass1234' });
-const teen = auth.createUser({ username: 'teen', password: 'pass1234', maxContentRating: 'PG-13', libraryIds: ['lib-m', 'lib-tv'] });
+const viewer = await auth.createUser({ username: 'viewer', password: 'pass1234' });
+const teen = await auth.createUser({ username: 'teen', password: 'pass1234', maxContentRating: 'PG-13', libraryIds: ['lib-m', 'lib-tv'] });
 db.insert('user_data', { user_id: viewer.id, item_id: 'disliked', not_interested: 1 });
 db.insert('user_data', { user_id: viewer.id, item_id: 'meh', rating: 3 });
 db.insert('user_data', { user_id: viewer.id, item_id: 'comedy-90s', played: 1 });

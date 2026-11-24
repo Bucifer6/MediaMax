@@ -77,7 +77,7 @@ test('X-Kinora-* and X-MediaMax-* headers are both accepted; the new one wins', 
 });
 
 test('sign-in records the device from either header family', async () => {
-  createUser({ username: 'renamer', password: 'pass1234' });
+  await createUser({ username: 'renamer', password: 'pass1234' });
   for (const [prefix, id] of [['x-kinora-', 'dev-new'], ['x-mediamax-', 'dev-old']] as const) {
     const r = await app.inject({
       method: 'POST', url: '/api/v1/auth/login', payload: { username: 'renamer', password: 'pass1234' },

@@ -68,11 +68,18 @@ function parseDovi(sd: any): DolbyVisionInfo {
 }
 
 /**
+ * VideoRangeInfo plus the stream's ffprobe `field_order` when it is interlaced (tt/bb/tb/bt). It is stored with the
+ * range (media video_range JSON), so it is only present for interlaced files and only for files probed since; the
+ * transcoder deinterlaces when it sees it (TranscodeOptions.videoRange / fieldOrder).
+ */
+export type VideoRangeInfoWithFields = VideoRangeInfo & { fieldOrder?: string };
+
+/**
  * Work out the video range from an ffprobe video stream and, optionally, the side data of its first frame
  * (`-show_frames -read_intervals %+#1`), which is where HDR10+ and (for MKV) mastering metadata show up.
  * Returns null for streams without a video codec.
  */
-export function parseVideoRange(stream: any, firstFrameSideData: any[] = []): VideoRangeInfo | null {
+export function parseVideoRange(stream: any, firstFrameSideData: any[] = []): VideoRangeInfoWithFields | null {
   if (!stream || stream.codec_type !== 'video') return null;
   const sideData: any[] = [...(stream.side_data_list ?? []), ...firstFrameSideData];
   const transfer: string | null = stream.color_transfer ?? null;
@@ -118,6 +125,7 @@ export function parseVideoRange(stream: any, firstFrameSideData: any[] = []): Vi
     dolbyVision,
     masteringDisplay: md ? { minLuminance: num(md.min_luminance), maxLuminance: num(md.max_luminance) } : null,
     contentLight: cl && (num(cl.max_content) || num(cl.max_average)) ? { maxCll: num(cl.max_content) ?? 0, maxFall: num(cl.max_average) ?? 0 } : null,
+    ...(/^(tt|bb|tb|bt)$/.test(String(stream.field_order ?? '')) ? { fieldOrder: String(stream.field_order) } : {}),
   };
 }
 
