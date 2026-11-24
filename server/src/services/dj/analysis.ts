@@ -69,8 +69,8 @@ export function decodePcm(file: string, maxSeconds = MAX_SECONDS): Promise<Float
 export function analysePcm(pcm: Float32Array, durationMs?: number) {
   const dur = durationMs ?? Math.round((pcm.length / RATE) * 1000);
   const l = loudness(pcm, RATE);
-  const { env, fps } = onsetEnvelope(pcm, RATE);
-  const tempo = estimateTempo(env, fps);
+  const { env, fps, low } = onsetEnvelope(pcm, RATE);
+  const tempo = estimateTempo(env, fps, low);
   const key = estimateKey(chroma(pcm, RATE));
   const points = mixPoints(l, Math.min(dur, Math.round((pcm.length / RATE) * 1000)));
   // Tracks longer than the decoded window: the real ending lies beyond what we heard.

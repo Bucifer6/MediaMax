@@ -87,10 +87,15 @@ export function loudness(pcm: Float32Array, rate: number, frame = 1024): Loudnes
 
 /* ------------------------------- tempo ------------------------------ */
 
-/** Onset strength envelope via log spectral flux (hop 256 → ~43 frames/s at 11025 Hz). */
-export function onsetEnvelope(pcm: Float32Array, rate: number, n = 1024, hop = 256): { env: Float64Array; fps: number } {
+/**
+ * Onset strength envelope via log spectral flux (hop 256 → ~43 frames/s at 11025 Hz), plus the flux of the lowest
+ * band alone (< ~160 Hz: kick drums and bass), which tells the beat from the off-beat hi-hats.
+ */
+export function onsetEnvelope(pcm: Float32Array, rate: number, n = 1024, hop = 256): { env: Float64Array; fps: number; low: Float64Array } {
   const frames = Math.max(0, Math.floor((pcm.length - n) / hop));
   const env = new Float64Array(frames);
+  const low = new Float64Array(frames);
+  const lowBin = Math.max(2, Math.round((160 / rate) * n));
   const win = hann(n);
   const frame = new Float64Array(n);
   const re = new Float64Array(n);
@@ -103,33 +108,55 @@ export function onsetEnvelope(pcm: Float32Array, rate: number, n = 1024, hop = 2
     for (let i = 0; i < n; i++) frame[i] = pcm[off + i] * win[i];
     magnitudes(frame, cur, re, im);
     let flux = 0;
+    let lowFlux = 0;
     for (let k = 1; k < maxBin; k++) {
       const v = Math.log1p(100 * cur[k]);
       const d = v - prev[k];
-      if (d > 0) flux += d;
+      if (d > 0) {
+        flux += d;
+        if (k <= lowBin) lowFlux += d;
+      }
       prev[k] = v;
     }
     env[f] = flux;
+    low[f] = lowFlux;
   }
-  return { env, fps: rate / hop };
+  return { env, fps: rate / hop, low };
 }
 
-/**
- * Tempo from the onset envelope: autocorrelation scored across 60–200 BPM with half/double-tempo support
- * and a gentle prior around 120 BPM (where most dance and pop music sits).
- */
-export function estimateTempo(env: Float64Array, fps: number): { bpm: number | null; confidence: number; beatOffsetMs: number | null } {
-  if (env.length < fps * 8) return { bpm: null, confidence: 0, beatOffsetMs: null };
-  // Remove the slow trend so loud sections don't dominate.
+/** Remove the slow trend (1 s moving mean) and keep the positive part. */
+function detrend(env: Float64Array, fps: number): Float64Array {
   const w = Math.round(fps);
   const x = new Float64Array(env.length);
   let acc = 0;
   for (let i = 0; i < env.length; i++) {
     acc += env[i];
     if (i >= w) acc -= env[i - w];
-    const mean = acc / Math.min(i + 1, w);
-    x[i] = Math.max(0, env[i] - mean);
+    x[i] = Math.max(0, env[i] - acc / Math.min(i + 1, w));
   }
+  return x;
+}
+
+/** Mean of the strongest frame within ±1 frame of each grid point phase + k·period. */
+function gridStrength(x: Float64Array, phase: number, period: number): number {
+  let s = 0;
+  let n = 0;
+  for (let t = phase; t < x.length - 1; t += period) {
+    const i = Math.round(t);
+    s += Math.max(x[i - 1] ?? 0, x[i], x[i + 1] ?? 0);
+    n++;
+  }
+  return n ? s / n : 0;
+}
+
+/**
+ * Tempo from the onset envelope: autocorrelation scored across 60–200 BPM with half/double-tempo support
+ * and a gentle prior around 120 BPM (where most dance and pop music sits).
+ */
+export function estimateTempo(env: Float64Array, fps: number, low?: Float64Array): { bpm: number | null; confidence: number; beatOffsetMs: number | null } {
+  if (env.length < fps * 8) return { bpm: null, confidence: 0, beatOffsetMs: null };
+  // Remove the slow trend so loud sections don't dominate.
+  const x = detrend(env, fps);
   const maxLag = Math.ceil((60 / 50) * fps) + 2;
   const ac = new Float64Array(maxLag + 1);
   for (let lag = 1; lag <= maxLag; lag++) {
@@ -174,7 +201,18 @@ export function estimateTempo(env: Float64Array, fps: number): { bpm: number | n
     const prior = Math.exp(-0.5 * Math.pow(Math.log2(half / 122) / 0.7, 2));
     if (sh * (0.35 + 0.65 * prior) >= best * 0.85) coarse = half;
   }
-  const { bpm: fine, phase } = refineTempo(x, fps, coarse);
+  const { bpm: fine, phase: fullPhase } = refineTempo(x, fps, coarse);
+  // Beat vs off-beat: bright off-beat hi-hats can out-score the kick in the full-band flux and put the grid half a
+  // beat late. The kick/bass band decides when it clearly favours the other half of the beat.
+  let phase = fullPhase;
+  if (low && low.length === x.length) {
+    const lx = detrend(low, fps);
+    const period = (60 / fine) * fps;
+    const other = (fullPhase + period / 2) % period;
+    const on = gridStrength(lx, fullPhase, period);
+    const off = gridStrength(lx, other, period);
+    if (off > 1.5 * on && off > 0) phase = other;
+  }
   // Phase in onset frames; analysis.ts adds the measured frame latency (~90 ms) to land on the audible beat.
   return { bpm: Math.round(fine * 100) / 100, confidence: Math.round(confidence * 100) / 100, beatOffsetMs: Math.round((phase / fps) * 1000) };
 }
