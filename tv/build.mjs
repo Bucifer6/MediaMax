@@ -46,7 +46,7 @@ if (useLogo) page = page.replace('<h1 id="brand">Kinora</h1>', '<h1 id="brand"><
 // Escape the name for where it lands: markup (HTML), the inline script's string literals (JS), config.xml (XML).
 const htmlName = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const jsName = JSON.stringify(name).slice(1, -1).replace(/'/g, "\\'").replace(/</g, '\\u003c');
-page = page.split(/(<script\b[^>]*>[\s\S]*?<\/script>)/i).map((part) => part.replaceAll('Kinora', /^<script/i.test(part) ? jsName : htmlName)).join('');
+page = page.split(/(<script\b[^>]*>[\s\S]*?<\/script\s*>)/i).map((part) => part.replaceAll('Kinora', /^<script/i.test(part) ? jsName : htmlName)).join('');
 for (const target of ['tizen', 'webos', 'vidaa']) {
   const dir = path.join(dist, target);
   fs.rmSync(dir, { recursive: true, force: true });
