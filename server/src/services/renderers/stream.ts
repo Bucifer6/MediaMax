@@ -217,7 +217,7 @@ export function transcodeArgs(o: TranscodeArgsInput): string[] {
 }
 
 /** HDR → SDR for renderers (zscale + tonemap), when ffmpeg has zscale. */
-export const SOFTWARE_TONEMAP = 'zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv';
+export const SOFTWARE_TONEMAP = 'zscale=m=gbr:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv';
 
 /** WebVTT → SRT, shifting cues back by `offsetMs` (transcodes that start mid-file) and dropping cues before 0. */
 export function vttToSrt(vtt: string, offsetMs = 0): string {

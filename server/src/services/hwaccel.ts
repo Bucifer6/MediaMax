@@ -119,7 +119,9 @@ function zscaleInput(src: SourceColor | null): string {
 export function softwareToneMap(path: 'software' | 'libplacebo', height: number | null = null, src: SourceColor | null = null): string[] {
   if (path === 'libplacebo') return ['libplacebo=tonemapping=bt.2390:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv:format=yuv420p'];
   const input = zscaleInput(src);
-  return [height ? `zscale=w=-2:h=${height}:f=bilinear:${input}t=linear:npl=100` : `zscale=${input}t=linear:npl=100`, 'format=gbrpf32le', 'zscale=p=bt709', 'tonemap=tonemap=hable:desat=0', 'zscale=t=bt709:m=bt709:r=tv', 'format=yuv420p'];
+  // m=gbr: the output is RGB (format=gbrpf32le next). FFmpeg 8 negotiates colour properties per link and otherwise
+  // keeps the source's YUV matrix on it, which zimg can't combine with linear light ("no path between colorspaces").
+  return [height ? `zscale=w=-2:h=${height}:f=bilinear:${input}m=gbr:t=linear:npl=100` : `zscale=${input}m=gbr:t=linear:npl=100`, 'format=gbrpf32le', 'zscale=p=bt709', 'tonemap=tonemap=hable:desat=0', 'zscale=t=bt709:m=bt709:r=tv', 'format=yuv420p'];
 }
 
 /**

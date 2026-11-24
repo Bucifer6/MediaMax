@@ -14,7 +14,7 @@ const DEV = '/dev/dri/renderD128';
 const T = (hw: HwAccel, platform = 'linux', gpuIndex = 0) => ({ hw, platform, vaapiDevice: DEV, gpuIndex });
 const SW_TM = softwareToneMap('software');
 /** CPU tone-mapping that downscales in its first zscale (no separate scale filter). */
-const SW_TM_H = (h: number) => [`zscale=w=-2:h=${h}:f=bilinear:t=linear:npl=100`, ...SW_TM.slice(1)];
+const SW_TM_H = (h: number) => [`zscale=w=-2:h=${h}:f=bilinear:m=gbr:t=linear:npl=100`, ...SW_TM.slice(1)];
 const PLACEBO = 'libplacebo=tonemapping=bt.2390:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv:format=yuv420p';
 const OPENCL = (back: string, fmt: string) => [
   'hwmap=derive_device=opencl:mode=read', 'tonemap_opencl=format=nv12:p=bt709:t=bt709:m=bt709:tonemap=hable:desat=0',
@@ -649,7 +649,7 @@ test('local ffmpeg accepts the new CPU chains (tone-map with scaling in zscale, 
   execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=1998x1080:rate=25', '-t', '0.4', '-pix_fmt', 'yuv420p10le',
     '-color_primaries', 'bt2020', '-color_trc', 'smpte2084', '-colorspace', 'bt2020nc', '-c:v', 'ffv1', hdr]);
   const p = buildVideoPipeline({ target: T('none'), codec: 'h264', height: 720, sourceHeight: 1080, toneMap: 'software', decode: true, deinterlace: 'interlaced', sourceColor: { transfer: 'smpte2084', primaries: 'bt2020', matrix: 'bt2020nc' } });
-  assert.match(p.filters.join(','), /zscale=w=-2:h=720:f=bilinear:tin=smpte2084:rin=tv:pin=bt2020:min=2020_ncl:t=linear:npl=100/);
+  assert.match(p.filters.join(','), /zscale=w=-2:h=720:f=bilinear:tin=smpte2084:rin=tv:pin=bt2020:min=2020_ncl:m=gbr:t=linear:npl=100/);
   const out = pathMod.join(tmp, 'tm.nut');
   execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', hdr, '-vf', p.filters.join(','), '-c:v', 'rawvideo', out]);
   const dims = (f: string) => execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=width,height,pix_fmt', '-of', 'csv=p=0', f]).toString().trim();
