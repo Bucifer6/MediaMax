@@ -16,6 +16,11 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # Native modules follow the versions the Expo SDK was tested with (expo/bundledNativeModules.json): Expo 58
+      # pins async-storage 2.x. Take its next major with the Expo SDK upgrade that moves to it.
+      - dependency-name: '@react-native-async-storage/async-storage'
+        update-types: [version-update:semver-major]
   - package-ecosystem: npm
     directory: /apps/roku
     schedule: { interval: monthly }
