@@ -101,15 +101,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const activate = useCallback(
     async (srv: SavedServer, dev: DeviceInfo) => {
       setError(null);
-      setServer(srv);
-      await setJSON(LAST_SERVER_KEY, srv.id);
       const [cachedBranding, cachedUser, storedToken] = await Promise.all([
         getJSON<Branding | null>(brandingKey(srv.id), null),
         getJSON<User | null>(userKey(srv.id), null),
         secureGet(tokenKey(srv.id)),
+        setJSON(LAST_SERVER_KEY, srv.id),
       ]);
-      if (cachedBranding) setBranding(cachedBranding);
+      // Server and token change in the same render: the api client must never pair the new server's URL with the
+      // previous server's token (or the reverse).
+      setServer(srv);
       setToken(storedToken);
+      if (cachedBranding) setBranding(cachedBranding);
       const anon = new MediaMaxClient({ baseUrl: srv.url, token: storedToken, device: dev });
       try {
         const [sys, brand] = await Promise.all([anon.systemInfo(), anon.branding()]);
@@ -220,7 +222,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (status !== 'signed-in' || !api?.token) return;
     const url = api.wsUrl();
     if (!url) return;
-    const ws = new RealtimeSocket(url);
+    // Rejected for auth (revoked token, signed out elsewhere, role changed): ask the server. A 401 signs out through
+    // the client's onUnauthorized (which tears this socket down); a still-valid session reconnects.
+    const ws = new RealtimeSocket(url, {
+      onUnauthorized: () => {
+        api.me().then(
+          (me) => {
+            setUser(me);
+            ws.resume();
+          },
+          (e) => {
+            if (!(e instanceof ApiError && e.status === 401)) ws.resume();
+          },
+        );
+      },
+    });
     const unsub = ws.subscribe((evt) => {
       switch (evt.type) {
         case 'branding.updated':

@@ -110,6 +110,9 @@ The original Emby paths still work as aliases for `:source = emby`: `/admin/emby
 
 `GET /items/:id/next` on a show or season returns its next-up episode (in progress → next unwatched → first).
 
+`Item.people` (cast and crew) is only returned on single-item responses such as `GET /items/:id`; lists (library pages,
+children, Home rows, search, My List and similar) leave it out to keep payloads small.
+
 ### Collections & playlists
 * `GET /collections` → `Item[]` · `POST /collections` 🛡️ `CreateCollectionRequest` → `Item` · `POST /collections/:id/items` 🛡️ `{ itemIds }` · `DELETE /collections/:id/items/:itemId` 🛡️ · `DELETE /collections/:id` 🛡️
 * `GET /playlists` → `Item[]` (own) · `POST /playlists` `CreatePlaylistRequest` → `Item` · `POST /playlists/:id/items` `{ itemIds }` · `DELETE /playlists/:id/items/:itemId` · `DELETE /playlists/:id`

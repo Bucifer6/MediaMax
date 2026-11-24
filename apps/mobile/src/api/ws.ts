@@ -3,16 +3,25 @@ import type { ClientEvent, ServerEvent } from './types';
 
 type Listener = (e: ServerEvent) => void;
 
+/** Close code the server uses for a missing, revoked or no-longer-valid session (server/src/routes/ws.ts). */
+export const WS_UNAUTHORIZED = 4001;
+
 export class RealtimeSocket {
   private ws: WebSocket | null = null;
   private listeners = new Set<Listener>();
   private openListeners = new Set<() => void>();
   private retry = 0;
   private closed = false;
+  /** Stopped after an auth rejection, waiting for resume(). */
+  private paused = false;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private url: string) {}
+  /**
+   * `onUnauthorized`: the server closed the socket with WS_UNAUTHORIZED. The socket stops reconnecting (it would be
+   * rejected forever) until `resume()`; the owner checks the session (sign out on 401, else resume).
+   */
+  constructor(private url: string, private opts: { onUnauthorized?: () => void } = {}) {}
 
   start() {
     this.closed = false;
@@ -40,9 +49,14 @@ export class RealtimeSocket {
         /* ignore malformed frames */
       }
     };
-    this.ws.onclose = () => {
+    this.ws.onclose = (e) => {
       if (this.pingTimer) clearInterval(this.pingTimer);
       this.pingTimer = null;
+      if (e?.code === WS_UNAUTHORIZED && this.opts.onUnauthorized) {
+        this.paused = true;
+        this.opts.onUnauthorized();
+        return;
+      }
       this.scheduleReconnect();
     };
     this.ws.onerror = () => {
@@ -54,6 +68,13 @@ export class RealtimeSocket {
     if (this.closed) return;
     const delay = Math.min(30000, 1000 * 2 ** this.retry++);
     this.reconnectTimer = setTimeout(() => this.open(), delay);
+  }
+
+  /** Reconnect (with the usual backoff) after onUnauthorized found the session still valid or could not check it. */
+  resume() {
+    if (this.closed || !this.paused) return;
+    this.paused = false;
+    this.scheduleReconnect();
   }
 
   send(evt: ClientEvent) {

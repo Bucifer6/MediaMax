@@ -121,8 +121,8 @@ export function TrackListDetail({ item, onUserData, onItem }: { item: Item; onUs
   const tracks = children.data?.items ?? [];
   const audio = tracks.filter((x) => isAudioItem(x.type));
   const total = tracks.reduce((n, x) => n + (x.durationMs ?? 0), 0);
-  const narrators = isBook ? item.people.filter((p) => p.role?.toLowerCase() === 'narrator').map((p) => p.name) : [];
-  const author = isBook ? item.parentTitle ?? item.people.find((p) => p.role?.toLowerCase() === 'author')?.name ?? null : null;
+  const narrators = isBook ? (item.people ?? []).filter((p) => p.role?.toLowerCase() === 'narrator').map((p) => p.name) : [];
+  const author = isBook ? item.parentTitle ?? item.people?.find((p) => p.role?.toLowerCase() === 'author')?.name ?? null : null;
   const countLabel = isBook ? `${tracks.length} part${tracks.length === 1 ? '' : 's'}` : `${tracks.length} ${audio.length === tracks.length ? 'songs' : 'items'}`;
   const subtitle = [item.type === 'album' ? item.parentTitle : author, narrators.length ? `Narrated by ${narrators.join(', ')}` : null, item.year, countLabel, formatDuration(total)].filter(Boolean).join(' · ');
   const started = isBook && tracks.some((x) => x.userData.positionMs > 0 || x.userData.played);
