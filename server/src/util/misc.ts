@@ -5,6 +5,12 @@ export const SAFE_URL = /^(https?|rtmps?|rtsp|rtp|udp|srt):\/\//i;
 export const isSafeRemoteUrl = (u: string | null | undefined) => !!u && SAFE_URL.test(u.trim());
 /** FFmpeg input options that restrict remote inputs to network protocols. */
 export const REMOTE_PROTOCOLS = ['-protocol_whitelist', 'http,https,tcp,tls,crypto,rtmp,rtmps,rtmpt,rtsp,rtp,udp,srt,httpproxy'];
+/**
+ * FFmpeg's auto-reconnect input options. They exist only for HTTP(S) inputs: for rtsp:// (SAT>IP), udp://, rtp:// or
+ * files ffmpeg exits with "Option reconnect not found", so they're added for HTTP URLs only.
+ */
+export const httpReconnectArgs = (input: string | null | undefined, delayMaxSec: number): string[] =>
+  input && /^https?:/i.test(input.trim()) ? ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', String(delayMaxSec)] : [];
 
 export function parseJson<T>(s: string | null | undefined, fallback: T): T {
   if (s == null || s === '') return fallback;

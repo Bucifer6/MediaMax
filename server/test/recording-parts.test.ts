@@ -170,6 +170,45 @@ test('parts left by older versions ("(resumed)" files) are attached to their rec
   assert.ok(fs.existsSync(unrelated), 'a file that cannot be attributed is left alone');
 });
 
+/** Schedule a recording on a channel with this stream URL that is due now, run the scheduler, wait until it failed. */
+async function recordUntilFailed(id: string, streamUrl: string) {
+  db.run("INSERT OR IGNORE INTO live_sources (id, name, type, url, created_at) VALUES ('src-fail', 'Src', 'm3u', 'http://x', ?)", t(0));
+  db.run("INSERT INTO channels (id, source_id, remote_id, name, stream_url) VALUES (?, 'src-fail', ?, 'Chan', ?)", `ch-${id}`, id, streamUrl);
+  db.run("INSERT INTO recordings (id, channel_id, channel_name, title, start, end, status, created_by, created_at) VALUES (?, ?, 'Chan', ?, ?, ?, 'scheduled', ?, ?)",
+    id, `ch-${id}`, `Show ${id}`, new Date(Date.now() - 60000).toISOString(), new Date(Date.now() + 20 * 60000).toISOString(), admin.id, t(0));
+  const failed = new Promise<void>((resolve) => bus.on('recording.failed', (r: any) => r.id === id && resolve()));
+  await tick();
+  await failed;
+  return row(id);
+}
+
+test('HTTP-only reconnect options are passed for http(s) channels only (not rtsp/udp/rtp, where ffmpeg rejects them)', async (tt) => {
+  // A stand-in ffmpeg that records its arguments and fails.
+  const fake = path.join(work, 'fake-ffmpeg.sh');
+  const argsFile = path.join(work, 'args.txt');
+  fs.writeFileSync(fake, `#!/bin/sh\necho "$@" >> "${argsFile}"\nexit 1\n`, { mode: 0o755 });
+  const real = config.ffmpeg;
+  config.ffmpeg = fake;
+  tt.after(() => (config.ffmpeg = real));
+  for (const [id, url, wantReconnect] of [['rec-rtsp', 'rtsp://192.0.2.1:554/?src=1&freq=11494', false], ['rec-udp', 'udp://239.0.0.1:1234', false], ['rec-http', 'http://192.0.2.1/live.ts', true]] as const) {
+    fs.rmSync(argsFile, { force: true });
+    const r = await recordUntilFailed(id, url);
+    assert.equal(r.status, 'failed');
+    const args = fs.readFileSync(argsFile, 'utf8');
+    assert.ok(args.includes(url));
+    assert.equal(args.includes('-reconnect'), wantReconnect, `${url}: ${args}`);
+  }
+});
+
+test('a recording whose ffmpeg cannot be started fails instead of staying "recording" forever', async (tt) => {
+  const real = config.ffmpeg;
+  config.ffmpeg = path.join(work, 'no-such-ffmpeg');
+  tt.after(() => (config.ffmpeg = real));
+  const r = await recordUntilFailed('rec-noffmpeg', 'http://192.0.2.1/live.ts');
+  assert.equal(r.status, 'failed');
+  assert.match(r.error, /ENOENT|Could not run ffmpeg/);
+});
+
 after(() => {
   stopActiveRecordings();
   fs.rmSync(recRoot, { recursive: true, force: true });

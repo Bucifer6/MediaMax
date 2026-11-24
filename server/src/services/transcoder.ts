@@ -9,7 +9,7 @@ import { doviMuxArgs, type DoviRemux } from './dovi.js';
 import { config } from '../config.js';
 import { getSettings } from './settings.js';
 import { logger } from '../util/log.js';
-import { sleep, REMOTE_PROTOCOLS } from '../util/misc.js';
+import { httpReconnectArgs, sleep, REMOTE_PROTOCOLS } from '../util/misc.js';
 import { audioArgs, audioNeedsFmp4, planDetail, type AudioPlan } from './audio.js';
 
 const log = logger('transcoder');
@@ -200,8 +200,13 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
   const h = targetHeight(o.bitrate, o.sourceHeight, o.maxHeight);
   const overlay = o.burnSubtitle?.kind === 'embedded-image' && o.burnSubtitle.streamIndex != null;
   const swFilters: string[] = [];
-  if (o.burnSubtitle?.kind === 'external' && o.burnSubtitle.file) swFilters.push(`subtitles=${escapeFilterPath(o.burnSubtitle.file)}`);
-  if (o.burnSubtitle?.kind === 'embedded-text' && o.burnSubtitle.relIndex != null) swFilters.push(`subtitles=${escapeFilterPath(o.input)}:si=${o.burnSubtitle.relIndex}`);
+  let subFilter: string | null = null;
+  if (o.burnSubtitle?.kind === 'external' && o.burnSubtitle.file) subFilter = `subtitles=${escapeFilterPath(o.burnSubtitle.file)}`;
+  if (o.burnSubtitle?.kind === 'embedded-text' && o.burnSubtitle.relIndex != null) subFilter = `subtitles=${escapeFilterPath(o.input)}:si=${o.burnSubtitle.relIndex}`;
+  // Input seeking (-ss before -i) starts frame timestamps at 0, but the subtitles filter times cues in source time:
+  // shift the frames to source time around it. These are CPU filters, so they run before any hwupload.
+  const seekSec = o.startSec > 0 && o.mode !== 'live' ? o.startSec.toFixed(3) : null;
+  if (subFilter) swFilters.push(...(seekSec ? [`setpts=PTS+${seekSec}/TB`, subFilter, `setpts=PTS-${seekSec}/TB`] : [subFilter]));
   let pipeline: VideoPipeline | null = null;
   if (encodeVideo) {
     const wantToneMap = shouldToneMap(o, s.toneMapHdr);
@@ -212,11 +217,11 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
     pipeline = buildVideoPipeline({ target, codec, height: h, sourceHeight: o.sourceHeight, toneMap, swFilters, decode: !overlay });
   }
 
-  if (o.mode === 'live') args.push('-fflags', '+genpts+discardcorrupt', '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5');
+  if (o.mode === 'live') args.push('-fflags', '+genpts+discardcorrupt', ...httpReconnectArgs(o.input, 5));
   if (pipeline) args.push(...pipeline.inputArgs);
   args.push(...(o.inputArgs ?? []));
   if (!path.isAbsolute(o.input)) args.push(...REMOTE_PROTOCOLS);
-  if (o.startSec > 0 && o.mode !== 'live') args.push('-ss', o.startSec.toFixed(3));
+  if (seekSec) args.push('-ss', seekSec);
   args.push('-i', o.input);
 
   // Stream mapping

@@ -24,6 +24,16 @@ http://stream/2.m3u8`);
   assert.equal(url, `http://cu/${Date.parse('2024-01-01T10:00:00Z') / 1000}/1800`);
 });
 
+test('m3u channel names may contain commas (split at the first comma outside quotes)', () => {
+  const pl = parseM3u(`#EXTM3U
+#EXTINF:-1 tvg-id="a" group-title="News, World",BBC One, HD
+http://x/1
+#EXTINF:-1 tvg-name="Foo, Bar",Sky, Sports, 1
+http://x/2`);
+  assert.deepEqual(pl.entries.map((e) => e.name), ['BBC One, HD', 'Sky, Sports, 1']);
+  assert.equal(pl.entries[0].group, 'News, World');
+});
+
 test('xmltv parsing', async () => {
   assert.equal(parseXmltvTime('20240101120000 +0100'), '2024-01-01T11:00:00.000Z');
   const xml = `<?xml version="1.0"?><tv><channel id="a"><display-name>A</display-name><icon src="http://i"/></channel>

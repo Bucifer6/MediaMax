@@ -9,7 +9,7 @@ import { db, type Row } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
 import { HttpError, badRequest, forbidden, notFound } from '../util/errors.js';
-import { nowIso, parseJson, REMOTE_PROTOCOLS } from '../util/misc.js';
+import { httpReconnectArgs, nowIso, parseJson, REMOTE_PROTOCOLS } from '../util/misc.js';
 import { logger } from '../util/log.js';
 import { TranscodeJob, encoderWorks, hasEncoder, type TranscodeOptions } from './transcoder.js';
 import { chooseVideoCodec } from './hwaccel.js';
@@ -856,7 +856,7 @@ export function dolbyVisionPlayback(media: MediaSource, d: Decision): PlaybackIn
 export function remoteInputArgs(mediaRow: Row): string[] {
   const ua = mediaRow.remote_url ? db.get<{ user_agent: string | null }>(
     `SELECT s.user_agent FROM live_sources s JOIN libraries l ON l.source_id = s.id JOIN items i ON i.library_id = l.id WHERE i.id = ?`, mediaRow.item_id)?.user_agent : null;
-  return ['-user_agent', ua || 'Kinora/1.0', '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5'];
+  return ['-user_agent', ua || 'Kinora/1.0', ...httpReconnectArgs(mediaRow.remote_url, 5)];
 }
 
 /* ------------------------------ subtitles --------------------------- */

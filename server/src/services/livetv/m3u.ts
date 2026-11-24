@@ -20,6 +20,16 @@ export interface M3uPlaylist {
 
 const ATTR = /([\w-]+)="([^"]*)"/g;
 
+/** Index of the comma that starts the channel name: the first one outside a quoted attribute value (names may contain commas). */
+function nameComma(line: string): number {
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '"') quoted = !quoted;
+    else if (line[i] === ',' && !quoted) return i;
+  }
+  return line.lastIndexOf(','); // unbalanced quotes: best effort
+}
+
 export function parseM3u(text: string): M3uPlaylist {
   const lines = text.split(/\r?\n/);
   let epgUrl: string | null = null;
@@ -36,7 +46,7 @@ export function parseM3u(text: string): M3uPlaylist {
     if (line.startsWith('#EXTINF')) {
       const attrs: Record<string, string> = {};
       for (const m of line.matchAll(ATTR)) attrs[m[1].toLowerCase()] = m[2];
-      const comma = line.lastIndexOf(',');
+      const comma = nameComma(line);
       const name = comma >= 0 ? line.slice(comma + 1).trim() : attrs['tvg-name'] ?? 'Channel';
       cur = {
         name: name || attrs['tvg-name'] || 'Channel',

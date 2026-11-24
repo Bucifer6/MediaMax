@@ -78,3 +78,52 @@ test('a large number of skipped names is summarised in the log and capped in the
   assert.equal(lib.skippedNames?.paths.length, 200);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+/** A tiny real video, copied wherever a test needs media files. */
+function sampleClip(dir: string): Buffer {
+  const f = path.join(dir, '.sample.mp4');
+  assert.equal(spawnSync(config.ffmpeg, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=160x120:d=1', '-pix_fmt', 'yuv420p', f]).status, 0);
+  const b = fs.readFileSync(f);
+  fs.rmSync(f);
+  return b;
+}
+
+test('movies: a shared (collection) folder holds separate movies; a movie\'s own folder groups its versions', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-movies-'));
+  const media = sampleClip(root);
+  const put = (rel: string) => (fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }), fs.writeFileSync(path.join(root, rel), media));
+  put('Marvel/Iron Man (2008).mp4');
+  put('Marvel/Thor (2011).mp4');
+  put('Movie (2010)/Movie (2010) - 1080p.mkv');
+  put('Movie (2010)/Movie (2010) - 4K.mkv');
+  put('Avatar/Avatar (2009) - 1080p.mkv');
+  put('Avatar/Avatar (2009) - 4K.mkv');
+  db.run("INSERT INTO libraries (id, name, type, paths, fetch_metadata, created_at) VALUES ('mov-lib', 'Movies', 'movies', ?, 0, '2026-01-01')", JSON.stringify([root]));
+  await scanLibrary('mov-lib');
+  const items = db.all<{ title: string; year: number; n: number }>("SELECT i.title, i.year, (SELECT COUNT(*) FROM media m WHERE m.item_id = i.id) n FROM items i WHERE i.library_id = 'mov-lib' AND i.type = 'movie' ORDER BY i.title");
+  assert.deepEqual(items.map((i) => ({ ...i })), [
+    { title: 'Avatar', year: 2009, n: 2 },
+    { title: 'Iron Man', year: 2008, n: 1 },
+    { title: 'Movie', year: 2010, n: 2 },
+    { title: 'Thor', year: 2011, n: 1 },
+  ]);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('symlinked folders are followed, but a symlink loop (or a second link to a folder) imports each file once', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-loop-'));
+  fs.writeFileSync(path.join(root, 'clip.mp4'), sampleClip(root));
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-loop-other-'));
+  fs.writeFileSync(path.join(other, 'linked.mp4'), fs.readFileSync(path.join(root, 'clip.mp4')));
+  fs.symlinkSync(root, path.join(root, 'loop'));
+  fs.mkdirSync(path.join(root, 'sub'));
+  fs.symlinkSync(root, path.join(root, 'sub', 'back'));
+  fs.symlinkSync(other, path.join(root, 'ext1'));
+  fs.symlinkSync(other, path.join(root, 'ext2'));
+  db.run("INSERT INTO libraries (id, name, type, paths, fetch_metadata, created_at) VALUES ('loop-lib', 'Clips', 'videos', ?, 0, '2026-01-01')", JSON.stringify([root]));
+  await scanLibrary('loop-lib');
+  const names = db.all<{ path: string }>("SELECT m.path FROM media m JOIN items i ON i.id = m.item_id WHERE i.library_id = 'loop-lib'").map((r) => path.basename(r.path));
+  assert.deepEqual(names.sort(), ['clip.mp4', 'linked.mp4'], 'each file once; the linked folder outside the library is still followed');
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(other, { recursive: true, force: true });
+});

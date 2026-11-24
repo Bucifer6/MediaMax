@@ -79,10 +79,16 @@ function countMediaBelow(dir: Buffer, accept: (e: string) => boolean, depth = 0)
 async function walk(root: string, accept: (e: string) => boolean, skipped: SkippedName[] = []): Promise<FileEntry[]> {
   const out: FileEntry[] = [];
   const stack = [root];
+  // Real paths of the folders walked so far: symlinked folders are followed, but a link back up the tree ("loop -> .")
+  // or two links to one folder must not import the same files again (or loop until the path gets too long).
+  const visited = new Set<string>();
   while (stack.length) {
     const dir = stack.pop()!;
     let entries: fs.Dirent<Buffer>[];
     try {
+      const real = await fs.promises.realpath(dir);
+      if (visited.has(real)) continue;
+      visited.add(real);
       entries = await fs.promises.readdir(dir, { withFileTypes: true, encoding: 'buffer' });
     } catch (e) {
       log.warn(`Cannot read ${dir}: ${(e as Error).message}`);
@@ -266,14 +272,19 @@ async function scanMovies(ctx: ScanCtx, files: FileEntry[]) {
     const fileParse = parseMovieName(path.basename(f.path));
     // Prefer the folder name when it looks like "Title (Year)".
     const p = folderParse?.year ? folderParse : fileParse.year || !folderParse ? fileParse : folderParse;
-    const key = inOwnFolder && folderParse?.title ? dir : `${p.title.toLowerCase()}|${p.year ?? ''}`;
+    // The folder is the movie's own folder (all its files are versions of it) when its name was chosen, or when the
+    // file names the same title ("Avatar/Avatar (2009).mkv"). Otherwise it's a shared folder ("Marvel/Iron Man (2008).mp4",
+    // "Marvel/Thor (2011).mp4"): each title + year is its own movie.
+    const sameTitle = (a: string, b: string) => a.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '') === b.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+    const ownFolder = inOwnFolder && !!folderParse?.title && (p === folderParse || sameTitle(folderParse.title, fileParse.title));
+    const key = ownFolder ? dir : `${p.title.toLowerCase()}|${p.year ?? ''}`;
     const id = stableId(ctx.lib.id, 'movie', key);
-    const nfoPath = findFile(dir, [`${stripExt(path.basename(f.path))}.nfo`, ...(inOwnFolder ? ['movie.nfo'] : [])]);
+    const nfoPath = findFile(dir, [`${stripExt(path.basename(f.path))}.nfo`, ...(ownFolder ? ['movie.nfo'] : [])]);
     const nfo = nfoPath ? readNfo(nfoPath) : null;
     const base = stripExt(path.basename(f.path));
-    const poster = findFile(dir, imgNames([`${base}-poster`, ...(inOwnFolder ? ['poster', 'folder', 'cover', 'movie'] : [])]));
-    const backdrop = findFile(dir, imgNames([`${base}-fanart`, `${base}-backdrop`, ...(inOwnFolder ? ['fanart', 'backdrop', 'background', 'art'] : [])]));
-    const logo = findFile(dir, imgNames([`${base}-logo`, `${base}-clearlogo`, ...(inOwnFolder ? ['logo', 'clearlogo'] : [])]));
+    const poster = findFile(dir, imgNames([`${base}-poster`, ...(ownFolder ? ['poster', 'folder', 'cover', 'movie'] : [])]));
+    const backdrop = findFile(dir, imgNames([`${base}-fanart`, `${base}-backdrop`, ...(ownFolder ? ['fanart', 'backdrop', 'background', 'art'] : [])]));
+    const logo = findFile(dir, imgNames([`${base}-logo`, `${base}-clearlogo`, ...(ownFolder ? ['logo', 'clearlogo'] : [])]));
     const ids = { ...(p.tmdbId ? { tmdb: p.tmdbId } : {}), ...(p.imdbId ? { imdb: p.imdbId } : {}) };
     const existed = !!db.get('SELECT 1 FROM items WHERE id = ?', id);
     ensureItem({
