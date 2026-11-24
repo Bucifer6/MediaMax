@@ -347,7 +347,9 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
     const toneMap = !wantToneMap ? null : ctx.toneMap === undefined || ctx.toneMap === 'auto' ? pickToneMap(hw, platform, gpuPossible, dv5) : ctx.toneMap;
     const target = { hw, platform, vaapiDevice: s.vaapiDevice, gpuIndex: s.gpuIndex ?? 0 };
     // Image subtitles are overlaid on the CPU (hybrid pipeline): the hardware decoder still decodes, into system memory.
-    pipeline = buildVideoPipeline({ target, codec, height: h, sourceHeight: o.sourceHeight, toneMap, swFilters, cpuFrames: overlay, decode: ctx.decode ?? true, deinterlace, features: ffmpegFeatures() });
+    const vr = o.videoRange;
+    const sourceColor = vr ? { transfer: vr.colorTransfer, primaries: vr.colorPrimaries, matrix: vr.colorSpace } : null;
+    pipeline = buildVideoPipeline({ target, codec, height: h, sourceHeight: o.sourceHeight, sourceColor, toneMap, swFilters, cpuFrames: overlay, decode: ctx.decode ?? true, deinterlace, features: ffmpegFeatures() });
   }
 
   if (o.mode === 'live') args.push('-fflags', '+genpts+discardcorrupt', ...httpReconnectArgs(o.input, 5));

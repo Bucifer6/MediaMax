@@ -96,9 +96,30 @@ export const isHwToneMap = (path: ToneMapPath | null, hw: HwAccel, platform: str
  * downscales in its first zscale, so the float (gbrpf32le) tone-mapping runs at the output size, not the source size
  * (4K → 1080p HDR: ~35 fps instead of ~6 fps); the caller then adds no separate scale filter.
  */
-export function softwareToneMap(path: 'software' | 'libplacebo', height: number | null = null): string[] {
+/** The source's probed colour properties (media.videoRange): ffprobe names (smpte2084, bt2020, bt2020nc …). */
+export interface SourceColor { transfer?: string | null; primaries?: string | null; matrix?: string | null }
+
+const ZSCALE_TRANSFER = new Set(['smpte2084', 'arib-std-b67']);
+const ZSCALE_PRIMARIES = new Set(['bt2020', 'bt709']);
+const ZSCALE_MATRIX: Record<string, string> = { bt2020nc: '2020_ncl', bt2020c: '2020_cl', bt709: '709' };
+/**
+ * Explicit zscale input properties for HDR sources, so the conversion doesn't depend on frame colour metadata
+ * surviving the filters before it (with FFmpeg 8 the frames after bwdif reached zscale untagged: "no path between
+ * colorspaces"). HDR10 / HLG video is TV range. Empty when the probe didn't record a known HDR transfer.
+ */
+function zscaleInput(src: SourceColor | null): string {
+  if (!src?.transfer || !ZSCALE_TRANSFER.has(src.transfer)) return '';
+  const out = [`tin=${src.transfer}`, 'rin=tv'];
+  if (src.primaries && ZSCALE_PRIMARIES.has(src.primaries)) out.push(`pin=${src.primaries}`);
+  const m = src.matrix ? ZSCALE_MATRIX[src.matrix] : undefined;
+  if (m) out.push(`min=${m}`);
+  return `${out.join(':')}:`;
+}
+
+export function softwareToneMap(path: 'software' | 'libplacebo', height: number | null = null, src: SourceColor | null = null): string[] {
   if (path === 'libplacebo') return ['libplacebo=tonemapping=bt.2390:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv:format=yuv420p'];
-  return [height ? `zscale=w=-2:h=${height}:f=bilinear:t=linear:npl=100` : 'zscale=t=linear:npl=100', 'format=gbrpf32le', 'zscale=p=bt709', 'tonemap=tonemap=hable:desat=0', 'zscale=t=bt709:m=bt709:r=tv', 'format=yuv420p'];
+  const input = zscaleInput(src);
+  return [height ? `zscale=w=-2:h=${height}:f=bilinear:${input}t=linear:npl=100` : `zscale=${input}t=linear:npl=100`, 'format=gbrpf32le', 'zscale=p=bt709', 'tonemap=tonemap=hable:desat=0', 'zscale=t=bt709:m=bt709:r=tv', 'format=yuv420p'];
 }
 
 /**
@@ -137,6 +158,8 @@ export function cpuDeinterlace(mode: Exclude<DeinterlaceMode, null>): string {
 
 export interface PipelineInput {
   target: HwTarget;
+  /** Probed colour properties of the source (explicit input for CPU tone-mapping). */
+  sourceColor?: SourceColor | null;
   codec: TranscodeVideoCodec;
   /** Output height; null keeps the source height. */
   height: number | null;
@@ -256,7 +279,7 @@ export function buildVideoPipeline(p: PipelineInput): VideoPipeline {
   /** CPU chain: deinterlace → tone-map (scaling inside zscale) or scale → CPU-only filters. */
   const cpuChain = (tm: 'software' | 'libplacebo' | null): string[] => [
     ...(deint ? [cpuDeinterlace(deint)] : []),
-    ...(tm ? softwareToneMap(tm, tm === 'software' && needScale ? h : null) : []),
+    ...(tm ? softwareToneMap(tm, tm === 'software' && needScale ? h : null, p.sourceColor ?? null) : []),
     ...(needScale && tm !== 'software' ? [`scale=-2:${h}`] : []),
     ...swFilters,
   ];
