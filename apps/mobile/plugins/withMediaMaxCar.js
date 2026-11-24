@@ -12,7 +12,7 @@
  *     (always added, so CI compiles it; inert until the Info.plist lists the intent)
  *   - `siri: true` only (KINORA_SIRI=1): INIntentsSupported / INSupportedMediaCategories /
  *     NSSiriUsageDescription and the com.apple.developer.siri entitlement, which turn on
- *     "Play … in Kinora". Off by default: the entitlement needs the Siri capability on the App ID
+ *     "Play … in Vibe". Off by default: the entitlement needs the Siri capability on the App ID
  *     (a paid Apple developer account), see README › Siri.
  *
  * Android (phones only):
@@ -104,7 +104,7 @@ const withCarPlay = (config) => {
 
 const SIRI_TAG = 'mediamax-siri';
 const SIRI_METHOD = [
-  `  // @generated begin ${SIRI_TAG}: Siri "Play … in Kinora" (modules/mediamax-car/ios/SiriIntents.swift)`,
+  `  // @generated begin ${SIRI_TAG}: Siri "Play … in Vibe" (modules/mediamax-car/ios/SiriIntents.swift)`,
   '  @objc(application:handlerForIntent:)',
   '  public func application(_ application: UIApplication, handlerFor intent: INIntent) -> Any? {',
   '    MediaMaxSiri.handler(for: intent)',
@@ -136,12 +136,12 @@ function addSiriHandler(src) {
 const withSiri = (config, { enabled }) => {
   config = withAppDelegate(config, (cfg) => {
     if (cfg.modResults.language !== 'swift') {
-      WarningAggregator.addWarningIOS('withMediaMaxCar', 'AppDelegate is not Swift; Siri "Play … in Kinora" is not wired up.');
+      WarningAggregator.addWarningIOS('withMediaMaxCar', 'AppDelegate is not Swift; Siri "Play … in Vibe" is not wired up.');
       return cfg;
     }
     const next = addSiriHandler(cfg.modResults.contents);
     if (next === cfg.modResults.contents && !next.includes(`@generated begin ${SIRI_TAG}`)) {
-      WarningAggregator.addWarningIOS('withMediaMaxCar', 'Could not find `class AppDelegate` in AppDelegate.swift; Siri "Play … in Kinora" is not wired up.');
+      WarningAggregator.addWarningIOS('withMediaMaxCar', 'Could not find `class AppDelegate` in AppDelegate.swift; Siri "Play … in Vibe" is not wired up.');
     }
     cfg.modResults.contents = next;
     return cfg;
@@ -152,7 +152,7 @@ const withSiri = (config, { enabled }) => {
     return cfg;
   });
   config = withInfoPlist(config, (cfg) => {
-    cfg.modResults = applySiriInfoPlist(cfg.modResults, cfg.name ?? 'Kinora');
+    cfg.modResults = applySiriInfoPlist(cfg.modResults, cfg.name ?? 'Vibe');
     return cfg;
   });
   return config;

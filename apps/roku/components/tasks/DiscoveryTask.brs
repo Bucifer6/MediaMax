@@ -8,14 +8,14 @@ sub runDiscovery()
     for each base in bases
         info = fetchSystemInfo(base)
         if info <> invalid
-            servers.Push({ url: base, name: getOr(info, "name", "Kinora"), version: getOr(info, "version", "") })
+            servers.Push({ url: base, name: getOr(info, "name", "Vibe"), version: getOr(info, "version", "") })
         end if
     end for
     m.top.servers = servers
     m.top.done = true
 end sub
 
-' Multicast M-SEARCH; returns the distinct server base URLs (http://host:port) that identify as Kinora.
+' Multicast M-SEARCH; returns the distinct server base URLs (http://host:port) that identify as Vibe.
 function ssdpSearch(timeoutMs as integer) as object
     crlf = Chr(13) + Chr(10)
     found = {}

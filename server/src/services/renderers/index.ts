@@ -553,7 +553,7 @@ export async function playOnRenderer(ctx: AuthContext, id: string, req: Renderer
     active.delete(id);
     throw new HttpError(502, `${k.name} refused the stream: ${(e as Error).message}`, 'renderer_failed');
   }
-  if (k.kind === 'kodi') void driverFor(k).notify?.('Kinora', `Playing ${queue[startIndex].title}`, null).catch(() => undefined);
+  if (k.kind === 'kodi') void driverFor(k).notify?.('Vibe', `Playing ${queue[startIndex].title}`, null).catch(() => undefined);
   log.info(`${ctx.user.displayName} → ${k.name} (${k.kind}): "${queue[startIndex].title}" ${queue[startIndex].format.method}${queue[startIndex].format.reasons.length ? ` (${queue[startIndex].format.reasons.join('; ')})` : ''}`);
   schedule(rs, 1500);
   return stateOf(rs, k);
@@ -692,7 +692,7 @@ async function endSession(rs: RendererSession, error: string | null, stopDevice 
 function controllable(ctx: AuthContext, id: string): { rs: RendererSession; k: Known } {
   const k = getKnown(id);
   const rs = active.get(id);
-  if (!rs || rs.ended) throw new HttpError(409, `Nothing from Kinora is playing on ${k.name}`, 'not_playing');
+  if (!rs || rs.ended) throw new HttpError(409, `Nothing from Vibe is playing on ${k.name}`, 'not_playing');
   if (rs.user.user.id !== ctx.user.id && !ctx.user.isAdmin) throw forbidden(`${k.name} is playing for ${rs.user.user.displayName}`);
   return { rs, k };
 }

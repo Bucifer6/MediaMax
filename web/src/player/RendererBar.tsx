@@ -1,4 +1,4 @@
-/** Mini remote for a TV / speaker / Kodi box Kinora is playing to (DLNA, Sonos, Kodi). */
+/** Mini remote for a TV / speaker / Kodi box Vibe is playing to (DLNA, Sonos, Kodi). */
 import { useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Icon } from '../components/Icon';

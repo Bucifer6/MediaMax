@@ -1,5 +1,5 @@
 /**
- * onnxruntime-web (the browser runtime for AI stem separation) is not installed with Kinora: it is ~150 MB and only
+ * onnxruntime-web (the browser runtime for AI stem separation) is not installed with Vibe: it is ~150 MB and only
  * needed by servers that turn AI karaoke on. The first time it is needed, the server downloads the pinned npm tarball,
  * checks it against the SHA-512 integrity hash from package-lock.json, and keeps only the browser files
  * (`package/dist/ort*.mjs|wasm`) under `<data>/stems/ort/<version>/`. Files are extracted into a temporary folder and

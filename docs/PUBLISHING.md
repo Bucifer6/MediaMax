@@ -1,4 +1,4 @@
-# Publishing the Kinora apps
+# Publishing the Vibe apps
 
 Publisher: an individual (your legal name shows as the developer). Accounts you already have: **Apple Developer** and **Google Play Console**.
 
@@ -16,10 +16,10 @@ Publisher: an individual (your legal name shows as the developer). Accounts you 
 
 ## Decide before submitting
 
-1. **The name: Kinora** (decided; the product was called MediaMax until the rename, which was done before any store
-   release, while renaming was free). Store listings use **"Kinora"**; if a store reports a clash, use a descriptive
-   store name such as **"Kinora – Home Media Server"** and keep "Kinora" under the icon. Before submitting, search each
-   store for "Kinora" and check the live trade-mark registers (USPTO TSDR, UK IPO, EUIPO) in classes 9 (software) and
+1. **The name: Vibe** (decided; the product was called MediaMax, then Kinora; both renames were done before any
+   store release, while renaming was free). The store identifiers below keep the `kinora` family for compatibility. Store listings use **"Vibe"**; if a store reports a clash, use a descriptive
+   store name such as **"Vibe – Home Media Server"** and keep "Vibe" under the icon. Before submitting, search each
+   store for "Vibe" and check the live trade-mark registers (USPTO TSDR, UK IPO, EUIPO) in classes 9 (software) and
    41 (entertainment).
 2. **App identifiers** (permanent once published), all from one family:
 
@@ -31,7 +31,7 @@ Publisher: an individual (your legal name shows as the developer). Accounts you 
    | LG webOS app id | `uk.burdujeni82.kinora` | `tv/webos/appinfo.json` |
    | Samsung Tizen | widget `http://burdujeni82.uk/kinora`, application `KinoraTV01.Kinora` | `tv/tizen/config.xml` |
    | Hisense VIDAA | `uk.burdujeni82.kinora.vidaa` | `tv/vidaa/app.json` |
-   | Roku | channel "Kinora", package `apps/roku/dist/Kinora.zip` | `apps/roku/manifest` |
+   | Roku | channel "Vibe", package `apps/roku/dist/Kinora.zip` | `apps/roku/manifest` |
 
    Apple and Google tie the id to the listing for good, so don't change these after the first upload. A white-label
    build gets its own ids (`npm run brand -- <server> <brand> --bundle-id com.example.media`).
@@ -40,19 +40,19 @@ Publisher: an individual (your legal name shows as the developer). Accounts you 
 
 ## Store art
 
-Rendered from the brand sources by `node scripts/brand-export.mjs` into [`branding/kinora/png/store/`](../branding/kinora/png/store/):
+Rendered from the brand sources by `node scripts/brand-export.mjs` into [`branding/vibe/png/store/`](../branding/vibe/png/store/):
 App Store icon (1024, opaque), Play icon (512), Play feature graphic (1024×500), Android TV banner (1280×720), Fire TV
 background (1920×1080), Samsung/LG icon (512) and Roku channel poster (540×405). The in-app icons, Apple TV layers and
 top shelf, Roku focus icons and splash screens are written straight into each app (see
-[`branding/kinora/README.md`](../branding/kinora/README.md)).
+[`branding/vibe/README.md`](../branding/vibe/README.md)).
 
 ## What every store review needs
 
-Kinora is a client for a server the user runs, so reviewers can't test it without one. Prepare once, reuse everywhere:
+Vibe is a client for a server the user runs, so reviewers can't test it without one. Prepare once, reuse everywhere:
 
 - **A demo server** reachable from the internet over HTTPS, with **legal, freely redistributable content only** (public-domain films, Creative Commons shorts such as Blender Open Movies) and no IPTV channels. Reviewers reject apps when they see commercial films or live TV they think is unlicensed.
 - **A reviewer account** on it (username + password), no 2FA, plus a link code flow that works.
-- **Review notes** explaining: the app connects to the user's own Kinora server; enter `https://demo.<your-domain>` and the credentials; content on the demo server is public domain.
+- **Review notes** explaining: the app connects to the user's own Vibe server; enter `https://demo.<your-domain>` and the credentials; content on the demo server is public domain.
 - **Content policy wording**: the app doesn't provide content; users stream their own media. Don't mention IPTV, Xtream or "free channels" anywhere in listings or screenshots — this is the most common reason media-server apps get rejected or pulled.
 - **Screenshots** from the demo server (no copyrighted posters). The screenshot pipeline (`npm run screenshots`) already builds a fictional demo library; it can render store sizes.
 
@@ -83,7 +83,7 @@ Kinora is a client for a server the user runs, so reviewers can't test it withou
    ```bash
    npx eas-cli submit --platform android --latest
    ```
-4. **Android TV**: in Play Console → Advanced settings → Form factors, add Android TV. It needs a TV banner (1280×720: `branding/kinora/png/store/android-tv-banner-1280x720.png`), TV screenshots, and passes a separate TV quality review (D-pad navigation everywhere, no touch-only screens).
+4. **Android TV**: in Play Console → Advanced settings → Form factors, add Android TV. It needs a TV banner (1280×720: `branding/vibe/png/store/android-tv-banner-1280x720.png`), TV screenshots, and passes a separate TV quality review (D-pad navigation everywhere, no touch-only screens).
 
 ## Amazon Appstore (Fire TV)
 

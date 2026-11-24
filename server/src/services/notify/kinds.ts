@@ -8,7 +8,7 @@ export const MASK = '••••';
 export const AGENT_KINDS: NotificationAgentKindInfo[] = [
   { kind: 'discord', label: 'Discord', fields: [
     { key: 'webhookUrl', label: 'Webhook URL', secret: true, required: true, placeholder: 'https://discord.com/api/webhooks/…', hint: 'Channel settings → Integrations → Webhooks.' },
-    { key: 'username', label: 'Bot name', placeholder: 'Kinora' },
+    { key: 'username', label: 'Bot name', placeholder: 'Vibe' },
   ] },
   { kind: 'slack', label: 'Slack', fields: [
     { key: 'webhookUrl', label: 'Incoming webhook URL', secret: true, required: true, placeholder: 'https://hooks.slack.com/services/…' },

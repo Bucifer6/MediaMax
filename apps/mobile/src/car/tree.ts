@@ -1,5 +1,5 @@
 /**
- * The browse tree shown in CarPlay and Android Auto, built from the Kinora REST API.
+ * The browse tree shown in CarPlay and Android Auto, built from the Vibe REST API.
  *
  *   root
  *   ├── tab:home       Continue listening (audiobooks, podcast episodes) · Recently played (music)
@@ -138,7 +138,7 @@ export class CarTree {
     const { status, api } = this.env;
     if (status === 'booting') throw new Error('Connecting…');
     if (status === 'offline') return [message('offline', "Can't reach your media server", 'Check your connection')];
-    if (status !== 'signed-in' || !api) return [message('signin', 'Sign in to Kinora', 'Choose a server and sign in to browse your library')];
+    if (status !== 'signed-in' || !api) return [message('signin', 'Sign in to Vibe', 'Choose a server and sign in to browse your library')];
     const has = await this.sections();
     const tabs: CarNode[] = [];
     if (has.music || has.books || has.podcasts) tabs.push({ id: 'tab:home', title: 'Home', icon: 'house.fill', browsable: true, playable: false, mediaType: 'folder' });
@@ -220,7 +220,7 @@ export class CarTree {
 
   private async podcasts(api: MediaMaxClient): Promise<CarNode[]> {
     const subs = await api.podcasts();
-    if (!subs.length) return [message('podcasts-empty', 'No podcast subscriptions', 'Subscribe to shows in Kinora')];
+    if (!subs.length) return [message('podcasts-empty', 'No podcast subscriptions', 'Subscribe to shows in Vibe')];
     return subs.slice(0, LIMIT.podcasts).map((s) => ({
       id: `podcast:${s.itemId}`,
       title: s.title,
@@ -319,7 +319,7 @@ export class CarTree {
   }
 
   /**
-   * Voice / "play from search" (Android Auto and Google Assistant, Siri "Play … in Kinora"). An
+   * Voice / "play from search" (Android Auto and Google Assistant, Siri "Play … in Vibe"). An
    * empty query means "play something": the caller resumes the current queue; otherwise continue
    * listening, else shuffle the music. `hints` (media type, artist, album) come from the assistant's
    * structured request when it sends one and steer which search result is played.
@@ -451,7 +451,7 @@ export class CarTree {
 
   private requireApi(): MediaMaxClient {
     const { api, status } = this.env;
-    if (!api || status !== 'signed-in') throw new Error(status === 'offline' ? "Can't reach your media server" : 'Sign in to Kinora to browse');
+    if (!api || status !== 'signed-in') throw new Error(status === 'offline' ? "Can't reach your media server" : 'Sign in to Vibe to browse');
     return api;
   }
 }

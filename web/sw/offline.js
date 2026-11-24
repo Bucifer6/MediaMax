@@ -10,10 +10,10 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var logo = $('logo');
-  var raw = (brand && typeof brand.name === 'string' && brand.name.trim()) || 'Kinora';
-  // A server still named "MediaMax" (the old product name) shows as Kinora, like the app.
-  var name = raw === 'MediaMax' ? 'Kinora' : raw;
-  var stock = name === 'Kinora';
+  var raw = (brand && typeof brand.name === 'string' && brand.name.trim()) || 'Vibe';
+  // A server still named "Kinora" or "MediaMax" (former product names) shows as Vibe, like the app.
+  var name = raw === 'MediaMax' || raw === 'Kinora' ? 'Vibe' : raw;
+  var stock = name === 'Vibe';
   var light = !!(brand && brand.mode === 'light');
   $('name').textContent = name;
   document.title = name + ': server offline';
@@ -36,7 +36,7 @@
   function fallbackLogo() {
     logo.textContent = '';
     if (stock) {
-      logo.appendChild(img(BASE + 'brand/wordmark-' + (light ? 'light' : 'dark') + '.svg', 'Kinora'));
+      logo.appendChild(img(BASE + 'brand/wordmark-' + (light ? 'light' : 'dark') + '.svg', 'Vibe'));
     } else {
       logo.appendChild(img(BASE + 'brand/mark.svg', ''));
       var t = document.createElement('span');
@@ -46,7 +46,7 @@
     }
   }
   // The server's own logo comes from the browser's HTTP cache if it is there (branding files are cached as immutable);
-  // the service worker never stores it. Without it: the Kinora wordmark, or the mark plus the server's name.
+  // the service worker never stores it. Without it: the Vibe wordmark, or the mark plus the server's name.
   var logoUrl = brand && typeof brand.logo === 'string' && /^(\/|https?:)/.test(brand.logo) ? brand.logo : null;
   if (logoUrl) {
     logo.textContent = '';

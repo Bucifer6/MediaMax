@@ -34,7 +34,7 @@ test('direct play: container, bitrate and each stream read "Direct Play"', () =>
     platform: 'web', appVersion: '1.2.0', hints: { userAgent: null, httpVersion: '1.1', secure: true }, local: false, media: media({ audioStreams: [eac3] }) as any,
     isAudioOnly: false, method: 'direct', videoCopy: true, audioCopy: true, audio: eac3 as any, audioPlan: null, reasons: [], adaptive: false, burnSub: null,
   });
-  assert.deepEqual(d.client, { app: 'Kinora Web', version: '1.2.0', browser: null, protocol: 'HTTP/1.1', secure: true, local: false });
+  assert.deepEqual(d.client, { app: 'Vibe Web', version: '1.2.0', browser: null, protocol: 'HTTP/1.1', secure: true, local: false });
   assert.equal(d.stream.container, 'MKV');
   assert.equal(d.stream.bitrate, 10000);
   assert.equal(d.stream.delivery, 'Direct Play');
@@ -51,7 +51,7 @@ test('transcode: encoder output, hardware, tone-mapping and friendly reasons are
     isAudioOnly: false, method: 'transcode', videoCopy: false, audioCopy: true, audio: eac3 as any, audioPlan: null,
     reasons: ['bitrate 10000k exceeds 7000k', 'video codec hevc not supported'], adaptive: false, burnSub: null,
   });
-  assert.equal(d.client.app, 'Kinora for Android TV');
+  assert.equal(d.client.app, 'Vibe for Android TV');
   assert.deepEqual(d.stream.reasons, ['Reducing bitrate: source 10 Mbps is above the 7.0 Mbps limit', 'Video codec hevc not supported']);
   const live = sd.withJob(d, { videoCodec: 'h264_qsv', audioCodec: 'copy', bitrate: 7000, hwAccel: 'qsv', toneMap: 'vpp_qsv', height: 1080 }, 640);
   assert.equal(live.stream.outputBitrate, 7640);
@@ -90,7 +90,7 @@ test('admin can pause, resume and message a session on the playing device only',
   const details = sd.liveDetails('androidtv', '2.5.0', { httpVersion: '1.1' }, false, { container: 'MPEG-TS', delivery: 'HLS (remux)' });
   const s = playback.registerSession({ ctx, itemId: null, channelId: 'c1', mediaId: null, method: 'live', job: null, title: 'Antena 1', subtitle: null, posterUrl: null, durationMs: null, remoteAddr: '203.0.113.9', details });
   const listed = playback.listSessions().find((x) => x.id === s.id)!;
-  assert.equal(listed.details?.client.app, 'Kinora for Android TV');
+  assert.equal(listed.details?.client.app, 'Vibe for Android TV');
   assert.equal(listed.details?.stream.delivery, 'HLS (remux)');
 
   const headers = (t: string) => ({ authorization: `Bearer ${t}`, 'content-type': 'application/json' });

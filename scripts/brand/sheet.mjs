@@ -4,7 +4,7 @@
  *
  *   node scripts/brand/sheet.mjs out.png
  *
- * Also writes branding/kinora/png/icon-sizes.png: the app icon and the mark at launcher, toolbar and favicon sizes.
+ * Also writes branding/vibe/png/icon-sizes.png: the app icon and the mark at launcher, toolbar and favicon sizes.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,7 +15,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
-const B = path.join(repo, 'branding/kinora');
+const B = path.join(repo, 'branding/vibe');
 const out = path.resolve(process.argv[2] ?? 'brand-sheet.png');
 
 const uri = (file) => {
@@ -31,7 +31,7 @@ h2{font-size:14px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
 .row{display:flex;gap:22px;align-items:flex-end;flex-wrap:wrap}
 .cell{display:flex;flex-direction:column;align-items:center;gap:6px}
 .cell small{color:#8d97b8}
-.dark{background:#0D0C1D;padding:16px;border-radius:10px}
+.dark{background:#0C0C10;padding:16px;border-radius:10px}
 .light{background:#ffffff;padding:16px;border-radius:10px}
 .pix{image-rendering:pixelated}
 .ios{border-radius:22.37%;overflow:hidden}
@@ -49,8 +49,8 @@ const html = `<!doctype html><style>${css}</style>
 <div class="row">
   ${cell(`<div class="dark">${img(uri('mark.svg'), 340)}</div>`, 'mark.svg on dark')}
   ${cell(`<div class="light">${img(uri('mark.svg'), 340)}</div>`, 'mark.svg on white')}
-  ${cell(`<div class="dark row" style="align-items:flex-end">${[16, 32, 48].map((s) => img(png(`branding/kinora/png/mark-simple-${s}.png`), s, s)).join('')}${img(uri('mark.svg'), 96)}</div>`, 'simplified 16 / 32 / 48 · full 96')}
-  ${cell(`<div class="light row" style="align-items:flex-end">${[16, 32, 48].map((s) => img(png(`branding/kinora/png/mark-simple-${s}.png`), s, s)).join('')}${img(uri('mark.svg'), 96)}</div>`, 'on white')}
+  ${cell(`<div class="dark row" style="align-items:flex-end">${[16, 32, 48].map((s) => img(png(`branding/vibe/png/mark-simple-${s}.png`), s, s)).join('')}${img(uri('mark.svg'), 96)}</div>`, 'simplified 16 / 32 / 48 · full 96')}
+  ${cell(`<div class="light row" style="align-items:flex-end">${[16, 32, 48].map((s) => img(png(`branding/vibe/png/mark-simple-${s}.png`), s, s)).join('')}${img(uri('mark.svg'), 96)}</div>`, 'on white')}
   ${cell(`<div class="dark row" style="align-items:flex-end">${img(png('web/public/favicon-16.png'), 16, 16)}${img(png('web/public/favicon-32.png'), 32, 32)}${img(png('web/public/favicon-32.png'), 128, 128, 'pix')}</div>`, 'favicon 16 / 32 / 32 zoomed')}
 </div>
 <h2>Single colour</h2>
@@ -96,7 +96,7 @@ const html = `<!doctype html><style>${css}</style>
   ${cell(img(png('tv/shared/brand/icon-80.png'), 80, 80), 'webOS icon 80')}
   ${cell(img(png('apps/roku/images/icon_focus_fhd.png'), 336, 210), 'Roku focus icon FHD 336×210')}
   ${cell(img(png('apps/roku/images/spinner.png'), 48, 48), 'Roku spinner')}
-  ${cell(img(png('branding/kinora/png/store/play-feature-graphic-1024x500.png'), 410, 200), 'Play feature graphic 1024×500')}
+  ${cell(img(png('branding/vibe/png/store/play-feature-graphic-1024x500.png'), 410, 200), 'Play feature graphic 1024×500')}
 </div>`;
 
 const browser = await chromium.launch();
@@ -109,7 +109,7 @@ await page.screenshot({ path: out, fullPage: true });
   const sizes = [256, 128, 64, 48, 32, 24, 16];
   const row = (bg, src, cls = '') => `<div style="background:${bg};padding:20px;display:flex;gap:20px;align-items:flex-end">${sizes.map((s) => `<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><img class="${cls}" src="${src}" width="${s}" height="${s}"><small style="color:#8d97b8;font:11px system-ui">${s}</small></div>`).join('')}</div>`;
   await page.setViewportSize({ width: 900, height: 400 });
-  await page.setContent(`<!doctype html><style>${css} body{width:auto;padding:0;display:inline-block} .ios{border-radius:22.37%}</style>${row('#0D0C1D', uri('app-icon-dark.svg'), 'ios')}${row('#ffffff', uri('app-icon-light.svg'), 'ios')}${row('#0D0C1D', uri('favicon.svg'))}${row('#ffffff', uri('mark-simple.svg'))}`);
+  await page.setContent(`<!doctype html><style>${css} body{width:auto;padding:0;display:inline-block} .ios{border-radius:22.37%}</style>${row('#0C0C10', uri('app-icon-dark.svg'), 'ios')}${row('#ffffff', uri('app-icon-light.svg'), 'ios')}${row('#0C0C10', uri('favicon.svg'))}${row('#ffffff', uri('mark-simple.svg'))}`);
   await page.waitForTimeout(300);
   await page.locator('body').screenshot({ path: path.join(B, 'png/icon-sizes.png') });
 }

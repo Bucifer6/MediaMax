@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-  Installs Kinora to start at boot in the background (Windows Task Scheduler, running as SYSTEM).
+  Installs Vibe (formerly Kinora) to start at boot in the background (Windows Task Scheduler, running as SYSTEM).
 
 .DESCRIPTION
-  Run from an elevated PowerShell, in the folder you extracted the Kinora zip to:
+  Run from an elevated PowerShell, in the folder you extracted the Vibe zip to:
 
       powershell -ExecutionPolicy Bypass -File .\install-service.ps1
 
@@ -143,7 +143,7 @@ $target = (Resolve-Path $InstallDir).Path.TrimEnd('\')
 if ($source -ine $target) {
   if (Test-Path (Join-Path $target 'web')) { Remove-Item -Recurse -Force (Join-Path $target 'web') }
   Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
-  Write-Host "Installed Kinora to $target."
+  Write-Host "Installed Vibe to $target."
 }
 $exe = Join-Path $target 'kinora.exe'
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
@@ -165,7 +165,7 @@ $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) 
   -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -AllowStartIfOnBatteries `
   -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $runAs -Settings $settings `
-  -Description 'Kinora media server (installed by install-service.ps1)' -Force | Out-Null
+  -Description 'Vibe media server (installed by install-service.ps1)' -Force | Out-Null
 Write-Host "Registered scheduled task '$TaskName' (starts at boot as SYSTEM)."
 
 # 4. Firewall.
@@ -188,8 +188,8 @@ for ($i = 0; $i -lt 30; $i++) {
   } catch { Start-Sleep -Seconds 1 }
 }
 if ($ok) {
-  Write-Host "Kinora is running: http://localhost:$Port/" -ForegroundColor Green
+  Write-Host "Vibe is running: http://localhost:$Port/" -ForegroundColor Green
 } else {
-  Write-Host "Kinora did not answer yet. Check the logs in $DataDir\logs and Task Scheduler > '$TaskName'." -ForegroundColor Yellow
+  Write-Host "Vibe did not answer yet. Check the logs in $DataDir\logs and Task Scheduler > '$TaskName'." -ForegroundColor Yellow
 }
 Write-Host "Data folder: $DataDir"

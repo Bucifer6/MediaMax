@@ -83,7 +83,7 @@ function Categories({ source }: { source: LiveSource }) {
   );
 }
 
-/** TVHeadend: finished recordings on the backend (read-only; files download through Kinora). */
+/** TVHeadend: finished recordings on the backend (read-only; files download through Vibe). */
 function TunerRecordings({ source }: { source: LiveSource }) {
   const recs = useAsync(() => api.livetv.tunerRecordings(source.id), [source.id]);
   if (recs.loading && !recs.data) return <Skeleton h={160} />;

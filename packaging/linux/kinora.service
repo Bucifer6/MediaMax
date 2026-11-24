@@ -1,4 +1,4 @@
-# Kinora systemd unit. Install guide: README.txt in this archive, or docs/INSTALL.md.
+# Vibe systemd unit. Install guide: README.txt in this archive, or docs/INSTALL.md.
 #
 #   sudo useradd --system --home-dir /var/lib/kinora --shell /usr/sbin/nologin kinora
 #   sudo cp kinora.service /etc/systemd/system/ && sudo systemctl daemon-reload
@@ -7,7 +7,7 @@
 # Change settings with `sudo systemctl edit kinora` (a drop-in override) rather than editing this file,
 # so upgrades can replace it.
 [Unit]
-Description=Kinora media server
+Description=Vibe media server
 Documentation=https://github.com/Bucifer6/MediaMax/blob/main/docs/INSTALL.md
 Wants=network-online.target
 After=network-online.target
@@ -20,7 +20,7 @@ Group=kinora
 #   sudo usermod -aG render,video kinora
 # Media on NAS shares: give the kinora user read access (or add it to the group that owns the files).
 
-# Creates /var/lib/kinora owned by the service user; Kinora keeps its database, caches and logs there
+# Creates /var/lib/kinora owned by the service user; Vibe keeps its database, caches and logs there
 # (systemd passes it as STATE_DIRECTORY). Settings use KINORA_* names; the original MEDIAMAX_* names still work.
 StateDirectory=kinora
 StateDirectoryMode=0750

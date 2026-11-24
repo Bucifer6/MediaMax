@@ -1,8 +1,8 @@
-# Kinora on Synology DSM 7.2+ (Container Manager -> Project -> Create). Guide: docs/INSTALL.md#synology
+# Vibe on Synology DSM 7.2+ (Container Manager -> Project -> Create). Guide: docs/INSTALL.md#synology
 #
 # Before you start:
 #   1. File Station: create /docker/kinora with subfolders config, transcode and recordings.
-#   2. PUID/PGID: the user that should own Kinora's files and can read your media.
+#   2. PUID/PGID: the user that should own Vibe's files and can read your media.
 #      SSH in and run `id <username>` (the first DSM user is usually uid 1026, group "users" = 100).
 #   3. Change the /volume1/... paths below to your shared folders (keep the right-hand side as is).
 services:
@@ -29,5 +29,5 @@ services:
     # DS1520+). AMD Ryzen models (DS923+, DS1522+) have no GPU. Check over SSH: `ls -l /dev/dri`.
     # devices:
     #   - /dev/dri:/dev/dri
-    # DLNA (smart TVs finding Kinora by themselves) needs the host network instead of the port mapping:
+    # DLNA (smart TVs finding Vibe by themselves) needs the host network instead of the port mapping:
     # network_mode: host

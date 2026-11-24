@@ -67,7 +67,7 @@ test('front-matter parser and heading ids', () => {
 /* ------------------------------- search ------------------------------- */
 
 test('search: ranking, prefixes and typos', () => {
-  const top = (q: string, admin = false) => help.helpSearch(q, admin, 'Kinora').results.map((r) => r.slug);
+  const top = (q: string, admin = false) => help.helpSearch(q, admin, 'Vibe').results.map((r) => r.slug);
   assert.equal(top('why is it transcoding')[0], 'why-transcoding');
   assert.ok(top('subtitles').slice(0, 3).includes('subtitles'));
   assert.ok(top('subt').slice(0, 3).includes('subtitles'), 'prefix');
@@ -77,15 +77,15 @@ test('search: ranking, prefixes and typos', () => {
   assert.ok(top('remote buttons colour').includes('remote-buttons'));
   assert.deepEqual(top(''), []);
   assert.deepEqual(top('the of and'), []);
-  const r = help.helpSearch('lip sync', false, 'Kinora').results[0];
+  const r = help.helpSearch('lip sync', false, 'Vibe').results[0];
   assert.ok(r.snippet.length > 20 && r.snippet.length < 200, 'snippet');
 });
 
 test('search: admin-only articles never reach other users', () => {
-  const viewerHits = help.helpSearch('hardware transcoding detect', false, 'Kinora').results;
+  const viewerHits = help.helpSearch('hardware transcoding detect', false, 'Vibe').results;
   assert.ok(viewerHits.every((r) => r.audience === 'everyone'));
   assert.ok(!viewerHits.some((r) => r.slug === 'admin-transcoding'));
-  const adminHits = help.helpSearch('hardware transcoding detect', true, 'Kinora').results;
+  const adminHits = help.helpSearch('hardware transcoding detect', true, 'Vibe').results;
   assert.equal(adminHits[0].slug, 'admin-transcoding');
 });
 
@@ -133,7 +133,7 @@ test('GET /help/:slug: admin articles are 404 for everyone else; related; placeh
     const wt = (await app.inject({ url: '/api/v1/help/why-transcoding', headers: auth(viewerTok) })).json();
     assert.ok(wt.related.every((r: any) => r.audience === 'everyone'));
   } finally {
-    updateBranding({ serverName: 'Kinora' });
+    updateBranding({ serverName: 'Vibe' });
   }
 });
 
@@ -147,7 +147,7 @@ test('GET /help/search and /help/whats-new', async () => {
   assert.equal(s3.results[0].slug, 'admin-security');
   const w = await app.inject({ url: '/api/v1/help/whats-new' });
   assert.equal(w.statusCode, 200);
-  assert.match(w.json().title, /What's new in Kinora/);
+  assert.match(w.json().title, /What's new in Vibe/);
   assert.ok(w.json().version);
 });
 

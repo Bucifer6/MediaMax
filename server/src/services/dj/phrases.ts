@@ -3,7 +3,7 @@
  * 8/16/32-bar boundaries, found from per-bar low/mid/high energy and a multi-scale novelty curve.
  *
  * Adapted from OpenDJ (MIT, github.com/Bucifer6/OpenDJ) — public/js/audio/analysis-core.js
- * (computeWaveform, detectPhrases, mixPoints). Changes: typed, milliseconds in/out, works on Kinora's
+ * (computeWaveform, detectPhrases, mixPoints). Changes: typed, milliseconds in/out, works on Vibe's
  * 11025 Hz analysis PCM, and returns the phrase list in the shared `DjPhrase` shape.
  */
 import type { DjPhrase, DjPhraseType } from '@mediamax/shared';

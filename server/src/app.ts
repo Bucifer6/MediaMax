@@ -243,7 +243,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       return reply.type('text/html').header('Cache-Control', 'no-cache').header('Content-Security-Policy', webAppCsp(req.host)).send(html);
     });
   } else {
-    app.get('/', async (_req, reply) => reply.type('text/html').send('<h1>Kinora server is running</h1><p>The web client has not been built. Run <code>npm run build</code>.</p>'));
+    app.get('/', async (_req, reply) => reply.type('text/html').send('<h1>Vibe server is running</h1><p>The web client has not been built. Run <code>npm run build</code>.</p>'));
   }
   return app;
 }

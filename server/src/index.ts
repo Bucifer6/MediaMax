@@ -33,7 +33,7 @@ async function main() {
   initStorage();
   const app = await buildApp();
   await app.listen({ port: config.port, host: config.host });
-  log.info(`Kinora ${config.version} (server ${serverId()}) listening on http://${config.host}:${config.port}`);
+  log.info(`Vibe ${config.version} (server ${serverId()}) listening on http://${config.host}:${config.port}`);
   log.info(`Data directory: ${config.dataDir}`);
   log.info(`Help Centre: ${helpArticleCount()} articles from ${config.helpDir}`);
   if (process.env.MEDIAMAX_NO_SCHEDULER !== '1') startScheduler();

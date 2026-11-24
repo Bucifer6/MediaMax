@@ -394,7 +394,7 @@ export const SHOTS = {
     await ctx.close();
   },
 
-  // A light theme (Kinora Light) on the home page and a title page.
+  // A light theme (Vibe Light) on the home page and a title page.
   async 'home-light'(s) {
     await s.state.admin.patch('/auth/me', { preferences: { themeId: 'mediamax-light' } });
     try {

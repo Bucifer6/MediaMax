@@ -3,7 +3,7 @@
  * Stem separation worker: ONNX Runtime Web (WebGPU when available, else WASM) runs HT-Demucs chunk by chunk.
  * Finished audio is posted back block by block as Int16 (the page uploads it to the server), so neither the UI
  * thread nor the audio thread does heavy work and a long track never sits in memory as four float stems.
- * onnxruntime-web is loaded at run time from the Kinora server (/api/v1/stems/ort/, same origin), not bundled.
+ * onnxruntime-web is loaded at run time from the Vibe server (/api/v1/stems/ort/, same origin), not bundled.
  *
  * in : { type: 'init', ortBase, modelUrl, threads, backend: 'auto'|'webgpu'|'wasm', stub }
  *      { type: 'separate', id, left, right, length, overlap }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Render every Kinora brand PNG (and favicon.ico) from the master SVGs in branding/kinora/,
+ * Render every Vibe brand PNG (and favicon.ico) from the master SVGs in branding/vibe/,
  * and copy them to where the web app, the Expo apps, the Samsung/LG/VIDAA TV wrappers and the Roku channel pick them up.
  *
  *   node scripts/brand-export.mjs            rebuild masters (scripts/brand/build-masters.mjs), then export
@@ -18,7 +18,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..');
-const B = path.join(repo, 'branding/kinora');
+const B = path.join(repo, 'branding/vibe');
 
 if (!process.argv.includes('--no-masters')) execFileSync(process.execPath, [path.join(here, 'brand/build-masters.mjs')], { stdio: 'inherit' });
 
@@ -26,36 +26,36 @@ if (!process.argv.includes('--no-masters')) execFileSync(process.execPath, [path
 const MOBILE = 'apps/mobile/assets';
 const JOBS = [
   // brand folder exports
-  ['mark.svg', 'branding/kinora/png/mark-512.png', 512],
-  ['mark.svg', 'branding/kinora/png/mark-1024.png', 1024],
-  ['mark-simple.svg', 'branding/kinora/png/mark-simple-16.png', 16],
-  ['mark-simple.svg', 'branding/kinora/png/mark-simple-32.png', 32],
-  ['mark-simple.svg', 'branding/kinora/png/mark-simple-48.png', 48],
-  ['mark-mono-black.svg', 'branding/kinora/png/mark-mono-black-512.png', 512],
-  ['mark-mono-white.svg', 'branding/kinora/png/mark-mono-white-512.png', 512],
-  ['wordmark-dark.svg', 'branding/kinora/png/wordmark-dark-1200.png', 1200],
-  ['wordmark-light.svg', 'branding/kinora/png/wordmark-light-1200.png', 1200],
-  ['wordmark-tagline-dark.svg', 'branding/kinora/png/wordmark-tagline-dark-1200.png', 1200],
-  ['wordmark-tagline-light.svg', 'branding/kinora/png/wordmark-tagline-light-1200.png', 1200],
-  ['wordmark-mono-black.svg', 'branding/kinora/png/wordmark-mono-black-1200.png', 1200],
-  ['wordmark-mono-white.svg', 'branding/kinora/png/wordmark-mono-white-1200.png', 1200],
-  ['lockup-stacked-dark.svg', 'branding/kinora/png/lockup-stacked-dark-1000.png', 1000],
-  ['lockup-stacked-light.svg', 'branding/kinora/png/lockup-stacked-light-1000.png', 1000],
-  ['lockup-stacked-mono-black.svg', 'branding/kinora/png/lockup-stacked-mono-black-1000.png', 1000],
-  ['lockup-stacked-mono-white.svg', 'branding/kinora/png/lockup-stacked-mono-white-1000.png', 1000],
-  ['app-icon-dark.svg', 'branding/kinora/png/app-icon-dark-1024.png', 1024],
-  ['app-icon-light.svg', 'branding/kinora/png/app-icon-light-1024.png', 1024],
-  ['splash-dark.svg', 'branding/kinora/png/splash-dark-1920x1080.png', 1920, 1080],
-  ['splash-light.svg', 'branding/kinora/png/splash-light-1920x1080.png', 1920, 1080],
-  ['og-image.svg', 'branding/kinora/png/og-image-1200x630.png', 1200, 630],
+  ['mark.svg', 'branding/vibe/png/mark-512.png', 512],
+  ['mark.svg', 'branding/vibe/png/mark-1024.png', 1024],
+  ['mark-simple.svg', 'branding/vibe/png/mark-simple-16.png', 16],
+  ['mark-simple.svg', 'branding/vibe/png/mark-simple-32.png', 32],
+  ['mark-simple.svg', 'branding/vibe/png/mark-simple-48.png', 48],
+  ['mark-mono-black.svg', 'branding/vibe/png/mark-mono-black-512.png', 512],
+  ['mark-mono-white.svg', 'branding/vibe/png/mark-mono-white-512.png', 512],
+  ['wordmark-dark.svg', 'branding/vibe/png/wordmark-dark-1200.png', 1200],
+  ['wordmark-light.svg', 'branding/vibe/png/wordmark-light-1200.png', 1200],
+  ['wordmark-tagline-dark.svg', 'branding/vibe/png/wordmark-tagline-dark-1200.png', 1200],
+  ['wordmark-tagline-light.svg', 'branding/vibe/png/wordmark-tagline-light-1200.png', 1200],
+  ['wordmark-mono-black.svg', 'branding/vibe/png/wordmark-mono-black-1200.png', 1200],
+  ['wordmark-mono-white.svg', 'branding/vibe/png/wordmark-mono-white-1200.png', 1200],
+  ['lockup-stacked-dark.svg', 'branding/vibe/png/lockup-stacked-dark-1000.png', 1000],
+  ['lockup-stacked-light.svg', 'branding/vibe/png/lockup-stacked-light-1000.png', 1000],
+  ['lockup-stacked-mono-black.svg', 'branding/vibe/png/lockup-stacked-mono-black-1000.png', 1000],
+  ['lockup-stacked-mono-white.svg', 'branding/vibe/png/lockup-stacked-mono-white-1000.png', 1000],
+  ['app-icon-dark.svg', 'branding/vibe/png/app-icon-dark-1024.png', 1024],
+  ['app-icon-light.svg', 'branding/vibe/png/app-icon-light-1024.png', 1024],
+  ['splash-dark.svg', 'branding/vibe/png/splash-dark-1920x1080.png', 1920, 1080],
+  ['splash-light.svg', 'branding/vibe/png/splash-light-1920x1080.png', 1920, 1080],
+  ['og-image.svg', 'branding/vibe/png/og-image-1200x630.png', 1200, 630],
   // store listing art
-  ['app-icon-dark.svg', 'branding/kinora/png/store/app-store-icon-1024.png', 1024],
-  ['app-icon-dark.svg', 'branding/kinora/png/store/play-icon-512.png', 512],
-  ['play-feature-graphic.svg', 'branding/kinora/png/store/play-feature-graphic-1024x500.png', 1024, 500],
-  ['tv-banner.svg', 'branding/kinora/png/store/android-tv-banner-1280x720.png', 1280, 720],
-  ['splash-dark.svg', 'branding/kinora/png/store/fire-tv-background-1920x1080.png', 1920, 1080],
-  ['app-icon-dark.svg', 'branding/kinora/png/store/samsung-lg-icon-512.png', 512],
-  ['roku-poster.svg', 'branding/kinora/png/store/roku-channel-poster-540x405.png', 540, 405],
+  ['app-icon-dark.svg', 'branding/vibe/png/store/app-store-icon-1024.png', 1024],
+  ['app-icon-dark.svg', 'branding/vibe/png/store/play-icon-512.png', 512],
+  ['play-feature-graphic.svg', 'branding/vibe/png/store/play-feature-graphic-1024x500.png', 1024, 500],
+  ['tv-banner.svg', 'branding/vibe/png/store/android-tv-banner-1280x720.png', 1280, 720],
+  ['splash-dark.svg', 'branding/vibe/png/store/fire-tv-background-1920x1080.png', 1920, 1080],
+  ['app-icon-dark.svg', 'branding/vibe/png/store/samsung-lg-icon-512.png', 512],
+  ['roku-poster.svg', 'branding/vibe/png/store/roku-channel-poster-540x405.png', 540, 405],
 
   // web app (web/public)
   ['favicon.svg', 'web/public/favicon-16.png', 16],

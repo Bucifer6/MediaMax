@@ -398,7 +398,7 @@ export function ServerSettingsAdmin() {
               <strong><Icon name="info" size={16} /> How to set up Trakt</strong>
               <ol>
                 <li>Sign in at <Ext href="https://trakt.tv/oauth/applications">trakt.tv/oauth/applications</Ext> and choose <em>New application</em>.</li>
-                <li>Give it a name (e.g. “{s.serverName || 'Kinora'}”) and set the <em>Redirect URI</em> to <code>urn:ietf:wg:oauth:2.0:oob</code>.</li>
+                <li>Give it a name (e.g. “{s.serverName || 'Vibe'}”) and set the <em>Redirect URI</em> to <code>urn:ietf:wg:oauth:2.0:oob</code>.</li>
                 <li>Save, then copy the <em>Client ID</em> and <em>Client Secret</em> here.</li>
                 <li>Each user connects their own account in <em>Settings → Connected services</em>.</li>
               </ol>
@@ -437,7 +437,7 @@ export function ServerSettingsAdmin() {
               </div>
               {!s.publicUrl && <p className="muted" style={{ marginTop: 8 }}>Set a Public URL on the General tab if people reach the server at a different address.</p>}
             </div>
-            <Field label="Issuer URL" hint="The provider’s issuer; Kinora reads /.well-known/openid-configuration from it.">
+            <Field label="Issuer URL" hint="The provider’s issuer; Vibe reads /.well-known/openid-configuration from it.">
               <input className="input mono" value={oi.issuer ?? ''} onChange={(e) => setOi({ issuer: e.target.value.trim() || null })} placeholder="https://auth.example.com/application/o/mediamax/" spellCheck={false} />
             </Field>
             <div className="form-row">
@@ -445,7 +445,7 @@ export function ServerSettingsAdmin() {
               <Field label="Client secret"><input className="input mono" type="password" value={oi.clientSecret ?? ''} onChange={(e) => setOi({ clientSecret: e.target.value.trim() || null })} autoComplete="new-password" spellCheck={false} /></Field>
             </div>
             <Field label="Button label"><input className="input" value={oi.buttonLabel} onChange={(e) => setOi({ buttonLabel: e.target.value })} placeholder="Sign in with SSO" /></Field>
-            <Switch checked={oi.autoCreateUsers} onChange={(v) => setOi({ autoCreateUsers: v })} label="Create accounts on first sign-in" hint="When off, only people who already have a Kinora account can use SSO." />
+            <Switch checked={oi.autoCreateUsers} onChange={(v) => setOi({ autoCreateUsers: v })} label="Create accounts on first sign-in" hint="When off, only people who already have a Vibe account can use SSO." />
             <div className="form-row form-row-3">
               <Field label="Groups claim" hint="Usually “groups”."><input className="input mono" value={oi.groupsClaim} onChange={(e) => setOi({ groupsClaim: e.target.value })} placeholder="groups" spellCheck={false} /></Field>
               <Field label="Admin group" hint="Members become administrators."><input className="input" value={oi.adminGroup ?? ''} onChange={(e) => setOi({ adminGroup: e.target.value.trim() || null })} placeholder="mediamax-admins" /></Field>
@@ -461,7 +461,7 @@ export function ServerSettingsAdmin() {
             <Switch checked={dl.enabled} onChange={(v) => setDl({ enabled: v })} label="Enable DLNA server" />
             <div className="form-row">
               <Field label="Friendly name" hint="What TVs show in their source list.">
-                <input className="input" value={dl.friendlyName ?? ''} onChange={(e) => setDl({ friendlyName: e.target.value || null })} placeholder={s.serverName || 'Kinora'} />
+                <input className="input" value={dl.friendlyName ?? ''} onChange={(e) => setDl({ friendlyName: e.target.value || null })} placeholder={s.serverName || 'Vibe'} />
               </Field>
               <Field label="Browse as user" hint="Required. DLNA has no login, so it serves exactly what this user may see — library access and rating limits apply.">
                 <select className="select" value={dl.userId ?? ''} onChange={(e) => setDl({ userId: e.target.value || null })}>
@@ -480,7 +480,7 @@ export function ServerSettingsAdmin() {
         )}
         {tab === 'webhooks' && (
           <div className="form-grid">
-            <p className="muted">Kinora POSTs a JSON payload to each URL when the selected events happen.</p>
+            <p className="muted">Vibe POSTs a JSON payload to each URL when the selected events happen.</p>
             {s.webhooks.map((w, i) => (
               <div key={w.id} className="webhook-card">
                 <div className="webhook-head">
@@ -491,7 +491,7 @@ export function ServerSettingsAdmin() {
                 </div>
                 <div className="row-gap">
                   <select className="select" value={w.format ?? 'mediamax'} onChange={(e) => setHook(i, { format: e.target.value as Webhook['format'] })} aria-label="Payload format">
-                    <option value="mediamax">Kinora JSON</option>
+                    <option value="mediamax">Vibe JSON</option>
                     <option value="home-assistant">Home Assistant (flat JSON)</option>
                   </select>
                   {w.format === 'home-assistant' && <span className="muted">Flat payload for HA’s webhook trigger — see Admin → Smart home.</span>}

@@ -1,4 +1,4 @@
-# Kinora on OpenMediaVault 7 with the openmediavault-compose plugin
+# Vibe on OpenMediaVault 7 with the openmediavault-compose plugin
 # (Services -> Compose -> Files -> Create, name "kinora", paste this file, Save, then Up).
 # Guide: docs/INSTALL.md#openmediavault
 #

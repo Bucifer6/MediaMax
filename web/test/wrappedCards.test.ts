@@ -35,7 +35,7 @@ test('a full year: every card in story order, with the right numbers', () => {
   assert.deepEqual(cards[6].traits, ['Night owl', 'Binge-watcher']);
   assert.equal(cards[7].headline, 'March was your biggest month');
   assert.equal(cards[8].headline, 'Synth Band');
-  assert.ok(cards.every((c) => !JSON.stringify(c).includes('Kinora')), 'product name comes from the branding, never hard-coded');
+  assert.ok(cards.every((c) => !/Vibe\b|Kinora/.test(JSON.stringify(c))), 'product name comes from the branding, never hard-coded');
 });
 
 test('missing sections are skipped; empty history is two cards', () => {

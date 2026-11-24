@@ -10,11 +10,11 @@ import { nowIso, parseJson } from '../../util/misc.js';
 import { type Matcher, type MetaImageKind, type Progress, type Session, type SrcMeta, type SrcSeries, pool } from './common.js';
 
 /**
- * Import → metadata: copy the source server's metadata and artwork onto the Kinora titles it matches.
+ * Import → metadata: copy the source server's metadata and artwork onto the Vibe titles it matches.
  *
  * - Text fields: overview, tagline, original title, genres, studios, cast/crew, content rating, community rating,
  *   release date. Artwork: poster, background, logo, episode still (`thumb`), season posters.
- * - By default only empty fields and missing artwork are filled; `overwrite` replaces what Kinora has. Fields in an
+ * - By default only empty fields and missing artwork are filled; `overwrite` replaces what Vibe has. Fields in an
  *   item's `locked_fields` are never touched either way.
  * - Artwork is downloaded once into `<data>/artwork/import/` and registered as a local image, so it is served without
  *   asking the source again (the source may be switched off after the move) and rescans keep it.
@@ -52,7 +52,7 @@ function stored(key: keyof SrcMeta, v: unknown): string | number | undefined {
   return s ? s : undefined;
 }
 
-/** The Kinora id of a source title (seasons through their show), or null. */
+/** The Vibe id of a source title (seasons through their show), or null. */
 function localId(matcher: Matcher, m: SrcMeta, series: Map<string, SrcSeries>): string | null {
   const it = m.item;
   const show = it.seriesId ? series.get(it.seriesId) ?? null : null;

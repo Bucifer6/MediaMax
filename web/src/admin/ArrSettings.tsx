@@ -109,7 +109,7 @@ export function ArrSettingsPanel({ value, onChange, publicUrl }: { value: ArrIns
       <div className="howto">
         <strong><Icon name="zap" size={16} /> Instant library updates (webhook)</strong>
         <p className="muted" style={{ margin: '6px 0 0' }}>
-          When an *arr app imports, upgrades, renames or deletes something, it can tell Kinora right away. Kinora then rescans only the library
+          When an *arr app imports, upgrades, renames or deletes something, it can tell Vibe right away. Vibe then rescans only the library
           that holds that folder (bursts such as a season pack become one scan) and marks matching requests as available.
         </p>
         {hook.loading && !hook.data ? <Skeleton h={38} /> : hook.error ? <p className="form-error">{hook.error}</p> : (
@@ -122,7 +122,7 @@ export function ArrSettingsPanel({ value, onChange, publicUrl }: { value: ArrIns
         {!publicUrl && <p className="muted" style={{ marginTop: 8 }}>The *arr apps must reach this address. If they use another one (e.g. a Docker network name), replace the host; set a Public URL on the General tab to change the default.</p>}
         <ol className="arr-steps">
           <li>In each app open <strong>Settings → Connect</strong>, click <strong>+</strong> and choose <strong>Webhook</strong>.</li>
-          <li>Name it “Kinora”, paste the URL above, method <strong>POST</strong>, no username or password.</li>
+          <li>Name it “Vibe”, paste the URL above, method <strong>POST</strong>, no username or password.</li>
           <li>Tick the triggers listed below, click <strong>Test</strong> (it shows up under Admin → Activity), then <strong>Save</strong>.</li>
         </ol>
         <div className="arr-apps">
@@ -132,7 +132,7 @@ export function ArrSettingsPanel({ value, onChange, publicUrl }: { value: ArrIns
           <div className="arr-app-help"><strong><Icon name="book" size={14} /> Readarr</strong><p>On Release Import, On Upgrade, On Rename, On Book Retag, On Author Delete, On Book Delete, On Book File Delete.</p></div>
         </div>
         <p className="muted" style={{ marginTop: 10 }}>
-          If an app sees your media at a different path than Kinora (common with Docker), add a <strong>path mapping</strong> to that instance,
+          If an app sees your media at a different path than Vibe (common with Docker), add a <strong>path mapping</strong> to that instance,
           e.g. <code>/movies</code> → <code>/media/Movies</code>. Bazarr has no webhook; its health shows on the Downloads page.
         </p>
       </div>
@@ -291,12 +291,12 @@ function InstanceModal({ initial, isNew, onClose, onSave }: { initial: ArrInstan
 
             <fieldset className="settings-fieldset">
               <legend className="field-label">Path mappings</legend>
-              <small className="field-hint">For webhooks: how a path in {ARR_NAME[v.kind]} (left) looks to Kinora (right). Only needed when they differ.</small>
+              <small className="field-hint">For webhooks: how a path in {ARR_NAME[v.kind]} (left) looks to Vibe (right). Only needed when they differ.</small>
               {maps.map((m, i) => (
                 <div key={i} className="arr-mapping" style={{ marginTop: 8 }}>
                   <input className="input mono" value={m.remotePath} onChange={(e) => setMap(i, { remotePath: e.target.value })} placeholder={`/${v.kind === 'radarr' ? 'movies' : v.kind === 'sonarr' ? 'tv' : v.kind === 'lidarr' ? 'music' : 'books'}`} aria-label={`${ARR_NAME[v.kind]} path`} spellCheck={false} />
                   <Icon name="next" size={16} />
-                  <input className="input mono" value={m.localPath} onChange={(e) => setMap(i, { localPath: e.target.value })} placeholder="/media/..." aria-label="Kinora path" spellCheck={false} />
+                  <input className="input mono" value={m.localPath} onChange={(e) => setMap(i, { localPath: e.target.value })} placeholder="/media/..." aria-label="Vibe path" spellCheck={false} />
                   <button className="btn-icon" onClick={() => set({ pathMappings: maps.filter((_, j) => j !== i) })} aria-label="Remove mapping"><Icon name="trash" size={16} /></button>
                 </div>
               ))}

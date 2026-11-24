@@ -484,7 +484,7 @@ function TraktCard() {
     }
   };
   const disconnect = async () => {
-    if (!(await confirm({ title: 'Disconnect Trakt?', message: 'Kinora will stop scrobbling to your Trakt account.', confirmLabel: 'Disconnect', danger: true }))) return;
+    if (!(await confirm({ title: 'Disconnect Trakt?', message: 'Vibe will stop scrobbling to your Trakt account.', confirmLabel: 'Disconnect', danger: true }))) return;
     setBusy(true);
     try {
       status.setData(await api.trakt.disconnect());
@@ -525,7 +525,7 @@ function TraktCard() {
             {code.userCode}
             <button className="btn-icon" onClick={() => { void navigator.clipboard?.writeText(code.userCode); toast.success('Code copied'); }} aria-label="Copy code"><Icon name="copy" size={18} /></button>
           </div>
-          <p className="muted device-code-wait"><Spinner size={14} /> Waiting for you to approve Kinora on Trakt…</p>
+          <p className="muted device-code-wait"><Spinner size={14} /> Waiting for you to approve Vibe on Trakt…</p>
           <div className="form-actions"><button className="btn btn-ghost" onClick={() => setCode(null)}>Cancel</button></div>
         </div>
       ) : (
@@ -606,7 +606,7 @@ function LastfmCard() {
     }
   };
   const disconnect = async () => {
-    if (!(await confirm({ title: 'Disconnect Last.fm?', message: 'Kinora will stop scrobbling your music to Last.fm.', confirmLabel: 'Disconnect', danger: true }))) return;
+    if (!(await confirm({ title: 'Disconnect Last.fm?', message: 'Vibe will stop scrobbling your music to Last.fm.', confirmLabel: 'Disconnect', danger: true }))) return;
     setBusy(true);
     try {
       status.setData(await api.lastfm.disconnect());
@@ -642,7 +642,7 @@ function LastfmCard() {
         </>
       ) : waiting ? (
         <div className="device-code">
-          <p>Approve Kinora in the Last.fm tab that just opened. This page updates by itself once you’re done.</p>
+          <p>Approve Vibe in the Last.fm tab that just opened. This page updates by itself once you’re done.</p>
           <p className="muted device-code-wait" aria-live="polite"><Spinner size={14} /> Waiting for Last.fm…</p>
           <div className="form-actions">
             <button className="btn btn-ghost" onClick={() => setWaiting(false)}>Cancel</button>

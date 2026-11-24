@@ -1,5 +1,5 @@
 /**
- * Kinora server benchmark.
+ * Vibe server benchmark.
  *
  *   npm run perf                      # = node scripts/perf/run.mjs
  *   node scripts/perf/run.mjs --label=after --scale=1 [--build] [--only=home,search] [--quick]

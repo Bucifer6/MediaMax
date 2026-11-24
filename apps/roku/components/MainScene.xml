@@ -29,7 +29,7 @@
   <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
 
   <children>
-    <Rectangle id="background" width="1920" height="1080" color="0x0D0C1DFF" />
+    <Rectangle id="background" width="1920" height="1080" color="0x0C0C10FF" />
     <Group id="screens" />
 
     <Group id="toastGroup" visible="false" translation="[560,940]">

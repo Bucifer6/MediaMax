@@ -1,4 +1,4 @@
-' Builds the Kinora DeviceProfile (shared/src/types.ts) from what this Roku can actually decode, at runtime.
+' Builds the Vibe DeviceProfile (shared/src/types.ts) from what this Roku can actually decode, at runtime.
 ' Codec names follow ffprobe / the server's decide() (h264, hevc, vp9, av1, aac, ac3, eac3 …).
 
 function canDecodeVideo(di as object, query as object) as boolean

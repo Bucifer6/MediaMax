@@ -236,7 +236,7 @@ export async function securityOverview(force = false): Promise<SecurityOverview>
         )
       : Promise.resolve(null),
     s.fail2banSocket
-      ? f2bStatus(s.fail2banSocket).then((o) => ({ ok: true, error: null, jails: o.jails }), (e: Error) => ({ ok: false, error: (e as NodeJS.ErrnoException).code === 'EACCES' ? 'Permission denied on the fail2ban socket — use the Kinora bridge (see docs/DEPLOY.md)' : e.message, jails: [] }))
+      ? f2bStatus(s.fail2banSocket).then((o) => ({ ok: true, error: null, jails: o.jails }), (e: Error) => ({ ok: false, error: (e as NodeJS.ErrnoException).code === 'EACCES' ? 'Permission denied on the fail2ban socket — use the Vibe bridge (see docs/DEPLOY.md)' : e.message, jails: [] }))
       : Promise.resolve(null),
   ]);
   const v: SecurityOverview = {

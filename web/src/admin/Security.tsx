@@ -209,7 +209,7 @@ export function SecurityAdmin() {
         <section className="sec-card">
           <h2><Icon name="lock" size={18} /> fail2ban</h2>
           {!d.fail2ban ? (
-            <NotConnected what="fail2ban" hint="deploy/install.sh connects it through the Kinora bridge; or set the bridge socket under Connections." />
+            <NotConnected what="fail2ban" hint="deploy/install.sh connects it through the Vibe bridge; or set the bridge socket under Connections." />
           ) : !d.fail2ban.ok ? (
             <p className="form-error">{d.fail2ban.error}</p>
           ) : d.fail2ban.jails.length === 0 ? <p className="muted small">No jails are running.</p> : (
@@ -301,7 +301,7 @@ function ConnectionsModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
     <Modal open onClose={onClose} size="lg" title="Connections" footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={() => void save()} disabled={!s}>Save</button></>}>
       {!s ? <Spinner /> : (
         <div className="form-grid">
-          <p className="muted small">The one-command installer (<code>deploy/install.sh</code>) fills these in for you. Values saved here override it. Paths are as seen from inside the Kinora container.</p>
+          <p className="muted small">The one-command installer (<code>deploy/install.sh</code>) fills these in for you. Values saved here override it. Paths are as seen from inside the Vibe container.</p>
           <div className="form-row">
             <Field label="Reverse proxy">
               <select className="input" value={s.proxy.kind} onChange={(e) => setS({ ...s, proxy: { ...s.proxy, kind: e.target.value as SecurityDashboardSettings['proxy']['kind'] } })}>
@@ -316,7 +316,7 @@ function ConnectionsModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
             <Field label="Machine ID"><input className="input mono" value={s.crowdsec.machineId ?? ''} placeholder="mediamax-dashboard" onChange={(e) => setS({ ...s, crowdsec: { ...s.crowdsec, machineId: e.target.value || null } })} /></Field>
             <Field label="Machine password" hint="cscli machines add mediamax-dashboard --password …"><input className="input mono" type="password" autoComplete="off" value={s.crowdsec.password ?? ''} onChange={(e) => setS({ ...s, crowdsec: { ...s.crowdsec, password: e.target.value || null } })} /></Field>
           </div>
-          <Field label="fail2ban bridge socket" hint="fail2ban's own socket is root-only; point this at the Kinora bridge (deploy/fail2ban/bridge.py)."><input className="input mono" value={s.fail2banSocket ?? ''} placeholder="/run/mediamax-f2b/bridge.sock" onChange={(e) => setS({ ...s, fail2banSocket: e.target.value || null })} /></Field>
+          <Field label="fail2ban bridge socket" hint="fail2ban's own socket is root-only; point this at the Vibe bridge (deploy/fail2ban/bridge.py)."><input className="input mono" value={s.fail2banSocket ?? ''} placeholder="/run/mediamax-f2b/bridge.sock" onChange={(e) => setS({ ...s, fail2banSocket: e.target.value || null })} /></Field>
         </div>
       )}
     </Modal>

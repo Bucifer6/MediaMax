@@ -4,7 +4,7 @@
  *  - "data" (default, the original behaviour): <data>/subtitles/<mediaId>/<lang>.<std|hi|forced>.<id>.<ext>, so
  *    read-only libraries work. Listed with index 2000+.
  *  - "sidecar": next to the video as "<Video name>.<lang>[.forced|.sdh].<ext>" (falls back to the data folder when
- *    the library is read-only). Sidecars Kinora wrote are recorded in `subtitle_downloads` and listed with index
+ *    the library is read-only). Sidecars Vibe wrote are recorded in `subtitle_downloads` and listed with index
  *    3000+ so the UI can delete them; other sidecars keep 1000+.
  */
 import fs from 'node:fs';
@@ -72,7 +72,7 @@ function safeIsDir(p: string) {
   }
 }
 
-/** Sidecar subtitles next to a video (and in Subs/Subtitles folders). Ones Kinora downloaded get 3000+. */
+/** Sidecar subtitles next to a video (and in Subs/Subtitles folders). Ones Vibe downloaded get 3000+. */
 export function sidecarSubs(videoPath: string, mediaId?: string): SubtitleStream[] {
   const dir = path.dirname(videoPath);
   const base = stripExt(path.basename(videoPath));

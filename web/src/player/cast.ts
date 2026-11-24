@@ -250,7 +250,7 @@ export function useCast(enabled: boolean): CastHandle {
     const info = new chrome.cast.media.MediaInfo(m.url, m.contentType);
     info.streamType = m.live ? chrome.cast.media.StreamType.LIVE : chrome.cast.media.StreamType.BUFFERED;
     if (/mpegurl/i.test(m.contentType)) {
-      // Kinora HLS uses MPEG-TS segments.
+      // Vibe HLS uses MPEG-TS segments.
       try {
         info.hlsSegmentFormat = chrome.cast.media.HlsSegmentFormat.TS;
         if (m.kind !== 'music' && chrome.cast.media.HlsVideoSegmentFormat) info.hlsVideoSegmentFormat = chrome.cast.media.HlsVideoSegmentFormat.MPEG2_TS;

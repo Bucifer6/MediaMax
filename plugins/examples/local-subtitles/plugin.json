@@ -3,7 +3,7 @@
   "name": "Local subtitle folder",
   "version": "1.0.0",
   "description": "A subtitle provider that searches a folder on the server (for example a shared archive of Romanian subtitles) by IMDb id or title. Files are named like \"tt0133093 The Matrix 1999 BluRay-GROUP.ro.srt\" or kept in folders named after the IMDb id; .zip/.rar archives work too.",
-  "author": "Kinora",
+  "author": "Vibe",
   "main": "index.js",
   "minServerVersion": "0.1.0",
   "capabilities": ["subtitles"],

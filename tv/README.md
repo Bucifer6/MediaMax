@@ -1,6 +1,6 @@
 # Samsung (Tizen), LG (webOS) and Hisense (VIDAA) TV apps
 
-These are thin wrapper apps. On first launch they ask for the Kinora server address, check it, remember it, and then load the server's own web app in **TV mode** (`/?tv=1`). The app therefore always matches the server's version, branding and theme, and updating the server updates the TV app.
+These are thin wrapper apps. On first launch they ask for the Vibe server address, check it, remember it, and then load the server's own web app in **TV mode** (`/?tv=1`). The app therefore always matches the server's version, branding and theme, and updating the server updates the TV app.
 
 TV mode (`web/src/tv/spatial.ts` and `web/src/styles/tv.css`) works in any browser on a TV or set-top box, not just these wrappers. Open `http://<server>:8484/?tv=1` once and it is remembered. It provides:
 
@@ -17,7 +17,7 @@ node tv/build.mjs --name "Smith Cinema" --icon brand/icon.png   # white-label
 node tv/build.mjs --url https://tv.example.com/kinora/        # where you'll host tv/dist/vidaa (absolute URLs in vidaa-app.json)
 ```
 
-Without options the wrappers use the stock Kinora artwork in `tv/shared/brand/` (app icon at 512/130/80 px and the 1920×1080 splash, rendered by `node scripts/brand-export.mjs`) and show the outlined Kinora wordmark on the start screen. With `--icon`, the script letterboxes your square icon with `ffmpeg` (already required by the server); with `--name`, the start screen shows your name as text.
+Without options the wrappers use the stock Vibe artwork in `tv/shared/brand/` (app icon at 512/130/80 px and the 1920×1080 splash, rendered by `node scripts/brand-export.mjs`) and show the outlined Vibe wordmark on the start screen. With `--icon`, the script letterboxes your square icon with `ffmpeg` (already required by the server); with `--name`, the start screen shows your name as text.
 
 ## Samsung Tizen
 
@@ -53,10 +53,10 @@ Without options the wrappers use the stock Kinora artwork in `tv/shared/brand/` 
 VIDAA OS (Hisense, and Toshiba/Sharp sets that run VIDAA) runs apps in its own Chromium-based browser engine (older
 firmware: Opera/Presto). Store apps are **hosted web apps**: VIDAA's launcher keeps a name, icons and a start URL for
 each one, and there is no public package format to sign like `.wgt` or `.ipk`. So `tv/dist/vidaa` is a plain static
-site (the same start screen as the other wrappers) plus `vidaa-app.json`, Kinora's own description of the app
+site (the same start screen as the other wrappers) plus `vidaa-app.json`, Vibe's own description of the app
 (id, name, start URL, icons, splash) in the field names VIDAA's launcher uses. It is not an official VIDAA manifest.
 
-There are two ways to run Kinora on VIDAA:
+There are two ways to run Vibe on VIDAA:
 
 - **Hosted wrapper (store app or a launcher tile):** upload `tv/dist/vidaa` to any HTTPS host and register that URL.
   On launch it asks for the server address once and then opens `http://<server>:8484/?tv=1`. Because the wrapper is
@@ -121,7 +121,7 @@ that `window.close()` does nothing there). None of these codes have been checked
 
 ## Notes
 
-- **Playback: our own engine, not the TV's player.** The TV apps play through Kinora's JavaScript player: hls.js
+- **Playback: our own engine, not the TV's player.** The TV apps play through Vibe's JavaScript player: hls.js
   on Media Source Extensions, the same engine as in browsers. The TV's built-in player (Samsung AVPlay, the
   progressive `<video src>` pipeline) and its subtitle parser are not used, because they have been unreliable.
   hls.js does the demuxing, buffering, bitrate switching, track switching and error recovery. The TV's hardware
@@ -147,4 +147,4 @@ that `window.close()` does nothing there). None of these codes have been checked
 - **Changing the server:** the wrapper reconnects to the saved server on launch. To switch servers, clear the app's data on the TV, or add `?change=1` to the wrapper URL when testing in a browser.
 - **Offline page:** browsers get a small service worker that shows a branded "Server offline" page on a reload while the server is down. It is not registered inside these wrapper apps (their start page already handles an unreachable server at launch).
 - **HTTPS:** a server behind HTTPS with a valid certificate works the same way. Self-signed certificates are rejected by the TV browsers.
-- **VIDAA playback** uses the same hls.js/MSE path and remux-to-fMP4 as Samsung and LG. Community reports say VIDAA's engine decodes H.264, HEVC (incl. 10-bit), VP9, AAC, AC-3 and E-AC-3, and usually not AV1. Kinora still asks MSE on each set rather than assuming any of this.
+- **VIDAA playback** uses the same hls.js/MSE path and remux-to-fMP4 as Samsung and LG. Community reports say VIDAA's engine decodes H.264, HEVC (incl. 10-bit), VP9, AAC, AC-3 and E-AC-3, and usually not AV1. Vibe still asks MSE on each set rather than assuming any of this.

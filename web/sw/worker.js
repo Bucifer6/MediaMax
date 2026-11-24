@@ -1,4 +1,4 @@
-/* Kinora service worker. Built by web/sw/plugin.ts: VERSION, PRECACHE and the helpers in web/sw/core.js are
+/* Vibe service worker. Built by web/sw/plugin.ts: VERSION, PRECACHE and the helpers in web/sw/core.js are
  * prepended at build time. Its only job is to show a branded "server offline" page instead of the browser's error
  * page, and to serve the hashed app files from cache. See docs/FEATURES.md → "Offline page". */
 /* global VERSION, PRECACHE, cacheName, staleCaches, classify, OFFLINE_STATUSES */

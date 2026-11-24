@@ -4,7 +4,7 @@ import ExpoModulesCore
 import UIKit
 import VideoToolbox
 
-/// Playback capabilities of this iPhone / iPad / Apple TV for Kinora's device profile (HDR modes AVPlayer can
+/// Playback capabilities of this iPhone / iPad / Apple TV for Vibe's device profile (HDR modes AVPlayer can
 /// output, hardware decoders), plus Apple TV display matching: switch the TV to the content's dynamic range and
 /// frame rate (AVDisplayCriteria) while a video plays, when the user enabled "Match Content" in tvOS settings.
 public class MediaMaxMediaModule: Module {

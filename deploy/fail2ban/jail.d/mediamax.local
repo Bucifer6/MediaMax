@@ -1,14 +1,14 @@
-# fail2ban jails for Kinora.
+# fail2ban jails for Vibe.
 #
 # Paths below are the ones inside the fail2ban container from deploy/install.sh (crazymax/fail2ban, which
 # reads /data/jail.d and /data/filter.d). For fail2ban installed on the host, change logpath to the host
 # path, e.g. /opt/kinora/config/logs/security.log, and see docs/DEPLOY.md.
 #
-# WHY DOCKER-USER: Docker publishes ports with DNAT rules, so traffic to Kinora, Caddy or nginx in a
+# WHY DOCKER-USER: Docker publishes ports with DNAT rules, so traffic to Vibe, Caddy or nginx in a
 # container goes through the FORWARD chain and never reaches INPUT. A ban in INPUT alone does nothing for
 # it. Docker leaves the DOCKER-USER chain to us and evaluates it before its own rules, with the client's
 # real source address still on the packet. Each jail therefore bans in DOCKER-USER (containers) and in
-# INPUT (anything listening on the host itself, e.g. a host nginx or Kinora with network_mode: host).
+# INPUT (anything listening on the host itself, e.g. a host nginx or Vibe with network_mode: host).
 # Docker must be running when fail2ban starts, or the DOCKER-USER chain doesn't exist yet. Docker's
 # nftables firewall backend (opt-in) has no DOCKER-USER chain: use the iptables backend, or CrowdSec.
 #
@@ -28,7 +28,7 @@ bantime  = 1h
 bantime.increment = true
 bantime.factor    = 1
 bantime.maxtime   = 1w
-# Never ban these. install.sh adds the Kinora Docker network in jail.d/mediamax.network.local (read
+# Never ban these. install.sh adds the Vibe Docker network in jail.d/mediamax.network.local (read
 # after this file); put your LAN (e.g. 192.168.1.0/24) in a jail.d/zz-custom.local if needed.
 ignoreip = 127.0.0.1/8 ::1
 # All ports: someone guessing passwords shouldn't get to try SSH next. Use iptables-multiport[...,

@@ -66,7 +66,7 @@ sub renderAbout()
         "Signed in as: " + getOr(m.global.user, "displayName", ""),
         "",
         "Device: " + m.global.deviceName + " (" + di.GetModelDisplayName() + ", " + di.GetModel() + ")",
-        "Kinora for Roku " + m.global.appVersion,
+        "Vibe for Roku " + m.global.appVersion,
         "",
         "Plays: " + UCase(p.videoCodecs.Join(", ")) + " up to " + toInt(p.maxHeight).ToStr() + "p",
         "Dynamic range: " + hdr.Join(", "),

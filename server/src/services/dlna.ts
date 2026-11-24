@@ -34,7 +34,7 @@ export function lanAddress(): string {
 }
 
 const baseUrl = () => `http://${lanAddress()}:${config.port}`;
-const friendlyName = () => getSettings().dlna.friendlyName || getBranding().serverName || 'Kinora';
+const friendlyName = () => getSettings().dlna.friendlyName || getBranding().serverName || 'Vibe';
 
 /** The account DLNA browses as. Must be chosen explicitly by an admin — there is no admin fallback. */
 export function dlnaUser(): User | null {
@@ -62,8 +62,8 @@ export function deviceDescription(): string {
   <device>
     <deviceType>${DEVICE}</deviceType>
     <friendlyName>${esc(friendlyName())}</friendlyName>
-    <manufacturer>Kinora</manufacturer>
-    <modelName>Kinora Server</modelName>
+    <manufacturer>Vibe</manufacturer>
+    <modelName>Vibe Server</modelName>
     <modelNumber>${config.version}</modelNumber>
     <UDN>${dlnaUuid()}</UDN>
     <dlna:X_DLNADOC>DMS-1.50</dlna:X_DLNADOC>

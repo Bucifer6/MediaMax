@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * End-to-end smoke test: boots a fresh Kinora server (built server + web), generates sample media
+ * End-to-end smoke test: boots a fresh Vibe server (built server + web), generates sample media
  * with ffmpeg, runs first-time setup, scans libraries, then opens every page of the web app in Chromium.
  * Fails on page errors, console errors, 5xx API responses, blank pages, or a player that never starts.
  *

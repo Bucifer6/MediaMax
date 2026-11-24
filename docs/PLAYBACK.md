@@ -1,12 +1,12 @@
 # Playback: subtitles and automatic quality
 
-This page explains how Kinora players show subtitles and pick the stream quality, what you can change, and what
+This page explains how Vibe players show subtitles and pick the stream quality, what you can change, and what
 the server does behind the scenes. Audio (Dolby Atmos, DTS:X, passthrough, downmix, night mode, lip-sync) has its own
 page: [AUDIO.md](AUDIO.md).
 
 ## Subtitles
 
-Kinora players draw subtitles **themselves**. They never hand subtitles to the browser's or TV's built-in text-track
+Vibe players draw subtitles **themselves**. They never hand subtitles to the browser's or TV's built-in text-track
 renderer or subtitle parser, which differ between devices and are unreliable on many smart TVs. This applies to the web
 player in every browser, to TV mode on Samsung (Tizen) and LG (webOS), and to the phone, tablet and TV apps.
 

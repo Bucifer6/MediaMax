@@ -21,7 +21,7 @@ export function setKv(key: string, value: unknown) {
 }
 
 export const DEFAULT_SETTINGS: ServerSettings = {
-  serverName: 'Kinora',
+  serverName: 'Vibe',
   publicUrl: null,
   tmdbApiKey: process.env.TMDB_API_KEY ?? null,
   metadataLanguage: 'en-US',

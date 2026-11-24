@@ -1,7 +1,7 @@
 #!/bin/sh
-# Kinora container entrypoint.
+# Vibe container entrypoint.
 #
-# PUID / PGID (optional): run Kinora as that user and group instead of root, so files it writes (database,
+# PUID / PGID (optional): run Vibe as that user and group instead of root, so files it writes (database,
 # artwork, DVR recordings) on NAS shares get the owner you expect. Without them it runs as root, as before.
 # The container can also be started with `--user uid:gid` (or `user:` in compose); then this script does nothing.
 set -eu
@@ -26,7 +26,7 @@ if [ "$PUID" = "0" ] && [ "$PGID" = "0" ]; then
   exec "$@"
 fi
 
-# Writable locations Kinora owns. /config is fully Kinora's own, so it is fixed up recursively, but only
+# Writable locations Vibe owns. /config is fully Vibe's own, so it is fixed up recursively, but only
 # when its top folder has a different owner (first start, or PUID changed). /transcode and /recordings only
 # get their top folder changed; existing recordings and media folders are never touched.
 fix_owner() {

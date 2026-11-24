@@ -1,6 +1,6 @@
 # Security policy
 
-Kinora is a self-hosted media server, so a security bug can expose someone's home network, accounts or media.
+Vibe is a self-hosted media server, so a security bug can expose someone's home network, accounts or media.
 Thank you for reporting responsibly.
 
 ## Reporting a vulnerability

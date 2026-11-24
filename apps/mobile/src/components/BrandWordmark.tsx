@@ -1,5 +1,5 @@
 /**
- * The stock "Kinora" logo (mark + outlined wordmark, rendered by scripts/brand-export.mjs) for a
+ * The stock "Vibe" logo (mark + outlined wordmark, rendered by scripts/brand-export.mjs) for a
  * server that has not been renamed; a white-labelled server shows its own name in the theme font.
  * Uploaded logos are handled by the callers (they always win).
  */
@@ -11,22 +11,22 @@ import { Icon } from './Icon';
 import { T } from './Text';
 
 const WORDMARK = { dark: require('../../assets/brand/wordmark-dark.png'), light: require('../../assets/brand/wordmark-light.png') };
-const ASPECT = 960 / 328; // wordmark-*.png from scripts/brand-export.mjs
+const ASPECT = 960 / 359; // wordmark-*.png from scripts/brand-export.mjs
 
 export function BrandWordmark({ name, width, textVariant = 'hero' }: { name?: string | null; width: number; textVariant?: 'hero' | 'heading' }) {
   const t = useTheme();
-  if (name && name !== 'Kinora' && name !== 'MediaMax') {
+  if (name && name !== 'Vibe' && name !== 'Kinora' && name !== 'MediaMax') {
     return (
       <T variant={textVariant} center={textVariant === 'hero'}>
         {name}
       </T>
     );
   }
-  return <Image source={WORDMARK[t.dark ? 'dark' : 'light']} style={{ width, height: width / ASPECT }} contentFit="contain" accessibilityLabel="Kinora" accessible />;
+  return <Image source={WORDMARK[t.dark ? 'dark' : 'light']} style={{ width, height: width / ASPECT }} contentFit="contain" accessibilityLabel="Vibe" accessible />;
 }
 
 const MARK = require('../../assets/brand/mark.png');
-const MARK_ASPECT = 512 / 582; // brand/mark.png
+const MARK_ASPECT = 1; // brand/mark.png (the Lens disc is square)
 const isWhiteLabel = !!Constants.expoConfig?.extra?.brand;
 
 /**
@@ -42,5 +42,5 @@ export function BrandMarkImage({ size }: { size: number }) {
       </View>
     );
   }
-  return <Image source={MARK} style={{ width: size * MARK_ASPECT, height: size }} contentFit="contain" accessibilityLabel="Kinora" />;
+  return <Image source={MARK} style={{ width: size * MARK_ASPECT, height: size }} contentFit="contain" accessibilityLabel="Vibe" />;
 }

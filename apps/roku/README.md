@@ -1,6 +1,6 @@
-# Kinora for Roku
+# Vibe for Roku
 
-A native Roku channel (BrightScript + SceneGraph) for Kinora. Roku can't run the web app, so this channel talks to
+A native Roku channel (BrightScript + SceneGraph) for Vibe. Roku can't run the web app, so this channel talks to
 the REST API (`/api/v1`, see [docs/API.md](../../docs/API.md)) directly and plays media in the Roku `Video` node.
 
 It sends `X-Kinora-Platform: roku` and `X-Kinora-Device-Id` (the Roku's channel client id), so the server lists
@@ -10,7 +10,7 @@ its sessions and devices as **Roku**.
 
 | Area | What it does |
 |---|---|
-| Server | Finds servers on the LAN with SSDP (needs **Settings → DLNA** on the server: Kinora only answers M-SEARCH while its DLNA server runs), or takes a typed address (`192.168.1.20` → `http://192.168.1.20:8484`; `https://` URLs work too). Each candidate is checked with `GET /system/info`. |
+| Server | Finds servers on the LAN with SSDP (needs **Settings → DLNA** on the server: Vibe only answers M-SEARCH while its DLNA server runs), or takes a typed address (`192.168.1.20` → `http://192.168.1.20:8484`; `https://` URLs work too). Each candidate is checked with `GET /system/info`. |
 | Sign-in | **Link code** (default): shows a 4-character code and `<server>/link`, polls `/auth/link/poll` every 3 s, gets a new code when it expires. Fallbacks: username + password on the on-screen keyboard (with the two-factor prompt when the account has TOTP), and the server's public profile picker (`features.profilePicker`) with a PIN pad. |
 | Profiles | "Who's watching?" at launch and after sign-in when the account has profiles (`/auth/account/profiles`, `/auth/profiles/:id/switch`, PIN pad). |
 | Home | The server's home rows (`GET /home`): posters, landscape cards for Continue watching / Next up / recordings with progress bars, live-channel rows, a header with the focused title's backdrop and overview. Refreshes when you come back from playback. |
@@ -44,12 +44,12 @@ its sessions and devices as **Roku**.
 
 ### Not supported (compared with the web app)
 
-* **Remote control / server messages**: Roku has no WebSocket client, and Kinora has no polling endpoint for
+* **Remote control / server messages**: Roku has no WebSocket client, and Vibe has no polling endpoint for
   `remote.command` / `session.message`, so "Play on…" can't target a Roku and server messages aren't shown. A stream
   stopped by an admin is still noticed through the next progress report (within 10 s).
 * Music, photos, audiobooks, podcasts, DVR management, requests (Discover), SyncPlay, karaoke and lyrics.
 * The full EPG grid (`/livetv/guide`): Live TV shows now / next per channel instead. No catch-up.
-* Trickplay thumbnails on the seek bar, the server's theme / branding colours (the channel uses the stock Kinora look),
+* Trickplay thumbnails on the seek bar, the server's theme / branding colours (the channel uses the stock Vibe look),
   single sign-on (OIDC needs a browser: use a link code instead).
 * Settings are per device (Roku registry); they aren't synced to the account's preferences.
 * H.264 profile / level limits aren't in the device profile (the server's profile format has no field for them). Older
@@ -58,7 +58,7 @@ its sessions and devices as **Roku**.
 ## Requirements
 
 * Roku OS 11 or newer (the channel uses the Standard keyboard, PIN pad and message dialogs).
-* A Kinora server reachable from the Roku. Link codes need the server's `linkCodes` feature flag (on by default).
+* A Vibe server reachable from the Roku. Link codes need the server's `linkCodes` feature flag (on by default).
 
 ## Build
 

@@ -2,9 +2,9 @@
 
 ## Lyrics
 
-Kinora looks for lyrics in this order and uses the first **synced** hit (a plain-text hit keeps looking for a synced one further down):
+Vibe looks for lyrics in this order and uses the first **synced** hit (a plain-text hit keeps looking for a synced one further down):
 
-1. **Edits made in Kinora** (administrators, full-screen player → *Edit lyrics*).
+1. **Edits made in Vibe** (administrators, full-screen player → *Edit lyrics*).
 2. **Files next to the music**: `Song.lrc`, `Song.LRC`, `Song.mp3.lrc`, then `Song.txt`.
 3. **Tags in the file**: ID3 `SYLT` (synced, with per-syllable timing — read straight from the tag because FFmpeg drops it), ID3 `USLT`, Vorbis/FLAC `LYRICS` / `UNSYNCEDLYRICS`, MP4 `©lyr`. A whole `.lrc` pasted into a tag is recognised and used as synced lyrics.
 4. **LRCLIB** (lrclib.net), if turned on under *Server settings → Metadata*. It is only asked for artist, title, album and duration; hits and misses are cached.
@@ -59,4 +59,4 @@ The full-screen player's *Visualiser* view has five styles: **Cover ring** (cove
 
 ## Licences
 
-onnxruntime-node and onnxruntime-web (MIT, Microsoft) are not installed with Kinora. For server separation, the server downloads onnxruntime-node and onnxruntime-common from the npm registry the first time a track is prepared (pinned to version 1.31.1, each checked against its SHA-512 hash; only the JavaScript and this platform's binaries are kept, about 100 MB, under `<data>/stems/ort-node/`). For browser separation it downloads onnxruntime-web the same way (pinned to 1.23.2; only the browser files are kept, under `<data>/stems/ort/`) and serves it to the browser. Air-gapped servers can point `KINORA_ORT_NODE_DIR` at a folder containing `node_modules/onnxruntime-node` (with `onnxruntime-common`), and `KINORA_ORT_DIR` at a copy of onnxruntime-web's `dist/` folder; the Demucs model weights (Meta, MIT licence in facebookresearch/demucs) are downloaded only when an administrator enables AI separation — the ONNX export's packager notes they may be meant for personal and research use, so check before commercial use. The LRC parser, SYLT handling, stem DSP and visualiser ring are adapted from OpenDJ (MIT). See [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+onnxruntime-node and onnxruntime-web (MIT, Microsoft) are not installed with Vibe. For server separation, the server downloads onnxruntime-node and onnxruntime-common from the npm registry the first time a track is prepared (pinned to version 1.31.1, each checked against its SHA-512 hash; only the JavaScript and this platform's binaries are kept, about 100 MB, under `<data>/stems/ort-node/`). For browser separation it downloads onnxruntime-web the same way (pinned to 1.23.2; only the browser files are kept, under `<data>/stems/ort/`) and serves it to the browser. Air-gapped servers can point `KINORA_ORT_NODE_DIR` at a folder containing `node_modules/onnxruntime-node` (with `onnxruntime-common`), and `KINORA_ORT_DIR` at a copy of onnxruntime-web's `dist/` folder; the Demucs model weights (Meta, MIT licence in facebookresearch/demucs) are downloaded only when an administrator enables AI separation — the ONNX export's packager notes they may be meant for personal and research use, so check before commercial use. The LRC parser, SYLT handling, stem DSP and visualiser ring are adapted from OpenDJ (MIT). See [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).

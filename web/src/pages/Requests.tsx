@@ -290,7 +290,7 @@ function RequestDetail({ id, onClose, onChanged }: { id: string | null; onClose:
                 <li key={a.id} className={a.kind === 'comment' ? 'tl-comment' : ''}>
                   <span className={`tl-dot k-${a.kind}`}><Icon name={ACT_ICON[a.kind] ?? 'info'} size={13} /></span>
                   <div className="tl-body">
-                    <div><strong>{a.user?.displayName ?? (a.kind === 'processing' || a.kind === 'failed' || a.kind === 'available' ? '' : 'Kinora')}</strong> {a.user ? ACT_TEXT[a.kind] : ACT_TEXT[a.kind]} <span className="muted" title={formatDateTime(a.createdAt)}>· {relativeTime(a.createdAt)}</span></div>
+                    <div><strong>{a.user?.displayName ?? (a.kind === 'processing' || a.kind === 'failed' || a.kind === 'available' ? '' : 'Vibe')}</strong> {a.user ? ACT_TEXT[a.kind] : ACT_TEXT[a.kind]} <span className="muted" title={formatDateTime(a.createdAt)}>· {relativeTime(a.createdAt)}</span></div>
                     {a.body && <p>{a.body}</p>}
                   </div>
                 </li>

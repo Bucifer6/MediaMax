@@ -1,5 +1,5 @@
 /**
- * Native AI stem separation, run as a child process of the Kinora server (native.ts forks it). Same model and the same
+ * Native AI stem separation, run as a child process of the Vibe server (native.ts forks it). Same model and the same
  * DSP as the browser worker (shared/src/stems/), but ONNX Runtime for Node: native multi-threaded CPU everywhere, and
  * the GPU where the platform has one (DirectML on Windows, CoreML on macOS, CUDA on Linux when its libraries are
  * installed). A separate process at below-normal priority, so neither the server's event loop nor playback waits for

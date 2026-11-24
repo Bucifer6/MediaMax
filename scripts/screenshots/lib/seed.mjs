@@ -62,7 +62,7 @@ export function seedLogs(dataDir, now = Date.now()) {
 
 /** Setup, libraries, users, history, DJ analysis and Live TV. Returns ids and tokens the screenshots need. */
 export async function seedServer({ base, media, data, mockBase, avatars, log }) {
-  const setup = await (await fetch(`${base}/api/v1/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ serverName: 'Kinora Demo', username: USERS.admin.username, password: USERS.admin.password }) })).json();
+  const setup = await (await fetch(`${base}/api/v1/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ serverName: 'Vibe Demo', username: USERS.admin.username, password: USERS.admin.password }) })).json();
   if (!setup.token) throw new Error('Setup failed: ' + JSON.stringify(setup));
   const admin = client(base, setup.token);
   await admin.patch('/auth/me', { displayName: USERS.admin.displayName, preferences: { autoplayPreviews: false } });

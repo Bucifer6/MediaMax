@@ -608,7 +608,7 @@ export function totpSetup(userId: string): TotpSetup {
   if (row.totp_enabled) throw badRequest('Two-factor authentication is already on');
   const secret = newTotpSecret();
   db.run('UPDATE users SET totp_secret = ? WHERE id = ?', secret, userId);
-  return { secret, otpauthUrl: otpauthUrl(secret, row.username, getBranding().serverName || 'Kinora') };
+  return { secret, otpauthUrl: otpauthUrl(secret, row.username, getBranding().serverName || 'Vibe') };
 }
 
 export async function totpEnable(userId: string, code: string): Promise<TotpEnabled> {

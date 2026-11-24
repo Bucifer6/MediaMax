@@ -804,7 +804,7 @@ export async function playChannel(ctx: AuthContext, channelId: string, req: Live
       return info(s, upstream, 'video/mp2t', false);
     }
     checkConnectionLimit(src);
-    const s = registerSession({ ...base, method: 'live', job: null, details: det('MPEG-TS (proxied)', 'Restreamed through Kinora') });
+    const s = registerSession({ ...base, method: 'live', job: null, details: det('MPEG-TS (proxied)', 'Restreamed through Vibe') });
     const extra = catchup ? `&catchupStart=${encodeURIComponent(catchup.start.toISOString())}&duration=${catchup.durationMin}` : '';
     return info(s, `/api/v1/livetv/stream/${channelId}${q}&session=${s.id}${extra}`, 'video/mp2t', false);
   }

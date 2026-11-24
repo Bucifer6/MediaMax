@@ -58,7 +58,7 @@ export class EmbyClient {
 
   private headers(): Record<string, string> {
     const h: Record<string, string> = { 'X-Emby-Token': this.c.apiKey, Accept: 'application/json' };
-    if (this.flavor === 'jellyfin') h.Authorization = `MediaBrowser Client="Kinora", Device="Kinora importer", DeviceId="mediamax-import", Version="1", Token="${this.c.apiKey}"`;
+    if (this.flavor === 'jellyfin') h.Authorization = `MediaBrowser Client="Vibe", Device="Vibe importer", DeviceId="mediamax-import", Version="1", Token="${this.c.apiKey}"`;
     return h;
   }
 
@@ -137,7 +137,7 @@ export class EmbyClient {
 
 /* ---------------------------- mapping ---------------------------- */
 
-/** Emby's parental rating number → a rating Kinora understands (US scale; values above 10 are ages). */
+/** Emby's parental rating number → a rating Vibe understands (US scale; values above 10 are ages). */
 export function embyRating(v: number | null | undefined): string | null {
   if (v == null || !Number.isFinite(v)) return null;
   if (v <= 1) return 'G';
@@ -197,7 +197,7 @@ const toUd = (u: EmbyUserData | undefined): UserData => ({
 const PERSON_KIND: Record<string, string> = { actor: 'actor', gueststar: 'actor', director: 'director', writer: 'writer', producer: 'producer', composer: 'composer' };
 const dateOnly = (s: string | undefined) => (s && /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : null);
 
-/** An Emby/Jellyfin item as neutral metadata with artwork refs (sized like Kinora's own artwork). */
+/** An Emby/Jellyfin item as neutral metadata with artwork refs (sized like Vibe's own artwork). */
 export function embyMeta(i: EmbyItem): SrcMeta | null {
   const img = (type: string, w: number) => `/Items/${encodeURIComponent(i.Id)}/Images/${type}?maxWidth=${w}&quality=90`;
   const tags = i.ImageTags ?? {};

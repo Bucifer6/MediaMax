@@ -51,13 +51,13 @@ export function DeviceCapabilitiesCard() {
               : 'Set by you'}</span>
             <p className="muted small">
               Many LG TVs (2018 and later) play Dolby Vision, but not every model reports it to apps. Choose Yes if your
-              TV shows Dolby Vision in its own apps but Kinora plays HDR10. Choose No if Dolby Vision videos look wrong.
+              TV shows Dolby Vision in its own apps but Vibe plays HDR10. Choose No if Dolby Vision videos look wrong.
             </p>
           </dd>
           <dt>Video codecs</dt><dd>{profile?.videoCodecs?.join(', ').toUpperCase() || '—'}{caps.tenBitCodecs.length ? ` · 10-bit: ${caps.tenBitCodecs.join(', ').toUpperCase()}` : ''}</dd>
           <dt>Audio codecs</dt><dd>{profile?.audioCodecs?.join(', ').toUpperCase() || '—'}</dd>
           <dt>Max resolution</dt><dd>{caps.maxHeight ? `${caps.maxHeight}p` : profile?.maxWidth ? `${profile.maxWidth} px wide` : '—'}</dd>
-          <dt>Player</dt><dd>{profile?.player === 'html5' ? 'Kinora player (hls.js / Media Source Extensions)' : `Kinora player on ${caps.platform === 'tizen' ? 'Samsung Tizen' : caps.platform === 'webos' ? 'LG webOS' : caps.platform === 'vidaa' ? 'Hisense VIDAA' : caps.platform} (hls.js / MSE)`}</dd>
+          <dt>Player</dt><dd>{profile?.player === 'html5' ? 'Vibe player (hls.js / Media Source Extensions)' : `Vibe player on ${caps.platform === 'tizen' ? 'Samsung Tizen' : caps.platform === 'webos' ? 'LG webOS' : caps.platform === 'vidaa' ? 'Hisense VIDAA' : caps.platform} (hls.js / MSE)`}</dd>
         </dl>
       )}
       {tv && (

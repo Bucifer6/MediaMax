@@ -171,7 +171,7 @@ export default async function djRoutes(app: FastifyInstance) {
   app.post<{ Body: { kind: 'llm' | 'tts' } }>('/dj/ai/test', async (req) => {
     requireAdmin(req);
     if (req.body?.kind === 'tts') {
-      const v = await speak(`Hi, this is ${getSettings().aiDj.hostName}. Your Kinora DJ is ready.`).catch((e) => {
+      const v = await speak(`Hi, this is ${getSettings().aiDj.hostName}. Your Vibe DJ is ready.`).catch((e) => {
         throw badRequest(`Piper failed: ${(e as Error).message}`);
       });
       if (!v) throw badRequest('Choose a server voice (Piper or a speech API) first');

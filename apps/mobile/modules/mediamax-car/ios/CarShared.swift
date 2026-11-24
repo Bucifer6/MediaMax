@@ -93,7 +93,7 @@ final class CarEventEmitter {
 ///
 /// expo-audio drives MPRemoteCommandCenter for the current `AudioPlayer`, but a single player has no
 /// queue, so it registers next/previous-track handlers that always fail and disables both commands
-/// every time `setActiveForLockScreen` runs. The Kinora queue lives in JS (`src/state/music.tsx`),
+/// every time `setActiveForLockScreen` runs. The Vibe queue lives in JS (`src/state/music.tsx`),
 /// so after each of those calls JS asks us to replace the handlers with ones that forward to JS.
 /// Both calls dispatch to the main queue in call order, so ours always lands last.
 ///
