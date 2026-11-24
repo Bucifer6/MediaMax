@@ -1,11 +1,13 @@
-import type { DjEnergyCurve, DjMix, DjMixRequest, DjMixTrack, DjPhraseType, DjTransition, DjTransitionFx, DjTransitionPreference, TrackAnalysis, User } from '@mediamax/shared';
+import path from 'node:path';
+import type { DjEnergyCurve, DjMix, DjMixRequest, DjOrderRequest, DjOrderSource, DjMixTrack, DjPhraseType, DjTransition, DjTransitionFx, DjTransitionPreference, TrackAnalysis, User } from '@mediamax/shared';
 import { db, type Param } from '../../db.js';
-import { accessClause, getItem } from '../items.js';
+import { accessClause, allowedLibraryIds, assertCanSee, getItem } from '../items.js';
 import { badRequest, notFound } from '../../util/errors.js';
 import { parseJson } from '../../util/misc.js';
 import { getAnalysis, getMixFeatures, type MixFeatures } from './analysis.js';
 import { keyCompatibility, similarity } from './dsp.js';
-import { phraseAt, phraseMixPoints } from './phrases.js';
+import { firstDownbeat, phraseAt, phraseMixPoints } from './phrases.js';
+export { firstDownbeat };
 import { skipStats } from './ai.js';
 
 interface Cand {
@@ -114,16 +116,6 @@ export function chooseFx(input: {
 }
 
 const snapBars = (bars: number) => (bars >= 30 ? 32 : bars >= 14 ? 16 : bars >= 7 ? 8 : 4);
-
-/** Where to start a track when mixing into it: its first downbeat (else beat) at/after the cue-in, else the cue-in. */
-export function firstDownbeat(b: TrackAnalysis): number {
-  const grid = b.downbeatMs ?? b.beatOffsetMs;
-  if (!b.bpm || grid == null) return b.cueInMs;
-  const unit = (60000 / b.bpm) * (b.downbeatMs != null ? 4 : 1);
-  let mixIn = grid + Math.ceil((b.cueInMs - grid - 30) / unit) * unit;
-  while (mixIn < 0) mixIn += unit;
-  return mixIn;
-}
 
 /** How to get from track A into track B: mix points on phrases (falling back to bars), length, tempo and effect. */
 export function planTransition(a: TrackAnalysis | null, aDur: number, b: TrackAnalysis | null, opts: PlanOptions = {}): DjTransition {
@@ -544,4 +536,131 @@ function analysisLoader() {
     if (a === undefined) cache.set(c.id, (a = getAnalysis(c.id)));
     return a;
   };
+}
+
+/* --------------------------- order as a mix --------------------------- */
+
+const MAX_ORDER_IDS = 5000;
+
+/** SQL (on alias i) selecting the tracks of a source, after checking the user may see it. */
+function sourceWhere(user: User, src: DjOrderSource): { where: string[]; params: Param[] } {
+  if (!src || typeof src !== 'object' || typeof src.id !== 'string' || !src.id) throw badRequest('source needs a type and an id');
+  switch (src.type) {
+    case 'library':
+    case 'folder': {
+      if (!allowedLibraryIds(user).includes(src.id)) throw notFound('Library not found');
+      if (src.type === 'library') return { where: ['i.library_id = ?'], params: [src.id] };
+      if (typeof src.path !== 'string' || !src.path.trim()) throw badRequest('A folder source needs a path');
+      const lib = db.get<{ paths: string }>('SELECT paths FROM libraries WHERE id = ?', src.id);
+      const roots = parseJson<string[]>(lib?.paths ?? '[]', []).map((r) => path.resolve(r));
+      const want = src.path.trim();
+      const dir = path.isAbsolute(want) ? path.resolve(want) : null;
+      const inLib = (d: string) => roots.some((r) => d === r || d.startsWith(r.endsWith(path.sep) ? r : r + path.sep));
+      const dirs = dir ? (inLib(dir) ? [dir] : []) : roots.map((r) => path.resolve(r, want)).filter(inLib);
+      if (!dirs.length) throw badRequest('That folder is not inside the library');
+      const esc = (d: string) => (d.endsWith(path.sep) ? d : d + path.sep).replace(/[\\%_]/g, (c) => `\\${c}`) + '%';
+      return {
+        where: ['i.library_id = ?', `EXISTS (SELECT 1 FROM media fm WHERE fm.item_id = i.id AND (${dirs.map(() => "fm.path LIKE ? ESCAPE '\\'").join(' OR ')}))`],
+        params: [src.id, ...dirs.map(esc)],
+      };
+    }
+    case 'genre': {
+      const g = src.id.trim().toLowerCase();
+      const where = [`(EXISTS (SELECT 1 FROM json_each(i.genres) j WHERE LOWER(j.value) = ?)
+        OR (COALESCE(i.genres, '[]') = '[]' AND EXISTS (SELECT 1 FROM items ga, json_each(ga.genres) j WHERE ga.id = i.parent_id AND LOWER(j.value) = ?)))`];
+      const params: Param[] = [g, g];
+      if (src.libraryId) {
+        where.push('i.library_id = ?');
+        params.push(src.libraryId);
+      }
+      return { where, params };
+    }
+    case 'artist':
+      assertCanSee(user, src.id);
+      return { where: ['(i.grandparent_id = ? OR i.id IN (SELECT track_id FROM track_artists WHERE artist_id = ?))'], params: [src.id, src.id] };
+    case 'album':
+      assertCanSee(user, src.id);
+      return { where: ['i.parent_id = ?'], params: [src.id] };
+    case 'playlist':
+      assertCanSee(user, src.id);
+      return { where: ['i.id IN (SELECT item_id FROM collection_items WHERE collection_id = ?)'], params: [src.id] };
+    default:
+      throw badRequest('source.type must be library, genre, artist, album, playlist or folder');
+  }
+}
+
+/** Explicit ids (a queue): tracks as is; albums, artists and playlists expand to their tracks. */
+function idsCandidates(user: User, ids: string[]): Cand[] {
+  const out = new Map<string, Cand>();
+  for (let i = 0; i < ids.length; i += 400) {
+    const chunk = ids.slice(i, i + 400);
+    const q = chunk.map(() => '?').join(',');
+    const pl = accessClause(user, 'pl');
+    for (const c of selectCandidates(user, [`(i.id IN (${q}) OR i.parent_id IN (${q}) OR i.grandparent_id IN (${q}) OR i.id IN (SELECT ci.item_id FROM collection_items ci WHERE ci.collection_id IN (SELECT pl.id FROM items pl WHERE pl.id IN (${q}) AND pl.type IN ('playlist','collection') AND ${pl.sql})))`],
+      [...chunk, ...chunk, ...chunk, ...chunk, ...pl.params], MAX_ORDER_IDS)) {
+      if (out.size < MAX_ORDER_IDS) out.set(c.id, c);
+    }
+  }
+  return [...out.values()];
+}
+
+/**
+ * Put a source's tracks (or a list of ids) in a mix-friendly order: each next track is the best by key (Camelot),
+ * tempo (half/double aware), timbre and an energy arc across the whole source, never repeating, artists spread out.
+ * Local and deterministic apart from a small random tie-break; no AI, no network. Pages with `history`.
+ */
+export function orderTracks(user: User, req: DjOrderRequest): { ids: string[]; total: number; remaining: number } {
+  if (req.itemIds != null && (!Array.isArray(req.itemIds) || req.itemIds.length > MAX_ORDER_IDS || req.itemIds.some((x) => typeof x !== 'string'))) {
+    throw badRequest(`itemIds must be a list of up to ${MAX_ORDER_IDS} ids`);
+  }
+  if (req.history != null && (!Array.isArray(req.history) || req.history.length > 5000 || req.history.some((x) => typeof x !== 'string'))) throw badRequest('history must be a list of up to 5000 ids');
+  if (!req.itemIds?.length && !req.source) throw badRequest('Send itemIds or a source');
+  const limit = Math.max(1, Math.min(500, Math.floor(Number(req.limit) || 100)));
+  let cands = req.itemIds?.length ? idsCandidates(user, req.itemIds) : [];
+  if (req.source) {
+    const { where, params } = sourceWhere(user, req.source);
+    const fromSource = selectCandidates(user, where, params);
+    if (req.itemIds?.length) {
+      const keep = new Set(fromSource.map((c) => c.id));
+      cands = cands.filter((c) => keep.has(c.id));
+    } else cands = fromSource;
+  }
+  const total = cands.length;
+  const byId = new Map(cands.map((c) => [c.id, c]));
+  const history = req.history ?? [];
+  const used = new Set(history);
+  const left = cands.filter((c) => !used.has(c.id));
+  if (!left.length) return { ids: [], total, remaining: 0 };
+  // Continue from the last played track, even when it is not part of this source.
+  const lastId = history[history.length - 1];
+  let prev: Cand | null = lastId ? byId.get(lastId) ?? null : null;
+  if (lastId && !prev) prev = selectCandidates(user, ['i.id = ?'], [lastId], 1)[0] ?? null;
+  const energies = cands.filter((c) => c.f).map((c) => c.f!.energy).sort((x, y) => x - y);
+  const z = timbreIndex(prev && !byId.has(prev.id) ? [...cands, prev] : cands);
+  const genres = new Set<string>();
+  const curve: DjEnergyCurve = CURVES.includes(req.curve as DjEnergyCurve) ? (req.curve as DjEnergyCurve) : 'peak';
+  const ctx: ScoreCtx = { harmonic: req.harmonic !== false, genres, z, seedZ: null, skips: skipStats(user.id), preferFavorites: false };
+  const recentArtists: (string | null)[] = history.slice(-2).map((id) => byId.get(id)?.artistId ?? null);
+  const out: Cand[] = [];
+  const take = (c: Cand) => {
+    out.push(c);
+    used.add(c.id);
+    recentArtists.push(c.artistId);
+    prev = c;
+  };
+  if (!prev) {
+    // Open gently: the requested track, else one from the lower-middle of the source's energy range.
+    const asked = req.startItemId ? left.find((c) => c.id === req.startItemId) : undefined;
+    const lo = percentile(energies, 0.15), hi = percentile(energies, 0.4);
+    const openers = left.filter((c) => c.f && c.f.energy >= lo && c.f.energy <= hi);
+    take(asked ?? (openers.length ? openers : left)[Math.floor(Math.random() * (openers.length || left.length))]);
+  }
+  const seedPct = 0.5;
+  while (out.length < limit) {
+    const target = percentile(energies, curveTarget(curve, Math.min(1, (history.length + out.length) / Math.max(1, total)), seedPct));
+    const next = pickNext(ctx, cands, used, recentArtists, 2, prev, target);
+    if (!next) break;
+    take(next);
+  }
+  return { ids: out.map((c) => c.id), total, remaining: Math.max(0, left.length - out.length) };
 }

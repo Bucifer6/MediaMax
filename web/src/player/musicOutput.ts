@@ -1,6 +1,8 @@
 import type { Item, PlaybackInfo, UserPreferences } from '@mediamax/shared';
 import type { Attached } from './engine';
+import type { DjTransitionFx } from '@mediamax/shared';
 import { buildVocalReducer, type VocalReducer } from './karaokeFx';
+import { buildEcho, buildStrip, restStrip, scheduleTransition, type EchoBus, type FxStrip } from './djStrip';
 
 /** One of the music player's two audio elements ("decks"): the live one, and the one preloading the next track. */
 export interface Deck {
@@ -72,6 +74,12 @@ export class MusicOutput {
   private vocalLevel = 1;
   /** Visualiser tap: fanned out after the vocal stage, never in the audio path. */
   private tap: AnalyserNode | null = null;
+  private srcs: [MediaElementAudioSourceNode | null, MediaElementAudioSourceNode | null] = [null, null];
+  /** Automix effect strips (EQ bass swap, filters, echo send), built the first time Automix needs them. */
+  private strips: [FxStrip | null, FxStrip | null] = [null, null];
+  private echo: EchoBus | null = null;
+  /** A scheduled Automix blend owns both deck gains until it ends (ReplayGain changes wait). */
+  private blending: { from: 0 | 1; to: 0 | 1; t0: number; dur: number } | null = null;
 
   constructor(setup: (el: HTMLAudioElement) => void) {
     const mk = (id: 0 | 1): Deck => {
@@ -120,6 +128,7 @@ export class MusicOutput {
         this.tap = tap;
         const gains = this.decks.map((d) => {
           const src = ctx.createMediaElementSource(d.el);
+          this.srcs[d.id] = src;
           const g = ctx.createGain();
           src.connect(g).connect(master);
           d.el.volume = 1;
@@ -176,11 +185,87 @@ export class MusicOutput {
   setReplayGain(id: 0 | 1, factor: number) {
     if (this.rg[id] === factor) return;
     this.rg[id] = factor;
-    if (this.fadeTimers[id] == null) this.applyDeck(id, 0.08);
+    if (this.fadeTimers[id] == null && !this.blending) this.applyDeck(id, 0.08);
+  }
+
+  /* ------------------------------ Automix ------------------------------ */
+
+  /** Audio clock (s), or null without Web Audio. */
+  get clock(): number | null {
+    return this.ctx ? this.ctx.currentTime : null;
+  }
+
+  /** Insert the effect strips (once). Returns false without Web Audio (then blends are plain volume fades). */
+  private ensureFx(): boolean {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return false;
+    if (this.strips[0] && this.strips[1]) return true;
+    try {
+      this.echo ??= buildEcho(ctx, this.master);
+      for (const d of this.decks) {
+        const src = this.srcs[d.id];
+        const g = this.gains[d.id];
+        if (!src || !g || this.strips[d.id]) continue;
+        const st = buildStrip(ctx, this.echo);
+        src.disconnect();
+        src.connect(st.input);
+        st.out.connect(g);
+        this.strips[d.id] = st;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Blend from deck `from` into deck `to` with a DJ transition effect, scheduled on the audio clock (the timers
+   * in the player only clean up afterwards). Returns the blend's start on the audio clock (s), or null when it
+   * fell back to a plain equal-power volume fade (no Web Audio).
+   */
+  blend(from: 0 | 1, to: 0 | 1, fx: DjTransitionFx, durSec: number, kSwap: number, kCut: number, echoDelaySec: number | null): number | null {
+    const ctx = this.ctx;
+    const gf = this.gains[from];
+    const gt = this.gains[to];
+    if (!ctx || !gf || !gt || durSec <= 0) {
+      void this.fadeTo(to, 1, durSec);
+      void this.fadeTo(from, 0, durSec);
+      return null;
+    }
+    const useFx = fx !== 'none' && this.ensureFx();
+    this.stopFade(from);
+    this.stopFade(to);
+    this.fade[from] = 0;
+    this.fade[to] = 1;
+    const t0 = ctx.currentTime + 0.01;
+    scheduleTransition(ctx, { outGain: gf.gain, inGain: gt.gain, out: this.strips[from], in: this.strips[to], echo: this.echo }, useFx ? fx : 'none', t0, durSec, kSwap, kCut, {
+      scale: { outGain: this.rg[from], inGain: this.rg[to] }, echoDelaySec,
+    });
+    this.blending = { from, to, t0, dur: durSec };
+    return t0;
+  }
+
+  /** 0–1 progress of the running blend on the audio clock (null when none). */
+  blendProgress(): number | null {
+    const b = this.blending;
+    if (!b || !this.ctx) return null;
+    return Math.max(0, Math.min(1, (this.ctx.currentTime - b.t0) / Math.max(0.001, b.dur)));
+  }
+
+  /** End a blend now (finished, skipped, paused or seeked): both decks back to their resting levels, EQ neutral. */
+  endBlend() {
+    const b = this.blending;
+    this.blending = null;
+    if (!b || !this.ctx) return;
+    restStrip(this.ctx, this.strips[b.from]);
+    restStrip(this.ctx, this.strips[b.to]);
+    this.applyDeck(b.from, 0);
+    this.applyDeck(b.to, 0.03);
   }
 
   /** Set the fade level at once (cancels a running fade). */
   setFade(id: 0 | 1, level: number) {
+    if (this.blending && (this.blending.from === id || this.blending.to === id)) this.endBlend();
     this.stopFade(id);
     this.fade[id] = level;
     this.applyDeck(id, 0);

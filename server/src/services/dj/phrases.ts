@@ -6,7 +6,7 @@
  * (computeWaveform, detectPhrases, mixPoints). Changes: typed, milliseconds in/out, works on Vibe's
  * 11025 Hz analysis PCM, and returns the phrase list in the shared `DjPhrase` shape.
  */
-import type { DjPhrase, DjPhraseType } from '@mediamax/shared';
+import type { DjPhrase, DjPhraseType, TrackAnalysis, TrackCues } from '@mediamax/shared';
 
 /** Waveform points per second. */
 const WAVE_RATE = 150;
@@ -277,4 +277,51 @@ export function phraseAt(phrases: DjPhrase[] | null | undefined, ms: number): Dj
   if (!phrases?.length) return null;
   for (const p of phrases) if (ms >= p.startMs - 50 && ms < p.endMs - 50) return p;
   return null;
+}
+
+/** Where to start a track when mixing into it: its first downbeat (else beat) at/after the cue-in, else the cue-in. */
+export function firstDownbeat(b: Pick<TrackAnalysis, 'bpm' | 'downbeatMs' | 'beatOffsetMs' | 'cueInMs'>): number {
+  const grid = b.downbeatMs ?? b.beatOffsetMs;
+  if (!b.bpm || grid == null) return b.cueInMs;
+  const unit = (60000 / b.bpm) * (b.downbeatMs != null ? 4 : 1);
+  let mixIn = grid + Math.ceil((b.cueInMs - grid - 30) / unit) * unit;
+  while (mixIn < 0) mixIn += unit;
+  return mixIn;
+}
+
+/**
+ * Automix cue points (lite DJ / smart crossfade) from a stored analysis: start at the first downbeat, blend out at
+ * the outro phrase (else the last 16/32 bars on an 8-bar line, else the loudness outro snapped to a bar, else ~10 s
+ * before the end). The same rules as planTransition, without needing the next track.
+ */
+export function trackCues(a: Omit<TrackAnalysis, 'cues'>): TrackCues {
+  const endMs = Math.max(0, a.cueOutMs || a.durationMs);
+  const mixInMs = Math.round(Math.min(firstDownbeat(a), Math.max(a.cueInMs, endMs - 1000)));
+  const earliest = Math.min(endMs, a.cueInMs + Math.min(30000, (endMs - a.cueInMs) / 3));
+  const bar = a.bpm ? 240000 / a.bpm : null;
+  const grid = a.downbeatMs ?? a.beatOffsetMs;
+  let mixOutMs: number | null = null;
+  let source: TrackCues['source'] = 'fallback';
+  if (a.phrases?.length && a.downbeatMs != null && a.bpm) {
+    const p = phraseMixPoints(a.phrases, a.downbeatMs, a.bpm, endMs);
+    if (p.mixOutMs >= earliest && p.mixOutMs < endMs) {
+      mixOutMs = p.mixOutMs;
+      source = p.fromOutro ? 'outro' : 'phrase';
+    }
+  }
+  if (mixOutMs == null && a.outroStartMs != null && a.outroStartMs >= earliest && a.outroStartMs < endMs) {
+    mixOutMs = bar && grid != null ? grid + Math.floor((a.outroStartMs - grid) / bar + 1e-6) * bar : a.outroStartMs;
+    if (mixOutMs < earliest) mixOutMs = a.outroStartMs;
+    source = 'loudness';
+  }
+  if (mixOutMs == null) {
+    mixOutMs = Math.max(earliest, endMs - 10000);
+    if (bar && grid != null) {
+      const snapped = grid + Math.floor((mixOutMs - grid) / bar + 1e-6) * bar;
+      if (snapped >= earliest) mixOutMs = snapped;
+    }
+  }
+  let introEndMs: number | null = a.phrases && a.phrases.length > 1 ? a.phrases[0].endMs : a.introEndMs ?? null;
+  if (introEndMs != null && (introEndMs <= mixInMs || introEndMs > mixOutMs)) introEndMs = null;
+  return { mixInMs, introEndMs: introEndMs != null ? Math.round(introEndMs) : null, mixOutMs: Math.round(mixOutMs), endMs: Math.round(endMs), source };
 }
