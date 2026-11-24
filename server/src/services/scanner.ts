@@ -77,12 +77,23 @@ function countMediaBelow(dir: Buffer, accept: (e: string) => boolean, depth = 0)
  * media doesn't freeze the server. Names are read as raw bytes: a string readdir silently turns legacy-codepage bytes
  * into U+FFFD, giving paths that don't exist; such names are reported in `skipped` instead.
  */
-async function walk(root: string, accept: (e: string) => boolean, skipped: SkippedName[] = []): Promise<FileEntry[]> {
+interface WalkOpts {
+  /** Folder to start from (default: the root). Paths stay relative to the root. */
+  start?: string;
+  /** Only the files directly in the start folder, no sub-folders. */
+  shallow?: boolean;
+  /** Real paths already walked (or not to walk into). */
+  visited?: Set<string>;
+  /** Folders (and files) that could not be read: what was under them must not count as deleted. */
+  failed?: string[];
+}
+
+async function walk(root: string, accept: (e: string) => boolean, skipped: SkippedName[] = [], o: WalkOpts = {}): Promise<FileEntry[]> {
   const out: FileEntry[] = [];
-  const stack = [root];
+  const stack = [o.start ?? root];
   // Real paths of the folders walked so far: symlinked folders are followed, but a link back up the tree ("loop -> .")
   // or two links to one folder must not import the same files again (or loop until the path gets too long).
-  const visited = new Set<string>();
+  const visited = o.visited ?? new Set<string>();
   while (stack.length) {
     const dir = stack.pop()!;
     let entries: fs.Dirent<Buffer>[];
@@ -92,10 +103,12 @@ async function walk(root: string, accept: (e: string) => boolean, skipped: Skipp
       visited.add(real);
       entries = await fs.promises.readdir(dir, { withFileTypes: true, encoding: 'buffer' });
     } catch (e) {
+      // EACCES, or a transient EIO on a network share: its files are unknown, not gone (a folder that vanished is gone).
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') o.failed?.push(dir);
       log.warn(`Cannot read ${dir}: ${(e as Error).message}`);
       continue;
     }
-    if (entries.some((e) => ['.mediamaxignore', '.plexignore', '.ignore'].includes(e.name.toString('utf8')))) continue;
+    if (entries.some((e) => IGNORE_MARKERS.includes(e.name.toString('utf8')))) continue;
     const files: string[] = [];
     for (const e of entries) {
       const raw = e.name;
@@ -111,11 +124,15 @@ async function walk(root: string, accept: (e: string) => boolean, skipped: Skipp
         continue;
       }
       const p = path.join(dir, lossy);
-      if (e.isDirectory() || (e.isSymbolicLink() && safeIsDir(p))) stack.push(p);
-      else if (accept(ext(lossy))) files.push(p);
+      if (e.isDirectory() || (e.isSymbolicLink() && safeIsDir(p))) {
+        if (!o.shallow) stack.push(p);
+      } else if (accept(ext(lossy))) files.push(p);
     }
     // Keep the order of a synchronous walk (directory listing order) while statting a folder's files in parallel.
-    const stats = await Promise.all(files.map((p) => fs.promises.stat(p).catch(() => null)));
+    const stats = await Promise.all(files.map((p) => fs.promises.stat(p).catch((e: NodeJS.ErrnoException) => {
+      if (e.code !== 'ENOENT') o.failed?.push(p);
+      return null;
+    })));
     files.forEach((p, k) => {
       const st = stats[k];
       if (st) out.push({ path: p, rel: path.relative(root, p), root, size: st.size, mtime: Math.floor(st.mtimeMs), birthtime: Math.floor(st.birthtimeMs || 0) });
@@ -170,6 +187,15 @@ function findFile(dir: string, names: string[]): string | null {
     if (hit) return path.join(dir, hit);
   }
   return null;
+}
+
+/**
+ * Bounds of the paths below a folder, for `path >= lo AND path < hi`: exact and case-sensitive (LIKE treats % and _
+ * in folder names as wildcards and ignores ASCII case), and it can use the path index. Every path in the range starts
+ * with "dir/": the bounds differ only in the separator, and no character sorts between it and the next one.
+ */
+function under(dir: string): [string, string] {
+  return [dir + path.sep, dir + String.fromCharCode(path.sep.charCodeAt(0) + 1)];
 }
 
 const imgNames = (bases: string[]) => bases.flatMap((b) => ['jpg', 'jpeg', 'png', 'webp', 'tbn'].map((e) => `${b}.${e}`));
@@ -344,7 +370,7 @@ async function scanExtras(ctx: ScanCtx, extras: FileEntry[]) {
     if (!extraType) continue;
     // Owner: the movie keyed by its folder, or the show keyed by its top folder.
     const owner = db.get<{ id: string }>("SELECT id FROM items WHERE library_id = ? AND type IN ('movie','show') AND path = ?", ctx.lib.id, dir)
-      ?? db.get<{ id: string }>("SELECT i.id FROM items i JOIN media m ON m.item_id = i.id WHERE i.library_id = ? AND i.type = 'movie' AND m.path LIKE ? LIMIT 1", ctx.lib.id, dir + path.sep + '%');
+      ?? db.get<{ id: string }>("SELECT i.id FROM items i JOIN media m ON m.item_id = i.id WHERE i.library_id = ? AND i.type = 'movie' AND m.path >= ? AND m.path < ? LIMIT 1", ctx.lib.id, ...under(dir));
     if (!owner) continue;
     const id = stableId(ctx.lib.id, 'extra', f.path);
     const title = stripExt(path.basename(f.path)).replace(/-(trailer|featurette|behindthescenes|deleted|interview|scene|short|other)$/i, '').replace(/[._]/g, ' ').trim();
@@ -803,15 +829,92 @@ const ACCEPT: Record<string, (e: string) => boolean> = {
   photos: (e) => IMAGE_EXT.has(e),
 };
 
-export function scanLibrary(libId: string, opts: { refreshMetadata?: boolean; force?: boolean } = {}): Promise<void> {
-  const running = scanning.get(libId);
-  if (running) return running;
-  const p = scanListings.run(new Map(), () => doScan(libId, opts)).finally(() => scanning.delete(libId));
-  scanning.set(libId, p);
-  return p;
+export interface ScanOptions {
+  refreshMetadata?: boolean;
+  force?: boolean;
+  /**
+   * Only these files/folders changed (watcher scans): walk just the library folders that hold them and remove only
+   * media below those. Each path is widened to its top-level folder under the library root (a show, a movie folder,
+   * an artist), so grouping comes out as a full scan's; the root itself (or a file directly in it) means the files
+   * directly in the root. Paths outside the roots, or more than MAX_SCAN_PATHS folders, fall back to a full scan.
+   */
+  paths?: string[];
 }
 
-async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: boolean }) {
+/** Scans requested while one runs for the same library: one follow-up scan with their options merged. */
+const followUps = new Map<string, { opts: ScanOptions; promise: Promise<void> }>();
+const MAX_SCAN_PATHS = 50;
+
+function mergeScanOptions(a: ScanOptions, b: ScanOptions): ScanOptions {
+  return {
+    refreshMetadata: !!(a.refreshMetadata || b.refreshMetadata),
+    force: !!(a.force || b.force),
+    // A full scan covers any partial one.
+    ...(a.paths && b.paths ? { paths: [...new Set([...a.paths, ...b.paths])] } : {}),
+  };
+}
+
+/**
+ * Scan a library. A request while a scan of it runs doesn't share that scan (its walk may have passed the change
+ * already): it gets one more scan once the running one ends, shared by every request made meanwhile.
+ */
+export function scanLibrary(libId: string, opts: ScanOptions = {}): Promise<void> {
+  const running = scanning.get(libId);
+  if (!running) {
+    const p = scanListings.run(new Map(), () => doScan(libId, opts)).finally(() => scanning.delete(libId));
+    scanning.set(libId, p);
+    return p;
+  }
+  const queued = followUps.get(libId);
+  if (queued) {
+    queued.opts = mergeScanOptions(queued.opts, opts);
+    return queued.promise;
+  }
+  const next: { opts: ScanOptions; promise: Promise<void> } = { opts, promise: null! };
+  const go = () => {
+    followUps.delete(libId);
+    return scanLibrary(libId, next.opts);
+  };
+  next.promise = running.then(go, go);
+  followUps.set(libId, next);
+  return next.promise;
+}
+
+/** What a partial scan covers: top-level folders walked fully, roots of which only the files directly inside. */
+interface ScanScope { deep: string[]; shallow: string[] }
+
+/** The folders a partial scan walks, or null for a full scan. */
+function scanScope(roots: string[], changed: string[]): ScanScope | null {
+  const deep = new Set<string>();
+  const shallow = new Set<string>();
+  for (const raw of changed) {
+    const p = path.resolve(raw);
+    const root = roots.find((r) => p === r || p.startsWith(r + path.sep));
+    if (!root) return null;
+    if (p === root) {
+      shallow.add(root);
+      continue;
+    }
+    const top = path.join(root, path.relative(root, p).split(path.sep)[0]);
+    let st: fs.Stats | null = null;
+    try {
+      st = fs.lstatSync(top);
+    } catch {
+      /* gone: whatever was below it is removed */
+    }
+    // A symlinked folder may point anywhere in the library (even back at the root): a full walk sorts out duplicates.
+    if (st?.isSymbolicLink()) return null;
+    deep.add(top);
+    // A file directly in the root, or something there that vanished (file or folder, no way to tell): root files too.
+    if (!st?.isDirectory()) shallow.add(root);
+  }
+  if (deep.size + shallow.size > MAX_SCAN_PATHS) return null;
+  return { deep: [...deep], shallow: [...shallow] };
+}
+
+const IGNORE_MARKERS = ['.mediamaxignore', '.plexignore', '.ignore'];
+
+async function doScan(libId: string, opts: ScanOptions) {
   const lib = db.get('SELECT * FROM libraries WHERE id = ?', libId);
   if (!lib) return;
   const type = lib.type as LibraryType;
@@ -826,8 +929,6 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
   }
   const started = Date.now();
   const startedIso = new Date(started).toISOString();
-  log.info(`Scanning library "${lib.name}" (${type})`);
-  events.toAdmins({ type: 'library.scan', libraryId: libId, status: 'started', progress: 0 });
   const paths = parseJson<string[]>(lib.paths, []).filter((p) => {
     if (!fs.existsSync(p)) {
       log.warn(`Library path missing: ${p}`);
@@ -835,13 +936,50 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     }
     return true;
   });
+  const scope = opts.paths ? scanScope(paths.map((p) => path.resolve(p)), opts.paths) : null;
+  log.info(`Scanning library "${lib.name}" (${type})${scope ? `: ${[...scope.deep, ...scope.shallow.map((r) => `${r} (files only)`)].join(', ')}` : ''}`);
+  events.toAdmins({ type: 'library.scan', libraryId: libId, status: 'started', progress: 0 });
   const accept = ACCEPT[type] ?? ((e: string) => VIDEO_EXT.has(e));
   const skipped: SkippedName[] = [];
   const allFiles: FileEntry[] = [];
-  for (const root of paths) allFiles.push(...(await walk(root, accept, skipped)));
+  const failed: string[] = [];
+  for (const root of paths) {
+    if (!scope) {
+      allFiles.push(...(await walk(root, accept, skipped, { failed })));
+      continue;
+    }
+    const r = path.resolve(root);
+    const deep = scope.deep.filter((d) => path.dirname(d) === r);
+    if (!deep.length && !scope.shallow.includes(r)) continue;
+    let rootEntries: string[];
+    try {
+      rootEntries = fs.readdirSync(r);
+    } catch (e) {
+      failed.push(r);
+      log.warn(`Cannot read ${r}: ${(e as Error).message}`);
+      continue;
+    }
+    // A full scan imports nothing below an ignore marker in the root.
+    if (rootEntries.some((n) => IGNORE_MARKERS.includes(n))) continue;
+    // The root counts as walked, as in a full scan (a link inside pointing back at it is not followed).
+    const visited = new Set([fs.realpathSync(r)]);
+    if (scope.shallow.includes(r)) allFiles.push(...(await walk(root, accept, skipped, { shallow: true, failed })));
+    for (const d of deep) if (fs.existsSync(d)) allFiles.push(...(await walk(root, accept, skipped, { start: d, visited, failed })));
+  }
+  // Media a partial scan may remove: only below the folders it walked.
+  const inScope = (p: string) => !scope || scope.deep.some((d) => p.startsWith(d + path.sep)) || scope.shallow.includes(path.dirname(p));
   logSkippedNames(lib.name, skipped);
-  // Kept with the library (like last_scan_at) so the admin page can show it after a restart.
-  db.run('UPDATE libraries SET skipped_names = ? WHERE id = ?', skipped.length ? JSON.stringify({ count: skipped.length, paths: skipped.slice(0, MAX_SKIPPED_LISTED) }) : null, libId);
+  // Kept with the library (like last_scan_at) so the admin page can show it after a restart. A partial scan only
+  // replaces the entries below the folders it walked.
+  let skippedAll = skipped;
+  let skippedCount = skipped.length;
+  if (scope) {
+    const prev = parseJson<{ count: number; paths: SkippedName[] } | null>(lib.skipped_names, null);
+    const kept = (prev?.paths ?? []).filter((x) => !inScope(x.path.replace(/[\\/]$/, '')));
+    skippedAll = [...kept, ...skipped];
+    skippedCount = Math.max(skippedAll.length, (prev?.count ?? 0) - ((prev?.paths.length ?? 0) - kept.length) + skipped.length);
+  }
+  db.run('UPDATE libraries SET skipped_names = ? WHERE id = ?', skippedCount ? JSON.stringify({ count: skippedCount, paths: skippedAll.slice(0, MAX_SKIPPED_LISTED) }) : null, libId);
   const files = allFiles.filter((f) => type === 'photos' || type === 'music' || type === 'audiobooks' || !isExtra(f.rel));
   const extraFiles = type === 'movies' || type === 'shows' ? allFiles.filter((f) => isExtra(f.rel)) : [];
   let lastEmit = 0;
@@ -883,9 +1021,15 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     const allRootsOk = roots.length > 0 && roots.every(rootOk);
     if (!allRootsOk && roots.some((p) => fs.existsSync(p))) log.warn(`Library "${lib.name}": a folder is missing or empty (unmounted?), so nothing was removed`);
     if (allRootsOk) {
+      // Below a folder that could not be read nothing is known, so nothing there counts as deleted.
+      const unreadable = (p: string | null) => !!p && failed.some((f) => p === f || p.startsWith(f + path.sep));
+      if (failed.length) log.warn(`Library "${lib.name}": ${failed.length} folder(s)/file(s) could not be read; their items are kept until a scan can read them`);
       db.tx(() => {
-        const media = db.all<{ id: string; item_id: string }>('SELECT m.id, m.item_id FROM media m JOIN items i ON i.id = m.item_id WHERE i.library_id = ?', libId);
-        for (const m of media) if (!ctx.seenMedia.has(m.id)) db.run('DELETE FROM media WHERE id = ?', m.id);
+        const media = db.all<{ id: string; path: string | null }>('SELECT m.id, m.path FROM media m JOIN items i ON i.id = m.item_id WHERE i.library_id = ?', libId);
+        for (const m of media) {
+          if (ctx.seenMedia.has(m.id) || unreadable(m.path) || (scope && !(m.path && inScope(m.path)))) continue;
+          db.run('DELETE FROM media WHERE id = ?', m.id);
+        }
         const leafTypes = "('movie','episode','track','photo','video','bookpart')";
         db.run(`DELETE FROM items WHERE library_id = ? AND type IN ${leafTypes} AND NOT EXISTS (SELECT 1 FROM media m WHERE m.item_id = items.id)`, libId);
         db.run(`DELETE FROM items WHERE library_id = ? AND type IN ('season','album','audiobook') AND NOT EXISTS (SELECT 1 FROM items c WHERE c.parent_id = items.id)`, libId);
