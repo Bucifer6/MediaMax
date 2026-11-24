@@ -1369,3 +1369,13 @@ export function useDj(): DjValue {
   if (!v) throw new Error('useDj outside DjProvider');
   return v;
 }
+
+/**
+ * Advanced DJ (the DJ screen with decks, the AI DJ prompt and its voice host) is opt-in: Settings → Playback,
+ * the same `advancedDj` preference as the web app. Entry points are hidden while it is off; a mix that is already
+ * playing stays reachable from the mini player.
+ */
+export function useAdvancedDj(): boolean {
+  const { user } = useSession();
+  return user?.preferences.advancedDj ?? false;
+}

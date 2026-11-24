@@ -86,6 +86,7 @@ export default function PlaybackSettings() {
           </SettingSection>
           <SettingSection title="Music">
             <SettingRow icon="volume-medium-outline" label="Volume levelling (ReplayGain)" value={RG_MODES.find((m) => m.key === (p.replayGain ?? 'auto'))?.label} onPress={() => setSheet('rg')} />
+            <SettingRow icon="disc-outline" label="Advanced DJ (DJ screen, AI DJ and its voice)" toggle={!!p.advancedDj} onToggle={(v) => set({ advancedDj: v })} />
           </SettingSection>
           <SettingSection title="Languages">
             <SettingRow icon="musical-note-outline" label="Audio language" value={p.audioLanguage ? languageName(p.audioLanguage) : 'Default'} onPress={() => setSheet('audioLang')} />

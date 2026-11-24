@@ -483,12 +483,12 @@ function MixStatus() {
   if (m.blend) {
     return (
       <span className="np-radio np-mixing" role="status" aria-live="polite">
-        <Icon name="shuffle" size={12} /> Mixing into {m.blend.into.title} · {m.blend.label}
+        <Icon name="layers" size={12} /> Mixing into {m.blend.into.title} · {m.blend.label}
         <i className="np-mix-progress" aria-hidden="true"><b style={{ width: `${Math.round(m.blend.progress * 100)}%` }} /></i>
       </span>
     );
   }
-  if (m.mix) return <span className="np-radio"><Icon name="shuffle" size={12} /> Mix: {m.mix.label}</span>;
+  if (m.mix) return <span className="np-radio"><Icon name="layers" size={12} /> Mix: {m.mix.label}</span>;
   return null;
 }
 
@@ -500,12 +500,12 @@ function AutomixMenu() {
       className="np-automix"
       trigger={({ onClick, open }) => (
         <button className={`btn-icon ${m.automix ? 'active' : ''}`} onClick={onClick} aria-expanded={open} aria-haspopup="menu" aria-label={`Automix ${m.automix ? 'on' : 'off'}`} title="Automix">
-          <Icon name="shuffle" size={20} />
+          <Icon name="layers" size={20} />
         </button>
       )}
       items={[
-        { label: 'Automix', icon: 'shuffle', checked: m.automix, onClick: () => m.setAutomix(!m.automix) },
-        ...(m.automix ? [{ label: 'Endless', icon: 'repeat' as const, checked: m.endless, onClick: () => m.setEndless(!m.endless) }] : []),
+        { label: 'Automix', checked: m.automix, onClick: () => m.setAutomix(!m.automix) },
+        ...(m.automix ? [{ label: 'Endless (keep going with similar songs)', checked: m.endless, onClick: () => m.setEndless(!m.endless) }] : []),
         { divider: true, label: '' },
         ...MIX_STYLES.map((x) => ({ label: `Transitions: ${x.label}`, checked: m.mixStyle === x.value, disabled: !m.automix, onClick: () => m.setMixStyle(x.value) })),
       ]}

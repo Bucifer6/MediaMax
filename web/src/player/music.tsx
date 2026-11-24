@@ -1477,6 +1477,16 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     });
   }, [user, setUser, toast]);
 
+  // Handy for debugging and automated tests (like window.mediamaxDj): window.vibeAutomixDebug.plan()
+  useEffect(() => {
+    (window as unknown as { vibeAutomixDebug?: unknown }).vibeAutomixDebug = {
+      plan: () => planRef.current,
+      positionMs: () => (out ? out.active.offsetMs + out.active.el.currentTime * 1000 : 0),
+      seek: (ms: number) => seekRef.current(ms),
+      blending: () => !!blendRef.current,
+    };
+  }, [out]);
+
   // Release the audio graph on unmount.
   useEffect(() => () => out?.close(), [out]);
 

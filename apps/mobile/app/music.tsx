@@ -18,6 +18,7 @@ import { SKIP_BACK_MS, SKIP_FORWARD_MS } from '@/car/policy';
 import { SPEEDS, useMusic, type SleepOption } from '@/state/music';
 import { useRemote } from '@/state/remote';
 import { useSession } from '@/state/session';
+import { useAdvancedDj } from '@/state/dj';
 import { useTheme } from '@/theme';
 import { useTVRemote } from '@/tv';
 import { formatClock } from '@/utils/format';
@@ -37,6 +38,7 @@ export default function NowPlaying() {
   const [playOn, setPlayOn] = useState(false);
   const remote = useRemote();
   const { status } = useSession();
+  const advancedDj = useAdvancedDj();
   const cur = m.current;
   const isTrack = cur?.type === 'track';
   /** ±15/30 s buttons: spoken audio, and music longer than LONG_TRACK_MS (mixes, live sets…). */
@@ -113,7 +115,7 @@ export default function NowPlaying() {
         {m.spoken ? <PanelChip icon="bookmark-outline" label="Bookmarks" active={panel === 'bookmarks'} onPress={() => setPanel(panel === 'bookmarks' ? 'queue' : 'bookmarks')} /> : null}
         {m.spoken ? <PanelChip icon="speedometer-outline" label={speedLabel(m.rate)} active={m.rate !== 1} onPress={() => setSpeedSheet(true)} /> : null}
         <PanelChip icon={m.sleep ? 'moon' : 'moon-outline'} label={sleepLabel} active={!!m.sleep} onPress={() => setSleepSheet(true)} />
-        {isTrack && !m.castingTo ? <PanelChip icon="disc-outline" label="DJ mix" active={false} onPress={() => openDj(cur)} /> : null}
+        {isTrack && !m.castingTo && advancedDj ? <PanelChip icon="disc-outline" label="DJ mix" active={false} onPress={() => openDj(cur)} /> : null}
         {canPlayOn && t.isTV ? <PanelChip icon="phone-portrait-outline" label="Play on…" active={false} onPress={() => setPlayOn(true)} /> : null}
       </View>
       {m.error ? <T tone="danger">{m.error}</T> : null}

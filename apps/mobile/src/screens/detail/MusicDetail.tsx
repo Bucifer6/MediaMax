@@ -26,6 +26,7 @@ import { useTheme } from '@/theme';
 import { formatClock, formatDuration, progressFraction } from '@/utils/format';
 import { isAudioItem, isSpokenAudio } from '@/utils/library';
 import { openDj, openItem, playItem } from '@/utils/nav';
+import { useAdvancedDj } from '@/state/dj';
 import { RatingStars, useUserDataActions } from './common';
 
 export function Header({ item, subtitle, children }: { item: Item; subtitle: string; children?: React.ReactNode }) {
@@ -118,6 +119,7 @@ export function TrackListDetail({ item, onUserData, onItem }: { item: Item; onUs
   const [editError, setEditError] = useState<string | null>(null);
   const similar = useQuery(item.type === 'album' ? `similar:${item.id}` : null, (api) => api.similar(item.id, 12), { staleMs: 300000 });
   const { toggleFavorite, setRating } = useUserDataActions(item, onUserData);
+  const advancedDj = useAdvancedDj();
   const tracks = children.data?.items ?? [];
   const audio = tracks.filter((x) => isAudioItem(x.type));
   const total = tracks.reduce((n, x) => n + (x.durationMs ?? 0), 0);
@@ -189,7 +191,7 @@ export function TrackListDetail({ item, onUserData, onItem }: { item: Item; onUs
               <Button label="Play" icon="play" onPress={() => playAt(0)} disabled={!tracks.length} hasTVPreferredFocus />
             )}
             {audio.length > 1 && !isBook ? <Button label="Shuffle" icon="shuffle" variant="secondary" onPress={() => playAt(Math.floor(Math.random() * tracks.length), true)} /> : null}
-            {caps.music && (item.type === 'album' || isPlaylist) && audio.some((x) => x.type === 'track') ? <Button label="Start DJ mix" icon="disc-outline" variant="secondary" onPress={() => openDj(item)} /> : null}
+            {caps.music && advancedDj && (item.type === 'album' || isPlaylist) && audio.some((x) => x.type === 'track') ? <Button label="Start DJ mix" icon="disc-outline" variant="secondary" onPress={() => openDj(item)} /> : null}
             <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" onPress={toggleFavorite} accessibilityLabel="Favourite" />
             {caps.downloads && downloads.supported && audio.length ? <Button icon="arrow-down-circle-outline" variant="secondary" onPress={() => downloads.download(audio, 'original')} accessibilityLabel="Download all" /> : null}
             {remote.enabled && audio.length ? <Button icon="phone-portrait-outline" label={t.isTV ? 'Play on…' : undefined} variant="secondary" onPress={() => setPlayOnSheet(true)} accessibilityLabel="Play on another device" /> : null}
@@ -251,6 +253,7 @@ export function ArtistDetail({ item, onUserData }: { item: Item; onUserData: (ud
   const albums = useQuery(`children:${item.id}`, (a) => a.children(item.id, { sort: 'year', order: 'desc', limit: 200 }));
   const similar = useQuery(`similar:${item.id}`, (a) => a.similar(item.id, 12), { staleMs: 300000 });
   const { toggleFavorite, setRating } = useUserDataActions(item, onUserData);
+  const advancedDj = useAdvancedDj();
   const list = albums.data?.items ?? [];
 
   const playAll = async (shuffle: boolean) => {
@@ -270,7 +273,7 @@ export function ArtistDetail({ item, onUserData }: { item: Item; onUserData: (ud
         <View style={{ flexDirection: 'row', gap: t.space.sm, marginTop: t.space.sm, flexWrap: 'wrap', justifyContent: t.isTV ? 'flex-start' : 'center' }}>
           <Button label="Play" icon="play" onPress={() => playAll(false)} disabled={!list.length} hasTVPreferredFocus />
           <Button label="Shuffle" icon="shuffle" variant="secondary" onPress={() => playAll(true)} disabled={!list.length} />
-          <Button label="Start DJ mix" icon="disc-outline" variant="secondary" onPress={() => openDj(item)} disabled={!list.length} />
+          {advancedDj ? <Button label="Start DJ mix" icon="disc-outline" variant="secondary" onPress={() => openDj(item)} disabled={!list.length} /> : null}
           <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" onPress={toggleFavorite} accessibilityLabel="Favourite" />
         </View>
         <RatingStars rating={item.userData.rating} onRate={setRating} />

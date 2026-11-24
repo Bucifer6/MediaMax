@@ -26,7 +26,7 @@ import { Screen, ScreenHeader } from '@/components/Screen';
 import { SettingRow, SettingSection } from '@/components/SettingRow';
 import { T } from '@/components/Text';
 import { Focusable } from '@/components/Focusable';
-import { useDj, type DeckView } from '@/state/dj';
+import { useAdvancedDj, useDj, type DeckView } from '@/state/dj';
 import { useMusic } from '@/state/music';
 import { useApi } from '@/state/session';
 import { useTheme } from '@/theme';
@@ -115,8 +115,10 @@ function Setup() {
   );
   const status = useQuery('dj:status', (a) => a.djStatus(), { staleMs: 30000 });
   const hasGenres = !!genreList.data?.length;
-  // Older servers have no `ai` block: treat as off.
-  const ai = status.data?.ai?.enabled ? status.data.ai : null;
+  // Older servers have no `ai` block: treat as off. The AI DJ (prompt, spoken host) is part of the opt-in
+  // Advanced DJ: without it this screen never talks to the language model or a speech service.
+  const advancedDj = useAdvancedDj();
+  const ai = advancedDj && status.data?.ai?.enabled ? status.data.ai : null;
   const playingArtist = music.playing && currentTrack ? currentTrack.grandparentTitle ?? currentTrack.parentTitle ?? null : null;
 
   const ask = async (prompt: string) => {

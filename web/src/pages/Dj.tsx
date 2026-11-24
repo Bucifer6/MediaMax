@@ -350,6 +350,8 @@ export default function DjPage() {
       if (!mix.tracks.length) throw new Error('No tracks matched — try fewer filters');
       // Prompt mixes come back with the resolved settings; top-ups reuse those instead of re-reading the prompt.
       await engine.start(mix, mix.request ?? req, mix.continuous ?? continuous);
+      // The setup form is long: bring the decks (top of the booth) into view.
+      window.scrollTo({ top: 0 });
     } catch (e) {
       toast.error(e);
     }
