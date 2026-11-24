@@ -77,6 +77,29 @@ const failures = new Map<string, Failure>();
 const pending = new Pending();
 
 /**
+ * Per-IP limit on failed sign-ins (wrong password, unknown user, invalid API key), on top of the per-account lockout:
+ * one address can't spray guesses across many usernames. Only failures count, so a client syncing thousands of
+ * covers and streams with valid credentials is never slowed down.
+ */
+const IP_MAX_FAILURES = 30;
+const IP_WINDOW_MS = 15 * 60000;
+const ipFailures = new Map<string, Failure>();
+const ipKey = (req: FastifyRequest) => `ip:${req.ip ?? 'unknown'}`;
+function checkIp(req: FastifyRequest) {
+  const k = ipKey(req);
+  const f = ipFailures.get(k);
+  if ((f && f.until > Date.now() ? f.n : 0) + pending.count(k) >= IP_MAX_FAILURES) throw new SubsonicError(40, 'Too many failed attempts, try later');
+}
+function recordIpFailure(req: FastifyRequest) {
+  const k = ipKey(req);
+  const cur = ipFailures.get(k);
+  if (!cur || cur.until < Date.now()) {
+    sweepExpired(ipFailures);
+    ipFailures.set(k, { n: 1, until: Date.now() + IP_WINDOW_MS });
+  } else cur.n++;
+}
+
+/**
  * Subsonic clients send u+p on every request; an scrypt check (~40 ms CPU) each time would starve the server during
  * a library sync. Successful checks are remembered for a while, keyed by user + presented secret + stored hash, so a
  * password change (new hash) or a different password never hits an old entry. Failures are never cached.
@@ -96,13 +119,17 @@ async function verifyCached(userId: string, secret: string, hash: string): Promi
   return true;
 }
 /** Tests only. */
-export const _subsonicAuthCache = { size: () => verified.size, clear: () => verified.clear(), max: VERIFIED_MAX };
+export const _subsonicAuthCache = { size: () => verified.size, clear: () => { verified.clear(); ipFailures.clear(); failures.clear(); }, max: VERIFIED_MAX, ipMax: IP_MAX_FAILURES };
 
 async function authenticate(req: FastifyRequest): Promise<User> {
   const apiKey = param(req, 'apiKey');
   if (apiKey) {
+    checkIp(req);
     const ctx = authenticateApiKey(apiKey);
-    if (!ctx) throw new SubsonicError(44, 'Invalid API key');
+    if (!ctx) {
+      recordIpFailure(req);
+      throw new SubsonicError(44, 'Invalid API key');
+    }
     return ctx.user;
   }
   const u = param(req, 'u');
@@ -112,19 +139,21 @@ async function authenticate(req: FastifyRequest): Promise<User> {
   const key = `s:${u.toLowerCase()}`;
   const f = failures.get(key);
   if ((f && f.until > Date.now() ? f.n : 0) + pending.count(key) >= 10) throw new SubsonicError(40, 'Too many failed attempts, try later');
+  checkIp(req);
   if (p.startsWith('enc:')) p = Buffer.from(p.slice(4), 'hex').toString('utf8');
   const secret = p;
-  const row = await pending.run(key, async () => {
+  const row = await pending.run(key, () => pending.run(ipKey(req), async () => {
     const row = db.get('SELECT * FROM users WHERE username = ? AND disabled = 0', u);
     if (!row || !row.password_hash || !(await verifyCached(row.id, secret, row.password_hash)) || row.totp_enabled) {
       const cur = failures.get(key);
       if (!cur || cur.until < Date.now()) sweepExpired(failures);
       failures.set(key, !cur || cur.until < Date.now() ? { n: 1, until: Date.now() + 15 * 60000 } : { ...cur, n: cur.n + 1 });
+      recordIpFailure(req);
       securityEvent('AUTH_FAIL', req.ip, { user: u, reason: 'subsonic' });
       throw new SubsonicError(40, row?.totp_enabled ? 'This account uses two-factor sign-in; create an API key and use the apiKey parameter' : 'Wrong username or password');
     }
     return row;
-  });
+  }));
   failures.delete(key);
   return getUser(row.id);
 }

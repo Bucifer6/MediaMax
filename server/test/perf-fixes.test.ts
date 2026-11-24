@@ -89,6 +89,33 @@ test('subsonic: successful u/p checks are cached; failures are not; a password c
   db.run('UPDATE users SET disabled = 0 WHERE id = ?', user.id);
 });
 
+test('subsonic: one IP is limited on failed sign-ins across usernames; other IPs and successful clients are not', async () => {
+  _subsonicAuthCache.clear();
+  await auth.createUser({ username: 'pf-iplimit', password: 'pass1234' });
+  const ping = async (u: string, p: string, ip: string) =>
+    (await app.inject({ url: `/rest/ping.view?u=${u}&p=${encodeURIComponent(p)}&f=json`, remoteAddress: ip })).json()['subsonic-response'];
+  // A valid client making many requests is never limited (only failures count).
+  for (let i = 0; i < _subsonicAuthCache.ipMax + 5; i++) { const r0 = await ping('pf-iplimit', 'pass1234', '10.9.0.1'); assert.equal(r0.status, 'ok', JSON.stringify(r0)); }
+  // Spraying one wrong password over many usernames from one address: blocked once the per-IP limit is reached.
+  for (let i = 0; i < _subsonicAuthCache.ipMax; i++) {
+    const r = await ping(`nobody${i}`, 'guess', '10.9.0.2');
+    assert.equal(r.error.message, 'Wrong username or password');
+  }
+  const blocked = await ping('nobody-next', 'guess', '10.9.0.2');
+  assert.match(blocked.error.message, /Too many failed attempts/);
+  assert.match((await ping('pf-iplimit', 'pass1234', '10.9.0.2')).error.message, /Too many failed attempts/, 'the address is blocked, even with valid credentials');
+  assert.equal((await ping('pf-iplimit', 'pass1234', '10.9.0.3')).status, 'ok', 'other addresses are unaffected');
+  // Invalid API keys count too.
+  _subsonicAuthCache.clear();
+  for (let i = 0; i < _subsonicAuthCache.ipMax; i++) {
+    const r = (await app.inject({ url: `/rest/ping.view?apiKey=mmk_wrong${i}&f=json`, remoteAddress: '10.9.0.4' })).json()['subsonic-response'];
+    assert.equal(r.error.code, 44);
+  }
+  const r = (await app.inject({ url: '/rest/ping.view?apiKey=mmk_wrongx&f=json', remoteAddress: '10.9.0.4' })).json()['subsonic-response'];
+  assert.match(r.error.message, /Too many failed attempts/);
+  _subsonicAuthCache.clear();
+});
+
 test('a no-op rescan writes no media rows', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-noop-'));
   const dir = path.join(root, 'Film (2020)');
