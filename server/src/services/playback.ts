@@ -22,7 +22,7 @@ import { isLocalAddress } from './dlna.js';
 import { outputRange, rangeDecision, type RangeDecision } from './hdr.js';
 import { doviCodecStyle, doviMuxCapability, doviMuxSupported, doviSignal, type DoviSignal } from './dovi.js';
 import { refreshVideoRange } from './hdrBackfill.js';
-import { sidecarStamp, subtitleTrackList } from './subtitles.js';
+import { sidecarStamp, subtitleCacheName, subtitleTrackList } from './subtitles.js';
 import { anyComfort, decisionInfo, masterAudioFor, normalizeComforts, planAudio, refreshAudioStreams, type AudioPlan } from './audio.js';
 import { mediaDetails, withJob, withSubtitle, type ClientHints } from './sessionDetails.js';
 import { bitrateCaps, buildLadder, createRenditionManager, pickStartRendition, streamingSettings, type RenditionManager } from './abr.js';
@@ -889,7 +889,7 @@ export async function subtitleVtt(mediaId: string, index: number): Promise<strin
   if (!TEXT_SUB_CODECS.has(s.codec)) throw badRequest('Image subtitles must be burned in');
   const dir = path.join(config.cacheDir, 'subs');
   fs.mkdirSync(dir, { recursive: true });
-  const out = path.join(dir, `${mediaId}_${index}_${m.mtime ?? 0}${sidecarStamp(s)}.vtt`);
+  const out = path.join(dir, subtitleCacheName(m.id, index, m.mtime, sidecarStamp(s), 'vtt'));
   if (fs.existsSync(out)) return out;
   let p = subInflight.get(out);
   if (!p) {

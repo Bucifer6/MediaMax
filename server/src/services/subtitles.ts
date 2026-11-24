@@ -113,6 +113,16 @@ function mediaRow(mediaId: string): MediaRowLite {
  * Cache-name stamp of a sidecar's own version (".s<mtime>x<size>", empty for embedded tracks or a missing file): the
  * converted copies are keyed by the media file's mtime, which doesn't change when a sidecar .srt is replaced.
  */
+/**
+ * Cache file name for a media row's subtitle: built from the database row's own id (never the request's value) and
+ * checked to be a plain id, so it can't reach outside the cache directory.
+ */
+export function subtitleCacheName(mediaRowId: unknown, index: number, mtime: unknown, stamp: string, ext: string): string {
+  const id = String(mediaRowId);
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || !Number.isInteger(index)) throw badRequest('Invalid subtitle reference');
+  return `${id}_${index}_${Number(mtime) || 0}${stamp}.${ext}`;
+}
+
 export function sidecarStamp(s: { external?: boolean; path?: string }): string {
   if (!s.external || !s.path) return '';
   try {
@@ -176,7 +186,7 @@ export function extractSubtitle(mediaId: string, index: number, ext: RawExt): Ex
   }
   const dir = cacheDir();
   fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `${mediaId}_${index}_${m.mtime ?? 0}${sidecarStamp(s)}.${ext}`);
+  const file = path.join(dir, subtitleCacheName(m.id, index, m.mtime, sidecarStamp(s), ext));
   const existing = extractions.get(file);
   if (existing && !existing.failed) return existing;
   // A sidecar already in the wanted format is served as is.
