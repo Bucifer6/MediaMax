@@ -5,9 +5,10 @@ import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync } from '../hooks';
 import { PosterCard, CardSkeleton } from '../components/Cards';
-import { EmptyState, ErrorState, Modal, Field } from '../components/ui';
+import { EmptyState, ErrorState, Modal, Field, PageHeader } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { SmartListModal } from '../components/SmartListModal';
+import '../styles/screens-browse.css';
 
 export default function ContainersPage({ kind }: { kind: 'playlists' | 'collections' }) {
   const { user } = useApp();
@@ -35,23 +36,21 @@ export default function ContainersPage({ kind }: { kind: 'playlists' | 'collecti
   };
 
   return (
-    <div className="page">
-      <header className="page-head">
-        <div className="page-title-wrap">
-          <Icon name={kind === 'playlists' ? 'playlist' : 'collection'} size={28} className="page-icon" />
-          <h1>{kind === 'playlists' ? 'Playlists' : 'Collections'}</h1>
-        </div>
-        {canCreate && (
-          <div className="page-actions">
-            <button className="btn" onClick={() => setSmart(true)}>
+    <div className="page containers-page">
+      <PageHeader
+        title={kind === 'playlists' ? 'Playlists' : 'Collections'}
+        subtitle={res.data?.length ? <span className="tabular">{res.data.length} {kind === 'playlists' ? (res.data.length === 1 ? 'playlist' : 'playlists') : res.data.length === 1 ? 'collection' : 'collections'}</span> : kind === 'playlists' ? 'Your mixes of movies, episodes and songs' : 'Related titles, grouped'}
+        actions={canCreate && (
+          <>
+            <button className="btn btn-ghost" onClick={() => setSmart(true)}>
               <Icon name="wand" size={16} /> New smart {kind === 'playlists' ? 'playlist' : 'collection'}
             </button>
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
               <Icon name="plus" size={16} /> New {kind === 'playlists' ? 'playlist' : 'collection'}
             </button>
-          </div>
+          </>
         )}
-      </header>
+      />
       {res.loading && !res.data ? (
         <div className="grid grid-poster">{Array.from({ length: 8 }).map((_, i) => <CardSkeleton key={i} shape={kind === 'playlists' ? 'square' : 'poster'} />)}</div>
       ) : res.error ? (

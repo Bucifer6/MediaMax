@@ -1,7 +1,7 @@
 import type { Theme } from '@mediamax/shared';
 
 /**
- * The Lumen type pairing ships with the web app (self-hosted Figtree text + Bricolage Grotesque display, see
+ * The Vibe type pairing ships with the web app (self-hosted Figtree for UI/body + Outfit for display, see
  * web/src/styles/fonts.css), so themes using it need no font URL. Themes with a font of their own keep it; the web
  * app then uses that face for headings too.
  */
@@ -14,15 +14,35 @@ export const DEFAULT_THEME_ID = 'mediamax';
 
 /** Built-in theme presets. Admins can duplicate and edit them in the Branding Studio. */
 export const BUILTIN_THEMES: Theme[] = [
-  // The Kinora brand themes (default for new installs): primary from the logo's stem, accent from its beams, the
-  // Lumen type pairing. The ids stay 'mediamax' / 'mediamax-light' so existing settings and preferences keep working.
+  // The Vibe brand themes (default for new installs): neutral graphite surfaces so the artwork supplies the colour, a
+  // rose accent for primary actions and a violet secondary (docs/DESIGN.md). The ids stay 'mediamax' /
+  // 'mediamax-light' so existing settings and preferences keep working. The rose is the AA-safe shade for a white label
+  // (≥ 4.5:1); the web app derives the brighter spec rose (#F0588C) from it for highlights on dark surfaces.
   {
-    ...base, id: 'mediamax', name: 'Kinora', mode: 'dark', radius: 14,
-    colors: { primary: '#9198FF', primaryText: '#0B0A1F', background: '#0D0C1D', surface: '#17152E', surfaceAlt: '#211E3D', text: '#F4F3FF', textMuted: '#A6A3CC', accent: '#FFA45C', border: '#2E2A52', success: '#2FD07F', warning: '#F5B014', danger: '#FF5C7A', overlay: '#0D0C1D' },
+    ...base, id: 'mediamax', name: 'Vibe Rose', mode: 'dark', radius: 14, heroStyle: 'static', brandGradient: ['#FF8A5C', '#E2498A', '#7C5CFF'],
+    colors: { primary: '#D23A72', primaryText: '#FFFFFF', background: '#0C0C10', surface: '#15151B', surfaceAlt: '#1D1D25', text: '#F2F1F6', textMuted: '#B4B2C2', accent: '#8C6BFF', border: '#2A2A33', success: '#3DD68C', warning: '#F5B53D', danger: '#FF5D6C', overlay: '#0C0C10' },
   },
   {
-    ...base, id: 'mediamax-light', name: 'Kinora Light', mode: 'light', radius: 14,
-    colors: { primary: '#4F3FE0', primaryText: '#FFFFFF', background: '#F7F6FF', surface: '#FFFFFF', surfaceAlt: '#EEECFB', text: '#14122B', textMuted: '#55527A', accent: '#C2410C', border: '#E0DDF3', success: '#15803D', warning: '#B45309', danger: '#D12A4A', overlay: '#F7F6FF' },
+    ...base, id: 'mediamax-light', name: 'Vibe Rose Light', mode: 'light', radius: 14, heroStyle: 'static', brandGradient: ['#FF8A5C', '#E2498A', '#7C5CFF'],
+    colors: { primary: '#C8336A', primaryText: '#FFFFFF', background: '#F7F6FA', surface: '#FFFFFF', surfaceAlt: '#F0EEF5', text: '#15131C', textMuted: '#4E4B5C', accent: '#6A4BF0', border: '#E1DEEA', success: '#15803D', warning: '#B45309', danger: '#D12A4A', overlay: '#F7F6FA' },
+  },
+  // Vibe colour-scheme alternatives: same graphite approach, a different accent family. Aurora is cool (teal + sky),
+  // Ember is warm (orange + amber); each has an AA-checked dark and light version (server/test/brand.test.ts).
+  {
+    ...base, id: 'vibe-aurora', name: 'Vibe Aurora', mode: 'dark', radius: 14, heroStyle: 'static', brandGradient: ['#7CF0D2', '#2BC4B0', '#5A8CFF'],
+    colors: { primary: '#2BC4B0', primaryText: '#04201C', background: '#0A0E11', surface: '#121820', surfaceAlt: '#1A222C', text: '#EEF5F7', textMuted: '#A9B8C2', accent: '#5AA2FF', border: '#26303B', success: '#3DD68C', warning: '#F5B53D', danger: '#FF5D6C', overlay: '#0A0E11' },
+  },
+  {
+    ...base, id: 'vibe-aurora-light', name: 'Vibe Aurora Light', mode: 'light', radius: 14, heroStyle: 'static', brandGradient: ['#7CF0D2', '#2BC4B0', '#5A8CFF'],
+    colors: { primary: '#0B7F73', primaryText: '#FFFFFF', background: '#F4F8F9', surface: '#FFFFFF', surfaceAlt: '#E9F0F2', text: '#0E1A1F', textMuted: '#45565E', accent: '#2563EB', border: '#D9E3E6', success: '#15803D', warning: '#B45309', danger: '#D12A4A', overlay: '#F4F8F9' },
+  },
+  {
+    ...base, id: 'vibe-ember', name: 'Vibe Ember', mode: 'dark', radius: 14, heroStyle: 'static', brandGradient: ['#FFD166', '#FF8A4C', '#F0506E'],
+    colors: { primary: '#FF8A4C', primaryText: '#241004', background: '#0F0C0A', surface: '#1A1512', surfaceAlt: '#241D19', text: '#F8F2EE', textMuted: '#C2B3A9', accent: '#FFC15E', border: '#352B25', success: '#3DD68C', warning: '#F5B53D', danger: '#FF5D6C', overlay: '#0F0C0A' },
+  },
+  {
+    ...base, id: 'vibe-ember-light', name: 'Vibe Ember Light', mode: 'light', radius: 14, heroStyle: 'static', brandGradient: ['#FFD166', '#FF8A4C', '#F0506E'],
+    colors: { primary: '#B8460F', primaryText: '#FFFFFF', background: '#FBF7F3', surface: '#FFFFFF', surfaceAlt: '#F3ECE5', text: '#1E140E', textMuted: '#5C4B40', accent: '#A15C00', border: '#E8DED5', success: '#15803D', warning: '#B45309', danger: '#D12A4A', overlay: '#FBF7F3' },
   },
   {
     ...base, id: 'midnight', name: 'Midnight', mode: 'dark',

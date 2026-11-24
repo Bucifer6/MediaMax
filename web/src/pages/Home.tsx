@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { HomeResponse, HomeRow, ItemSort } from '@mediamax/shared';
 import { api } from '../api/endpoints';
@@ -7,10 +7,13 @@ import { useAsync, useServerEvent } from '../hooks';
 import { Hero, HeroSkeleton } from '../components/Hero';
 import { Row } from '../components/Row';
 import { CardSkeleton, ChannelCard, LandscapeCard, PosterCard, RankedCard, UpcomingCard } from '../components/Cards';
-import { EmptyState, ErrorState } from '../components/ui';
+import { Button, EmptyState, ErrorState } from '../components/ui';
 import { Icon } from '../components/Icon';
-import { DecideBar } from '../components/decide/DecideBar';
+import { DecideLinks } from '../components/decide/DecideBar';
+import { CustomizeHome } from '../components/CustomizeHome';
+import '../styles/screens-browse.css';
 import { prefetchCommonPagesWhenIdle } from '../utils/prefetch';
+import { orderHomeRows } from '../utils/homeRows';
 
 function rowLink(row: HomeRow): string | undefined {
   const l = row.link;
@@ -59,7 +62,7 @@ function HomeRowView({ row }: { row: HomeRow }) {
   }
   const wide = row.type === 'continue' || row.type === 'nextup' || row.type === 'recordings';
   return (
-    <Row title={row.title} link={rowLink(row)} className={wide ? 'row-wide' : ''}>
+    <Row title={row.title} link={rowLink(row)} id={row.id} className={`${wide ? 'row-wide' : ''} home-row-${row.type}`}>
       {row.items.map((it) => (wide ? <LandscapeCard key={it.id} item={it} /> : <PosterCard key={it.id} item={it} />))}
     </Row>
   );
@@ -74,6 +77,8 @@ let lastHome: { userId: string; data: HomeResponse } | null = null;
 export function Home() {
   const { theme, user, libraries } = useApp();
   const userId = user?.id ?? '';
+  const [customizing, setCustomizing] = useState(false);
+  const customOrder = (user?.preferences?.homeLayout?.order?.length ?? 0) > 0;
   const home = useAsync(() => api.items.home().then((d) => {
     // Keep the featured titles the viewer is already looking at (the server picks new random ones each time), so the
     // hero doesn't swap under them when the fresh copy arrives.
@@ -108,11 +113,14 @@ export function Home() {
     }
   });
 
+  const orderedRows = useMemo(() => orderHomeRows((homeData?.rows ?? []).filter((r) => r.type !== 'hero'), customOrder), [homeData, customOrder]);
+
   if (home.loading && !homeData) {
     return (
-      <div className="home">
+      <div className="home home-loading" aria-busy="true">
         {theme.heroStyle !== 'none' && <HeroSkeleton />}
         <div className="home-rows">
+          <div className="home-head"><div className="skeleton skeleton-line" style={{ width: 120, height: 28 }} /></div>
           {[0, 1, 2].map((r) => (
             <section className="row" key={r}>
               <div className="row-head"><div className="skeleton skeleton-line" style={{ width: 180, height: 20 }} /></div>
@@ -127,7 +135,7 @@ export function Home() {
 
   const rows = homeData?.rows ?? [];
   const heroRow = rows.find((r) => r.type === 'hero');
-  const rest = rows.filter((r) => r.type !== 'hero');
+  const rest = orderedRows;
   const hasContent = rows.some((r) => r.items.length || r.channels?.length);
 
   if (!hasContent) {
@@ -154,15 +162,29 @@ export function Home() {
     );
   }
 
+  const showHero = !!heroRow && theme.heroStyle !== 'none' && heroRow.items.length > 0;
+  // Customize Home lists every row the server sent (empty ones too: they fill up later), hero first.
+  const arrangeable = [...(heroRow ? [heroRow] : []), ...rest].map((r) => ({ id: r.id, title: r.title }));
+
   return (
-    <div className={`home ${heroRow && theme.heroStyle !== 'none' && heroRow.items.length ? 'has-hero' : 'no-hero'}`}>
-      {heroRow && theme.heroStyle !== 'none' && heroRow.items.length > 0 && <Hero items={heroRow.items} style={theme.heroStyle} />}
+    <div className={`home ${showHero ? 'has-hero' : 'no-hero'}`}>
+      {showHero && <Hero items={heroRow!.items} style={theme.heroStyle} collapsible />}
       <div className="home-rows">
-        <DecideBar className="home-decide" />
+        <header className="home-head">
+          <h1 className={`home-title ${showHero ? 'sr-only' : ''}`}>Home</h1>
+          <div className="home-tools" role="group" aria-label="Home tools">
+            <DecideLinks />
+            <span className="home-tools-sep" aria-hidden />
+            <Button variant="ghost" size="sm" icon="edit" className="home-customize" aria-label="Customize Home" title="Customize Home" onClick={() => setCustomizing(true)} data-nav>
+              <span className="home-tool-label">Customize</span>
+            </Button>
+          </div>
+        </header>
         {rest.map((r) => (
           <HomeRowView key={r.id} row={r} />
         ))}
       </div>
+      <CustomizeHome open={customizing} onClose={() => setCustomizing(false)} rows={arrangeable} onSaved={home.reload} />
     </div>
   );
 }

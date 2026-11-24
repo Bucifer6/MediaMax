@@ -104,10 +104,11 @@ function MatchStart() {
 
   return (
     <div className="page match-start">
-      <header className="page-head">
-        <div>
-          <h1><Icon name="together" size={28} className="page-icon" /> Movie Match</h1>
-          <p className="muted">Everyone swipes the same picks on their phone. When you all say yes, it's a match.</p>
+      <header className="page-header">
+        <div className="page-header-text">
+          <span className="page-header-eyebrow">Help me decide</span>
+          <h1 className="page-header-title">Movie Match</h1>
+          <p className="page-header-sub">Everyone swipes the same picks on their phone. When you all say yes, it's a match.</p>
         </div>
       </header>
       <div className="match-start-grid">

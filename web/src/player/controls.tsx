@@ -143,6 +143,9 @@ export function SeekBar({
         {markers?.map((m, i) => (
           <div key={i} className={`seek-marker seek-marker-${m.type}`} style={{ left: `${(m.startMs / dur) * 100}%`, width: `${((m.endMs - m.startMs) / dur) * 100}%` }} />
         ))}
+        {durationMs > 0 && (chapters?.length ?? 0) > 1 && chapters!.slice(1).map((c, i) => (
+          c.startMs > 0 && c.startMs < durationMs ? <div key={`c${i}`} className="seek-chapter-tick" style={{ left: `${(c.startMs / dur) * 100}%` }} aria-hidden="true" /> : null
+        ))}
         <div className="seek-fill" style={{ width: `${Math.min(100, (shown / dur) * 100)}%` }} />
         <div className="seek-thumb" style={{ left: `${Math.min(100, (shown / dur) * 100)}%` }} />
       </div>

@@ -78,6 +78,9 @@ interface MusicApi {
   radio: RadioState | null;
   /** Start a radio mix seeded from a track, album or artist; `title` names it ("Radio based on <title>"). */
   startRadio: (seedId: string, title: string) => Promise<void>;
+  /** Playback speed for audiobooks and podcasts (music always plays at 1×). Remembered per device. */
+  rate: number;
+  setRate: (r: number) => void;
   /** Local audio output hooks for lyrics, karaoke and visualisers (stable object). */
   output: MusicOutputApi;
   /** The live deck plays an alternative source (karaoke stem mix) instead of the track's own stream. */
@@ -114,6 +117,15 @@ export function useMusic(): MusicApi {
 }
 
 const VOL_KEY = 'mm.volume';
+const RATE_KEY = 'vibe.spokenRate';
+function loadRate() {
+  try {
+    const v = Number(localStorage.getItem(RATE_KEY));
+    return v >= 0.5 && v <= 3 ? v : 1;
+  } catch {
+    return 1;
+  }
+}
 function loadVolume() {
   try {
     const v = Number(localStorage.getItem(VOL_KEY));
@@ -147,6 +159,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [sleep, setSleepState] = useState<SleepTimer | null>(null);
   const [radio, setRadio] = useState<RadioState | null>(null);
+  const [rate, setRateState] = useState(loadRate);
   /** Requested start position for the next track load (bookmarks). */
   const startAtRef = useRef<{ id: string; ms: number } | null>(null);
   /** Load the next track paused (sleep timer "end of part"). */
@@ -173,6 +186,16 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const wantGraph = () => !SUSPENDS_WEB_AUDIO_IN_BACKGROUND || stateRef.current.crossfadeSec > 0;
   /** The live deck's element (null during SSR). */
   const liveEl = () => out?.active.el ?? null;
+
+  // Spoken-word speed: both decks (defaultPlaybackRate survives a source change); music stays at 1×.
+  const spoken = current?.type === 'bookpart' || current?.type === 'podcastepisode';
+  useEffect(() => {
+    const r = spoken ? rate : 1;
+    for (const d of out?.decks ?? []) {
+      d.el.defaultPlaybackRate = r;
+      d.el.playbackRate = r;
+    }
+  }, [out, rate, spoken, current?.id]);
 
   /* ---------------- output levels ---------------- */
   const applyMaster = useCallback(() => {
@@ -1142,11 +1165,21 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       setSleep,
       radio,
       startRadio,
+      rate,
+      setRate: (r) => {
+        const v = Math.max(0.5, Math.min(3, r));
+        setRateState(v);
+        try {
+          localStorage.setItem(RATE_KEY, String(v));
+        } catch {
+          /* private mode */
+        }
+      },
       output: outputApi,
       altSource,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto, togglePlayback, pausePlayback, cast, casting, sleep, setSleep, radio, startRadio, cancelHandover, outputApi, altSource],
+    [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto, togglePlayback, pausePlayback, cast, casting, sleep, setSleep, radio, startRadio, cancelHandover, outputApi, altSource, rate],
   );
 
   const latest = useRef(value);

@@ -175,7 +175,7 @@ function LockToggle({ locked, onToggle, label }: { locked: boolean; onToggle: ()
   );
 }
 
-export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: boolean; onClose: () => void; item: Item; onUpdated: (i: Item) => void }) {
+export function EditMetadataModal({ open, onClose, item, onUpdated, initialView = 'form' }: { open: boolean; onClose: () => void; item: Item; onUpdated: (i: Item) => void; /** 'match' opens straight on Fix match. */ initialView?: 'form' | 'match' }) {
   const toast = useToast();
   const init = () => ({
     title: item.title,
@@ -199,7 +199,7 @@ export function EditMetadataModal({ open, onClose, item, onUpdated }: { open: bo
 
   useEffect(() => {
     if (!open) return;
-    setView('form');
+    setView(initialView === 'match' && canFixMatch(item) ? 'match' : 'form');
     setEpisodeOrder(item.episodeOrder ?? 'aired');
     setF(init());
     setLocked(new Set(item.lockedFields ?? []));

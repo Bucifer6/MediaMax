@@ -52,8 +52,8 @@ test('tintFrom returns a button colour with a readable label', () => {
   assert.equal(tintFrom([[120, 120, 120], [30, 30, 30], [200, 200, 200]]), null);
 });
 
-test('displayFont: Lumen display face for the Lumen / generic text faces, theme font otherwise', () => {
-  assert.match(displayFont("'Figtree Variable', system-ui"), /Bricolage/);
-  assert.match(displayFont("'Inter', system-ui"), /Bricolage/);
+test('displayFont: Vibe display face (Outfit) for the Vibe / generic text faces, theme font otherwise', () => {
+  assert.match(displayFont("'Figtree Variable', system-ui"), /Outfit/);
+  assert.match(displayFont("'Inter', system-ui"), /Outfit/);
   assert.equal(displayFont("'Playfair Display', Georgia, serif"), "'Playfair Display', Georgia, serif");
 });

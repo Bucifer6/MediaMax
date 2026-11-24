@@ -33,7 +33,7 @@ function useMediaQuery(q: string): boolean {
 export function usePreviewsEnabled(): boolean {
   const { user } = useApp();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
-  return user?.preferences.autoplayPreviews !== false && !reduced;
+  return user?.preferences.autoplayPreviews === true && !reduced;
 }
 
 /** Card hover previews also need a real mouse (not touch, not a TV remote). */

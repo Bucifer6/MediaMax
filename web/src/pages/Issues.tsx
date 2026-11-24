@@ -5,7 +5,7 @@ import { seerrApi } from '../api/seerr';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync } from '../hooks';
-import { Badge, EmptyState, ErrorState, Img, Skeleton, Spinner, useConfirm } from '../components/ui';
+import { Badge, EmptyState, ErrorState, Img, PageHeader, Skeleton, Spinner, useConfirm } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { ArrItemActions } from '../components/ArrItemActions';
 import { ISSUE_KINDS } from '../components/ReportIssue';
@@ -24,13 +24,11 @@ function IssueList() {
   const list = useAsync(() => seerrApi.issues({ status: status || undefined, kind: kind || undefined }), [status, kind]);
   return (
     <div className="page issues-page">
-      <header className="page-head">
-        <div className="page-title-wrap">
-          <Icon name="flag" size={28} className="page-icon" />
-          <h1>{manager ? 'Issues' : 'My issues'}</h1>
-        </div>
-        <Link to="/requests" className="btn"><Icon name="inbox" size={16} /> Requests</Link>
-      </header>
+      <PageHeader
+        title={manager ? 'Issues' : 'My issues'}
+        subtitle={manager ? 'Problems people reported with titles: wrong audio, bad subtitles, missing episodes.' : 'Problems you reported and their replies.'}
+        actions={<Link to="/requests" className="btn"><Icon name="inbox" size={16} /> Requests</Link>}
+      />
       <div className="req-toolbar">
         <div className="chip-row">
           {(['open', 'resolved', ''] as const).map((s) => (

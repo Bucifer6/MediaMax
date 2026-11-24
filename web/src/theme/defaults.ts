@@ -1,35 +1,37 @@
 import type { Branding, FeatureFlags, Theme, UserPreferences } from '@mediamax/shared';
 
-/** The Lumen type pairing, self-hosted in styles/fonts.css (server/src/services/themes.ts LUMEN_FONT). */
+/** The Vibe type pairing, self-hosted in styles/fonts.css (server/src/services/themes.ts LUMEN_FONT). */
 export const LUMEN_TEXT = "'Figtree Variable', 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
-export const LUMEN_DISPLAY = "'Bricolage Grotesque Variable', 'Figtree Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+/** Display face (headings, hero and title-page titles): Outfit. Never for body or small text. */
+export const LUMEN_DISPLAY = "'Outfit Variable', 'Figtree Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
-/** Used until the server's branding arrives: the Kinora brand theme (server/src/services/themes.ts). */
+/** Used until the server's branding arrives: the Vibe brand theme (server/src/services/themes.ts). */
 export const DEFAULT_THEME: Theme = {
   id: 'mediamax',
-  name: 'Kinora',
+  name: 'Vibe Rose',
   mode: 'dark',
+  brandGradient: ['#FF8A5C', '#E2498A', '#7C5CFF'],
   colors: {
-    primary: '#9198FF',
-    primaryText: '#0B0A1F',
-    background: '#0D0C1D',
-    surface: '#17152E',
-    surfaceAlt: '#211E3D',
-    text: '#F4F3FF',
-    textMuted: '#A6A3CC',
-    accent: '#FFA45C',
-    border: '#2E2A52',
-    success: '#2FD07F',
-    warning: '#F5B014',
-    danger: '#FF5C7A',
-    overlay: '#0D0C1D',
+    primary: '#D23A72',
+    primaryText: '#FFFFFF',
+    background: '#0C0C10',
+    surface: '#15151B',
+    surfaceAlt: '#1D1D25',
+    text: '#F2F1F6',
+    textMuted: '#B4B2C2',
+    accent: '#8C6BFF',
+    border: '#2A2A33',
+    success: '#3DD68C',
+    warning: '#F5B53D',
+    danger: '#FF5D6C',
+    overlay: '#0C0C10',
   },
   radius: 14,
   fontFamily: LUMEN_TEXT,
   fontUrl: null,
   posterShape: 'rounded',
   cardSize: 'medium',
-  heroStyle: 'carousel',
+  heroStyle: 'static',
   builtIn: true,
 };
 
@@ -47,7 +49,7 @@ export const DEFAULT_FEATURES: FeatureFlags = {
 };
 
 export const DEFAULT_BRANDING: Branding = {
-  serverName: 'Kinora',
+  serverName: 'Vibe',
   tagline: 'Your media. Everywhere.',
   logoUrl: null,
   logoWideUrl: null,
@@ -57,7 +59,7 @@ export const DEFAULT_BRANDING: Branding = {
   loginMessage: '',
   footerText: '',
   supportUrl: null,
-  splash: { backgroundColor: '#0D0C1D', logoUrl: null },
+  splash: { backgroundColor: '#0C0C10', logoUrl: null },
   tvBannerUrl: null,
   topShelfUrl: null,
   defaultThemeId: DEFAULT_THEME.id,

@@ -1,5 +1,5 @@
 /**
- * Kinora API contract (the npm workspace keeps its original name, @mediamax/shared).
+ * Vibe API contract (the npm workspace keeps its original name, @mediamax/shared).
  *
  * This file is the single source of truth for the shapes exchanged between the
  * server and every client (web, iOS, Android, TV). It has no runtime imports so
@@ -17,9 +17,11 @@
  */
 
 /** The product's default name (servers can be renamed in the Branding Studio). */
-export const PRODUCT_NAME = 'Kinora';
-/** The product's former name: a server still called this is treated as using the stock name. */
-export const LEGACY_PRODUCT_NAME = 'MediaMax';
+export const PRODUCT_NAME = 'Vibe';
+/** The product's most recent former name: a server still called this is treated as using the stock name. */
+export const LEGACY_PRODUCT_NAME = 'Kinora';
+/** Every former product name (Kinora, earlier MediaMax). */
+export const LEGACY_PRODUCT_NAMES: readonly string[] = ['Kinora', 'MediaMax'];
 /** Primary app URL scheme (deep links, OIDC redirects, pairing). The legacy scheme stays registered and accepted. */
 export const APP_SCHEME = 'kinora';
 export const LEGACY_APP_SCHEME = 'mediamax';
@@ -104,6 +106,11 @@ export interface Theme {
   posterShape: PosterShape;
   cardSize: CardSize;
   heroStyle: HeroStyle;
+  /**
+   * The logo's three gradient stops (start, middle, end) for this skin. Clients colour the mark with it; missing means
+   * the stock Vibe gradient (sunset → rose → violet).
+   */
+  brandGradient?: [string, string, string] | null;
   /** Built-in presets cannot be deleted. */
   builtIn?: boolean;
 }
@@ -327,6 +334,18 @@ export interface UserPreferences {
   subtitleStyle?: SubtitleStyle;
   /** Music: crossfade between tracks in seconds (0–12; 0 = gapless, no fade). Consecutive tracks of one album never crossfade. */
   musicCrossfadeSec?: number;
+  /**
+   * Per-profile "Customize Home": row ids (HomeRow.id) to hide and the order to show them in. Rows not listed in
+   * `order` keep their server order after the ordered ones. An id without a `:suffix` also matches the rows it expands
+   * to (e.g. 'lib-recent' hides/orders every 'lib-recent:<libraryId>' row). Applied by the server's home builder.
+   */
+  homeLayout?: HomeLayout;
+}
+
+/** Per-profile home row visibility and order (UserPreferences.homeLayout). */
+export interface HomeLayout {
+  hidden: string[];
+  order: string[];
 }
 
 /** Subtitle appearance, applied to text tracks (WebVTT `::cue`). */
@@ -899,7 +918,7 @@ export type StreamAction = 'direct' | 'copy' | 'transcode' | 'burn-in' | 'extern
 
 export interface SessionDetails {
   client: {
-    /** e.g. "Kinora Web", "Kinora for Android TV". */
+    /** e.g. "Vibe Web", "Vibe for Android TV". */
     app: string;
     version: string | null;
     /** e.g. "Chrome 131 on Windows" (from the User-Agent). */

@@ -11,11 +11,13 @@ import { NowPlayingProvider } from './player/NowPlaying';
 import { Layout } from './components/Layout';
 import { Icon } from './components/Icon';
 import { BrandLogo } from './components/BrandLogo';
+import { PRODUCT_NAME } from './brand/product';
 import { Home } from './pages/Home';
 import { NotFound } from './pages/NotFound';
 import { ShortcutsHost } from './components/Shortcuts';
 import { WhatsNew } from './components/WhatsNew';
 import { RemoteHost } from './remote/RemoteHost';
+import './livetv/reminders'; // arms programme-reminder timers app-wide so they survive a reload
 
 /** Lazy-load a route chunk; after a server upgrade old chunk names 404, so reload once. */
 function lazyPage<T extends { default: React.ComponentType<any> }>(load: () => Promise<T>) {
@@ -117,14 +119,14 @@ function Splash() {
 }
 
 function Offline() {
-  const { retryBoot } = useApp();
+  const { retryBoot, branding } = useApp();
   return (
     <div className="fullscreen-center offline">
       <div className="empty-state">
         <BrandLogo height={40} />
         <div className="empty-icon" style={{ marginTop: 24 }}><Icon name="server" size={34} /></div>
         <h3>Can't reach the server</h3>
-        <p className="muted">Kinora isn't responding right now. Check that the server is running and you're on the right network.</p>
+        <p className="muted">{branding.serverName || PRODUCT_NAME} isn't responding right now. Check that the server is running and you're on the right network.</p>
         <button className="btn btn-primary" onClick={retryBoot}>
           <Icon name="refresh" size={16} /> Retry
         </button>

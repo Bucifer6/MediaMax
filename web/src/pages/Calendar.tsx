@@ -6,7 +6,7 @@ import { useApp } from '../state/app';
 import { useAsync } from '../hooks';
 import { Row } from '../components/Row';
 import { dayLabel, epCode, UpcomingCard } from '../components/Cards';
-import { Badge, EmptyState, ErrorState, Img, Skeleton } from '../components/ui';
+import { Badge, EmptyState, ErrorState, Img, PageHeader, Skeleton } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { itemLink, posterFor } from '../utils/items';
 
@@ -124,18 +124,17 @@ export default function CalendarPage() {
   const weekEnd = addDays(weekStart, 6);
   return (
     <div className="page calendar-page">
-      <header className="page-head">
-        <div className="page-title-wrap">
-          <Icon name="calendar" size={28} className="page-icon" />
-          <h1>Calendar</h1>
-        </div>
-        <div className="cal-nav">
+      <PageHeader
+        title="Calendar"
+        subtitle={<span className="tabular">{rangeFmt.format(weekStart)} – {rangeFmt.format(weekEnd)}</span>}
+        actions={
+        <div className="cal-nav" role="group" aria-label="Week">
           <button className="btn-icon" onClick={() => setWeekStart((w) => addDays(w, -7))} aria-label="Previous week"><Icon name="chevronLeft" /></button>
-          <button className={`btn btn-sm ${thisWeek ? 'btn-primary' : ''}`} onClick={() => setWeekStart(startOfWeek(new Date()))}>This week</button>
+          <button className={`btn btn-sm ${thisWeek ? 'cal-this-week is-current' : 'cal-this-week'}`} aria-pressed={thisWeek} onClick={() => setWeekStart(startOfWeek(new Date()))}>This week</button>
           <button className="btn-icon" onClick={() => setWeekStart((w) => addDays(w, 7))} aria-label="Next week"><Icon name="chevronRight" /></button>
-          <span className="cal-range muted">{rangeFmt.format(weekStart)} – {rangeFmt.format(weekEnd)}</span>
         </div>
-      </header>
+        }
+      />
 
       {!tmdb && (
         <div className="cal-notice">

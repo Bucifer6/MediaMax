@@ -1,3 +1,4 @@
+import { BRAND_GRADIENT } from '../brand/art';
 import type { CSSProperties } from 'react';
 import type { Branding, Theme, ThemeColors } from '@mediamax/shared';
 import { DEFAULT_THEME, LUMEN_DISPLAY } from './defaults';
@@ -29,13 +30,14 @@ export function posterRadius(theme: Theme): string {
     case 'pill':
       return `${Math.max(18, theme.radius * 2)}px`;
     default:
-      return `${theme.radius}px`;
+      // Vibe: posters use the small radius (10 px for the default 14).
+      return `${Math.max(2, Math.round(theme.radius * 0.72))}px`;
   }
 }
 
 /**
- * Headings use the Lumen display face (Bricolage Grotesque) when the theme uses the Lumen text face (Figtree) or the
- * old generic defaults; a theme with a font of its own (Playfair for Film Noir, Baloo for kids…) keeps it for headings.
+ * Headings use the Vibe display face (Outfit) when the theme uses the Vibe text face (Figtree) or the old generic
+ * defaults; a theme with a font of its own (Playfair for Film Noir, Baloo for kids…) keeps it for headings.
  */
 export function displayFont(font: string): string {
   return /^\s*'?(Figtree|Inter|Plus Jakarta Sans)\b/i.test(font) ? LUMEN_DISPLAY : font;
@@ -46,6 +48,11 @@ export function themeVars(theme: Theme): Record<string, string> {
   const t = { ...DEFAULT_THEME, ...theme, colors: { ...DEFAULT_THEME.colors, ...theme.colors } };
   const vars: Record<string, string> = {};
   for (const key of COLOR_KEYS) vars[COLOR_VARS[key]] = t.colors[key];
+  // Logo gradient for this skin (BrandMark reads these; the stock Vibe gradient when the theme has none).
+  const g = theme.brandGradient && theme.brandGradient.length === 3 ? theme.brandGradient : BRAND_GRADIENT;
+  vars['--brand-g1'] = g[0];
+  vars['--brand-g2'] = g[1];
+  vars['--brand-g3'] = g[2];
   vars['--radius'] = `${t.radius}px`;
   vars['--radius-sm'] = `${Math.max(2, Math.round(t.radius * 0.6))}px`;
   vars['--radius-lg'] = `${Math.round(t.radius * 1.6)}px`;
@@ -71,6 +78,10 @@ export function loadFont(url: string | null | undefined) {
   document.head.appendChild(link);
 }
 
+/**
+ * Applies a theme. The theme's colours land in the legacy `--c-*` variables; styles/tokens.css derives the Vibe tokens
+ * (`--bg`, `--surface-1…3`, `--text`, `--accent`…) from them, so server themes and Branding Studio colours drive both.
+ */
 export function applyTheme(theme: Theme) {
   const root = document.documentElement;
   const vars = themeVars(theme);
@@ -103,7 +114,7 @@ export function applyCustomCss(css: string) {
 }
 
 export function applyBrandingChrome(b: Branding) {
-  document.title = b.serverName || 'Kinora';
+  document.title = b.serverName || 'Vibe';
   const href = b.faviconUrl || b.appIconUrl || b.logoUrl;
   let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (!link) {
@@ -130,4 +141,33 @@ export function resolveTheme(b: Branding, userThemeId: string | null | undefined
     if (t) return t;
   }
   return themes.find((x) => x.id === b.defaultThemeId) ?? themes[0];
+}
+
+/* ---------------- density (per device) ---------------- */
+
+export type Density = 'comfortable' | 'compact';
+const DENSITY_KEY = 'vibe.density';
+
+export function getDensity(): Density {
+  try {
+    return localStorage.getItem(DENSITY_KEY) === 'compact' ? 'compact' : 'comfortable';
+  } catch {
+    return 'comfortable';
+  }
+}
+
+/** Comfortable (default) or Compact: `html[data-density=compact]` shrinks row gaps and card sizes by about 15%. */
+export function applyDensity(d: Density = getDensity()) {
+  if (typeof document === 'undefined') return;
+  if (d === 'compact') document.documentElement.dataset.density = 'compact';
+  else delete document.documentElement.dataset.density;
+}
+
+export function setDensity(d: Density) {
+  try {
+    localStorage.setItem(DENSITY_KEY, d);
+  } catch {
+    /* storage blocked */
+  }
+  applyDensity(d);
 }

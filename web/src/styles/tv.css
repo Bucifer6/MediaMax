@@ -2,9 +2,9 @@
 html.tv { font-size: 20px; }
 html.tv body { cursor: none; }
 /* Focus must always be obvious: there is no mouse pointer. */
-html.tv :focus-visible, html.tv :focus { outline: 4px solid var(--c-primary); outline-offset: 4px; }
-html.tv .card:focus .card-art, html.tv .card:focus-visible .card-art { transform: scale(1.08); box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.7), 0 0 0 4px var(--c-primary); z-index: 3; }
-html.tv .card:focus, html.tv .card:focus-visible { outline: none; }
+html.tv :focus-visible, html.tv :focus { outline: 4px solid var(--focus); outline-offset: 4px; box-shadow: 0 0 0 8px color-mix(in srgb, var(--focus-halo) 55%, transparent); }
+html.tv .card:focus .card-art, html.tv .card:focus-visible .card-art { transform: scale(1.06); box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.7), 0 0 0 4px var(--focus); z-index: 3; }
+html.tv .card:focus, html.tv .card:focus-visible { outline: none; box-shadow: none; }
 html.tv .card:focus .card-hover { opacity: 1; }
 /* Rows scroll by focus, not by swipe; snapping fights smooth focus scrolling. */
 html.tv .row-scroller { scroll-snap-type: none; padding-top: 18px; padding-bottom: 22px; margin: -18px 0 -22px; }
@@ -12,26 +12,38 @@ html.tv .row-scroller { scroll-snap-type: none; padding-top: 18px; padding-botto
 html.tv .btn, html.tv .btn-icon { min-height: 48px; min-width: 48px; }
 html.tv .chip { height: 44px; padding: 0 20px; }
 html.tv .input { min-height: 52px; font-size: 1rem; }
-/* Overscan safe area (TVs crop ~3–5% at the edges): the floating rail, command bar and page content all sit
-   inside it; full-bleed art (hero, title backdrops) still runs to the edges. */
-html.tv { --tv-x: 3vw; --tv-y: 3vh; --rail-w: 76px; --rail-open-w: 300px; --rail-gap: 14px; --sidebar-w: calc(var(--tv-x) + var(--rail-w) + var(--rail-gap) * 2); }
-html.tv .rail { left: calc(var(--tv-x) + var(--rail-gap)); top: var(--tv-y); bottom: calc(var(--tv-y) + var(--mini-h)); }
-html.tv .topbar { top: var(--tv-y); right: var(--tv-x); }
+/* Overscan safe area, as Android TV specifies it: 48 dp left/right and 27 dp top/bottom of a 960 × 540 dp screen
+   (5 % each way; 96 × 54 px at 1080p). The icon rail, top bar and page content sit inside it; full-bleed art (hero,
+   title backdrops) still runs to the edges of the screen. */
+html.tv { --tv-x: 5vw; --tv-y: 5vh; --sidebar-rail-w: calc(var(--tv-x) + 84px); }
+html.tv .sidebar { padding-left: var(--tv-x); padding-top: var(--tv-y); padding-bottom: calc(var(--tv-y) + var(--mini-h)); }
+html.tv .sidebar-head { padding: 0; justify-content: center; }
+/* The rail widens with labels while it has D-pad focus, floating over the page (no reflow). */
+html.tv .sidebar:focus-within { width: calc(var(--tv-x) + 320px); box-shadow: 40px 0 80px -20px rgb(0 0 0 / 0.8); background: var(--surface-1); }
+html.tv .sidebar:focus-within :is(.nav-label, .nav-tag, .nav-group-chev) { display: block; }
+html.tv .sidebar:focus-within .nav-section-label { display: inline; }
+html.tv .sidebar:focus-within .nav-section-head { height: 28px; background: none; margin: 0 0 2px; padding: 0 12px; }
+html.tv .sidebar:focus-within .nav-item { width: 100%; justify-content: flex-start; gap: 12px; }
+html.tv .sidebar:focus-within .brand-full { display: inline-flex; }
+html.tv .sidebar:focus-within .brand-compact { display: none; }
+/* The bar spans the screen (its frosted background has no gap at the edge); its controls sit in the safe area. */
+html.tv .topbar { height: calc(var(--topbar-h) + var(--tv-y)); padding-top: var(--tv-y); padding-right: calc(var(--gutter) + var(--tv-x)); }
+html.tv .topbar-kbd { display: none; }
 html.tv .main { padding-top: calc(var(--topbar-h) + var(--tv-y)); padding-right: var(--tv-x); padding-bottom: calc(var(--tv-y) + 40px + var(--mini-h)); }
 html.tv .hero { margin-top: calc((var(--topbar-h) + var(--tv-y)) * -1); margin-right: calc(var(--tv-x) * -1); }
-html.tv .hero-reel { right: calc(var(--gutter) + var(--tv-x)); }
+html.tv .hero-content { padding-bottom: calc(var(--tv-y) + 48px); }
 html.tv .detail { margin-top: calc((var(--topbar-h) + var(--tv-y)) * -1); }
 html.tv .detail-backdrop { right: calc(var(--tv-x) * -1); }
-/* Rail items: an inset ring (the rail clips anything outside it) on a lit background. */
-html.tv .nav-item:focus, html.tv .nav-group-head:focus { outline: 3px solid var(--c-primary); outline-offset: -3px; background: var(--c-hover-strong); color: var(--c-text); }
+/* Sidebar items: an inset ring on a lit background. */
+html.tv .nav-item:focus { outline: 3px solid var(--focus); outline-offset: -3px; background: var(--hover-strong); color: var(--text); }
 html.tv .nav-item { height: 52px; font-size: 1rem; }
 html.tv .nav-icon { width: 56px; height: 52px; }
-html.tv { --nav-icon-w: 56px; }
-html.tv .cmd-trigger { height: 52px; }
-html.tv .cmd-trigger:focus { outline-offset: 3px; }
+html.tv .sidebar-collapsed .nav-item { width: 56px; }
+html.tv .topbar-search { height: 52px; }
+html.tv .topbar-search:focus { outline-offset: 3px; }
 /* Peek cards and the palette: options are D-pad stops. */
-html.tv .peek-play:focus, html.tv .peek-btn:focus { outline: 4px solid var(--c-primary); outline-offset: 3px; }
-html.tv .cmdk-item:focus { outline: 3px solid var(--c-primary); outline-offset: -3px; }
+html.tv .peek-play:focus, html.tv .peek-btn:focus { outline: 4px solid var(--accent); outline-offset: 3px; }
+html.tv .cmdk-item:focus { outline: 3px solid var(--accent); outline-offset: -3px; }
 html.tv .cmdk-backdrop { padding-top: 10vh; }
 html.tv .episode:focus-within { outline: none; }
 html.tv .player, html.tv .mv-shell { padding: 0; }
@@ -41,3 +53,42 @@ html.tv .player:focus-within .player-bottom, html.tv .player:focus-within .playe
 html.tv .mv-tile:focus-within .mv-bar { opacity: 1; }
 /* Hover-only affordances aren't reachable; show them. */
 html.tv .hover-only { opacity: 1 !important; }
+html.tv .sidebar-collapse { display: none; }
+
+/* ---------- Browse screens on TV (Home, libraries, search) ---------- */
+/* Rows and page content: right edge inside the safe area; rows still scroll to the screen edge. */
+html.tv .row { margin-right: calc(var(--tv-x) * -1); }
+html.tv .row-head { padding-right: calc(var(--gutter) + var(--tv-x)); }
+html.tv .row-scroller { padding-right: calc(var(--gutter) + var(--tv-x)); scroll-padding: 0 calc(var(--gutter) + var(--tv-x)) 0 var(--gutter); }
+html.tv .hero-collapse { right: calc(var(--gutter) + var(--tv-x)); top: calc(var(--topbar-h) + var(--tv-y) + 12px); }
+html.tv .row-title { font-size: 1.3rem; }
+/* Focused card: lifted and ringed; titles under the art stay readable from the sofa. */
+html.tv .card .card-title { font-size: 0.95rem; }
+html.tv .card .card-sub { font-size: 0.8rem; }
+html.tv .card:focus .card-title, html.tv .card:focus-visible .card-title { color: var(--text); }
+/* Home tools (decide, Customize Home) are D-pad stops but stay quiet. */
+html.tv .home-head { min-height: 56px; }
+html.tv .home-tools .btn { min-height: 48px; padding: 0 16px; }
+/* Library toolbar: no sticky bar (focus scrolling would hide the grid under it); bigger chips. */
+html.tv .lib-toolbar { position: static; border-bottom: 0; background: none; }
+html.tv .chip-select select { font-size: 0.8rem; }
+html.tv .jumpbar button { width: 36px; height: 30px; font-size: 0.75rem; }
+html.tv .lib-list-row { padding: 12px; }
+html.tv .lib-list-row:focus { outline: 4px solid var(--focus); outline-offset: 0; background: var(--hover-strong); }
+/* Search: a big field; results are cards with the TV focus. */
+html.tv .search-field { height: 72px; }
+html.tv .search-field:focus-within { box-shadow: 0 0 0 4px var(--focus); }
+html.tv .search-field-input:focus, html.tv .search-field-input:focus-visible { outline: none; box-shadow: none; }
+html.tv .search-recent-item { height: 56px; }
+
+/* ---------- Rail fit (1080p) ---------- */
+/* The collapsed rail must hold every destination without scrolling: tighter stops and section hairlines, so the last
+   item (Requests, with its count) never sits under the footer divider. */
+html.tv .sidebar-collapsed .sidebar-nav { gap: 2px; padding-top: 2px; padding-bottom: 12px; }
+html.tv .sidebar-collapsed .nav-item { height: 40px; }
+html.tv .sidebar-collapsed .nav-icon { height: 40px; }
+html.tv .sidebar-collapsed .nav-section-head { margin: 4px 8px 5px; }
+html.tv .sidebar-collapsed .sidebar-foot { padding-top: 8px; padding-bottom: 8px; }
+/* Count badges sit on the icon's top-right corner of the 56 px TV stop. */
+html.tv .sidebar-collapsed .nav-count { left: 32px; top: 1px; }
+html.tv .sidebar-collapsed :is(.nav-dot, .nav-live) { left: 38px; top: 6px; }

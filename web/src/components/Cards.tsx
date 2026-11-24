@@ -2,13 +2,13 @@ import { memo, useEffect, useState, type MouseEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { CalendarEntry, Channel, Item } from '@mediamax/shared';
 import { Icon } from './Icon';
-import { Img, ProgressBar } from './ui';
+import { Badge, Img, ProgressBar, qualityTags } from './ui';
 import { usePlayItem } from '../player/music';
 import { api } from '../api/endpoints';
 import { useToast } from '../state/toast';
 import { peekHandlers } from './Peek';
 import { posterTransition } from '../utils/viewTransition';
-import { isSquare, itemLink, itemSubtitle, landscapeFor, posterFor, progressPct } from '../utils/items';
+import { episodeCode, isSquare, itemLink, itemSubtitle, landscapeFor, posterFor, progressPct } from '../utils/items';
 import { formatTime } from '../utils/format';
 
 /** Kinds of item that can go on My List. */
@@ -56,10 +56,58 @@ export function WatchlistButton({ item, variant = 'detail', onChange }: { item: 
     );
   }
   return (
-    <button className={`btn btn-glass btn-lg watchlist-btn watchlist-${variant} ${on ? 'active' : ''}`} onClick={toggle} aria-pressed={on} title={title} data-nav>
-      <Icon name={on ? 'check' : 'plus'} size={20} /> {label}
+    <button className={`btn btn-glass btn-lg watchlist-btn watchlist-${variant} ${variant === 'hero' ? 'on-media hero-secondary' : ''} ${on ? 'active' : ''}`} onClick={toggle} aria-pressed={on} title={title} data-nav>
+      <Icon name={on ? 'check' : 'plus'} size={20} /> {variant === 'hero' ? <span className="hero-btn-label">{label}</span> : label}
     </button>
   );
+}
+
+/** Kinds of item that can be marked watched from a card. */
+const canMarkWatched = (item: Pick<Item, 'type'>) => ['movie', 'show', 'season', 'episode', 'video', 'audiobook', 'podcastepisode'].includes(item.type);
+
+/** "Mark watched" toggle for card quick actions (small round button). */
+export function WatchedButton({ item, played, onChange }: { item: Item; played: boolean; onChange: (played: boolean) => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const toggle = async (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (busy) return;
+    const next = !played;
+    onChange(next);
+    setBusy(true);
+    try {
+      const ud = await api.items.setPlayed(item.id, next);
+      onChange(!!ud.played);
+    } catch (err) {
+      onChange(!next);
+      toast.error(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const title = played ? 'Mark as unwatched' : 'Mark as watched';
+  return (
+    <button className={`card-action ${played ? 'active' : ''}`} onClick={toggle} aria-label={title} title={title} aria-pressed={played} tabIndex={-1}>
+      <Icon name="eye" size={17} />
+    </button>
+  );
+}
+
+/** Added in the last two weeks and not started: shows a NEW tag on hover / focus. */
+export function isNewItem(item: Item, now = Date.now()): boolean {
+  if (item.userData?.played || (item.userData?.positionMs ?? 0) > 0) return false;
+  const t = Date.parse(item.addedAt);
+  return Number.isFinite(t) && now - t < 14 * 86_400_000 && ['movie', 'show', 'episode', 'album', 'audiobook'].includes(item.type);
+}
+
+/** Remaining time for a started item, e.g. "23 min left" / "1 h 5 min left" (null when not started or nearly done). */
+export function remainingLabel(item: Item): string | null {
+  const pos = item.userData?.positionMs ?? 0;
+  if (!item.durationMs || pos <= 0) return null;
+  const left = Math.round((item.durationMs - pos) / 60000);
+  if (left < 1) return null;
+  return left >= 60 ? `${Math.floor(left / 60)} h ${left % 60} min left` : `${left} min left`;
 }
 
 function Fallback({ title, icon = 'film' }: { title: string; icon?: Parameters<typeof Icon>[0]['name'] }) {
@@ -98,10 +146,16 @@ function fallbackIcon(item: Item) {
   }
 }
 
-export const PosterCard = memo(function PosterCard({ item, shape, showProgress = true, width }: { item: Item; shape?: 'poster' | 'square' | 'landscape'; showProgress?: boolean; width?: string }) {
+/**
+ * Media card: poster (2:3), square (music, photos) or landscape (16:9 episodes / videos). Always shows watched state,
+ * unplayed count and progress; hover / focus reveals quick actions (play, My List, watched) and badges (new, quality).
+ */
+export const PosterCard = memo(function PosterCard({ item, shape, showProgress = true, width, quickActions = true }: { item: Item; shape?: 'poster' | 'square' | 'landscape'; showProgress?: boolean; width?: string; quickActions?: boolean }) {
   const play = usePlayItem();
   const s = shape ?? (isSquare(item) ? 'square' : item.type === 'episode' || item.type === 'video' ? 'landscape' : 'poster');
   const img = s === 'landscape' ? landscapeFor(item) : posterFor(item);
+  const [played, setPlayed] = useState(!!item.userData?.played);
+  useEffect(() => setPlayed(!!item.userData?.played), [item.id, item.userData?.played]);
   const pct = showProgress ? progressPct(item) : 0;
   const unplayed = item.userData?.unplayedCount;
   const navigate = useNavigate();
@@ -110,6 +164,9 @@ export const PosterCard = memo(function PosterCard({ item, shape, showProgress =
     e.stopPropagation();
     play(item);
   };
+  const fresh = isNewItem(item);
+  const quality = qualityTags(item.media);
+  const canPlay = item.type !== 'photo';
   return (
     <Link
       to={itemLink(item)}
@@ -123,53 +180,65 @@ export const PosterCard = memo(function PosterCard({ item, shape, showProgress =
     >
       <div className="card-art">
         <Img src={img} width={s === 'landscape' ? 400 : 260} alt={item.title} fallback={<Fallback title={item.title} icon={fallbackIcon(item)} />} />
-        <div className="card-hover">
-          {item.type !== 'photo' && (
-            <button className="card-play" data-play onClick={onPlay} aria-label={`Play ${item.title}`} tabIndex={-1}>
-              <Icon name="play" size={22} />
-            </button>
-          )}
-          {canWatchlist(item) && (
-            <div className="card-actions">
-              <WatchlistButton item={item} variant="card" />
+        {quickActions && (
+          <div className="card-hover">
+            <div className="card-hover-badges">
+              {fresh && <Badge tone="new">New</Badge>}
+              {quality.map((q) => <Badge key={q.label} tone="quality" title={q.title}>{q.label}</Badge>)}
             </div>
-          )}
-        </div>
-        {item.userData?.played && item.type !== 'track' && (
+            <div className="card-quick">
+              {canPlay && (
+                <button className="card-play" data-play onClick={onPlay} aria-label={`Play ${item.title}`} title="Play" tabIndex={-1}>
+                  <Icon name="play" size={18} />
+                </button>
+              )}
+              {canWatchlist(item) && <WatchlistButton item={item} variant="card" />}
+              {canMarkWatched(item) && <WatchedButton item={item} played={played} onChange={setPlayed} />}
+            </div>
+          </div>
+        )}
+        {played && item.type !== 'track' && (
           <span className="card-badge card-watched" title="Watched">
             <Icon name="check" size={13} />
           </span>
         )}
-        {!item.userData?.played && unplayed != null && unplayed > 0 && <span className="card-badge card-count">{unplayed}</span>}
+        {!played && unplayed != null && unplayed > 0 && <span className="card-badge card-count" title={`${unplayed} unwatched`}>{unplayed}</span>}
         {item.userData?.favorite && (
-          <span className="card-fav">
+          <span className="card-fav" title="Favourite">
             <Icon name="heartFill" size={13} />
           </span>
         )}
-        {pct > 0 && !item.userData?.played && <ProgressBar value={pct} className="card-progress" />}
+        {pct > 0 && !played && <ProgressBar value={pct} className="card-progress" />}
       </div>
       <div className="card-meta">
         <div className="card-title">{item.title}</div>
-        <div className="card-sub">{itemSubtitle(item)}</div>
+        <div className="card-sub"><span>{itemSubtitle(item)}</span></div>
       </div>
     </Link>
   );
 });
 
-/** Wide card used by Continue Watching / Next Up. */
+/**
+ * Continue Watching / Next Up: a 16:9 still with progress along the bottom edge; title, episode and time left
+ * below. One click resumes (when started); quick actions: My List and watched.
+ */
 export const LandscapeCard = memo(function LandscapeCard({ item }: { item: Item }) {
   const play = usePlayItem();
   const pct = progressPct(item);
-  const remaining = item.durationMs && item.userData?.positionMs ? item.durationMs - item.userData.positionMs : null;
-  const title = item.type === 'episode' ? item.grandparentTitle ?? item.title : item.title;
-  const sub = item.type === 'episode' ? `${item.parentIndex != null ? `S${item.parentIndex} · ` : ''}E${item.index ?? '?'} — ${item.title}` : itemSubtitle(item);
-  // A wide "frame": title, episode and time left sit inside the picture over a soft shade, progress along the bottom edge.
+  const left = pct > 0 ? remainingLabel(item) : null;
+  const [played, setPlayed] = useState(!!item.userData?.played);
+  useEffect(() => setPlayed(!!item.userData?.played), [item.id, item.userData?.played]);
+  const isEp = item.type === 'episode';
+  const title = isEp ? item.grandparentTitle ?? item.title : item.title;
+  const code = episodeCode(item);
+  const sub = isEp ? [code, item.title].filter(Boolean).join(' · ') : itemSubtitle(item);
   return (
     <Link
       to={itemLink(item)}
       className="card card-landscape card-continue"
       data-nav
-      aria-label={`${title}${item.type === 'episode' ? `, ${sub}` : ''}${remaining != null && remaining > 60000 && pct > 0 ? `, ${Math.round(remaining / 60000)} minutes left` : ''}`}
+      title={title}
+      aria-label={`${pct > 0 ? 'Resume ' : ''}${title}${isEp ? `, ${sub}` : ''}${left ? `, ${left}` : ''}`}
       {...peekHandlers(item)}
       data-play={pct > 0 ? '' : undefined}
       onClick={(e) => {
@@ -182,18 +251,23 @@ export const LandscapeCard = memo(function LandscapeCard({ item }: { item: Item 
       <div className="card-art">
         <Img src={landscapeFor(item)} width={480} alt="" fallback={<Fallback title={title} icon={fallbackIcon(item)} />} />
         <div className="card-hover">
-          <button className="card-play" data-play onClick={(e) => { e.preventDefault(); e.stopPropagation(); play(item); }} aria-label={`Play ${title}`} tabIndex={-1}>
+          <button className="card-play" data-play onClick={(e) => { e.preventDefault(); e.stopPropagation(); play(item); }} aria-label={`Play ${title}`} title={pct > 0 ? 'Resume' : 'Play'} tabIndex={-1}>
             <Icon name="play" size={22} />
           </button>
-        </div>
-        <div className="cw-info" aria-hidden="true">
-          <div className="cw-title">{title}</div>
-          <div className="cw-sub">
-            <span>{sub}</span>
-            {remaining != null && remaining > 60000 && pct > 0 && <span className="cw-left">{Math.round(remaining / 60000)} min left</span>}
+          <div className="cw-actions">
+            {canWatchlist(item) && <WatchlistButton item={item} variant="card" />}
+            {canMarkWatched(item) && <WatchedButton item={item} played={played} onChange={setPlayed} />}
           </div>
         </div>
-        {pct > 0 && <ProgressBar value={pct} className="card-progress cw-progress" />}
+        {played && <span className="card-badge card-watched" title="Watched"><Icon name="check" size={13} /></span>}
+        {pct > 0 && !played && <ProgressBar value={pct} className="card-progress" />}
+      </div>
+      <div className="card-meta">
+        <div className="card-title">{title}</div>
+        <div className="card-sub">
+          <span className={isEp ? 'cw-ep' : undefined}>{sub}</span>
+          {left && <span className="card-left">{left}</span>}
+        </div>
       </div>
     </Link>
   );

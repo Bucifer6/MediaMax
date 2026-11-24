@@ -172,6 +172,7 @@ function validateTheme(t: Theme): Theme {
     posterShape: (['rounded', 'square', 'pill'] as const).includes(t.posterShape) ? t.posterShape : 'rounded',
     cardSize: (['small', 'medium', 'large'] as const).includes(t.cardSize) ? t.cardSize : 'medium',
     heroStyle: (['carousel', 'static', 'none'] as const).includes(t.heroStyle) ? t.heroStyle : 'carousel',
+    brandGradient: Array.isArray(t.brandGradient) && t.brandGradient.length === 3 && t.brandGradient.every((c) => typeof c === 'string' && HEX.test(c)) ? [t.brandGradient[0], t.brandGradient[1], t.brandGradient[2]] : null,
     builtIn: false,
   };
 }

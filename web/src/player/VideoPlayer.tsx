@@ -30,7 +30,8 @@ import { formatClock, languageName } from '../utils/format';
 import { useRemoteTarget } from '../remote/useRemoteTarget';
 import { openPairDialog } from '../remote/api';
 import { isResumable } from '../utils/items';
-import { SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitleStyleOf } from './subtitleStyle';
+import { SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitlePreviewStyle, subtitleStyleOf } from './subtitleStyle';
+import '../styles/screens-player.css';
 import { SubtitleOverlay, type SubtitleStatus } from './subtitles/SubtitleOverlay';
 import { useAdaptive } from './useAdaptive';
 import { initialBandwidth } from './bandwidth';
@@ -1329,10 +1330,19 @@ export default function VideoPlayer() {
     skip: () => (introThen ? skipIntros() : activeSkip ? seekTo(activeSkip.endMs) : inCredits ? (info?.nextItemId ? goNext() : seekTo(inCredits.endMs)) : undefined),
   });
 
+  // The audio & subtitles panel (and its style / sync sub-views); focus moves into it when it opens.
+  const avOpen = menu === 'subs' || menu === 'audio' || menu === 'subStyle' || menu === 'sync';
+  const avRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!avOpen) return;
+    const el = avRef.current;
+    (el?.querySelector<HTMLElement>('.option.selected, .chip.active, .btn-icon') ?? el)?.focus();
+  }, [avOpen, menu]);
+
   return (
     <div
       ref={shellRef}
-      className={`player ${controls ? 'show-controls' : 'hide-controls'} ${fullscreen ? 'is-fs' : ''}`}
+      className={`player vp ${controls ? 'show-controls' : 'hide-controls'} ${fullscreen ? 'is-fs' : ''} ${paused ? 'is-paused' : ''}`}
       onMouseMove={poke}
       onTouchStart={poke}
     >
@@ -1359,6 +1369,13 @@ export default function VideoPlayer() {
       )}
 
       {(buffering && !error && !casting) && <div className="player-center"><Spinner size={56} /></div>}
+      {!buffering && !error && !ended && !casting && (
+        <div className="vp-center" onClick={(e) => e.stopPropagation()}>
+          <button className="vp-center-skip" onClick={() => { seekTo(currentMs() - 10000); poke(); }} aria-label="Back 10 seconds" tabIndex={-1}><Icon name="rewind10" size={30} /></button>
+          <button className="vp-center-play" onClick={() => { togglePlay(); poke(); }} aria-label={paused ? 'Play' : 'Pause'} tabIndex={-1}><Icon name={paused ? 'play' : 'pause'} size={40} /></button>
+          <button className="vp-center-skip" onClick={() => { seekTo(currentMs() + 10000); poke(); }} aria-label="Forward 10 seconds" tabIndex={-1}><Icon name="forward10" size={30} /></button>
+        </div>
+      )}
       {casting && (
         <div className="cast-overlay">
           {backdrop && <div className="cast-overlay-bg"><Img src={backdrop} width={1280} /></div>}
@@ -1435,6 +1452,7 @@ export default function VideoPlayer() {
         {sync.room && <span className="badge badge-accent"><Icon name="together" size={12} /> {sync.room.members.length} watching</span>}
         {marathonId && <span className="badge badge-accent"><Icon name="shuffle" size={12} /> Marathon</span>}
         {marathon.sleepButton}
+        <button className={`btn-icon vp-info-btn ${showStats ? 'active' : ''}`} onClick={() => setShowStats((x) => !x)} aria-label="Playback info" aria-pressed={showStats} title="Playback info (I)"><Icon name="info" size={22} /></button>
       </div>
       {marathon.overlay}
 
@@ -1512,137 +1530,13 @@ export default function VideoPlayer() {
             <VolumeControl volume={volume} muted={muted} onVolume={setVolume} onMute={setMuted} />
           </div>
           <div className="pc-right">
-            <div className="pc-menu">
-              <button className={`btn-icon ${subtitleIndex != null ? 'active' : ''}`} onClick={() => setMenu(menu === 'subs' ? null : 'subs')} aria-label="Subtitles"><Icon name="subtitles" size={24} /></button>
-              <Popover open={menu === 'subs'} onClose={() => setMenu(null)}>
-                <OptionList<string>
-                  title="Subtitles"
-                  value={subtitleIndex == null ? 'off' : `${burned ? 'b' : 't'}${subtitleIndex}`}
-                  onSelect={(v) => (v === 'off' ? selectSubtitle(null) : selectSubtitle(Number(v.slice(1)), v[0] === 'b'))}
-                  options={[
-                    { label: 'Off', value: 'off' },
-                    ...textSubs.map((s) => ({ label: s.title || languageName(s.language), value: `t${s.index}`, sub: [s.forced && 'Forced', s.default && 'Default', s.format && s.format !== 'srt' && s.format !== 'vtt' && s.format.toUpperCase()].filter(Boolean).join(' · ') || undefined })),
-                    ...burnOnly.map((s) => ({ label: s.title || languageName(s.language), value: `b${s.index}`, sub: `${(s.codec ?? 'bitmap').toUpperCase()} · burn-in (transcodes)` })),
-                  ]}
-                />
-                <button className="option option-action" onClick={() => setMenu('subStyle')}>
-                  <span className="option-check"><Icon name="type" size={16} /></span>
-                  <span className="option-label">Subtitle style…</span>
-                </button>
-                <button className="option option-action option-action-plain" onClick={() => setMenu('sync')}>
-                  <span className="option-check"><Icon name="clock" size={16} /></span>
-                  <span className="option-label">
-                    Sync &amp; delay…
-                    {(subDelayMs !== 0 || audioDelayMs !== 0) && <small>Subtitles {formatDelay(subDelayMs)} · Audio {formatDelay(audioDelayMs)}</small>}
-                  </span>
-                </button>
-                {canSearchSubtitles(item) && (
-                  <button className="option option-action option-action-plain" onClick={openSubSearch}>
-                    <span className="option-check"><Icon name="search" size={16} /></span>
-                    <span className="option-label">Search online…</span>
-                  </button>
-                )}
-              </Popover>
-              <Popover open={menu === 'subStyle'} onClose={() => setMenu(null)} className="substyle-popover">
-                <div className="option-title option-title-back">
-                  <button className="btn-icon" onClick={() => setMenu('subs')} aria-label="Back to subtitles"><Icon name="chevronLeft" size={16} /></button>
-                  Subtitle style
-                </div>
-                {(Object.keys(SUBTITLE_OPTIONS) as (keyof SubtitleStyle)[]).map((field) => (
-                  <div className="substyle-row" key={field} role="radiogroup" aria-label={SUBTITLE_FIELD_LABELS[field]}>
-                    <span className="substyle-label">{SUBTITLE_FIELD_LABELS[field]}</span>
-                    <div className="substyle-chips">
-                      {SUBTITLE_OPTIONS[field].map((o) => (
-                        <button
-                          key={o.value}
-                          role="radio"
-                          aria-checked={subStyle[field] === o.value}
-                          className={`chip ${subStyle[field] === o.value ? 'active' : ''}`}
-                          onClick={() => void saveSubStyle({ [field]: o.value } as Partial<SubtitleStyle>)}
-                        >
-                          {o.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </Popover>
-              <Popover open={menu === 'sync'} onClose={() => setMenu(null)} className="sync-popover">
-                <div className="option-title option-title-back">
-                  <button className="btn-icon" onClick={() => setMenu('subs')} aria-label="Back to subtitles"><Icon name="chevronLeft" size={16} /></button>
-                  Sync &amp; delay
-                </div>
-                <div className="sync-row">
-                  <span className="sync-label">Subtitles<small>G / H</small></span>
-                  <button className="btn-icon" onClick={() => nudgeSubtitles(-SUB_DELAY_STEP)} aria-label="Subtitles earlier"><Icon name="minus" size={16} /></button>
-                  <output className="sync-value" aria-live="polite">{formatDelay(subDelayMs)}</output>
-                  <button className="btn-icon" onClick={() => nudgeSubtitles(SUB_DELAY_STEP)} aria-label="Subtitles later"><Icon name="plus" size={16} /></button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => nudgeSubtitles(null)} disabled={!subDelayMs}>Reset</button>
-                </div>
-                <input
-                  className="sync-slider"
-                  type="range"
-                  min={-SUB_DELAY_MAX}
-                  max={SUB_DELAY_MAX}
-                  step={SUB_DELAY_STEP}
-                  value={subDelayMs}
-                  onChange={(e) => nudgeSubtitles(Number(e.target.value) - subDelayMs)}
-                  aria-label="Subtitle delay"
-                />
-                {!casting && (
-                  <>
-                    <div className="sync-row">
-                      <span className="sync-label">Audio<small>delay only</small></span>
-                      <button className="btn-icon" onClick={() => nudgeAudio(-AUDIO_DELAY_STEP)} aria-label="Audio earlier" disabled={!audioDelayMs}><Icon name="minus" size={16} /></button>
-                      <output className="sync-value" aria-live="polite">{formatDelay(audioDelayMs)}</output>
-                      <button className="btn-icon" onClick={() => nudgeAudio(AUDIO_DELAY_STEP)} aria-label="Audio later"><Icon name="plus" size={16} /></button>
-                      <button className="btn btn-ghost btn-sm" onClick={() => nudgeAudio(null)} disabled={!audioDelayMs}>Reset</button>
-                    </div>
-                    <p className="sync-hint">Positive values make subtitles or sound come later. Audio can only be delayed (for sound that runs ahead of the picture).</p>
-                  </>
-                )}
-              </Popover>
-            </div>
+            <button className={`btn-icon vp-av-btn ${subtitleIndex != null ? 'active' : ''}`} onClick={() => setMenu(avOpen ? null : 'subs')} aria-label="Audio and subtitles" aria-expanded={avOpen} aria-haspopup="dialog" title="Audio & subtitles (C / A)"><Icon name="subtitles" size={24} /></button>
             {(item?.chapters?.length ?? 0) > 0 && (
               <div className="pc-menu">
                 <button className={`btn-icon ${menu === 'chapters' ? 'active' : ''}`} onClick={() => setMenu(menu === 'chapters' ? null : 'chapters')} aria-label="Chapters"><Icon name="chapters" size={22} /></button>
                 <Popover open={menu === 'chapters'} onClose={() => setMenu(null)} className="chapters-popover">
                   <div className="option-title">Chapters</div>
                   <ChapterList chapters={item!.chapters!} positionMs={positionMs} onSeek={(ms) => { setMenu(null); seekTo(ms); }} />
-                </Popover>
-              </div>
-            )}
-            {audioStreams.length > 0 && (
-              <div className="pc-menu">
-                <button className="btn-icon" onClick={() => setMenu(menu === 'audio' ? null : 'audio')} aria-label="Audio"><Icon name="audio" size={22} /></button>
-                <Popover open={menu === 'audio'} onClose={() => setMenu(null)} className="audio-popover">
-                  <OptionList<number | undefined>
-                    title="Audio"
-                    value={currentAudio}
-                    onSelect={(v) => v !== undefined && v !== currentAudio && selectAudio(v)}
-                    options={audioStreams.map((a) => ({
-                      label: a.title || languageName(a.language),
-                      value: a.index,
-                      sub: <span className="audio-track-sub">{audioSummary(a)} <AudioBadges stream={a} channels={false} /></span>,
-                    }))}
-                  />
-                  {info?.audio && info.audio.delivery !== 'direct' && <p className="audio-delivery">{audioDecisionText(info.audio)}</p>}
-                  {!casting && (
-                    <div className="audio-panel" role="group" aria-label="Listening">
-                      {([
-                        ['nightMode', 'Night mode', 'Softer explosions, clearer quiet scenes'],
-                        ['dialogueBoost', 'Dialogue boost', 'Lifts voices above music and effects'],
-                        ['normalize', 'Normalise volume', 'Even loudness (re-encodes the audio on the server)'],
-                      ] as const).map(([key, label, hint]) => (
-                        <button key={key} type="button" role="switch" aria-checked={!!comforts[key]} className="audio-toggle" onClick={() => void setComfort(key, !comforts[key])}>
-                          <span>{label}<small>{hint}</small></span>
-                          <i className="audio-switch" aria-hidden="true" />
-                        </button>
-                      ))}
-                      {!webFx && <p className="audio-note">This device plays sound through its own hardware pipeline, so these are applied by the server (the audio is re-encoded; the picture is not).</p>}
-                      {(comforts.delayMs ?? 0) !== 0 && <p className="audio-note">Lip-sync for this device: {formatDelay(comforts.delayMs ?? 0)} (Settings → Audio).</p>}
-                    </div>
-                  )}
                 </Popover>
               </div>
             )}
@@ -1707,6 +1601,139 @@ export default function VideoPlayer() {
           </div>
         </div>
       </div>
+      {/* Audio & subtitles: one panel on the right, with a live preview of the caption style. */}
+      <Popover open={avOpen} onClose={() => setMenu(null)} className="vp-panel">
+        <div ref={avRef} className="vp-panel-inner" role="dialog" aria-label={menu === 'subStyle' ? 'Subtitle style' : menu === 'sync' ? 'Sync and delay' : 'Audio and subtitles'} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') setMenu(null); }}>
+          <div className="vp-panel-head">
+            {menu === 'subStyle' || menu === 'sync' ? (
+              <button className="btn-icon" onClick={() => setMenu('subs')} aria-label="Back to audio and subtitles"><Icon name="chevronLeft" size={18} /></button>
+            ) : null}
+            <strong>{menu === 'subStyle' ? 'Subtitle style' : menu === 'sync' ? 'Sync & delay' : 'Audio & subtitles'}</strong>
+            <button className="btn-icon vp-panel-close" onClick={() => setMenu(null)} aria-label="Close"><Icon name="x" size={18} /></button>
+          </div>
+          <div className={`vp-caption-preview ${subStyle.position === 'raised' ? 'raised' : ''}`} aria-hidden="true">
+            <span className="vp-caption-label">{subtitleIndex == null && menu !== 'subStyle' ? 'Subtitles off · preview' : 'Preview'}</span>
+            <span className="vp-caption-text" style={subtitlePreviewStyle(subStyle, 18)}>{'Where do you think you\'re going?'}</span>
+          </div>
+          {menu === 'subStyle' ? (
+            <div className="vp-panel-body substyle-body">
+                {(Object.keys(SUBTITLE_OPTIONS) as (keyof SubtitleStyle)[]).map((field) => (
+                  <div className="substyle-row" key={field} role="radiogroup" aria-label={SUBTITLE_FIELD_LABELS[field]}>
+                    <span className="substyle-label">{SUBTITLE_FIELD_LABELS[field]}</span>
+                    <div className="substyle-chips">
+                      {SUBTITLE_OPTIONS[field].map((o) => (
+                        <button
+                          key={o.value}
+                          role="radio"
+                          aria-checked={subStyle[field] === o.value}
+                          className={`chip ${subStyle[field] === o.value ? 'active' : ''}`}
+                          onClick={() => void saveSubStyle({ [field]: o.value } as Partial<SubtitleStyle>)}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ) : menu === 'sync' ? (
+            <div className="vp-panel-body sync-body">
+                <div className="sync-row">
+                  <span className="sync-label">Subtitles<small>G / H</small></span>
+                  <button className="btn-icon" onClick={() => nudgeSubtitles(-SUB_DELAY_STEP)} aria-label="Subtitles earlier"><Icon name="minus" size={16} /></button>
+                  <output className="sync-value" aria-live="polite">{formatDelay(subDelayMs)}</output>
+                  <button className="btn-icon" onClick={() => nudgeSubtitles(SUB_DELAY_STEP)} aria-label="Subtitles later"><Icon name="plus" size={16} /></button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => nudgeSubtitles(null)} disabled={!subDelayMs}>Reset</button>
+                </div>
+                <input
+                  className="sync-slider"
+                  type="range"
+                  min={-SUB_DELAY_MAX}
+                  max={SUB_DELAY_MAX}
+                  step={SUB_DELAY_STEP}
+                  value={subDelayMs}
+                  onChange={(e) => nudgeSubtitles(Number(e.target.value) - subDelayMs)}
+                  aria-label="Subtitle delay"
+                />
+                {!casting && (
+                  <>
+                    <div className="sync-row">
+                      <span className="sync-label">Audio<small>delay only</small></span>
+                      <button className="btn-icon" onClick={() => nudgeAudio(-AUDIO_DELAY_STEP)} aria-label="Audio earlier" disabled={!audioDelayMs}><Icon name="minus" size={16} /></button>
+                      <output className="sync-value" aria-live="polite">{formatDelay(audioDelayMs)}</output>
+                      <button className="btn-icon" onClick={() => nudgeAudio(AUDIO_DELAY_STEP)} aria-label="Audio later"><Icon name="plus" size={16} /></button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => nudgeAudio(null)} disabled={!audioDelayMs}>Reset</button>
+                    </div>
+                    <p className="sync-hint">Positive values make subtitles or sound come later. Audio can only be delayed (for sound that runs ahead of the picture).</p>
+                  </>
+                )}
+            </div>
+          ) : (
+            <div className={`vp-panel-body vp-panel-cols ${audioStreams.length > 0 ? 'two' : ''}`}>
+              {audioStreams.length > 0 && (
+                <div className="vp-col">
+                  <OptionList<number | undefined>
+                    title="Audio"
+                    value={currentAudio}
+                    onSelect={(v) => v !== undefined && v !== currentAudio && selectAudio(v)}
+                    options={audioStreams.map((a) => ({
+                      label: a.title || languageName(a.language),
+                      value: a.index,
+                      sub: <span className="audio-track-sub">{audioSummary(a)} <AudioBadges stream={a} channels={false} /></span>,
+                    }))}
+                  />
+                  {info?.audio && info.audio.delivery !== 'direct' && <p className="audio-delivery">{audioDecisionText(info.audio)}</p>}
+                  {!casting && (
+                    <div className="audio-panel" role="group" aria-label="Listening">
+                      {([
+                        ['nightMode', 'Night mode', 'Softer explosions, clearer quiet scenes'],
+                        ['dialogueBoost', 'Dialogue boost', 'Lifts voices above music and effects'],
+                        ['normalize', 'Normalise volume', 'Even loudness (re-encodes the audio on the server)'],
+                      ] as const).map(([key, label, hint]) => (
+                        <button key={key} type="button" role="switch" aria-checked={!!comforts[key]} className="audio-toggle" onClick={() => void setComfort(key, !comforts[key])}>
+                          <span>{label}<small>{hint}</small></span>
+                          <i className="audio-switch" aria-hidden="true" />
+                        </button>
+                      ))}
+                      {!webFx && <p className="audio-note">This device plays sound through its own hardware pipeline, so these are applied by the server (the audio is re-encoded; the picture is not).</p>}
+                      {(comforts.delayMs ?? 0) !== 0 && <p className="audio-note">Lip-sync for this device: {formatDelay(comforts.delayMs ?? 0)} (Settings → Audio).</p>}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="vp-col">
+                <OptionList<string>
+                  title="Subtitles"
+                  value={subtitleIndex == null ? 'off' : `${burned ? 'b' : 't'}${subtitleIndex}`}
+                  onSelect={(v) => (v === 'off' ? selectSubtitle(null) : selectSubtitle(Number(v.slice(1)), v[0] === 'b'))}
+                  options={[
+                    { label: 'Off', value: 'off' },
+                    ...textSubs.map((s) => ({ label: s.title || languageName(s.language), value: `t${s.index}`, sub: [s.forced && 'Forced', s.default && 'Default', s.format && s.format !== 'srt' && s.format !== 'vtt' && s.format.toUpperCase()].filter(Boolean).join(' · ') || undefined })),
+                    ...burnOnly.map((s) => ({ label: s.title || languageName(s.language), value: `b${s.index}`, sub: `${(s.codec ?? 'bitmap').toUpperCase()} · burn-in (transcodes)` })),
+                  ]}
+                />
+                <button className="option option-action" onClick={() => setMenu('subStyle')}>
+                  <span className="option-check"><Icon name="type" size={16} /></span>
+                  <span className="option-label">Subtitle style…</span>
+                </button>
+                <button className="option option-action option-action-plain" onClick={() => setMenu('sync')}>
+                  <span className="option-check"><Icon name="clock" size={16} /></span>
+                  <span className="option-label">
+                    Sync &amp; delay…
+                    {(subDelayMs !== 0 || audioDelayMs !== 0) && <small>Subtitles {formatDelay(subDelayMs)} · Audio {formatDelay(audioDelayMs)}</small>}
+                  </span>
+                </button>
+                {canSearchSubtitles(item) && (
+                  <button className="option option-action option-action-plain" onClick={openSubSearch}>
+                    <span className="option-check"><Icon name="search" size={16} /></span>
+                    <span className="option-label">Search online…</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </Popover>
       {canSearchSubtitles(item) && (
         <SubtitleSearchModal open={subSearch} onClose={() => setSubSearch(false)} item={item} onUpdated={onSubtitlesChanged} container={shellRef.current} />
       )}

@@ -40,7 +40,7 @@
 .tl-dot.k-approved, .tl-dot.k-processing, .tl-dot.k-retried { color: var(--c-accent); }
 .tl-dot.k-available { color: var(--c-success); }
 .tl-dot.k-declined, .tl-dot.k-failed { color: var(--c-danger); }
-.tl-dot.k-comment { color: var(--c-primary); }
+.tl-dot.k-comment { color: var(--accent-ink); }
 .tl-body { min-width: 0; }
 .tl-body p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tl-comment p { padding: 8px 12px; border-radius: var(--radius); background: var(--c-surface-alt); }
@@ -67,14 +67,17 @@
 .disc-genres { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
 .disc-card-tools { position: absolute; bottom: 6px; right: 6px; display: flex; gap: 4px; z-index: 2; }
 .disc-card-tools .btn-icon { width: 30px; height: 30px; background: color-mix(in srgb, var(--c-bg) 70%, transparent); border-radius: 50%; }
-.disc-card-tools .btn-icon.on { color: var(--c-primary); }
+.disc-card-tools .btn-icon.on { color: var(--accent-ink); }
 .discover-card { position: relative; }
 .discover-card.is-blacklisted .card-art { filter: grayscale(1); opacity: 0.6; }
-.person-head { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; }
-.person-photo { width: 160px; flex: none; border-radius: var(--radius-lg); overflow: hidden; aspect-ratio: 2 / 3; background: var(--c-surface-alt); }
+.person-head { display: flex; gap: var(--s-6); align-items: flex-start; margin-bottom: var(--s-8); flex-wrap: wrap; }
+.person-photo { width: 168px; flex: none; border-radius: var(--poster-radius); overflow: hidden; aspect-ratio: 2 / 3; background: var(--surface-2); display: grid; place-items: center; color: var(--text-3); box-shadow: inset 0 0 0 1px var(--line); }
+.person-head .dp-name { margin: 0 0 var(--s-2); font-family: var(--font-display); font-size: var(--t-3xl); font-weight: 650; letter-spacing: -0.025em; line-height: var(--lh-display); }
+.person-head .dp-facts { margin: 0 0 var(--s-4); color: var(--text-2); font-size: var(--t-sm); }
 .person-photo img { width: 100%; height: 100%; object-fit: cover; }
 .person-bio { flex: 1; min-width: 240px; }
 .person-bio p { white-space: pre-line; max-height: 12em; overflow: auto; }
+.person-bio p:not(.dp-facts) { color: var(--text-2); line-height: var(--lh-body); max-width: 72ch; }
 
 /* issues */
 .issue-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }

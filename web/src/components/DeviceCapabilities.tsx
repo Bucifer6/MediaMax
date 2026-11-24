@@ -41,7 +41,7 @@ export function DeviceCapabilitiesCard() {
           </dd>
           <dt><label htmlFor="dv-override">Dolby Vision</label></dt>
           <dd>
-            <select id="dv-override" value={dvOverride} onChange={(e) => changeDv(e.target.value as DolbyVisionOverride)}>
+            <select id="dv-override" className="select" value={dvOverride} onChange={(e) => changeDv(e.target.value as DolbyVisionOverride)}>
               <option value="auto">Auto (detect)</option>
               <option value="yes">Yes, this {tv ? 'TV' : 'device'} supports Dolby Vision</option>
               <option value="no">No, play the HDR10 base layer</option>

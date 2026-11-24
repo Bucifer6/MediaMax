@@ -2,7 +2,13 @@ import { useId } from 'react';
 import { useApp } from '../state/app';
 import { Img } from './ui';
 import { LEGACY_PRODUCT_NAMES, PRODUCT_NAME } from '../brand/product';
-import { MARK_ASPECT, MARK_FULL, MARK_SIMPLE, MARK_VIEWBOX, NAME } from '../brand/art';
+import { BRAND_GRADIENT, MARK_ASPECT, MARK_FULL, MARK_SIMPLE, MARK_VIEWBOX, NAME } from '../brand/art';
+
+/** The generated mark with its gradient stops bound to the skin's --brand-g1..3 (stock colours as fallback). */
+const skinned = (art: string) =>
+  BRAND_GRADIENT.reduce((a, c, i) => a.replaceAll(`stop-color="${c}"`, `style="stop-color:var(--brand-g${i + 1},${c})"`), art);
+const SKINNED_FULL = skinned(MARK_FULL);
+const SKINNED_SIMPLE = skinned(MARK_SIMPLE);
 
 /**
  * The Vibe mark (the Lens: a disc in the brand gradient with a V-shaped hole), inlined so it is crisp at any size.
@@ -10,7 +16,7 @@ import { MARK_ASPECT, MARK_FULL, MARK_SIMPLE, MARK_VIEWBOX, NAME } from '../bran
  */
 export function BrandMark({ size = 32, simple }: { size?: number; simple?: boolean }) {
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, '');
-  const art = (simple ?? size < 28) ? MARK_SIMPLE : MARK_FULL;
+  const art = (simple ?? size < 28) ? SKINNED_SIMPLE : SKINNED_FULL;
   return (
     <svg
       width={Math.round(size * MARK_ASPECT)}

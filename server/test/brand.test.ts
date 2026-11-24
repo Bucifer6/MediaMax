@@ -30,7 +30,7 @@ test('Vibe themes use the brand colours and meet AA', () => {
     const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
     return (x + 0.05) / (y + 0.05);
   };
-  for (const id of ['mediamax', 'mediamax-light']) {
+  for (const id of ['mediamax', 'mediamax-light', 'vibe-aurora', 'vibe-aurora-light', 'vibe-ember', 'vibe-ember-light']) {
     const t = BUILTIN_THEMES.find((x) => x.id === id)!;
     assert.ok(t, id);
     const c = t.colors;
@@ -39,6 +39,22 @@ test('Vibe themes use the brand colours and meet AA', () => {
     }
     // accent is used for icons and large text: 3:1
     assert.ok(cr(c.accent, c.background) >= 3, `${id} accent`);
+  }
+});
+
+test('Vibe skins: each built-in skin has a light sibling and a valid logo gradient', () => {
+  const hex = /^#[0-9a-f]{6}$/i;
+  for (const id of ['mediamax', 'vibe-aurora', 'vibe-ember']) {
+    const dark = BUILTIN_THEMES.find((t) => t.id === id)!;
+    const light = BUILTIN_THEMES.find((t) => t.id === `${id}-light`)!;
+    assert.ok(dark && light, id);
+    assert.equal(dark.mode, 'dark');
+    assert.equal(light.mode, 'light');
+    for (const t of [dark, light]) {
+      assert.equal(t.brandGradient?.length, 3, t.id);
+      assert.ok(t.brandGradient!.every((c) => hex.test(c)), t.id);
+    }
+    assert.deepEqual(dark.brandGradient, light.brandGradient, `${id}: dark and light share the logo colours`);
   }
 });
 
@@ -55,9 +71,9 @@ test('shipped logo SVGs are pure outlines', () => {
   }
 });
 
-test('the brand themes are named Vibe; their ids stay the same for existing settings', () => {
-  assert.equal(BUILTIN_THEMES.find((t) => t.id === 'mediamax')?.name, 'Vibe');
-  assert.equal(BUILTIN_THEMES.find((t) => t.id === 'mediamax-light')?.name, 'Vibe Light');
+test('the brand themes are named Vibe Rose; their ids stay the same for existing settings', () => {
+  assert.equal(BUILTIN_THEMES.find((t) => t.id === 'mediamax')?.name, 'Vibe Rose');
+  assert.equal(BUILTIN_THEMES.find((t) => t.id === 'mediamax-light')?.name, 'Vibe Rose Light');
 });
 
 test('app identifiers come from one family, with kinora:// first and mediamax:// still registered', () => {

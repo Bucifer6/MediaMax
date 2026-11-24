@@ -6,6 +6,7 @@ import { useApp } from '../state/app';
 import { useAsync } from '../hooks';
 import { Spinner } from '../components/ui';
 import { Icon } from '../components/Icon';
+import { LightField } from '../components/LightField';
 import { BrandLogo } from '../components/BrandLogo';
 
 /** Public page for a one-time set-password link: /set-password/:token (accounts moved over from Emby, Jellyfin or Plex). Works while signed out. */
@@ -42,11 +43,8 @@ export default function SetPasswordPage() {
   const p = preview.data;
   const serverName = p?.serverName || branding.serverName;
   return (
-    <div className="login">
-      <div className="login-bg" style={bg ? { backgroundImage: `url("${mediaUrl(bg, 1920)}")` } : undefined}>
-        {!bg && <div className="login-aurora" />}
-      </div>
-      <div className="login-shade" />
+    <div className="login vibe-auth">
+      <LightField image={bg ? mediaUrl(bg, 1920) : null} />
       <div className="login-inner">
         <div className="login-brand">
           <BrandLogo height={52} wide={!branding.logoUrl || !!branding.logoWideUrl} />

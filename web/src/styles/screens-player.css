@@ -1,0 +1,183 @@
+/* ==========================================================================
+   Video player OSD (player/VideoPlayer.tsx, root `.player.vp`). Restyle only: playback logic is unchanged.
+   Big centre play, a bottom scrubber with trickplay and chapter ticks, a skip pill, the audio & subtitles panel
+   on the right with a live caption preview, and a compact info panel that leaves the picture visible.
+   The live player and multiview keep the shared .player rules in player.css.
+   ========================================================================== */
+
+/* Chapter ticks on the scrubber (SeekBar renders them whenever chapters are passed; only the video OSD shows them). */
+.seek-chapter-tick { display: none; }
+.vp .seek-chapter-tick { display: block; position: absolute; top: -1px; bottom: -1px; width: 3px; margin-left: -1.5px; background: rgb(0 0 0 / 0.75); pointer-events: none; z-index: 1; }
+
+/* ---------- Chrome ---------- */
+.player.vp { font-family: var(--font); }
+.vp .player-top { align-items: center; gap: var(--s-3); padding: 20px clamp(16px, 3vw, 40px) 96px; background: linear-gradient(to bottom, rgb(0 0 0 / 0.7), rgb(0 0 0 / 0.3) 55%, transparent); }
+.vp .player-bottom { padding: 110px clamp(16px, 3vw, 40px) clamp(14px, 2.4vw, 28px); background: linear-gradient(to top, rgb(0 0 0 / 0.82), rgb(0 0 0 / 0.45) 45%, transparent); }
+.vp .player-title { font-family: var(--font-display); font-weight: 650; letter-spacing: -0.02em; font-size: clamp(18px, 1.6vw + 6px, 26px); line-height: 1.15; text-shadow: 0 2px 12px rgb(0 0 0 / 0.5); }
+.vp .player-subtitle { font-size: var(--t-sm); color: rgb(255 255 255 / 0.72); margin-top: 2px; }
+.vp .player-top .badge { height: 24px; padding: 0 10px; border-radius: var(--r-pill); font-size: var(--t-xs); font-weight: 600; background: rgb(255 255 255 / 0.12); color: rgb(255 255 255 / 0.9); border: 1px solid rgb(255 255 255 / 0.14); }
+.vp .player-method.method-direct { background: rgb(255 255 255 / 0.12); }
+.vp .player-method.method-direct::before { content: ''; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; background: var(--ok); }
+.vp .player-method.method-transcode::before { content: ''; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; background: var(--warn); }
+.vp .player-method.method-transcode { background: rgb(255 255 255 / 0.12); }
+.vp .btn-icon { color: #fff; width: 44px; height: 44px; border-radius: 50%; transition: background var(--dur-hover) var(--ease), transform var(--dur-hover) var(--ease); }
+.vp .btn-icon:hover:not(:disabled) { background: rgb(255 255 255 / 0.14); transform: none; }
+.vp .btn-icon.active { color: #fff; background: rgb(255 255 255 / 0.16); }
+.vp .btn-icon:focus-visible, .vp .seekbar:focus-visible, .vp .vp-center-play:focus-visible { outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 55%, transparent); }
+.vp .vp-av-btn.active { background: none; }
+.vp .vp-av-btn.active::after { content: ''; position: absolute; left: 50%; bottom: 6px; width: 14px; height: 2px; margin-left: -7px; border-radius: 2px; background: var(--accent-ink); }
+.vp .vp-av-btn { position: relative; }
+
+/* ---------- Big centre play ---------- */
+.vp-center { position: absolute; left: 50%; top: 50%; z-index: 4; display: flex; align-items: center; gap: clamp(24px, 6vw, 56px); transform: translate(-50%, -50%); transition: opacity var(--dur-panel) var(--ease); pointer-events: none; }
+.vp-center > button { pointer-events: auto; display: grid; place-items: center; color: #fff; border-radius: 50%; transition: transform var(--dur-hover) var(--ease), background var(--dur-hover); }
+.vp-center-play { width: 88px; height: 88px; background: rgb(0 0 0 / 0.38); border: 1px solid rgb(255 255 255 / 0.22); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 10px 40px -10px rgb(0 0 0 / 0.6); }
+.vp-center-play .icon { margin-left: 4px; }
+.vp:not(.is-paused) .vp-center-play .icon { margin-left: 0; }
+.vp-center-play:hover { transform: scale(1.06); background: rgb(0 0 0 / 0.5); }
+.vp-center-skip { width: 60px; height: 60px; background: rgb(0 0 0 / 0.28); }
+.vp-center-skip:hover { background: rgb(0 0 0 / 0.45); }
+/* Pointer devices: only the play button, only while paused. Touch: −10 · play/pause · +10 while the controls are up. */
+@media (hover: hover) and (pointer: fine) {
+  .vp-center > .vp-center-skip { display: none; }
+  .vp:not(.is-paused) .vp-center { opacity: 0; }
+  .vp:not(.is-paused) .vp-center > button { pointer-events: none; }
+}
+.vp.hide-controls .vp-center { opacity: 0; }
+.vp.hide-controls .vp-center > button { pointer-events: none; }
+html.tv .vp-center { display: none; }
+
+/* ---------- Scrubber ---------- */
+.vp .player-seek-row { gap: var(--s-4); margin-bottom: var(--s-2); }
+.vp .player-time { min-width: 56px; font-size: var(--t-sm); font-weight: 600; color: rgb(255 255 255 / 0.9); letter-spacing: 0; }
+.vp .player-time:first-child { text-align: left; }
+.vp .player-time:last-child { text-align: right; }
+.vp .seekbar { height: 28px; }
+.vp .seek-track { height: 4px; border-radius: 4px; background: rgb(255 255 255 / 0.24); transition: height var(--dur-hover) var(--ease); }
+.vp .seekbar:hover .seek-track, .vp .seekbar:focus-visible .seek-track { height: 8px; }
+.vp .seek-buffer { background: rgb(255 255 255 / 0.34); }
+.vp .seek-fill { background: var(--accent); box-shadow: none; }
+.vp .seek-marker { background: rgb(255 255 255 / 0.4); }
+.vp .seek-marker-credits { background: rgb(255 255 255 / 0.3); }
+.vp .seek-thumb { width: 16px; height: 16px; margin: -8px 0 0 -8px; background: #fff; box-shadow: 0 1px 6px rgb(0 0 0 / 0.5); transform: scale(0); transition: transform var(--dur-hover) var(--ease); }
+.vp.is-paused .seek-thumb, .vp .seekbar:hover .seek-thumb, .vp .seekbar:focus-visible .seek-thumb { transform: scale(1); }
+.vp .seek-tooltip { bottom: 34px; padding: 4px 10px; border-radius: var(--r-xs); background: rgb(12 12 16 / 0.86); border: 1px solid rgb(255 255 255 / 0.14); font-size: var(--t-sm); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.vp .seek-preview { padding: 4px 4px 6px; border-radius: var(--r-sm); background: rgb(12 12 16 / 0.9); box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.8); }
+.vp .seek-preview span { font-size: var(--t-sm); padding-top: 2px; }
+.vp .trickplay-thumb { border-radius: 6px; }
+.vp .seek-chapter { font-size: var(--t-xs); color: rgb(255 255 255 / 0.8); }
+
+/* ---------- Control row ---------- */
+.vp .player-controls { gap: var(--s-2); }
+.vp .pc-left, .vp .pc-right { gap: 2px; }
+.vp .pc-left > .btn-icon:first-child { width: 48px; height: 48px; }
+.vp .volume-slider { background: linear-gradient(to right, #fff var(--val, 100%), rgb(255 255 255 / 0.28) var(--val, 100%)); }
+.vp .popover { right: 0; bottom: calc(100% + 14px); border-radius: var(--r); background: rgb(16 16 22 / 0.88); border: 1px solid rgb(255 255 255 / 0.12); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.8); padding: 6px; }
+.vp .option { min-height: 40px; border-radius: var(--r-xs); }
+.vp .option:hover { background: rgb(255 255 255 / 0.08); }
+.vp .option.selected { background: rgb(255 255 255 / 0.1); color: #fff; }
+.vp .option.selected .option-check { color: var(--accent-ink); }
+.vp .option:focus-visible { outline: 2px solid #fff; outline-offset: -2px; box-shadow: none; }
+.vp .option-title { font-size: var(--t-xs); letter-spacing: 0.08em; color: rgb(255 255 255 / 0.55); }
+
+/* ---------- Skip intro / credits pill & up next ---------- */
+.vp .skip-btn {
+  right: clamp(16px, 3vw, 40px); bottom: 132px; height: 48px; padding: 0 22px; gap: 8px; border-radius: var(--r-pill);
+  font-family: var(--font); font-size: var(--t-md); font-weight: 700; letter-spacing: 0; color: #111; background: rgb(255 255 255 / 0.94); border: 0;
+  -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 0 12px 32px -10px rgb(0 0 0 / 0.6); animation: vpIn var(--dur-panel) var(--ease) both;
+}
+.vp .skip-btn::before { display: none; }
+.vp .skip-btn:hover, .vp .skip-btn:focus-visible { background: #fff; color: #000; outline: 2px solid #fff; outline-offset: 3px; }
+.vp.hide-controls .skip-btn { bottom: 40px; }
+.vp .upnext { right: clamp(16px, 3vw, 40px); bottom: 132px; border-radius: var(--r); background: rgb(16 16 22 / 0.88); border: 1px solid rgb(255 255 255 / 0.12); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.8); animation: vpIn var(--dur-panel) var(--ease) both; }
+.vp .upnext-body strong { font-family: var(--font-display); font-size: var(--t-lg); font-weight: 600; }
+.vp .upnext-ring .ring-fill { stroke: #fff; }
+.vp .upnext .btn-primary { background: #fff; color: #111; border-color: transparent; }
+@keyframes vpIn { from { opacity: 0; transform: translate3d(0, 8px, 0); } to { opacity: 1; transform: none; } }
+
+/* ---------- Audio & subtitles panel (right side, one click) ---------- */
+.vp .popover.vp-panel {
+  position: absolute; top: 16px; right: 16px; bottom: auto; z-index: 9; width: min(380px, calc(100vw - 32px)); max-width: none;
+  max-height: calc(100% - 140px); padding: 0; overflow: hidden; display: flex; flex-direction: column; border-radius: var(--r-lg);
+  background: rgb(14 14 20 / 0.9); animation: vpPanel var(--dur-panel) var(--ease) both;
+}
+/* Two columns (audio | subtitles) when the title has audio tracks to choose from. */
+.vp .popover.vp-panel:has(.vp-panel-cols.two), .vp .popover.vp-panel:has(.substyle-body) { width: min(600px, calc(100vw - 32px)); }
+@keyframes vpPanel { from { opacity: 0; transform: translate3d(12px, 0, 0); } to { opacity: 1; transform: none; } }
+.vp-panel-inner { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; overflow: hidden; outline: none; }
+.vp-panel-head { display: flex; align-items: center; gap: var(--s-2); padding: 12px 10px 8px 18px; }
+.vp-panel-head strong { flex: 1; font-family: var(--font); font-size: var(--t-md); font-weight: 700; }
+.vp-panel-head .btn-icon { width: 36px; height: 36px; }
+.vp-panel-head .btn-icon:first-child { margin-left: -10px; }
+.vp-caption-preview {
+  position: relative; flex: none; height: 96px; margin: 0 14px 6px; border-radius: var(--r-sm); overflow: hidden; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 14px;
+  background: radial-gradient(120% 120% at 75% 15%, #6c7a8c 0%, #36404e 38%, #171b22 75%);
+}
+.vp-caption-preview.raised { padding-bottom: 30px; }
+.vp-caption-label { position: absolute; top: 8px; left: 10px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgb(255 255 255 / 0.75); }
+.vp-caption-text { padding: 0.08em 0.4em; border-radius: 2px; max-width: 90%; text-align: center; }
+.vp-panel-body { overflow-y: auto; padding: 4px 8px 10px; min-height: 0; overscroll-behavior: contain; }
+.vp-panel-cols.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px; }
+.vp-col { min-width: 0; display: flex; flex-direction: column; }
+.vp-col + .vp-col { border-left: 1px solid rgb(255 255 255 / 0.08); padding-left: 4px; }
+.vp-panel .option-title { padding: 10px 10px 6px; }
+.vp-panel .option { width: 100%; }
+.vp-panel .option-label small { color: rgb(255 255 255 / 0.55); }
+.vp-panel .option.option-action { margin-top: 6px; border-top: 1px solid rgb(255 255 255 / 0.08); border-radius: var(--r-xs); color: #fff; font-weight: 600; }
+.vp-panel .option.option-action .option-check { color: rgb(255 255 255 / 0.7); }
+.vp-panel .option.option-action-plain { margin-top: 0; border-top: 0; }
+.vp-panel .audio-panel { border-top-color: rgb(255 255 255 / 0.08); }
+.vp-panel .audio-toggle { border-radius: var(--r-xs); }
+.vp-panel .audio-toggle[aria-checked='true'] .audio-switch { background: var(--accent); }
+.vp-panel .substyle-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 8px; }
+.vp-panel .substyle-label { color: rgb(255 255 255 / 0.6); }
+.vp-panel .substyle-chips .chip { height: 30px; padding: 0 11px; font-size: var(--t-xs); background: rgb(255 255 255 / 0.08); border-color: rgb(255 255 255 / 0.12); color: #fff; }
+.vp-panel .substyle-chips .chip.active { background: #fff; color: #111; border-color: transparent; }
+.vp-panel .sync-body { padding: 4px 8px 12px; }
+.vp-panel .sync-slider { accent-color: var(--accent); }
+
+/* ---------- Info panel (stats): small, top-left under the title, never over the middle of the picture ---------- */
+.vp .player-stats {
+  top: 84px; left: clamp(16px, 3vw, 40px); width: min(340px, calc(100vw - 32px)); max-height: calc(100% - 240px); overflow-y: auto;
+  padding: 10px 12px; border-radius: var(--r-sm); font-size: 11.5px; line-height: 1.45; background: rgb(10 10 14 / 0.66);
+  border: 1px solid rgb(255 255 255 / 0.1); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.vp .player-stats-head strong { font-size: var(--t-sm); }
+.vp .player-stats dl { gap: 2px 10px; }
+.vp .player-stats .btn-icon { width: 26px; height: 26px; }
+.vp .player-stats-pair { margin-top: 8px; }
+.vp .vp-info-btn.active { background: rgb(255 255 255 / 0.16); }
+
+.vp .player-osd { border-radius: var(--r-pill); padding: 10px 20px; font-size: var(--t-md); font-weight: 700; background: rgb(12 12 16 / 0.72); }
+
+/* ---------- Phones ---------- */
+@media (max-width: 700px) {
+  .vp .player-top { padding: max(10px, env(safe-area-inset-top)) 8px 64px; gap: 4px; }
+  .vp .player-top .badge:not(.player-method) { display: none; }
+  .vp .player-title { font-size: 17px; }
+  .vp .player-bottom { padding: 70px 12px max(10px, env(safe-area-inset-bottom)); }
+  .vp .pc-left > .btn-icon[aria-label$='10 seconds'] { display: none; }
+  .vp .btn-icon { width: 40px; height: 40px; }
+  .vp .pc-right { flex-wrap: nowrap; gap: 0; }
+  .vp .pc-right .btn-icon { width: 36px; height: 40px; }
+  .vp .pc-right .btn-icon .icon { width: 21px; height: 21px; }
+  .vp-center-play { width: 72px; height: 72px; }
+  .vp-center-skip { width: 52px; height: 52px; }
+  .vp .skip-btn, .vp .upnext { bottom: 112px; right: 12px; }
+  .vp .skip-btn { height: 42px; padding: 0 18px; font-size: var(--t-base); }
+  .vp .popover.vp-panel, .vp .popover.vp-panel:has(.vp-panel-cols.two), .vp .popover.vp-panel:has(.substyle-body) { top: auto; bottom: 0; right: 0; left: 0; width: 100%; max-height: 78%; border-radius: var(--r-lg) var(--r-lg) 0 0; animation-name: vpSheet; }
+  @keyframes vpSheet { from { transform: translate3d(0, 24px, 0); opacity: 0; } to { transform: none; opacity: 1; } }
+  .vp-panel-cols.two { grid-template-columns: minmax(0, 1fr); }
+  .vp-col + .vp-col { border-left: 0; padding-left: 0; border-top: 1px solid rgb(255 255 255 / 0.08); }
+  .vp-panel .substyle-body { grid-template-columns: minmax(0, 1fr); }
+  .vp .player-stats { top: 64px; font-size: 11px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vp .popover.vp-panel, .vp .skip-btn, .vp .upnext { animation: none; }
+  .vp-center, .vp-center > button, .vp .seek-thumb, .vp .seek-track { transition: none; }
+}
+
+/* The player is always dark: keep glass buttons white in light themes too. */
+.player.vp .btn-glass.btn-glass:not(.on-media-x) { color: #fff; background: rgb(255 255 255 / 0.14); border-color: rgb(255 255 255 / 0.2); }
+.player.vp .btn-glass.btn-glass:not(.on-media-x):hover:not(:disabled) { background: rgb(255 255 255 / 0.22); }

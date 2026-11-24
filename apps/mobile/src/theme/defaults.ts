@@ -15,8 +15,9 @@ function onColor(hex: string): string {
 /** Used until /branding arrives (and when the server's theme is malformed): the Vibe brand theme. */
 export const FALLBACK_THEME: Theme = {
   id: 'mediamax',
-  name: 'Vibe',
+  name: 'Vibe Rose',
   mode: 'dark',
+  brandGradient: ['#FF8A5C', '#E2498A', '#7C5CFF'],
   colors: {
     primary,
     primaryText: onColor(primary),

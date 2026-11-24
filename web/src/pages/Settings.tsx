@@ -1,15 +1,15 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { DeviceCapabilitiesCard } from '../components/DeviceCapabilities';
 import { AudioSettingsCard } from '../components/AudioSettings';
-import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import type { Device, SubtitleStyle, Theme, TraktDeviceCode, UserPreferences } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync } from '../hooks';
-import { AvatarEditor, Badge, EmptyState, Field, Skeleton, Spinner, Switch, useConfirm } from '../components/ui';
+import { AvatarEditor, Badge, EmptyState, Field, Segmented, Skeleton, Spinner, Switch, useConfirm } from '../components/ui';
 import { Icon, type IconName } from '../components/Icon';
-import { themeStyle } from '../theme/applyTheme';
+import { getDensity, setDensity, themeStyle, type Density } from '../theme/applyTheme';
 import { DEFAULT_PREFERENCES } from '../theme/defaults';
 import { autoLiteReason, getFxPref, isLite, onFxChange, setFxPref, type FxPref } from '../theme/fx';
 import { QUALITY_OPTIONS } from '../player/deviceProfile';
@@ -18,7 +18,8 @@ import { relativeTime } from '../utils/format';
 import { LinkDeviceForm } from './LinkDevice';
 import { ApiKeysCard, SubsonicCard, TwoFactorCard } from './SecuritySettings';
 import { DownloadRulesSettings } from './DownloadRules';
-import { BrowsingSettings } from './BrowsingSettings';
+import { PreviewSetting } from './BrowsingSettings';
+import { SectionNav, type SectionNavGroup } from '../components/SectionNav';
 import ProfilesSettings from './ProfilesSettings';
 import { HelpLink } from '../components/HelpLink';
 import { ListenBrainzCard } from '../components/ListenBrainz';
@@ -164,7 +165,7 @@ function Security() {
 
 export function ThemeSwatch({ theme, active, onClick }: { theme: Theme; active?: boolean; onClick?: () => void }) {
   return (
-    <button type="button" className={`theme-swatch ${active ? 'active' : ''}`} onClick={onClick} style={themeStyle(theme)}>
+    <button type="button" className={`theme-swatch ${active ? 'active' : ''}`} onClick={onClick} style={themeStyle(theme)} aria-pressed={onClick ? !!active : undefined}>
       <span className="ts-preview">
         <span className="ts-bar" />
         <span className="ts-cards"><i /><i /><i /></span>
@@ -182,29 +183,113 @@ function VisualEffects() {
   useEffect(() => onFxChange(() => bump((n) => n + 1)), []);
   const reason = autoLiteReason();
   const lite = isLite();
-  const opts: { v: FxPref; label: string }[] = [
-    { v: 'auto', label: 'Automatic' },
-    { v: 'full', label: 'Full' },
-    { v: 'lite', label: 'Lite' },
-  ];
   return (
-    <div className="settings-card">
-      <h2>Visual effects</h2>
-      <p className="muted">
-        Full effects add frosted glass, light from the artwork that drifts behind the page, parallax and card tilt. Lite keeps the look but drops the
-        expensive layers, for TVs and older devices. This setting is saved on this device only.
-      </p>
-      <div className="segmented" role="radiogroup" aria-label="Visual effects">
-        {opts.map((o) => (
-          <button key={o.v} type="button" role="radio" aria-checked={pref === o.v} className={pref === o.v ? 'active' : ''} onClick={() => { setPref(o.v); setFxPref(o.v); }}>
-            {o.label}
-          </button>
-        ))}
+    <div className="disp-row">
+      <div className="disp-row-text">
+        <strong>Visual effects</strong>
+        <span>Full adds frosted glass and light from the artwork. Lite drops the expensive layers for TVs and older devices.</span>
+        <span className="disp-note" aria-live="polite">
+          {pref === 'auto' ? (lite ? `Using lite effects on this device (${reason ?? 'performance'}).` : 'Using full effects on this device.') : pref === 'lite' ? 'Lite effects are on.' : 'Full effects are on.'}
+        </span>
       </div>
-      <p className="field-hint" aria-live="polite">
-        {pref === 'auto' ? (lite ? `Using lite effects on this device (${reason ?? 'performance'}).` : 'Using full effects on this device.') : pref === 'lite' ? 'Lite effects are on.' : 'Full effects are on.'}
-      </p>
+      <Segmented<FxPref>
+        label="Visual effects"
+        value={pref}
+        onChange={(v) => { setPref(v); setFxPref(v); }}
+        options={[{ value: 'auto', label: 'Automatic' }, { value: 'full', label: 'Full' }, { value: 'lite', label: 'Lite' }]}
+      />
     </div>
+  );
+}
+
+type Mode = 'default' | 'dark' | 'light' | 'custom';
+
+/** Settings → Display: theme mode, density, trailer previews and visual effects. */
+function Display() {
+  const { branding } = useApp();
+  const { prefs, save } = usePrefs();
+  const [density, setD] = useState<Density>(getDensity);
+  const themes = branding.themes ?? [];
+  // Dark / Light switch within the current colour scheme: a theme with a "-light" sibling (Vibe, Vibe Aurora, Vibe
+  // Ember…) pairs with it; anything else falls back to the Vibe pair.
+  const family = (prefs.themeId ?? branding.defaultThemeId ?? '').replace(/-light$/, '');
+  const pairDark = themes.find((t) => t.id === family && t.mode === 'dark');
+  const pairLight = themes.find((t) => t.id === `${family}-light` && t.mode === 'light');
+  const paired = !!pairDark && !!pairLight;
+  const dark = (paired ? pairDark : undefined) ?? themes.find((t) => t.id === 'mediamax') ?? themes.find((t) => t.mode === 'dark');
+  const light = (paired ? pairLight : undefined) ?? themes.find((t) => t.id === 'mediamax-light') ?? themes.find((t) => t.mode === 'light');
+  const mode: Mode = !prefs.themeId ? 'default' : prefs.themeId === dark?.id ? 'dark' : prefs.themeId === light?.id ? 'light' : 'custom';
+  const custom = mode === 'custom' ? themes.find((t) => t.id === prefs.themeId) : undefined;
+  const canPick = branding.allowUserThemes && !!dark && !!light;
+  // Skins: built-in looks with a dark and a light version and their own logo colours (Vibe Rose, Aurora, Ember).
+  const skins = themes.filter((t) => t.builtIn && t.mode === 'dark' && t.brandGradient && themes.some((l) => l.id === `${t.id}-light`));
+  const skin = skins.find((s) => s.id === family)?.id ?? (mode === 'custom' ? '' : 'mediamax');
+  const pickSkin = (id: string) => {
+    const serverLight = themes.find((t) => t.id === branding.defaultThemeId)?.mode === 'light';
+    const wantLight = mode === 'light' || (mode === 'default' && serverLight);
+    void save({ themeId: wantLight ? `${id}-light` : id });
+  };
+  const skinLabel = (t: Theme) => (
+    <span className="skin-opt">
+      <span className="skin-dot" aria-hidden style={{ background: `linear-gradient(135deg, ${(t.brandGradient ?? []).join(', ')})` }} />
+      {t.name.replace(/^Vibe\s+/, '')}
+    </span>
+  );
+  return (
+    <>
+      <div className="settings-card">
+        <h2>Look</h2>
+        <div className="disp-row">
+          <div className="disp-row-text">
+            <strong>Theme</strong>
+            {canPick ? (
+              <span>
+                {mode === 'custom' ? <>You’re using the <b>{custom?.name ?? 'custom'}</b> theme. </> : null}
+                Dark or light for you on every device. More looks are in <Link className="link-strong" to="/settings/appearance">Themes</Link>.
+              </span>
+            ) : (
+              <span>This server uses one look for everyone.</span>
+            )}
+          </div>
+          {canPick && (
+            <Segmented<Mode>
+              label="Theme"
+              value={mode}
+              onChange={(v) => void save({ themeId: v === 'dark' ? dark!.id : v === 'light' ? light!.id : null })}
+              options={[{ value: 'default', label: 'Server default' }, { value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }]}
+            />
+          )}
+        </div>
+        {canPick && skins.length > 1 && (
+          <div className="disp-row">
+            <div className="disp-row-text">
+              <strong>Skin</strong>
+              <span>The accent colour and logo. Each skin has a dark and a light version.</span>
+            </div>
+            <Segmented<string> label="Skin" value={skin} onChange={pickSkin} options={skins.map((t) => ({ value: t.id, label: skinLabel(t) }))} />
+          </div>
+        )}
+        <div className="disp-row">
+          <div className="disp-row-text">
+            <strong>Density</strong>
+            <span>Compact fits about 15 % more on screen: smaller cards and tighter rows. Saved on this device.</span>
+          </div>
+          <Segmented<Density>
+            label="Density"
+            value={density}
+            onChange={(v) => { setD(v); setDensity(v); }}
+            options={[{ value: 'comfortable', label: 'Comfortable' }, { value: 'compact', label: 'Compact' }]}
+          />
+        </div>
+        <VisualEffects />
+      </div>
+      <div className="settings-card">
+        <h2>Motion</h2>
+        <div className="switch-group">
+          <PreviewSetting />
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -212,28 +297,20 @@ function Appearance() {
   const { branding } = useApp();
   const { prefs, save } = usePrefs();
   if (!branding.allowUserThemes) {
-    return (
-      <>
-        <VisualEffects />
-        <div className="settings-card"><EmptyState icon="palette" title="Themes are managed by your admin" message="This server uses one look for everyone." /></div>
-      </>
-    );
+    return <div className="settings-card"><EmptyState icon="palette" title="Themes are managed by your admin" message="This server uses one look for everyone." /></div>;
   }
   return (
-    <>
-    <VisualEffects />
     <div className="settings-card">
       <h2>Theme</h2>
       <p className="muted">Pick how {branding.serverName} looks for you on this and every other device.</p>
       <div className="theme-grid">
-        <button type="button" className={`theme-swatch theme-default ${!prefs.themeId ? 'active' : ''}`} onClick={() => save({ themeId: null })}>
+        <button type="button" className={`theme-swatch theme-default ${!prefs.themeId ? 'active' : ''}`} onClick={() => save({ themeId: null })} aria-pressed={!prefs.themeId}>
           <span className="ts-preview ts-auto"><Icon name="sparkles" size={28} /></span>
           <span className="ts-name">Server default {!prefs.themeId && <Icon name="checkCircle" size={16} />}</span>
         </button>
         {branding.themes.map((t) => <ThemeSwatch key={t.id} theme={t} active={prefs.themeId === t.id} onClick={() => save({ themeId: t.id })} />)}
       </div>
     </div>
-    </>
   );
 }
 
@@ -685,50 +762,84 @@ function LinkTab() {
   );
 }
 
+interface Section { to: string; label: string; icon: IconName; keywords: string; title?: string; subtitle?: string }
+
 export default function SettingsPage() {
-  const { features, user } = useApp();
+  const { features, user, branding } = useApp();
+  const { pathname } = useLocation();
   // Profile sessions have no password, 2FA or API keys of their own (account security is the owner's).
   const profileSession = !!user?.parentUserId;
-  const tabs: { to: string; label: string; icon: IconName }[] = [
-    { to: 'profile', label: 'Profile', icon: 'user' },
-    { to: 'profiles', label: 'Profiles', icon: 'users' },
-    ...(profileSession ? [] : [{ to: 'security', label: 'Security', icon: 'lock' as IconName }]),
-    { to: 'appearance', label: 'Appearance', icon: 'palette' },
-    { to: 'playback', label: 'Playback', icon: 'play' },
-    { to: 'browsing', label: 'Browsing', icon: 'compass' },
-    { to: 'devices', label: 'Devices', icon: 'device' },
-    ...(features.downloads && (user?.allowDownloads || user?.isAdmin) ? [{ to: 'downloads', label: 'Downloads', icon: 'download' as IconName }] : []),
-    { to: 'services', label: 'Connected services', icon: 'globe' },
-    { to: '/wrapped', label: 'Your year', icon: 'sparkles' },
-    ...(features.linkCodes && !profileSession ? [{ to: 'link', label: 'Link device', icon: 'link' as IconName }] : []),
+  const account: Section[] = [
+    { to: 'profile', label: 'Profile', icon: 'user', keywords: 'name display picture avatar photo', subtitle: 'Your name and picture.' },
+    { to: 'profiles', label: 'Profiles', icon: 'users', keywords: 'kids family household pin parental who watching', subtitle: 'Everyone who watches on this account, with their own lists, history and limits.' },
+    ...(profileSession ? [] : [{ to: 'security', label: 'Security', icon: 'lock' as IconName, keywords: 'password pin two factor 2fa totp api keys subsonic token', subtitle: 'Password, profile PIN, two-factor sign-in and keys for other apps.' }]),
+    { to: 'devices', label: 'Devices', icon: 'device', keywords: 'signed in sessions sign out phone tv browser', title: 'Signed-in devices', subtitle: 'Everywhere you’re signed in. Sign out anything you don’t recognise.' },
+    ...(features.linkCodes && !profileSession ? [{ to: 'link', label: 'Link a device', icon: 'link' as IconName, keywords: 'code tv sign in pair', subtitle: 'Sign in on a TV or another device with the code it shows.' }] : []),
   ];
+  const prefsGroup: Section[] = [
+    { to: 'display', label: 'Display', icon: 'monitor', keywords: 'theme dark light mode density compact comfortable trailer previews autoplay motion effects lite', subtitle: 'Theme mode, density, previews and effects.' },
+    { to: 'appearance', label: 'Themes', icon: 'palette', keywords: 'appearance colours colors look theme', subtitle: `Pick how ${branding.serverName} looks for you.` },
+    { to: 'playback', label: 'Playback', icon: 'play', keywords: 'quality bitrate audio subtitles language captions autoplay next skip intro music crossfade replaygain lyrics karaoke visualiser night mode dialogue device codecs', subtitle: 'Quality, languages, subtitles, audio and music.' },
+    ...(features.downloads && (user?.allowDownloads || user?.isAdmin) ? [{ to: 'downloads', label: 'Downloads', icon: 'download' as IconName, keywords: 'offline sync auto download rules', subtitle: 'Keep titles on your devices for offline viewing.' }] : []),
+  ];
+  const connected: Section[] = [
+    { to: 'services', label: 'Connected services', icon: 'globe', keywords: 'trakt last.fm lastfm listenbrainz scrobble', subtitle: 'Scrobble and sync with Trakt, Last.fm and ListenBrainz.' },
+    { to: '/wrapped', label: 'Your year', icon: 'sparkles', keywords: 'wrapped review stats' },
+  ];
+  const abs = (x: Section) => ({ ...x, to: x.to.startsWith('/') ? x.to : `/settings/${x.to}` });
+  const groups: SectionNavGroup[] = [
+    { label: 'Account', items: account.map(abs) },
+    { label: 'Preferences', items: prefsGroup.map(abs) },
+    { label: 'Connected', items: connected.map(abs) },
+  ];
+  const all = [...account, ...prefsGroup, ...connected];
+  const seg = pathname.replace(/^\/settings\/?/, '').split('/')[0];
+  const current = all.find((x) => x.to === seg);
   return (
     <div className="page settings-page">
-      <header className="page-head">
-        <div className="page-title-wrap"><Icon name="settings" size={28} className="page-icon" /><h1>Settings</h1></div>
-      </header>
-      <div className="settings-layout">
-        <nav className="settings-nav">
-          {tabs.map((t) => (
-            <NavLink key={t.to} to={t.to} className={({ isActive }) => `settings-link ${isActive ? 'active' : ''}`}>
-              <Icon name={t.icon} size={18} /> {t.label}
-            </NavLink>
-          ))}
-        </nav>
-        <div className="settings-content">
+      <div className="twopane">
+        <SectionNav
+          title="Settings"
+          icon="settings"
+          label="Settings sections"
+          groups={groups}
+          footer={user?.isAdmin ? (
+            <>
+              <span>Server-wide settings for everyone live in Admin.</span>
+              <Link to="/admin"><Icon name="shield" size={16} /> Server administration <Icon name="chevronRight" size={14} /></Link>
+            </>
+          ) : undefined}
+        />
+        <div className="settings-content twopane-content">
+          {current && (
+            <header className="pane-head">
+              <div>
+                <h1>{current.title ?? current.label}</h1>
+                {current.subtitle && <p>{current.subtitle}</p>}
+              </div>
+            </header>
+          )}
           <Routes>
             <Route index element={<Navigate to="profile" replace />} />
             <Route path="profile" element={<Profile />} />
             <Route path="profiles" element={<ProfilesSettings />} />
             <Route path="security" element={<Security />} />
+            <Route path="display" element={<Display />} />
             <Route path="appearance" element={<Appearance />} />
-            <Route path="browsing" element={<BrowsingSettings />} />
+            <Route path="browsing" element={<Navigate to="/settings/display" replace />} />
             <Route path="playback" element={<><Playback /><SubtitleSettings /><AudioSettingsCard /><MusicSettings /><DeviceCapabilitiesCard /></>} />
             <Route path="devices" element={<Devices />} />
             <Route path="downloads" element={<DownloadRulesSettings />} />
             <Route path="services" element={<Services />} />
             <Route path="link" element={<LinkTab />} />
           </Routes>
+          {user?.isAdmin && current?.to === 'profile' && (
+            <div className="settings-admin-card">
+              <Icon name="shield" size={20} />
+              <div><strong>Looking for server settings?</strong> Libraries, users, transcoding and branding are in Admin and apply to everyone.</div>
+              <Link className="btn btn-sm" to="/admin">Open Admin</Link>
+            </div>
+          )}
         </div>
       </div>
     </div>

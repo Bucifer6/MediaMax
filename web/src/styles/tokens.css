@@ -1,0 +1,205 @@
+/* ==========================================================================
+   Vibe design tokens (docs/DESIGN.md).
+
+   Two layers:
+   1. Theme inputs: the legacy `--c-*` variables. web/src/theme/applyTheme.ts writes them on <html> from the server
+      theme (Branding Studio, starter looks, seasonal schedules, the viewer's own theme choice). The defaults below are
+      the Vibe dark theme, used before the server's branding arrives.
+   2. Vibe tokens: `--bg`, `--surface-1…3`, `--text`, `--text-2/3`, `--line`, `--accent`… derived from the inputs, so
+      every server theme still drives the new design. Page CSS should use these tokens; the `--c-*` names keep
+      working for CSS that has not been restyled yet.
+
+   Derived tokens are declared on :root and on any element that carries an inline theme (`style="--c-bg: …"`, e.g.
+   the Branding Studio previews), so they resolve against that element's colours.
+   ========================================================================== */
+
+:root {
+  /* ---- theme inputs (overridden at runtime by applyTheme.ts) ---- */
+  --c-primary: #D23A72;
+  --c-primary-text: #FFFFFF;
+  --c-bg: #0C0C10;
+  --c-surface: #15151B;
+  --c-surface-alt: #1D1D25;
+  --c-text: #F2F1F6;
+  --c-text-muted: #B4B2C2;
+  --c-accent: #8C6BFF;
+  --c-border: #2A2A33;
+  --c-success: #3DD68C;
+  --c-warning: #F5B53D;
+  --c-danger: #FF5D6C;
+  --c-overlay: #0C0C10;
+  --radius: 14px;
+  --radius-sm: 8px;
+  --radius-lg: 22px;
+  --poster-radius: 10px;
+  --font: 'Figtree Variable', 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Outfit Variable', 'Figtree Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  /* ---- radius (scale follows the theme's radius: 14 → 6 / 10 / 14 / 20) ---- */
+  --r-xs: calc(var(--radius) * 0.43);
+  --r-sm: calc(var(--radius) * 0.72);
+  --r: var(--radius);
+  --r-lg: calc(var(--radius) * 1.43);
+  --r-pill: 999px;
+
+  /* ---- spacing: 4-pt scale ---- */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 24px;
+  --s-7: 28px; --s-8: 32px; --s-9: 36px; --s-10: 40px; --s-11: 44px; --s-12: 48px;
+  --gutter: clamp(16px, 3vw, 48px);
+  --content-max: 1680px;
+
+  /* ---- type scale (Figtree; ≥ 22 px steps use Outfit) ---- */
+  --t-xs: 12px;     /* captions, badges */
+  --t-sm: 13px;     /* secondary text, card subtitles */
+  --t-base: 14px;   /* body, controls */
+  --t-md: 16px;     /* emphasised body, card titles on big cards */
+  --t-lg: 18px;     /* section headers */
+  --t-xl: 22px;     /* Outfit: row titles, modal titles */
+  --t-2xl: 28px;    /* Outfit: page titles */
+  --t-3xl: 36px;    /* Outfit: large page titles */
+  --t-hero: 52px;   /* Outfit: hero / title page */
+  --lh-body: 1.45;
+  --lh-display: 1.1;
+
+  /* ---- motion ---- */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-hover: 120ms;
+  --dur-enter: 200ms;
+  --dur-panel: 280ms;
+  /* legacy names (page CSS) mapped onto the Vibe durations */
+  --dur-1: var(--dur-hover);
+  --dur-2: var(--dur-enter);
+  --dur-3: var(--dur-panel);
+  --dur-4: 360ms;
+  --dur-light: 900ms;
+  --ease-out: var(--ease);
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: var(--ease);
+  --stagger: 40ms;
+
+  /* ---- shell geometry ---- */
+  --sidebar-open-w: 248px;
+  --sidebar-rail-w: 72px;
+  --sidebar-w: var(--sidebar-open-w);   /* current width; the shell sets it (collapsed / drawer) */
+  --topbar-h: 64px;
+  --mini-h: 0px;                         /* height of the docked mini player when one is showing */
+  --tabbar-h: 0px;                       /* phone tab bar */
+  --card-w: var(--card-w-theme, 164px);
+  --row-gap: 16px;
+  --section-gap: 40px;
+
+  /* ---- fixed colours ---- */
+  --live: #FF4757;
+  --scrim: rgb(0 0 0 / 0.55);
+  --on-media: #FFFFFF;                  /* text over artwork (always over a dark scrim) */
+}
+
+:root, [style*='--c-bg'] {
+  /* ---- surfaces: raised elevations are lighter; no heavy shadows ---- */
+  --bg: var(--c-bg);
+  --surface-1: var(--c-surface);
+  --surface-2: var(--c-surface-alt);
+  --surface-3: color-mix(in oklab, var(--c-surface-alt), var(--c-text) 7%);
+  --surface-glass: color-mix(in srgb, var(--c-bg) 72%, transparent);
+  --surface-overlay: color-mix(in srgb, var(--c-surface) 96%, transparent);
+
+  /* ---- text ---- */
+  --text: var(--c-text);
+  --text-2: var(--c-text-muted);
+  --text-3: color-mix(in oklab, var(--c-text-muted) 80%, var(--c-bg));
+
+  /* ---- lines ---- */
+  --line: color-mix(in srgb, var(--c-text) 8%, transparent);
+  --line-strong: color-mix(in srgb, var(--c-text) 16%, transparent);
+
+  /* ---- accent ---- */
+  --accent: var(--c-primary);
+  --on-accent: var(--c-primary-text);
+  /* Accent as text / thin strokes on the page background (brighter in dark mode, deeper in light mode). */
+  --accent-ink: color-mix(in oklab, var(--c-primary) 74%, white);
+  --accent-soft: color-mix(in srgb, var(--c-primary) 16%, transparent);
+  --accent-2: var(--c-accent);
+  --accent-2-soft: color-mix(in srgb, var(--c-accent) 16%, transparent);
+
+  /* ---- status ---- */
+  --ok: var(--c-success);
+  --warn: var(--c-warning);
+  --err: var(--c-danger);
+
+  /* ---- interaction ---- */
+  --hover: color-mix(in srgb, var(--c-text) 6%, transparent);
+  --hover-strong: color-mix(in srgb, var(--c-text) 11%, transparent);
+  --pressed: color-mix(in srgb, var(--c-text) 15%, transparent);
+  --focus: var(--c-text);                 /* the ring itself: text colour (≥ 3:1 on every surface) */
+  --focus-halo: var(--c-primary);         /* 2 px accent halo outside the ring */
+  --focus-ring: 0 0 0 2px var(--focus), 0 0 0 4px color-mix(in srgb, var(--focus-halo) 70%, transparent);
+
+  /* ---- elevation (light shadows; surfaces carry most of the depth) ---- */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.25);
+  --shadow: 0 8px 24px -8px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 24px 64px -16px rgb(0 0 0 / 0.6);
+
+  /* ---- legacy derived names (pre-Vibe page CSS) mapped onto the tokens ---- */
+  --c-primary-soft: var(--accent-soft);
+  --c-primary-glow: color-mix(in srgb, var(--c-primary) 35%, transparent);
+  --c-hover: var(--hover);
+  --c-hover-strong: var(--hover-strong);
+  --c-line: var(--line);
+  --c-glass: color-mix(in srgb, var(--c-surface) 86%, transparent);
+  --c-glass-strong: var(--surface-overlay);
+  --glass-bg: color-mix(in srgb, var(--c-surface) 88%, transparent);
+  --glass-bg-strong: var(--surface-overlay);
+  --glass-border: var(--line);
+  --glass-hi: transparent;
+  --glass-blur: blur(20px) saturate(1.3);
+  --ring: var(--focus-ring);
+}
+
+/* Light themes: deeper accent ink, softer shadows. */
+:root[data-mode='light'], [data-mode='light'][style*='--c-bg'] {
+  --accent-ink: color-mix(in oklab, var(--c-primary) 88%, black);
+  --surface-3: color-mix(in oklab, var(--c-surface-alt), var(--c-text) 6%);
+  --surface-glass: color-mix(in srgb, var(--c-bg) 78%, transparent);
+  --hover: color-mix(in srgb, var(--c-text) 5%, transparent);
+  --hover-strong: color-mix(in srgb, var(--c-text) 9%, transparent);
+  --line: color-mix(in srgb, var(--c-text) 10%, transparent);
+  --line-strong: color-mix(in srgb, var(--c-text) 18%, transparent);
+  --shadow-sm: 0 1px 2px rgb(20 16 40 / 0.08);
+  --shadow: 0 8px 24px -10px rgb(20 16 40 / 0.18);
+  --shadow-lg: 0 24px 64px -20px rgb(20 16 40 / 0.28);
+  --scrim: rgb(10 8 20 / 0.45);
+}
+
+/* Compact density: ~15 % smaller cards and tighter rows. */
+:root[data-density='compact'] {
+  --card-w: calc(var(--card-w-theme, 164px) * 0.85);
+  --row-gap: 12px;
+  --section-gap: 28px;
+  --topbar-h: 56px;
+}
+
+/* Higher contrast when the OS asks for it: stronger lines and secondary text, solid chrome. */
+@media (prefers-contrast: more) {
+  :root {
+    --text-2: color-mix(in oklab, var(--c-text-muted) 55%, var(--c-text));
+    --text-3: var(--c-text-muted);
+    --line: color-mix(in srgb, var(--c-text) 22%, transparent);
+    --line-strong: color-mix(in srgb, var(--c-text) 40%, transparent);
+    --surface-glass: var(--c-bg);
+    --glass-bg: var(--c-surface);
+  }
+}
+
+/* Reduced motion: durations collapse (opacity fades stay, very short). */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-hover: 1ms;
+    --dur-enter: 1ms;
+    --dur-panel: 1ms;
+    --dur-4: 1ms;
+    --dur-light: 300ms;
+    --stagger: 0ms;
+  }
+}

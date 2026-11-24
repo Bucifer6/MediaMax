@@ -3,6 +3,7 @@ import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import { Icon } from '../components/Icon';
 import { Spinner } from '../components/ui';
+import '../styles/screens-account.css';
 
 export function LinkDeviceForm() {
   const [code, setCode] = useState('');
@@ -62,7 +63,7 @@ export function LinkDeviceForm() {
 export function LinkDevicePage() {
   return (
     <div className="page page-narrow">
-      <div className="link-page glass">
+      <div className="link-page vibe-link">
         <div className="link-hero">
           <Icon name="monitor" size={40} />
           <Icon name="link" size={22} />

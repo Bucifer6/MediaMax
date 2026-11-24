@@ -18,7 +18,9 @@ import { AdminHeader } from './AdminRoutes';
 import { NotificationAgentsPanel } from './NotificationAgents';
 import { QuotaEditor, DEFAULT_QUOTAS } from './RequestPermissionsEditor';
 
-type Tab = 'general' | 'transcoding' | 'cinema' | 'aidj' | 'karaoke' | 'dvr' | 'requests' | 'notifications' | 'arr' | 'sso' | 'trickplay' | 'subtitles' | 'trakt' | 'lastfm' | 'dlna' | 'webhooks' | 'metadata';
+const TABS = ['general', 'transcoding', 'cinema', 'aidj', 'karaoke', 'dvr', 'requests', 'notifications', 'arr', 'sso', 'trickplay', 'subtitles', 'trakt', 'lastfm', 'dlna', 'webhooks', 'metadata'] as const;
+type Tab = (typeof TABS)[number];
+const asTab = (t: string | null): Tab => (TABS as readonly string[]).includes(t ?? '') ? (t as Tab) : 'general';
 const HW: { value: HwAccel; label: string }[] = [
   { value: 'none', label: 'None (CPU)' },
   { value: 'vaapi', label: 'VA-API (Intel/AMD, Linux)' },
@@ -67,8 +69,10 @@ export function ServerSettingsAdmin() {
   const { refreshSystem } = useApp();
   const [s, setS] = useState<ServerSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [params] = useSearchParams();
-  const [tab, setTab] = useState<Tab>(() => { const t = params.get('tab'); return t === 'arr' || t === 'requests' || t === 'notifications' || t === 'metadata' ? t : 'general'; });
+  // The tab lives in the URL (?tab=), so the admin list and search can link straight to Transcoding and friends.
+  const [params, setParams] = useSearchParams();
+  const tab = asTab(params.get('tab'));
+  const setTab = (t: Tab) => setParams((p) => { const n = new URLSearchParams(p); if (t === 'general') n.delete('tab'); else n.set('tab', t); return n; }, { replace: true });
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
@@ -151,7 +155,7 @@ export function ServerSettingsAdmin() {
   return (
     <div>
       <AdminHeader help={SETTINGS_HELP[tab] ?? 'admin-setup'} title="Server settings" actions={<button className="btn btn-primary" onClick={() => void save()} disabled={!dirty || saving}>{saving ? <Spinner size={18} /> : 'Save changes'}</button>} />
-      <Tabs<Tab> value={tab} onChange={setTab} tabs={[
+      <Tabs<Tab> variant="pills" className="server-tabs" value={tab} onChange={setTab} tabs={[
         { value: 'general', label: 'General' },
         { value: 'metadata', label: 'Metadata' },
         { value: 'transcoding', label: 'Transcoding' },

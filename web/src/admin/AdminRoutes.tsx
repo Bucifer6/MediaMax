@@ -1,5 +1,5 @@
 import type React from 'react';
-import { Navigate, NavLink, Route, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { ADMIN_NAV as NAV } from './nav';
 import { Overview } from './Overview';
@@ -28,20 +28,28 @@ import { StorageAdmin } from './Storage';
 import { AiSettingsAdmin } from './AiSettings';
 import WrappedPage from '../pages/Wrapped';
 import { HelpLink } from '../components/HelpLink';
+import { SectionNav, type SectionNavGroup } from '../components/SectionNav';
 
+
+/** The admin pages grouped for the side list (Server, Media, People, Live TV, Playback, Look & feel, System). */
+const GROUPS: SectionNavGroup[] = [];
+for (const n of NAV) {
+  let g = GROUPS.find((x) => x.label === n.group);
+  if (!g) GROUPS.push((g = { label: n.group, items: [] }));
+  g.items.push(n);
+}
 
 export default function AdminRoutes() {
   return (
     <div className="page admin">
-      <div className="admin-layout">
-        <nav className="admin-nav" aria-label="Admin">
-          <div className="admin-nav-title"><Icon name="shield" size={18} /> Admin</div>
-          {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `admin-link ${isActive ? 'active' : ''}`}>
-              <Icon name={n.icon} size={18} /> <span>{n.label}</span>
-            </NavLink>
-          ))}
-        </nav>
+      <div className="admin-layout twopane">
+        <SectionNav
+          title="Admin"
+          icon="shield"
+          label="Admin"
+          groups={GROUPS}
+          footer={<Link to="/settings"><Icon name="settings" size={16} /> Your personal settings <Icon name="chevronRight" size={14} /></Link>}
+        />
         <div className="admin-content">
           <Routes>
             <Route index element={<Overview />} />

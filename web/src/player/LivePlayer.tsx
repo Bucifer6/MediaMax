@@ -18,6 +18,8 @@ import { formatClock, formatTime } from '../utils/format';
 import { subtitleStyleOf } from './subtitleStyle';
 import { SubtitleOverlay } from './subtitles/SubtitleOverlay';
 import { activeLiveCues } from './subtitles/live';
+import { rememberChannel } from '../livetv/recent';
+import '../styles/epg.css';
 import type { TextCue } from './subtitles/types';
 
 export default function LivePlayer() {
@@ -214,6 +216,7 @@ export default function LivePlayer() {
     music.pause();
     let cancelled = false;
     setChannel(null);
+    if (!catchup) rememberChannel(user?.id, channelId);
     api.livetv.channel(channelId).then((c) => !cancelled && setChannel(c)).catch(() => {});
     const s = new Date(Date.now() - 2 * 3600000).toISOString();
     const e = new Date(Date.now() + 6 * 3600000).toISOString();
@@ -535,16 +538,17 @@ export default function LivePlayer() {
 
       {showList && (
         <aside className="live-list" onClick={(e) => e.stopPropagation()}>
-          <div className="queue-head"><h3>Channels</h3><button className="btn-icon" onClick={() => setShowList(false)} aria-label="Close"><Icon name="x" /></button></div>
+          <div className="queue-head"><h3>Channels</h3><button className="btn-icon" onClick={() => setShowList(false)} aria-label="Close the channel list"><Icon name="x" /></button></div>
           <ul>
             {lineup.map((c) => (
               <li key={c.id}>
-                <button className={`live-list-item ${c.id === channelId ? 'current' : ''}`} onClick={() => navigate(`/watch/live/${c.id}`, { replace: true })}>
+                <button className={`live-list-item ${c.id === channelId ? 'current' : ''}`} onClick={() => navigate(`/watch/live/${c.id}`, { replace: true })} aria-current={c.id === channelId ? 'true' : undefined}>
                   <span className="ch-num">{c.number ?? ''}</span>
                   <span className="ch-logo"><Img src={c.logoUrl} width={80} fallback={<span className="ch-logo-text">{c.name.slice(0, 3)}</span>} /></span>
                   <span className="ch-info">
                     <span className="ch-name">{c.name}</span>
                     {c.nowPlaying && <span className="ch-now">{c.nowPlaying.title}</span>}
+                    {c.nowPlaying && <ProgressBar value={programProgress(c.nowPlaying.start, c.nowPlaying.end, now)} />}
                   </span>
                 </button>
               </li>
@@ -563,17 +567,27 @@ export default function LivePlayer() {
         ) : nowProg ? (
           <div className="live-now">
             <div className="live-now-text">
+              <span className="live-now-kicker"><span className="live-pill small"><span className="live-dot" /> LIVE</span> {Math.max(1, Math.round((new Date(nowProg.end).getTime() - now) / 60000))} min left</span>
               <strong>{nowProg.title}</strong>
-              <span className="muted">{formatTime(nowProg.start)} – {formatTime(nowProg.end)}{nextProg ? ` · Next: ${nextProg.title} at ${formatTime(nextProg.start)}` : ''}</span>
+              {(nowProg.subtitle || nowProg.episodeNum) && <span className="live-now-sub">{[nowProg.episodeNum, nowProg.subtitle].filter(Boolean).join(' · ')}</span>}
             </div>
-            <ProgressBar value={programProgress(nowProg.start, nowProg.end, now)} />
+            <div className="live-now-bar">
+              <span className="tabular">{formatTime(nowProg.start)}</span>
+              <ProgressBar value={programProgress(nowProg.start, nowProg.end, now)} label="Programme progress" />
+              <span className="tabular">{formatTime(nowProg.end)}</span>
+            </div>
+            {nextProg && (
+              <button className="live-next" onClick={() => navigate(`/livetv/guide?program=${encodeURIComponent(nextProg.id)}`)} title="Open in the guide: record or remind">
+                <span className="live-next-label">Next · {formatTime(nextProg.start)}</span> <span className="live-next-title">{nextProg.title}</span>
+              </button>
+            )}
           </div>
         ) : null}
         <div className="player-controls">
           <div className="pc-left">
             <button className="btn-icon btn-icon-lg" onClick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}><Icon name={paused ? 'play' : 'pause'} size={30} /></button>
-            <button className="btn-icon" onClick={() => startZap(-1)} aria-label="Channel up"><Icon name="chevronUp" size={24} /></button>
-            <button className="btn-icon" onClick={() => startZap(1)} aria-label="Channel down"><Icon name="chevronDown" size={24} /></button>
+            <button className="btn-icon" onClick={() => startZap(-1)} aria-label="Channel up" title="Channel up (↑)"><Icon name="chevronUp" size={24} /></button>
+            <button className="btn-icon" onClick={() => startZap(1)} aria-label="Channel down" title="Channel down (↓)"><Icon name="chevronDown" size={24} /></button>
             <VolumeControl volume={volume} muted={muted} onVolume={setVolume} onMute={setMuted} />
           </div>
           <div className="pc-right">
@@ -589,8 +603,8 @@ export default function LivePlayer() {
             {ccCount > 0 && (
               <button className={`btn-icon ${ccOn ? 'active' : ''}`} onClick={() => setCcOn((x) => !x)} aria-label={ccOn ? 'Turn captions off' : 'Turn captions on'} aria-pressed={ccOn} title="Captions (C)"><Icon name="subtitles" size={22} /></button>
             )}
-            <button className={`btn-icon ${showList ? 'active' : ''}`} onClick={() => setShowList((s) => !s)} aria-label="Channel list"><Icon name="list" size={22} /></button>
-            <button className="btn-icon" onClick={() => navigate('/livetv/guide')} aria-label="Guide"><Icon name="guide" size={22} /></button>
+            <button className={`btn-icon ${showList ? 'active' : ''}`} onClick={() => setShowList((s) => !s)} aria-label="Channel list" aria-expanded={showList} title="Channels (L)"><Icon name="list" size={22} /></button>
+            <button className="btn-icon" onClick={() => navigate('/livetv/guide')} aria-label="Guide" title="Guide"><Icon name="guide" size={22} /></button>
             {!catchup && <button className="btn-icon" onClick={() => navigate(`/watch/multiview?ch=${encodeURIComponent(channelId)}`)} aria-label="Multiview" title="Multiview"><Icon name="grid" size={22} /></button>}
             {(cast.available || cast.connected) && (
               <button
@@ -603,9 +617,9 @@ export default function LivePlayer() {
               </button>
             )}
             {!casting && 'pictureInPictureEnabled' in document && document.pictureInPictureEnabled && (
-              <button className="btn-icon" onClick={() => void videoRef.current?.requestPictureInPicture().catch(() => {})} aria-label="Picture in picture"><Icon name="pip" size={22} /></button>
+              <button className="btn-icon" onClick={() => void videoRef.current?.requestPictureInPicture().catch(() => {})} aria-label="Picture in picture" title="Picture in picture"><Icon name="pip" size={22} /></button>
             )}
-            <button className="btn-icon" onClick={toggleFs} aria-label="Fullscreen"><Icon name={fullscreen ? 'fullscreenExit' : 'fullscreen'} size={22} /></button>
+            <button className="btn-icon" onClick={toggleFs} aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"} title="Fullscreen (F)"><Icon name={fullscreen ? 'fullscreenExit' : 'fullscreen'} size={22} /></button>
           </div>
         </div>
       </div>
