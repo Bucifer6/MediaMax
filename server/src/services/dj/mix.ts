@@ -3,7 +3,7 @@ import { db, type Param } from '../../db.js';
 import { accessClause, getItem } from '../items.js';
 import { badRequest, notFound } from '../../util/errors.js';
 import { parseJson } from '../../util/misc.js';
-import { getAnalyses } from './analysis.js';
+import { getAnalysis, getMixFeatures, type MixFeatures } from './analysis.js';
 import { keyCompatibility, similarity } from './dsp.js';
 import { phraseAt, phraseMixPoints } from './phrases.js';
 import { skipStats } from './ai.js';
@@ -17,7 +17,8 @@ interface Cand {
   favorite: boolean;
   rating: number | null;
   year: number | null;
-  a: TrackAnalysis | null;
+  /** Lean analysis features for scoring (null = not analysed yet). */
+  f: MixFeatures | null;
 }
 
 const CURVES: DjEnergyCurve[] = ['steady', 'build', 'peak', 'wave', 'chill'];
@@ -114,6 +115,16 @@ export function chooseFx(input: {
 
 const snapBars = (bars: number) => (bars >= 30 ? 32 : bars >= 14 ? 16 : bars >= 7 ? 8 : 4);
 
+/** Where to start a track when mixing into it: its first downbeat (else beat) at/after the cue-in, else the cue-in. */
+export function firstDownbeat(b: TrackAnalysis): number {
+  const grid = b.downbeatMs ?? b.beatOffsetMs;
+  if (!b.bpm || grid == null) return b.cueInMs;
+  const unit = (60000 / b.bpm) * (b.downbeatMs != null ? 4 : 1);
+  let mixIn = grid + Math.ceil((b.cueInMs - grid - 30) / unit) * unit;
+  while (mixIn < 0) mixIn += unit;
+  return mixIn;
+}
+
 /** How to get from track A into track B: mix points on phrases (falling back to bars), length, tempo and effect. */
 export function planTransition(a: TrackAnalysis | null, aDur: number, b: TrackAnalysis | null, opts: PlanOptions = {}): DjTransition {
   const pref: DjTransitionPreference = opts.preference ?? 'auto';
@@ -146,13 +157,7 @@ export function planTransition(a: TrackAnalysis | null, aDur: number, b: TrackAn
   } else mixOut = a.outroStartMs ?? Infinity;
 
   // Mix-in: B's first downbeat (bar 1 of its intro phrase), else the first beat after its cue-in.
-  let mixIn = b.cueInMs;
-  if (b.bpm && gridB != null) {
-    const beatB = 60000 / b.bpm;
-    const unit = b.downbeatMs != null ? beatB * 4 : beatB;
-    mixIn = gridB + Math.ceil((b.cueInMs - gridB - 30) / unit) * unit;
-    while (mixIn < 0) mixIn += unit;
-  }
+  const mixIn = firstDownbeat(b);
 
   // Length: whole phrases (4/8/16/32 bars) shaped by the outro/intro and the preference.
   let crossfade: number;
@@ -240,33 +245,42 @@ export function bassSwapPoint(b: TrackAnalysis, mixInMs: number, crossfadeMs: nu
 
 const lc = (s: string) => s.toLowerCase();
 
-function loadCandidates(user: User, req: DjMixRequest): Cand[] {
+const CAND_SQL = `SELECT i.id, i.grandparent_id artist_id, i.parent_id album_id, i.genres, i.duration_ms, al.genres album_genres, ud.favorite, ud.rating, COALESCE(i.year, al.year) year
+     FROM items i LEFT JOIN items al ON al.id = i.parent_id LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ?`;
+
+/** Tracks the user can see matching `where` (plus the access clause), with their mix features (one lean query each). */
+function selectCandidates(user: User, where: string[], params: Param[], limit = 50000): Cand[] {
   const acc = accessClause(user, 'i');
-  const where = [acc.sql, "i.type = 'track'", 'EXISTS (SELECT 1 FROM media m WHERE m.item_id = i.id)'];
-  const params: Param[] = [...acc.params];
+  const rows = db.all(
+    `${CAND_SQL} WHERE ${[acc.sql, "i.type = 'track'", 'EXISTS (SELECT 1 FROM media m WHERE m.item_id = i.id)', ...where].join(' AND ')} LIMIT ${limit}`,
+    user.id, ...acc.params, ...params);
+  const feats = getMixFeatures(rows.map((r) => r.id));
+  return rows.map((r) => {
+    const own = parseJson<string[]>(r.genres, []);
+    return {
+      id: r.id, artistId: r.artist_id, albumId: r.album_id,
+      // A track's own genre tags win; the album's genres are only a fallback for untagged tracks.
+      genres: [...new Set((own.length ? own : parseJson<string[]>(r.album_genres, [])).map(lc))],
+      durationMs: r.duration_ms ?? 0, favorite: !!r.favorite, rating: r.rating ?? null, year: r.year ?? null, f: feats.get(r.id) ?? null,
+    };
+  });
+}
+
+function loadCandidates(user: User, req: DjMixRequest): Cand[] {
+  const where: string[] = [];
+  const params: Param[] = [];
   if (req.libraryId) {
     where.push('i.library_id = ?');
     params.push(req.libraryId);
   }
-  const rows = db.all(
-    `SELECT i.id, i.grandparent_id artist_id, i.parent_id album_id, i.genres, i.duration_ms, al.genres album_genres, ud.favorite, ud.rating, COALESCE(i.year, al.year) year
-     FROM items i LEFT JOIN items al ON al.id = i.parent_id LEFT JOIN user_data ud ON ud.item_id = i.id AND ud.user_id = ?
-     WHERE ${where.join(' AND ')} LIMIT 50000`, user.id, ...params);
-  const analyses = getAnalyses(rows.map((r) => r.id));
   const wantGenres = (req.genres ?? []).map(lc);
-  return rows
-    .map((r) => ({
-      id: r.id, artistId: r.artist_id, albumId: r.album_id,
-      // A track's own genre tags win; the album's genres are only a fallback for untagged tracks.
-      genres: [...new Set((parseJson<string[]>(r.genres, []).length ? parseJson<string[]>(r.genres, []) : parseJson<string[]>(r.album_genres, [])).map(lc))],
-      durationMs: r.duration_ms ?? 0, favorite: !!r.favorite, rating: r.rating ?? null, year: r.year ?? null, a: analyses.get(r.id) ?? null,
-    }))
+  return selectCandidates(user, where, params)
     .filter((c) => !wantGenres.length || c.genres.some((g) => wantGenres.includes(g)))
     .filter((c) => (req.yearFrom == null || (c.year != null && c.year >= req.yearFrom)) && (req.yearTo == null || (c.year != null && c.year <= req.yearTo)))
     .filter((c) => req.maxTrackMinutes == null || !c.durationMs || c.durationMs <= req.maxTrackMinutes * 60000)
     .filter((c) => {
       if (req.bpmMin == null && req.bpmMax == null) return true;
-      const b = c.a?.bpm;
+      const b = c.f?.bpm;
       if (!b) return false;
       // Half/double time counts as in range.
       return [b, b * 2, b / 2].some((x) => (req.bpmMin == null || x >= req.bpmMin) && (req.bpmMax == null || x <= req.bpmMax));
@@ -309,110 +323,202 @@ function percentile(sorted: number[], q: number) {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(q * (sorted.length - 1))))];
 }
 
+/* ------------------------------ scoring ------------------------------ */
+
+interface ScoreCtx {
+  harmonic: boolean;
+  genres: Set<string>;
+  /** Unit-length z-scored timbre vectors by track id (cosine similarity = dot product); empty below 5 tracks. */
+  z: Map<string, Float64Array>;
+  seedZ: Float64Array | null;
+  skips: { tracks: Map<string, number>; artists: Map<string, number> };
+  preferFavorites: boolean;
+}
+
+/** z-score every timbre fingerprint against the candidates' statistics once, so each comparison is a dot product. */
+function timbreIndex(cands: Cand[]): Map<string, Float64Array> {
+  const out = new Map<string, Float64Array>();
+  const dims = cands.find((c) => c.f?.timbre?.length)?.f?.timbre?.length ?? 0;
+  const withT = dims ? cands.filter((c) => c.f?.timbre?.length === dims) : [];
+  if (withT.length < 5) return out;
+  const mean = new Float64Array(dims);
+  const std = new Float64Array(dims);
+  for (const c of withT) for (let i = 0; i < dims; i++) mean[i] += c.f!.timbre![i] / withT.length;
+  for (const c of withT) for (let i = 0; i < dims; i++) std[i] += (c.f!.timbre![i] - mean[i]) ** 2 / withT.length;
+  for (let i = 0; i < dims; i++) std[i] = Math.sqrt(std[i]) || 1;
+  for (const c of withT) {
+    const v = new Float64Array(dims);
+    let n = 0;
+    for (let i = 0; i < dims; i++) {
+      v[i] = (c.f!.timbre![i] - mean[i]) / std[i];
+      n += v[i] * v[i];
+    }
+    if (n > 0) {
+      n = Math.sqrt(n);
+      for (let i = 0; i < dims; i++) v[i] /= n;
+      out.set(c.id, v);
+    }
+  }
+  return out;
+}
+const dot = (a: Float64Array, b: Float64Array) => {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+  return s;
+};
+const keyMemo = new Map<string, ReturnType<typeof keyCompatibility>>();
+const keyCompat = (a: string | null, b: string | null) => {
+  const k = `${a}|${b}`;
+  let v = keyMemo.get(k);
+  if (!v) keyMemo.set(k, (v = keyCompatibility(a, b)));
+  return v;
+};
+
+/** How well `c` follows `prev` (key, tempo, energy target, genre, timbre, taste); higher is better. */
+function scoreCand(ctx: ScoreCtx, prev: Cand | null, c: Cand, target: number): number {
+  let s = 0;
+  const a = c.f;
+  if (prev?.f && a) {
+    if (ctx.harmonic) {
+      const k = keyCompat(prev.f.camelot, a.camelot);
+      s += 0.3 * (k === 'perfect' ? 1 : k === 'compatible' ? 0.85 : k === 'energy' ? 0.55 : k === 'unknown' ? 0.45 : 0.05);
+    }
+    const t = tempoDistance(prev.f.bpm, a.bpm);
+    s += 0.3 * (t ? Math.exp(-Math.pow(t.d / 0.04, 2)) : 0.35);
+  } else s += 0.25;
+  s += a ? 0.25 * Math.max(0, 1 - Math.abs(a.energy - target) * 3) : 0.08;
+  if (ctx.genres.size) {
+    let overlap = 0;
+    for (const g of c.genres) if (ctx.genres.has(g)) overlap++;
+    s += 0.15 * (overlap ? Math.min(1, overlap / Math.min(3, c.genres.length || 1)) : 0);
+  }
+  // "Sounds like": close to the previous track and to the seed (keeps the mix coherent beyond tempo/key).
+  const zc = ctx.z.get(c.id);
+  if (zc) {
+    const zp = prev ? ctx.z.get(prev.id) : undefined;
+    s += 0.12 * Math.max(0, zp ? dot(zp, zc) : 0) + 0.08 * Math.max(0, ctx.seedZ ? dot(ctx.seedZ, zc) : 0);
+  }
+  s -= Math.min(0.5, 0.25 * (ctx.skips.tracks.get(c.id) ?? 0)) + Math.min(0.2, 0.04 * (c.artistId ? ctx.skips.artists.get(c.artistId) ?? 0 : 0));
+  if (ctx.preferFavorites) s += (c.favorite ? 0.06 : 0) + ((c.rating ?? 0) / 10) * 0.04;
+  if (prev && c.albumId && c.albumId === prev.albumId) s -= 0.1; // variety
+  return s + Math.random() * 0.04;
+}
+
+/** The best next track from `cands` (not used, artist gap respected when possible). Big pools are sampled. */
+function pickNext(ctx: ScoreCtx, cands: Cand[], used: Set<string>, recentArtists: (string | null)[], artistGap: number, prev: Cand | null, target: number): Cand | null {
+  const blocked = new Set(recentArtists.slice(-artistGap).filter(Boolean));
+  let pool = cands.filter((c) => !used.has(c.id) && !(c.artistId && blocked.has(c.artistId)));
+  if (!pool.length) pool = cands.filter((c) => !used.has(c.id));
+  if (!pool.length) return null;
+  if (pool.length > 4000) {
+    // Big libraries: score a genre-weighted random sample.
+    const inGenre = ctx.genres.size ? pool.filter((c) => c.genres.some((g) => ctx.genres.has(g))) : [];
+    const sample = (arr: Cand[], n: number) => (arr.length <= n ? arr : Array.from({ length: n }, () => arr[Math.floor(Math.random() * arr.length)]));
+    pool = [...new Set([...sample(inGenre, 2500), ...sample(pool, 1500)])];
+  }
+  let best: Cand | null = null;
+  let bestScore = -Infinity;
+  for (const c of pool) {
+    const s = scoreCand(ctx, prev, c, target);
+    if (s > bestScore) {
+      bestScore = s;
+      best = c;
+    }
+  }
+  return best;
+}
+
+const PREFS: DjTransitionPreference[] = ['auto', 'smooth', 'energetic', 'minimal'];
+/** Planner options from a request (preference and the clamped tempo-stretch limit). */
+export function transitionOptions(transitions: unknown, maxStretchPct: unknown): Pick<PlanOptions, 'preference' | 'maxStretch'> {
+  const pct = typeof maxStretchPct === 'number' ? maxStretchPct : typeof maxStretchPct === 'string' && maxStretchPct.trim() ? Number(maxStretchPct) : NaN;
+  return {
+    preference: PREFS.includes(transitions as DjTransitionPreference) ? (transitions as DjTransitionPreference) : 'auto',
+    maxStretch: Number.isFinite(pct) && pct > 0 ? Math.max(1, Math.min(16, pct)) / 100 : 0.08,
+  };
+}
+
+/**
+ * Length of a mix as played: each track runs from its mix-in point until the next track starts at its mix-out
+ * point (the tail after that is faded or skipped); the last track plays to its end.
+ */
+class MixClock {
+  private committed = 0;
+  private lastIn = 0;
+  private lastDur = 0;
+  private any = false;
+  /** Add a track; `t` is the transition into it (null: a plain gap-less follow-on). The first track starts at `firstInMs`. */
+  add(durationMs: number, t: DjTransition | null, firstInMs = 0) {
+    if (!this.any) this.lastIn = firstInMs;
+    else if (t) {
+      this.committed += Math.max(0, t.mixOutMs - this.lastIn);
+      this.lastIn = t.mixInMs;
+    } else {
+      this.committed += Math.max(0, this.lastDur - this.lastIn);
+      this.lastIn = 0;
+    }
+    this.lastDur = durationMs;
+    this.any = true;
+  }
+  get totalMs() {
+    return this.any ? this.committed + Math.max(0, this.lastDur - this.lastIn) : 0;
+  }
+}
+
 /** Build an ordered DJ mix (or the next `count` tracks of a continuous mix). */
 export function buildMix(user: User, req: DjMixRequest): DjMix {
   const curve: DjEnergyCurve = CURVES.includes(req.curve as DjEnergyCurve) ? (req.curve as DjEnergyCurve) : 'steady';
-  const harmonic = req.harmonic !== false;
   const artistGap = Math.max(0, Math.min(20, req.artistGap ?? 3));
   const cands = loadCandidates(user, req);
   if (!cands.length) throw badRequest('No music matches those filters');
   const byId = new Map(cands.map((c) => [c.id, c]));
   const { start, genres } = resolveSeed(user, req, cands, byId);
-  const energies = cands.filter((c) => c.a).map((c) => c.a!.energy).sort((x, y) => x - y);
-  // Timbre statistics for z-scored "sounds like" similarity.
-  const withTimbre = cands.filter((c) => c.a?.timbre?.length);
-  const dims = withTimbre[0]?.a?.timbre?.length ?? 0;
-  const tMean = Array.from({ length: dims }, (_, i) => withTimbre.reduce((s, c) => s + c.a!.timbre![i], 0) / (withTimbre.length || 1));
-  const tStd = Array.from({ length: dims }, (_, i) => Math.sqrt(withTimbre.reduce((s, c) => s + (c.a!.timbre![i] - tMean[i]) ** 2, 0) / (withTimbre.length || 1)));
-  const seedTimbre = (start ?? (req.history?.length ? byId.get(req.history[req.history.length - 1]) : null))?.a?.timbre ?? null;
-  // Listener feedback: recently skipped tracks and artists are played less.
-  const skips = skipStats(user.id);
+  const energies = cands.filter((c) => c.f).map((c) => c.f!.energy).sort((x, y) => x - y);
+  const z = timbreIndex(cands);
+  const seedCand = start ?? (req.history?.length ? byId.get(req.history[req.history.length - 1]) : null) ?? null;
+  const ctx: ScoreCtx = {
+    harmonic: req.harmonic !== false, genres, z, seedZ: seedCand ? z.get(seedCand.id) ?? null : null,
+    // Listener feedback: recently skipped tracks and artists are played less.
+    skips: skipStats(user.id), preferFavorites: req.preferFavorites !== false,
+  };
   const analyzedShare = cands.length ? energies.length / cands.length : 0;
 
   const history = (req.history ?? []).filter((id) => byId.has(id) || db.get('SELECT 1 FROM items WHERE id = ?', id));
   const used = new Set(history);
   const recentArtists: (string | null)[] = history.slice(-artistGap).map((id) => byId.get(id)?.artistId ?? null);
   let prev: Cand | null = history.length ? byId.get(history[history.length - 1]) ?? null : null;
-  const seedEnergy = (start ?? prev)?.a?.energy;
-  const seedPct = seedEnergy != null && energies.length ? energies.findIndex((e) => e >= seedEnergy) / energies.length : 0.55;
+  const seedEnergy = (start ?? prev)?.f?.energy;
+  const seedPct = seedEnergy != null && energies.length ? Math.max(0, energies.findIndex((e) => e >= seedEnergy)) / energies.length : 0.55;
 
+  const planOpts = (x: Cand, y: Cand): PlanOptions => ({ ...transitionOptions(req.transitions, req.maxStretchPct), genresA: x.genres, genresB: y.genres });
+  const full = analysisLoader();
   const targetMs = (req.durationMin ?? 60) * 60000;
   const maxCount = req.count != null ? Math.max(1, Math.min(100, req.count)) : 200;
   const out: Cand[] = [];
-  let total = 0;
-  if (start && !used.has(start.id)) {
-    out.push(start);
-    used.add(start.id);
-    recentArtists.push(start.artistId);
-    total += start.durationMs;
-    prev = start;
-  }
+  // The mix's length as played (mix-in to mix-out of each track), so "1 hour" means an hour of mix.
+  const clock = new MixClock();
+  const add = (c: Cand) => {
+    clock.add(c.durationMs, out.length ? planTransition(full(out[out.length - 1]), out[out.length - 1].durationMs, full(c), planOpts(out[out.length - 1], c)) : null);
+    out.push(c);
+    used.add(c.id);
+    recentArtists.push(c.artistId);
+    prev = c;
+  };
+  if (start && !used.has(start.id)) add(start);
   // Continuous mode keeps the curve moving with the history length (≈ 30-track arc).
-  const position = () => (req.count != null ? ((history.length + out.length) % 30) / 30 : Math.min(1, total / targetMs));
+  const position = () => (req.count != null ? ((history.length + out.length) % 30) / 30 : Math.min(1, clock.totalMs / targetMs));
 
-  while (out.length < maxCount && (req.count != null || total < targetMs)) {
+  while (out.length < maxCount && (req.count != null || clock.totalMs < targetMs)) {
     const target = percentile(energies, curveTarget(curve, position(), seedPct));
-    const blocked = new Set(recentArtists.slice(-artistGap).filter(Boolean));
-    let pool = cands.filter((c) => !used.has(c.id) && !(c.artistId && blocked.has(c.artistId)));
-    if (!pool.length) pool = cands.filter((c) => !used.has(c.id));
-    if (!pool.length) break;
-    if (pool.length > 4000) {
-      // Big libraries: score a genre-weighted random sample.
-      const inGenre = pool.filter((c) => c.genres.some((g) => genres.has(g)));
-      const sample = (arr: Cand[], n: number) => (arr.length <= n ? arr : Array.from({ length: n }, () => arr[Math.floor(Math.random() * arr.length)]));
-      pool = [...new Set([...sample(inGenre, 2500), ...sample(pool, 1500)])];
-    }
-    let best: Cand | null = null;
-    let bestScore = -Infinity;
-    for (const c of pool) {
-      let s = 0;
-      const a = c.a;
-      if (prev?.a && a) {
-        if (harmonic) {
-          const k = keyCompatibility(prev.a.camelot, a.camelot);
-          s += 0.3 * (k === 'perfect' ? 1 : k === 'compatible' ? 0.85 : k === 'energy' ? 0.55 : k === 'unknown' ? 0.45 : 0.05);
-        }
-        const t = tempoDistance(prev.a.bpm, a.bpm);
-        s += 0.3 * (t ? Math.exp(-Math.pow(t.d / 0.04, 2)) : 0.35);
-      } else s += 0.25;
-      s += a ? 0.25 * Math.max(0, 1 - Math.abs(a.energy - target) * 3) : 0.08;
-      if (genres.size) {
-        const overlap = c.genres.filter((g) => genres.has(g)).length;
-        s += 0.15 * (overlap ? Math.min(1, overlap / Math.min(3, c.genres.length || 1)) : 0);
-      }
-      // "Sounds like": close to the previous track and to the seed (keeps the mix coherent beyond tempo/key).
-      if (a?.timbre && withTimbre.length >= 5 && a.timbre.length === dims) {
-        const sp = prev?.a?.timbre?.length === dims ? similarity(prev.a.timbre, a.timbre, tMean, tStd) : 0;
-        const ss = seedTimbre?.length === dims ? similarity(seedTimbre, a.timbre, tMean, tStd) : 0;
-        s += 0.12 * Math.max(0, sp) + 0.08 * Math.max(0, ss);
-      }
-      s -= Math.min(0.5, 0.25 * (skips.tracks.get(c.id) ?? 0)) + Math.min(0.2, 0.04 * (c.artistId ? skips.artists.get(c.artistId) ?? 0 : 0));
-      if (req.preferFavorites !== false) s += (c.favorite ? 0.06 : 0) + ((c.rating ?? 0) / 10) * 0.04;
-      if (prev && c.albumId && c.albumId === prev.albumId) s -= 0.1; // variety
-      s += Math.random() * 0.04;
-      if (s > bestScore) {
-        bestScore = s;
-        best = c;
-      }
-    }
+    const best = pickNext(ctx, cands, used, recentArtists, artistGap, prev, target);
     if (!best) break;
-    out.push(best);
-    used.add(best.id);
-    recentArtists.push(best.artistId);
-    total += best.durationMs;
-    prev = best;
+    add(best);
   }
 
-  const prefs: DjTransitionPreference[] = ['auto', 'smooth', 'energetic', 'minimal'];
-  const planOpts = (x: Cand, y: Cand): PlanOptions => ({
-    preference: prefs.includes(req.transitions as DjTransitionPreference) ? req.transitions : 'auto',
-    maxStretch: req.maxStretchPct != null && Number.isFinite(req.maxStretchPct) ? Math.max(1, Math.min(16, req.maxStretchPct)) / 100 : 0.08,
-    genresA: x.genres, genresB: y.genres,
-  });
   // Materialise items and transitions.
   const tracks: DjMixTrack[] = [];
   let before: Cand | null = history.length ? byId.get(history[history.length - 1]) ?? null : null;
-  let durationMs = 0;
+  const played = new MixClock();
   for (const c of out) {
     let item;
     try {
@@ -420,10 +526,22 @@ export function buildMix(user: User, req: DjMixRequest): DjMix {
     } catch {
       continue;
     }
-    const transition = before ? planTransition(before.a, before.durationMs, c.a, planOpts(before, c)) : null;
-    tracks.push({ item, analysis: c.a, transition });
-    durationMs += c.durationMs - (transition ? transition.crossfadeMs + transition.mixInMs : 0);
+    const transition = before ? planTransition(full(before), before.durationMs, full(c), planOpts(before, c)) : null;
+    tracks.push({ item, analysis: full(c), transition });
+    // Continuing from the history: count from the first new track's mix-in.
+    played.add(c.durationMs, transition, transition?.mixInMs ?? 0);
     before = c;
   }
-  return { tracks, durationMs: Math.max(0, durationMs), curve, analyzedShare: Math.round(analyzedShare * 100) / 100 };
+  return { tracks, durationMs: Math.max(0, played.totalMs), curve, analyzedShare: Math.round(analyzedShare * 100) / 100 };
+}
+
+/** Full analyses, loaded only for the tracks a mix actually uses (scoring needs just the lean features). */
+function analysisLoader() {
+  const cache = new Map<string, TrackAnalysis | null>();
+  return (c: Cand): TrackAnalysis | null => {
+    if (!c.f) return null;
+    let a = cache.get(c.id);
+    if (a === undefined) cache.set(c.id, (a = getAnalysis(c.id)));
+    return a;
+  };
 }

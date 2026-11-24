@@ -2611,6 +2611,25 @@ export interface TrackAnalysis {
   downbeatMs?: number | null;
   /** Song structure on 8/16/32-bar phrase boundaries (intro, verse, build, drop, breakdown, outro). */
   phrases?: DjPhrase[] | null;
+  /** Ready-made automix cue points (smart crossfade), derived from the fields above. Always set by servers that know it. */
+  cues?: TrackCues;
+}
+
+/**
+ * Automix cue points of one track (lite DJ / smart crossfade). Mix out of A at A.cues.mixOutMs by starting B at
+ * B.cues.mixInMs; the blend should be over by B.cues.introEndMs (when known) and must end by A.cues.endMs.
+ */
+export interface TrackCues {
+  /** Where to start this track when mixing into it: its first downbeat at/after the leading silence (else cueInMs). */
+  mixInMs: number;
+  /** End of the intro (first phrase boundary, else the loudness-based intro end); null when there is no clear intro. */
+  introEndMs: number | null;
+  /** Where to start mixing out of this track: its outro phrase, else the last 16/32 bars on an 8-bar line, else the loudness outro, else ~10 s before the end. */
+  mixOutMs: number;
+  /** Last audible moment (trailing silence trimmed) = cueOutMs. */
+  endMs: number;
+  /** Where mixOutMs came from: 'outro' phrase, a 'phrase' line, the 'loudness' outro, or a 'fallback' before the end. */
+  source: 'outro' | 'phrase' | 'loudness' | 'fallback';
 }
 
 export type DjPhraseType = 'intro' | 'verse' | 'buildup' | 'drop' | 'breakdown' | 'outro';
@@ -2718,6 +2737,57 @@ export interface DjMix {
   request?: DjMixRequest;
   /** AI DJ: the prompt asked for a non-stop mix ("all night", "radio"). */
   continuous?: boolean;
+}
+
+/** POST /dj/transitions: plan many transitions at once from stored analyses (no AI, no on-demand analysis). */
+export interface DjTransitionsRequest {
+  /** Up to 50 pairs. */
+  pairs: { from: string; to: string }[];
+  transitions?: DjTransitionPreference;
+  /** Largest tempo change in percent (clamped to 1–16, default 8). */
+  maxStretchPct?: number;
+}
+
+export interface DjTransitionsResponse {
+  /** Same order as `pairs`; null when either id is not a music track the user can see. */
+  transitions: (DjTransition | null)[];
+}
+
+/** A music source to mix (POST /dj/order). */
+export interface DjOrderSource {
+  type: 'library' | 'genre' | 'artist' | 'album' | 'playlist' | 'folder';
+  /** Library, artist, album or playlist id; the genre name for 'genre'; the library id for 'folder'. */
+  id: string;
+  /** 'folder': the folder's path (absolute, or relative to one of the library's folders). */
+  path?: string;
+  /** 'genre': restrict to one library. */
+  libraryId?: string;
+}
+
+/** POST /dj/order: put tracks in a mix-friendly order (tempo, Camelot key, energy and timbre flow). Local only, no AI. */
+export interface DjOrderRequest {
+  /** Explicit tracks (e.g. the queue), up to 5000. Albums/artists/playlists in the list are expanded to their tracks. */
+  itemIds?: string[];
+  source?: DjOrderSource;
+  /** How many tracks to return (default 100, max 500). Page with `history`. */
+  limit?: number;
+  /** Tracks already played or returned (excluded; the last one is the track to continue from). */
+  history?: string[];
+  /** Track to start with (when there is no history). */
+  startItemId?: string;
+  /** Prefer key-compatible neighbours. Default true. */
+  harmonic?: boolean;
+  curve?: DjEnergyCurve;
+}
+
+export interface DjOrderResponse {
+  items: Item[];
+  /** Stored analyses of the returned tracks (timbre omitted), null when not analysed yet. */
+  analyses: Record<string, TrackAnalysis | null>;
+  /** Tracks in the source the user can see. */
+  total: number;
+  /** Tracks not yet returned (page again with `history`). */
+  remaining: number;
 }
 
 /** AI DJ host: a short spoken link between two tracks. */

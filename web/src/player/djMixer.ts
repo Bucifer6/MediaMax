@@ -152,3 +152,41 @@ export function glideMs(bars: number, bpm: number | null | undefined, rate: numb
   if (!bpm || bars <= 0) return 8000;
   return Math.round(((bars * 4 * 60000) / (bpm * (rate || 1))));
 }
+
+/**
+ * Rates for both decks during a tempo-matched transition. The incoming deck plays at tempoRatio × the outgoing
+ * deck's rate (beats line up). When that would pass ±maxStretch (the outgoing deck is still stretched from the
+ * previous transition), the incoming deck takes the limit and the outgoing deck moves toward its own tempo so the
+ * pair stays matched; only a ratio that is itself out of range is clamped (and then drifts).
+ */
+export function matchRates(tempoRatio: number, outgoingRate: number, maxStretch: number): { inRate: number; outRate: number } {
+  const lo = 1 - maxStretch;
+  const hi = 1 + maxStretch;
+  const ratio = tempoRatio || 1;
+  const out = outgoingRate || 1;
+  const want = ratio * out;
+  if (want >= lo && want <= hi) return { inRate: want, outRate: out };
+  const inRate = Math.max(lo, Math.min(hi, want));
+  const outRate = Math.max(lo, Math.min(hi, inRate / ratio));
+  return { inRate, outRate };
+}
+
+/** Beat drift (ms) accumulated over `durMs` of wall time between two decks whose effective tempos differ. */
+export function beatDriftMs(bpmOut: number, outRate: number, bpmIn: number, inRate: number, durMs: number): number {
+  const a = bpmOut * outRate;
+  const b = bpmIn * inRate;
+  // Phase difference in beats × the outgoing beat length.
+  return Math.abs(((b - a) * durMs) / 60000) * (60000 / a);
+}
+
+/** The first bar line at or after `posMs` on a grid of `bpm` anchored at `anchorMs` (a downbeat); null without a grid. */
+export function nextBarMs(posMs: number, bpm: number | null | undefined, anchorMs: number | null | undefined): number | null {
+  if (!bpm || anchorMs == null) return null;
+  const bar = (60000 / bpm) * 4;
+  return anchorMs + Math.ceil((posMs - anchorMs) / bar - 1e-9) * bar;
+}
+
+/** 0–1 progress of a transition that started at `start` and lasts `len` (same clock, ms). */
+export function transitionProgress(now: number, start: number, len: number): number {
+  return Math.max(0, Math.min(1, (now - start) / Math.max(1, len)));
+}
