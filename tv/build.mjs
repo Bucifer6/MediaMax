@@ -46,7 +46,12 @@ if (useLogo) page = page.replace('<h1 id="brand">Kinora</h1>', '<h1 id="brand"><
 // Escape the name for where it lands: markup (HTML), the inline script's string literals (JS), config.xml (XML).
 const htmlName = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const jsName = JSON.stringify(name).slice(1, -1).replace(/'/g, "\\'").replace(/</g, '\\u003c');
-page = page.split(/(<script\b[^>]*>[\s\S]*?<\/script\s*>)/i).map((part) => part.replaceAll('Kinora', /^<script/i.test(part) ? jsName : htmlName)).join('');
+// The page has one inline <script>…</script> block (our own file): split on it by position, not with an HTML regex.
+const lower = page.toLowerCase();
+const scriptStart = lower.indexOf('<script');
+const scriptEnd = scriptStart < 0 ? -1 : lower.indexOf('</script', scriptStart);
+if (scriptStart < 0 || scriptEnd < 0 || lower.indexOf('<script', scriptStart + 1) >= 0) throw new Error('tv/shared/index.html must contain exactly one <script> block');
+page = page.slice(0, scriptStart).replaceAll('Kinora', htmlName) + page.slice(scriptStart, scriptEnd).replaceAll('Kinora', jsName) + page.slice(scriptEnd).replaceAll('Kinora', htmlName);
 for (const target of ['tizen', 'webos', 'vidaa']) {
   const dir = path.join(dist, target);
   fs.rmSync(dir, { recursive: true, force: true });
