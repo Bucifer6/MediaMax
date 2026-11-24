@@ -396,28 +396,49 @@ function scoreCand(ctx: ScoreCtx, prev: Cand | null, c: Cand, target: number): n
   return s + Math.random() * 0.04;
 }
 
-/** The best next track from `cands` (not used, artist gap respected when possible). Big pools are sampled. */
-function pickNext(ctx: ScoreCtx, cands: Cand[], used: Set<string>, recentArtists: (string | null)[], artistGap: number, prev: Cand | null, target: number): Cand | null {
+/** Candidates of one request, with the in-genre subset precomputed for sampling big libraries. */
+interface CandPool {
+  all: Cand[];
+  inGenre: Cand[];
+}
+const candPool = (all: Cand[], genres: Set<string>): CandPool => ({ all, inGenre: genres.size && all.length > SAMPLE_OVER ? all.filter((c) => c.genres.some((g) => genres.has(g))) : [] });
+/** Above this many candidates each step scores a (genre-weighted) random sample instead of everything. */
+const SAMPLE_OVER = 4000;
+
+/** The best next track (not used, artist gap respected when possible), in one pass without building pools. */
+function pickNext(ctx: ScoreCtx, pool: CandPool, used: Set<string>, recentArtists: (string | null)[], artistGap: number, prev: Cand | null, target: number): Cand | null {
   const blocked = new Set(recentArtists.slice(-artistGap).filter(Boolean));
-  let pool = cands.filter((c) => !used.has(c.id) && !(c.artistId && blocked.has(c.artistId)));
-  if (!pool.length) pool = cands.filter((c) => !used.has(c.id));
-  if (!pool.length) return null;
-  if (pool.length > 4000) {
-    // Big libraries: score a genre-weighted random sample.
-    const inGenre = ctx.genres.size ? pool.filter((c) => c.genres.some((g) => ctx.genres.has(g))) : [];
-    const sample = (arr: Cand[], n: number) => (arr.length <= n ? arr : Array.from({ length: n }, () => arr[Math.floor(Math.random() * arr.length)]));
-    pool = [...new Set([...sample(inGenre, 2500), ...sample(pool, 1500)])];
-  }
   let best: Cand | null = null;
   let bestScore = -Infinity;
-  for (const c of pool) {
+  let fallback: Cand | null = null;
+  let fallbackScore = -Infinity;
+  const consider = (c: Cand) => {
+    if (used.has(c.id)) return;
     const s = scoreCand(ctx, prev, c, target);
-    if (s > bestScore) {
+    if (c.artistId && blocked.has(c.artistId)) {
+      if (s > fallbackScore) {
+        fallbackScore = s;
+        fallback = c;
+      }
+    } else if (s > bestScore) {
       bestScore = s;
       best = c;
     }
+  };
+  const { all, inGenre } = pool;
+  if (all.length <= SAMPLE_OVER) for (const c of all) consider(c);
+  else {
+    // Big libraries: score a genre-weighted random sample (duplicates are harmless).
+    const draw = (arr: Cand[], n: number) => {
+      if (arr.length <= n) for (const c of arr) consider(c);
+      else for (let i = 0; i < n; i++) consider(arr[Math.floor(Math.random() * arr.length)]);
+    };
+    draw(inGenre, 2500);
+    draw(all, inGenre.length ? 1500 : SAMPLE_OVER);
+    // A sample of a nearly used-up library can come back empty: fall back to a full pass.
+    if (!best && !fallback) for (const c of all) consider(c);
   }
-  return best;
+  return best ?? fallback;
 }
 
 const PREFS: DjTransitionPreference[] = ['auto', 'smooth', 'energetic', 'minimal'];
@@ -474,6 +495,7 @@ export function buildMix(user: User, req: DjMixRequest): DjMix {
     skips: skipStats(user.id), preferFavorites: req.preferFavorites !== false,
   };
   const analyzedShare = cands.length ? energies.length / cands.length : 0;
+  const pool = candPool(cands, genres);
 
   const history = (req.history ?? []).filter((id) => byId.has(id) || db.get('SELECT 1 FROM items WHERE id = ?', id));
   const used = new Set(history);
@@ -502,7 +524,7 @@ export function buildMix(user: User, req: DjMixRequest): DjMix {
 
   while (out.length < maxCount && (req.count != null || clock.totalMs < targetMs)) {
     const target = percentile(energies, curveTarget(curve, position(), seedPct));
-    const best = pickNext(ctx, cands, used, recentArtists, artistGap, prev, target);
+    const best = pickNext(ctx, pool, used, recentArtists, artistGap, prev, target);
     if (!best) break;
     add(best);
   }
@@ -641,6 +663,7 @@ export function orderTracks(user: User, req: DjOrderRequest): { ids: string[]; t
   const curve: DjEnergyCurve = CURVES.includes(req.curve as DjEnergyCurve) ? (req.curve as DjEnergyCurve) : 'peak';
   const ctx: ScoreCtx = { harmonic: req.harmonic !== false, genres, z, seedZ: null, skips: skipStats(user.id), preferFavorites: false };
   const recentArtists: (string | null)[] = history.slice(-2).map((id) => byId.get(id)?.artistId ?? null);
+  const pool = candPool(cands, genres);
   const out: Cand[] = [];
   const take = (c: Cand) => {
     out.push(c);
@@ -658,7 +681,7 @@ export function orderTracks(user: User, req: DjOrderRequest): { ids: string[]; t
   const seedPct = 0.5;
   while (out.length < limit) {
     const target = percentile(energies, curveTarget(curve, Math.min(1, (history.length + out.length) / Math.max(1, total)), seedPct));
-    const next = pickNext(ctx, cands, used, recentArtists, 2, prev, target);
+    const next = pickNext(ctx, pool, used, recentArtists, 2, prev, target);
     if (!next) break;
     take(next);
   }

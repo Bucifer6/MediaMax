@@ -335,6 +335,17 @@ export interface UserPreferences {
   /** Music: crossfade between tracks in seconds (0–12; 0 = gapless, no fade). Consecutive tracks of one album never crossfade. */
   musicCrossfadeSec?: number;
   /**
+   * Music: Automix ("lite DJ"): albums, playlists, queues and radio blend from one track into the next like a
+   * continuous DJ mix (beat-matched on bar lines when tempos are close, else a ~6 s crossfade; gapless albums stay
+   * gapless). Unset = the client's default (on for music; audiobooks and podcasts never automix). Replaces
+   * `musicCrossfadeSec` while on.
+   */
+  automix?: boolean;
+  /** Automix transition feel, the DJ's choices: auto (default), smooth, energetic, minimal. */
+  automixStyle?: DjTransitionPreference;
+  /** Show the advanced DJ: the DJ page, the AI DJ prompt and voice host, and the DJ entry points. Default off. */
+  advancedDj?: boolean;
+  /**
    * Per-profile "Customize Home": row ids (HomeRow.id) to hide and the order to show them in. Rows not listed in
    * `order` keep their server order after the ordered ones. An id without a `:suffix` also matches the rows it expands
    * to (e.g. 'lib-recent' hides/orders every 'lib-recent:<libraryId>' row). Applied by the server's home builder.
