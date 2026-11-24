@@ -44,9 +44,15 @@ export function MiniPlayer() {
             <T variant="small" weight="700" numberOfLines={1}>
               {m.current.title}
             </T>
-            <T variant="caption" tone="muted" numberOfLines={1}>
-              {m.current.grandparentTitle ?? m.current.parentTitle ?? ''}
-            </T>
+            {m.blend ? (
+              <T variant="caption" tone="primary" numberOfLines={1}>
+                Mixing into {m.blend.into.title}
+              </T>
+            ) : (
+              <T variant="caption" tone="muted" numberOfLines={1}>
+                {m.current.grandparentTitle ?? m.current.parentTitle ?? ''}
+              </T>
+            )}
           </View>
         </Focusable>
         <Focusable onPress={m.toggle} accessibilityLabel={m.playing ? 'Pause' : 'Play'} ringRadius={999} style={{ padding: t.space.xs, borderRadius: 999 }}>
