@@ -261,8 +261,8 @@ const { SdClient } = await import('../src/services/livetv/epg/schedulesdirect.ts
 const { createUser, issueToken } = await import('../src/services/auth.ts');
 const { buildApp } = await import('../src/app.ts');
 
-const admin = createUser({ username: 'epgadmin', password: 'pw-123456', isAdmin: true });
-const viewer = createUser({ username: 'epgviewer', password: 'pw-123456' });
+const admin = await createUser({ username: 'epgadmin', password: 'pw-123456', isAdmin: true });
+const viewer = await createUser({ username: 'epgviewer', password: 'pw-123456' });
 const ch = (sourceId: string, name: string) => db.get('SELECT * FROM channels WHERE source_id = ? AND name = ?', sourceId, name)!;
 const progTitles = (channelId: string) => live.channelPrograms(admin, channelId).map((p) => p.title);
 

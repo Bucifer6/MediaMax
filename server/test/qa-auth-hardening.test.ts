@@ -15,8 +15,8 @@ const invites = await import('../src/services/invites.ts');
 const live = await import('../src/services/livetv/livetv.ts');
 const { buildApp } = await import('../src/app.ts');
 
-const owner = createUser({ username: 'hardowner', password: 'pass1234', isAdmin: true });
-const viewer = createUser({ username: 'hardviewer', password: 'pass1234' });
+const owner = await createUser({ username: 'hardowner', password: 'pass1234', isAdmin: true });
+const viewer = await createUser({ username: 'hardviewer', password: 'pass1234' });
 const otok = issueToken(owner.id, { deviceId: 'h-o', deviceName: 'test', platform: 'web' }).token;
 const vtok = issueToken(viewer.id, { deviceId: 'h-v', deviceName: 'test', platform: 'web' }).token;
 const key = createApiKey(owner.id, 'homepage widget').key;

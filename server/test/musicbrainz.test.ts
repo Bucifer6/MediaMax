@@ -203,9 +203,9 @@ const id3 = (frames: Buffer[]) => {
 
 let admin: User;
 let listener: User;
-before(() => {
-  admin = auth.createUser({ username: 'mbadmin', password: 'pass1234', isAdmin: true });
-  listener = auth.createUser({ username: 'listener', password: 'pass1234' });
+before(async () => {
+  admin = await auth.createUser({ username: 'mbadmin', password: 'pass1234', isAdmin: true });
+  listener = await auth.createUser({ username: 'listener', password: 'pass1234' });
 });
 
 /* ------------------------------------ tags ------------------------------------ */

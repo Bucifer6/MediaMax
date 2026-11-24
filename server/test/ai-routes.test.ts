@@ -11,8 +11,8 @@ const { buildApp } = await import('../src/app.ts');
 const app = await buildApp();
 after(() => app.close());
 
-const admin = createUser({ username: 'air-admin', password: 'pass1234', isAdmin: true });
-const viewer = createUser({ username: 'air-viewer', password: 'pass1234' });
+const admin = await createUser({ username: 'air-admin', password: 'pass1234', isAdmin: true });
+const viewer = await createUser({ username: 'air-viewer', password: 'pass1234' });
 const tok = (id: string, d: string) => issueToken(id, { deviceId: d, deviceName: 'test', platform: 'web' }).token;
 const A = { authorization: `Bearer ${tok(admin.id, 'air-a')}` };
 const V = { authorization: `Bearer ${tok(viewer.id, 'air-v')}` };

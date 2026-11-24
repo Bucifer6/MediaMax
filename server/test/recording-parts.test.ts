@@ -18,7 +18,7 @@ const { bus } = await import('../src/services/events.ts');
 
 const recRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-rec-parts-'));
 updateSettings({ dvr: { ...getSettings().dvr, recordingsPath: recRoot, commercialDetection: false } } as any);
-const admin = createUser({ username: 'dvradmin', password: 'pw-123456', isAdmin: true });
+const admin = await createUser({ username: 'dvradmin', password: 'pw-123456', isAdmin: true });
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-rec-src-'));
 
 /** A small MPEG-TS clip (> 100 KB, the minimum for a part to count) with H.264 video + AAC audio. */

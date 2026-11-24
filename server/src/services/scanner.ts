@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn } from 'node:child_process';
 import type { DateAddedSource, ExtraType, Library, LibraryType, SubtitleStream } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
@@ -146,14 +147,24 @@ function usableNames(dir: string): string[] {
   return fs.readdirSync(dir, { encoding: 'buffer' }).filter(isValidUtf8Name).map((b) => b.toString('utf8'));
 }
 
+/**
+ * Folder listings for findFile, kept for one scan (artwork lookups list the same folder several times per file).
+ * The scan writes no files into media folders, so a listing can't go stale because of the scan itself.
+ */
+const scanListings = new AsyncLocalStorage<Map<string, Map<string, string> | null>>();
+
 function findFile(dir: string, names: string[]): string | null {
-  let files: string[];
-  try {
-    files = usableNames(dir);
-  } catch {
-    return null;
+  const cache = scanListings.getStore();
+  let lower = cache?.get(dir);
+  if (lower === undefined) {
+    try {
+      lower = new Map(usableNames(dir).map((f) => [f.toLowerCase(), f]));
+    } catch {
+      lower = null;
+    }
+    cache?.set(dir, lower);
   }
-  const lower = new Map(files.map((f) => [f.toLowerCase(), f]));
+  if (!lower) return null;
   for (const n of names) {
     const hit = lower.get(n.toLowerCase());
     if (hit) return path.join(dir, hit);
@@ -226,7 +237,9 @@ async function upsertMedia(itemId: string, f: FileEntry, force = false, preProbe
   if (existing && existing.mtime === f.mtime && existing.size === f.size && !force && existing.probed_at) {
     // Keep sidecar subtitles fresh even when the file itself is unchanged.
     const embedded = parseJson<SubtitleStream[]>(existing.subs, []).filter((s) => !s.external);
-    db.run('UPDATE media SET item_id = ?, subs = ? WHERE id = ?', itemId, JSON.stringify([...embedded, ...subsSide]), id);
+    const subs = JSON.stringify([...embedded, ...subsSide]);
+    // Only when something changed: a no-op rescan must not rewrite every media row.
+    db.run('UPDATE media SET item_id = ?, subs = ? WHERE id = ? AND (item_id IS NOT ? OR subs IS NOT ?)', itemId, subs, id, itemId, subs);
     importSidecarEdl(itemId, f.path);
     return { mediaId: id, probe: null, changed: false };
   }
@@ -296,7 +309,7 @@ async function scanMovies(ctx: ScanCtx, files: FileEntry[]) {
     if (!existed) ctx.newItems.push(id);
     const m = await upsertMedia(id, f, ctx.force);
     const edition = fileParse.edition ?? stripExt(path.basename(f.path)).match(/\s-\s(director'?s cut|extended(?: edition| cut)?|theatrical(?: cut)?|unrated|ultimate edition|imax|remastered|final cut)\s*$/i)?.[1] ?? null;
-    db.run('UPDATE media SET edition = ? WHERE id = ?', edition, m.mediaId);
+    db.run('UPDATE media SET edition = ? WHERE id = ? AND edition IS NOT ?', edition, m.mediaId, edition);
     ctx.seenMedia.add(m.mediaId);
     ctx.seenItems.add(id);
     itemDuration(id);
@@ -793,7 +806,7 @@ const ACCEPT: Record<string, (e: string) => boolean> = {
 export function scanLibrary(libId: string, opts: { refreshMetadata?: boolean; force?: boolean } = {}): Promise<void> {
   const running = scanning.get(libId);
   if (running) return running;
-  const p = doScan(libId, opts).finally(() => scanning.delete(libId));
+  const p = scanListings.run(new Map(), () => doScan(libId, opts)).finally(() => scanning.delete(libId));
   scanning.set(libId, p);
   return p;
 }
@@ -854,6 +867,7 @@ async function doScan(libId: string, opts: { refreshMetadata?: boolean; force?: 
     else if (type === 'audiobooks') await scanAudiobooks(ctx, files);
     else if (type === 'photos') await scanFlat(ctx, files, 'photo');
     else await scanFlat(ctx, files, 'video');
+    scanListings.getStore()?.clear(); // done with artwork lookups: free the folder listings
 
     // Remove vanished media / items — but only if all library roots are reachable (avoid wiping on unmounted drives).
     // An empty root counts as unreachable: an unmounted NAS share usually leaves its empty mount-point folder behind,

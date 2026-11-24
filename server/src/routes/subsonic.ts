@@ -15,6 +15,8 @@ import { creditsFor } from '../services/music/credits.js';
 import { dispatchListen, dispatchNowPlaying } from '../services/scrobble.js';
 import { parseJson } from '../util/misc.js';
 import { logger } from '../util/log.js';
+import { sha256 } from '../util/ids.js';
+import { Pending, sweepExpired, type Failure } from '../util/lockout.js';
 
 /**
  * Subsonic / OpenSubsonic API (music) at /rest/*.view — lets Symfonium, Feishin, play:Sub, Amperfy, Substreamer,
@@ -71,8 +73,32 @@ function params(req: FastifyRequest, k: string): string[] {
   return v == null ? [] : Array.isArray(v) ? v.map(String) : [String(v)];
 }
 
-const failures = new Map<string, { n: number; until: number }>();
-function authenticate(req: FastifyRequest): User {
+const failures = new Map<string, Failure>();
+const pending = new Pending();
+
+/**
+ * Subsonic clients send u+p on every request; an scrypt check (~40 ms CPU) each time would starve the server during
+ * a library sync. Successful checks are remembered for a while, keyed by user + presented secret + stored hash, so a
+ * password change (new hash) or a different password never hits an old entry. Failures are never cached.
+ */
+const VERIFIED_TTL = 10 * 60000;
+const VERIFIED_MAX = 1000;
+const verified = new Map<string, number>(); // key → expiry; insertion order = age
+const verifiedKey = (userId: string, secret: string, hash: string) => sha256(`${userId}\0${secret}\0${hash}`);
+async function verifyCached(userId: string, secret: string, hash: string): Promise<boolean> {
+  const k = verifiedKey(userId, secret, hash);
+  const exp = verified.get(k);
+  if (exp && exp > Date.now()) return true;
+  if (exp) verified.delete(k);
+  if (!(await verifySecret(secret, hash))) return false;
+  while (verified.size >= VERIFIED_MAX) verified.delete(verified.keys().next().value!);
+  verified.set(k, Date.now() + VERIFIED_TTL);
+  return true;
+}
+/** Tests only. */
+export const _subsonicAuthCache = { size: () => verified.size, clear: () => verified.clear(), max: VERIFIED_MAX };
+
+async function authenticate(req: FastifyRequest): Promise<User> {
   const apiKey = param(req, 'apiKey');
   if (apiKey) {
     const ctx = authenticateApiKey(apiKey);
@@ -85,15 +111,20 @@ function authenticate(req: FastifyRequest): User {
   if (!u || p == null) throw new SubsonicError(10, 'Required parameter is missing');
   const key = `s:${u.toLowerCase()}`;
   const f = failures.get(key);
-  if (f && f.n >= 10 && f.until > Date.now()) throw new SubsonicError(40, 'Too many failed attempts, try later');
+  if ((f && f.until > Date.now() ? f.n : 0) + pending.count(key) >= 10) throw new SubsonicError(40, 'Too many failed attempts, try later');
   if (p.startsWith('enc:')) p = Buffer.from(p.slice(4), 'hex').toString('utf8');
-  const row = db.get('SELECT * FROM users WHERE username = ? AND disabled = 0', u);
-  if (!row || !row.password_hash || !verifySecret(p, row.password_hash) || row.totp_enabled) {
-    const cur = failures.get(key);
-    failures.set(key, !cur || cur.until < Date.now() ? { n: 1, until: Date.now() + 15 * 60000 } : { ...cur, n: cur.n + 1 });
-    securityEvent('AUTH_FAIL', req.ip, { user: u, reason: 'subsonic' });
-    throw new SubsonicError(40, row?.totp_enabled ? 'This account uses two-factor sign-in; create an API key and use the apiKey parameter' : 'Wrong username or password');
-  }
+  const secret = p;
+  const row = await pending.run(key, async () => {
+    const row = db.get('SELECT * FROM users WHERE username = ? AND disabled = 0', u);
+    if (!row || !row.password_hash || !(await verifyCached(row.id, secret, row.password_hash)) || row.totp_enabled) {
+      const cur = failures.get(key);
+      if (!cur || cur.until < Date.now()) sweepExpired(failures);
+      failures.set(key, !cur || cur.until < Date.now() ? { n: 1, until: Date.now() + 15 * 60000 } : { ...cur, n: cur.n + 1 });
+      securityEvent('AUTH_FAIL', req.ip, { user: u, reason: 'subsonic' });
+      throw new SubsonicError(40, row?.totp_enabled ? 'This account uses two-factor sign-in; create an API key and use the apiKey parameter' : 'Wrong username or password');
+    }
+    return row;
+  });
   failures.delete(key);
   return getUser(row.id);
 }
@@ -403,7 +434,7 @@ export default async function subsonicRoutes(app: FastifyInstance) {
   const handle = async (req: FastifyRequest<{ Params: { method: string } }>, reply: FastifyReply) => {
     const method = req.params.method.replace(/\.view$/, '');
     try {
-      const u = authenticate(req);
+      const u = await authenticate(req);
       if (method === 'stream' || method === 'download') return await stream(req, reply, u);
       if (method === 'getCoverArt') return await coverArt(req, reply, u);
       const h = handlers[method];

@@ -329,7 +329,7 @@ test('HTTP: LG gets a DV master playlist and a dvvC init segment; Samsung gets t
   db.run('INSERT INTO items (id, library_id, type, title, sort_title, added_at, updated_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 'item-dv', 'lib-dv', 'movie', 'DV test', 'dv test', now, now, p.durationMs);
   db.run('INSERT INTO media (id, item_id, path, container, duration_ms, size, bitrate, width, height, video_codec, audio, subs, mtime, hdr, video_range) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
     'media-dv', 'item-dv', file, p.container, p.durationMs, p.size, p.bitrate, p.width, p.height, p.videoCodec, JSON.stringify(p.audio), JSON.stringify(p.subs), fs.statSync(file).mtimeMs | 0, 1, JSON.stringify(p.videoRange));
-  const admin = createUser({ username: 'dvadmin', password: 'pw-123456', isAdmin: true });
+  const admin = await createUser({ username: 'dvadmin', password: 'pw-123456', isAdmin: true });
   const tok = issueToken(admin.id, { deviceId: 'dv-a', deviceName: 'test', platform: 'web' }).token;
   const app = await buildApp();
   const auth = { authorization: `Bearer ${tok}` };

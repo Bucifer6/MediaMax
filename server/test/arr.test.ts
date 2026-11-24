@@ -116,8 +116,8 @@ const now = new Date().toISOString();
 for (const [id, type, p] of [['lib-movies', 'movies', '/data/movies'], ['lib-tv', 'shows', '/data/tv'], ['lib-music', 'music', '/data/music'], ['lib-books', 'audiobooks', '/data/books']]) {
   db.insert('libraries', { id, name: id, type, paths: JSON.stringify([p]), created_at: now });
 }
-const admin = createUser({ username: 'admin', password: 'pass1234', isAdmin: true });
-const viewer = createUser({ username: 'viewer', password: 'pass1234' });
+const admin = await createUser({ username: 'admin', password: 'pass1234', isAdmin: true });
+const viewer = await createUser({ username: 'viewer', password: 'pass1234' });
 
 /* ------------------------------------------------------------------ */
 /* Settings                                                            */

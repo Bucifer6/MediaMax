@@ -10,7 +10,6 @@ const { parseAsk, validateFilter, chipsFor, removeChips } = await import('../src
 const { ask, llmFilter, clearAskCache } = await import('../src/services/ask/search.ts');
 const { storeVector, closeVectorWorker } = await import('../src/services/ask/vectors.ts');
 const { getSettings, updateSettings } = await import('../src/services/settings.ts');
-after(() => closeVectorWorker());
 
 const NOW = new Date(2026, 10, 21);
 const f = (q: string) => parseAsk(q, NOW).filter;
@@ -111,9 +110,11 @@ movie('m-light-scifi', 'ask-main', { title: 'Galaxy Laughs', genres: ['Science F
 movie('m-dark-scifi', 'ask-main', { title: 'Dark Orbit', genres: ['Science Fiction', 'Horror'], year: 2012 });
 movie('m-hanks', 'ask-main', { title: 'Big Heart', genres: ['Drama'], year: 1994, people: ['Tom Hanks'] });
 
-const admin = getUser(createUser({ username: 'ask-admin', password: 'pass1234', isAdmin: true }).id);
-const kid = getUser(createUser({ username: 'ask-kid', password: 'pass1234', libraryIds: ['ask-main'], maxContentRating: 'PG-13' }).id);
+const admin = getUser((await createUser({ username: 'ask-admin', password: 'pass1234', isAdmin: true })).id);
+const kid = getUser((await createUser({ username: 'ask-kid', password: 'pass1234', libraryIds: ['ask-main'], maxContentRating: 'PG-13' })).id);
 db.run('INSERT INTO user_data (user_id, item_id, played) VALUES (?, ?, 1)', kid.id, 'm-en-comedy');
+// Registered after the last top-level await: node:test runs root hooks as soon as the tests queued so far finish.
+after(() => closeVectorWorker());
 
 const ids = (r: { items: { id: string }[] }) => r.items.map((i) => i.id);
 

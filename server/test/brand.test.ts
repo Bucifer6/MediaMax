@@ -12,10 +12,10 @@ const branding = await import('../src/services/branding.ts');
 const { BUILTIN_THEMES, DEFAULT_THEME_ID } = await import('../src/services/themes.ts');
 const auth = await import('../src/services/auth.ts');
 
-test('a new install defaults to the Kinora theme and keeps it once accounts exist', () => {
+test('a new install defaults to the Kinora theme and keeps it once accounts exist', async () => {
   assert.equal(DEFAULT_THEME_ID, 'mediamax');
   assert.equal(branding.getBranding().defaultThemeId, 'mediamax');
-  auth.createUser({ username: 'admin', password: 'pass1234', isAdmin: true });
+  await auth.createUser({ username: 'admin', password: 'pass1234', isAdmin: true });
   assert.equal(branding.getBranding().defaultThemeId, 'mediamax');
   // White-label still works: an admin's choice wins.
   assert.equal(branding.updateBranding({ defaultThemeId: 'noir' }).defaultThemeId, 'noir');

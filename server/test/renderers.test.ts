@@ -270,13 +270,6 @@ process.env.MEDIAMAX_RENDERER_SSDP_PORT = String((ssdpSock.address() as AddressI
 setKv('renderers.settings', { enabled: true, mdns: false, allowPublicHosts: false, streamBaseUrl: null });
 
 const app = await buildApp();
-after(async () => {
-  renderers._test.reset();
-  await app.close();
-  tv.server.close();
-  kodi.server.close();
-  ssdpSock.close();
-});
 
 const now = new Date().toISOString();
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-renderer-'));
@@ -285,9 +278,17 @@ fs.writeFileSync(file, Buffer.alloc(4096, 7));
 db.insert('libraries', { id: 'lib-r', name: 'Movies', type: 'movies', paths: '[]', created_at: now });
 db.insert('items', { id: 'mov-r', library_id: 'lib-r', type: 'movie', title: 'Tom & Jerry <Live>', sort_title: 'tom', year: 2020, added_at: now, updated_at: now });
 db.insert('media', { id: 'med-r', item_id: 'mov-r', path: file, container: 'mp4', duration_ms: 7_200_000, size: 4096, width: 1920, height: 1080, video_codec: 'h264', audio: JSON.stringify([{ index: 1, codec: 'aac', channels: 2, default: true, language: 'en' }]), subs: '[]' });
-const alice = createUser({ username: 'ralice', password: 'pass1234' });
-const bob = createUser({ username: 'rbob', password: 'pass1234', allowTranscode: false });
-const admin = createUser({ username: 'radmin', password: 'pass1234', isAdmin: true });
+const alice = await createUser({ username: 'ralice', password: 'pass1234' });
+const bob = await createUser({ username: 'rbob', password: 'pass1234', allowTranscode: false });
+const admin = await createUser({ username: 'radmin', password: 'pass1234', isAdmin: true });
+// Registered after the last top-level await: node:test runs root hooks as soon as the tests queued so far finish.
+after(async () => {
+  renderers._test.reset();
+  await app.close();
+  tv.server.close();
+  kodi.server.close();
+  ssdpSock.close();
+});
 const aliceTok = issueToken(alice.id, { deviceId: 'a1', platform: 'web' }).token;
 const bobTok = issueToken(bob.id, { deviceId: 'b1', platform: 'web' }).token;
 const adminTok = issueToken(admin.id, { deviceId: 'ad1', platform: 'web' }).token;

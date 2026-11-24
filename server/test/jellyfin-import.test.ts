@@ -162,7 +162,7 @@ item('e-bb1', 'lib-tv', 'episode', 'Pilot', { grandparent_id: 's-bb', parent_idx
 item('e-bb2', 'lib-tv', 'episode', 'Cat in the Bag', { grandparent_id: 's-bb', parent_idx: 1, idx: 2 });
 db.insert('media', { id: 'md-heat', item_id: 'm-heat', path: '/mnt/movies/Heat (1995)/Heat.mkv' });
 
-const admin = auth.createUser({ username: 'mmadmin', password: 'pass1234', isAdmin: true });
+const admin = await auth.createUser({ username: 'mmadmin', password: 'pass1234', isAdmin: true });
 const dev = (id: string) => ({ deviceId: id, deviceName: 'test', platform: 'web' as const });
 const adminTok = auth.issueToken(admin.id, dev('a')).token;
 const as = (t: string) => ({ authorization: `Bearer ${t}`, 'content-type': 'application/json' });

@@ -191,8 +191,8 @@ const disc = await import('../src/services/livetv/tuners/discovery.ts');
 const { createUser, issueToken } = await import('../src/services/auth.ts');
 const { buildApp } = await import('../src/app.ts');
 
-const admin = createUser({ username: 'tuneradmin', password: 'pw-123456', isAdmin: true });
-const viewer = createUser({ username: 'tunerviewer', password: 'pw-123456' });
+const admin = await createUser({ username: 'tuneradmin', password: 'pw-123456', isAdmin: true });
+const viewer = await createUser({ username: 'tunerviewer', password: 'pw-123456' });
 const app = await buildApp();
 after(() => app.close());
 const tok = issueToken(admin.id, { deviceId: 'tuner-test', deviceName: 'test', platform: 'web' }).token;

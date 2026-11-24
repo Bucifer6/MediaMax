@@ -5,14 +5,20 @@
  * watches. inotify itself never touches the disk, so sleeping disks stay asleep. macOS and Windows use the native
  * recursive watcher.
  */
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 
 /** Folders nobody wants scanned (NAS metadata, recycle bins, snapshots). */
 export const IGNORED_DIRS = /^(\..*|@eaDir|@Recycle|#recycle|#snapshot|\$RECYCLE\.BIN|System Volume Information|lost\+found|\.snapshots?)$/i;
 const IGNORED_FILES = /(^|[\\/])\.|\.(part|tmp|!qb|crdownload|partial|aria2)$/i;
 
 export interface DirWatchResult { directories: number; error: string | null }
+
+/** Folder walks (walkFolders) give the event loop a turn every this many folders, and read this many at once. */
+const YIELD_EVERY = 200;
+const WALK_CONCURRENCY = 4;
 
 export class DirWatcher {
   private watchers = new Map<string, fs.FSWatcher>();
@@ -21,7 +27,7 @@ export class DirWatcher {
 
   constructor(private readonly root: string, private readonly onChange: (rel: string) => void, private readonly maxDirs = 100000) {}
 
-  start(): DirWatchResult {
+  async start(): Promise<DirWatchResult> {
     if (process.platform === 'darwin' || process.platform === 'win32') {
       try {
         const w = fs.watch(this.root, { recursive: true, persistent: false }, (_ev, file) => {
@@ -36,7 +42,7 @@ export class DirWatcher {
       }
       return this.result();
     }
-    this.addTree(this.root);
+    await this.addTree(this.root);
     return this.result();
   }
 
@@ -44,24 +50,16 @@ export class DirWatcher {
     return { directories: this.watchers.size, error: this.error };
   }
 
-  private addTree(dir: string) {
-    const stack = [dir];
-    while (stack.length && !this.closed) {
-      const d = stack.pop()!;
-      if (this.watchers.has(d)) continue;
+  private async addTree(dir: string) {
+    await walkFolders(dir, (d) => {
+      if (this.closed) return 'stop';
+      if (this.watchers.has(d)) return 'skip';
       if (this.watchers.size >= this.maxDirs) {
         this.error = `Stopped at ${this.maxDirs} folders`;
-        return;
+        return 'stop';
       }
-      if (!this.watchDir(d)) continue;
-      let entries: fs.Dirent[] = [];
-      try {
-        entries = fs.readdirSync(d, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const e of entries) if (e.isDirectory() && !IGNORED_DIRS.test(e.name)) stack.push(path.join(d, e.name));
-    }
+      return this.watchDir(d) ? 'descend' : 'skip';
+    });
   }
 
   private watchDir(d: string): boolean {
@@ -90,7 +88,7 @@ export class DirWatcher {
       } catch {
         this.dropTree(full);
       }
-      if (isDir) this.addTree(full);
+      if (isDir) void this.addTree(full);
     }
     this.onChange(path.relative(this.root, full));
   }
@@ -114,22 +112,61 @@ export class DirWatcher {
 
 /**
  * Poll-mode signature: folder modification times only (adding/removing/renaming a file changes its folder's
- * mtime), so no per-file stat. Used for network shares where inotify sees nothing.
+ * mtime), so no per-file stat. Used for network shares where inotify sees nothing. A digest (SHA-1 per folder and
+ * time), not the joined list: that was a multi-MB string per big library, kept between polls.
  */
-export function folderSignature(root: string, maxDirs = 100000): string | null {
+export async function folderSignature(root: string, maxDirs = 100000): Promise<string | null> {
   if (!fs.existsSync(root)) return null;
-  const parts: string[] = [];
-  const stack = [root];
+  // Folders are read a few at a time, in no fixed order: each folder's digest is XORed into the total, so the same
+  // tree always gives the same signature (paths are unique, so entries can't cancel out).
+  const sum = Buffer.alloc(20);
   let n = 0;
-  while (stack.length && n < maxDirs) {
-    const d = stack.pop()!;
+  await walkFolders(root, async (d) => {
+    if (n >= maxDirs) return 'stop';
     n++;
     try {
-      parts.push(`${d}:${fs.statSync(d).mtimeMs}`);
-      for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory() && !IGNORED_DIRS.test(e.name)) stack.push(path.join(d, e.name));
+      const digest = crypto.createHash('sha1').update(`${d}:${(await fs.promises.stat(d)).mtimeMs}`).digest();
+      for (let i = 0; i < 20; i++) sum[i] ^= digest[i];
+      return 'descend';
     } catch {
-      /* vanished */
+      return 'skip'; // vanished
     }
-  }
-  return parts.sort().join('|');
+  });
+  return sum.toString('hex');
 }
+
+/**
+ * Walk the folders below `root` (NAS metadata / recycle folders left out) without blocking the event loop: folders
+ * are read asynchronously, a few at once (one after another takes several times as long as a sync walk), with a
+ * turn for other work every YIELD_EVERY folders. `visit` decides per folder: read its subfolders, skip them, or stop.
+ */
+async function walkFolders(root: string, visit: (dir: string) => WalkStep | Promise<WalkStep>) {
+  const stack = [root];
+  let n = 0;
+  let busy = 0;
+  let stopped = false;
+  const worker = async () => {
+    while (!stopped) {
+      if (++n % YIELD_EVERY === 0) await nextTurn();
+      const d = stack.pop();
+      if (d === undefined) {
+        if (!busy) return;
+        await nextTurn(); // other workers are still reading folders that may add more
+        continue;
+      }
+      busy++;
+      try {
+        const step = await visit(d);
+        if (step === 'stop') stopped = true;
+        if (step !== 'descend') continue;
+        for (const e of await fs.promises.readdir(d, { withFileTypes: true })) if (e.isDirectory() && !IGNORED_DIRS.test(e.name)) stack.push(path.join(d, e.name));
+      } catch {
+        /* unreadable or vanished */
+      } finally {
+        busy--;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: WALK_CONCURRENCY }, worker));
+}
+type WalkStep = 'descend' | 'skip' | 'stop';

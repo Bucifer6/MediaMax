@@ -8,7 +8,7 @@ const { buildApp } = await import('../src/app.ts');
 
 const app = await buildApp();
 after(() => app.close());
-const admin = createUser({ username: 'ts-admin', password: 'pass1234', isAdmin: true });
+const admin = await createUser({ username: 'ts-admin', password: 'pass1234', isAdmin: true });
 const atok = issueToken(admin.id, { deviceId: 'ts-a', deviceName: 'test', platform: 'web' }).token;
 const auth = { authorization: `Bearer ${atok}` };
 const on = (y: number, m: number, d: number) => new Date(y, m - 1, d, 12);

@@ -143,7 +143,7 @@ export async function finishLogin(state: string, code: string, cookieState: stri
     if (!row) {
       if (!o.autoCreateUsers) return fail('No Kinora account is linked to this sign-in. Ask your administrator.');
       const username = uniqueUsername(claims.preferred_username || claims.email?.split('@')[0] || claims.name || 'user');
-      const u = createUser({ username, displayName: claims.name || claims.preferred_username || username, isAdmin, allowDvr: isAdmin });
+      const u = await createUser({ username, displayName: claims.name || claims.preferred_username || username, isAdmin, allowDvr: isAdmin });
       db.run('UPDATE users SET oidc_sub = ? WHERE id = ?', sub, u.id);
       logActivity('user.create', `User ${u.displayName} created via single sign-on`);
       row = db.get('SELECT * FROM users WHERE id = ?', u.id)!;

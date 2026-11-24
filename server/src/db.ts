@@ -607,6 +607,10 @@ const MIGRATIONS: string[] = [
   ALTER TABLE recordings ADD COLUMN gap_seconds INTEGER;
   ALTER TABLE recordings ADD COLUMN leftover_parts TEXT;
   `,
+  /* Performance: library browsing sorted by year (newest first, title tie-break: the web's default order for "Year")
+     walks an index instead of sorting the whole library. Oldest-first sorts only the titles within each year. */ `
+  CREATE INDEX IF NOT EXISTS items_lib_type_year ON items(library_id, type, COALESCE(year, 0) DESC, sort_title);
+  `,
 ];
 
 function migrate(db: Database) {

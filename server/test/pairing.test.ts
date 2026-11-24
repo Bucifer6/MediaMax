@@ -13,9 +13,9 @@ const pairing = await import('../src/services/pairing.ts');
 const { buildApp } = await import('../src/app.ts');
 const { WebSocket } = await import('ws');
 
-const owner = createUser({ username: 'pair-owner', password: 'pw-123456' });
-const guest = createUser({ username: 'pair-guest', password: 'pw-123456' });
-const stranger = createUser({ username: 'pair-stranger', password: 'pw-123456' });
+const owner = await createUser({ username: 'pair-owner', password: 'pw-123456' });
+const guest = await createUser({ username: 'pair-guest', password: 'pw-123456' });
+const stranger = await createUser({ username: 'pair-stranger', password: 'pw-123456' });
 const dev = (id: string, name = id) => ({ deviceId: id, deviceName: name, platform: 'web' as const });
 const tvTok = issueToken(owner.id, dev('tv', 'Living room TV')).token;
 const myPhoneTok = issueToken(owner.id, dev('my-phone', 'My phone')).token;
@@ -170,7 +170,7 @@ test('cross-user pairing waits for the TV user to accept on that TV; decline and
 test('a cross-user claim needs the TV online', async () => {
   await settle();
   const s = (await post('/pair/start', tvTok)).json();
-  const other = issueToken(createUser({ username: 'pair-other', password: 'pw-123456' }).id, dev('other-phone')).token;
+  const other = issueToken((await createUser({ username: 'pair-other', password: 'pw-123456' })).id, dev('other-phone')).token;
   const c = await post('/pair/claim', other, { token: s.token });
   assert.equal(c.statusCode, 409, c.body);
 });

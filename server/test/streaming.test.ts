@@ -26,8 +26,8 @@ const hasFfmpeg = spawnSync('ffmpeg', ['-version']).status === 0;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-stream-'));
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-const admin = createUser({ username: 'streamadmin', password: 'pw-123456', isAdmin: true });
-const viewer = createUser({ username: 'streamviewer', password: 'pw-123456' });
+const admin = await createUser({ username: 'streamadmin', password: 'pw-123456', isAdmin: true });
+const viewer = await createUser({ username: 'streamviewer', password: 'pw-123456' });
 const atok = issueToken(admin.id, { deviceId: 'stream-a', deviceName: 'test', platform: 'web' }).token;
 const vtok = issueToken(viewer.id, { deviceId: 'stream-v', deviceName: 'test', platform: 'web' }).token;
 const app = await buildApp();

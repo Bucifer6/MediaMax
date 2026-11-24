@@ -162,8 +162,8 @@ const { initWebhooks } = await import('../src/services/webhooks.ts');
 const { haWebhookUrl } = await import('../src/services/smarthome/hawebhook.ts');
 const { nowIso } = await import('../src/util/misc.ts');
 
-const admin = createUser({ username: 'admin', password: 'pass1234', isAdmin: true });
-const viewer = createUser({ username: 'viewer', password: 'pass1234' });
+const admin = await createUser({ username: 'admin', password: 'pass1234', isAdmin: true });
+const viewer = await createUser({ username: 'viewer', password: 'pass1234' });
 
 // A show with one episode, for rich now-playing payloads.
 db.insert('libraries', { id: 'lib-tv', name: 'TV', type: 'shows', paths: '["/media/tv"]', created_at: nowIso() });
@@ -337,7 +337,7 @@ test('Home Assistant webhook preset: flat payload for /api/webhook/<id>, plus RE
     assert.equal(j.sessions[0].user, viewer.displayName);
     const viaQuery = await app.inject({ method: 'GET', url: `/api/v1/status/now-playing?api_key=${createApiKey(admin.id, 'q').key}` });
     assert.equal(viaQuery.json().activeStreams, 1);
-    const otherKey = createApiKey(createUser({ username: 'other', password: 'pass1234' }).id, 'w').key;
+    const otherKey = createApiKey((await createUser({ username: 'other', password: 'pass1234' })).id, 'w').key;
     assert.equal((await app.inject({ method: 'GET', url: '/api/v1/status/now-playing', headers: { 'x-api-key': otherKey } })).json().activeStreams, 0);
     assert.equal((await app.inject({ method: 'GET', url: '/api/v1/status/now-playing' })).statusCode, 401);
 

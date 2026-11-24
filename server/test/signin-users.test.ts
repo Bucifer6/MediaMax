@@ -10,9 +10,9 @@ const { buildApp } = await import('../src/app.ts');
 const app = await buildApp();
 after(() => app.close());
 
-const admin = createUser({ username: 'si-admin', password: 'pass1234', isAdmin: true });
-const hidden = createUser({ username: 'si-hidden', password: 'pass1234' });
-const kid = createUser({ username: 'si-kid', pin: '1234' });
+const admin = await createUser({ username: 'si-admin', password: 'pass1234', isAdmin: true });
+const hidden = await createUser({ username: 'si-hidden', password: 'pass1234' });
+const kid = await createUser({ username: 'si-kid', pin: '1234' });
 const atok = issueToken(admin.id, { deviceId: 'si-a', deviceName: 'test', platform: 'web' }).token;
 const LAN = '192.168.1.20';
 const WAN = '203.0.113.7';

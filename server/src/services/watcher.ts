@@ -44,13 +44,15 @@ export function syncWatchers() {
     if (mode === 'native') {
       for (const p of parseJson<string[]>(lib.paths, [])) {
         const w = new DirWatcher(p, () => changed(lib.id, lib.name, p));
-        const r = w.start();
         entry.watchers.push(w);
-        entry.directories += r.directories;
-        if (r.error) {
-          entry.error = r.error;
-          log.debug(`Cannot fully watch ${p}: ${r.error} (scheduled scans still apply)`);
-        }
+        // The folder walk is asynchronous (a big library has tens of thousands of folders); counts fill in as it ends.
+        void w.start().then((r) => {
+          entry.directories += r.directories;
+          if (r.error) {
+            entry.error = r.error;
+            log.debug(`Cannot fully watch ${p}: ${r.error} (scheduled scans still apply)`);
+          }
+        });
       }
     }
     watched.set(lib.id, entry);
@@ -78,7 +80,7 @@ export async function pollOnce(): Promise<number> {
     for (const p of parseJson<string[]>(lib.paths, [])) {
       // Disk-friendly: only poll inside the window or when the disk is known to be awake.
       if (s.diskFriendly && !inWindow(new Date(), s.windowStart, s.windowEnd) && (await stateForKey(diskKeyForPath(p))) !== 'active') continue;
-      const sig = folderSignature(p);
+      const sig = await folderSignature(p);
       if (sig == null) continue;
       const k = `${lib.id}|${p}`;
       const prev = signatures.get(k);

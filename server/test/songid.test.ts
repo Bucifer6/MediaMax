@@ -51,7 +51,7 @@ await new Promise((r) => mock.once('listening', r));
 setProviderHttpOptions('acoustid', { base: `http://127.0.0.1:${(mock.address() as AddressInfo).port}/acoustid`, minIntervalMs: 0 });
 after(() => mock.close());
 
-const viewer = createUser({ username: 'song-viewer', password: 'pw-123456' });
+const viewer = await createUser({ username: 'song-viewer', password: 'pw-123456' });
 const tok = issueToken(viewer.id, { deviceId: 'song-phone', deviceName: 'Phone', platform: 'web' }).token;
 const now = new Date().toISOString();
 const movieFile = path.join(TMP, 'Film.2020.mkv');
@@ -105,18 +105,18 @@ test('file pipeline: 12 s centred on the position, selected audio track, AcoustI
   assert.equal(fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith(`mm-songid-${process.pid}-`)).length, 0);
 });
 
-test('library match falls back to title + artist; no match leaves libraryTrack empty and uses Cover Art Archive', () => {
+test('library match falls back to title + artist; no match leaves libraryTrack empty and uses Cover Art Archive', async () => {
   assert.equal(songid.libraryMatch(viewer, { recordingMbid: null, title: 'song in the film', artists: [{ name: 'the band', mbid: null, joinPhrase: '' }] })?.id, 's-trk');
   assert.equal(songid.libraryMatch(viewer, { recordingMbid: null, title: 'Song In The Film', artists: [{ name: 'Someone Else', mbid: null, joinPhrase: '' }] }), null);
   // A user without access to the music library gets no library match.
-  const kid = createUser({ username: 'song-kid', password: 'pw-123456' });
+  const kid = await createUser({ username: 'song-kid', password: 'pw-123456' });
   db.run('UPDATE users SET library_ids = ? WHERE id = ?', JSON.stringify(['s-movies']), kid.id);
   const k = authenticate(issueToken(kid.id, { deviceId: 'kid' }).token)!.user;
   assert.equal(songid.libraryMatch(k, { recordingMbid: REC, title: 'Song In The Film', artists: [] }), null);
 });
 
 test('access, missing file, rate limit', async () => {
-  const kid = createUser({ username: 'song-kid2', password: 'pw-123456' });
+  const kid = await createUser({ username: 'song-kid2', password: 'pw-123456' });
   db.run('UPDATE users SET library_ids = ? WHERE id = ?', JSON.stringify(['s-music']), kid.id);
   const k = authenticate(issueToken(kid.id, { deviceId: 'kid2' }).token)!.user;
   await assert.rejects(songid.identifyAt(k, k, 's-film', 0), /not found/i);
@@ -152,7 +152,7 @@ test('microphone fallback and HTTP routes', async () => {
   assert.equal(own.json().positionMs, 900_000);
   assert.equal((await app.inject({ method: 'POST', url: '/api/v1/songid/items/s-film', payload: {} })).statusCode, 401);
   // A TV that isn't yours and isn't paired: refused.
-  const other = createUser({ username: 'song-tvowner', password: 'pw-123456' });
+  const other = await createUser({ username: 'song-tvowner', password: 'pw-123456' });
   const tvRow = authenticate(issueToken(other.id, { deviceId: 'song-tv' }).token)!.deviceRowId;
   const r = await app.inject({ method: 'POST', url: `/api/v1/pair/targets/${tvRow}/identify-song`, headers: { authorization: `Bearer ${tok}`, 'content-type': 'application/json' }, payload: {} });
   assert.equal(r.statusCode, 403);

@@ -34,9 +34,9 @@ after(async () => {
   fs.rmSync(webDir, { recursive: true, force: true });
 });
 
-const admin = createUser({ username: 'sec-admin', password: 'pass1234', isAdmin: true });
-const viewer = createUser({ username: 'sec-viewer', password: 'pass1234' });
-const homeOnly = createUser({ username: 'sec-home', password: 'pass1234', allowRemote: false });
+const admin = await createUser({ username: 'sec-admin', password: 'pass1234', isAdmin: true });
+const viewer = await createUser({ username: 'sec-viewer', password: 'pass1234' });
+const homeOnly = await createUser({ username: 'sec-home', password: 'pass1234', allowRemote: false });
 const dev = (id: string) => ({ deviceId: id, deviceName: 'test', platform: 'web' as const });
 const adminTok = issueToken(admin.id, dev('a')).token;
 const viewerTok = issueToken(viewer.id, dev('v')).token;
@@ -143,7 +143,7 @@ test('"allow remote streaming" off: media endpoints refuse internet clients, not
 /* --------------------------------------------------------------- sessions --------------------------------------------------------------- */
 
 test('changing your own password signs your other devices out (and keeps this one)', async () => {
-  const u = createUser({ username: 'sec-pw', password: 'oldpass1' });
+  const u = await createUser({ username: 'sec-pw', password: 'oldpass1' });
   const here = issueToken(u.id, dev('pw-here')).token;
   const other = issueToken(u.id, dev('pw-other')).token;
   const r = await app.inject({ method: 'PATCH', url: '/api/v1/auth/me', headers: bearer(here), payload: { currentPassword: 'oldpass1', password: 'newpass2' } });

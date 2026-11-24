@@ -128,7 +128,7 @@ initRequestNotifications();
 
 const now = new Date().toISOString();
 const inst = (id: string, kind: 'radarr' | 'sonarr', url: string, extra: Partial<ArrInstance> = {}): ArrInstance => ({ id, kind, name: id, url, apiKey: KEY, enabled: true, ...extra });
-const admin = auth.createUser({ username: 'admin', password: 'pass1234', isAdmin: true });
+const admin = await auth.createUser({ username: 'admin', password: 'pass1234', isAdmin: true });
 // Legacy users: created before permissions existed (no request_perms stored).
 db.insert('users', { id: 'legacy-auto', username: 'legacyauto', display_name: 'Legacy Auto', is_admin: 0, allow_request_4k: 1, preferences: '{}', created_at: now });
 db.insert('users', { id: 'legacy-plain', username: 'legacyplain', display_name: 'Legacy Plain', is_admin: 0, preferences: '{}', created_at: now });
@@ -157,7 +157,7 @@ const fresh = (u: User) => auth.getUser(u.id);
 
 /* ------------------------------------------------------------------ */
 
-test('legacy allowRequest4k + autoApproveUserIds migrate into permissions; quotas seed from weeklyLimit', () => {
+test('legacy allowRequest4k + autoApproveUserIds migrate into permissions; quotas seed from weeklyLimit', async () => {
   const a = auth.getUser('legacy-auto');
   assert.deepEqual([a.requestPermissions!.movie, a.requestPermissions!.show, a.requestPermissions!.music, a.requestPermissions!.movie4k, a.requestPermissions!.show4k], ['auto', 'auto', 'auto', 'auto', 'auto']);
   const p = auth.getUser('legacy-plain');
@@ -167,18 +167,18 @@ test('legacy allowRequest4k + autoApproveUserIds migrate into permissions; quota
   assert.equal(db.get("SELECT request_perms FROM users WHERE id = 'legacy-auto'")!.request_perms, null);
   assert.deepEqual(perms.defaultQuotas().movie, { limit: 50, days: 7 });
   // An old client toggling only allowRequest4k writes real permissions.
-  const u = auth.updateUser('legacy-plain', { allowRequest4k: true }, admin.id);
+  const u = await auth.updateUser('legacy-plain', { allowRequest4k: true }, admin.id);
   assert.equal(u.requestPermissions!.movie4k, 'request');
   assert.equal(u.allowRequest4k, true);
   assert.ok(db.get("SELECT request_perms FROM users WHERE id = 'legacy-plain'")!.request_perms);
 });
 
-test('new users get the default permissions; invite templates and explicit values override', () => {
+test('new users get the default permissions; invite templates and explicit values override', async () => {
   settings.updateSettings({ requests: { ...settings.getSettings().requests, defaultPermissions: { ...perms.DEFAULT_PERMISSIONS, movie: 'auto', book: 'none' } } });
-  const u = auth.createUser({ username: 'newbie', password: 'pass1234' });
+  const u = await auth.createUser({ username: 'newbie', password: 'pass1234' });
   assert.equal(u.requestPermissions!.movie, 'auto');
   assert.equal(u.requestPermissions!.book, 'none');
-  const v = auth.createUser({ username: 'custom', password: 'pass1234', requestPermissions: { show: 'none' } });
+  const v = await auth.createUser({ username: 'custom', password: 'pass1234', requestPermissions: { show: 'none' } });
   assert.equal(v.requestPermissions!.show, 'none');
   assert.equal(v.requestPermissions!.movie, 'auto');
   settings.updateSettings({ requests: { ...settings.getSettings().requests, defaultPermissions: perms.DEFAULT_PERMISSIONS } });
@@ -188,9 +188,9 @@ let viewer: User;
 let manager: User;
 let blocked: User;
 test('permission enforcement: 403 for kinds a user may not request, approve needs manage permission', async () => {
-  viewer = auth.createUser({ username: 'viewer', password: 'pass1234' });
-  manager = auth.createUser({ username: 'manager', password: 'pass1234', requestPermissions: { manageRequests: true } });
-  blocked = auth.createUser({ username: 'blocked', password: 'pass1234', requestPermissions: { movie: 'none', reportIssues: false } });
+  viewer = await auth.createUser({ username: 'viewer', password: 'pass1234' });
+  manager = await auth.createUser({ username: 'manager', password: 'pass1234', requestPermissions: { manageRequests: true } });
+  blocked = await auth.createUser({ username: 'blocked', password: 'pass1234', requestPermissions: { movie: 'none', reportIssues: false } });
   const r = await call(blocked, 'POST', '/requests', { mediaType: 'movie', tmdbId: '100' });
   assert.equal(r.statusCode, 403);
   assert.equal(r.json().code ?? r.json().error, r.json().code ?? r.json().error);
@@ -221,7 +221,7 @@ test('permission enforcement: 403 for kinds a user may not request, approve need
 });
 
 test('auto-approve by permission (and the global rating rule)', async () => {
-  const auto = auth.createUser({ username: 'auto', password: 'pass1234', requestPermissions: { movie: 'auto' } });
+  const auto = await auth.createUser({ username: 'auto', password: 'pass1234', requestPermissions: { movie: 'auto' } });
   const r = await requests.createRequest(fresh(auto), { mediaType: 'movie', tmdbId: '102' });
   assert.equal(r.status, 'processing');
   assert.equal(r.decidedBy?.id, auto.id);
@@ -238,7 +238,7 @@ test('auto-approve by permission (and the global rating rule)', async () => {
 });
 
 test('quotas: TV counts seasons, declined requests do not count, the window rolls', async () => {
-  const q = auth.createUser({ username: 'quota', password: 'pass1234', requestQuotas: { movie: { limit: 1, days: 7 }, show: { limit: 3, days: 7 }, music: { limit: 0, days: 7 }, book: { limit: 0, days: 7 } } });
+  const q = await auth.createUser({ username: 'quota', password: 'pass1234', requestQuotas: { movie: { limit: 1, days: 7 }, show: { limit: 3, days: 7 }, music: { limit: 0, days: 7 }, book: { limit: 0, days: 7 } } });
   const a = await requests.createRequest(fresh(q), { mediaType: 'show', tmdbId: '200', seasonMode: 'specific', seasons: [1, 2] });
   assert.equal(a.quotaUnits, 2);
   assert.equal(perms.quotaStatus(fresh(q), 'show').remaining, 1);
@@ -401,7 +401,7 @@ test('issues: report, visibility, comments, resolve/reopen, permission', async (
   assert.deepEqual([issue.season, issue.episode], [1, 3]);
   assert.ok(notifications.listNotifications(manager).items.some((n) => n.kind === 'issue' && n.link === `/issues/${issue.id}`));
   assert.equal((await call(blocked, 'POST', '/issues', { itemId: 'mov-109', kind: 'video', message: 'x' })).statusCode, 403);
-  const other = auth.createUser({ username: 'other', password: 'pass1234' });
+  const other = await auth.createUser({ username: 'other', password: 'pass1234' });
   assert.equal((await call(other, 'GET', `/issues/${issue.id}`)).statusCode, 404);
   assert.equal((await call(other, 'GET', '/issues')).json().length, 0);
   assert.equal((await call(manager, 'GET', '/issues?status=open')).json().length, 1);

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { db } from '../db.js';
@@ -112,7 +113,33 @@ async function fetchRemote(id: string, url: string, untrusted: boolean): Promise
   return dest;
 }
 
+/**
+ * At most this many ffmpeg resizes at once: a fresh poster grid asks for dozens of sizes in parallel, and one
+ * ffmpeg per request (~50 MB each) would swamp a small NAS. Waiters queue in order.
+ */
+export const RESIZE_CONCURRENCY = Math.max(2, os.availableParallelism());
+let resizing = 0;
+const resizeQueue: (() => void)[] = [];
+async function withResizeSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (resizing >= RESIZE_CONCURRENCY) await new Promise<void>((r) => resizeQueue.push(r));
+  else resizing++;
+  try {
+    return await fn();
+  } finally {
+    // Hand the slot straight to the next waiter (the count stays the same), or free it.
+    const next = resizeQueue.shift();
+    if (next) next();
+    else resizing--;
+  }
+}
+/** Tests only. */
+export const _resizeStats = () => ({ running: resizing, queued: resizeQueue.length });
+
 function resize(src: string, dest: string, width: number): Promise<void> {
+  return withResizeSlot(() => runResize(src, dest, width));
+}
+
+function runResize(src: string, dest: string, width: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const p = spawn(config.ffmpeg, ['-v', 'error', '-y', '-i', src, '-vf', `scale='min(${width},iw)':-2`, '-frames:v', '1', ...(dest.endsWith('.png') ? ['-compression_level', '6'] : ['-q:v', '3']), dest]);
     p.on('error', reject);

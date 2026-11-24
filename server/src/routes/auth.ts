@@ -14,6 +14,7 @@ import path from 'node:path';
 import type { FastifyRequest } from 'fastify';
 import { config } from '../config.js';
 import { badRequest } from '../util/errors.js';
+import { Pending, sweepExpired, type Failure } from '../util/lockout.js';
 
 export async function saveAvatar(req: FastifyRequest, userId: string): Promise<string> {
   const file = await req.file();
@@ -29,29 +30,39 @@ export async function saveAvatar(req: FastifyRequest, userId: string): Promise<s
 }
 
 /** Simple in-memory login rate limiting per IP. */
-const attempts = new Map<string, { n: number; until: number }>();
+const attempts = new Map<string, Failure>();
+/** Attempts from an IP still being checked (async password hashing) count until they finish. */
+const pending = new Pending();
 function rateLimit(ip: string | null) {
   const k = ip ?? 'unknown';
   const a = attempts.get(k);
-  if (a && a.until > Date.now() && a.n >= 10) throw Object.assign(new Error('Too many sign-in attempts. Try again in a few minutes.'), { statusCode: 429 });
+  if ((a && a.until > Date.now() ? a.n : 0) + pending.count(k) >= 10) throw Object.assign(new Error('Too many sign-in attempts. Try again in a few minutes.'), { statusCode: 429 });
 }
 function recordFail(ip: string | null) {
   const k = ip ?? 'unknown';
   const a = attempts.get(k);
-  if (!a || a.until < Date.now()) attempts.set(k, { n: 1, until: Date.now() + 10 * 60000 });
-  else a.n++;
+  if (!a || a.until < Date.now()) {
+    sweepExpired(attempts);
+    attempts.set(k, { n: 1, until: Date.now() + 10 * 60000 });
+  } else a.n++;
+}
+/** Rate-limited sign-in style attempt: a rejection counts as a failure for the IP. */
+async function limited<T>(ip: string | null, fn: () => Promise<T>): Promise<T> {
+  rateLimit(ip);
+  return pending.run(ip ?? 'unknown', async () => {
+    try {
+      return await fn();
+    } catch (e) {
+      recordFail(ip);
+      throw e;
+    }
+  });
 }
 
 export default async function authRoutes(app: FastifyInstance) {
   app.post<{ Body: LoginRequest }>('/auth/login', async (req) => {
     const ip = remoteAddr(req);
-    rateLimit(ip);
-    try {
-      return auth.login(req.body?.username, req.body?.password, deviceFromRequest(req, req.body), ip ?? undefined, req.body?.totpCode);
-    } catch (e) {
-      recordFail(ip);
-      throw e;
-    }
+    return limited(ip, () => auth.login(req.body?.username, req.body?.password, deviceFromRequest(req, req.body), ip ?? undefined, req.body?.totpCode));
   });
 
   app.get('/auth/profiles', async (req, reply) => {
@@ -63,12 +74,7 @@ export default async function authRoutes(app: FastifyInstance) {
     const ip = remoteAddr(req);
     rateLimit(ip);
     if (!req.body?.userId || typeof req.body.userId !== 'string') throw badRequest('userId required');
-    try {
-      return auth.profileLogin(req.body.userId, req.body.pin, deviceFromRequest(req, req.body), ip ?? undefined, req.body.totpCode);
-    } catch (e) {
-      recordFail(ip);
-      throw e;
-    }
+    return limited(ip, () => auth.profileLogin(req.body.userId, req.body.pin, deviceFromRequest(req, req.body), ip ?? undefined, req.body.totpCode));
   });
 
   /* Single sign-on (OpenID Connect). Clients open /auth/oidc/start in a browser;
@@ -171,13 +177,7 @@ export default async function authRoutes(app: FastifyInstance) {
   });
   app.post<{ Params: { code: string }; Body: AcceptInviteRequest }>('/invites/:code/accept', async (req) => {
     const ip = remoteAddr(req);
-    rateLimit(ip);
-    try {
-      return invites.acceptInvite(req.params.code, { ...(req.body ?? ({} as AcceptInviteRequest)), ...deviceFromRequest(req, req.body) } as AcceptInviteRequest, ip ?? undefined);
-    } catch (e) {
-      recordFail(ip);
-      throw e;
-    }
+    return limited(ip, () => invites.acceptInvite(req.params.code, { ...(req.body ?? ({} as AcceptInviteRequest)), ...deviceFromRequest(req, req.body) } as AcceptInviteRequest, ip ?? undefined));
   });
 
   /* One-time set-password links (accounts imported from Emby). Public: the random token is the secret. */
@@ -187,13 +187,7 @@ export default async function authRoutes(app: FastifyInstance) {
   });
   app.post<{ Params: { token: string }; Body: UsePasswordLinkRequest }>('/auth/password-link/:token', async (req) => {
     const ip = remoteAddr(req);
-    rateLimit(ip);
-    try {
-      return passwordLinks.usePasswordLink(req.params.token, { ...(req.body ?? ({} as UsePasswordLinkRequest)), ...deviceFromRequest(req, req.body) }, ip ?? undefined);
-    } catch (e) {
-      recordFail(ip);
-      throw e;
-    }
+    return limited(ip, () => passwordLinks.usePasswordLink(req.params.token, { ...(req.body ?? ({} as UsePasswordLinkRequest)), ...deviceFromRequest(req, req.body) }, ip ?? undefined));
   });
 
   app.get<{ Querystring: { all?: string } }>('/auth/devices', async (req) => auth.listDevices(requireUser(req), req.query.all === 'true'));
@@ -209,7 +203,7 @@ export default async function authRoutes(app: FastifyInstance) {
   });
   app.post<{ Body: CreateUserRequest }>('/users', async (req) => {
     const a = requireAdmin(req);
-    const u = auth.createUser(req.body ?? ({} as CreateUserRequest));
+    const u = await auth.createUser(req.body ?? ({} as CreateUserRequest));
     logActivity('user.create', `User ${u.displayName} created`, { userId: a.user.id, userName: a.user.displayName });
     return u;
   });
