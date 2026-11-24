@@ -26,7 +26,8 @@ ARG TARGETARCH
 # VA-API work on current Intel (N100, Arc, Core Ultra). Linked into /usr/local/bin as ffmpeg / ffprobe.
 # Distro VA drivers stay for AMD (Mesa) and pre-Broadwell Intel (i965); intel-opencl-icd enables OpenCL tone-mapping.
 # For NVIDIA use the nvidia container runtime (see docs/INSTALL.md).
-# The signing key is fetched with retries (a single-shot ADD fails the whole build on one network hiccup).
+# The signing key is fetched with retries (a single-shot ADD fails the whole build on one network hiccup), and
+# ca-certificates comes from Debian's mirrors first: apt needs it to reach the Jellyfin repo over HTTPS.
 RUN set -eux; \
     mkdir -p /etc/apt/keyrings; \
     node -e "const u='https://repo.jellyfin.org/jellyfin_team.gpg.key';(async()=>{for(let i=1;;i++){try{const r=await fetch(u,{signal:AbortSignal.timeout(30000)});if(!r.ok)throw new Error('HTTP '+r.status);require('fs').writeFileSync('/etc/apt/keyrings/jellyfin.asc',await r.text());return}catch(e){if(i>=5)throw e;console.error('key fetch failed ('+e.message+'), retrying');await new Promise(s=>setTimeout(s,i*3000))}}})().catch(e=>{console.error(e);process.exit(1)})"; \
@@ -37,9 +38,11 @@ RUN set -eux; \
     else \
       extra=""; \
     fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates; \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/jellyfin.asc] https://repo.jellyfin.org/debian bookworm main" > /etc/apt/sources.list.d/jellyfin.list; \
     apt-get update; \
-    apt-get install -y --no-install-recommends jellyfin-ffmpeg7 libchromaprint-tools ca-certificates tzdata mesa-va-drivers $extra; \
+    apt-get install -y --no-install-recommends jellyfin-ffmpeg7 libchromaprint-tools tzdata mesa-va-drivers $extra; \
     ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg; \
     ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe; \
     ffmpeg -hide_banner -version | head -1; \
