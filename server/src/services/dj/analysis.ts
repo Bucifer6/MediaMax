@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process';
+import os from 'node:os';
 import type { TrackAnalysis } from '@mediamax/shared';
 import { db } from '../../db.js';
 import { config } from '../../config.js';
 import { logger } from '../../util/log.js';
 import { nowIso } from '../../util/misc.js';
 import { chroma, energyScore, estimateKey, estimateTempo, loudness, mixPoints, onsetEnvelope, timbre } from './dsp.js';
-import { detectPhrases } from './phrases.js';
+import { detectPhrases, trackCues } from './phrases.js';
 
 const log = logger('dj');
 /**
@@ -33,7 +34,13 @@ const MAX_SECONDS = 15 * 60;
 /** Decode a file to mono float PCM at 11025 Hz. */
 export function decodePcm(file: string, maxSeconds = MAX_SECONDS): Promise<Float32Array> {
   return new Promise((resolve, reject) => {
-    const p = spawn(config.ffmpeg, ['-v', 'error', '-nostdin', '-i', file, '-t', String(maxSeconds), '-map', '0:a:0', '-ac', '1', '-ar', String(RATE), '-f', 'f32le', 'pipe:1'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const p = spawn(config.ffmpeg, ['-v', 'error', '-nostdin', '-threads', '1', '-i', file, '-t', String(maxSeconds), '-map', '0:a:0', '-ac', '1', '-ar', String(RATE), '-f', 'f32le', 'pipe:1'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    // Background work: decode at low CPU priority so playback and transcodes on a small NAS come first.
+    try {
+      if (p.pid) os.setPriority(p.pid, os.constants.priority.PRIORITY_LOW);
+    } catch {
+      /* not permitted on this platform */
+    }
     const chunks: Buffer[] = [];
     let size = 0;
     let err = '';
@@ -62,8 +69,8 @@ export function decodePcm(file: string, maxSeconds = MAX_SECONDS): Promise<Float
 export function analysePcm(pcm: Float32Array, durationMs?: number) {
   const dur = durationMs ?? Math.round((pcm.length / RATE) * 1000);
   const l = loudness(pcm, RATE);
-  const { env, fps } = onsetEnvelope(pcm, RATE);
-  const tempo = estimateTempo(env, fps);
+  const { env, fps, low } = onsetEnvelope(pcm, RATE);
+  const tempo = estimateTempo(env, fps, low);
   const key = estimateKey(chroma(pcm, RATE));
   const points = mixPoints(l, Math.min(dur, Math.round((pcm.length / RATE) * 1000)));
   // Tracks longer than the decoded window: the real ending lies beyond what we heard.
@@ -82,12 +89,37 @@ export function analysePcm(pcm: Float32Array, durationMs?: number) {
   };
 }
 
-const toAnalysis = (r: any): TrackAnalysis => ({
-  itemId: r.item_id, bpm: r.bpm, bpmConfidence: r.bpm_confidence, beatOffsetMs: r.beat_offset_ms, key: r.key_name, camelot: r.camelot, energy: r.energy,
-  loudnessDb: r.loudness_db, cueInMs: r.cue_in_ms, cueOutMs: r.cue_out_ms, introEndMs: r.intro_end_ms, outroStartMs: r.outro_start_ms,
-  durationMs: r.duration_ms, analyzedAt: r.analyzed_at, timbre: r.timbre ? JSON.parse(r.timbre) : null,
-  downbeatMs: r.downbeat_ms ?? null, phrases: r.phrases ? JSON.parse(r.phrases) : null,
-});
+const toAnalysis = (r: any): TrackAnalysis => {
+  const a: TrackAnalysis = {
+    itemId: r.item_id, bpm: r.bpm, bpmConfidence: r.bpm_confidence, beatOffsetMs: r.beat_offset_ms, key: r.key_name, camelot: r.camelot, energy: r.energy,
+    loudnessDb: r.loudness_db, cueInMs: r.cue_in_ms, cueOutMs: r.cue_out_ms, introEndMs: r.intro_end_ms, outroStartMs: r.outro_start_ms,
+    durationMs: r.duration_ms, analyzedAt: r.analyzed_at, timbre: r.timbre ? JSON.parse(r.timbre) : null,
+    downbeatMs: r.downbeat_ms ?? null, phrases: r.phrases ? JSON.parse(r.phrases) : null,
+  };
+  a.cues = trackCues(a);
+  return a;
+};
+
+/** The few analysis fields mix ordering scores on (no phrases), for whole-library candidate lists. */
+export interface MixFeatures {
+  bpm: number | null;
+  bpmConfidence: number;
+  camelot: string | null;
+  energy: number;
+  timbre: number[] | null;
+}
+
+export function getMixFeatures(ids: string[]): Map<string, MixFeatures> {
+  const out = new Map<string, MixFeatures>();
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    for (const r of db.all<{ item_id: string; bpm: number | null; bpm_confidence: number; camelot: string | null; energy: number; timbre: string | null }>(
+      `SELECT item_id, bpm, bpm_confidence, camelot, energy, timbre FROM track_analysis WHERE error IS NULL AND item_id IN (${chunk.map(() => '?').join(',')})`, ...chunk)) {
+      out.set(r.item_id, { bpm: r.bpm, bpmConfidence: r.bpm_confidence, camelot: r.camelot, energy: r.energy, timbre: r.timbre ? JSON.parse(r.timbre) : null });
+    }
+  }
+  return out;
+}
 
 /** True when a stored analysis predates the current algorithm (still usable, upgraded lazily). */
 export function analysisOutdated(itemId: string): boolean {
@@ -111,6 +143,51 @@ export function getAnalyses(ids: string[]): Map<string, TrackAnalysis> {
   return out;
 }
 
+/** True when the last attempt on the current file failed (undecodable, too short): not retried until the file changes. */
+export function analysisFailed(itemId: string): boolean {
+  const r = db.get<{ ok: number }>(
+    `SELECT 1 ok FROM track_analysis a JOIN media m ON m.item_id = a.item_id WHERE a.item_id = ? AND a.error IS NOT NULL AND a.version >= ? AND a.media_mtime IS m.mtime LIMIT 1`,
+    itemId, ANALYSIS_VERSION);
+  return !!r;
+}
+
+/** On-demand analyses (API requests): one per track at a time, at most this many decodes in parallel. */
+const ON_DEMAND_SLOTS = 2;
+const inflight = new Map<string, Promise<TrackAnalysis | null>>();
+let activeOnDemand = 0;
+const slotWaiters: (() => void)[] = [];
+
+/**
+ * Analyse a track for an API request: the stored analysis when it is current, else analyse it now (deduplicated
+ * per track and throttled). Null when it cannot be analysed (not a local file, undecodable, shorter than 5 s).
+ */
+export async function analyseOnDemand(itemId: string): Promise<TrackAnalysis | null> {
+  const have = getAnalysis(itemId);
+  if (have && !analysisOutdated(itemId) && !analysisStale(itemId)) return have;
+  if (!have && analysisFailed(itemId)) return null;
+  let p = inflight.get(itemId);
+  if (!p) {
+    p = (async () => {
+      if (activeOnDemand >= ON_DEMAND_SLOTS) await new Promise<void>((r) => slotWaiters.push(r));
+      activeOnDemand++;
+      try {
+        return (await analyseTrack(itemId)) ?? getAnalysis(itemId);
+      } finally {
+        activeOnDemand--;
+        slotWaiters.shift()?.();
+        inflight.delete(itemId);
+      }
+    })();
+    inflight.set(itemId, p);
+  }
+  return p;
+}
+
+/** True when the file changed since it was analysed. */
+function analysisStale(itemId: string): boolean {
+  return !!db.get(`SELECT 1 FROM track_analysis a JOIN media m ON m.item_id = a.item_id WHERE a.item_id = ? AND a.media_mtime IS NOT m.mtime LIMIT 1`, itemId);
+}
+
 /** Analyse one track (by item id) and store the result. */
 export async function analyseTrack(itemId: string): Promise<TrackAnalysis | null> {
   const m = db.get<{ path: string; mtime: number; duration_ms: number | null }>("SELECT m.path, m.mtime, m.duration_ms FROM media m JOIN items i ON i.id = m.item_id WHERE i.id = ? AND i.type = 'track' AND m.path IS NOT NULL LIMIT 1", itemId);
@@ -119,6 +196,7 @@ export async function analyseTrack(itemId: string): Promise<TrackAnalysis | null
   try {
     const pcm = await decodePcm(m.path);
     if (pcm.length < RATE * 5) throw new Error('Too short to analyse');
+    await new Promise((r) => setImmediate(r)); // let pending requests run before the (synchronous) DSP
     const a = analysePcm(pcm, m.duration_ms ?? undefined);
     db.run(
       `INSERT OR REPLACE INTO track_analysis (item_id, media_mtime, version, bpm, bpm_confidence, beat_offset_ms, key_name, camelot, energy, loudness_db, cue_in_ms, cue_out_ms, intro_end_ms, outro_start_ms, duration_ms, analyzed_at, timbre, phrases, downbeat_ms, error)
@@ -140,7 +218,7 @@ export async function analyseTrack(itemId: string): Promise<TrackAnalysis | null
 const PENDING_SQL = `FROM items i JOIN media m ON m.item_id = i.id
   LEFT JOIN track_analysis a ON a.item_id = i.id
   WHERE i.type = 'track' AND m.path IS NOT NULL AND (a.item_id IS NULL OR a.version < ${ANALYSIS_VERSION} OR a.media_mtime IS NOT m.mtime)`;
-/** Pending because the file is new/changed or the last attempt failed (not just an older algorithm version). */
+/** Pending because the file is new or changed (not just an older algorithm version). Failed attempts are not retried until the file changes. */
 const NEEDS_FULL = `(a.item_id IS NULL OR a.media_mtime IS NOT m.mtime)`;
 
 let running = false;

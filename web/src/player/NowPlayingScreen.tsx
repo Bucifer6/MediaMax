@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Item, NowPlayingView, VisualizerStyle } from '@mediamax/shared';
+import type { DjTransitionPreference, Item, NowPlayingView, VisualizerStyle } from '@mediamax/shared';
 import { useMusic } from './music';
 import { useKaraoke } from './karaoke';
 import { SeekBar, VolumeControl } from './controls';
@@ -27,6 +27,8 @@ import { totalOffset, useLyrics, usePrefs } from '../lyrics/useLyrics';
 import { Visualizer } from '../visualizer/Visualizer';
 import { VISUALIZER_STYLES } from '../visualizer/styles';
 import { isTvMode, KaraokeControls, useNowPlaying, VIEWS } from './NowPlaying';
+import { useApp } from '../state/app';
+import { advancedDjEnabled } from './djAccess';
 import '../styles/listen.css';
 
 type Panel = 'lyrics' | 'queue' | 'chapters' | 'bookmarks';
@@ -118,6 +120,7 @@ function NpQueue() {
 
 export default function NowPlaying() {
   const m = useMusic();
+  const advancedDj = advancedDjEnabled(useApp().user);
   const k = useKaraoke();
   const np = useNowPlaying();
   const toast = useToast();
@@ -288,7 +291,7 @@ export default function NowPlaying() {
 
   const trackMenu: MenuItem[] = [
     ...radioMenuItems(t, (id, title) => void m.startRadio(id, title)),
-    ...(t.type === 'track' ? [{ label: 'DJ mix from this track', icon: 'music' as const, onClick: () => goTo(`/dj?seed=${encodeURIComponent(t.id)}`) }] : []),
+    ...(t.type === 'track' && advancedDj ? [{ label: 'DJ mix from this track', icon: 'music' as const, onClick: () => goTo(`/dj?seed=${encodeURIComponent(t.id)}`) }] : []),
     ...(t.type === 'track' ? [{ divider: true, label: '' }] : []),
     ...(t.parentId ? [{ label: t.type === 'track' ? 'Go to album' : t.type === 'podcastepisode' ? 'Go to podcast' : 'Go to book', icon: (t.type === 'track' ? 'music' : 'book') as IconName, onClick: () => goTo(`/item/${t.parentId}`) }] : []),
     ...(t.grandparentId ? [{ label: 'Go to artist', icon: 'user' as const, onClick: () => goTo(`/item/${t.grandparentId}`) }] : []),
@@ -398,6 +401,7 @@ export default function NowPlaying() {
             <div className="np-artist">
               {m.casting ? <><Icon name="cast" size={13} /> Casting to {m.cast.deviceName ?? 'device'}</> : artist}
               {m.radio && !m.casting && <span className="np-radio"><Icon name="antenna" size={12} /> {m.radio.label}</span>}
+              {!m.casting && !spoken && <MixStatus />}
             </div>
           </div>
           {!np.screensaver && (
@@ -434,6 +438,7 @@ export default function NowPlaying() {
                     items={SPEEDS.map((r) => ({ label: `${r}×${r === 1 ? ' (normal)' : ''}`, checked: m.rate === r, onClick: () => m.setRate(r) }))}
                   />
                 )}
+                {!spoken && t.type === 'track' && <AutomixMenu />}
                 <SleepTimerButton />
                 {t.type === 'track' && view !== 'karaoke' && (
                   <Popover
@@ -465,5 +470,45 @@ export default function NowPlaying() {
         <LyricsEditor track={t} lyrics={lyrics} onClose={() => setEditing(false)} onSaved={(l) => (l ? setLyrics({ ...l, canEdit: true }) : reload())} />
       )}
     </div>
+  );
+}
+
+const MIX_STYLES: { value: DjTransitionPreference; label: string }[] = [
+  { value: 'auto', label: 'Auto' }, { value: 'smooth', label: 'Smooth' }, { value: 'energetic', label: 'Energetic' }, { value: 'minimal', label: 'Minimal' },
+];
+
+/** "Mixing into <next> · Bass swap 40 %" during a blend; "Mix: <source>" otherwise. No DJ controls. */
+function MixStatus() {
+  const m = useMusic();
+  if (m.blend) {
+    return (
+      <span className="np-radio np-mixing" role="status" aria-live="polite">
+        <Icon name="layers" size={12} /> Mixing into {m.blend.into.title} · {m.blend.label}
+        <i className="np-mix-progress" aria-hidden="true"><b style={{ width: `${Math.round(m.blend.progress * 100)}%` }} /></i>
+      </span>
+    );
+  }
+  if (m.mix) return <span className="np-radio"><Icon name="layers" size={12} /> Mix: {m.mix.label}</span>;
+  return null;
+}
+
+/** Automix on/off, Endless and the transition style: the whole lite DJ. */
+function AutomixMenu() {
+  const m = useMusic();
+  return (
+    <Dropdown
+      className="np-automix"
+      trigger={({ onClick, open }) => (
+        <button className={`btn-icon ${m.automix ? 'active' : ''}`} onClick={onClick} aria-expanded={open} aria-haspopup="menu" aria-label={`Automix ${m.automix ? 'on' : 'off'}`} title="Automix">
+          <Icon name="layers" size={20} />
+        </button>
+      )}
+      items={[
+        { label: 'Automix', checked: m.automix, onClick: () => m.setAutomix(!m.automix) },
+        ...(m.automix ? [{ label: 'Endless (keep going with similar songs)', checked: m.endless, onClick: () => m.setEndless(!m.endless) }] : []),
+        { divider: true, label: '' },
+        ...MIX_STYLES.map((x) => ({ label: `Transitions: ${x.label}`, checked: m.mixStyle === x.value, disabled: !m.automix, onClick: () => m.setMixStyle(x.value) })),
+      ]}
+    />
   );
 }

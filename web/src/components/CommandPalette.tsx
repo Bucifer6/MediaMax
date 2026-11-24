@@ -5,6 +5,7 @@ import type { Channel, FeatureFlags, Item, Library } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { seerrApi } from '../api/seerr';
 import { useApp } from '../state/app';
+import { advancedDjEnabled } from '../player/djAccess';
 import { useDebounced } from '../hooks';
 import { ADMIN_NAV } from '../admin/nav';
 import { itemLink, itemSubtitle, landscapeFor, libraryIcon, posterFor } from '../utils/items';
@@ -37,7 +38,7 @@ export interface PaletteContext {
   hasProfiles: boolean;
 }
 
-function buildDestinations(c: PaletteContext, features: FeatureFlags, linkDevice: boolean): PaletteEntry[] {
+function buildDestinations(c: PaletteContext, features: FeatureFlags, linkDevice: boolean, advancedDj = false): PaletteEntry[] {
   const d: PaletteEntry[] = [
     { id: 'home', label: 'Home', icon: 'home', to: '/', group: 'Go to' },
     { id: 'search', label: 'Search', icon: 'search', to: '/search', group: 'Go to' },
@@ -59,7 +60,8 @@ function buildDestinations(c: PaletteContext, features: FeatureFlags, linkDevice
     { id: 'match', label: 'Movie Match (decide together)', icon: 'together', to: '/match', group: 'You' },
     { id: 'remote', label: 'Use your phone as remote', icon: 'device', to: '/remote', group: 'You' },
     { id: 'downloads', label: 'Smart downloads', icon: 'download', to: '/settings/downloads', group: 'You' },
-    ...(features.music ? [{ id: 'dj', label: 'DJ', icon: 'music' as IconName, to: '/dj', group: 'You' }] : []),
+    // The DJ page is the advanced DJ (opt-in); the lite DJ is Automix in the player.
+    ...(features.music && advancedDj ? [{ id: 'dj', label: 'DJ', icon: 'music' as IconName, to: '/dj', group: 'You' }] : []),
     { id: 'podcasts', label: 'Podcasts', icon: 'podcast', to: '/podcasts', group: 'You' },
     { id: 'playlists', label: 'Playlists', icon: 'playlist', to: '/playlists', group: 'You' },
     { id: 'collections', label: 'Collections', icon: 'collection', to: '/collections', group: 'You' },
@@ -105,7 +107,8 @@ export default function CommandPalette({ open, onClose, ctx }: { open: boolean; 
   const navigate = useNavigate();
   const { features, user, logout } = useApp();
   const isAdmin = !!user?.isAdmin;
-  const destinations = useMemo(() => buildDestinations(ctx, features, features.linkCodes && !user?.parentUserId), [ctx, features, user?.parentUserId]);
+  const advancedDj = advancedDjEnabled(user);
+  const destinations = useMemo(() => buildDestinations(ctx, features, features.linkCodes && !user?.parentUserId, advancedDj), [ctx, features, user?.parentUserId, advancedDj]);
   const actions = useMemo<PaletteEntry[]>(() => [
     ...(ctx.hasProfiles ? [{ id: 'act-profile', label: 'Switch profile', icon: 'users' as IconName, group: 'Actions', run: () => navigate('/profiles') }] : []),
     { id: 'act-shortcuts', label: 'Keyboard shortcuts', icon: 'keyboard', group: 'Actions', run: () => window.dispatchEvent(new CustomEvent('mm:shortcuts')) },

@@ -11,6 +11,7 @@ import type {
   CalendarResponse, NotificationsResponse,
   BackupInfo, RemoteAccessStatus, Bookmark, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
+import type { DjOrderRequest, DjOrderResponse, DjTransitionsRequest, DjTransitionsResponse } from '@mediamax/shared';
 import type { ManualRendererRequest, Renderer, RendererAction, RendererAdminView, RendererCommandRequest, RendererPlayRequest, RendererSettings, RendererState } from '@mediamax/shared';
 import type { ApplyMatchRequest, MatchSearchResponse, MetadataProviderId, MetadataSettings, MetadataSettingsResponse, MetadataTestResult } from '@mediamax/shared';
 import type {
@@ -187,6 +188,10 @@ export const api = {
     status: () => http.get<DjStatus>('/dj/status'),
     analyze: () => http.post<Ok>('/dj/analyze'),
     analysis: (itemId: string) => http.get<TrackAnalysis | null>(`/items/${enc(itemId)}/analysis`),
+    /** Lite automix: plan many transitions at once from stored analyses (local only, no AI). */
+    transitions: (body: DjTransitionsRequest) => http.post<DjTransitionsResponse>('/dj/transitions', body),
+    /** Put a source or a list of tracks in a mix-friendly order (local only, no AI); page with `history`. */
+    order: (body: DjOrderRequest) => http.post<DjOrderResponse>('/dj/order', body),
     host: (body: DjHostRequest) => http.post<DjHostLine>('/dj/host', body),
     feedback: (body: DjFeedback) => http.post<Ok>('/dj/feedback', body),
     aiTest: (kind: 'llm' | 'tts') => http.post<{ ok: true; reply?: string; ms?: number; audioUrl?: string; usage?: { used: number; max: number } }>('/dj/ai/test', { kind }),

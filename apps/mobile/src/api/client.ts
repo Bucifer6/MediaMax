@@ -30,7 +30,11 @@ import type {
   DjHostRequest,
   DjMix,
   DjMixRequest,
+  DjOrderRequest,
+  DjOrderResponse,
   DjStatus,
+  DjTransitionsRequest,
+  DjTransitionsResponse,
   DownloadQuality,
   DvrDefaults,
   GuideResponse,
@@ -544,6 +548,14 @@ export class MediaMaxClient {
   /** How much of the music library has been analysed. */
   djStatus() {
     return this.get<DjStatus>('/dj/status');
+  }
+  /** Automix (lite DJ): plan transitions between track pairs from stored analyses (local planner, no AI). */
+  djTransitions(body: DjTransitionsRequest, signal?: AbortSignal) {
+    return this.post<DjTransitionsResponse>('/dj/transitions', body, { timeoutMs: 15000, signal });
+  }
+  /** Automix "Mix": a source (library, genre, artist, album, playlist, folder) or ids in a mix-friendly order, paged via `history`. */
+  djOrder(body: DjOrderRequest, signal?: AbortSignal) {
+    return this.post<DjOrderResponse>('/dj/order', body, { timeoutMs: 30000, signal });
   }
   /** BPM / key / energy / cue points of one track (analysed on demand). */
   trackAnalysis(itemId: string, signal?: AbortSignal) {

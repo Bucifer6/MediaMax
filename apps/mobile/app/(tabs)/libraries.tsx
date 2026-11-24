@@ -14,6 +14,7 @@ import { EmptyState, ErrorState, Loading } from '@/components/States';
 import { useTabBarSpace } from '@/components/TabBar';
 import { T } from '@/components/Text';
 import { useSession } from '@/state/session';
+import { useAdvancedDj } from '@/state/dj';
 import { mix, useTheme } from '@/theme';
 import { LIBRARY_ICON } from '@/utils/library';
 import { openDj, openItem } from '@/utils/nav';
@@ -21,6 +22,7 @@ import { openDj, openItem } from '@/utils/nav';
 export default function LibrariesScreen() {
   const t = useTheme();
   const { features } = useSession();
+  const advancedDj = useAdvancedDj();
   const bottom = useTabBarSpace();
   const libs = useQuery('libraries', (api) => api.libraries());
   const collections = useQuery('collections', (api) => api.collections());
@@ -58,7 +60,7 @@ export default function LibrariesScreen() {
           back={false}
           right={
             <View style={{ flexDirection: 'row', gap: t.space.sm }}>
-              {features.music ? <Button label="DJ" icon="disc-outline" size="sm" variant="secondary" onPress={() => openDj()} accessibilityLabel="DJ mode" /> : null}
+              {features.music && advancedDj ? <Button label="DJ" icon="disc-outline" size="sm" variant="secondary" onPress={() => openDj()} accessibilityLabel="DJ mode" /> : null}
               <Button label="Podcasts" icon="mic-outline" size="sm" variant="secondary" onPress={() => router.push('/podcasts' as never)} />
             </View>
           }

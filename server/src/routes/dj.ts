@@ -2,13 +2,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import type { DjFeedback, DjHostRequest, DjMixRequest, DjStatus, DjTransitionPreference } from '@mediamax/shared';
+import type { DjFeedback, DjHostRequest, DjMixRequest, DjOrderRequest, DjOrderResponse, DjStatus, DjTransition, DjTransitionsRequest, DjTransitionsResponse, TrackAnalysis } from '@mediamax/shared';
 import { db } from '../db.js';
 import { remoteAddr, requireAdmin, requireUser } from '../http.js';
 import { assertRemoteAllowed } from '../services/playback.js';
-import { assertCanSee } from '../services/items.js';
-import { analyseTrack, analysisOutdated, analysisStatus, getAnalysis, upgradeLazily } from '../services/dj/analysis.js';
-import { buildMix, planTransition } from '../services/dj/mix.js';
+import { accessClause, assertCanSee, itemsByIds } from '../services/items.js';
+import { analyseOnDemand, analysisOutdated, getAnalyses, analysisStatus, getAnalysis, upgradeLazily } from '../services/dj/analysis.js';
+import { buildMix, orderTracks, planTransition, transitionOptions } from '../services/dj/mix.js';
 import { buildTransitionGraph, ffmpegHasFilter, renderTransition } from '../services/dj/render.js';
 import { parseJson } from '../util/misc.js';
 import { findSeed, hostLine, llmChat, llmUsage, parsePrompt, recordFeedback, serverVoiceConfigured, speak, voiceFile } from '../services/dj/ai.js';
@@ -48,9 +48,9 @@ export default async function djRoutes(app: FastifyInstance) {
     const { user } = requireUser(req);
     const row = assertCanSee(user, req.params.id);
     if (row.type !== 'track') throw badRequest('Only music tracks can be analysed');
-    // Outdated analyses (older algorithm) are re-run on demand; it takes about half a second.
-    if (analysisOutdated(req.params.id)) return (await analyseTrack(req.params.id)) ?? getAnalysis(req.params.id);
-    return getAnalysis(req.params.id) ?? (await analyseTrack(req.params.id));
+    // Not analysed yet, outdated (older algorithm) or the file changed: analysed now (≈0.3 s, throttled, local only).
+    // null when the track can't be analysed (undecodable, under 5 s); clients then use a plain crossfade.
+    return analyseOnDemand(req.params.id);
   });
 
   app.post<{ Body: DjMixRequest }>('/dj/mix', async (req) => {
@@ -77,7 +77,7 @@ export default async function djRoutes(app: FastifyInstance) {
     const last = body.history?.[body.history.length - 1];
     if (last && (!getAnalysis(last) || analysisOutdated(last))) {
       try {
-        if (assertCanSee(user, last).type === 'track') await analyseTrack(last);
+        if (assertCanSee(user, last).type === 'track') await analyseOnDemand(last);
       } catch {
         /* unknown or hidden item: ignore */
       }
@@ -96,6 +96,59 @@ export default async function djRoutes(app: FastifyInstance) {
     upgradeLazily(mix.tracks.map((t) => t.item.id));
     const { history: _h, count: _c, ...resolved } = body;
     return { ...mix, summary, understoodBy, continuous, request: resolved };
+  });
+
+  /**
+   * Plan many transitions at once (lite automix): stored analyses only — no on-demand analysis, no AI, no network.
+   * An unanalysed side gets planTransition's plain fade.
+   */
+  app.post<{ Body: DjTransitionsRequest }>('/dj/transitions', async (req): Promise<DjTransitionsResponse> => {
+    const { user } = requireUser(req);
+    const b = req.body;
+    if (!b || !Array.isArray(b.pairs)) throw badRequest('pairs must be a list of {from, to}');
+    if (b.pairs.length > 50) throw badRequest('At most 50 pairs per request');
+    if (b.pairs.some((p) => !p || typeof p !== 'object' || typeof p.from !== 'string' || typeof p.to !== 'string' || !p.from || !p.to || p.from.length > 100 || p.to.length > 100)) {
+      throw badRequest('Each pair needs string ids from and to');
+    }
+    const ids = [...new Set(b.pairs.flatMap((p) => [p.from, p.to]))];
+    const acc = accessClause(user, 'i');
+    // Tracks the user may see (library access and parental ratings), with their file's duration and genres.
+    const rows = db.all<{ id: string; duration_ms: number | null; genres: string | null }>(
+      `SELECT i.id, COALESCE(m.duration_ms, i.duration_ms) duration_ms, i.genres FROM items i LEFT JOIN media m ON m.id = (SELECT id FROM media WHERE item_id = i.id AND path IS NOT NULL LIMIT 1)
+       WHERE i.id IN (${ids.map(() => '?').join(',')}) AND i.type = 'track' AND ${acc.sql}`, ...ids, ...acc.params);
+    const seen = new Map(rows.map((r) => [r.id, r]));
+    const analyses = getAnalyses(ids);
+    const opts = transitionOptions(b.transitions, b.maxStretchPct);
+    const genres = (r: { genres: string | null }) => parseJson<string[]>(r.genres, []).filter((g) => typeof g === 'string').map((g) => g.toLowerCase());
+    const transitions = b.pairs.map(({ from, to }): DjTransition | null => {
+      const ra = seen.get(from);
+      const rb = seen.get(to);
+      if (!ra || !rb) return null;
+      const a = analyses.get(from) ?? null;
+      return planTransition(a, ra.duration_ms ?? a?.durationMs ?? 0, analyses.get(to) ?? null, { ...opts, genresA: genres(ra), genresB: genres(rb) });
+    });
+    return { transitions };
+  });
+
+  /**
+   * Order a source (library, genre, artist, album, playlist, folder) or a list of ids as a mix: local scoring on
+   * key, tempo, energy and timbre, no AI, no network. Page through big sources with `history`.
+   */
+  app.post<{ Body: DjOrderRequest }>('/dj/order', async (req): Promise<DjOrderResponse> => {
+    const { user } = requireUser(req);
+    const b = req.body;
+    if (!b || typeof b !== 'object') throw badRequest('Send itemIds or a source');
+    const { ids, total, remaining } = orderTracks(user, b);
+    const items = itemsByIds(user, ids);
+    const stored = getAnalyses(items.map((i) => i.id));
+    const analyses: Record<string, TrackAnalysis | null> = {};
+    for (const it of items) {
+      const a = stored.get(it.id);
+      analyses[it.id] = a ? { ...a, timbre: null } : null;
+    }
+    // Tracks with an older-version analysis are upgraded in the background, a few per request.
+    upgradeLazily(ids.slice(0, 8));
+    return { items, analyses, total, remaining };
   });
 
   /** AI DJ host: a short spoken link between two tracks. */
@@ -127,13 +180,10 @@ export default async function djRoutes(app: FastifyInstance) {
     };
     const fa = file(from);
     const fb = file(to);
-    const ensure = async (id: string) => (!getAnalysis(id) || analysisOutdated(id) ? await analyseTrack(id) : getAnalysis(id)) ?? getAnalysis(id);
+    const ensure = (id: string) => analyseOnDemand(id);
     const [a, b] = await Promise.all([ensure(from), ensure(to)]);
-    const prefs: DjTransitionPreference[] = ['auto', 'smooth', 'energetic', 'minimal'];
-    const pref = prefs.includes(req.query.transitions as DjTransitionPreference) ? (req.query.transitions as DjTransitionPreference) : 'auto';
-    const stretch = Number(req.query.maxStretchPct);
     const tr = planTransition(a, fa.duration_ms ?? a?.durationMs ?? 0, b, {
-      preference: pref, maxStretch: Number.isFinite(stretch) && stretch > 0 ? Math.min(16, stretch) / 100 : 0.08,
+      ...transitionOptions(req.query.transitions, req.query.maxStretchPct),
       genresA: parseJson<string[]>(fa.genres, []).map((g) => g.toLowerCase()), genresB: parseJson<string[]>(fb.genres, []).map((g) => g.toLowerCase()),
     });
     const glideMs = tr.beatMs ? tr.beatMs * 4 * 8 : 8000;

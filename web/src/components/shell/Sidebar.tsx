@@ -4,6 +4,8 @@ import type { Library } from '@mediamax/shared';
 import { Icon, type IconName } from '../Icon';
 import { BrandLogo } from '../BrandLogo';
 import { libraryIcon } from '../../utils/items';
+import { useApp } from '../../state/app';
+import { advancedDjEnabled } from '../../player/djAccess';
 
 /** One sidebar destination. Collapsed (icon rail) the label becomes the tooltip. */
 export function NavItem({ to, icon, label, end, badge, title }: { to: string; icon: IconName; label: string; end?: boolean; badge?: ReactNode; title?: string }) {
@@ -116,6 +118,8 @@ export function Sidebar({
   onSaveOrder: (ids: string[]) => void; onResetOrder: () => void;
 }) {
   const m = model;
+  // The DJ page is the advanced DJ (opt-in, Settings → Playback); a mix that is playing keeps its entry visible.
+  const advancedDj = advancedDjEnabled(useApp().user);
   const [editing, setEditing] = useState(false);
   const hasLive = m.liveTv || m.iptv.length > 0;
   return (
@@ -174,7 +178,7 @@ export function Sidebar({
 
         <div className="nav-section">
           <SectionLabel>Listen & discover</SectionLabel>
-          {m.music && <NavItem to="/dj" icon="music" label="DJ" badge={m.djPlaying ? <span className="live-dot nav-live" aria-label="Mix playing" /> : undefined} />}
+          {m.music && (advancedDj || m.djPlaying) && <NavItem to="/dj" icon="music" label="DJ" badge={m.djPlaying ? <span className="live-dot nav-live" aria-label="Mix playing" /> : undefined} />}
           <NavItem to="/podcasts" icon="podcast" label="Podcasts" />
           {m.showRequests && <NavItem to="/requests" icon="inbox" label={m.requestsLabel} badge={count(m.pending, 'pending')} />}
           {m.discover && <NavItem to="/discover" icon="compass" label="Discover" />}

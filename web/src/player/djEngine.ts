@@ -21,9 +21,10 @@ import { attachStream, type Attached } from './engine';
 import { profileWithBitrate } from './deviceProfile';
 import { djLive } from './djLive';
 import {
-  automationCurves, ECHO_BEATS, ECHO_FEEDBACK, glideMs, incomingRate, levelsAt, OPEN_HP, OPEN_LP, resolveKeyLock, transitionLabel, transitionPoints, usedControls,
-  type KeyLockMode, type MixLevels,
+  glideMs, levelsAt, matchRates, nativeKeyLock, nextBarMs, resolveKeyLock, transitionLabel, transitionPoints, transitionProgress,
+  type KeyLockMode,
 } from './djMixer';
+import { buildEcho, buildStrip, echoDelaySec, restStrip, scheduleTransition, type EchoBus, type FxStrip } from './djStrip';
 import keylockWorkletUrl from './djKeylock.worklet.ts?worker&url';
 import type { DjTransitionPreference } from '@mediamax/shared';
 
@@ -76,17 +77,10 @@ export interface DjState {
   keyLock: 'native' | 'worklet' | 'off';
 }
 
-/** One deck's mixer strip (Web Audio). */
-interface Strip {
+/** One deck's mixer strip (Web Audio): the shared effect strip (djStrip.ts) behind the optional key-lock worklet. */
+interface Strip extends FxStrip {
   src: MediaElementAudioSourceNode;
-  /** Entry point after the (optional) key-lock worklet. */
-  input: GainNode;
   keylock: AudioWorkletNode | null;
-  low: GainNode;
-  high: GainNode;
-  hp: BiquadFilterNode;
-  lp: BiquadFilterNode;
-  echoSend: GainNode;
 }
 
 interface Deck {
@@ -99,13 +93,12 @@ interface Deck {
   queueIndex: number;
   ready: boolean;
   lastReport: number;
+  /** Bumped on every load/unload so a superseded async load can tell (and release what it started). */
+  gen: number;
 }
 
 const PRELOAD_MS = 15000;
 const TOPUP_BELOW = 3;
-/** Bass-swap crossover (Hz) and Butterworth Q in dB (Web Audio lowpass/highpass Q is in dB): LR4 = 2 × Butterworth. */
-const XOVER = 200;
-const Q_BUTTER_DB = -3.0103;
 
 const OPTIONS_KEY = 'mm.dj.mixer';
 function loadOptions(): DjOptions {
@@ -117,12 +110,7 @@ function loadOptions(): DjOptions {
   }
 }
 
-/** Can this browser time-stretch an <audio> element without changing pitch? */
-export function nativeKeyLock(): boolean {
-  if (typeof HTMLMediaElement === 'undefined') return false;
-  const p = HTMLMediaElement.prototype as unknown as Record<string, unknown>;
-  return 'preservesPitch' in p || 'webkitPreservesPitch' in p || 'mozPreservesPitch' in p;
-}
+export { nativeKeyLock } from './djMixer';
 
 export class DjEngine {
   private ctx: AudioContext | null = null;
@@ -148,17 +136,21 @@ export class DjEngine {
   private options: DjOptions = loadOptions();
   private keyLockMode: 'native' | 'worklet' | 'off' = 'off';
   private workletReady: Promise<boolean> | null = null;
-  private echo: { delay: DelayNode; feedback: GainNode; ret: GainNode } | null = null;
+  private echo: EchoBus | null = null;
   /** Running transition's effect and swap/cut points. */
   private fx: { fx: NonNullable<NonNullable<DjMixTrack['transition']>['fx']>; kSwap: number; kCut: number; label: string } | null = null;
   private pausedAt = 0;
+  /** Fade clock: the audio clock (it freezes with the context on pause and drives the scheduled curves), else wall time. */
+  private now(): number {
+    return this.ctx ? this.ctx.currentTime * 1000 : performance.now();
+  }
 
   constructor() {
     const mk = (): Deck => {
       const audio = new Audio();
       audio.preload = 'auto';
       (audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = true;
-      return { audio, gain: null, strip: null, attached: null, sessionId: null, offsetMs: 0, queueIndex: -1, ready: false, lastReport: 0 };
+      return { audio, gain: null, strip: null, attached: null, sessionId: null, offsetMs: 0, queueIndex: -1, ready: false, lastReport: 0, gen: 0 };
     };
     this.decks = [mk(), mk()];
     for (const d of this.decks) d.audio.addEventListener('ended', () => this.onEnded(d));
@@ -365,7 +357,8 @@ export class DjEngine {
   async resume() {
     if (this.status !== 'paused') return;
     await this.ctx?.resume();
-    if (this.pausedAt) this.fadeStart += performance.now() - this.pausedAt;
+    // Without Web Audio the fade runs on wall time: skip the paused stretch. (The audio clock froze with the context.)
+    if (this.pausedAt && !this.ctx) this.fadeStart += performance.now() - this.pausedAt;
     this.pausedAt = 0;
     const liveDeck = this.decks[this.live];
     await liveDeck.audio.play().catch(() => {});
@@ -394,12 +387,9 @@ export class DjEngine {
     if (!next) return;
     const cur = this.queue[this.index];
     const pos = this.position(this.decks[this.live]);
-    let at = pos + 200;
     const a = cur.analysis;
-    if (a?.bpm && a.beatOffsetMs != null) {
-      const bar = (60000 / a.bpm) * 4;
-      at = a.beatOffsetMs + Math.ceil((pos + 300 - a.beatOffsetMs) / bar) * bar;
-    }
+    // On the next bar line (counted from the first downbeat when known, not just any beat).
+    const at = nextBarMs(pos + 300, a?.bpm, a?.downbeatMs ?? a?.beatOffsetMs) ?? pos + 200;
     next.transition = {
       ...(next.transition ?? { mixInMs: next.analysis?.cueInMs ?? 0, tempoRatio: 1, keyMatch: 'unknown', bpmDelta: null }),
       mixOutMs: Math.round(at), crossfadeMs: Math.min(8000, Math.max(2000, (next.transition?.crossfadeMs ?? 8000))), style: next.transition?.style === 'cut' ? 'cut' : 'fade',
@@ -459,7 +449,7 @@ export class DjEngine {
       status: this.status, error: this.error, decks: [deck(0), deck(1)], live: this.live, crossfader: Math.max(-1, Math.min(1, xf)),
       transitioning: this.transitioning, queue: this.queue, index: this.index, continuous: this.continuous, fetching: this.fetching,
       hostSpeaking: this.hostSpeaking, voice: this.voiceOn, summary: this.summary, understoodBy: this.understoodBy,
-      transition: this.transitioning && this.fx ? { label: this.fx.label, progress: Math.min(1, (performance.now() - this.fadeStart) / this.fadeLen) } : null,
+      transition: this.transitioning && this.fx ? { label: this.fx.label, progress: transitionProgress(this.now(), this.fadeStart, this.fadeLen) } : null,
       options: { ...this.options }, keyLock: this.keyLockMode,
     };
   }
@@ -497,37 +487,14 @@ export class DjEngine {
       limiter.attack.value = 0.003;
       limiter.release.value = 0.25;
       this.master.connect(limiter).connect(ctx.destination);
-      const delay = ctx.createDelay(4);
-      const feedback = ctx.createGain();
-      const ret = ctx.createGain();
-      feedback.gain.value = ECHO_FEEDBACK;
-      ret.gain.value = ECHO_FEEDBACK;
-      delay.connect(feedback).connect(delay);
-      delay.connect(ret).connect(this.master);
-      this.echo = { delay, feedback, ret };
-      const biquad = (type: BiquadFilterType, f: number) => {
-        const b = ctx.createBiquadFilter();
-        b.type = type;
-        b.frequency.value = f;
-        b.Q.value = Q_BUTTER_DB;
-        return b;
-      };
+      this.echo = buildEcho(ctx, this.master);
       for (const d of this.decks) {
         const src = ctx.createMediaElementSource(d.audio);
-        const input = ctx.createGain();
-        const low = ctx.createGain();
-        const high = ctx.createGain();
-        const hp = biquad('highpass', OPEN_HP);
-        const lp = biquad('lowpass', OPEN_LP);
-        const echoSend = ctx.createGain();
-        echoSend.gain.value = 0;
+        const fx = buildStrip(ctx, this.echo);
         d.gain = ctx.createGain();
-        src.connect(input);
-        input.connect(biquad('lowpass', XOVER)).connect(biquad('lowpass', XOVER)).connect(low).connect(hp);
-        input.connect(biquad('highpass', XOVER)).connect(biquad('highpass', XOVER)).connect(high).connect(hp);
-        hp.connect(lp).connect(d.gain).connect(this.master);
-        lp.connect(echoSend).connect(delay);
-        d.strip = { src, input, keylock: null, low, high, hp, lp, echoSend };
+        src.connect(fx.input);
+        fx.out.connect(d.gain).connect(this.master);
+        d.strip = { ...fx, src, keylock: null };
       }
     } catch {
       this.ctx = null; // fall back to element volume
@@ -590,18 +557,7 @@ export class DjEngine {
 
   /** Put a deck's EQ/filters/echo send back to neutral. */
   private restStrip(d: Deck) {
-    const st = d.strip;
-    if (!st || !this.ctx) return;
-    const t = this.ctx.currentTime;
-    const set = (p: AudioParam, v: number) => {
-      p.cancelScheduledValues(0);
-      p.setValueAtTime(v, t);
-    };
-    set(st.low.gain, 1);
-    set(st.high.gain, 1);
-    set(st.hp.frequency, OPEN_HP);
-    set(st.lp.frequency, OPEN_LP);
-    set(st.echoSend.gain, 0);
+    if (this.ctx) restStrip(this.ctx, d.strip);
   }
 
   private setGain(i: 0 | 1, v: number) {
@@ -622,18 +578,26 @@ export class DjEngine {
 
   private async load(d: Deck, queueIndex: number, startMs: number) {
     this.unload(d);
+    const gen = d.gen;
     const t = this.queue[queueIndex];
     d.queueIndex = queueIndex;
     d.ready = false;
+    const superseded = () => d.gen !== gen;
     const pi: PlaybackInfo = await api.playback.start(t.item.id, { startMs: Math.round(startMs) || undefined, deviceProfile: profileWithBitrate(null) });
+    // The mix was stopped / restarted (or the deck reloaded) while the server was starting the stream: release it.
+    if (superseded()) {
+      api.playback.stop(pi.sessionId, true).catch(() => {});
+      throw new DeckSuperseded();
+    }
     d.sessionId = pi.sessionId;
     d.offsetMs = pi.streamStartMs ?? 0;
     this.setRate(d, 1);
-    d.attached = await attachStream(d.audio, pi, {
-      onFatal: (_k, msg) => {
-        if (d.queueIndex === this.index) this.fail(`Can't play "${t.item.title}": ${msg}`);
-      },
-    });
+    const attached = await attachStream(d.audio, pi, { onFatal: (_k, msg) => (d.gen === gen ? this.onDeckFailed(d, t, msg) : undefined) });
+    if (superseded()) {
+      attached.destroy();
+      throw new DeckSuperseded();
+    }
+    d.attached = attached;
     await new Promise<void>((resolve) => {
       if (d.audio.readyState >= 1) return resolve();
       const done = () => {
@@ -655,11 +619,57 @@ export class DjEngine {
       d.audio.addEventListener('canplay', done);
       setTimeout(done, 15000);
     });
+    if (superseded()) throw new DeckSuperseded();
     d.ready = true;
     this.emit();
   }
 
+  /**
+   * A deck's stream died. The live deck: carry on with the next track (hard cut) or end with an error; the
+   * preloaded / incoming deck: drop that track (abandoning a running transition) so the next tick prepares the one after.
+   */
+  private onDeckFailed(d: Deck, t: DjMixTrack, msg: string) {
+    const isLive = d === this.decks[this.live];
+    if (isLive && !this.transitioning) {
+      const next = this.queue[this.index + 1];
+      if (!next) return this.fail(`Can't play "${t.item.title}": ${msg}`);
+      d.audio.pause();
+      this.onEnded(d);
+      return;
+    }
+    if (isLive) {
+      // The outgoing deck failed mid-transition: the incoming one simply takes over now.
+      this.finishTransition();
+      return;
+    }
+    const i = d.queueIndex;
+    if (this.transitioning) this.abortTransition();
+    this.unload(d);
+    if (i === this.index + 1 && this.queue[i]?.item.id === t.item.id) this.dropUpcoming(i);
+    this.emit();
+  }
+
+  /** Remove the upcoming entry `i`; the one after it keeps the mix-out timing that was planned from the live track. */
+  private dropUpcoming(i: number) {
+    const removed = this.queue.splice(i, 1)[0];
+    for (const k of [...this.lines.keys()]) if (k >= i) this.lines.delete(k);
+    const next = this.queue[i];
+    if (next && removed?.transition && i === this.index + 1) next.transition = { ...(next.transition ?? removed.transition), mixOutMs: removed.transition.mixOutMs };
+    return removed;
+  }
+
+  /** Stop a running transition and put the outgoing (live) deck back to full level. */
+  private abortTransition() {
+    const outIdx = this.live;
+    this.transitioning = false;
+    this.fx = null;
+    this.setGain(outIdx, 1);
+    this.setGain((1 - outIdx) as 0 | 1, 0);
+    this.restStrip(this.decks[outIdx]);
+  }
+
   private unload(d: Deck) {
+    d.gen++;
     if (d.sessionId) {
       api.playback.progress(d.sessionId, { positionMs: Math.round(this.position(d)), state: 'stopped', sessionId: d.sessionId }, true).catch(() => {});
       api.playback.stop(d.sessionId, true).catch(() => {});
@@ -731,9 +741,15 @@ export class DjEngine {
       this.setGain((1 - this.live) as 0 | 1, 0);
       this.fetchLine(i);
       await this.load(idle, i, next.transition?.mixInMs ?? next.analysis?.cueInMs ?? 0);
-    } catch {
-      // Unplayable: drop it and let the next tick try the following track.
-      this.queue.splice(i, 1);
+    } catch (e) {
+      if (!(e instanceof DeckSuperseded) && this.queue[i] === next) {
+        // Unplayable: free the deck (it still claimed this queue slot, which stalled the mix until the live track
+        // ended) and drop the track; the next tick prepares the following one.
+        const idle = this.decks[1 - this.live];
+        if (idle.queueIndex === i) this.unload(idle);
+        this.dropUpcoming(i);
+        this.emit();
+      }
     } finally {
       this.preloading = false;
     }
@@ -747,13 +763,21 @@ export class DjEngine {
     if (!next || incoming.queueIndex !== this.index + 1) return;
     const tr = next.transition;
     const outgoing = this.decks[this.live];
-    const outRate = outgoing.audio.playbackRate || 1;
-    // Tempo match with key lock (within the stretch limit; half/double time already folded into the ratio).
-    const rate = tr?.tempoRatio && tr.style === 'blend' ? incomingRate(tr.tempoRatio, outRate, this.options.maxStretchPct / 100) : 1;
-    this.setRate(incoming, rate);
+    // Tempo match with key lock (half/double time is already folded into the ratio). When the outgoing deck is
+    // still stretched from the previous transition and the product would pass the limit, the outgoing deck moves
+    // toward its own tempo instead, so the beats stay matched (a clamp alone drifts ~20 ms per second per percent).
+    const wantMatch = !!tr?.tempoRatio && tr.style === 'blend' && this.keyLockMode !== 'off';
+    const rates = wantMatch ? matchRates(tr!.tempoRatio, outgoing.audio.playbackRate || 1, this.options.maxStretchPct / 100) : { inRate: 1, outRate: outgoing.audio.playbackRate || 1 };
+    if (Math.abs(rates.outRate - (outgoing.audio.playbackRate || 1)) > 1e-4) this.setRate(outgoing, rates.outRate);
+    const outRate = rates.outRate;
+    this.setRate(incoming, rates.inRate);
+    // Started late (throttled timers, a slow preload): skip the incoming track ahead by the same amount so its
+    // beats still land on the outgoing track's.
+    const lateMs = tr?.mixOutMs ? (this.position(outgoing) - tr.mixOutMs) / outRate : 0;
+    if (lateMs > 40 && lateMs < 4000 && tr?.style === 'blend') incoming.audio.currentTime += (lateMs * rates.inRate) / 1000;
     void incoming.audio.play();
     this.transitioning = true;
-    this.fadeStart = performance.now();
+    this.fadeStart = this.now() + (this.ctx ? 10 : 0);
     // The plan is in the outgoing track's own time; at a matched tempo its bars pass faster/slower.
     this.fadeLen = Math.max(300, (tr?.crossfadeMs ?? 5000) / outRate);
     const fx = tr?.fx ?? 'none';
@@ -761,23 +785,8 @@ export class DjEngine {
     this.fx = { fx, kSwap, kCut, label: tr ? transitionLabel(tr) : 'Crossfade' };
     // Every control the style uses, scheduled on the audio clock (smooth regardless of timer jitter).
     if (this.ctx && incoming.gain && outgoing.gain) {
-      const t0 = this.ctx.currentTime + 0.01;
-      const dur = this.fadeLen / 1000;
-      const curves = automationCurves(fx, dur, kSwap, kCut);
-      const params: Partial<Record<keyof MixLevels, AudioParam | undefined>> = {
-        outGain: outgoing.gain.gain, inGain: incoming.gain.gain,
-        outLow: outgoing.strip?.low.gain, inLow: incoming.strip?.low.gain,
-        outHp: outgoing.strip?.hp.frequency, inLp: incoming.strip?.lp.frequency,
-        echoSend: outgoing.strip?.echoSend.gain,
-      };
-      if (fx === 'echo' && this.echo && tr?.beatMs) this.echo.delay.delayTime.setValueAtTime(Math.min(3.9, (ECHO_BEATS * tr.beatMs) / 1000 / outRate), t0);
-      for (const key of usedControls(fx)) {
-        const p = params[key];
-        if (!p) continue;
-        p.cancelScheduledValues(0);
-        p.setValueAtTime(curves[key][0], t0 - 0.005);
-        p.setValueCurveAtTime(curves[key], t0, dur);
-      }
+      scheduleTransition(this.ctx, { outGain: outgoing.gain.gain, inGain: incoming.gain.gain, out: outgoing.strip, in: incoming.strip, echo: this.echo },
+        fx, this.fadeStart / 1000, this.fadeLen / 1000, kSwap, kCut, { echoDelaySec: echoDelaySec(tr?.beatMs, outRate) });
     }
     this.updateMediaSession(next);
     void this.speakIfReady(this.index + 1);
@@ -786,7 +795,7 @@ export class DjEngine {
 
   /** Track fade progress (and drive element volume when Web Audio isn't available). */
   private fadeStep() {
-    const x = Math.min(1, (performance.now() - this.fadeStart) / this.fadeLen);
+    const x = transitionProgress(this.now(), this.fadeStart, this.fadeLen);
     const inIdx = (1 - this.live) as 0 | 1;
     const l = levelsAt(this.fx?.fx ?? 'none', x, this.fx?.kSwap, this.fx?.kCut);
     this.gains[inIdx] = l.inGain;
@@ -885,6 +894,9 @@ export class DjEngine {
     navigator.mediaSession.setActionHandler('nexttrack', () => this.mixNow());
   }
 }
+
+/** A deck load that was overtaken by a stop / restart / reload (not an error). */
+class DeckSuperseded extends Error {}
 
 let shared: DjEngine | null = null;
 /** One engine per tab. */

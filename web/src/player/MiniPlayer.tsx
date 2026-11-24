@@ -177,6 +177,7 @@ export function MiniPlayer() {
             <div className="mini-sub">
               {m.casting ? <span className="mini-casting"><Icon name="cast" size={13} /> Casting to {m.cast.deviceName ?? 'device'}</span> : artist}
               {m.radio && !m.casting && <span className="mini-radio" title={m.radio.label}><Icon name="antenna" size={12} /> {m.radio.label}</span>}
+              {m.blend && !m.casting && <span className="mini-radio" role="status" title={`${m.blend.label} · ${Math.round(m.blend.progress * 100)} %`}><Icon name="layers" size={12} /> Mixing into {m.blend.into.title}</span>}
             </div>
           </div>
         </div>

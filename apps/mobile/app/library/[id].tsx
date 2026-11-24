@@ -12,6 +12,8 @@ import { useApi } from '@/state/session';
 import { useTheme } from '@/theme';
 import { browseTypes } from '@/utils/library';
 import { openDj } from '@/utils/nav';
+import { useAdvancedDj } from '@/state/dj';
+import { useMusic } from '@/state/music';
 
 const SORTS: { key: ItemSort; label: string; order: 'asc' | 'desc' }[] = [
   { key: 'title', label: 'Title', order: 'asc' },
@@ -29,6 +31,9 @@ type Filter = 'all' | 'unplayed' | 'played' | 'favorites';
 export default function LibraryScreen() {
   const t = useTheme();
   const api = useApi();
+  const advancedDj = useAdvancedDj();
+  const music = useMusic();
+  const [mixing, setMixing] = useState(false);
   const params = useLocalSearchParams<{ id: string; sort?: ItemSort; genre?: string }>();
   const libs = useQuery('libraries', (a) => a.libraries());
   const lib = libs.data?.find((l) => l.id === params.id);
@@ -112,7 +117,23 @@ export default function LibraryScreen() {
         <Chip label={`${sortLabel} ${order === 'asc' ? '↑' : '↓'}`} icon="swap-vertical" onPress={() => setSheet('sort')} hasTVPreferredFocus={tabs.length <= 1} />
         <Chip label={genre ?? 'All genres'} icon="pricetags-outline" selected={!!genre} onPress={() => setSheet('genre')} />
         <Chip label={{ all: 'All', unplayed: 'Unwatched', played: 'Watched', favorites: 'Favourites' }[filter]} icon="filter" selected={filter !== 'all'} onPress={() => setSheet('filter')} />
-        {lib.type === 'music' ? <Chip label="DJ" icon="disc-outline" onPress={() => openDj()} /> : null}
+        {lib.type === 'music' ? (
+          <Chip
+            label={mixing ? 'Mixing…' : 'Mix'}
+            icon="infinite-outline"
+            onPress={async () => {
+              if (mixing) return;
+              // The whole library (or the chosen genre) in the server's smart order, 50 tracks at a time.
+              setMixing(true);
+              try {
+                await music.playAsMix(genre ? { label: genre, source: { type: 'genre', id: genre, libraryId: lib.id } } : { label: lib.name, source: { type: 'library', id: lib.id } });
+              } finally {
+                setMixing(false);
+              }
+            }}
+          />
+        ) : null}
+        {lib.type === 'music' && advancedDj ? <Chip label="DJ" icon="disc-outline" onPress={() => openDj()} /> : null}
       </ScrollView>
 
       {loading && !items.length ? (

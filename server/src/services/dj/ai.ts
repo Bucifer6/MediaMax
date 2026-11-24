@@ -294,7 +294,7 @@ export async function hostLine(user: User, req: DjHostRequest): Promise<DjHostLi
     const ctx = { opening: !prev, listenerRequest: req.prompt ?? null, localHour: hour, tracksPlayedSoFar: req.position, previous: prev, next };
     const reply = await llmChat(HOST_SYSTEM(cfg.hostName), JSON.stringify(ctx), { temperature: 0.9, maxTokens: 90 });
     // Keep it short and plain; models occasionally wrap in quotes or add a speaker label.
-    const clean = reply?.replace(/^["'“]|["'”]$/g, '').replace(new RegExp(`^${cfg.hostName}:\\s*`, 'i'), '').replace(/[*_#`]/g, '').trim();
+    const clean = reply?.replace(/^["'“]|["'”]$/g, '').replace(new RegExp(`^${cfg.hostName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:\\s*`, 'i'), '').replace(/[*_#`]/g, '').trim();
     if (clean && clean.length >= 8 && clean.length <= 320) {
       text = clean;
       by = 'llm';
@@ -346,9 +346,15 @@ export async function speak(text: string): Promise<{ file: string; durationMs: n
   const wav = path.join(voiceDir(), `${key}.wav`);
   const args = ['--model', tts.voiceModel!, '--output_file', wav];
   if (tts.speaker != null) args.push('--speaker', String(tts.speaker));
-  await run(tts.piperPath || 'piper', args, text, 60000);
-  await run(config.ffmpeg, ['-v', 'error', '-y', '-i', wav, '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11', '-ac', '1', '-c:a', 'libmp3lame', '-b:a', '96k', out], null, 30000);
-  fs.rmSync(wav, { force: true });
+  try {
+    await run(tts.piperPath || 'piper', args, text, 60000);
+    await run(config.ffmpeg, ['-v', 'error', '-y', '-i', wav, '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11', '-ac', '1', '-c:a', 'libmp3lame', '-b:a', '96k', out], null, 30000);
+  } catch (e) {
+    fs.rmSync(out, { force: true }); // never cache a half-written clip
+    throw e;
+  } finally {
+    fs.rmSync(wav, { force: true });
+  }
   return { file, durationMs: null };
 }
 
