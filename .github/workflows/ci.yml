@@ -56,9 +56,19 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
-      - name: Contract copy is in sync
+      # sync-types copies shared/src (types, lrc, stems) into the mobile app, server and web; every copy must be
+      # committed. Runs right after checkout, so any change or new file in the tree is drift.
+      - name: Shared copies are in sync
         working-directory: .
-        run: node scripts/sync-types.mjs && git diff --exit-code apps/mobile/src/api/types.ts
+        run: |
+          node scripts/sync-types.mjs
+          drift="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$drift" ]; then
+            echo "::error::Copies of shared/src are out of date. Run 'node scripts/sync-types.mjs' and commit the result."
+            echo "$drift"
+            git --no-pager diff
+            exit 1
+          fi
       - run: npm ci
       - run: npx tsc --noEmit
 

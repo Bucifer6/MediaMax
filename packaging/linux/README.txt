@@ -35,9 +35,9 @@ Install as a service (starts at boot)
 The service runs as the "kinora" user and keeps its data in /var/lib/kinora.
   Status and logs:   systemctl status kinora ; journalctl -u kinora -f
   Hardware transcoding (Intel/AMD):  sudo usermod -aG render,video kinora && sudo systemctl restart kinora
-  Media folders must be readable by the mediamax user.
+  Media folders must be readable by the kinora user.
   Firewall (if enabled):  sudo ufw allow 8484/tcp   or   sudo firewall-cmd --add-port=8484/tcp --permanent && sudo firewall-cmd --reload
-  Settings (port, folders): sudo systemctl edit mediamax, then add e.g.
+  Settings (port, folders): sudo systemctl edit kinora, then add e.g.
       [Service]
       Environment=KINORA_PORT=9000
 

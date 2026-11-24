@@ -3,13 +3,14 @@ name: Native apps
 # Compiles the phone and TV apps for real (not just type-checks): Android phone, Android TV / Fire TV,
 # iPhone/iPad (simulator) and Apple TV (simulator). Android builds produce installable APKs (signed with
 # the debug key — for testing, not for the stores). Store builds go through EAS (see apps/mobile/README.md).
+# shared/src reaches the apps through scripts/sync-types.mjs, so changes there rebuild them too.
 on:
   workflow_dispatch:
   push:
     branches: [main, 'claude/**']
-    paths: ['apps/mobile/**', '.github/workflows/apps.yml']
+    paths: ['apps/mobile/**', 'shared/src/**', 'scripts/sync-types.mjs', '.github/workflows/apps.yml']
   pull_request:
-    paths: ['apps/mobile/**', '.github/workflows/apps.yml']
+    paths: ['apps/mobile/**', 'shared/src/**', 'scripts/sync-types.mjs', '.github/workflows/apps.yml']
 
 # Least privilege: the token only reads the repo (pull requests from forks never get write access or secrets).
 permissions:
