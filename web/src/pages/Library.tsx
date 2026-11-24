@@ -58,6 +58,12 @@ export function LibraryPage() {
     else p.delete(k);
     setParams(p, { replace: true });
   };
+  /** Drop the filters only: sort, order and the music view (albums / artists) stay. */
+  const clearFilters = () => {
+    const p = new URLSearchParams(params);
+    for (const k of ['genre', 'year', 'played', 'fav', 'letter', 'series']) p.delete(k);
+    setParams(p, { replace: true });
+  };
 
   const query = useCallback(
     (offset: number): ItemQuery => ({
@@ -202,7 +208,7 @@ export function LibraryPage() {
           <Icon name={fav ? 'heartFill' : 'heart'} size={14} /> Favourites
         </button>
         {(genre || year || played || fav || letter || series) && (
-          <button className="btn btn-ghost btn-sm" onClick={() => setParams(new URLSearchParams(sort !== 'title' ? { sort } : {}), { replace: true })}>
+          <button className="btn btn-ghost btn-sm" onClick={clearFilters}>
             <Icon name="x" size={14} /> Clear
           </button>
         )}

@@ -51,6 +51,12 @@ test('markup: nested tags restore styles, WebVTT classes and voices', () => {
   assert.equal(runs[2].color, undefined);
 });
 
+test('SRT: leading blank line and whitespace-only separator lines keep every cue', () => {
+  const src = '\n  \n1\n00:00:01,000 --> 00:00:02,000\nFirst\n \n\t\n\n2\r\n00:00:03,000 --> 00:00:04,000\r\nSecond\r\n  \r\n3\n00:00:05,000 --> 00:00:06,000\nThird\n';
+  const { cues } = parseSrt(src);
+  assert.deepEqual(cues.map((c) => [c.id, c.start, cueText(c)]), [['1', 1000, 'First'], ['2', 3000, 'Second'], ['3', 5000, 'Third']]);
+});
+
 /* -------------------------------- WebVTT -------------------------------- */
 
 test('WebVTT: header, NOTE, STYLE classes, cue settings, timestamp tags', () => {
@@ -84,6 +90,12 @@ Vertical
   assert.equal(sniffTextFormat(src), 'vtt');
   assert.equal(sniffTextFormat('[Script Info]\nTitle: x'), 'ass');
   assert.equal(sniffTextFormat('1\n00:00:01,000 --> 00:00:02,000\nx'), 'srt');
+});
+
+test('WebVTT: whitespace-only separator lines keep every cue', () => {
+  const src = 'WEBVTT\n \n\n00:00:01.000 --> 00:00:02.000\nFirst\n\t\n \nb\n00:00:03.000 --> 00:00:04.000\nSecond\n';
+  const { cues } = parseVtt(src);
+  assert.deepEqual(cues.map((c) => [c.id, c.start, cueText(c)]), [[undefined, 1000, 'First'], ['b', 3000, 'Second']]);
 });
 
 /* -------------------------------- timing -------------------------------- */

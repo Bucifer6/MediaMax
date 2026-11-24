@@ -1096,6 +1096,9 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         goto(i);
       },
       removeAt: (i) => {
+        const cur = queue[index];
+        // Removing an entry above the current one only shifts its position: the same track keeps playing.
+        if (cur && i < index) adoptRef.current = { itemId: cur.id, index: index - 1 };
         setQueue((q) => q.filter((_, j) => j !== i));
         setIndex((cur) => (i < cur ? cur - 1 : i === cur ? Math.min(cur, queue.length - 2) : cur));
         if (out && out.active.queueIndex > i) out.active.queueIndex--;

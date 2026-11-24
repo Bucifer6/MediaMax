@@ -203,6 +203,8 @@ export default function VideoPlayer() {
   const [subSearch, setSubSearch] = useState(false);
   /** Subtitle index to select once the next PlaybackInfo arrives (after an online download). */
   const pendingSubPick = useRef<number | null>(null);
+  /** The item whose default subtitle choice has been applied (later sessions of it keep the current choice). */
+  const subsInitFor = useRef<string | null>(null);
   /** Subtitle / audio sync offsets (ms); positive = later. */
   const [subDelayMs, setSubDelayMs] = useState(() => loadSync(itemId).sub);
   const [audioDelayMs, setAudioDelayMs] = useState(() => Math.max(0, loadSync(itemId).audio));
@@ -387,7 +389,9 @@ export default function VideoPlayer() {
       return;
     }
     optsRef.current = { ...opts, measuredKbps: undefined };
-    genRef.current++;
+    const gen = ++genRef.current;
+    // Overtaken by another (re)start, an item change / unmount, or casting while a step was in flight.
+    const stale = () => gen !== genRef.current || castingRef.current;
     retiringRef.current = null;
     setError(null);
     setBuffering(true);
@@ -397,9 +401,9 @@ export default function VideoPlayer() {
     try {
       await capabilitiesReady(); // HDR / 10-bit detection (bounded wait), so the profile carries videoRange
       await audioCapsReady(); // speaker channels / multichannel / Atmos (bounded wait)
+      if (stale()) return;
       const pi = await api.playback.start(itemId, await playbackRequest(opts));
-      if (castingRef.current) {
-        // Casting started while this request was in flight.
+      if (stale()) {
         api.playback.stop(pi.sessionId).catch(() => {});
         return;
       }
@@ -410,7 +414,7 @@ export default function VideoPlayer() {
       setBurned(opts.burn);
       let me: Attached | null = null;
       const seekTo = pendingSeek.current != null ? (pendingSeek.current - (pi.streamStartMs ?? 0)) / 1000 : 0;
-      me = attached.current = await attachStream(v, pi, {
+      me = await attachStream(v, pi, {
         ...abrAttachOptions(opts),
         // hls.js fetches the resume fragment first instead of segment 0 (a transcode would encode both).
         startPosition: seekTo > 0.5 ? seekTo : undefined,
@@ -426,9 +430,16 @@ export default function VideoPlayer() {
           setError(msg);
         },
       });
+      if (stale()) {
+        me.destroy();
+        if (sessionRef.current === pi.sessionId) endSession();
+        return;
+      }
+      attached.current = me;
       v.playbackRate = rate;
       await v.play().catch(() => setPaused(true));
     } catch (e) {
+      if (gen !== genRef.current) return;
       setError(errorMessage(e));
       setBuffering(false);
     }
@@ -567,6 +578,7 @@ export default function VideoPlayer() {
     })();
     return () => {
       cancelled = true;
+      genRef.current++;
       tpCtrl.abort();
       endSession();
       attached.current?.destroy();
@@ -657,7 +669,13 @@ export default function VideoPlayer() {
       setSubtitleIndex(wanted);
       return;
     }
-    setSubtitleIndex((cur) => (cur != null && subs.some((s) => s.index === cur) ? cur : pick));
+    // The default applies to the item's first stream only: a restart (new session) keeps the viewer's choice, Off included.
+    if (subsInitFor.current !== itemId) {
+      subsInitFor.current = itemId;
+      setSubtitleIndex(pick);
+      return;
+    }
+    setSubtitleIndex((cur) => (cur != null && subs.some((s) => s.index === cur) ? cur : null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [info?.sessionId]);
 

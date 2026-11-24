@@ -120,10 +120,15 @@ export function parseMarkup(src: string, opts: { srt?: boolean } = {}): { runs: 
 
 const TIMING = /^\s*(\S+)\s*-->\s*(\S+)(.*)$/;
 
+/** Blank-line separated blocks (whitespace-only lines count as blank), each without leading blank lines. */
+function splitBlocks(text: string): string[] {
+  return text.split(/\n(?:[ \t]*\n)+/).map((b) => b.replace(/^(?:[ \t]*\n)+/, ''));
+}
+
 export function parseSrt(src: string): ParsedText {
   const cues: TextCue[] = [];
   const text = src.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
-  for (const block of text.split(/\n[ \t]*\n+/)) {
+  for (const block of splitBlocks(text)) {
     const lines = block.split('\n');
     const ti = lines.findIndex((l) => l.includes('-->'));
     if (ti < 0 || ti > 1) continue;
@@ -220,7 +225,7 @@ function parseStyleBlock(css: string, out: NonNullable<ParsedText['classStyles']
 
 export function parseVtt(src: string): ParsedText {
   const text = src.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
-  const blocks = text.split(/\n[ \t]*\n+/);
+  const blocks = splitBlocks(text);
   const cues: TextCue[] = [];
   const classStyles: NonNullable<ParsedText['classStyles']> = {};
   blocks.forEach((block, bi) => {

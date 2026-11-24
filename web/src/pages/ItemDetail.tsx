@@ -768,7 +768,7 @@ export function ItemPage() {
       </div>
 
       <div className="detail-sections">
-        {item.type === 'show' && <SeasonsBody show={item} />}
+        {item.type === 'show' && <SeasonsBody key={item.id} show={item} />}
         {item.type === 'season' && <EpisodeList seasonId={item.id} />}
         {item.type === 'podcast' && <PodcastEpisodes podcast={item} />}
         {item.type === 'audiobook' && item.childCount !== 1 && <TrackList parent={item} />}

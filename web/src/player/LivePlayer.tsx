@@ -40,6 +40,8 @@ export default function LivePlayer() {
   const shellRef = useRef<HTMLDivElement>(null);
   const attached = useRef<Attached | null>(null);
   const sessionRef = useRef<string | null>(null);
+  /** Bumped by every play() and on channel change/unmount, so a late in-flight play() knows it was overtaken. */
+  const genRef = useRef(0);
   const [channel, setChannel] = useState<Channel | null>(null);
   const [lineup, setLineup] = useState<Channel[]>([]);
   const [info, setInfo] = useState<PlaybackInfo | null>(null);
@@ -164,6 +166,8 @@ export default function LivePlayer() {
       await playCastRef.current();
       return;
     }
+    const gen = ++genRef.current;
+    const stale = () => gen !== genRef.current || castingRef.current;
     setError(null);
     setBuffering(true);
     endSession();
@@ -175,13 +179,14 @@ export default function LivePlayer() {
         catchupStart: catchup ?? undefined,
         catchupDurationMin: catchup ? catchupDur : undefined,
       });
-      if (castingRef.current) {
+      if (stale()) {
+        // Overtaken (zapped, unmounted or casting started) while this request was in flight.
         api.playback.stop(pi.sessionId).catch(() => {});
         return;
       }
       sessionRef.current = pi.sessionId;
       setInfo(pi);
-      attached.current = await attachStream(v, pi, {
+      const me = await attachStream(v, pi, {
         live: !catchup,
         onFatal: (kind, msg) => {
           if ((kind === 'mpegts' || kind === 'native') && !forceHls) {
@@ -191,8 +196,15 @@ export default function LivePlayer() {
           setError(msg);
         },
       });
+      if (stale()) {
+        me.destroy();
+        if (sessionRef.current === pi.sessionId) endSession();
+        return;
+      }
+      attached.current = me;
       await v.play().catch(() => setPaused(true));
     } catch (e) {
+      if (gen !== genRef.current) return;
       setError(errorMessage(e));
       setBuffering(false);
     }
@@ -209,6 +221,7 @@ export default function LivePlayer() {
     void play(false);
     return () => {
       cancelled = true;
+      genRef.current++;
       endSession();
       attached.current?.destroy();
       attached.current = null;

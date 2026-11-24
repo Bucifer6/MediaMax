@@ -31,7 +31,7 @@ if %errorlevel%==0 (
 echo Waiting for Kinora to start...
 powershell -NoProfile -Command "for ($i = 0; $i -lt 60; $i++) { try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 'http://127.0.0.1:%KPORT%/health' | Out-Null; exit 0 } catch { Start-Sleep -Milliseconds 500 } }; exit 1"
 if errorlevel 1 (
-  echo Kinora did not start. Look at the "Kinora server" window or the logs in %ProgramData%\Kinora\logs (or %ProgramData%\MediaMax\logs after an upgrade).
+  echo Kinora did not start. Look at the "Kinora server" window or the logs in %ProgramData%\Kinora\logs, or %ProgramData%\MediaMax\logs after an upgrade.
   pause
   exit /b 1
 )

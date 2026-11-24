@@ -52,8 +52,8 @@
     if (!/^https?:\/\//i.test(v)) v = 'http://' + v;
     try {
       var u = new URL(v);
-      // Plain http with no port: assume Kinora's default port.
-      if (u.protocol === 'http:' && !u.port) u.port = '8484';
+      // Plain http with no port typed: assume Kinora's default port (an explicit :80 parses to port '' too).
+      if (u.protocol === 'http:' && !u.port && !/^https?:\/\/(\[[^\]]*\]|[^\/?#]*):\d+/i.test(v)) u.port = '8484';
       return u.origin + (u.pathname === '/' ? '' : u.pathname.replace(/\/+$/, ''));
     } catch (e) { return null; }
   }

@@ -38,7 +38,7 @@ function defaultDataDir(): string {
   // Windows: a machine-wide folder, so the boot-time task (running as SYSTEM) and the user see the same data.
   if (process.platform === 'win32') {
     const base = process.env.ProgramData ?? 'C:\\ProgramData';
-    return pickDataDir(path.join(base, 'Kinora'), path.join(base, 'Kinora'));
+    return pickDataDir(path.join(base, 'Kinora'), path.join(base, 'MediaMax'));
   }
   // systemd's StateDirectory= sets STATE_DIRECTORY (normally /var/lib/kinora).
   if (process.env.STATE_DIRECTORY) {

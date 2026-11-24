@@ -115,10 +115,10 @@ export interface SubtitleProvider {
   download(result: SubtitleSearchResult): Promise<{ data: Buffer | Uint8Array; fileName: string }>;
 }
 
-/** Server events plugins can listen to (payload shapes follow the webhook payloads). */
+/** Server events plugins can listen to. Payloads are the server's own event objects (e.g. playback events carry `ctx.user`); see plugins/examples. */
 export type PluginEvent =
   | 'playback.start' | 'playback.pause' | 'playback.resume' | 'playback.stop' | 'playback.scrobble'
-  | 'library.new' | 'library.updated' | 'items.played' | 'user.login'
+  | 'library.new' | 'items.played' | 'user.login'
   | 'recording.completed' | 'recording.failed' | 'request.created' | 'request.updated' | 'request.available'
   | 'epg.refreshed';
 
