@@ -103,14 +103,17 @@ const ZSCALE_TRANSFER = new Set(['smpte2084', 'arib-std-b67']);
 const ZSCALE_PRIMARIES = new Set(['bt2020', 'bt709']);
 const ZSCALE_MATRIX: Record<string, string> = { bt2020nc: '2020_ncl', bt2020c: '2020_cl', bt709: '709' };
 /**
- * Explicit zscale input properties for HDR sources, so the conversion doesn't depend on frame colour metadata
- * surviving the filters before it (with FFmpeg 8 the frames after bwdif reached zscale untagged: "no path between
- * colorspaces"). HDR10 / HLG video is TV range. Empty when the probe didn't record a known HDR transfer.
+ * Explicit zscale colour properties for HDR sources, so the conversion doesn't depend on frame colour tags. zscale
+ * takes any property it isn't given from the incoming frame, for the output too (vf_zscale.c format_init): with
+ * untagged frames the input became "unspecified" (or, with only the input set, the output primaries did), and zimg
+ * has no path between a specified and an unspecified colorspace. So the input transfer / primaries / matrix / range
+ * are set, and the output primaries stay the source's (the next zscale converts them to BT.709).
+ * Empty when the probe didn't record a known HDR transfer (then the frame tags are used, as before).
  */
 function zscaleInput(src: SourceColor | null): string {
   if (!src?.transfer || !ZSCALE_TRANSFER.has(src.transfer)) return '';
   const out = [`tin=${src.transfer}`, 'rin=tv'];
-  if (src.primaries && ZSCALE_PRIMARIES.has(src.primaries)) out.push(`pin=${src.primaries}`);
+  if (src.primaries && ZSCALE_PRIMARIES.has(src.primaries)) out.push(`pin=${src.primaries}`, `p=${src.primaries}`);
   const m = src.matrix ? ZSCALE_MATRIX[src.matrix] : undefined;
   if (m) out.push(`min=${m}`);
   return `${out.join(':')}:`;
@@ -119,9 +122,7 @@ function zscaleInput(src: SourceColor | null): string {
 export function softwareToneMap(path: 'software' | 'libplacebo', height: number | null = null, src: SourceColor | null = null): string[] {
   if (path === 'libplacebo') return ['libplacebo=tonemapping=bt.2390:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv:format=yuv420p'];
   const input = zscaleInput(src);
-  // m=gbr: the output is RGB (format=gbrpf32le next). FFmpeg 8 negotiates colour properties per link and otherwise
-  // keeps the source's YUV matrix on it, which zimg can't combine with linear light ("no path between colorspaces").
-  return [height ? `zscale=w=-2:h=${height}:f=bilinear:${input}m=gbr:t=linear:npl=100` : `zscale=${input}m=gbr:t=linear:npl=100`, 'format=gbrpf32le', 'zscale=p=bt709', 'tonemap=tonemap=hable:desat=0', 'zscale=t=bt709:m=bt709:r=tv', 'format=yuv420p'];
+  return [height ? `zscale=w=-2:h=${height}:f=bilinear:${input}t=linear:npl=100` : `zscale=${input}t=linear:npl=100`, 'format=gbrpf32le', 'zscale=p=bt709', 'tonemap=tonemap=hable:desat=0', 'zscale=t=bt709:m=bt709:r=tv', 'format=yuv420p'];
 }
 
 /**
