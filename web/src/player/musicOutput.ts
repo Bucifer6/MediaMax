@@ -3,6 +3,7 @@ import type { Attached } from './engine';
 import type { DjTransitionFx } from '@mediamax/shared';
 import { buildVocalReducer, type VocalReducer } from './karaokeFx';
 import { buildEcho, buildStrip, restStrip, scheduleTransition, type EchoBus, type FxStrip } from './djStrip';
+import { duckPoints } from './radioHost';
 
 /** One of the music player's two audio elements ("decks"): the live one, and the one preloading the next track. */
 export interface Deck {
@@ -62,6 +63,8 @@ export class MusicOutput {
   private live: 0 | 1 = 0;
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  /** Radio Host duck (music under the host's voice), after the master gain and the safety limiter. */
+  private duckGain: GainNode | null = null;
   private gains: [GainNode | null, GainNode | null] = [null, null];
   private failed = false;
   /** ReplayGain factor per deck and fade level per deck (0–1). */
@@ -118,7 +121,9 @@ export class MusicOutput {
         const ctx = new Ctx({ latencyHint: 'playback' });
         const master = ctx.createGain();
         const vocal = buildVocalReducer(ctx);
-        master.connect(vocal.input);
+        const duck = ctx.createGain();
+        master.connect(duck).connect(vocal.input);
+        this.duckGain = duck;
         vocal.output.connect(ctx.destination);
         const tap = ctx.createAnalyser();
         tap.fftSize = 2048;
@@ -211,8 +216,9 @@ export class MusicOutput {
         lim.ratio.value = 20;
         lim.attack.value = 0.002;
         lim.release.value = 0.2;
-        this.master.disconnect(this.vocal.input);
-        this.master.connect(lim).connect(this.vocal.input);
+        const after = this.duckGain ?? this.vocal.input;
+        this.master.disconnect(after);
+        this.master.connect(lim).connect(after);
         this.limiter = lim;
       }
       this.echo ??= buildEcho(ctx, this.master);
@@ -275,6 +281,43 @@ export class MusicOutput {
     restStrip(this.ctx, this.strips[b.to]);
     this.applyDeck(b.from, 0);
     this.applyDeck(b.to, 0.03);
+  }
+
+  /* ------------------------------ Radio Host duck ------------------------------ */
+
+  /** Web Audio is running, so the music can be ducked (iOS without the graph, or a suspended context: no). */
+  get canDuck(): boolean {
+    return !!this.ctx && !!this.duckGain && this.ctx.state === 'running';
+  }
+
+  /**
+   * Duck the music to `gain` with `rampMs` ramps on the audio clock: attack `duckInMs` from now, release at
+   * `releaseInMs`. Returns false (nothing changed) when it can't; the host then talks without ducking.
+   */
+  duck(duckInMs: number, releaseInMs: number, gain: number, rampMs: number): boolean {
+    const ctx = this.ctx;
+    const g = this.duckGain?.gain;
+    if (!ctx || !g || !this.canDuck) return false;
+    const now = ctx.currentTime;
+    const pts = duckPoints({ duckAtMs: duckInMs, releaseAtMs: releaseInMs, gain }, now, rampMs);
+    if (!pts.length) return false;
+    g.cancelScheduledValues(now);
+    // Start from wherever the gain is now (a previous duck may still be releasing).
+    g.setValueAtTime(g.value, now);
+    g.setValueAtTime(g.value, Math.max(now, pts[0]!.t));
+    for (const p of pts.slice(1)) g.linearRampToValueAtTime(p.v, p.t);
+    return true;
+  }
+
+  /** Ramp the music back to full now (talk ended early or was skipped). */
+  unduck(rampMs: number) {
+    const ctx = this.ctx;
+    const g = this.duckGain?.gain;
+    if (!ctx || !g) return;
+    const now = ctx.currentTime;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now);
+    g.linearRampToValueAtTime(1, now + Math.max(0.01, rampMs / 1000));
   }
 
   /** Set the fade level at once (cancels a running fade). */

@@ -1,9 +1,11 @@
 /**
- * The shared language-model client (Admin → AI): Ollama or any OpenAI-compatible chat API, one daily call budget for
- * every feature, and per-feature switches. With provider 'none', a feature switched off or the budget used up, every
- * call returns null and the feature uses its built-in fallback.
+ * The shared language-model client (Admin → AI): an ordered chain of providers (Ollama, any OpenAI-compatible API,
+ * Anthropic, Gemini) with silent fallback (chain.ts), one daily call budget for every feature, and per-feature
+ * switches. With no provider, a feature switched off, the budget used up or every provider failing, every call
+ * returns null and the feature uses its built-in fallback.
  */
-import type { AiFeature, AiSettings } from '@mediamax/shared';
+import type { AiFeature, AiLlmProvider, AiSettings } from '@mediamax/shared';
+import { checkResponse, runChain } from './chain.js';
 import { getSettings } from '../settings.js';
 import { DEFAULT_AI } from './settings.js';
 import { logger } from '../../util/log.js';
@@ -19,10 +21,14 @@ export function openaiUrl(base: string, pathPart: string): string {
   return /\/(v\d+[a-z0-9]*|openai)$/i.test(b) ? `${b}/${pathPart}` : `${b}/v1/${pathPart}`;
 }
 
-/** A model is set up (provider, URL and model name). */
+/** Chain providers that can be called (enabled, with a URL where the kind needs one, and a model). */
+export function llmProviders(): AiLlmProvider[] {
+  return (aiSettings().llmProviders ?? []).filter((p) => p.enabled && p.model && (p.url || p.kind === 'anthropic' || p.kind === 'gemini'));
+}
+
+/** A model is set up (at least one enabled provider in the chain). */
 export function llmConfigured(): boolean {
-  const c = aiSettings().llm;
-  return c.provider !== 'none' && !!c.url && !!c.model;
+  return llmProviders().length > 0;
 }
 
 /** The feature is switched on in Admin → AI. */
@@ -57,43 +63,77 @@ export interface ChatOptions {
   /** Feature making the call; switched-off features get null. Omit for admin tests. */
   feature?: AiFeature;
   timeoutMs?: number;
+  /** Reject a reply (treated like a failed provider: the next one is tried). */
+  validate?: (text: string) => boolean;
 }
 
-/** Send a chat to the configured model. Returns the reply text, or null when no model is set up / it fails. */
+const base = (u: string) => u.replace(/\/+$/, '');
+
+/** Anthropic Messages endpoint from a pasted base (https://api.anthropic.com, …/v1 or …/v1/messages). */
+export function anthropicUrl(u: string): string {
+  const b = base(u || 'https://api.anthropic.com').replace(/\/messages$/, '');
+  return /\/v1$/.test(b) ? `${b}/messages` : `${b}/v1/messages`;
+}
+
+/** Gemini generateContent endpoint from a pasted base (https://generativelanguage.googleapis.com, …/v1beta). */
+export function geminiUrl(u: string, model: string): string {
+  let b = base(u || 'https://generativelanguage.googleapis.com').replace(/\/models\/.*$/, '').replace(/\/openai$/, '');
+  if (!/\/v1(beta|alpha)?\d*$/.test(b)) b += '/v1beta';
+  return `${b}/models/${encodeURIComponent(model.replace(/^models\//, ''))}:generateContent`;
+}
+
+/** One chat call to one provider. Throws ProviderError (or a network error) on failure; null for an empty reply. */
+export async function chatOnce(p: AiLlmProvider, system: string, user: string, opts: ChatOptions = {}): Promise<string | null> {
+  const signal = AbortSignal.timeout(opts.timeoutMs ?? 45000);
+  const temperature = opts.temperature ?? 0.7;
+  const maxTokens = opts.maxTokens ?? 300;
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  const post = async (url: string, body: unknown) => checkResponse(await fetch(url, { method: 'POST', headers, signal, body: JSON.stringify(body) }));
+  let text: string | undefined;
+  if (p.kind === 'anthropic') {
+    if (p.apiKey) headers['x-api-key'] = p.apiKey;
+    headers['anthropic-version'] = '2023-06-01';
+    const sys = opts.json ? `${system}\nReply with one JSON object only.` : system;
+    const j = (await (await post(anthropicUrl(p.url), { model: p.model, max_tokens: maxTokens, temperature, system: sys, messages: [{ role: 'user', content: user }] })).json()) as { content?: { type?: string; text?: string }[] };
+    text = j.content?.filter((c) => c.type === 'text' || c.text).map((c) => c.text ?? '').join('');
+  } else if (p.kind === 'gemini') {
+    if (p.apiKey) headers['x-goog-api-key'] = p.apiKey;
+    const j = (await (await post(geminiUrl(p.url, p.model), {
+      systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [{ text: user }] }],
+      generationConfig: { temperature, maxOutputTokens: maxTokens, ...(opts.json ? { responseMimeType: 'application/json' } : {}) },
+    })).json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+    text = j.candidates?.[0]?.content?.parts?.map((x) => x.text ?? '').join('');
+  } else {
+    if (p.apiKey) headers.authorization = `Bearer ${p.apiKey}`;
+    const messages = [{ role: 'system', content: system }, { role: 'user', content: user }];
+    if (p.kind === 'ollama' && !/\/v1$/.test(base(p.url))) {
+      const j = (await (await post(`${base(p.url)}/api/chat`, { model: p.model, messages, stream: false, ...(opts.json ? { format: 'json' } : {}), options: { temperature, num_predict: maxTokens } })).json()) as { message?: { content?: string } };
+      text = j.message?.content;
+    } else {
+      const j = (await (await post(openaiUrl(p.url, 'chat/completions'), { model: p.model, messages, temperature, max_tokens: maxTokens, ...(opts.json ? { response_format: { type: 'json_object' } } : {}) })).json()) as { choices?: { message?: { content?: string } }[] };
+      text = j.choices?.[0]?.message?.content;
+    }
+  }
+  const t = text?.trim();
+  if (!t) return null;
+  if (opts.validate && !opts.validate(t)) return null;
+  return t;
+}
+
+/**
+ * Send a chat through the provider chain (first healthy provider wins; failures fall through silently). Returns the
+ * reply text, or null when no model is set up, the feature is off, the budget is used up or every provider failed.
+ */
 export async function llmChat(system: string, user: string, opts: ChatOptions = {}): Promise<string | null> {
-  const cfg = aiSettings().llm;
-  if (!llmConfigured()) return null;
+  const chain = llmProviders();
+  if (!chain.length) return null;
   if (opts.feature && !featureEnabled(opts.feature)) return null;
   if (!takeBudget()) {
     log.info('Daily language-model budget used up; AI features use their built-in fallbacks until tomorrow');
     return null;
   }
-  const base = cfg.url!.replace(/\/+$/, '');
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
-  if (cfg.apiKey) headers.authorization = `Bearer ${cfg.apiKey}`;
-  const messages = [{ role: 'system', content: system }, { role: 'user', content: user }];
-  const signal = AbortSignal.timeout(opts.timeoutMs ?? 45000);
-  try {
-    if (cfg.provider === 'ollama') {
-      const res = await fetch(`${base}/api/chat`, {
-        method: 'POST', headers, signal,
-        body: JSON.stringify({ model: cfg.model, messages, stream: false, ...(opts.json ? { format: 'json' } : {}), options: { temperature: opts.temperature ?? 0.7, num_predict: opts.maxTokens ?? 300 } }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const j = (await res.json()) as { message?: { content?: string } };
-      return j.message?.content?.trim() || null;
-    }
-    const res = await fetch(openaiUrl(base, 'chat/completions'), {
-      method: 'POST', headers, signal,
-      body: JSON.stringify({ model: cfg.model, messages, temperature: opts.temperature ?? 0.7, max_tokens: opts.maxTokens ?? 300, ...(opts.json ? { response_format: { type: 'json_object' } } : {}) }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    return j.choices?.[0]?.message?.content?.trim() || null;
-  } catch (e) {
-    log.warn(`Language model request failed: ${(e as Error).message}`);
-    return null;
-  }
+  const r = await runChain('llm', chain, (p) => chatOnce(p, system, user, opts), { feature: opts.feature ?? 'admin' });
+  return r?.value ?? null;
 }
 
 /** Pull the first JSON object out of a model reply (models like to wrap JSON in prose or code fences). */

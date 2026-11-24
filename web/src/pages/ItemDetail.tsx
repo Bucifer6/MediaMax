@@ -8,6 +8,7 @@ import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync, useMediaQuery, useServerEvent } from '../hooks';
 import { usePlayAsMix, usePlayItem, useMusic } from '../player/music';
+import { openPlayRules } from '../components/PlayRules';
 import { advancedDjEnabled } from '../player/djAccess';
 import { usePlayWarmup } from '../player/warmup';
 import { Icon, type IconName } from '../components/Icon';
@@ -733,6 +734,7 @@ export function ItemPage() {
     [
       ...(phone ? [{ label: item.userData.favorite ? 'Remove from favourites' : 'Add to favourites', icon: (item.userData.favorite ? 'heartFill' : 'heart') as IconName, onClick: toggleFav }] : []),
       ...(canPlaylist ? [{ label: 'Add to playlist…', icon: 'playlist' as const, onClick: () => setModal('playlist') }] : []),
+      ...(features.music && ['album', 'artist', 'playlist'].includes(item.type) ? [{ label: 'Play rules for mixes…', icon: 'filter' as const, onClick: () => openPlayRules() }] : []),
       ...(phone ? downloadItems : []),
     ],
     [

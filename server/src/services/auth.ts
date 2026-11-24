@@ -1,4 +1,5 @@
 import { securityEvent } from '../util/securityLog.js';
+import { normaliseHostPrefs } from './dj/rulesNormalise.js';
 import crypto from 'node:crypto';
 import type {
   ApiKey, AuthResponse, CreatedApiKey, CreateUserRequest, TotpEnabled, TotpSetup, Device, DeviceInfo, LinkCodeResponse, LinkPollResponse, Platform,
@@ -105,6 +106,8 @@ function mergePrefs(stored: Partial<UserPreferences>, patch: Partial<UserPrefere
     if (v === undefined) delete prefs[k];
     else prefs[k] = v;
   }
+  // AI DJ: rule presets, Radio Host and Your DJ options.
+  normaliseHostPrefs(prefs);
   // Listening comforts (audio.ts): validated; per-device entries merge field by field, an empty one removes the device.
   if (prefs.audio !== undefined) prefs.audio = normalizeComforts(prefs.audio);
   if (prefs.audioDevices !== undefined) {

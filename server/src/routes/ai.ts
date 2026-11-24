@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { AiStatus, AskRequest, AskResponse, RecapResponse, WhisperModelSize } from '@mediamax/shared';
+import type { AiHealthResponse, AiLlmProvider, AiTtsProvider, AiProviderTestRequest, AiProviderTestResponse, AiStatus, AskRequest, AskResponse, RecapResponse, WhisperModelSize } from '@mediamax/shared';
 import { requireAdmin, requireUser } from '../http.js';
 import { badRequest, forbidden } from '../util/errors.js';
 import { aiSettings, featureEnabled, llmAvailable, llmChat, llmConfigured, llmUsage } from '../services/ai/llm.js';
@@ -10,6 +10,10 @@ import { assertCanSee } from '../services/items.js';
 import { autoSubtitleStatus, cancelJob, clearFinished, enqueue, isRunning, runAutoSubtitles, stopAutoSubtitles } from '../services/autosubs/queue.js';
 import { downloadModel, downloadWhisperBinary, WHISPER_MODELS } from '../services/autosubs/engine.js';
 import { runTask } from '../services/tasks.js';
+import { chatOnce } from '../services/ai/llm.js';
+import { fallbackEvents, providerHealth, runChain } from '../services/ai/chain.js';
+import { speakChain } from '../services/ai/tts.js';
+import { getSettings } from '../services/settings.js';
 import { logger } from '../util/log.js';
 
 const log = logger('ai');
@@ -35,6 +39,33 @@ export default async function aiRoutes(app: FastifyInstance) {
     const r = await llmChat('Reply with exactly: OK', 'Say OK.', { maxTokens: 5, temperature: 0, timeoutMs: 30000 });
     if (!r) throw badRequest('The model did not answer. Check the URL, model name and key (or the daily limit).');
     return { ok: true, reply: r.slice(0, 100), ms: Date.now() - t, usage: llmUsage() };
+  });
+
+  /** Provider chains: health (cooldowns, last errors, calls) and the fallback log, newest first. */
+  app.get('/ai/health', async (req): Promise<AiHealthResponse> => {
+    requireAdmin(req);
+    const s = aiSettings();
+    return { providers: [...providerHealth('llm', s.llmProviders ?? []), ...providerHealth('tts', s.ttsProviders ?? [])], events: fallbackEvents() };
+  });
+
+  /** Explicit test of one provider (ignores its cooldown and daily cap; the result updates its health). Save first. */
+  app.post<{ Body: AiProviderTestRequest }>('/ai/providers/test', async (req): Promise<AiProviderTestResponse> => {
+    requireAdmin(req);
+    const { kind, providerId } = req.body ?? ({} as AiProviderTestRequest);
+    if (kind !== 'llm' && kind !== 'tts') throw badRequest('kind must be llm or tts');
+    const s = aiSettings();
+    const list = kind === 'llm' ? s.llmProviders ?? [] : s.ttsProviders ?? [];
+    const p = list.find((x) => x.id === providerId);
+    if (!p) throw badRequest('Unknown provider (save the settings first)');
+    const t = Date.now();
+    const errorOf = () => providerHealth(kind, [p]).find((h) => h.lastErrorAt && Date.parse(h.lastErrorAt) >= t)?.lastError ?? 'No usable reply';
+    if (kind === 'llm') {
+      const lp = p as AiLlmProvider;
+      const r = await runChain('llm', [{ ...lp, enabled: true }], (x) => chatOnce(x, 'Reply with exactly: OK', 'Say OK.', { maxTokens: 10, temperature: 0, timeoutMs: 30000 }), { feature: 'test', force: true });
+      return r ? { ok: true, ms: Date.now() - t, sample: r.value.slice(0, 100) } : { ok: false, ms: Date.now() - t, error: errorOf() };
+    }
+    const v = await speakChain(`Hi, this is ${getSettings().aiDj.hostName}. Your Vibe DJ is ready.`, { providers: [{ ...(p as AiTtsProvider), enabled: true }], force: true, feature: 'test' });
+    return v ? { ok: true, ms: Date.now() - t, sample: `/api/v1/dj/voice/${v.file}` } : { ok: false, ms: Date.now() - t, error: errorOf() };
   });
 
   app.get('/ai/subtitles', async (req) => {

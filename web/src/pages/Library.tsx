@@ -6,7 +6,9 @@ import { useApp } from '../state/app';
 import { useToast } from '../state/toast';
 import { useAsync, useInfiniteSentinel, useServerEvent } from '../hooks';
 import { CardSkeleton, PosterCard } from '../components/Cards';
-import { EmptyState, ErrorState, Badge, Button, Chip, Img, ProgressBar, Segmented } from '../components/ui';
+import { EmptyState, ErrorState, Badge, Button, Chip, IconButton, Img, ProgressBar, Segmented } from '../components/ui';
+import { openPlayRules } from '../components/PlayRules';
+import { YourDjCard, useYourDjAvailable } from '../components/YourDjCard';
 import { Icon } from '../components/Icon';
 import { isIptvLibrary, isSquare, itemLink, itemSubtitle, libraryIcon, libraryItemTypes, posterFor, progressPct } from '../utils/items';
 import { formatDuration } from '../utils/format';
@@ -135,6 +137,7 @@ export function LibraryPage() {
 
   const isPhotos = library?.type === 'photos';
   const isMusic = library?.type === 'music';
+  const djAvailable = useYourDjAvailable();
   const music = useMusicActions();
   const rawView = params.get('layout') as View | null;
   const view: View = isPhotos ? 'grid' : rawView === 'list' || rawView === 'az' ? rawView : 'grid';
@@ -331,6 +334,9 @@ export function LibraryPage() {
               Mix
             </Button>
           )}
+          {isMusic && library && (
+            <IconButton icon="filter" label="Play rules for mixes and Your DJ" onClick={() => openPlayRules()} />
+          )}
           {user?.isAdmin && (
             <Button variant="ghost" icon="refresh" onClick={scan} disabled={scanProgress != null} title="Scan this library for new files">
               {scanProgress != null ? `Scanning ${Math.round(scanProgress)}%` : 'Scan'}
@@ -338,6 +344,8 @@ export function LibraryPage() {
           )}
         </div>
       </header>
+
+      {isMusic && djAvailable && !genre && !series && <YourDjCard compact />}
 
       <div className="lib-toolbar" role="toolbar" aria-label="View, sort and filter">
         <div className="lib-filters">

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { HomeResponse, HomeRow, ItemSort } from '@mediamax/shared';
 import { api } from '../api/endpoints';
@@ -14,6 +14,8 @@ import { CustomizeHome } from '../components/CustomizeHome';
 import '../styles/screens-browse.css';
 import { prefetchCommonPagesWhenIdle } from '../utils/prefetch';
 import { orderHomeRows } from '../utils/homeRows';
+import { placeYourDj } from '../player/yourDj';
+import { YOUR_DJ_ROW_ID, YourDjCard, useYourDjAvailable } from '../components/YourDjCard';
 
 function rowLink(row: HomeRow): string | undefined {
   const l = row.link;
@@ -113,6 +115,7 @@ export function Home() {
     }
   });
 
+  const djAvailable = useYourDjAvailable();
   const orderedRows = useMemo(() => orderHomeRows((homeData?.rows ?? []).filter((r) => r.type !== 'hero'), customOrder), [homeData, customOrder]);
 
   if (home.loading && !homeData) {
@@ -136,6 +139,9 @@ export function Home() {
   const rows = homeData?.rows ?? [];
   const heroRow = rows.find((r) => r.type === 'hero');
   const rest = orderedRows;
+  const layout = user?.preferences?.homeLayout;
+  // Your DJ is a client row: Customize Home can hide and move it like the server's rows.
+  const djAt = djAvailable ? placeYourDj(rest, layout?.order ?? [], layout?.hidden ?? []) : -1;
   const hasContent = rows.some((r) => r.items.length || r.channels?.length);
 
   if (!hasContent) {
@@ -165,6 +171,7 @@ export function Home() {
   const showHero = !!heroRow && theme.heroStyle !== 'none' && heroRow.items.length > 0;
   // Customize Home lists every row the server sent (empty ones too: they fill up later), hero first.
   const arrangeable = [...(heroRow ? [heroRow] : []), ...rest].map((r) => ({ id: r.id, title: r.title }));
+  if (djAt >= 0) arrangeable.splice(djAt + (heroRow ? 1 : 0), 0, { id: YOUR_DJ_ROW_ID, title: 'Your DJ' });
 
   return (
     <div className={`home ${showHero ? 'has-hero' : 'no-hero'}`}>
@@ -180,9 +187,13 @@ export function Home() {
             </Button>
           </div>
         </header>
-        {rest.map((r) => (
-          <HomeRowView key={r.id} row={r} />
+        {rest.map((r, i) => (
+          <Fragment key={r.id}>
+            {i === djAt && <YourDjCard />}
+            <HomeRowView row={r} />
+          </Fragment>
         ))}
+        {djAt >= rest.length && <YourDjCard />}
       </div>
       <CustomizeHome open={customizing} onClose={() => setCustomizing(false)} rows={arrangeable} onSaved={home.reload} />
     </div>

@@ -18,6 +18,7 @@ interface Entry { id: string; title: string; hidden: boolean }
 
 /** A human title for a row id that isn't on screen (hidden rows): from the server's row config and the libraries. */
 function titleFor(id: string, configs: HomeRowConfig[], libName: (id: string) => string | undefined): string {
+  if (id === 'your-dj') return 'Your DJ';
   const [base, lib] = id.split(':');
   const cfg = configs.find((c) => c.id === base);
   if (lib) return `Recently Added in ${libName(lib) ?? 'a library'}`;

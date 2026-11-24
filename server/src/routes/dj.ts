@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import type { DjFeedback, DjHostRequest, DjMixRequest, DjOrderRequest, DjOrderResponse, DjStatus, DjTransition, DjTransitionsRequest, DjTransitionsResponse, TrackAnalysis } from '@mediamax/shared';
+import type { DjBreakRequest, DjBreakResponse, DjFeedback, DjHostRequest, DjRules, DjRulesResponse, DjSessionNextRequest, DjSessionRequestBody, DjSessionStartRequest, DjSuggestions, DjMixRequest, DjOrderRequest, DjOrderResponse, DjStatus, DjTransition, DjTransitionsRequest, DjTransitionsResponse, TrackAnalysis } from '@mediamax/shared';
 import { db } from '../db.js';
 import { remoteAddr, requireAdmin, requireUser } from '../http.js';
 import { assertRemoteAllowed } from '../services/playback.js';
@@ -16,6 +16,10 @@ import { getSettings } from '../services/settings.js';
 import { llmAvailable } from '../services/ai/llm.js';
 import { runTask } from '../services/tasks.js';
 import { badRequest, forbidden, notFound } from '../util/errors.js';
+import { getEnforced, rulesResponse, setEnforced } from '../services/dj/rules.js';
+import { getSession, moreSession, requestSession, segmentStartingAt, startSession, suggestions, switchSession } from '../services/dj/session.js';
+import { makeBreak } from '../services/dj/host/breaks.js';
+import { getUser } from '../services/auth.js';
 
 /** DJ mode and the AI DJ: analysis, automatic beat/key-aware mixes, natural-language requests and a spoken host. */
 export default async function djRoutes(app: FastifyInstance) {
@@ -33,6 +37,7 @@ export default async function djRoutes(app: FastifyInstance) {
       ai: {
         enabled: ai.enabled, llm: llmAvailable('dj'),
         serverVoice: serverVoiceConfigured(), hostName: ai.hostName, chattiness: ai.chattiness,
+        yourDj: ai.enabled, radioHost: ai.enabled, weather: !!getSettings().ai?.weatherLocation, onlineFacts: getSettings().ai?.onlineFacts === true,
       },
     };
   });
@@ -151,6 +156,89 @@ export default async function djRoutes(app: FastifyInstance) {
     return { items, analyses, total, remaining };
   });
 
+  /* ----------------------------- DJ rules ----------------------------- */
+
+  app.get('/dj/rules', async (req): Promise<DjRulesResponse> => rulesResponse(requireUser(req).user));
+
+  /** Admin: restrictions enforced for one user (e.g. a kids' profile); the user can't loosen them. {} = none. */
+  app.get<{ Params: { id: string } }>('/users/:id/dj-restrictions', async (req): Promise<DjRules> => {
+    requireAdmin(req);
+    getUser(req.params.id); // 404 for an unknown user
+    return getEnforced(req.params.id);
+  });
+  app.put<{ Params: { id: string }; Body: DjRules }>('/users/:id/dj-restrictions', async (req): Promise<DjRules> => {
+    requireAdmin(req);
+    getUser(req.params.id);
+    if (req.body != null && (typeof req.body !== 'object' || Array.isArray(req.body))) throw badRequest('Send the rules as an object');
+    return setEnforced(req.params.id, req.body ?? {});
+  });
+
+  /* ----------------------------- Your DJ ----------------------------- */
+
+  const sessionOf = (user: Parameters<typeof getSession>[0], id: string) => {
+    const s = getSession(user, id);
+    if (!s) throw notFound('This DJ session has ended; start a new one');
+    return s;
+  };
+  const checkHistory = (h: unknown) => {
+    if (h != null && (!Array.isArray(h) || h.length > 2000)) throw badRequest('history must be a list of up to 2000 item ids');
+  };
+
+  app.post<{ Body: DjSessionStartRequest }>('/dj/session', async (req) => {
+    const { user } = requireUser(req);
+    aiOn();
+    return startSession(user, req.body ?? {});
+  });
+
+  app.get<{ Querystring: { hour?: string } }>('/dj/session/suggestions', async (req): Promise<DjSuggestions> => {
+    const { user } = requireUser(req);
+    aiOn();
+    return { chips: suggestions(user, req.query.hour) };
+  });
+
+  app.post<{ Params: { id: string }; Body: DjSessionNextRequest }>('/dj/session/:id/more', async (req) => {
+    const { user } = requireUser(req);
+    aiOn();
+    checkHistory(req.body?.history);
+    return moreSession(user, sessionOf(user, req.params.id), req.body ?? {});
+  });
+
+  app.post<{ Params: { id: string }; Body: DjSessionNextRequest }>('/dj/session/:id/switch', async (req) => {
+    const { user } = requireUser(req);
+    aiOn();
+    checkHistory(req.body?.history);
+    return switchSession(user, sessionOf(user, req.params.id), req.body ?? {});
+  });
+
+  app.post<{ Params: { id: string }; Body: DjSessionRequestBody }>('/dj/session/:id/request', async (req) => {
+    const { user } = requireUser(req);
+    aiOn();
+    const b = req.body;
+    if (!b || typeof b.text !== 'string' || !b.text.trim()) throw badRequest('text is required');
+    if (b.text.length > 300) throw badRequest('Keep the request under 300 characters');
+    checkHistory(b.history);
+    return requestSession(user, sessionOf(user, req.params.id), b);
+  });
+
+  /* ----------------------------- radio host ----------------------------- */
+
+  /**
+   * A host break for the coming transition (Radio Host add-on or Your DJ commentary). Most calls return null.
+   * Silent by design: any AI / voice failure degrades to templates, device speech or no talk — never an error.
+   */
+  app.post<{ Body: DjBreakRequest }>('/dj/break', async (req): Promise<DjBreakResponse> => {
+    const { user } = requireUser(req);
+    aiOn();
+    const b = req.body;
+    if (!b || typeof b.nextItemId !== 'string' || !b.nextItemId) throw badRequest('nextItemId is required');
+    if (b.mode !== 'radio' && b.mode !== 'yourdj') throw badRequest('mode must be radio or yourdj');
+    assertCanSee(user, b.nextItemId);
+    if (b.previousItemId) assertCanSee(user, b.previousItemId);
+    const segmentStart = b.mode === 'yourdj' ? segmentStartingAt(user, b.sessionId, b.nextItemId) : null;
+    const brk = await makeBreak({ user, req: b, segmentStart });
+    return { break: brk };
+  });
+
   /** AI DJ host: a short spoken link between two tracks. */
   app.post<{ Body: DjHostRequest }>('/dj/host', async (req) => {
     const { user } = requireUser(req);
@@ -221,10 +309,9 @@ export default async function djRoutes(app: FastifyInstance) {
   app.post<{ Body: { kind: 'llm' | 'tts' } }>('/dj/ai/test', async (req) => {
     requireAdmin(req);
     if (req.body?.kind === 'tts') {
-      const v = await speak(`Hi, this is ${getSettings().aiDj.hostName}. Your Vibe DJ is ready.`).catch((e) => {
-        throw badRequest(`Piper failed: ${(e as Error).message}`);
-      });
-      if (!v) throw badRequest('Choose a server voice (Piper or a speech API) first');
+      if (!serverVoiceConfigured()) throw badRequest('Choose a server voice (Piper or a speech API) first');
+      const v = await speak(`Hi, this is ${getSettings().aiDj.hostName}. Your Vibe DJ is ready.`);
+      if (!v) throw badRequest('No server voice answered — see Admin → AI → provider health for the error');
       return { ok: true, audioUrl: `/api/v1/dj/voice/${v.file}` };
     }
     const t = Date.now();

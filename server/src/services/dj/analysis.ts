@@ -13,8 +13,9 @@ const log = logger('dj');
  * Bump when the algorithm changes so tracks are re-analysed. Older analyses stay usable until then: they are
  * upgraded lazily (on demand when a mix uses them, plus a throttled batch per background run), never all at once.
  * v3: phrase structure + downbeat.
+ * v4: beat-grid and key-detection fixes (DJ lite), cue points for automix and the radio host's talk-over window.
  */
-export const ANALYSIS_VERSION = 3;
+export const ANALYSIS_VERSION = 4;
 /** Background runs re-analyse at most this many outdated (but still usable) tracks; new/changed files are not capped. */
 export const UPGRADE_PER_RUN = 150;
 

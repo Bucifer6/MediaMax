@@ -2862,7 +2862,15 @@ export interface DjStatus {
   total: number;
   running: boolean;
   /** AI DJ availability for clients. */
-  ai: { enabled: boolean; llm: boolean; serverVoice: boolean; hostName: string; chattiness: AiDjSettings['chattiness'] };
+  ai: {
+    enabled: boolean; llm: boolean; serverVoice: boolean; hostName: string; chattiness: AiDjSettings['chattiness'];
+    /** Your DJ sessions and the Radio Host (POST /dj/session, /dj/break) are available (they work with nothing configured). */
+    yourDj?: boolean;
+    radioHost?: boolean;
+    /** The admin set a weather location / enabled online facts (the host's weather and online-fact slots can be used). */
+    weather?: boolean;
+    onlineFacts?: boolean;
+  };
 }
 
 /** A one-click starting point for the whole server's look: theme + home screen rows + feature toggles. */
@@ -5486,4 +5494,308 @@ export interface OfflineSyncResult {
   /** Changed on the server after the offline change: the server state wins and is returned in `state`. */
   skipped: string[];
   state: DownloadedItemState[];
+}
+
+/* ------------------------------------------------------------------ */
+/* AI DJ phase: provider chains, DJ rules, Your DJ sessions, breaks    */
+/* ------------------------------------------------------------------ */
+
+/** Language-model API shape. 'openai' = any OpenAI-compatible chat API (Ollama /v1, LM Studio, llama.cpp, LocalAI,
+ *  Groq, OpenRouter, Mistral, Cerebras, DeepSeek, OpenAI); 'ollama' = Ollama's native /api/chat; 'anthropic' = the
+ *  Messages API; 'gemini' = generativelanguage generateContent. */
+export type AiLlmKind = 'ollama' | 'openai' | 'anthropic' | 'gemini';
+
+/** One language model in the ordered fallback chain (Admin → AI). */
+export interface AiLlmProvider {
+  /** Stable id (letters, digits, - and _). */
+  id: string;
+  name: string;
+  kind: AiLlmKind;
+  url: string;
+  model: string;
+  enabled: boolean;
+  /** Costs money: the daily cap applies and the admin UI labels it. */
+  paid?: boolean;
+  /** Most calls per day (UTC) for this provider; null/0 = no cap of its own. */
+  dailyCap?: number | null;
+  /** Read only: a key is stored. Keys are never returned. */
+  hasKey?: boolean;
+  /**
+   * Write only. On save: omitted / undefined / "••••" = keep the stored key; "" or null = remove it; any other string = set it.
+   * Never present in GET responses.
+   */
+  apiKey?: string | null;
+}
+
+/** Speech API shape. 'piper' = Piper on this server (local program, or a Piper HTTP server when `url` is set);
+ *  'kokoro' = Kokoro-FastAPI (OpenAI-compatible /audio/speech, no key); 'openai' = any OpenAI-compatible /audio/speech;
+ *  'elevenlabs' = ElevenLabs text-to-speech. */
+export type AiTtsKind = 'piper' | 'kokoro' | 'openai' | 'elevenlabs';
+
+/** One voice in the ordered TTS fallback chain. Final fallback is each device's own voice (audioUrl null). */
+export interface AiTtsProvider {
+  id: string;
+  name: string;
+  kind: AiTtsKind;
+  /** API base URL (Piper: optional HTTP server; empty = run the local piper program). */
+  url: string;
+  /** Model (OpenAI-compatible: e.g. "tts-1", "kokoro"; ElevenLabs: e.g. "eleven_flash_v2_5"). */
+  model?: string | null;
+  /** Voice name / id (ElevenLabs: the voice id). */
+  voice?: string | null;
+  /** Piper program (default "piper" on the PATH). */
+  piperPath?: string | null;
+  /** Piper voice model (.onnx). */
+  voiceModel?: string | null;
+  /** Piper speaker number for multi-speaker voices. */
+  speaker?: number | null;
+  enabled: boolean;
+  paid?: boolean;
+  dailyCap?: number | null;
+  /** Read only. */
+  hasKey?: boolean;
+  /** Write only (same rules as AiLlmProvider.apiKey). */
+  apiKey?: string | null;
+}
+
+/** Health of one provider (in memory; resets on restart). */
+export interface AiProviderHealth {
+  id: string;
+  kind: 'llm' | 'tts';
+  name: string;
+  ok: boolean;
+  lastError?: string;
+  lastErrorAt?: string;
+  /** Skipped until then (exponential back-off 1 → 5 → 15 → 60 min, or the server's Retry-After). */
+  cooldownUntil?: string;
+  lastUsedAt?: string;
+  /** Successful calls in the last 24 h. */
+  calls24h: number;
+  /** Calls today (UTC) counted against `dailyCap`. */
+  callsToday: number;
+}
+
+/** A provider was skipped or failed and the next one (or the built-in fallback) answered instead. */
+export interface AiFallbackEvent {
+  at: string;
+  /** 'dj', 'ask', 'recaps', 'autoSubtitles', 'tts', 'test'… */
+  feature: string;
+  /** Provider id that failed or was skipped. */
+  from: string;
+  /** Provider id used next, or 'builtin' (templates / device voice / no talk). */
+  to: string | 'builtin';
+  /** e.g. "HTTP 429", "timeout", "cooldown", "daily cap", "invalid output". */
+  reason: string;
+}
+
+/** GET /ai/health (admin). */
+export interface AiHealthResponse {
+  providers: AiProviderHealth[];
+  /** Newest first, at most 200. */
+  events: AiFallbackEvent[];
+}
+
+/** POST /ai/providers/test (admin): one explicit call to one provider (ignores cooldown and caps). */
+export interface AiProviderTestRequest {
+  kind: 'llm' | 'tts';
+  providerId: string;
+}
+export interface AiProviderTestResponse {
+  ok: boolean;
+  ms: number;
+  /** LLM: the reply; TTS: a playable /api/v1/dj/voice/… URL. */
+  sample?: string;
+  error?: string;
+}
+
+/** Weather for the radio host's weather slot (Open-Meteo, no key; CC BY 4.0, non-commercial use). */
+export interface AiWeatherLocation {
+  name: string;
+  lat: number;
+  lon: number;
+}
+
+/**
+ * What Your DJ, Mix / endless continuation and /dj/order|/dj/mix may play. Every field is optional; an empty object =
+ * no limits. Genres and artists compare case-insensitively (artists by name or id).
+ */
+export interface DjRules {
+  includeGenres?: string[];
+  excludeGenres?: string[];
+  includeArtists?: string[];
+  excludeArtists?: string[];
+  /** Only tracks from these sources (library, folder, playlist, genre, artist, album). */
+  sources?: DjOrderSource[];
+  yearMin?: number;
+  yearMax?: number;
+  /** From the track analysis (half/double time counts); unanalysed tracks are left out while a BPM range is set. */
+  bpmMin?: number;
+  bpmMax?: number;
+  /** 0–1, from the track analysis; unanalysed tracks are left out while an energy range is set. */
+  energyMin?: number;
+  energyMax?: number;
+  /** Leave out tracks tagged explicit (an "explicit" genre/tag or a rating like "Explicit"). */
+  cleanOnly?: boolean;
+  /** Only tracks the listener rated at least this (0–10, user rating; unrated tracks are left out). */
+  minRating?: number;
+  maxDurationSec?: number;
+}
+
+export interface DjRulePreset {
+  id: string;
+  name: string;
+  rules: DjRules;
+}
+
+/** GET /dj/rules */
+export interface DjRulesResponse {
+  /** What actually applies now: the active preset ∩ the admin's enforced restrictions. */
+  effective: DjRules;
+  /** Set by an admin for this user (read only for the user; cannot be loosened). */
+  enforced: DjRules;
+  presets: DjRulePreset[];
+  activePresetId: string | null;
+}
+
+/** Your DJ segment themes. */
+export type DjSegmentKind = 'on-repeat' | 'throwbacks' | 'forgotten' | 'rare' | 'recent' | 'genre' | 'decade' | 'mood' | 'request';
+
+export interface DjSegment {
+  id: string;
+  kind: DjSegmentKind;
+  /** Short heading, e.g. "On repeat", "Back to 2019", "Deep cuts". */
+  title: string;
+  /** Why this segment, e.g. "Songs you've had on lately". */
+  reason: string;
+}
+
+/** A Your DJ session's current batch (4–6 tracks of one segment, ordered for smooth transitions). */
+export interface DjSession {
+  id: string;
+  segment: DjSegment;
+  items: Item[];
+  /** Stored analyses (timbre omitted), null when not analysed yet. */
+  analyses: Record<string, TrackAnalysis | null>;
+  /** Per item id: the reason label shown with the track ("You played this 12 times this month"). */
+  reasons: Record<string, string>;
+  /** Spoken segment intro (null when commentary is off or nothing to say). */
+  intro?: DjBreak | null;
+  /** Set when the rules left little or nothing to choose from (gentle, for display; the set stays within bounds). */
+  note?: string | null;
+}
+
+/** POST /dj/session */
+export interface DjSessionStartRequest {
+  rules?: DjRules;
+  presetId?: string;
+  /** Listener's local hour (0–23), for greetings and chips. */
+  hour?: number;
+}
+/** POST /dj/session/:id/more and /switch */
+export interface DjSessionNextRequest {
+  /** Tracks played or queued so far in this session (never repeated; the last one is mixed out of). */
+  history?: string[];
+  hour?: number;
+}
+/** POST /dj/session/:id/request */
+export interface DjSessionRequestBody extends DjSessionNextRequest {
+  text: string;
+}
+/** A request that nothing within the rules matches (HTTP 200; the session keeps playing what it had). */
+export interface DjSessionRequestMiss {
+  ok: false;
+  message: string;
+}
+/** GET /dj/session/suggestions */
+export interface DjSuggestions {
+  /** Three short request chips from the listener's history and the time of day. */
+  chips: string[];
+}
+
+export type DjBreakKind = 'frontsell' | 'backsell' | 'link' | 'full' | 'segment-intro';
+
+/** One spoken host break. Clients duck the music (≈ −12 dB) and show `text` as captions. */
+export interface DjBreak {
+  id: string;
+  kind: DjBreakKind;
+  text: string;
+  /** over-intro = over the next track's intro (stop before its vocals); gap = between tracks; over-outro = over the end of the previous one. */
+  placement: 'over-intro' | 'gap' | 'over-outro';
+  /** Longest the talk may run (the planner kept the text within it at ~3 words/s). */
+  maxMs: number;
+  /** Server-rendered speech; null => speak `text` with the device's voice. */
+  audioUrl: string | null;
+  durationMs: number | null;
+  /** Content slots used, e.g. ["backsell","fact","time"] (informational). */
+  slots?: string[];
+  by?: 'llm' | 'template';
+}
+
+export type HostChattiness = 'off' | 'intros' | 'light' | 'chatty';
+
+/** Radio Host add-on for any listening (per user; off by default). */
+export interface RadioHostPrefs {
+  enabled: boolean;
+  chattiness: HostChattiness;
+  categories: { announce: boolean; facts: boolean; jokes: boolean; weather: boolean; time: boolean; stats: boolean };
+  /** Device voice name preference (clients), or a server voice provider id. */
+  voice?: string | null;
+}
+
+export type YourDjCommentary = 'off' | 'intros' | 'full';
+
+/** POST /dj/break */
+export interface DjBreakRequest {
+  mode: 'radio' | 'yourdj';
+  previousItemId?: string;
+  nextItemId: string;
+  /** Your DJ session (segment intros, session-scoped anti-repeat). */
+  sessionId?: string;
+  tracksSinceBreak: number;
+  msSinceBreak: number;
+  /** Next track's talk-over window (its intro / vocal start, from cues.introEndMs); absent = unknown (talk in the gap). */
+  introMs?: number;
+  /** Listener's local time, for time checks (defaults to the server's). */
+  hour?: number;
+  minute?: number;
+  /** Override the stored chattiness for this call. */
+  chattiness?: HostChattiness;
+}
+export interface DjBreakResponse {
+  /** null = stay quiet (most transitions). */
+  break: DjBreak | null;
+}
+
+export interface UserPreferences {
+  /** DJ rules: saved presets and the one in use (admin-enforced restrictions are separate and always apply). */
+  djRules?: { activePresetId?: string | null; presets: DjRulePreset[] };
+  /** Radio Host add-on (off by default). */
+  radioHost?: RadioHostPrefs;
+  /** Your DJ options. */
+  yourDj?: { commentary: YourDjCommentary };
+}
+
+export interface AiSettings {
+  /** Ordered language-model chain (first enabled, healthy provider wins). Migrated from `llm` on first read. */
+  llmProviders?: AiLlmProvider[];
+  /** Ordered speech chain; after it each device's own voice. Migrated from `aiDj.tts` on first read. */
+  ttsProviders?: AiTtsProvider[];
+  /** Radio host weather slot: null = off (no outbound requests). */
+  weatherLocation?: AiWeatherLocation | null;
+  /** Online music facts from MusicBrainz / Wikidata (cached, 1 request/s). Default false. */
+  onlineFacts?: boolean;
+  /** Your DJ: days before a track the DJ played comes back (default 7). */
+  djTrackCooldownDays?: number;
+}
+
+export interface DjMixRequest {
+  /** DJ rules for this request (intersected with the admin's enforced ones); default the active preset. */
+  rules?: DjRules;
+  /** Use this saved preset instead of the active one. */
+  presetId?: string;
+}
+
+export interface DjOrderRequest {
+  rules?: DjRules;
+  presetId?: string;
 }
