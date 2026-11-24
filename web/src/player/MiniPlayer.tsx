@@ -15,6 +15,8 @@ import { KaraokeLyrics } from '../lyrics/KaraokeLyrics';
 import { totalOffset, useLyrics, usePrefs } from '../lyrics/useLyrics';
 import { useKaraoke } from './karaoke';
 import { KaraokeControls, useNowPlaying } from './NowPlaying';
+import { HostCaption } from './HostCaptions';
+import { reasonLabel } from './yourDj';
 
 /** Index of the chapter containing `ms`. */
 export function chapterAt(chapters: Chapter[], ms: number): number {
@@ -165,6 +167,7 @@ export function MiniPlayer() {
   const artist = t.grandparentTitle ?? t.parentTitle ?? m.info?.subtitle ?? '';
   return (
     <>
+      <HostCaption variant="mini" />
       <div className="miniplayer" role="region" aria-label="Music player">
         <SeekBar className="mini-seek" positionMs={m.positionMs} durationMs={m.durationMs} onSeek={m.seek} />
         <div className="mini-left">
@@ -177,6 +180,7 @@ export function MiniPlayer() {
             <div className="mini-sub">
               {m.casting ? <span className="mini-casting"><Icon name="cast" size={13} /> Casting to {m.cast.deviceName ?? 'device'}</span> : artist}
               {m.radio && !m.casting && <span className="mini-radio" title={m.radio.label}><Icon name="antenna" size={12} /> {m.radio.label}</span>}
+              {m.yourDj && !m.blend && !m.casting && reasonLabel(m.yourDj, t.id) && <span className="mini-radio mini-reason" title={reasonLabel(m.yourDj, t.id)!}><Icon name="sparkles" size={12} /> {reasonLabel(m.yourDj, t.id)}</span>}
               {m.blend && !m.casting && <span className="mini-radio" role="status" title={`${m.blend.label} · ${Math.round(m.blend.progress * 100)} %`}><Icon name="layers" size={12} /> Mixing into {m.blend.into.title}</span>}
             </div>
           </div>

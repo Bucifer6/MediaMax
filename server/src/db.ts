@@ -622,6 +622,25 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS programs_staging_channel ON programs_staging(source_id, epg_channel_id);
   DELETE FROM programs WHERE id >= 'tmp:' AND id < 'tmp;';
   `,
+  /* AI DJ: plays chosen by Your DJ are flagged (they don't count as "you play this a lot"), tracks a Your DJ session
+     handed out (anti-repeat cooldown, play attribution), admin-enforced DJ restrictions per user, the radio host's
+     anti-repeat log (jokes, facts, phrases) and cached online music facts / weather. */ `
+  ALTER TABLE play_history ADD COLUMN source TEXT;
+  CREATE TABLE IF NOT EXISTS dj_restrictions (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, rules TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS dj_served (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    artist_id TEXT, session_id TEXT, at TEXT NOT NULL, played_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS dj_served_user ON dj_served(user_id, at);
+  CREATE INDEX IF NOT EXISTS dj_served_item ON dj_served(user_id, item_id);
+  CREATE TABLE IF NOT EXISTS dj_host_log (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, key TEXT NOT NULL, at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS dj_host_log_user ON dj_host_log(user_id, kind, at);
+  CREATE TABLE IF NOT EXISTS dj_cache (key TEXT PRIMARY KEY, data TEXT NOT NULL, fetched_at TEXT NOT NULL);
+  `,
 ];
 
 function migrate(db: Database) {

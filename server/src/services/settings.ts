@@ -4,7 +4,7 @@ import { config } from '../config.js';
 import { newId } from '../util/ids.js';
 import { productName } from '../util/product.js';
 import { maskAgents, mergeAgents } from './notify/kinds.js';
-import { aiFromStored, mergeAi, DEFAULT_AI } from './ai/settings.js';
+import { aiFromStored, mergeAi, publicProviders, resolveProviderKeys, DEFAULT_AI } from './ai/settings.js';
 
 export function getKv<T>(key: string, fallback: T): T {
   const row = db.get<{ value: string }>('SELECT value FROM settings WHERE key = ?', key);
@@ -204,7 +204,13 @@ export function publicSettings(s: ServerSettings = getSettings()): ServerSetting
     notificationAgents: maskAgents(s.notificationAgents),
     aiDj: { ...s.aiDj, llm: { ...s.aiDj.llm, apiKey: s.aiDj.llm.apiKey ? SECRET_MASK : null }, tts: { ...s.aiDj.tts, apiKey: s.aiDj.tts.apiKey ? SECRET_MASK : null } },
     ...(s.subtitles ? { subtitles: { ...s.subtitles, subsRo: { ...s.subtitles.subsRo, apiKey: s.subtitles.subsRo.apiKey ? SECRET_MASK : null } } } : {}),
-    ...(s.ai ? { ai: { ...s.ai, llm: { ...s.ai.llm, apiKey: s.ai.llm.apiKey ? SECRET_MASK : null }, autoSubtitles: { ...s.ai.autoSubtitles, apiKey: s.ai.autoSubtitles.apiKey ? SECRET_MASK : null } } } : {}),
+    ...(s.ai ? {
+      ai: {
+        ...s.ai, llm: { ...s.ai.llm, apiKey: s.ai.llm.apiKey ? SECRET_MASK : null }, autoSubtitles: { ...s.ai.autoSubtitles, apiKey: s.ai.autoSubtitles.apiKey ? SECRET_MASK : null },
+        // Provider chains: keys are never sent, only whether one is stored.
+        llmProviders: publicProviders(s.ai.llmProviders), ttsProviders: publicProviders(s.ai.ttsProviders),
+      },
+    } : {}),
   };
 }
 
@@ -215,6 +221,8 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
   if (patch.aiDj?.tts?.apiKey === SECRET_MASK) patch = { ...patch, aiDj: { ...patch.aiDj!, tts: { ...patch.aiDj!.tts!, apiKey: cur.aiDj.tts.apiKey } } };
   if (patch.ai?.llm?.apiKey === SECRET_MASK) patch = { ...patch, ai: { ...patch.ai, llm: { ...patch.ai.llm, apiKey: cur.ai!.llm.apiKey } } };
   if (patch.ai?.autoSubtitles?.apiKey === SECRET_MASK) patch = { ...patch, ai: { ...patch.ai!, autoSubtitles: { ...patch.ai!.autoSubtitles, apiKey: cur.ai!.autoSubtitles.apiKey } } };
+  if (Array.isArray(patch.ai?.llmProviders)) patch = { ...patch, ai: { ...patch.ai!, llmProviders: resolveProviderKeys(patch.ai!.llmProviders, cur.ai?.llmProviders ?? [], SECRET_MASK) } };
+  if (Array.isArray(patch.ai?.ttsProviders)) patch = { ...patch, ai: { ...patch.ai!, ttsProviders: resolveProviderKeys(patch.ai!.ttsProviders, cur.ai?.ttsProviders ?? [], SECRET_MASK) } };
   for (const [sec, key] of SECRET_FIELDS) {
     const p = patch as Record<string, any>;
     if (sec === null) {
@@ -250,7 +258,7 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     webhooks: (patch.webhooks ?? cur.webhooks).map((w) => ({ ...w, id: w.id || newId() })),
     arr: patch.arr !== undefined ? normaliseArr(patch.arr, cur.arr) : cur.arr,
     notificationAgents: patch.notificationAgents !== undefined ? mergeAgents(patch.notificationAgents, cur.notificationAgents, newId) : cur.notificationAgents ?? [],
-    ai: mergeAi(cur.ai ?? DEFAULT_AI, patch, cur.aiDj.llm),
+    ai: mergeAi(cur.ai ?? DEFAULT_AI, patch, cur.aiDj.llm, cur.aiDj.tts),
   };
   // The DJ's language model is the shared one (kept in step for older apps and backups).
   next.aiDj = { ...next.aiDj, llm: { ...next.ai!.llm } };

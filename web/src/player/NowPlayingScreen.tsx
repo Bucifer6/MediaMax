@@ -29,22 +29,28 @@ import { VISUALIZER_STYLES } from '../visualizer/styles';
 import { isTvMode, KaraokeControls, useNowPlaying, VIEWS } from './NowPlaying';
 import { useApp } from '../state/app';
 import { advancedDjEnabled } from './djAccess';
+import { DjButton, YourDjPanel, YourDjStrip, useReasonLabel } from './YourDjPanel';
+import { HostCaption } from './HostCaptions';
+import { openPlayRules, useDjPrefsSave, useRulePresets } from '../components/PlayRules';
+import { radioHostPrefs, type HostChattiness } from './djTypes';
 import '../styles/listen.css';
+import '../styles/yourdj.css';
 
-type Panel = 'lyrics' | 'queue' | 'chapters' | 'bookmarks';
-const PANEL_LABEL: Record<Panel, string> = { lyrics: 'Lyrics', queue: 'Up next', chapters: 'Chapters', bookmarks: 'Bookmarks' };
-const PANEL_ICON: Record<Panel, IconName> = { lyrics: 'lyrics', queue: 'queue', chapters: 'chapters', bookmarks: 'flag' };
+type Panel = 'lyrics' | 'queue' | 'chapters' | 'bookmarks' | 'dj';
+const PANEL_LABEL: Record<Panel, string> = { lyrics: 'Lyrics', queue: 'Up next', chapters: 'Chapters', bookmarks: 'Bookmarks', dj: 'Your DJ' };
+const PANEL_ICON: Record<Panel, IconName> = { lyrics: 'lyrics', queue: 'queue', chapters: 'chapters', bookmarks: 'flag', dj: 'sparkles' };
 const PANELS_KEY = 'vibe.np.panels';
 const SPEEDS = [0.75, 1, 1.15, 1.25, 1.5, 1.75, 2, 2.5];
 
 function loadPanels(): Panel[] {
   try {
     const v = JSON.parse(localStorage.getItem(PANELS_KEY) || 'null') as Panel[] | null;
-    if (Array.isArray(v)) return v;
+    // The Your DJ panel is new: open unless the listener closed it (saved as "-dj").
+    if (Array.isArray(v)) return v.includes('-dj' as Panel) || v.includes('dj') ? v : [...v, 'dj'];
   } catch {
     /* ignore */
   }
-  return ['lyrics', 'queue', 'chapters'];
+  return ['lyrics', 'queue', 'chapters', 'dj'];
 }
 function savePanels(p: Panel[]) {
   try {
@@ -137,6 +143,7 @@ export default function NowPlaying() {
   /** Phones: what the stage shows instead of the view (queue, chapters, bookmarks). */
   const [phonePanel, setPhonePanel] = useState<Panel | null>(null);
   const wide = useMediaQuery('(min-width: 1000px)');
+  const xwide = useMediaQuery('(min-width: 1800px)');
   const stage = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const tv = isTvMode();
@@ -241,13 +248,16 @@ export default function NowPlaying() {
   };
 
   // Panels this item can show, and which are open on the desktop side.
-  const available: Panel[] = spoken ? [...(m.chapters.length ? (['chapters'] as Panel[]) : []), 'bookmarks', 'queue'] : ['lyrics', 'queue'];
+  const available: Panel[] = spoken ? [...(m.chapters.length ? (['chapters'] as Panel[]) : []), 'bookmarks', 'queue'] : [...(m.yourDj ? (['dj'] as Panel[]) : []), 'lyrics', 'queue'];
   const togglePanel = (p: Panel) => {
-    const next = panels.includes(p) ? panels.filter((x) => x !== p) : [...panels, p];
+    const next = panels.includes(p) ? panels.filter((x) => x !== p) : [...panels.filter((x) => x !== ('-' + p) as Panel), p];
     setPanels(next);
-    savePanels(next);
+    savePanels(p === 'dj' && !next.includes('dj') ? [...next, '-dj' as Panel] : next);
   };
-  const sideOpen = wide && !immersive && !tv ? available.filter((p) => panels.includes(p) && !(p === 'lyrics' && view === 'lyrics')) : [];
+  const sideAll = wide && !immersive && !tv ? available.filter((p) => panels.includes(p) && !(p === 'lyrics' && view === 'lyrics')) : [];
+  // Three panels only on very wide screens; otherwise the Your DJ panel takes the lyrics' place.
+  const sideOpen = sideAll.length > 2 && !xwide ? sideAll.filter((p) => p !== 'lyrics') : sideAll;
+  const djStripShown = !!m.yourDj && view === 'cover' && !phonePanel;
   const views = VIEWS.filter((v) => !spoken || v.id === 'cover' || v.id === 'visualizer');
   const phoneTabs: Panel[] = !wide && !tv ? available.filter((p) => p !== 'lyrics') : [];
 
@@ -261,6 +271,7 @@ export default function NowPlaying() {
 
   const panelBody = (p: Panel) => {
     if (p === 'queue') return <NpQueue />;
+    if (p === 'dj') return <YourDjPanel />;
     if (p === 'lyrics') {
       return (
         <>
@@ -343,8 +354,9 @@ export default function NowPlaying() {
           ) : (
             <>
               {view === 'cover' && (
-                <div className="np-cover-view">
+                <div className={`np-cover-view ${m.yourDj ? 'has-dj' : ''}`}>
                   <div className="np-art"><Img src={art ?? undefined} width={900} fallback={<Icon name={spoken ? 'book' : 'music'} size={64} />} /></div>
+                  {m.yourDj && <YourDjStrip />}
                 </div>
               )}
               {view === 'lyrics' && (
@@ -390,6 +402,7 @@ export default function NowPlaying() {
       </div>
 
       <footer className="np-foot">
+        {!np.screensaver && !djStripShown && <HostCaption variant="np" />}
         <div className="np-seek-row">
           <span className="np-time">{formatClock(m.positionMs)}</span>
           <SeekBar className="np-seek" positionMs={m.positionMs} durationMs={m.durationMs} onSeek={m.seek} chapters={spoken && m.chapters.length ? m.chapters : null} />
@@ -438,6 +451,7 @@ export default function NowPlaying() {
                     items={SPEEDS.map((r) => ({ label: `${r}×${r === 1 ? ' (normal)' : ''}`, checked: m.rate === r, onClick: () => m.setRate(r) }))}
                   />
                 )}
+                {!spoken && t.type === 'track' && m.yourDj && !djStripShown && <DjButton />}
                 {!spoken && t.type === 'track' && <AutomixMenu />}
                 <SleepTimerButton />
                 {t.type === 'track' && view !== 'karaoke' && (
@@ -480,6 +494,7 @@ const MIX_STYLES: { value: DjTransitionPreference; label: string }[] = [
 /** "Mixing into <next> · Bass swap 40 %" during a blend; "Mix: <source>" otherwise. No DJ controls. */
 function MixStatus() {
   const m = useMusic();
+  const reason = useReasonLabel();
   if (m.blend) {
     return (
       <span className="np-radio np-mixing" role="status" aria-live="polite">
@@ -488,13 +503,27 @@ function MixStatus() {
       </span>
     );
   }
+  if (m.yourDj) return reason ? <span className="np-radio np-reason" title={reason}><Icon name="sparkles" size={12} /> {reason}</span> : null;
   if (m.mix) return <span className="np-radio"><Icon name="layers" size={12} /> Mix: {m.mix.label}</span>;
   return null;
 }
 
-/** Automix on/off, Endless and the transition style: the whole lite DJ. */
+const HOST_LEVELS: { value: HostChattiness; label: string }[] = [
+  { value: 'off', label: 'Off' }, { value: 'intros', label: 'Just intros' }, { value: 'light', label: 'Light' }, { value: 'chatty', label: 'Chatty' },
+];
+
+/** Automix on/off, Endless, the transition style, the Radio Host and the play rules: the whole lite DJ. */
 function AutomixMenu() {
   const m = useMusic();
+  const { user } = useApp();
+  const save = useDjPrefsSave();
+  const { active } = useRulePresets();
+  const host = radioHostPrefs(user?.preferences);
+  const setHost = (c: HostChattiness) => {
+    void save({ radioHost: { ...host, chattiness: c, enabled: c !== 'off' } });
+    if (c !== 'off' && m.host.muted) m.host.setMuted(false);
+  };
+  const label = (main: string, sub?: string) => (sub ? <span className="menu-two">{main}<small>{sub}</small></span> : main);
   return (
     <Dropdown
       className="np-automix"
@@ -508,6 +537,13 @@ function AutomixMenu() {
         ...(m.automix ? [{ label: 'Endless (keep going with similar songs)', checked: m.endless, onClick: () => m.setEndless(!m.endless) }] : []),
         { divider: true, label: '' },
         ...MIX_STYLES.map((x) => ({ label: `Transitions: ${x.label}`, checked: m.mixStyle === x.value, disabled: !m.automix, onClick: () => m.setMixStyle(x.value) })),
+        { divider: true, label: '' },
+        ...(m.yourDj
+          ? [{ label: label('Your DJ talks', 'Commentary is set in the Your DJ panel'), icon: 'sparkles' as const, disabled: true }]
+          : HOST_LEVELS.map((x) => ({ label: x.value === 'off' ? 'Radio Host: Off' : `Radio Host: ${x.label}`, checked: host.chattiness === x.value, onClick: () => setHost(x.value) }))),
+        ...(m.host.muted ? [{ label: 'Unmute the host', icon: 'volume' as const, onClick: () => m.host.setMuted(false) }] : []),
+        { divider: true, label: '' },
+        { label: label('Play rules…', active ? active.name : 'Everything'), icon: 'filter' as const, onClick: () => openPlayRules() },
       ]}
     />
   );

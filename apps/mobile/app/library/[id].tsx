@@ -14,6 +14,7 @@ import { browseTypes } from '@/utils/library';
 import { openDj } from '@/utils/nav';
 import { useAdvancedDj } from '@/state/dj';
 import { useMusic } from '@/state/music';
+import { YourDjCard } from '@/components/YourDjCard';
 
 const SORTS: { key: ItemSort; label: string; order: 'asc' | 'desc' }[] = [
   { key: 'title', label: 'Title', order: 'asc' },
@@ -151,6 +152,7 @@ export default function LibraryScreen() {
           columnWrapperStyle={{ gap: t.card.gap }}
           contentContainerStyle={{ paddingHorizontal: t.space.gutter, paddingBottom: t.space.xxl * 2, gap: t.isTV ? t.space.lg : t.space.md, paddingTop: t.space.sm }}
           renderItem={({ item }) => <MediaCard item={item} width={cardW} />}
+          ListHeaderComponent={lib.type === 'music' ? <YourDjCard hasMusic style={{ marginHorizontal: 0 }} /> : undefined}
           onEndReached={loadMore}
           onEndReachedThreshold={1.5}
           initialNumToRender={cols * 4}

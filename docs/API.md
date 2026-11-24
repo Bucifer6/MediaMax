@@ -361,6 +361,27 @@ When Settings → DLNA is on, the server announces itself over SSDP and serves U
   `POST /ai/whisper/download { what: 'binary' | 'model', model? }` · `POST /ai/embeddings/build`.
 * Scheduled tasks: `auto-subtitles` (Generate missing subtitles, every 30 min while switched on, works only inside the
   window) and `ask-embeddings` (Build search embeddings).
+* **Provider chains.** `ai.llmProviders: AiLlmProvider[]` and `ai.ttsProviders: AiTtsProvider[]` are ordered fallback
+  chains used by every AI feature (the single `ai.llm` / `aiDj.tts` of older servers become one-item chains on first
+  read; `ai.llm` keeps mirroring the first enabled Ollama/OpenAI-compatible provider, and an older client that edits
+  it updates that provider). LLM `kind`: `openai` (any OpenAI-compatible API: Ollama `/v1`, LM Studio, llama.cpp,
+  LocalAI, Groq, OpenRouter, Mistral, Cerebras, DeepSeek, OpenAI), `ollama` (native `/api/chat`), `anthropic`
+  (Messages API, `x-api-key` + `anthropic-version`), `gemini` (`…/v1beta/models/<model>:generateContent`,
+  `x-goog-api-key`). TTS `kind`: `piper` (local program, or a Piper HTTP server when `url` is set), `kokoro`, `openai`
+  (`/audio/speech`), `elevenlabs`. Each provider has `enabled`, `paid`, `dailyCap` (calls per UTC day).
+  Every call tries the enabled providers in order; a network error, timeout, 5xx, 429, 401/402/403 or unusable output
+  cools the provider down (1 → 5 → 15 → 60 min; auth/quota errors start at 15 min; `Retry-After` is honoured) and the
+  next one is tried; after the last the feature uses its built-in fallback (templates, rules, device voice, or no
+  talk). Fallback is silent: nothing reaches listeners, it is logged and kept as health. Keys are write-only: GET
+  returns `hasKey` and never `apiKey`; on PUT an omitted key (or `••••`) keeps the stored one, `""`/`null` removes it.
+  `ai.llm.maxRequestsPerDay` still caps all model calls together.
+* 🛡️ `GET /ai/health` → `AiHealthResponse { providers: AiProviderHealth[], events: AiFallbackEvent[] }` (newest first,
+  200 max; in memory) · `POST /ai/providers/test { kind: 'llm'|'tts', providerId }` → `{ ok, ms, sample?, error? }`
+  (one explicit call that ignores cooldown and caps; save first; the TTS `sample` is a voice clip URL).
+* `ai.weatherLocation: { name, lat, lon } | null` (radio host weather; Open-Meteo, CC BY 4.0, non-commercial, cached
+  30 min, coordinates rounded to 0.01°) and `ai.onlineFacts` (MusicBrainz + Wikidata artist facts, 1 request/s,
+  User-Agent `Vibe/<version> (self-hosted media server)`, cached 30 days) are off by default: no outbound request is
+  made unless set. `ai.djTrackCooldownDays` (default 7): Your DJ replays a track it chose only after this.
 
 ## Trakt
 * `GET /trakt` → `TraktStatus` · `POST /trakt/connect` → `TraktDeviceCode` (show `userCode` + `verificationUrl`; poll `GET /trakt` until `connected`) · `PATCH /trakt` `{ scrobble }` · `DELETE /trakt`.
@@ -794,7 +815,12 @@ with a prior for 16/8/4-bar lines, then sections labelled by relative energy, ba
 a drop, the quieter one after a drop a breakdown, a rising one before a drop a build). Sections longer than 32 bars are
 split into 16-bar phrases.
 
-**Re-analysis is lazy.** When the algorithm changes (analysis version 3 added phrases), existing analyses stay in use.
+**Cue points.** `TrackAnalysis.cues` `{ mixInMs, introEndMs, mixOutMs, endMs }` are the automix / DJ cues: where to
+start the track, where its intro ends (the "post": vocals start, so a host may talk over the intro until then), where
+to start mixing out, and where the audible part ends.
+
+**Re-analysis is lazy.** When the algorithm changes (analysis version 3 added phrases, version 4 the beat-grid and key
+fixes with cue points), existing analyses stay in use.
 They are upgraded on demand (the track a mix continues from, the tracks a new mix picks — a few per request, one at a
 time in the background — and `GET /items/:id/analysis`), and the scheduled task upgrades at most 150 per run (new or
 changed files are never capped), so a library is never re-analysed all at once. `GET /dj/status` counts outdated
@@ -808,6 +834,7 @@ analyses as analysed.
 - **Mixing rules:** `harmonic` (default true), `artistGap` (default 3), `preferFavorites` (default true).
 - **Transitions:** `transitions` is `auto` (default), `smooth`, `energetic` or `minimal`; `maxStretchPct` (default 8, 1–16) is the largest tempo change used to beat-match.
 - **Continuous mode:** send `history` (ids already played or queued) plus `count` to get the next tracks. Tracks are never repeated, and the energy curve keeps moving.
+- **DJ rules:** `rules` (`DjRules`) or `presetId`; default the active preset. The user's admin-enforced restrictions always apply on top (also to every continuous top-up). See **DJ rules** below.
 
 Tracks are ordered by scoring each candidate on:
 
@@ -833,6 +860,26 @@ when the ffmpeg build has it, otherwise `atempo`, which also keeps the pitch (it
 resampler) and glides back to 1.0 with `asendcmd`. The `X-DJ-Transition` header reports style, effect and stretch filter.
 The server does not render whole mixes otherwise: the web and mobile apps mix on the device.
 
+**Plan many transitions (lite automix).** `POST /dj/transitions` `DjTransitionsRequest { pairs: [{from, to}] (≤50),
+transitions?, maxStretchPct? }` → `{ transitions: (DjTransition | null)[] }` in the same order: stored analyses only (no
+on-demand analysis, no AI, no network); `null` when either id isn't a track the user may see; an unanalysed side gets a
+plain fade.
+
+**Order a source as a mix.** `POST /dj/order` `DjOrderRequest { itemIds? (≤5000; albums/artists/playlists expand),
+source? { type: library|genre|artist|album|playlist|folder, id, path?, libraryId? }, limit? (≤500, default 100),
+history?, startItemId?, harmonic?, curve?, rules?, presetId? }` → `DjOrderResponse { items, analyses, total, remaining }`:
+each next track is the best by key, tempo, timbre and an energy arc, artists spread out; page with `history`. Local
+only. DJ rules (and enforced restrictions) filter the candidates; `items: []` when nothing matches.
+
+**DJ rules.** `DjRules { includeGenres, excludeGenres, includeArtists, excludeArtists (names any case, or ids),
+sources (DjOrderSource[]), yearMin, yearMax, bpmMin, bpmMax, energyMin, energyMax (0–1; from the analysis, unanalysed
+tracks are left out while set), cleanOnly (explicit tag/rating/"(Explicit)" title), minRating (user rating 0–10),
+maxDurationSec }`. Presets live in `UserPreferences.djRules { activePresetId, presets: DjRulePreset[] }` (`PATCH
+/auth/me`). `GET /dj/rules` → `DjRulesResponse { effective, enforced, presets, activePresetId }`. Admins enforce
+restrictions per user with 🛡️ `GET`/`PUT /users/:id/dj-restrictions` (body/response `DjRules`, `{}` = none); they are
+intersected with whatever the user asks (the user can narrow, never loosen) in `/dj/order`, `/dj/mix`, Your DJ and
+continuous mixes.
+
 The web app's DJ page (`/dj`) runs two decks on Web Audio. Each deck has a small mixer strip — a Linkwitz-Riley
 200 Hz band split (bass swap), high/low-pass filters (filter fade) and a send into a shared beat-synced echo — and every
 control is automated on the audio clock. Tempo matching keeps the key: the browser's pitch-preserving playback where
@@ -856,22 +903,61 @@ The AI DJ is free by default and works offline. Admins can connect free or cheap
   - "like/start with \<artist, album or song\>"
 
   The response adds `summary`, `understoodBy` (`llm`/`rules`), `continuous` and the resolved `request`; reuse that request for continuous top-ups. If the filters match nothing, they are relaxed instead of failing.
-- **Language model (optional):** configured once for every AI feature in `ai.llm` (**Admin → AI**); `aiDj.llm` mirrors it for older clients. `provider` is `ollama`, or `openai` for any OpenAI-compatible API:
+- **Language model (optional):** configured once for every AI feature as the provider chain `ai.llmProviders` (**Admin → AI**); `ai.llm` / `aiDj.llm` mirror its first Ollama/OpenAI-compatible provider for older clients. Kinds include `ollama`, `openai` (any OpenAI-compatible API), `anthropic` and `gemini`:
   - **Self-hosted, free:** LM Studio, llama.cpp, LocalAI, vLLM.
   - **Hosted free tiers:** Groq, Google Gemini (`…/v1beta/openai`), OpenRouter `:free` models, Mistral, Cerebras.
   - **Very cheap hosted:** DeepSeek, OpenAI mini models.
 
   Model replies are validated (genres must exist in your library) and merged with the parser's results. `maxRequestsPerDay` (default 300) caps calls from all AI features together so free tiers stay free; `ai.features.dj = false` keeps the DJ on its built-in brain. Over the cap, the built-in DJ takes over silently. API keys are write-only: settings reads return `••••`.
 - **The host:** `POST /dj/host {previousItemId?, nextItemId, position, prompt?, hour}` returns `{text, audioUrl, by}`. Text comes from varied templates or the model. The model is told to use only the facts it is given: title, artist, year, BPM, key, energy, your play count and favourite status.
-- **Voice:** `aiDj.tts.provider` is one of:
-  - `device`: the browser, phone or TV speaks it, free
-  - `piper`: open-source neural TTS on the server, free
-  - `openai`: any OpenAI-compatible `/audio/speech` API, such as self-hosted Kokoro-FastAPI (free) or a hosted API (cheap)
+- **Voice:** the TTS provider chain in `ai.ttsProviders` (Admin → AI; see **Provider chains** above). The legacy
+  `aiDj.tts` (`device` / `piper` / `openai`) is migrated into it. With no voice, or when every voice fails, the browser,
+  phone or TV speaks the text itself.
 
   Clips are cached as MP3 and served from `GET /dj/voice/:file`. Clients duck the music to about 30% while the host speaks.
 - **Test the setup (admin):** `POST /dj/ai/test {kind: "llm"|"tts"}` → `{ok, reply, ms, usage}` for the language model, `{ok, audioUrl}` for the server voice.
 - **Taste:** `POST /dj/feedback {itemId, kind: 'skip'|'love'}`. Skipped tracks and artists are played less for 60 days, and "love" also favourites the track.
 - **Sounds-like:** analysis v2 adds a 26-number timbre fingerprint (MFCC 1–12 mean and deviation, spectral centroid and flatness). Mixes prefer tracks that sound like the previous one and the seed. `GET /dj/status` reports `ai: {enabled, llm, serverVoice, hostName, chattiness}`.
+
+### Your DJ
+
+A personal set from the listener's own library in themed segments. Sessions are in memory (6 h idle); 403 when the
+AI DJ is switched off.
+
+- `POST /dj/session` `{ rules?, presetId?, hour? }` → `DjSession { id, segment {id, kind, title, reason}, items, analyses,
+  reasons (per item id), intro (DjBreak | null), note }`. Segment kinds: `on-repeat` (most played in 30 days),
+  `throwbacks` (heavy plays long ago, not for 4+ months), `forgotten` (favourites / rated ≥8 not played lately),
+  `rare` (deep cuts by artists you play, else rarely played), `recent` (added in 45 days), `genre`, `decade`, `mood`
+  (time of day + analysed energy), `request`. 4–6 tracks per batch, ordered with the mix scoring.
+- `POST /dj/session/:id/more { history }` → the next batch (a request segment continues up to 3 batches, otherwise the
+  next segment). `POST /dj/session/:id/switch { history }` → always a different segment kind.
+- `POST /dj/session/:id/request { text, history }` → `DjSession` (kind `request`), or `{ ok: false, message }` (HTTP 200)
+  when nothing within the rules matches. Understood by the language-model chain, else the built-in parser.
+- `GET /dj/session/suggestions?hour=H` → `{ chips: string[3] }` from history and the time of day.
+- Anti-repeat: tracks the DJ handed out are not chosen again for `ai.djTrackCooldownDays` (relaxed only when a small
+  library runs dry), artists the DJ served 3+ times in 3 h rest, tracks skipped twice in 60 days stay out.
+- A playback of a track a session handed this user in the last 12 h is flagged `play_history.source = 'yourdj'`;
+  such plays don't count for On repeat, throwbacks, play-count facts or stats-style lines.
+- `UserPreferences.yourDj { commentary: 'off' | 'intros' | 'full' }` (default full).
+
+### Radio Host
+
+- `UserPreferences.radioHost` (`RadioHostPrefs { enabled (default false), chattiness: off|intros|light|chatty,
+  categories { announce, facts, jokes, weather, time, stats }, voice }`).
+- `POST /dj/break` `DjBreakRequest { mode: 'radio'|'yourdj', previousItemId?, nextItemId, sessionId?, tracksSinceBreak,
+  msSinceBreak, introMs?, hour?, minute?, chattiness? }` → `{ break: DjBreak | null }`. Ask ~30 s before the transition;
+  most calls return null. `DjBreak { id, kind: frontsell|backsell|link|full|segment-intro, text (captions), placement:
+  over-intro|gap|over-outro, maxMs, audioUrl (null = device speech), durationMs, slots, by }`.
+- Planner: a frontsell over the next intro fits min(10 s, introMs − 1 s) at ~3 words/s; without a usable intro it talks
+  in the gap or over the outro; full breaks (≤40 s, gap) at most 1 (light) / 3 (chatty) an hour; time checks and weather
+  near :00 / :30. Slots: announce, local facts (year, album, genre, date added, real play counts), online facts (opt-in),
+  weather (opt-in), time, a curated clean joke pool, Your DJ segment intros. Nothing is repeated within a session; jokes
+  (5 days), facts (3 days) and phrases (1 day) are remembered per listener.
+- With a language model the talking points are rewritten in 1–2 sentences within the word budget, using only the
+  facts given (replies with numbers that are not in the facts are rejected); otherwise templates with many variants.
+  Speech comes from the TTS chain (cached clips at `GET /dj/voice/:file`), else `audioUrl: null`. Any failure is
+  silent (templates, device voice or no talk). Clients duck the music about −12 dB while the host speaks.
+- `GET /dj/status` → `ai` also reports `yourDj`, `radioHost`, `weather`, `onlineFacts`.
 
 ## Security dashboard (admin)
 

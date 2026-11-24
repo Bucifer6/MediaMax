@@ -2,6 +2,7 @@
  * Network type and charging state for smart downloads and instant play (expo-network, expo-battery).
  * Falls back to "online, Wi-Fi unknown = not Wi-Fi, not charging" when a module is unavailable (web, old builds).
  */
+import React from 'react';
 import * as Battery from 'expo-battery';
 import * as Network from 'expo-network';
 import type { Conditions } from '@/state/smartDownloads';
@@ -40,4 +41,31 @@ export function onConditionsChange(cb: () => void): () => void {
     /* module unavailable */
   }
   return () => subs.forEach((s) => s.remove());
+}
+
+/**
+ * Whether the device has a network connection (expo-network). Starts optimistic (true) and follows changes; used to
+ * keep server-only features (Your DJ, the Radio Host) quiet while offline.
+ */
+export function useOnline(): boolean {
+  const [online, setOnline] = React.useState(true);
+  React.useEffect(() => {
+    let alive = true;
+    const check = () =>
+      void Network.getNetworkStateAsync()
+        .then((n) => alive && setOnline(n.isConnected !== false && n.type !== Network.NetworkStateType.NONE))
+        .catch(() => undefined);
+    check();
+    let sub: { remove(): void } | null = null;
+    try {
+      sub = Network.addNetworkStateListener((n) => alive && setOnline(n.isConnected !== false && n.type !== Network.NetworkStateType.NONE));
+    } catch {
+      /* module unavailable: stay optimistic */
+    }
+    return () => {
+      alive = false;
+      sub?.remove();
+    };
+  }, []);
+  return online;
 }

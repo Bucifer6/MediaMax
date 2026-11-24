@@ -5,13 +5,9 @@
  *  - A radio-style host: short spoken links between tracks from varied templates, or the LLM.
  *  - Speech: Piper (open-source neural TTS) on the server, else each client's built-in voice.
  */
-import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
-import { spawn } from 'node:child_process';
 import type { DjEnergyCurve, DjHostLine, DjHostRequest, DjMixRequest, User } from '@mediamax/shared';
 import { db } from '../../db.js';
-import { config } from '../../config.js';
+import { speakChain } from '../ai/tts.js';
 import { getSettings } from '../settings.js';
 import { accessClause } from '../items.js';
 import { logger } from '../../util/log.js';
@@ -301,99 +297,16 @@ export async function hostLine(user: User, req: DjHostRequest): Promise<DjHostLi
     }
   }
   if (!text) text = templateLine(cfg.hostName, prev, next, req);
-  const voice = await speak(text).catch((e) => {
-    log.warn(`Piper failed: ${(e as Error).message}`);
-    return null;
-  });
+  const voice = await speak(text);
   return { text, audioUrl: voice ? `/api/v1/dj/voice/${voice.file}` : null, durationMs: voice?.durationMs ?? null, by };
 }
 
 /* ------------------------------- speech ------------------------------- */
 
-const voiceDir = () => {
-  const d = path.join(config.cacheDir, 'dj-voice');
-  fs.mkdirSync(d, { recursive: true });
-  return d;
-};
-
-/** True when the server renders speech itself (Piper or an OpenAI-compatible speech API). */
-export function serverVoiceConfigured(): boolean {
-  const t = getSettings().aiDj.tts;
-  return (t.provider === 'piper' && !!t.voiceModel) || (t.provider === 'openai' && !!t.url);
-}
-
-/** Render `text` to a cached MP3 (Piper or an OpenAI-compatible speech API). Null when the apps should speak it themselves. */
-export async function speak(text: string): Promise<{ file: string; durationMs: number | null } | null> {
-  const tts = getSettings().aiDj.tts;
-  if (!serverVoiceConfigured()) return null;
-  const key = crypto.createHash('sha256').update(JSON.stringify([text, tts.provider, tts.voiceModel, tts.speaker, tts.url, tts.model, tts.voice])).digest('hex').slice(0, 32);
-  const file = `${key}.mp3`;
-  const out = path.join(voiceDir(), file);
-  if (fs.existsSync(out)) return { file, durationMs: null };
-  if (tts.provider === 'openai') {
-    const headers: Record<string, string> = { 'content-type': 'application/json' };
-    if (tts.apiKey) headers.authorization = `Bearer ${tts.apiKey}`;
-    const res = await fetch(openaiUrl(tts.url!, 'audio/speech'), {
-      method: 'POST', headers, signal: AbortSignal.timeout(60000),
-      body: JSON.stringify({ model: tts.model || 'tts-1', voice: tts.voice || 'alloy', input: text.slice(0, 1000), response_format: 'mp3' }),
-    });
-    if (!res.ok) throw new Error(`Speech API HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length < 200 || buf.length > 20 * 1024 * 1024) throw new Error('Speech API returned no usable audio');
-    fs.writeFileSync(out, buf);
-    return { file, durationMs: null };
-  }
-  const wav = path.join(voiceDir(), `${key}.wav`);
-  const args = ['--model', tts.voiceModel!, '--output_file', wav];
-  if (tts.speaker != null) args.push('--speaker', String(tts.speaker));
-  try {
-    await run(tts.piperPath || 'piper', args, text, 60000);
-    await run(config.ffmpeg, ['-v', 'error', '-y', '-i', wav, '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11', '-ac', '1', '-c:a', 'libmp3lame', '-b:a', '96k', out], null, 30000);
-  } catch (e) {
-    fs.rmSync(out, { force: true }); // never cache a half-written clip
-    throw e;
-  } finally {
-    fs.rmSync(wav, { force: true });
-  }
-  return { file, durationMs: null };
-}
-
-function run(bin: string, args: string[], stdin: string | null, timeoutMs: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const p = spawn(bin, args, { stdio: [stdin == null ? 'ignore' : 'pipe', 'ignore', 'pipe'] });
-    let err = '';
-    p.stderr?.on('data', (d) => (err = (err + d).slice(-400)));
-    const t = setTimeout(() => p.kill('SIGKILL'), timeoutMs);
-    p.on('error', (e) => {
-      clearTimeout(t);
-      reject(e);
-    });
-    p.on('close', (code) => {
-      clearTimeout(t);
-      code === 0 ? resolve() : reject(new Error(err.trim() || `${path.basename(bin)} exited with ${code}`));
-    });
-    if (stdin != null) p.stdin?.end(stdin);
-  });
-}
-
-/** Path of a cached voice clip, or null (only our own hashed file names are served). */
-export function voiceFile(name: string): string | null {
-  if (!/^[a-f0-9]{32}\.mp3$/.test(name)) return null;
-  const f = path.join(voiceDir(), name);
-  return fs.existsSync(f) ? f : null;
-}
-
-/** Drop voice clips older than a week. */
-export function pruneVoices() {
-  const cutoff = Date.now() - 7 * 86400000;
-  for (const f of fs.readdirSync(voiceDir())) {
-    try {
-      if (fs.statSync(path.join(voiceDir(), f)).mtimeMs < cutoff) fs.rmSync(path.join(voiceDir(), f), { force: true });
-    } catch {
-      /* ignore */
-    }
-  }
-}
+// Speech goes through the TTS provider chain (Admin → AI); null = the apps speak with the device's voice.
+export { serverVoiceConfigured, voiceFile, pruneVoices } from '../ai/tts.js';
+/** Render `text` with the first working server voice (cached). Null when the apps should speak it themselves. */
+export const speak = (text: string) => speakChain(text, { feature: 'dj' });
 
 /* ------------------------------- feedback ------------------------------- */
 

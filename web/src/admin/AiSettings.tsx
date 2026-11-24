@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AiSettings, AiStatus, AutoSubtitleJob, AutoSubtitleSettings, AutoSubtitleStatus, WhisperModelSize } from '@mediamax/shared';
+import type { AiHealthResponse, AiLlmProvider, AiSettings, AiStatus, AiTtsProvider, AutoSubtitleJob, AutoSubtitleSettings, AutoSubtitleStatus, WhisperModelSize } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { aiApi, type WhisperModels } from '../api/ai';
 import { useToast } from '../state/toast';
@@ -7,7 +7,8 @@ import { Badge, Field, PageLoader, ProgressBar, Spinner, Switch } from '../compo
 import { Icon } from '../components/Icon';
 import { formatBytes, formatDateTime } from '../utils/format';
 import { AdminHeader } from './AdminRoutes';
-import { LLM_PRESETS } from './AiDjSettings';
+import { LLM_PRESETS, ProviderChainEditor, TTS_PRESETS, llmFromPreset, ttsFromPreset } from './AiDjSettings';
+import '../styles/ai-chain.css';
 
 const AI_DEFAULTS: AiSettings = {
   llm: { provider: 'none', url: null, model: null, apiKey: null, maxRequestsPerDay: 300 },
@@ -15,7 +16,34 @@ const AI_DEFAULTS: AiSettings = {
   autoSubtitles: { engine: 'whisper-cpp', whisperPath: null, model: 'base', modelPath: null, threads: 0, apiUrl: null, apiModel: null, apiKey: null, languages: [], windowStart: '01:00', windowEnd: '07:00', translate: true, libraryIds: [] },
   ask: { embeddings: false, embeddingSource: 'local', embeddingModel: null },
   recaps: { minGapDays: 7, maxEpisodes: 3 },
+  llmProviders: [],
+  ttsProviders: [],
+  weatherLocation: null,
+  onlineFacts: false,
+  djTrackCooldownDays: 7,
 };
+
+function FallbackLog({ health }: { health: AiHealthResponse | null }) {
+  const name = (id: string) => (id === 'builtin' ? 'built-in' : health?.providers.find((p) => p.id === id)?.name ?? id);
+  if (!health?.events.length) return <p className="muted">No fallbacks yet. When a provider fails or runs out of quota, the switch to the next one is listed here (listeners never see it).</p>;
+  return (
+    <div className="table-wrap">
+      <table className="table ai-fallback-log">
+        <thead><tr><th>Time</th><th>Feature</th><th>From → to</th><th>Reason</th></tr></thead>
+        <tbody>
+          {health.events.slice(0, 50).map((e, i) => (
+            <tr key={`${e.at}-${i}`}>
+              <td>{formatDateTime(e.at)}</td>
+              <td>{e.feature}</td>
+              <td>{name(e.from)} → {name(e.to)}</td>
+              <td className="muted">{e.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 const eta = (s: number | null) => (s == null ? '' : s < 90 ? `~${Math.max(1, Math.round(s))} s left` : s < 5400 ? `~${Math.round(s / 60)} min left` : `~${(s / 3600).toFixed(1)} h left`);
 const langList = (t: string) => Array.from(new Set(t.split(/[,\s]+/).map((x) => x.trim().toLowerCase()).filter(Boolean)));
@@ -84,13 +112,20 @@ export function AiSettingsAdmin() {
   const [subs, setSubs] = useState<(AutoSubtitleStatus & { models: WhisperModels }) | null>(null);
   const [langText, setLangText] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [health, setHealth] = useState<AiHealthResponse | null>(null);
+  const [saved, setSaved] = useState<{ llm: Set<string>; tts: Set<string> }>({ llm: new Set(), tts: new Set() });
+  const loaded = (x: AiSettings) => {
+    setAi({ ...AI_DEFAULTS, ...x });
+    setSaved({ llm: new Set((x.llmProviders ?? []).map((p) => p.id)), tts: new Set((x.ttsProviders ?? []).map((p) => p.id)) });
+  };
 
   const reload = useCallback(() => {
     aiApi.status().then(setStatus).catch(() => {});
     aiApi.subtitles().then(setSubs).catch(() => {});
+    aiApi.health().then(setHealth).catch(() => {});
   }, []);
   useEffect(() => {
-    api.admin.settings().then((s) => setAi({ ...AI_DEFAULTS, ...(s.ai ?? {}) })).catch((e) => toast.error(e));
+    api.admin.settings().then((s) => loaded(s.ai ?? AI_DEFAULTS)).catch((e) => toast.error(e));
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -104,16 +139,15 @@ export function AiSettingsAdmin() {
   if (!ai) return <PageLoader />;
   const set = (p: Partial<AiSettings>) => setAi({ ...ai, ...p });
   const setLlm = (p: Partial<AiSettings['llm']>) => set({ llm: { ...ai.llm, ...p } });
+  const loc = ai.weatherLocation ?? null;
   const setSub = (p: Partial<AutoSubtitleSettings>) => set({ autoSubtitles: { ...ai.autoSubtitles, ...p } });
-  const llmPreset = LLM_PRESETS.find((p) => p.provider === ai.llm.provider && (p.provider === 'none' || p.url === ai.llm.url))?.id ?? 'custom';
-  const curLlm = LLM_PRESETS.find((p) => p.id === llmPreset);
   const a = ai.autoSubtitles;
 
   const save = async () => {
     setBusy('save');
     try {
       const s = await api.admin.saveSettingsPatch({ ai });
-      setAi({ ...AI_DEFAULTS, ...(s.ai ?? {}) });
+      loaded(s.ai ?? AI_DEFAULTS);
       toast.success('AI settings saved');
       reload();
     } catch (e) {
@@ -134,10 +168,6 @@ export function AiSettingsAdmin() {
       setBusy(null);
     }
   };
-  const testLlm = () => run('test', async () => {
-    const r = await aiApi.test();
-    toast.success(`The model answered in ${r.ms} ms${r.usage.max ? ` · ${r.usage.used}/${r.usage.max} calls today` : ''}`);
-  }, 'Model test finished');
   const tag = (t: string) => <span className={`ai-tag ai-tag-${t.replace(' ', '-')}`}>{t}</span>;
   const dl = subs?.download;
 
@@ -147,34 +177,59 @@ export function AiSettingsAdmin() {
         actions={<button className="btn btn-primary" onClick={() => void save()} disabled={busy === 'save'}>{busy === 'save' ? <Spinner size={16} /> : 'Save'}</button>} />
 
       <section className="settings-card">
-        <h2><Icon name="sparkles" size={18} /> Language model</h2>
-        <div className="ai-presets" role="radiogroup" aria-label="Language model">
-          {LLM_PRESETS.map((p) => (
-            <button key={p.id} role="radio" aria-checked={llmPreset === p.id} className={`ai-preset ${llmPreset === p.id ? 'active' : ''}`}
-              onClick={() => setLlm({ provider: p.provider, url: p.url, model: p.model, apiKey: p.key ? ai.llm.apiKey : null })}>
-              <strong>{p.label}</strong> {tag(p.tag)}
-            </button>
-          ))}
+        <h2><Icon name="sparkles" size={18} /> Language models</h2>
+        <p className="muted">
+          An ordered fallback chain: each request tries the first enabled model; if it fails, times out or runs out of quota it rests for a while
+          (1 → 5 → 15 → 60 min, or what the service asks) and the next one answers. After the last one every feature uses its built-in rules and templates.
+          Nothing is ever shown to listeners; the switches are logged below.
+        </p>
+        <ProviderChainEditor<AiLlmProvider> kind="llm" list={ai.llmProviders ?? []} onChange={(llmProviders) => set({ llmProviders })} health={health?.providers ?? []} savedIds={saved.llm}
+          presets={LLM_PRESETS.map((p) => ({ id: p.id, label: p.label, group: p.group, note: p.note, make: () => llmFromPreset(p) }))} />
+        <div className="form-row">
+          <Field label="Daily limit (model calls, all features and providers)" hint={`Keeps free tiers free; over it every feature uses its built-in fallback. 0 = no limit.${status ? ` Today: ${status.usage.used}${status.usage.max ? `/${status.usage.max}` : ''}.` : ''}`}>
+            <input className="input" type="number" min={0} value={ai.llm.maxRequestsPerDay} onChange={(e) => setLlm({ maxRequestsPerDay: Math.max(0, Number(e.target.value) || 0) })} />
+          </Field>
         </div>
-        {curLlm && <p className="field-hint">{curLlm.note}</p>}
-        {ai.llm.provider !== 'none' && (
-          <>
-            <div className="form-row">
-              <Field label="API URL"><input className="input mono" value={ai.llm.url ?? ''} onChange={(e) => setLlm({ url: e.target.value || null })} /></Field>
-              <Field label="Model" hint="For Romanian translation pick a model that writes good Romanian (e.g. a 7-8B+ model or a hosted one)."><input className="input mono" value={ai.llm.model ?? ''} onChange={(e) => setLlm({ model: e.target.value || null })} /></Field>
-            </div>
-            <div className="form-row">
-              <Field label="API key" hint="Only for hosted services. Stored on the server; never shown again.">
-                <input className="input mono" type="password" autoComplete="off" value={ai.llm.apiKey ?? ''} placeholder={curLlm?.key ? 'Paste your key' : 'Not needed'} onChange={(e) => setLlm({ apiKey: e.target.value || null })} />
-              </Field>
-              <Field label="Daily limit (model calls, all features)" hint={`Keeps free tiers free; over it every feature uses its built-in fallback. 0 = no limit.${status ? ` Today: ${status.usage.used}${status.usage.max ? `/${status.usage.max}` : ''}.` : ''}`}>
-                <input className="input" type="number" min={0} value={ai.llm.maxRequestsPerDay} onChange={(e) => setLlm({ maxRequestsPerDay: Math.max(0, Number(e.target.value) || 0) })} />
-              </Field>
-            </div>
-            <div><button className="btn" onClick={() => void testLlm()} disabled={!!busy}>{busy === 'test' ? <Spinner size={16} /> : <Icon name="zap" size={16} />} Test the model (save first)</button></div>
-            {curLlm?.key && <p className="field-hint">A hosted service receives: DJ requests with song titles, Ask queries, the summaries of episodes being recapped, and subtitle lines being translated. Nothing else from your library.</p>}
-          </>
+        {(ai.llmProviders ?? []).some((p) => p.enabled && !/localhost|127\.0\.0\.1|^http:\/\/(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(p.url)) && (
+          <p className="field-hint">A hosted service receives: DJ requests and host talking points with song titles, Ask queries, the summaries of episodes being recapped, and subtitle lines being translated. Nothing else from your library.</p>
         )}
+      </section>
+
+      <section className="settings-card">
+        <h2><Icon name="volume" size={18} /> Voices (text to speech)</h2>
+        <p className="muted">Used by the DJ and the Radio Host, in order, with the same quiet fallback. After the last voice each device speaks with its own built-in voice. Clips are cached on the server.</p>
+        <ProviderChainEditor<AiTtsProvider> kind="tts" list={ai.ttsProviders ?? []} onChange={(ttsProviders) => set({ ttsProviders })} health={health?.providers ?? []} savedIds={saved.tts}
+          presets={TTS_PRESETS.map((p) => ({ id: p.id, label: p.label, group: p.group, note: p.note, make: () => ttsFromPreset(p) }))} />
+      </section>
+
+      <section className="settings-card">
+        <h2><Icon name="activity" size={18} /> Provider fallback log</h2>
+        <FallbackLog health={health} />
+      </section>
+
+      <section className="settings-card">
+        <h2><Icon name="music" size={18} /> Radio host & Your DJ</h2>
+        <p className="muted">Both are off by default and make no outside requests unless you turn them on here.</p>
+        <div className="form-row">
+          <Field label="Weather location (name)" hint="For the host's weather slot. Empty = no weather.">
+            <input className="input" value={loc?.name ?? ''} placeholder="e.g. Bucharest" onChange={(e) => set({ weatherLocation: e.target.value || loc ? { name: e.target.value, lat: loc?.lat ?? 0, lon: loc?.lon ?? 0 } : null })} />
+          </Field>
+          <Field label="Latitude"><input className="input" type="number" step="0.01" min={-90} max={90} value={loc?.lat ?? ''} disabled={!loc} onChange={(e) => loc && set({ weatherLocation: { ...loc, lat: Number(e.target.value) } })} /></Field>
+          <Field label="Longitude"><input className="input" type="number" step="0.01" min={-180} max={180} value={loc?.lon ?? ''} disabled={!loc} onChange={(e) => loc && set({ weatherLocation: { ...loc, lon: Number(e.target.value) } })} /></Field>
+          {loc && <div className="ai-chain-keyrm"><button className="btn btn-sm btn-ghost" onClick={() => set({ weatherLocation: null })}><Icon name="x" size={14} /> No weather</button></div>}
+        </div>
+        <p className="field-hint">
+          Weather comes from <a href="https://open-meteo.com" target="_blank" rel="noreferrer">Open-Meteo</a> (no key; data under CC BY 4.0, free for non-commercial use), at most twice an hour, rounded to about 1 km.
+        </p>
+        <Switch checked={!!ai.onlineFacts} onChange={(v) => set({ onlineFacts: v })} label="Online music facts (MusicBrainz, Wikidata)"
+          hint="Artist origins, start years and short descriptions for the host. Looked up by artist name at most once a second, cached for 30 days; no personal data is sent. Off: only facts from your own library." />
+        <div className="form-row">
+          <Field label="Your DJ: replay a track it played after" hint="Anti-repeat cooldown for tracks Your DJ chose (small libraries relax it automatically).">
+            <select className="input" value={ai.djTrackCooldownDays ?? 7} onChange={(e) => set({ djTrackCooldownDays: Number(e.target.value) })}>
+              {[0, 1, 3, 7, 14, 30].map((d) => <option key={d} value={d}>{d === 0 ? 'No cooldown' : `${d} day${d === 1 ? '' : 's'}`}</option>)}
+            </select>
+          </Field>
+        </div>
       </section>
 
       <section className="settings-card">

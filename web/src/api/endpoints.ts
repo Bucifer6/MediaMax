@@ -17,6 +17,8 @@ import type { ApplyMatchRequest, MatchSearchResponse, MetadataProviderId, Metada
 import type {
   AcoustIdCandidate, DiscographyResponse, IdentifyResponse, LbRecommendations, ListenBrainzStatus, ListenBrainzUpdate, MusicSettings, MusicSettingsResponse, RelatedArtistsResponse,
 } from '@mediamax/shared';
+import type { DjBreakRequest, DjBreakResponse, DjRulesResponse, DjSession, DjSessionStartRequest, DjSuggestions } from '@mediamax/shared';
+import type { DjRequestResult } from '../player/djTypes';
 import { http, request, upload } from './client';
 import { deviceInfo } from './device';
 
@@ -194,6 +196,16 @@ export const api = {
     order: (body: DjOrderRequest) => http.post<DjOrderResponse>('/dj/order', body),
     host: (body: DjHostRequest) => http.post<DjHostLine>('/dj/host', body),
     feedback: (body: DjFeedback) => http.post<Ok>('/dj/feedback', body),
+    /* Your DJ: a personal set in themed segments (server picks; local only unless an admin configured AI). */
+    session: (body: DjSessionStartRequest = {}) => http.post<DjSession>('/dj/session', { hour: new Date().getHours(), ...body }),
+    sessionMore: (id: string, history: string[]) => http.post<DjSession>(`/dj/session/${enc(id)}/more`, { history, hour: new Date().getHours() }),
+    sessionSwitch: (id: string, history: string[]) => http.post<DjSession>(`/dj/session/${enc(id)}/switch`, { history, hour: new Date().getHours() }),
+    sessionRequest: (id: string, text: string, history: string[]) => http.post<DjRequestResult>(`/dj/session/${enc(id)}/request`, { text, history, hour: new Date().getHours() }),
+    suggestions: () => http.get<DjSuggestions>('/dj/session/suggestions', { hour: new Date().getHours() }),
+    /* Radio Host: ask for a talk break before a transition (null = stay quiet). */
+    hostBreak: (body: DjBreakRequest, signal?: AbortSignal) => request<DjBreakResponse>('POST', '/dj/break', { body, signal }),
+    /* DJ rules: the effective, admin-enforced and saved presets. */
+    rules: () => http.get<DjRulesResponse>('/dj/rules'),
     aiTest: (kind: 'llm' | 'tts') => http.post<{ ok: true; reply?: string; ms?: number; audioUrl?: string; usage?: { used: number; max: number } }>('/dj/ai/test', { kind }),
   },
 

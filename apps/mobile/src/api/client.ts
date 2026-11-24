@@ -25,6 +25,8 @@ import type {
   Device,
   DeviceInfo,
   DiscoverResponse,
+  DjBreakRequest,
+  DjBreakResponse,
   DjFeedback,
   DjHostLine,
   DjHostRequest,
@@ -32,6 +34,13 @@ import type {
   DjMixRequest,
   DjOrderRequest,
   DjOrderResponse,
+  DjRulesResponse,
+  DjSession,
+  DjSessionNextRequest,
+  DjSessionRequestBody,
+  DjSessionRequestMiss,
+  DjSessionStartRequest,
+  DjSuggestions,
   DjStatus,
   DjTransitionsRequest,
   DjTransitionsResponse,
@@ -556,6 +565,35 @@ export class MediaMaxClient {
   /** Automix "Mix": a source (library, genre, artist, album, playlist, folder) or ids in a mix-friendly order, paged via `history`. */
   djOrder(body: DjOrderRequest, signal?: AbortSignal) {
     return this.post<DjOrderResponse>('/dj/order', body, { timeoutMs: 30000, signal });
+  }
+  /* ----------------------- Your DJ / Radio Host (AI DJ) ----------------------- */
+  /** Your DJ: start a personal set. 403 when the admin switched the AI DJ off. */
+  djSession(body: DjSessionStartRequest, signal?: AbortSignal) {
+    return this.post<DjSession>('/dj/session', body, { timeoutMs: 30000, signal });
+  }
+  /** The next batch (same segment while it has tracks, else the next one). 404 = the session ended: start a new one. */
+  djSessionMore(id: string, body: DjSessionNextRequest, signal?: AbortSignal) {
+    return this.post<DjSession>(`/dj/session/${encodeURIComponent(id)}/more`, body, { timeoutMs: 30000, signal });
+  }
+  /** "Switch it up": always a different segment kind. */
+  djSessionSwitch(id: string, body: DjSessionNextRequest, signal?: AbortSignal) {
+    return this.post<DjSession>(`/dj/session/${encodeURIComponent(id)}/switch`, body, { timeoutMs: 30000, signal });
+  }
+  /** A typed request; nothing within the rules = HTTP 200 `{ ok: false, message }`. */
+  djSessionRequest(id: string, body: DjSessionRequestBody, signal?: AbortSignal) {
+    return this.post<DjSession | DjSessionRequestMiss>(`/dj/session/${encodeURIComponent(id)}/request`, body, { timeoutMs: 30000, signal });
+  }
+  /** Three request chips (history + time of day); fine before a session exists. */
+  djSuggestions(hour?: number, signal?: AbortSignal) {
+    return this.get<DjSuggestions>('/dj/session/suggestions', { hour }, signal);
+  }
+  /** Radio Host / Your DJ commentary: a break for the coming transition (`break: null` most of the time). */
+  djBreak(body: DjBreakRequest, signal?: AbortSignal) {
+    return this.post<DjBreakResponse>('/dj/break', body, { timeoutMs: 20000, signal });
+  }
+  /** Play rules in effect: the active preset ∩ the admin's enforced restrictions (shown as locked chips). */
+  djRules(signal?: AbortSignal) {
+    return this.get<DjRulesResponse>('/dj/rules', undefined, signal);
   }
   /** BPM / key / energy / cue points of one track (analysed on demand). */
   trackAnalysis(itemId: string, signal?: AbortSignal) {

@@ -289,15 +289,16 @@ export function Dropdown({ trigger, items, align = 'right', className }: { trigg
             ) : (
               <button
                 key={i}
-                role="menuitem"
-                className={`menu-item ${it.danger ? 'danger' : ''}`}
+                role={it.checked !== undefined ? 'menuitemcheckbox' : 'menuitem'}
+                aria-checked={it.checked !== undefined ? it.checked : undefined}
+                className={`menu-item ${it.danger ? 'danger' : ''} ${it.checked ? 'is-checked' : ''}`}
                 disabled={it.disabled}
                 onClick={() => {
                   setOpen(false);
                   it.onClick?.();
                 }}
               >
-                {it.icon ? <Icon name={it.icon} size={16} /> : it.checked !== undefined ? <span className="menu-check">{it.checked && <Icon name="check" size={16} />}</span> : null}
+                {it.icon ? <Icon name={it.icon} size={16} /> : it.checked !== undefined ? <span className="menu-check" aria-hidden="true">{it.checked ? <Icon name="check" size={16} /> : null}</span> : null}
                 <span>{it.label}</span>
               </button>
             ),

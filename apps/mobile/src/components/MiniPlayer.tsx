@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { View } from 'react-native';
 import { useDj } from '@/state/dj';
 import { useMusic } from '@/state/music';
+import { HostCaption } from '@/player/YourDjPanel';
 import { useTheme } from '@/theme';
 import { Focusable } from './Focusable';
 import { Icon } from './Icon';
@@ -44,7 +45,9 @@ export function MiniPlayer() {
             <T variant="small" weight="700" numberOfLines={1}>
               {m.current.title}
             </T>
-            {m.blend ? (
+            {m.host.caption ? (
+              <HostCaption variant="mini" />
+            ) : m.blend ? (
               <T variant="caption" tone="primary" numberOfLines={1}>
                 Mixing into {m.blend.into.title}
               </T>
@@ -55,6 +58,11 @@ export function MiniPlayer() {
             )}
           </View>
         </Focusable>
+        {m.host.speaking ? (
+          <Focusable onPress={m.host.skip} accessibilityLabel="Skip talk" ringRadius={999} style={{ padding: t.space.xs, borderRadius: 999 }}>
+            <Icon name="mic-off-outline" size={t.isTV ? t.s(24) : 20} color={t.colors.primary} />
+          </Focusable>
+        ) : null}
         <Focusable onPress={m.toggle} accessibilityLabel={m.playing ? 'Pause' : 'Play'} ringRadius={999} style={{ padding: t.space.xs, borderRadius: 999 }}>
           <Icon name={m.playing ? 'pause' : 'play'} size={t.isTV ? t.s(28) : 26} />
         </Focusable>

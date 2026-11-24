@@ -9,6 +9,7 @@ import { keyCompatibility, similarity } from './dsp.js';
 import { firstDownbeat, phraseAt, phraseMixPoints } from './phrases.js';
 export { firstDownbeat };
 import { skipStats } from './ai.js';
+import { effectiveRules, rulesWhere, type EffectiveRules } from './rules.js';
 
 interface Cand {
   id: string;
@@ -258,9 +259,9 @@ function selectCandidates(user: User, where: string[], params: Param[], limit = 
   });
 }
 
-function loadCandidates(user: User, req: DjMixRequest): Cand[] {
-  const where: string[] = [];
-  const params: Param[] = [];
+function loadCandidates(user: User, req: DjMixRequest, rules: EffectiveRules): Cand[] {
+  // DJ rules (the listener's preset ∩ admin-enforced restrictions) bound every candidate, endless top-ups included.
+  const { where, params } = rulesWhere(user, rules);
   if (req.libraryId) {
     where.push('i.library_id = ?');
     params.push(req.libraryId);
@@ -479,10 +480,10 @@ class MixClock {
 }
 
 /** Build an ordered DJ mix (or the next `count` tracks of a continuous mix). */
-export function buildMix(user: User, req: DjMixRequest): DjMix {
+export function buildMix(user: User, req: DjMixRequest, rules: EffectiveRules = effectiveRules(user, req)): DjMix {
   const curve: DjEnergyCurve = CURVES.includes(req.curve as DjEnergyCurve) ? (req.curve as DjEnergyCurve) : 'steady';
   const artistGap = Math.max(0, Math.min(20, req.artistGap ?? 3));
-  const cands = loadCandidates(user, req);
+  const cands = loadCandidates(user, req, rules);
   if (!cands.length) throw badRequest('No music matches those filters');
   const byId = new Map(cands.map((c) => [c.id, c]));
   const { start, genres } = resolveSeed(user, req, cands, byId);
@@ -565,7 +566,7 @@ function analysisLoader() {
 const MAX_ORDER_IDS = 5000;
 
 /** SQL (on alias i) selecting the tracks of a source, after checking the user may see it. */
-function sourceWhere(user: User, src: DjOrderSource): { where: string[]; params: Param[] } {
+export function sourceWhere(user: User, src: DjOrderSource): { where: string[]; params: Param[] } {
   if (!src || typeof src !== 'object' || typeof src.id !== 'string' || !src.id) throw badRequest('source needs a type and an id');
   switch (src.type) {
     case 'library':
@@ -612,14 +613,14 @@ function sourceWhere(user: User, src: DjOrderSource): { where: string[]; params:
 }
 
 /** Explicit ids (a queue): tracks as is; albums, artists and playlists expand to their tracks. */
-function idsCandidates(user: User, ids: string[]): Cand[] {
+function idsCandidates(user: User, ids: string[], extra: { where: string[]; params: Param[] }): Cand[] {
   const out = new Map<string, Cand>();
   for (let i = 0; i < ids.length; i += 400) {
     const chunk = ids.slice(i, i + 400);
     const q = chunk.map(() => '?').join(',');
     const pl = accessClause(user, 'pl');
-    for (const c of selectCandidates(user, [`(i.id IN (${q}) OR i.parent_id IN (${q}) OR i.grandparent_id IN (${q}) OR i.id IN (SELECT ci.item_id FROM collection_items ci WHERE ci.collection_id IN (SELECT pl.id FROM items pl WHERE pl.id IN (${q}) AND pl.type IN ('playlist','collection') AND ${pl.sql})))`],
-      [...chunk, ...chunk, ...chunk, ...chunk, ...pl.params], MAX_ORDER_IDS)) {
+    for (const c of selectCandidates(user, [`(i.id IN (${q}) OR i.parent_id IN (${q}) OR i.grandparent_id IN (${q}) OR i.id IN (SELECT ci.item_id FROM collection_items ci WHERE ci.collection_id IN (SELECT pl.id FROM items pl WHERE pl.id IN (${q}) AND pl.type IN ('playlist','collection') AND ${pl.sql})))`, ...extra.where],
+      [...chunk, ...chunk, ...chunk, ...chunk, ...pl.params, ...extra.params], MAX_ORDER_IDS)) {
       if (out.size < MAX_ORDER_IDS) out.set(c.id, c);
     }
   }
@@ -631,17 +632,18 @@ function idsCandidates(user: User, ids: string[]): Cand[] {
  * tempo (half/double aware), timbre and an energy arc across the whole source, never repeating, artists spread out.
  * Local and deterministic apart from a small random tie-break; no AI, no network. Pages with `history`.
  */
-export function orderTracks(user: User, req: DjOrderRequest): { ids: string[]; total: number; remaining: number } {
+export function orderTracks(user: User, req: DjOrderRequest, rules: EffectiveRules = effectiveRules(user, req)): { ids: string[]; total: number; remaining: number } {
   if (req.itemIds != null && (!Array.isArray(req.itemIds) || req.itemIds.length > MAX_ORDER_IDS || req.itemIds.some((x) => typeof x !== 'string'))) {
     throw badRequest(`itemIds must be a list of up to ${MAX_ORDER_IDS} ids`);
   }
   if (req.history != null && (!Array.isArray(req.history) || req.history.length > 5000 || req.history.some((x) => typeof x !== 'string'))) throw badRequest('history must be a list of up to 5000 ids');
   if (!req.itemIds?.length && !req.source) throw badRequest('Send itemIds or a source');
   const limit = Math.max(1, Math.min(500, Math.floor(Number(req.limit) || 100)));
-  let cands = req.itemIds?.length ? idsCandidates(user, req.itemIds) : [];
+  const rw = rulesWhere(user, rules);
+  let cands = req.itemIds?.length ? idsCandidates(user, req.itemIds, rw) : [];
   if (req.source) {
     const { where, params } = sourceWhere(user, req.source);
-    const fromSource = selectCandidates(user, where, params);
+    const fromSource = selectCandidates(user, [...where, ...rw.where], [...params, ...rw.params]);
     if (req.itemIds?.length) {
       const keep = new Set(fromSource.map((c) => c.id));
       cands = cands.filter((c) => keep.has(c.id));

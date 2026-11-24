@@ -16,6 +16,10 @@ import { echoDelaySec } from './djStrip';
 import { useToast } from '../state/toast';
 import { findNextEpisode, shuffled, tracksFor } from '../utils/playback';
 import { hasAudioResume, isAudio, isResumable, isVideo, playLink } from '../utils/items';
+import { askState, createHostVoice, GAP_FADE_MS, RadioHost, talkWindowMs, type HostSnapshot } from './radioHost';
+import { appendTracks, sessionHistory, switchAck, switchQueue, yourDjReducer, type YourDjAction, type YourDjState } from './yourDj';
+import { djRulesPrefs, radioHostPrefs, yourDjCommentary, type DjBreak, type DjSession } from './djTypes';
+import { PlayRulesHost } from '../components/PlayRules';
 
 type Repeat = 'off' | 'all' | 'one';
 
@@ -130,6 +134,21 @@ interface MusicApi {
   setEndless: (on: boolean) => void;
   /** The running blend ("Mixing into …"), null between transitions. */
   blend: BlendState | null;
+  /** Your DJ session, when the queue is one (segments, reasons, busy state, gentle messages). */
+  yourDj: YourDjState | null;
+  /** A Your DJ session is being started (the card shows progress). */
+  yourDjStarting: boolean;
+  /** One tap: a personal set from the library, played as an endless Automix mix. */
+  startYourDj: () => Promise<void>;
+  /** "Switch it up": a different segment, starting with the next track. */
+  djSwitch: () => Promise<void>;
+  /** A typed request ("something upbeat from the 90s"); no match = a gentle message, the set carries on. */
+  djRequest: (text: string) => Promise<void>;
+  djDismiss: () => void;
+  /** Like a track: favourite + DJ feedback (steers Your DJ and mixes). */
+  djLove: (item: Item) => void;
+  /** Radio Host / Your DJ voice: captions while it talks, skip talk, mute. */
+  host: HostSnapshot & { muted: boolean; skip: () => void; setMuted: (m: boolean) => void; active: boolean };
 }
 
 export interface MusicOutputApi {
@@ -153,7 +172,7 @@ const Ctx = createContext<MusicApi | null>(null);
  * usePlayItem). The full context changes on every timeupdate while something plays, which re-rendered each card on
  * screen four times a second; this one never changes.
  */
-type MusicActions = Pick<MusicApi, 'playQueue' | 'playAsMix'>;
+type MusicActions = Pick<MusicApi, 'playQueue' | 'playAsMix' | 'startYourDj'>;
 const ActionsCtx = createContext<MusicActions | null>(null);
 export function useMusic(): MusicApi {
   const v = useContext(Ctx);
@@ -162,6 +181,16 @@ export function useMusic(): MusicApi {
 }
 
 const VOL_KEY = 'mm.volume';
+const HOST_MUTE_KEY = 'vibe.host.muted';
+/** A skip this early in a track counts as "not for me" (DJ feedback). */
+const SKIP_FEEDBACK_MS = 30000;
+function loadHostMuted() {
+  try {
+    return localStorage.getItem(HOST_MUTE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 const RATE_KEY = 'vibe.spokenRate';
 function loadRate() {
   try {
@@ -225,9 +254,22 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const automixOn = !!mixSession || automixPref;
   const [endless, setEndless] = useState(true);
   const [blend, setBlend] = useState<BlendState | null>(null);
+  /* Your DJ */
+  const [yourDj, setYourDjState] = useState<YourDjState | null>(null);
+  const yourDjRef = useRef<YourDjState | null>(null);
+  const dispatchDj = useCallback((a: YourDjAction) => {
+    yourDjRef.current = yourDjReducer(yourDjRef.current, a);
+    setYourDjState(yourDjRef.current);
+  }, []);
+  const [yourDjStarting, setYourDjStarting] = useState(false);
+  const commentary = yourDjCommentary(user?.preferences);
+  const hostPrefs = radioHostPrefs(user?.preferences);
+  const activePresetId = djRulesPrefs(user?.preferences).activePresetId ?? null;
+  /** Who talks between tracks: Your DJ (commentary Full), the Radio Host (any other music), or nobody. */
+  const hostMode: 'radio' | 'yourdj' | null = yourDj ? (commentary === 'full' ? 'yourdj' : null) : hostPrefs.enabled ? 'radio' : null;
   const current = index >= 0 ? queue[index] ?? null : null;
-  const stateRef = useRef({ queue, index, repeat, durationMs, positionMs, chapters, volume, muted, sleep, shuffle, crossfadeSec, rgMode, radio, automixOn, mixStyle, endless });
-  stateRef.current = { queue, index, repeat, durationMs, positionMs, chapters, volume, muted, sleep, shuffle, crossfadeSec, rgMode, radio, automixOn, mixStyle, endless };
+  const stateRef = useRef({ queue, index, repeat, durationMs, positionMs, chapters, volume, muted, sleep, shuffle, crossfadeSec, rgMode, radio, automixOn, mixStyle, endless, hostMode, hostVoice: hostPrefs.voice ?? null, commentary, activePresetId, mixSession });
+  stateRef.current = { queue, index, repeat, durationMs, positionMs, chapters, volume, muted, sleep, shuffle, crossfadeSec, rgMode, radio, automixOn, mixStyle, endless, hostMode, hostVoice: hostPrefs.voice ?? null, commentary, activePresetId, mixSession };
   const playingRef = useRef(playing);
   playingRef.current = playing;
   /** Karaoke: the live deck plays this URL instead of the track's stream. */
@@ -240,6 +282,36 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const wantGraph = () => !SUSPENDS_WEB_AUDIO_IN_BACKGROUND || stateRef.current.crossfadeSec > 0;
   /** The live deck's element (null during SSR). */
   const liveEl = () => out?.active.el ?? null;
+
+  /* ---------------- Radio Host / Your DJ voice ---------------- */
+  const [hostState, setHostState] = useState<HostSnapshot>({ caption: null, speaking: false, kind: null });
+  const [hostMuted, setHostMutedState] = useState(loadHostMuted);
+  const hostRef = useRef<RadioHost | null>(null);
+  if (!hostRef.current && typeof window !== 'undefined') {
+    hostRef.current = new RadioHost({
+      now: () => performance.now(),
+      setTimer: (fn, ms) => window.setTimeout(fn, ms),
+      clearTimer: (t) => window.clearTimeout(t as number),
+      fetchBreak: (req, signal) => api.dj.hostBreak(req, signal).then((r) => r?.break ?? null),
+      prepareVoice: (brk, signal) => createHostVoice(brk, stateRef.current.hostVoice, signal, withToken),
+      duck: (a, b, g, r) => out?.duck(a, b, g, r) ?? false,
+      unduck: (r) => out?.unduck(r),
+      volume: () => (stateRef.current.muted ? 0 : stateRef.current.volume),
+      onState: setHostState,
+      // Silent fallback: never a toast, never an interruption.
+      log: (...a) => console.debug(...a),
+    });
+    hostRef.current.setMuted(loadHostMuted());
+  }
+  const host = hostRef.current;
+  /** Transitions already asked about (once per pair and queue position). */
+  const hostAskedRef = useRef(new Set<string>());
+  const hostKey = (a: Item, b: Item, i: number) => `${a.id}>${b.id}@${i}`;
+  /** A gap break is running: the outgoing deck is paused on purpose (key), or the listener paused during it. */
+  const gapRef = useRef<string | null>(null);
+  const gapPausedRef = useRef(false);
+  /** A Your DJ intro / acknowledgement to play once the next track has started. */
+  const pendingIntroRef = useRef<{ brk: DjBreak; itemId: string } | null>(null);
 
   // Spoken-word speed: both decks (defaultPlaybackRate survives a source change); music stays at 1×.
   const spoken = current?.type === 'bookpart' || current?.type === 'podcastepisode';
@@ -510,6 +582,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     }
     adoptRef.current = null;
     cancelHandover();
+    if (!host?.current?.key.startsWith('now:')) host?.cancel();
     let cancelled = false;
     setLoading(true);
     setPosition(0);
@@ -593,6 +666,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       setPosition(ms);
       return;
     }
+    abortGap(true);
+    host?.cancel();
     cancelHandover();
     const d = out.active;
     const a = d.el;
@@ -663,6 +738,25 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setAltSource: (url: string | null) => altSourceRef.current(url),
   }), [out]);
 
+  /** End a running gap break early (seek, skip): the outgoing deck back to full; `resume` = play it on. */
+  const abortGap = useCallback((resume: boolean) => {
+    if (!gapRef.current || !out) return;
+    gapRef.current = null;
+    gapPausedRef.current = false;
+    handoverRef.current = null;
+    host?.cancel();
+    out.setFade(out.active.id, 1);
+    if (resume) void out.active.el.play().catch(() => setPlaying(false));
+  }, [out, host]);
+
+  /** The listener moved on from a track early: DJ feedback ("not for me"), for Your DJ and mixes. */
+  const noteSkip = () => {
+    const st = stateRef.current;
+    const cur = st.queue[st.index];
+    if (!cur || cur.type !== 'track' || (!yourDjRef.current && !st.mixSession && !st.radio)) return;
+    if (st.positionMs < SKIP_FEEDBACK_MS && (!st.durationMs || st.positionMs < st.durationMs - 3000)) api.dj.feedback({ itemId: cur.id, kind: 'skip' }).catch(() => {});
+  };
+
   const goto = useCallback((i: number) => {
     const { queue: q } = stateRef.current;
     if (i < 0 || i >= q.length) return;
@@ -679,6 +773,14 @@ export function MusicProvider({ children }: { children: ReactNode }) {
 
   const next = useCallback(() => {
     out?.prime(wantGraph());
+    if (gapRef.current) {
+      // Skipping during a gap break: the host stops, the next track starts now.
+      gapRef.current = null;
+      gapPausedRef.current = false;
+      handoverRef.current = null;
+    }
+    host?.cancel();
+    noteSkip();
     // Skipping during an Automix blend completes it: the incoming track simply takes over.
     if (blendRef.current) {
       completeBlend();
@@ -703,6 +805,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
 
   const prev = useCallback(() => {
     out?.prime(wantGraph());
+    abortGap(false);
+    host?.cancel();
     const a = liveEl();
     if (castingRef.current) {
       const pos = castOffsetRef.current + castRef.current.remote.currentTime * 1000;
@@ -737,6 +841,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   /* ---------------- Automix plans ---------------- */
   /** Automix runs on Web Audio (it needs gain automation); on iOS only where the graph is in use (see wantGraph). */
   const automixActive = () => stateRef.current.automixOn && (!SUSPENDS_WEB_AUDIO_IN_BACKGROUND || !!out?.webAudio);
+  /** Analyses already loaded (synchronous reads for the host's gap timing). */
+  const resolvedAnalysesRef = useRef(new Map<string, TrackAnalysis>());
   /** Track analysis per item (server's own API; on-demand analysis there), shared by planning and gapless checks. */
   const analysesRef = useRef(new Map<string, Promise<TrackAnalysis | null>>());
   const analysisFor = useCallback((id: string) => {
@@ -744,6 +850,9 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     let p = m.get(id);
     if (!p) {
       p = api.dj.analysis(id).catch(() => null);
+      p.then((a) => {
+        if (a) resolvedAnalysesRef.current.set(id, a);
+      });
       m.set(id, p);
       if (m.size > 500) m.delete(m.keys().next().value!);
     }
@@ -752,7 +861,11 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const seedAnalyses = useCallback((list: Record<string, TrackAnalysis | null> | { item: Item; analysis: TrackAnalysis | null }[]) => {
     const m = analysesRef.current;
     const entries = Array.isArray(list) ? list.map((t) => [t.item.id, t.analysis] as const) : Object.entries(list);
-    for (const [id, a] of entries) if (a) m.set(id, Promise.resolve(a));
+    for (const [id, a] of entries) {
+      if (!a) continue;
+      m.set(id, Promise.resolve(a));
+      resolvedAnalysesRef.current.set(id, a);
+    }
   }, []);
   /** The plan for the move from the current track to the next: tr = null means a gapless join. */
   const planRef = useRef<{ key: string; ready: boolean; tr: DjTransition | null } | null>(null);
@@ -839,6 +952,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const n = nextIndexOf();
     const st = stateRef.current;
     if (n < 0 || !to.ready || to.itemId !== st.queue[n]?.id) return false;
+    const fromItem = st.queue[st.index];
+    if (fromItem) host?.onTransition(hostKey(fromItem, st.queue[n]!, st.index));
     out.resume();
     to.queueIndex = n;
     out.swap();
@@ -922,6 +1037,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const label = automixLabel(tr);
     const b = { from, to, n, into, label, tr, inRate: rates.inRate, outRate: rates.outRate, token: to.token, durMs, startedAt: performance.now(), timers: [] as number[] };
     blendRef.current = b;
+    const fromItem = st.queue[st.index];
+    if (fromItem) host?.onTransition(hostKey(fromItem, into, st.index));
     void to.el.play().catch(() => {
       if (blendRef.current === b) abortBlend();
     });
@@ -954,10 +1071,58 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     return true;
   }, [out, nextIndexOf, deckGain, abortBlend, completeBlend]);
 
+  /**
+   * Radio Host / Your DJ commentary: about 30 s before the transition into the next track, ask the server for a
+   * break (once per transition), with the incoming track's talk-over window from its analysis.
+   */
+  const hostTick = () => {
+    const st = stateRef.current;
+    if (!out || !host || !st.hostMode || castingRef.current || host.isMuted || st.repeat === 'one') return;
+    const d = out.active;
+    if (d.el.paused) return;
+    const n = nextIndexOf();
+    const cur = st.queue[st.index];
+    const nx = st.queue[n];
+    if (!cur || !nx || cur.type !== 'track' || nx.type !== 'track' || n === st.index) return;
+    const key = hostKey(cur, nx, st.index);
+    const rate = d.el.playbackRate || 1;
+    const pos = d.offsetMs + d.el.currentTime * 1000;
+    const endMs = Number.isFinite(d.el.duration) ? d.offsetMs + d.el.duration * 1000 : st.durationMs;
+    if (!endMs) return;
+    const plan = automixActive() && automixApplies(cur, nx) ? planFor(cur, nx) : null;
+    const tr = plan?.ready ? plan.tr : null;
+    const transitionMs = tr ? tr.mixOutMs : endMs - fadeSecFor(cur, nx) * 1000;
+    const remaining = (transitionMs - pos) / rate;
+    const at = performance.now() + remaining;
+    if (host.current?.key === key) {
+      host.retime(key, at);
+      return;
+    }
+    if (hostAskedRef.current.has(key)) return;
+    const ask = askState(remaining);
+    if (ask === 'wait') return;
+    hostAskedRef.current.add(key);
+    if (hostAskedRef.current.size > 200) hostAskedRef.current.delete(hostAskedRef.current.values().next().value!);
+    if (ask === 'late') return;
+    const mode = st.hostMode;
+    const sessionId = yourDjRef.current?.sessionId;
+    void analysisFor(nx.id).then((ab) => {
+      if (stateRef.current.queue[stateRef.current.index]?.id !== cur.id) return;
+      const introEnd = ab?.cues?.introEndMs ?? ab?.introEndMs ?? null;
+      const introMs = talkWindowMs(introEnd, tr?.mixInMs ?? 0, tr?.style === 'blend' ? tr.tempoRatio || 1 : 1);
+      const now = new Date();
+      host.ask(key, {
+        mode, previousItemId: cur.id, nextItemId: nx.id, sessionId: mode === 'yourdj' ? sessionId : undefined, ...host.stats(),
+        introMs: introMs ?? undefined, hour: now.getHours(), minute: now.getMinutes(),
+      }, at, introMs);
+    });
+  };
+
   /** Called on every timeupdate of the live deck: preload, then start the next track on time. */
   const checkTransition = useCallback(() => {
     if (!out || castingRef.current || handoverRef.current) return;
     maybePreload();
+    hostTick();
     const st = stateRef.current;
     const d = out.active;
     const to = out.standby;
@@ -966,6 +1131,32 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     if (!Number.isFinite(remainingMs)) return;
     const cur = st.queue[st.index];
     const nx = st.queue[nextIndexOf()];
+    const gapKey = cur && nx ? hostKey(cur, nx, st.index) : '';
+    if (gapKey && host?.wantsGap(gapKey)) {
+      // A gap break: no blend; at the end of the song's audio the music fades, the host talks, then the next track.
+      const ca = resolvedAnalysesRef.current.get(cur!.id);
+      const durMs = d.offsetMs + d.el.duration * 1000;
+      const endMs = Math.min(durMs, ca?.cues?.endMs ?? ca?.cueOutMs ?? durMs);
+      const pos = d.offsetMs + d.el.currentTime * 1000;
+      if (pos < endMs - GAP_FADE_MS - 150) return;
+      handoverRef.current = { timer: null, fromDeck: d.id };
+      gapRef.current = gapKey;
+      void out.fadeTo(d.id, 0, GAP_FADE_MS / 1000).then(async () => {
+        if (gapRef.current !== gapKey) return;
+        d.el.pause();
+        await host.playGap(gapKey);
+        if (gapRef.current !== gapKey) return;
+        gapRef.current = null;
+        handoverRef.current = null;
+        if (gapPausedRef.current) {
+          // Paused during the talk: the next track waits, paused.
+          gapPausedRef.current = false;
+          holdRef.current = true;
+          setIndex(nextIndexOf());
+        } else if (!handover(0)) next();
+      });
+      return;
+    }
     const plan = automixActive() && automixApplies(cur, nx) ? planFor(cur, nx) : null;
     if (plan?.tr && to.itemId === nx?.id) {
       // Automix: start the blend exactly on the planned mix-out point (a timer closes the gap between timeupdates).
@@ -997,7 +1188,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       handoverRef.current = { timer, fromDeck: d.id };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [out, maybePreload, fadeSecFor, nextIndexOf, handover, startBlend]);
+  }, [out, maybePreload, fadeSecFor, nextIndexOf, handover, startBlend, next]);
 
   // A stale preload (queue edited, repeat/shuffle changed): drop it so the right track is prepared.
   useEffect(() => {
@@ -1041,6 +1232,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       };
       const onPause = () => {
         if (!live()) return;
+        // A gap break paused the outgoing track on purpose: the set is still "playing".
+        if (gapRef.current) return;
         // Paused from outside (headset, OS media controls) mid-blend: cut it so the incoming track doesn't play on alone.
         if (blendRef.current && !a.ended) abortBlend();
         setPlaying(false);
@@ -1245,17 +1438,32 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     }
     out.prime(wantGraph());
     const a = out.active.el;
+    if (gapRef.current) {
+      // During a gap break the deck is paused on purpose: play/pause toggles whether the next track waits.
+      gapPausedRef.current = !gapPausedRef.current;
+      if (gapPausedRef.current) host?.skip();
+      setPlaying(!gapPausedRef.current);
+      return;
+    }
     if (a.paused) void a.play();
     else {
+      host?.cancel();
       cancelHandover();
       a.pause();
     }
-  }, [out, takeOverCast, cancelHandover]);
+  }, [out, takeOverCast, cancelHandover, host]);
   const pausePlayback = useCallback(() => {
     if (castingRef.current) {
       if (!castRef.current.remote.isPaused) castRef.current.playOrPause();
       return;
     }
+    if (gapRef.current) {
+      gapPausedRef.current = true;
+      host?.skip();
+      setPlaying(false);
+      return;
+    }
+    host?.cancel();
     cancelHandover();
     liveEl()?.pause();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1345,8 +1553,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const label = `Radio based on ${title}`;
     try {
       radioReq.current = { harmonic: true, curve: 'steady' };
-      const mix = await api.dj.mix({ seedItemId: seedId, count: 25, harmonic: true, curve: 'steady' });
-      if (mix.request) radioReq.current = { ...mix.request, harmonic: true, curve: 'steady' };
+      const presetId = stateRef.current.activePresetId ?? undefined;
+      if (presetId) radioReq.current.presetId = presetId;
+      const mix = await api.dj.mix({ seedItemId: seedId, count: 25, harmonic: true, curve: 'steady', presetId });
+      if (mix.request) radioReq.current = { ...mix.request, harmonic: true, curve: 'steady', presetId };
       const tracks = mix.tracks.map((t) => t.item).filter(isAudio);
       if (!tracks.length) {
         toast.show('Not enough music to build a radio from this yet');
@@ -1356,6 +1566,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       const cur = st.queue[st.index];
       setShuffleState(false);
       setRepeat('off');
+      dispatchDj({ type: 'end' });
       setRadio({ seedId, label });
       if (cur && cur.id === seedId && (playingRef.current || castingRef.current)) {
         // Keep the seed playing; the mix becomes what comes next.
@@ -1406,7 +1617,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       let start = src.start ?? 0;
       mixSourceRef.current = null;
       if (src.source || src.smart) {
-        const base: DjOrderRequest = src.source ? { source: src.source, harmonic: true } : { itemIds: (src.items ?? []).map((i) => i.id).slice(0, 5000), harmonic: true };
+        const presetId = stateRef.current.activePresetId ?? undefined;
+        const base: DjOrderRequest = src.source ? { source: src.source, harmonic: true, presetId } : { itemIds: (src.items ?? []).map((i) => i.id).slice(0, 5000), harmonic: true, presetId };
         const r = await api.dj.order({ ...base, limit: src.source ? MIX_PAGE : 500 });
         seedAnalyses(r.analyses);
         tracks = r.items.filter(isAudio);
@@ -1420,6 +1632,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       setRadio(null);
       setShuffleState(false);
       setRepeat('off');
+      dispatchDj({ type: 'end' });
       setMixSession({ label: src.label });
       setEndless(true);
       startAtRef.current = null;
@@ -1429,7 +1642,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       toast.error(e);
     }
-  }, [out, toast, seedAnalyses]);
+  }, [out, toast, seedAnalyses, dispatchDj]);
 
   // Keep a mix going: the next page of a big source, then (Endless) similar tracks from the library.
   useEffect(() => {
@@ -1438,7 +1651,22 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const src = mixSourceRef.current;
     const ids = queue.map((q) => q.id);
     let more: Promise<Item[]>;
-    if (src && src.remaining > 0) {
+    const dj = yourDjRef.current;
+    if (dj) {
+      // Your DJ: more of the current segment, or the next one (the server decides).
+      const history = sessionHistory(queue, queue.length - 1);
+      // Sessions live a few hours on the server: an expired one just starts afresh (same rules), silently.
+      more = api.dj.sessionMore(dj.sessionId, history).catch((e: { status?: number }) => {
+        if (e?.status !== 404) throw e;
+        const presetId = stateRef.current.activePresetId ?? undefined;
+        return api.dj.session(presetId ? { presetId } : {});
+      }).then((r) => {
+        if (yourDjRef.current?.sessionId !== dj.sessionId) return [];
+        seedAnalyses(r.analyses);
+        dispatchDj({ type: 'more', session: r });
+        return r.items;
+      });
+    } else if (src && src.remaining > 0) {
       more = api.dj.order({ ...src.base, history: ids.slice(-5000), limit: MIX_PAGE }).then((r) => {
         seedAnalyses(r.analyses);
         src.remaining = r.remaining;
@@ -1446,7 +1674,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       });
     } else if (endless) {
       // Seeded from the last played tracks; local scoring only (no prompt, so no AI).
-      more = api.dj.mix({ history: ids.slice(-200), count: 10, harmonic: true, curve: 'steady', transitions: mixStyle, maxStretchPct: AUTOMIX_MAX_STRETCH * 100 }).then((m) => {
+      more = api.dj.mix({ history: ids.slice(-200), count: 10, harmonic: true, curve: 'steady', transitions: mixStyle, maxStretchPct: AUTOMIX_MAX_STRETCH * 100, presetId: stateRef.current.activePresetId ?? undefined }).then((m) => {
         seedAnalyses(m.tracks);
         return m.tracks.map((t) => t.item);
       });
@@ -1464,7 +1692,163 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       .finally(() => {
         mixFetching.current = false;
       });
-  }, [mixSession, endless, queue, index, mixStyle, seedAnalyses]);
+  }, [mixSession, endless, queue, index, mixStyle, seedAnalyses, dispatchDj]);
+
+  /* ---------------- Your DJ ---------------- */
+  /** Introduce a new direction once its first track plays: the DJ's voice, or a caption when commentary is off. */
+  const introduce = useCallback((session: DjSession, ack: boolean) => {
+    const first = session.items[0];
+    if (!first) return;
+    const c = stateRef.current.commentary;
+    if (c === 'off') {
+      if (ack) host?.caption(switchAck(session.segment));
+      return;
+    }
+    const brk: DjBreak | null = session.intro ?? (ack ? { id: `ack-${session.segment.id}`, kind: 'segment-intro', text: switchAck(session.segment), placement: 'over-intro', maxMs: 8000, audioUrl: null, durationMs: null } : null);
+    if (brk) pendingIntroRef.current = { brk, itemId: first.id };
+  }, [host]);
+
+  const startYourDj = useCallback(async () => {
+    out?.prime(true);
+    setYourDjStarting(true);
+    try {
+      const presetId = stateRef.current.activePresetId ?? undefined;
+      djPresetRef.current = presetId ?? null;
+      const session = await api.dj.session(presetId ? { presetId } : {});
+      const tracks = session.items.filter(isAudio);
+      if (!tracks.length) {
+        toast.show(session.note || 'Your DJ needs a few more songs in your library to build a set.');
+        return;
+      }
+      seedAnalyses(session.analyses);
+      host?.cancel();
+      setRadio(null);
+      setShuffleState(false);
+      setRepeat('off');
+      mixSourceRef.current = null;
+      setMixSession({ label: 'Your DJ' });
+      setEndless(true);
+      dispatchDj({ type: 'start', session: { ...session, items: tracks } });
+      introduce({ ...session, items: tracks }, false);
+      startAtRef.current = null;
+      setQueue(tracks);
+      setIndex(-1);
+      window.setTimeout(() => setIndex(0), 0);
+    } catch (e) {
+      console.debug('[your dj] start failed', e);
+      toast.show("Your DJ isn't available right now. Try again in a moment.");
+    } finally {
+      setYourDjStarting(false);
+    }
+  }, [out, toast, seedAnalyses, dispatchDj, introduce, host]);
+
+  /** Apply a new direction (switch / request): it replaces what was coming up and starts with the next track. */
+  const turnTo = useCallback((session: DjSession) => {
+    const tracks = session.items.filter(isAudio);
+    const i = stateRef.current.index;
+    if (!tracks.length || i < 0) return;
+    seedAnalyses(session.analyses);
+    introduce({ ...session, items: tracks }, true);
+    setQueue((q) => switchQueue(q, i, tracks));
+    // A short fade out of the current track, then the new segment.
+    window.setTimeout(() => {
+      if (blendRef.current) abortBlend();
+      cancelHandover();
+      const d = out?.active;
+      const go = () => setIndex(stateRef.current.index === i ? i + 1 : stateRef.current.index);
+      if (d && out?.webAudio && !d.el.paused) void out.fadeTo(d.id, 0, 0.6).then(go);
+      else go();
+    }, 0);
+  }, [out, seedAnalyses, introduce, abortBlend, cancelHandover]);
+
+  const djSwitch = useCallback(async () => {
+    const dj = yourDjRef.current;
+    if (!dj || dj.busy) return;
+    out?.prime(true);
+    dispatchDj({ type: 'busy', busy: 'switch' });
+    try {
+      const st = stateRef.current;
+      const session = await api.dj.sessionSwitch(dj.sessionId, sessionHistory(st.queue, st.queue.length - 1));
+      if (yourDjRef.current?.sessionId !== dj.sessionId) return;
+      dispatchDj({ type: 'switch', session });
+      turnTo(session);
+    } catch (e) {
+      // Silent: the set just carries on.
+      console.debug('[your dj] switch failed', e);
+      dispatchDj({ type: 'busy', busy: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [out, dispatchDj, turnTo]);
+
+  const djRequest = useCallback(async (text: string) => {
+    const dj = yourDjRef.current;
+    const q = text.trim();
+    if (!dj || !q || dj.busy) return;
+    out?.prime(true);
+    dispatchDj({ type: 'busy', busy: 'request' });
+    try {
+      const st = stateRef.current;
+      const result = await api.dj.sessionRequest(dj.sessionId, q, sessionHistory(st.queue, st.queue.length - 1));
+      if (yourDjRef.current?.sessionId !== dj.sessionId) return;
+      dispatchDj({ type: 'request', result });
+      if ('id' in result && result.items?.length) turnTo(result);
+    } catch (e) {
+      console.debug('[your dj] request failed', e);
+      // Never an error: a gentle line, and the set carries on.
+      dispatchDj({ type: 'request', result: { ok: false, message: "I couldn't line that up just now, so I'll keep this going." } });
+    }
+  }, [out, dispatchDj, turnTo]);
+
+  const djLove = useCallback((item: Item) => {
+    api.dj.feedback({ itemId: item.id, kind: 'love' }).catch(() => {});
+    api.items.setFavorite(item.id, true).catch(() => {});
+  }, []);
+
+  // A new track started: count it for the host's spacing, and play a pending Your DJ intro over its start.
+  useEffect(() => {
+    if (!current || !playing) return;
+    const p = pendingIntroRef.current;
+    if (p && p.itemId === current.id) {
+      pendingIntroRef.current = null;
+      void analysisFor(current.id).then((a) => {
+        if (stateRef.current.queue[stateRef.current.index]?.id !== current.id) return;
+        const d = out?.active;
+        const pos = d ? d.offsetMs + d.el.currentTime * 1000 : 0;
+        host?.playNow(p.brk, talkWindowMs(a?.cues?.introEndMs ?? a?.introEndMs ?? null, pos));
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id, playing]);
+  useEffect(() => {
+    if (current) host?.noteTrackStarted();
+  }, [current?.id, host]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Play rules changed during Your DJ: what's coming up is re-picked within the new rules (the current song plays on).
+  const djPresetRef = useRef<string | null>(null);
+  useEffect(() => {
+    const dj = yourDjRef.current;
+    if (!dj || djPresetRef.current === activePresetId) return;
+    djPresetRef.current = activePresetId;
+    api.dj.session(activePresetId ? { presetId: activePresetId } : {})
+      .then((session) => {
+        if (yourDjRef.current?.sessionId !== dj.sessionId) return;
+        const tracks = session.items.filter(isAudio);
+        if (!tracks.length) {
+          dispatchDj({ type: 'request', result: { ok: false, message: session.note || 'Nothing in your library fits those rules yet, so I kept the current songs.' } });
+          return;
+        }
+        seedAnalyses(session.analyses);
+        dispatchDj({ type: 'more', session: { ...session, items: tracks } });
+        const i = stateRef.current.index;
+        setQueue((q) => switchQueue(q, i, tracks));
+      })
+      .catch((e) => console.debug('[your dj] rules change', e));
+  }, [activePresetId, dispatchDj, seedAnalyses]);
+
+  // The host stops talking when it is turned off, and follows mute.
+  useEffect(() => {
+    if (!hostMode && !yourDj) host?.cancel();
+  }, [hostMode, yourDj, host]);
 
   /** Save a music preference for this listener (optimistic). */
   const savePref = useCallback((patch: Partial<UserPreferences>) => {
@@ -1485,7 +1869,12 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       seek: (ms: number) => seekRef.current(ms),
       blending: () => !!blendRef.current,
     };
-  }, [out]);
+    // Radio Host / Your DJ voice (tests and screenshots): what it is doing, and a caption on demand.
+    (window as unknown as { vibeHostDebug?: unknown }).vibeHostDebug = {
+      state: () => ({ ...host?.state, current: host?.current, stats: host?.stats() }),
+      caption: (text: string, ms = 60000) => host?.caption(text, ms),
+    };
+  }, [out, host]);
 
   // Release the audio graph on unmount.
   useEffect(() => () => out?.close(), [out]);
@@ -1496,7 +1885,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       playQueue: (items, start = 0, startMs) => {
         if (!items.length) return;
         out?.prime(wantGraph());
+        abortGap(false);
+        host?.cancel();
         setRadio(null);
+        dispatchDj({ type: 'end' });
         // Normal Play follows the Automix preference ("Play as mix" sessions end here).
         setMixSession(null);
         mixSourceRef.current = null;
@@ -1529,6 +1921,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         const item = stateRef.current.queue[i];
         if (!item) return;
         out?.prime(wantGraph());
+        if (i !== stateRef.current.index) {
+          abortGap(false);
+          host?.cancel();
+        }
         if (i === stateRef.current.index) {
           if (startMs != null) seekRef.current(startMs);
           return;
@@ -1545,6 +1941,9 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         if (out && out.active.queueIndex > i) out.active.queueIndex--;
       },
       clear: () => {
+        abortGap(false);
+        host?.cancel();
+        dispatchDj({ type: 'end' });
         cancelHandover();
         liveEl()?.pause();
         if (castingRef.current) castRef.current.stop();
@@ -1593,6 +1992,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       setAutomix: (on) => {
         if (!on) {
           setMixSession(null);
+          dispatchDj({ type: 'end' });
           if (blendRef.current) completeBlend();
         }
         if (on !== automixPref || user?.preferences.automix === undefined) savePref({ automix: on });
@@ -1604,19 +2004,51 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       endless,
       setEndless,
       blend,
+      yourDj,
+      yourDjStarting,
+      startYourDj,
+      djSwitch,
+      djRequest,
+      djDismiss: () => dispatchDj({ type: 'dismiss' }),
+      djLove,
+      host: {
+        ...hostState,
+        muted: hostMuted,
+        active: !!hostMode || !!yourDj,
+        skip: () => {
+          host?.skip();
+        },
+        setMuted: (mu: boolean) => {
+          host?.setMuted(mu);
+          setHostMutedState(mu);
+          try {
+            localStorage.setItem(HOST_MUTE_KEY, mu ? '1' : '0');
+          } catch {
+            /* private mode */
+          }
+        },
+      },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [queue, index, current, info, playing, loading, positionMs, durationMs, volume, muted, shuffle, repeat, chapters, next, prev, goto, togglePlayback, pausePlayback, cast, casting, sleep, setSleep, radio, startRadio, cancelHandover, outputApi, altSource, rate,
-      automixOn, automixPref, mixStyle, mixSession, playAsMix, endless, blend, savePref, completeBlend, user?.preferences.automix],
+      automixOn, automixPref, mixStyle, mixSession, playAsMix, endless, blend, savePref, completeBlend, user?.preferences.automix,
+      yourDj, yourDjStarting, startYourDj, djSwitch, djRequest, djLove, hostState, hostMuted, hostMode, host, abortGap, dispatchDj],
   );
 
   const latest = useRef(value);
   latest.current = value;
-  const actions = useMemo<MusicActions>(() => ({ playQueue: (...a) => latest.current.playQueue(...a), playAsMix: (...a) => latest.current.playAsMix(...a) }), []);
+  const actions = useMemo<MusicActions>(() => ({
+    playQueue: (...a) => latest.current.playQueue(...a),
+    playAsMix: (...a) => latest.current.playAsMix(...a),
+    startYourDj: () => latest.current.startYourDj(),
+  }), []);
 
   return (
     <Ctx.Provider value={value}>
-      <ActionsCtx.Provider value={actions}>{children}</ActionsCtx.Provider>
+      <ActionsCtx.Provider value={actions}>
+        {children}
+        <PlayRulesHost />
+      </ActionsCtx.Provider>
     </Ctx.Provider>
   );
 }
