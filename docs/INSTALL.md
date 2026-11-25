@@ -103,7 +103,7 @@ Windows 10/11 or Server 2019+ (x64).
 
 ### Installer (recommended)
 
-1. Download `kinora-<version>-windows-x64-setup.exe` from [Releases](https://github.com/Bucifer6/MediaMax/releases/latest)
+1. Download `vibe-<version>-windows-x64-setup.exe` from [Releases](https://github.com/Bucifer6/MediaMax/releases/latest)
    and run it. SmartScreen may warn about an unrecognised app the first time: **More info → Run anyway**.
 2. Choose how Vibe should run:
    - **As a tray app** (default, for a PC you use): Vibe runs while you are signed in, with an icon next to the
@@ -121,12 +121,12 @@ keeps your choices and starts it again. It also takes over a folder set up by ha
 `install-service.ps1`. **Uninstall:** Settings → Apps → Vibe. It asks whether to delete your data as well (default:
 keep it). You can switch between tray app and service by running setup again.
 
-Unattended install: `kinora-<version>-windows-x64-setup.exe /VERYSILENT [/TASKS="service"] [/PORT=9000]`; uninstall
+Unattended install: `vibe-<version>-windows-x64-setup.exe /VERYSILENT [/TASKS="service"] [/PORT=9000]`; uninstall
 with `"C:\Program Files\Kinora\unins000.exe" /VERYSILENT` (keeps the data).
 
 ### Portable zip
 
-1. Download `kinora-<version>-windows-x64.zip` and extract it (right-click → Extract All).
+1. Download `vibe-<version>-windows-x64.zip` and extract it (right-click → Extract All).
 2. **Try it:** double-click `Kinora.cmd`. It starts Vibe in a minimised window and opens your browser.
 3. **Run at boot:** open PowerShell **as Administrator** in the extracted folder and run
 
@@ -165,8 +165,8 @@ For x64 and arm64 Linux with glibc 2.28 or newer (Debian 10+, Ubuntu 20.04+, RHE
 64-bit). Nothing else to install: Node.js and FFmpeg are in the archive.
 
 ```bash
-tar -xzf kinora-<version>-linux-x64.tar.gz      # or -linux-arm64
-cd kinora-<version>-linux-x64
+tar -xzf vibe-<version>-linux-x64.tar.gz      # or -linux-arm64
+cd vibe-<version>-linux-x64
 ./kinora                                         # try it; Ctrl+C stops it
 ```
 
@@ -544,7 +544,7 @@ you edit them; the old weekly limit becomes the default quota.
 ```bash
 npm ci && npm run build
 node scripts/fetch-ffmpeg.mjs --target linux-x64 --out build/ffmpeg     # optional: static FFmpeg
-node scripts/package.mjs --ffmpeg-dir build/ffmpeg                      # -> release/kinora-<version>-linux-x64.tar.gz
+node scripts/package.mjs --ffmpeg-dir build/ffmpeg                      # -> release/vibe-<version>-linux-x64.tar.gz
 ```
 
 `scripts/package.mjs` bundles the server into one file with esbuild and turns it into a Node.js

@@ -2,7 +2,7 @@
 ;
 ; Built by scripts/build-installer.mjs on the Windows release runner from the same files as the zip:
 ;   iscc /DAppVersion=0.5.0 /DNumericVersion=0.5.0.0 /DSourceDir=<unpacked zip> /DTrayExe=<VibeTray.exe>
-;        /DOutputDir=release /DOutputBase=kinora-0.5.0-windows-x64-setup kinora.iss
+;        /DOutputDir=release /DOutputBase=vibe-0.5.0-windows-x64-setup kinora.iss
 ;
 ; What it does (like other Windows media servers):
 ;   - installs to C:\Program Files\Kinora (folder name kept from before the rename to Vibe);
@@ -14,7 +14,7 @@
 ;     uninstaller in Settings > Apps that keeps the library data unless asked to delete it.
 ; Data lives in %ProgramData%\Kinora (or %ProgramData%\MediaMax after an upgrade from MediaMax) in both modes.
 ;
-; Silent install: kinora-<version>-windows-x64-setup.exe /VERYSILENT [/TASKS="service"] [/PORT=9000]
+; Silent install: vibe-<version>-windows-x64-setup.exe /VERYSILENT [/TASKS="service"] [/PORT=9000]
 
 #ifndef AppVersion
   #error Pass /DAppVersion=x.y.z
@@ -32,7 +32,7 @@
   #define OutputDir "release"
 #endif
 #ifndef OutputBase
-  #define OutputBase "kinora-" + AppVersion + "-windows-x64-setup"
+  #define OutputBase "vibe-" + AppVersion + "-windows-x64-setup"
 #endif
 
 [Setup]

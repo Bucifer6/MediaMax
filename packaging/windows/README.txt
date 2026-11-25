@@ -5,7 +5,7 @@ Version @VERSION@
 Everything Vibe needs is in this folder. Nothing else has to be installed.
 
 Prefer a normal Windows installer (tray icon, Start menu, uninstaller)? Download
-kinora-@VERSION@-windows-x64-setup.exe from the same Releases page instead of this zip.
+vibe-@VERSION@-windows-x64-setup.exe from the same Releases page instead of this zip.
 
   kinora.exe            the server (Node.js is built in)
   web\                  the web app it serves (keep it next to kinora.exe)

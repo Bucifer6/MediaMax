@@ -201,8 +201,8 @@ FFmpeg is included in every option. Then open `http://<server>:8484` and follow 
 | **Linux server, secure & public** | `curl -fsSL https://raw.githubusercontent.com/Bucifer6/MediaMax/main/deploy/install.sh \| sudo bash` sets up Docker, **CrowdSec** and/or **fail2ban**, your media folders read-only, hardware transcoding and hardened defaults. It installs **no reverse proxy by default** (`--proxy none`), so it fits behind the one you already run; add `--proxy caddy` or `--proxy nginx` for HTTPS with a free certificate, `--proxy tunnel` for Cloudflare Tunnel, or `--builtin-https` to turn on Vibe's own HTTPS later from **Admin → Network**. See [docs/DEPLOY.md](docs/DEPLOY.md) |
 | **Docker** (amd64, arm64) | `docker run -d -p 8484:8484 -v "$PWD/config:/config" -v /path/to/media:/media:ro ghcr.io/bucifer6/kinora` |
 | **NAS**: Synology, QNAP, Unraid, TrueNAS SCALE, OpenMediaVault | ready-made templates in [`nas/`](nas) |
-| **Windows** x64 | `kinora-<version>-windows-x64-setup.exe` from [Releases](https://github.com/Bucifer6/MediaMax/releases/latest): a setup wizard that runs Vibe as a tray app or as a background service (a portable zip is there too) |
-| **Linux** x64 / arm64 | `kinora-<version>-linux-<arch>.tar.gz`: run `./kinora`, or install the included systemd unit |
+| **Windows** x64 | `vibe-<version>-windows-x64-setup.exe` from [Releases](https://github.com/Bucifer6/MediaMax/releases/latest): a setup wizard that runs Vibe as a tray app or as a background service (a portable zip is there too) |
+| **Linux** x64 / arm64 | `vibe-<version>-linux-<arch>.tar.gz`: run `./kinora`, or install the included systemd unit |
 
 Step-by-step guides, hardware transcoding, upgrades and backups are in **[docs/INSTALL.md](docs/INSTALL.md)**. Optional free add-ons for the AI DJ (Ollama, Kokoro, Piper) are covered there too.
 

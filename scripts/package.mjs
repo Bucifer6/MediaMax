@@ -224,7 +224,7 @@ async function main() {
   run(process.execPath, ['--experimental-sea-config', seaConfig], { cwd: work });
 
   // 3. Copy the Node binary and inject the blob.
-  const stageName = `kinora-${version}-${target}`;
+  const stageName = `vibe-${version}-${target}`;
   const stage = path.join(work, stageName);
   fs.mkdirSync(stage, { recursive: true });
   const exeName = isWin ? 'kinora.exe' : 'kinora';

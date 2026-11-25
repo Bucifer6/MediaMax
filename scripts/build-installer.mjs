@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * Builds the Windows setup program (kinora-<version>-windows-x64-setup.exe) from the Windows release zip.
+ * Builds the Windows setup program (vibe-<version>-windows-x64-setup.exe) from the Windows release zip.
  * Runs on Windows only: it compiles the tray app with the C# compiler that ships with the .NET Framework and
  * packs everything with Inno Setup 6 (`choco install innosetup`, or set ISCC to ISCC.exe).
  *
- *   node scripts/package.mjs --target windows-x64 --ffmpeg-dir build/ffmpeg    # -> release/kinora-<v>-windows-x64.zip
- *   node scripts/build-installer.mjs                                           # -> release/kinora-<v>-windows-x64-setup.exe
+ *   node scripts/package.mjs --target windows-x64 --ffmpeg-dir build/ffmpeg    # -> release/vibe-<v>-windows-x64.zip
+ *   node scripts/build-installer.mjs                                           # -> release/vibe-<v>-windows-x64-setup.exe
  *
  * Options:
  *   --version <x.y.z>   default: root package.json version (or $KINORA_VERSION / $MEDIAMAX_VERSION)
- *   --zip <file>        default: release/kinora-<version>-windows-x64.zip
+ *   --zip <file>        default: release/vibe-<version>-windows-x64.zip
  *   --out <dir>         default: release/
  *
  * The installer itself is packaging/windows-installer/kinora.iss; the tray app is VibeTray.cs next to it.
@@ -56,7 +56,7 @@ function main() {
   if (!m || !/^[0-9A-Za-z.+-]+$/.test(version)) throw new Error(`Bad version "${version}"`);
   const numeric = `${m[1]}.${m[2]}.${m[3]}.0`; // Windows file versions are four numbers; pre-release tags drop out
   const outDir = path.resolve(root, args.out ?? 'release');
-  const zip = path.resolve(root, args.zip ?? path.join('release', `kinora-${version}-windows-x64.zip`));
+  const zip = path.resolve(root, args.zip ?? path.join('release', `vibe-${version}-windows-x64.zip`));
   if (!fs.existsSync(zip)) throw new Error(`${zip} not found: run scripts/package.mjs --target windows-x64 first`);
 
   const winDir = process.env.WINDIR ?? 'C:\\Windows';
@@ -85,7 +85,7 @@ function main() {
     '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', `/out:${tray}`, path.join(srcDir, 'VibeTray.cs')]);
 
   // 3. Setup program.
-  const base = `kinora-${version}-windows-x64-setup`;
+  const base = `vibe-${version}-windows-x64-setup`;
   run(iscc, ['/Qp', `/DAppVersion=${version}`, `/DNumericVersion=${numeric}`, `/DSourceDir=${app}`, `/DTrayExe=${tray}`,
     `/DOutputDir=${outDir}`, `/DOutputBase=${base}`, path.join(srcDir, 'kinora.iss')]);
   const exe = path.join(outDir, `${base}.exe`);
