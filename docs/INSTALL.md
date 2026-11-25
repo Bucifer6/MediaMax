@@ -9,7 +9,7 @@ setup wizard creates the first administrator.
 | Synology, QNAP, Unraid, TrueNAS SCALE, OpenMediaVault | the Docker image | [NAS units](#nas-units) |
 | A Linux server with Docker, reachable from the internet (HTTPS, CrowdSec/fail2ban) | the installer | [DEPLOY.md](DEPLOY.md) |
 | Any Linux server with Docker | the Docker image | [Docker](#docker) |
-| A Windows PC or server | the Windows zip | [Windows](#windows) |
+| A Windows PC or server | the Windows installer | [Windows](#windows) |
 | Linux without Docker (x64, or arm64 such as a Raspberry Pi 4/5 with a 64-bit OS) | the Linux archive | [Linux](#linux) |
 
 Downloads are on the [Releases page](https://github.com/Bucifer6/MediaMax/releases/latest). The Windows and
@@ -101,11 +101,34 @@ repository, or `docker buildx build --platform linux/amd64,linux/arm64 -t kinora
 
 Windows 10/11 or Server 2019+ (x64).
 
-1. Download `kinora-<version>-windows-x64.zip` from [Releases](https://github.com/Bucifer6/MediaMax/releases/latest)
-   and extract it (right-click → Extract All).
+### Installer (recommended)
+
+1. Download `vibe-<version>-windows-x64-setup.exe` from [Releases](https://github.com/Bucifer6/MediaMax/releases/latest)
+   and run it. SmartScreen may warn about an unrecognised app the first time: **More info → Run anyway**.
+2. Choose how Vibe should run:
+   - **As a tray app** (default, for a PC you use): Vibe runs while you are signed in, with an icon next to the
+     clock, and starts when you sign in (untick *Start Vibe when I sign in* to start it yourself from the Start menu).
+     Double-click the icon to open Vibe; right-click it for *Restart server*, *Open data folder*, *Open logs*,
+     *Start Vibe when I sign in* and *Exit*.
+   - **As a background service** (for a home server): Vibe starts with Windows, before anyone signs in, as the
+     **Kinora** task in Task Scheduler running as SYSTEM (the same setup as `install-service.ps1` below).
+3. Pick the port (default 8484). Setup opens it in Windows Firewall for Private/Domain networks (tick *Also allow
+   connections on Public networks* to open it everywhere), adds a **Vibe** Start menu shortcut, and on the last page
+   starts Vibe and opens the setup wizard in your browser.
+
+**Upgrade:** take a backup (Admin → Backups), then run the new setup: it stops Vibe, replaces the program files,
+keeps your choices and starts it again. It also takes over a folder set up by hand with the zip and
+`install-service.ps1`. **Uninstall:** Settings → Apps → Vibe. It asks whether to delete your data as well (default:
+keep it). You can switch between tray app and service by running setup again.
+
+Unattended install: `vibe-<version>-windows-x64-setup.exe /VERYSILENT [/TASKS="service"] [/PORT=9000]`; uninstall
+with `"C:\Program Files\Kinora\unins000.exe" /VERYSILENT` (keeps the data).
+
+### Portable zip
+
+1. Download `vibe-<version>-windows-x64.zip` and extract it (right-click → Extract All).
 2. **Try it:** double-click `Kinora.cmd`. It starts Vibe in a minimised window and opens your browser.
-   SmartScreen may warn about an unrecognised app the first time: **More info → Run anyway**.
-3. **Run at boot** (recommended for a home server): open PowerShell **as Administrator** in the extracted folder and run
+3. **Run at boot:** open PowerShell **as Administrator** in the extracted folder and run
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\install-service.ps1
@@ -129,7 +152,7 @@ Windows 10/11 or Server 2019+ (x64).
 **Network shares.** Running as SYSTEM, Vibe can't see drive letters a user mapped. Add NAS folders as UNC
 paths (`\\nas\media\movies`); the share must allow this computer's account (`DOMAIN\PCNAME$`) or guests to read.
 
-**Upgrade.** Back up (Admin → Backups), extract the new zip and run `install-service.ps1` from it again: it
+**Upgrade (zip).** Back up (Admin → Backups), extract the new zip and run `install-service.ps1` from it again: it
 stops Vibe, replaces the program files and starts it. Without the task, close Vibe and replace the files.
 
 **Data:** `C:\ProgramData\Kinora` (`%ProgramData%\Kinora`), whether started by hand or by the task.
@@ -142,8 +165,8 @@ For x64 and arm64 Linux with glibc 2.28 or newer (Debian 10+, Ubuntu 20.04+, RHE
 64-bit). Nothing else to install: Node.js and FFmpeg are in the archive.
 
 ```bash
-tar -xzf kinora-<version>-linux-x64.tar.gz      # or -linux-arm64
-cd kinora-<version>-linux-x64
+tar -xzf vibe-<version>-linux-x64.tar.gz      # or -linux-arm64
+cd vibe-<version>-linux-x64
 ./kinora                                         # try it; Ctrl+C stops it
 ```
 
@@ -521,7 +544,7 @@ you edit them; the old weekly limit becomes the default quota.
 ```bash
 npm ci && npm run build
 node scripts/fetch-ffmpeg.mjs --target linux-x64 --out build/ffmpeg     # optional: static FFmpeg
-node scripts/package.mjs --ffmpeg-dir build/ffmpeg                      # -> release/kinora-<version>-linux-x64.tar.gz
+node scripts/package.mjs --ffmpeg-dir build/ffmpeg                      # -> release/vibe-<version>-linux-x64.tar.gz
 ```
 
 `scripts/package.mjs` bundles the server into one file with esbuild and turns it into a Node.js
@@ -529,7 +552,8 @@ node scripts/package.mjs --ffmpeg-dir build/ffmpeg                      # -> rel
 FFmpeg sit next to the executable rather than inside it: the server serves the web app from disk and runs FFmpeg
 as a separate program, so embedding them would mean unpacking them at every start. The release workflow
 (`.github/workflows/release.yml`) builds the three archives on Windows, Linux x64 and Linux arm64 runners,
-smoke-tests each one, and publishes them with the multi-arch Docker image when a `v*` tag is pushed.
+plus the Windows setup program (`scripts/build-installer.mjs`: Inno Setup, with the tray app in
+`packaging/windows-installer`), smoke-tests each one, and publishes them with the multi-arch Docker image when a `v*` tag is pushed.
 
 ## Optional: AI DJ add-ons (free)
 

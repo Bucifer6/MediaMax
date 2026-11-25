@@ -82,6 +82,12 @@ jobs:
         run: node scripts/fetch-ffmpeg.mjs --target ${{ matrix.target }} --out build/ffmpeg
       - name: Build single executable and archive
         run: node scripts/package.mjs --target ${{ matrix.target }} --version ${{ env.VERSION }} --ffmpeg-dir build/ffmpeg
+      - name: Build setup program (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          node scripts/build-installer.mjs --version $env:VERSION
 
       - name: Smoke test (Linux)
         if: runner.os == 'Linux'
@@ -89,8 +95,8 @@ jobs:
         run: |
           set -euo pipefail
           dir="$RUNNER_TEMP/smoke"; mkdir -p "$dir"
-          tar -xzf "release/kinora-$VERSION-${{ matrix.target }}.tar.gz" -C "$dir"
-          app="$dir/kinora-$VERSION-${{ matrix.target }}"
+          tar -xzf "release/vibe-$VERSION-${{ matrix.target }}.tar.gz" -C "$dir"
+          app="$dir/vibe-$VERSION-${{ matrix.target }}"
           file "$app/kinora" "$app/ffmpeg"
           "$app/ffmpeg" -hide_banner -version | head -1
           # No MEDIAMAX_DATA: must default to ~/.local/share/kinora and use the bundled ffmpeg.
@@ -113,7 +119,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app="$RUNNER_TEMP/smoke/kinora-$VERSION-${{ matrix.target }}"
+          app="$RUNNER_TEMP/smoke/vibe-$VERSION-${{ matrix.target }}"
           sudo mkdir -p /opt/kinora && sudo cp -r "$app"/* /opt/kinora/
           sudo useradd --system --home-dir /var/lib/kinora --shell /usr/sbin/nologin kinora
           sudo cp /opt/kinora/kinora.service /etc/systemd/system/
@@ -134,7 +140,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $dir = Join-Path $env:RUNNER_TEMP 'smoke'
-          Expand-Archive "release/kinora-$env:VERSION-windows-x64.zip" -DestinationPath $dir
+          Expand-Archive "release/vibe-$env:VERSION-windows-x64.zip" -DestinationPath $dir
           Get-ChildItem $dir | Format-Table Name, Length
           foreach ($f in 'kinora.exe','ffmpeg.exe','ffprobe.exe','Kinora.cmd','install-service.ps1','README.txt','web\index.html') {
             if (-not (Test-Path (Join-Path $dir $f))) { throw "$f missing from the zip" }
@@ -189,10 +195,71 @@ jobs:
           if (Get-NetFirewallRule -DisplayName 'Kinora*' -ErrorAction SilentlyContinue) { throw 'firewall rules left behind' }
           if (Test-Path "$env:ProgramFiles\Kinora") { throw 'install folder left behind' }
 
+      - name: Smoke test setup program (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item Env:\MEDIAMAX_PORT -ErrorAction SilentlyContinue
+          $setup = (Resolve-Path "release/vibe-$env:VERSION-windows-x64-setup.exe").Path
+          $app = Join-Path $env:ProgramFiles 'Kinora'
+          $envKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+          function Install([string[]]$extra, [string]$name) {
+            $log = Join-Path $env:RUNNER_TEMP "setup-$name.log"
+            # Not -Wait: that also waits for the tray app setup leaves running.
+            $p = Start-Process $setup -ArgumentList (@('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$log`"") + $extra) -PassThru
+            if (-not $p.WaitForExit(300000)) { Get-Content $log | Select-Object -Last 40; throw "setup ($name) timed out" }
+            if ($p.ExitCode) { Get-Content $log | Select-Object -Last 40; throw "setup ($name) exited with $($p.ExitCode)" }
+          }
+          function WaitUp([int]$port) {
+            for ($i = 0; $i -lt 45; $i++) {
+              try { return Invoke-RestMethod "http://127.0.0.1:$port/api/v1/system/info" } catch { Start-Sleep 1 }
+            }
+            throw "Vibe did not answer on port $port"
+          }
+
+          # 1. Fresh install, default "tray app" mode: the tray app starts the server as this user.
+          Install @() 'tray'
+          foreach ($f in 'kinora.exe', 'VibeTray.exe', 'ffmpeg.exe', 'web\index.html', 'unins000.exe') {
+            if (-not (Test-Path (Join-Path $app $f))) { throw "$f not installed" }
+          }
+          $info = WaitUp 8484
+          if ($info.version -ne $env:VERSION) { throw "version $($info.version) != $env:VERSION" }
+          if (-not (Get-Process VibeTray -ErrorAction SilentlyContinue)) { throw 'tray app not running' }
+          if (-not (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name Vibe -ErrorAction SilentlyContinue)) { throw 'sign-in start not set' }
+          if (-not (Get-NetFirewallRule -DisplayName 'Kinora (HTTP 8484)' -ErrorAction SilentlyContinue)) { throw 'firewall rule missing' }
+          if (Get-ScheduledTask -TaskName Kinora -ErrorAction SilentlyContinue) { throw 'tray mode must not register the task' }
+          if (-not (Test-Path "$env:ProgramData\Kinora\mediamax.db")) { throw 'database not created' }
+
+          # 2. Upgrade in place to "background service" mode on another port.
+          Install @('/TASKS="service"', '/PORT=18486') 'service'
+          Start-Sleep 3
+          if (Get-Process VibeTray -ErrorAction SilentlyContinue) { throw 'tray app still running in service mode' }
+          $task = Get-ScheduledTask -TaskName Kinora
+          if ($task.Principal.UserId -notmatch 'SYSTEM') { throw 'task should run as SYSTEM' }
+          WaitUp 18486 | Out-Null
+          if ((Get-ItemProperty $envKey).KINORA_PORT -ne '18486') { throw 'port not stored' }
+          if ((Get-ItemProperty 'HKLM:\SOFTWARE\Kinora').ServiceMode -ne 1) { throw 'service mode not recorded' }
+          if (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name Vibe -ErrorAction SilentlyContinue) { throw 'sign-in start left on' }
+          if (-not (Get-NetFirewallRule -DisplayName 'Kinora (HTTP 18486)' -ErrorAction SilentlyContinue)) { throw 'firewall rule missing' }
+
+          # 3. Uninstall (silent: keeps the data). unins000.exe hands over to a temp copy, so wait for the folder to go.
+          (Start-Process (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -PassThru).WaitForExit(120000) | Out-Null
+          for ($i = 0; $i -lt 60 -and (Test-Path (Join-Path $app 'kinora.exe')); $i++) { Start-Sleep 1 }
+          if (Test-Path (Join-Path $app 'kinora.exe')) { throw 'program files left behind' }
+          if (Get-ScheduledTask -TaskName Kinora -ErrorAction SilentlyContinue) { throw 'task still registered' }
+          if (Get-NetFirewallRule -DisplayName 'Kinora*' -ErrorAction SilentlyContinue) { throw 'firewall rules left behind' }
+          if ((Get-ItemProperty $envKey).KINORA_PORT) { throw 'port variable left behind' }
+          if (Get-Process kinora -ErrorAction SilentlyContinue) { throw 'kinora.exe still running' }
+          if (-not (Test-Path "$env:ProgramData\Kinora\mediamax.db")) { throw 'uninstall must keep the data' }
+          if (Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' | Where-Object { $_.PSChildName -like '*6F1C3B52*' }) { throw 'Apps & features entry left behind' }
+          Write-Host 'Setup program: install, upgrade to service and uninstall all passed.'
+
       - uses: actions/upload-artifact@v7
         with:
-          name: kinora-${{ matrix.target }}
-          path: release/kinora-*
+          name: vibe-${{ matrix.target }}
+          path: release/vibe-*
           if-no-files-found: error
 
   github-release:
@@ -206,7 +273,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: release
-          pattern: kinora-*
+          pattern: vibe-*
           merge-multiple: true
       - name: Combined checksums
         working-directory: release
@@ -227,15 +294,18 @@ jobs:
             ## Downloads
             | Platform | File |
             |---|---|
-            | Windows 10/11, Server 2019+ (x64) | `kinora-${{ needs.version.outputs.version }}-windows-x64.zip` |
-            | Linux x64 (glibc 2.28+) | `kinora-${{ needs.version.outputs.version }}-linux-x64.tar.gz` |
-            | Linux arm64 (Raspberry Pi 4/5 64-bit, ARM servers) | `kinora-${{ needs.version.outputs.version }}-linux-arm64.tar.gz` |
-            | Docker / NAS (amd64, arm64) | `docker pull ghcr.io/${{ github.repository_owner }}/kinora:${{ needs.version.outputs.version }}` (lower-case the owner) |
+            | Windows 10/11, Server 2019+ (x64): **installer** (recommended) | `vibe-${{ needs.version.outputs.version }}-windows-x64-setup.exe` |
+            | Windows 10/11, Server 2019+ (x64): portable zip | `vibe-${{ needs.version.outputs.version }}-windows-x64.zip` |
+            | Linux x64 (glibc 2.28+) | `vibe-${{ needs.version.outputs.version }}-linux-x64.tar.gz` |
+            | Linux arm64 (Raspberry Pi 4/5 64-bit, ARM servers) | `vibe-${{ needs.version.outputs.version }}-linux-arm64.tar.gz` |
+            | Docker / NAS (amd64, arm64) | `docker pull ghcr.io/${{ github.repository_owner }}/vibe:${{ needs.version.outputs.version }}` (lower-case the owner; `…/kinora` is still published too) |
 
-            Each archive includes FFmpeg. Install guides for Windows, Linux, Docker, Synology, QNAP, Unraid, TrueNAS SCALE
+            Each download includes FFmpeg. The Windows installer runs Vibe as a tray app (starts when you sign in) or as a
+            background service (starts with Windows), and adds Start menu shortcuts and an uninstaller. Install guides for Windows, Linux, Docker, Synology, QNAP, Unraid, TrueNAS SCALE
             and OpenMediaVault: [docs/INSTALL.md](https://github.com/${{ github.repository }}/blob/v${{ needs.version.outputs.version }}/docs/INSTALL.md).
             Verify downloads against `SHA256SUMS.txt`.
           files: |
+            release/*.exe
             release/*.zip
             release/*.tar.gz
             release/SHA256SUMS.txt
@@ -316,9 +386,11 @@ jobs:
         if: needs.version.outputs.publish == 'true'
         shell: bash
         run: |
-          tags="$IMAGE:$VERSION"
+          # Published as "vibe" (the app's name) and still as "kinora", so existing installs keep getting updates.
+          vibe="${IMAGE%/kinora}/vibe"
+          tags="$vibe:$VERSION,$IMAGE:$VERSION"
           # Pre-releases (1.2.0-beta.1) never move "latest".
-          if [[ "${{ needs.version.outputs.prerelease }}" != "true" ]]; then tags="$tags,$IMAGE:latest"; fi
+          if [[ "${{ needs.version.outputs.prerelease }}" != "true" ]]; then tags="$tags,$vibe:latest,$IMAGE:latest"; fi
           echo "TAGS=$tags" >> "$GITHUB_ENV"
           echo "$tags"
       - name: Build and push multi-arch image
