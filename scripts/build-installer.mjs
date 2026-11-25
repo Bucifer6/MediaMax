@@ -75,7 +75,8 @@ function main() {
   fs.mkdirSync(app, { recursive: true });
 
   // 1. The same files as the zip.
-  run('powershell', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${zip}' -DestinationPath '${app}'`]);
+  // Windows' own bsdtar reads zips (Expand-Archive breaks when Windows PowerShell inherits PowerShell 7's module path).
+  run(path.join(winDir, 'System32', 'tar.exe'), ['-xf', zip, '-C', app]);
   if (!fs.existsSync(path.join(app, 'kinora.exe'))) throw new Error('kinora.exe missing from the zip');
 
   // 2. Tray app (x64, so it sees the same registry view as the 64-bit installer).
