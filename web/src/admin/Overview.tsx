@@ -21,6 +21,23 @@ function Health({ icon, label, value, sub, tone, to }: { icon: IconName; label: 
   return to ? <Link to={to} className={`health ${tone ?? ''}`}>{body}</Link> : <div className={`health ${tone ?? ''}`}>{body}</div>;
 }
 
+/** "Vibe x.y.z is available" with a link to Admin → Updates, once a check has found a newer release. */
+function UpdateBanner() {
+  const status = useAsync(() => api.admin.updates(), []);
+  useServerEvent((ev) => {
+    if (ev.type === 'update.status') status.setData(ev.status);
+  });
+  const s = status.data;
+  if (!s?.updateAvailable || !s.latest) return null;
+  return (
+    <Link to="/admin/updates" className="update-banner" role="status">
+      <Icon name="sparkles" size={20} />
+      <span><strong>Vibe {s.latest.version} is available.</strong> <span className="muted">You have {s.currentVersion}. {s.canSelfUpdate ? 'Update from Admin → Updates.' : 'See how to update.'}</span></span>
+      <Icon name="chevronRight" size={16} />
+    </Link>
+  );
+}
+
 function Stat({ icon, label, value, to }: { icon: IconName; label: string; value: React.ReactNode; to?: string }) {
   const body = (
     <>
@@ -217,6 +234,7 @@ export function Overview() {
   return (
     <div>
       <AdminHeader help="admin-setup" title="Overview" subtitle={st ? `Vibe ${st.version} · up ${formatUptime(st.uptimeSeconds)}` : undefined} />
+      <UpdateBanner />
       <h2 className="sr-only">Server health</h2>
       <div className="health-grid">
         {!st ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} h={112} />) : (() => {

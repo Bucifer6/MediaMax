@@ -20,6 +20,7 @@ import { PluginsAdmin } from './Plugins';
 import { InvitesAdmin } from './Invites';
 import { ServerImportAdmin } from './ServerImport';
 import { BackupsAdmin } from './Backups';
+import { UpdatesAdmin } from './Updates';
 import { RemoteAccessAdmin } from './RemoteAccess';
 import { DownloadsAdmin } from './Downloads';
 import { RenderersAdmin } from './Renderers';
@@ -72,6 +73,7 @@ export default function AdminRoutes() {
             <Route path="renderers" element={<RenderersAdmin />} />
             <Route path="remote" element={<RemoteAccessAdmin />} />
             <Route path="backups" element={<BackupsAdmin />} />
+            <Route path="updates" element={<UpdatesAdmin />} />
             <Route path="plugins" element={<PluginsAdmin />} />
             <Route path="tasks" element={<TasksAdmin />} />
             <Route path="activity" element={<ActivityAdmin />} />
