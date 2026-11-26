@@ -5,7 +5,8 @@
 ;        /DOutputDir=release /DOutputBase=vibe-0.5.0-windows-x64-setup kinora.iss
 ;
 ; What it does (like other Windows media servers):
-;   - installs to C:\Program Files\Kinora (folder name kept from before the rename to Vibe);
+;   - installs to C:\Program Files\Vibe; an upgrade keeps the folder already in use (C:\Program Files\Kinora for
+;     installs made before this default changed, including ones set up by hand with install-service.ps1);
 ;   - "Tray app" mode (default): VibeTray.exe runs the server for the signed-in user, shows an icon in the
 ;     notification area and starts at sign-in;
 ;   - "Background service" mode: the boot-time "Kinora" scheduled task running as SYSTEM (install-service.ps1),
@@ -47,7 +48,7 @@ AppUpdatesURL=https://github.com/Bucifer6/MediaMax/releases/latest
 VersionInfoVersion={#NumericVersion}
 VersionInfoProductName=Vibe
 VersionInfoDescription=Vibe media server setup
-DefaultDirName={autopf}\Kinora
+DefaultDirName={code:DefaultInstallDir}
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 DisableReadyPage=no
@@ -145,6 +146,17 @@ begin
     if RegQueryStringValue(HKLM, EnvKey, 'KINORA_PORT', S) and (S <> '') then Result := S
     else if RegQueryStringValue(HKLM, EnvKey, 'MEDIAMAX_PORT', S) and (S <> '') then Result := S
     else Result := '8484';
+end;
+
+// New installs go to Program Files\Vibe. A copy already in Program Files\Kinora (the default before the rename,
+// also used by install-service.ps1 set-ups that have no setup record) is upgraded where it is. Upgrades of a setup
+// install never get here: Inno Setup reuses the previous folder (UsePreviousAppDir).
+function DefaultInstallDir(Param: String): String;
+begin
+  if FileExists(ExpandConstant('{autopf}\Kinora\kinora.exe')) then
+    Result := ExpandConstant('{autopf}\Kinora')
+  else
+    Result := ExpandConstant('{autopf}\Vibe');
 end;
 
 function GetPort(Param: String): String;

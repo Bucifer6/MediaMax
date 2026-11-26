@@ -122,7 +122,8 @@ keeps your choices and starts it again. It also takes over a folder set up by ha
 keep it). You can switch between tray app and service by running setup again.
 
 Unattended install: `vibe-<version>-windows-x64-setup.exe /VERYSILENT [/TASKS="service"] [/PORT=9000]`; uninstall
-with `"C:\Program Files\Kinora\unins000.exe" /VERYSILENT` (keeps the data).
+with `"C:\Program Files\Vibe\unins000.exe" /VERYSILENT` (keeps the data; older installs are in
+`C:\Program Files\Kinora`).
 
 ### Portable zip
 
@@ -134,7 +135,8 @@ with `"C:\Program Files\Kinora\unins000.exe" /VERYSILENT` (keeps the data).
    powershell -ExecutionPolicy Bypass -File .\install-service.ps1
    ```
 
-   This copies Vibe to `C:\Program Files\Kinora` (a folder only administrators can change), registers a
+   This copies Vibe to `C:\Program Files\Vibe` (a folder only administrators can change; an earlier install in
+   `C:\Program Files\Kinora` is updated where it is), registers a
    **Kinora** task (the name is kept from before the rename to Vibe) in Task Scheduler that starts at boot as SYSTEM without anyone signing in, opens TCP 8484 (and
    UDP 1900 for DLNA) in Windows Firewall for Private/Domain networks, and starts it. If Vibe ever exits,
    the task starts it again within 5 minutes. Options: `-Port 9000`, `-AllNetworkProfiles` (also open the
