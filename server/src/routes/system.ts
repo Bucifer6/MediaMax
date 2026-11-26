@@ -66,8 +66,9 @@ export default async function systemRoutes(app: FastifyInstance) {
 
   app.get<{ Querystring: { path?: string } }>('/system/browse', async (req): Promise<DirectoryEntry[]> => {
     requireAdmin(req);
-    const p = req.query.path || (process.platform === 'win32' ? 'C:\\' : '/');
-    const abs = path.resolve(p);
+    // Windows has no single root: with no path, list the drives (the picker goes "up" from C:\ to here).
+    if (!req.query.path && process.platform === 'win32') return listWindowsDrives();
+    const abs = path.resolve(req.query.path || '/');
     let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(abs, { withFileTypes: true });
@@ -197,4 +198,18 @@ export default async function systemRoutes(app: FastifyInstance) {
     requireAdmin(req);
     return listActivity(toInt(req.query.limit, 50, 1, 500), toInt(req.query.offset, 0, 0));
   });
+}
+
+/** Drive letters that are present right now (local, removable with media inserted, and mapped network drives). */
+async function listWindowsDrives(): Promise<DirectoryEntry[]> {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  const found = await Promise.all(letters.map(async (l) => {
+    const root = `${l}:\\`;
+    try {
+      return (await fs.promises.stat(root)).isDirectory() ? root : null;
+    } catch {
+      return null;
+    }
+  }));
+  return found.filter((r): r is string => r !== null).map((r) => ({ name: r, path: r, isDirectory: true }));
 }

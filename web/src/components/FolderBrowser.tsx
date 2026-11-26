@@ -30,7 +30,7 @@ export function FolderBrowser({ open, onClose, onPick, initialPath }: { open: bo
     setError(null);
     api.system
       .browse(path || undefined)
-      .then((e) => !cancelled && setEntries(e.filter((x) => x.isDirectory).sort((a, b) => a.name.localeCompare(b.name))))
+      .then((e) => !cancelled && setEntries(e.filter((x) => x.isDirectory && x.name !== '..').sort((a, b) => a.name.localeCompare(b.name))))
       .catch((e) => !cancelled && setError(errorMessage(e)))
       .finally(() => !cancelled && setLoading(false));
     setTyped(path);

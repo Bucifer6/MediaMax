@@ -22,7 +22,7 @@ Make a backup in **Admin → Backups** (see [Backups](help:admin-backups)).
 | **Docker Compose** | `docker compose pull && docker compose up -d` |
 | **Docker** | Pull the new image, then remove and re-create the container with the same volumes. |
 | **NAS** (Synology, Unraid, TrueNAS…) | Update the container from the NAS's container or app manager. |
-| **Windows** | Extract the new release and run `install-service.ps1` from it again: it stops the server, replaces the program files and starts it. Without the service, close it and replace the files. Your data in `C:\ProgramData\Kinora` is kept. |
+| **Windows** | Run the new `vibe-<version>-windows-x64-setup.exe`: it stops Vibe, upgrades it in the folder it is already in and starts it again. With the portable zip, extract the new release and run `install-service.ps1` from it again (without the service, close it and replace the files). Your data in `C:\ProgramData\Kinora` is kept. |
 | **Linux binary** | `sudo systemctl stop mediamax`, remove the old `web` folder, copy the new release's files over the old ones, then `sudo systemctl start mediamax`. |
 
 The database is upgraded automatically on the first start. The web app, the Samsung and LG TV apps and this Help Centre update with the server. After an update, everyone sees a short *What's new* card once.

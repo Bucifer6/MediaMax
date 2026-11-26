@@ -33,7 +33,7 @@ Run at boot (recommended for a home server)
 
      powershell -ExecutionPolicy Bypass -File .\install-service.ps1
 
-This copies Vibe to C:\Program Files\Kinora, registers a "Kinora" scheduled task (names kept from before the rename to Vibe) that starts at
+This copies Vibe to C:\Program Files\Vibe (or updates an earlier install in C:\Program Files\Kinora), registers a "Kinora" scheduled task (names kept from before the rename to Vibe) that starts at
 boot as SYSTEM (no sign-in needed) and opens TCP 8484 (and UDP 1900 for DLNA) in Windows Firewall.
 Options: -Port 9000, -AllNetworkProfiles (also open the firewall on "Public" networks).
 

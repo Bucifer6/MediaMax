@@ -8,7 +8,7 @@
       powershell -ExecutionPolicy Bypass -File .\install-service.ps1
 
   The script:
-    1. copies kinora.exe, ffmpeg, ffprobe and the web app into -InstallDir (default C:\Program Files\Kinora),
+    1. copies kinora.exe, ffmpeg, ffprobe and the web app into -InstallDir (default C:\Program Files\Vibe, or C:\Program Files\Kinora if an earlier install is there),
        a folder only administrators can change. A task that runs as SYSTEM must never start a program
        from a folder ordinary users can write to (such as Downloads);
     2. registers a scheduled task "Kinora" that starts at boot as SYSTEM, has no run-time limit, and is
@@ -47,11 +47,16 @@ param(
   [switch]$Uninstall,
   [switch]$RemoveData,
   [ValidateRange(1, 65535)][int]$Port = 8484,
-  [string]$InstallDir = (Join-Path $env:ProgramFiles 'Kinora'),
+  # Default: Program Files\Vibe, or Program Files\Kinora when an earlier install is already there (see below).
+  [string]$InstallDir = '',
   [switch]$AllNetworkProfiles
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $InstallDir) {
+  $legacyDir = Join-Path $env:ProgramFiles 'Kinora'
+  $InstallDir = if (Test-Path (Join-Path $legacyDir 'kinora.exe')) { $legacyDir } else { Join-Path $env:ProgramFiles 'Vibe' }
+}
 $TaskName = 'Kinora'
 $RuleName = 'Kinora'
 $LegacyName = 'MediaMax'
