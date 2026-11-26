@@ -161,7 +161,7 @@ sensor:
     name: Vibe streams
     resource: http://mediamax.lan:8484/api/v1/status/now-playing
     headers:
-      X-Api-Key: !secret kinora_api_key
+      X-Api-Key: !secret vibe_api_key
     value_template: "{{ value_json.activeStreams }}"
     json_attributes: [watching, transcodes, bandwidthKbps, sessions, recentlyAdded]
     scan_interval: 30

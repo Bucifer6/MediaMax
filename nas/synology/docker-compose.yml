@@ -1,14 +1,14 @@
 # Vibe on Synology DSM 7.2+ (Container Manager -> Project -> Create). Guide: docs/INSTALL.md#synology
 #
 # Before you start:
-#   1. File Station: create /docker/kinora with subfolders config, transcode and recordings.
+#   1. File Station: create /docker/vibe with subfolders config, transcode and recordings.
 #   2. PUID/PGID: the user that should own Vibe's files and can read your media.
 #      SSH in and run `id <username>` (the first DSM user is usually uid 1026, group "users" = 100).
 #   3. Change the /volume1/... paths below to your shared folders (keep the right-hand side as is).
 services:
-  kinora:
-    image: ghcr.io/bucifer6/kinora:latest
-    container_name: kinora
+  vibe:
+    image: ghcr.io/bucifer6/vibe:latest
+    container_name: vibe
     restart: unless-stopped
     ports:
       - "8484:8484"
@@ -18,9 +18,9 @@ services:
       - TZ=Europe/London
       # - KINORA_HWACCEL=vaapi          # or qsv; then pick it in Admin -> Settings -> Transcoding
     volumes:
-      - /volume1/docker/kinora/config:/config
-      - /volume1/docker/kinora/transcode:/transcode   # most DS units have little RAM, so use disk, not tmpfs
-      - /volume1/docker/kinora/recordings:/recordings
+      - /volume1/docker/vibe/config:/config
+      - /volume1/docker/vibe/transcode:/transcode   # most DS units have little RAM, so use disk, not tmpfs
+      - /volume1/docker/vibe/recordings:/recordings
       - /volume1/video/Movies:/media/movies:ro
       - /volume1/video/TV Shows:/media/tv:ro
       - /volume1/music:/media/music:ro

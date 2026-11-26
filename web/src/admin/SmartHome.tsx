@@ -44,7 +44,7 @@ export function SmartHomeAdmin() {
   const [s, setS] = useState<HomeAssistantSettings | null>(null);
   const [busy, setBusy] = useState<'' | 'save' | 'test' | 'discovery' | 'hook'>('');
   const [haUrl, setHaUrl] = useState('http://homeassistant.local:8123');
-  const [hookId, setHookId] = useState(() => `kinora_${Math.random().toString(36).slice(2, 10)}`);
+  const [hookId, setHookId] = useState(() => `vibe_${Math.random().toString(36).slice(2, 10)}`);
 
   useEffect(() => {
     if (data.data) setS(data.data.settings);
@@ -209,7 +209,7 @@ export function SmartHomeAdmin() {
   - platform: rest
     name: Vibe streams
     resource: ${location.origin}${st?.restPath ?? '/api/v1/status/now-playing'}
-    headers: { X-Api-Key: !secret kinora_api_key }
+    headers: { X-Api-Key: !secret vibe_api_key }
     value_template: "{{ value_json.activeStreams }}"
     json_attributes: [watching, transcodes, bandwidthKbps, sessions]
     scan_interval: 30`}</code></pre>

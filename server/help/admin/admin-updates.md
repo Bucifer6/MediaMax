@@ -18,7 +18,7 @@ Make a backup in **Admin → Backups** (see [Backups](help:admin-backups)).
 
 | Install | How |
 |---|---|
-| **Deploy kit** (`install.sh`) | `sudo /opt/kinora/install.sh --upgrade`. It can also run weekly by itself (`--auto-upgrade`). |
+| **Deploy kit** (`install.sh`) | `sudo /opt/vibe/install.sh --upgrade` (`/opt/kinora` for installs made before the rename). It can also run weekly by itself (`--auto-upgrade`). |
 | **Docker Compose** | `docker compose pull && docker compose up -d` |
 | **Docker** | Pull the new image, then remove and re-create the container with the same volumes. |
 | **NAS** (Synology, Unraid, TrueNAS…) | Update the container from the NAS's container or app manager. |

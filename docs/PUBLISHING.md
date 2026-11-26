@@ -12,7 +12,7 @@ Publisher: an individual (your legal name shows as the developer). Accounts you 
 | Samsung TV (Tizen) | Samsung Apps TV (Seller Office) | **Samsung Seller Office (free) — apply** | free | `tv/dist/tizen` → `.wgt` | Needs account |
 | LG TV (webOS) | LG Content Store (Seller Lounge) | **LG Seller Lounge (free) — apply** | free | `tv/dist/webos` → `.ipk` | Needs account |
 | Hisense (VIDAA) | VIDAA Store | **VIDAA partner programme — apply** | free | `tv/dist/vidaa` | In progress |
-| Roku | Roku Channel Store | **Roku Developer (free) — create** | free | `apps/roku/dist/Kinora.zip` | In progress |
+| Roku | Roku Channel Store | **Roku Developer (free) — create** | free | `apps/roku/dist/Vibe.zip` | In progress |
 
 ## Decide before submitting
 
@@ -31,7 +31,7 @@ Publisher: an individual (your legal name shows as the developer). Accounts you 
    | LG webOS app id | `uk.burdujeni82.kinora` | `tv/webos/appinfo.json` |
    | Samsung Tizen | widget `http://burdujeni82.uk/kinora`, application `KinoraTV01.Kinora` | `tv/tizen/config.xml` |
    | Hisense VIDAA | `uk.burdujeni82.kinora.vidaa` | `tv/vidaa/app.json` |
-   | Roku | channel "Vibe", package `apps/roku/dist/Kinora.zip` | `apps/roku/manifest` |
+   | Roku | channel "Vibe", package `apps/roku/dist/Vibe.zip` | `apps/roku/manifest` |
 
    Apple and Google tie the id to the listing for good, so don't change these after the first upload. A white-label
    build gets its own ids (`npm run brand -- <server> <brand> --bundle-id com.example.media`).
@@ -103,7 +103,7 @@ VIDAA publishes third-party apps through its partner programme; apply via the VI
 
 ## Roku
 
-Free account at developer.roku.com. Enable developer mode on a Roku, sideload `apps/roku/dist/Kinora.zip` to test, then package it on the device (Roku signs packages on-device) and publish as a **public** channel, or as a **beta/non-certified** channel shared by access code if you only want your own users (no certification needed, up to 20 testers, expires after 120 days).
+Free account at developer.roku.com. Enable developer mode on a Roku, sideload `apps/roku/dist/Vibe.zip` to test, then package it on the device (Roku signs packages on-device) and publish as a **public** channel, or as a **beta/non-certified** channel shared by access code if you only want your own users (no certification needed, up to 20 testers, expires after 120 days).
 
 ## Suggested order
 

@@ -875,7 +875,7 @@ export interface PlaybackInfo {
   /** Position (ms) the client should seek to once playback starts. */
   startMs: number;
   /**
-   * Media position (ms) that stream time 0 corresponds to. Kinora always
+   * Media position (ms) that stream time 0 corresponds to. Vibe always
    * produces full-timeline streams, so this is 0 for VOD; clients should
    * compute `mediaPosition = streamTime + streamStartMs`.
    */
@@ -996,7 +996,7 @@ export interface LiveSource {
   /** One or more XMLTV URLs (newline-separated), highest priority first; the provider's own guide fills gaps. */
   epgUrl: string | null;
   enabled: boolean;
-  /** Restream through Kinora (hides provider creds, allows remux/transcode). */
+  /** Restream through Vibe (hides provider creds, allows remux/transcode). */
   proxyStreams: boolean;
   /** Import Xtream VOD movies into a virtual library. */
   importVod: boolean;
@@ -1327,7 +1327,7 @@ export interface ArrOptions {
 
 export type ArrKind = 'radarr' | 'sonarr' | 'lidarr' | 'readarr' | 'bazarr';
 
-/** Rewrites a path as the *arr sees it (`remotePath`) into the path Kinora sees (`localPath`). */
+/** Rewrites a path as the *arr sees it (`remotePath`) into the path Vibe sees (`localPath`). */
 export interface ArrPathMapping {
   remotePath: string;
   localPath: string;
@@ -1703,7 +1703,7 @@ export interface ServerSettings {
     commercialDetection: boolean;
     /** Path to the comskip binary; defaults to `comskip` on PATH. */
     comskipPath: string | null;
-    /** Optional comskip.ini; Kinora supplies a minimal EDL-only ini otherwise. */
+    /** Optional comskip.ini; Vibe supplies a minimal EDL-only ini otherwise. */
     comskipIni: string | null;
   };
   webhooks: Webhook[];
@@ -1765,7 +1765,7 @@ export interface ServerSettings {
     clientId: string | null;
     clientSecret: string | null;
     buttonLabel: string;
-    /** Create a Kinora user on first SSO sign-in. */
+    /** Create a Vibe user on first SSO sign-in. */
     autoCreateUsers: boolean;
     /** Claim holding group names (default "groups"). */
     groupsClaim: string;
@@ -2144,7 +2144,7 @@ export interface LastfmStatus {
 }
 
 export interface LastfmAuthStart {
-  /** Open this in a browser to approve Kinora; then poll GET /lastfm until connected. */
+  /** Open this in a browser to approve Vibe; then poll GET /lastfm until connected. */
   authUrl: string;
 }
 
@@ -2419,7 +2419,7 @@ export interface PluginManifest {
   homepage?: string;
   /** Entry module (ES module) relative to the plugin folder; exports `activate(ctx)`. */
   main: string;
-  /** Minimum Kinora server version (semver). */
+  /** Minimum Vibe server version (semver). */
   minServerVersion?: string;
   settings?: PluginSetting[];
   /** HTML page (relative path) shown inside the admin dashboard. */
@@ -2949,7 +2949,7 @@ export interface SecurityDashboardSettings {
   /** Public host name to check the HTTPS certificate of. */
   publicHost: string | null;
   crowdsec: { url: string | null; machineId: string | null; password: string | null };
-  /** fail2ban control socket, normally the Kinora bridge's socket. */
+  /** fail2ban control socket, normally the Vibe bridge's socket. */
   fail2banSocket: string | null;
 }
 
@@ -3012,9 +3012,9 @@ export interface SecurityBanRequest {
 
 export interface NetworkSettings {
   /**
-   * direct  = clients connect straight to Kinora (LAN, VPN, or port forward to 8484);
+   * direct  = clients connect straight to Vibe (LAN, VPN, or port forward to 8484);
    * proxy   = behind your own reverse proxy (Nginx, Traefik, Caddy, NPM, Cloudflare Tunnel…);
-   * builtin = Kinora runs Caddy itself for automatic HTTPS (Let's Encrypt). Off unless chosen here.
+   * builtin = Vibe runs Caddy itself for automatic HTTPS (Let's Encrypt). Off unless chosen here.
    */
   mode: 'direct' | 'proxy' | 'builtin';
   /** Addresses/CIDRs whose X-Forwarded-For/-Proto headers are believed. Keywords: loopback, linklocal, uniquelocal. */
@@ -3035,7 +3035,7 @@ export interface NetworkStatus {
   settings: NetworkSettings;
   /** MEDIAMAX_TRUSTED_PROXIES from the environment overrides the saved list when set. */
   envTrustedProxies: string[] | null;
-  /** How this very request reached Kinora, to verify a proxy setup. */
+  /** How this very request reached Vibe, to verify a proxy setup. */
   you: { ip: string; socketAddress: string; forwardedFor: string | null; forwardedProto: string | null; proxyTrusted: boolean; protocol: string; host: string };
   publicUrl: string | null;
   builtin: {
@@ -3110,7 +3110,7 @@ export interface VideoRangeCapabilities {
 }
 
 export interface DeviceProfile {
-  /** HDR support. Omitted = legacy client: Kinora keeps its old behaviour (no range-based decisions). */
+  /** HDR support. Omitted = legacy client: Vibe keeps its old behaviour (no range-based decisions). */
   videoRange?: VideoRangeCapabilities;
   maxHeight?: number | null;
   /** Video codecs the client decodes at 10-bit, e.g. ["hevc","av1","vp9"]. */
@@ -3502,7 +3502,7 @@ export interface AppNotification {
 /* Home Assistant / smart home                                         */
 /* ------------------------------------------------------------------ */
 
-/** Payload shape a webhook sends: Kinora's own (default) or a flat one made for Home Assistant's webhook trigger. */
+/** Payload shape a webhook sends: Vibe's own (default) or a flat one made for Home Assistant's webhook trigger. */
 export type WebhookFormat = 'mediamax' | 'home-assistant';
 
 export interface Webhook {
@@ -3523,7 +3523,7 @@ export interface HomeAssistantMqttSettings {
   tls: boolean;
   /** Accept self-signed broker certificates. */
   tlsInsecure: boolean;
-  /** Root of Kinora's own topics (default "mediamax"). */
+  /** Root of Vibe's own topics (default "mediamax"). */
   baseTopic: string;
   /** Home Assistant discovery prefix (default "homeassistant"). */
   discoveryPrefix: string;
@@ -3687,7 +3687,7 @@ export interface StorageStatus {
 
 export type RendererKind = 'dlna' | 'sonos' | 'kodi';
 
-/** A device on the local network Kinora can send media to. */
+/** A device on the local network Vibe can send media to. */
 export interface Renderer {
   /** Stable id (derived from the device UDN or the manual entry). */
   id: string;
@@ -3704,7 +3704,7 @@ export interface Renderer {
   manual: boolean;
   online: boolean;
   lastSeenAt: string | null;
-  /** What it's playing for Kinora right now, if anything. */
+  /** What it's playing for Vibe right now, if anything. */
   nowPlaying: { title: string; userName: string; state: RendererPlayState } | null;
 }
 
@@ -3727,7 +3727,7 @@ export interface RendererState {
   /** 0–100, null when the device doesn't report it. */
   volume: number | null;
   muted: boolean;
-  /** direct = original file; transcode = Kinora converts it for the device. */
+  /** direct = original file; transcode = Vibe converts it for the device. */
   method: 'direct' | 'transcode' | null;
   /** Queue position for albums / playlists (1-based), null for a single item. */
   queue: { index: number; total: number } | null;
@@ -4504,7 +4504,7 @@ export interface Lyrics {
   userOffsetMs?: number;
   /** May save edits (administrators). */
   canEdit?: boolean;
-  /** When these lyrics were last edited in Kinora (source 'user'). */
+  /** When these lyrics were last edited in Vibe (source 'user'). */
   editedAt?: string | null;
 }
 
@@ -4607,7 +4607,7 @@ export interface StemsStatus {
   /** onnxruntime-web's browser files are on the server (served same-origin to the browser worker). */
   ort: boolean;
   ortVersion: string | null;
-  /** onnxruntime-web is downloaded on first use (not installed with Kinora); progress of that download. */
+  /** onnxruntime-web is downloaded on first use (not installed with Vibe); progress of that download. */
   ortDownload?: { state: 'idle' | 'downloading' | 'ready' | 'error'; received: number; total: number; error: string | null; version: string };
   format: 'flac' | 'wav';
   sampleRate: number;
@@ -4653,7 +4653,7 @@ export interface TrackStems {
 
 export type ImportSource = 'emby' | 'jellyfin' | 'plex';
 
-/** Rewrites a source server's file path prefix to where Kinora sees the same files, e.g. `D:\Movies` → `/mnt/d/Movies`. */
+/** Rewrites a source server's file path prefix to where Vibe sees the same files, e.g. `D:\Movies` → `/mnt/d/Movies`. */
 export interface ImportPathMapping {
   from: string;
   to: string;
@@ -4690,7 +4690,7 @@ export interface ImportOptions {
    * backgrounds, logos, season posters, episode stills). Fields the user locked are never touched. Default false.
    */
   importMetadata?: boolean;
-  /** With importMetadata: replace values Kinora already has (default false = only fill what is missing). */
+  /** With importMetadata: replace values Vibe already has (default false = only fill what is missing). */
   overwriteMetadata?: boolean;
   /** Days the set-password links stay valid (1-365, default 30). */
   linkExpiryDays?: number;
@@ -4700,9 +4700,9 @@ export interface ImportOptions {
 export interface ImportMetadataResult {
   /** Source titles read (movies, shows, seasons, episodes). */
   read: number;
-  /** Matched to a Kinora title. */
+  /** Matched to a Vibe title. */
   matched: number;
-  /** Kinora titles that changed. */
+  /** Vibe titles that changed. */
   updated: number;
   /** Artwork files downloaded. */
   images: number;
@@ -4731,7 +4731,7 @@ export interface ImportLibraryMapping {
 
 export interface ImportPreviewUser {
   sourceId: string;
-  /** Source login name, made safe for Kinora (see `renamedFrom`). */
+  /** Source login name, made safe for Vibe (see `renamedFrom`). */
   username: string;
   renamedFrom: string | null;
   displayName: string;
@@ -4743,9 +4743,9 @@ export interface ImportPreviewUser {
   allowDownloads: boolean;
   maxStreams: number | null;
   maxContentRating: string | null;
-  /** Kinora library names this user will see; null = all libraries. */
+  /** Vibe library names this user will see; null = all libraries. */
   libraries: string[] | null;
-  /** Source libraries the user may see that map to no Kinora library. */
+  /** Source libraries the user may see that map to no Vibe library. */
   unmappedFolders: string[];
   lastActivity: string | null;
   /** create: new account; update: existing account, permissions overwritten; merge: existing account, only watch data; skip. */
@@ -4793,7 +4793,7 @@ export interface ImportUserResult {
   userId: string | null;
   status: 'created' | 'updated' | 'merged' | 'skipped' | 'error';
   message: string | null;
-  /** One-time link where the user chooses their Kinora password (source password hashes can't be carried over). */
+  /** One-time link where the user chooses their Vibe password (source password hashes can't be carried over). */
   setPasswordUrl: string | null;
   setPasswordExpiresAt: string | null;
   watched: number;

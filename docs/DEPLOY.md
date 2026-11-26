@@ -51,17 +51,17 @@ sudo bash install.sh --yes --domain media.example.com --email you@example.com \
 Afterwards the installer lives in the install folder:
 
 ```bash
-sudo /opt/kinora/install.sh            # reconfigure (current answers are the defaults)
-sudo /opt/kinora/install.sh --upgrade  # new images and deploy files, restart
-sudo /opt/kinora/install.sh --status   # containers, health, bans, recent sign-in failures
-sudo /opt/kinora/install.sh --uninstall [--purge]
+sudo /opt/vibe/install.sh            # reconfigure (current answers are the defaults)
+sudo /opt/vibe/install.sh --upgrade  # new images and deploy files, restart
+sudo /opt/vibe/install.sh --status   # containers, health, bans, recent sign-in failures
+sudo /opt/vibe/install.sh --uninstall [--purge]
 ```
 
 ## What gets installed
 
 | Component | Why | When |
 |---|---|---|
-| **Vibe** (`ghcr.io/bucifer6/kinora`) | the server | always |
+| **Vibe** (`ghcr.io/bucifer6/vibe`) | the server | always |
 | **Caddy** | HTTPS with automatic certificates, HTTP→HTTPS, HTTP/3, compression, security headers, access log | proxy `caddy` (the default is `none`) |
 | **Nginx + Certbot** | the same with Nginx; Certbot gets and renews the certificate | proxy `nginx` |
 | **CrowdSec** | reads the Vibe security log and the proxy log, bans brute force, scanners and known-bad addresses (community blocklist) | security `crowdsec` (default) or `both` |
@@ -73,10 +73,10 @@ sudo /opt/kinora/install.sh --uninstall [--purge]
 Everything runs as one Docker Compose project called `mediamax`, with the optional services switched on by
 **compose profiles** (`COMPOSE_PROFILES` in `.env`: `caddy`, `nginx`, `crowdsec`, `fail2ban`, `tunnel`).
 
-The install folder (default `/opt/kinora`):
+The install folder (default `/opt/vibe`):
 
 ```
-/opt/kinora
+/opt/vibe
 ├── .env                     your answers (mode 600; holds the CrowdSec bouncer key and tunnel token)
 ├── docker-compose.yml       generated from .env; regenerated on every run (previous copy: .bak)
 ├── docker-compose.override.yml   optional, yours: merged automatically, never touched by the installer
@@ -246,7 +246,7 @@ then listens on all interfaces at 8484 and trusts that address.
 
 ### Nginx (already installed)
 
-Use the files in `/opt/kinora/snippets/nginx/` as described in [Nginx](#nginx), with the upstream set to
+Use the files in `/opt/vibe/snippets/nginx/` as described in [Nginx](#nginx), with the upstream set to
 `127.0.0.1:8484`. The minimum, if you'd rather write your own server block:
 
 ```nginx
@@ -287,7 +287,7 @@ there and `limit_req zone=mediamax_login burst=10 nodelay;` in the location.
 
 ### Traefik
 
-With Traefik on the `mediamax` network, add labels to Vibe in `/opt/kinora/docker-compose.override.yml`
+With Traefik on the `mediamax` network, add labels to Vibe in `/opt/vibe/docker-compose.override.yml`
 (kept by the installer, merged automatically):
 
 ```yaml
@@ -400,7 +400,7 @@ banned (`crowdsecurity/whitelists`). A ban lasts 4 hours (CrowdSec's default pro
   The Lua-based `cs-nginx-bouncer` needs OpenResty or Nginx built with Lua, which the official image isn't;
   the firewall bouncer works with any proxy.
 
-Useful commands (`cd /opt/kinora` first):
+Useful commands (`cd /opt/vibe` first):
 
 ```bash
 docker compose exec crowdsec cscli metrics                 # what is read, parsed, which scenarios fire
@@ -432,7 +432,7 @@ read-only, and adds `jail.d/mediamax.network.local` so the Docker network itself
 jail with a file of your own:
 
 ```ini
-# /opt/kinora/fail2ban/jail.d/zz-custom.local
+# /opt/vibe/fail2ban/jail.d/zz-custom.local
 [mediamax-caddy]
 enabled = true
 ```
@@ -445,8 +445,8 @@ then `docker compose restart fail2ban`.
 sudo cp deploy/fail2ban/filter.d/mediamax*.conf /etc/fail2ban/filter.d/
 sudo cp deploy/fail2ban/jail.d/mediamax.local /etc/fail2ban/jail.d/
 # point logpath at the host file:
-sudo sed -i 's|/var/log/mediamax/security.log|/opt/kinora/config/logs/security.log|' /etc/fail2ban/jail.d/mediamax.local
-sudo fail2ban-regex /opt/kinora/config/logs/security.log /etc/fail2ban/filter.d/mediamax.conf
+sudo sed -i 's|/var/log/mediamax/security.log|/opt/vibe/config/logs/security.log|' /etc/fail2ban/jail.d/mediamax.local
+sudo fail2ban-regex /opt/vibe/config/logs/security.log /etc/fail2ban/filter.d/mediamax.conf
 sudo systemctl restart fail2ban && sudo fail2ban-client status mediamax
 ```
 
@@ -466,7 +466,7 @@ action line and use `/var/lib/kinora/logs/security.log` (or wherever your data f
 | fail2ban, everything | `docker compose exec fail2ban fail2ban-client unban --all` |
 | Nginx rate limit | nothing to undo: it only slows requests down while they come too fast |
 
-Run these from `/opt/kinora`. `install.sh --status` lists current bans.
+Run these from `/opt/vibe`. `install.sh --status` lists current bans.
 
 ---
 
@@ -489,14 +489,14 @@ The generated `docker-compose.yml`:
 - `/transcode` is a RAM disk (`MEDIAMAX_TRANSCODE_SIZE`, default 4g, only used as needed).
 - Secrets (`.env`, `mediamax.env`) are readable by root only.
 
-Version pinning: add `MEDIAMAX_IMAGE=ghcr.io/bucifer6/kinora:0.3.0` (and if you like `CADDY_IMAGE`,
+Version pinning: add `MEDIAMAX_IMAGE=ghcr.io/bucifer6/vibe:0.5.1` (and if you like `CADDY_IMAGE`,
 `NGINX_IMAGE`, `CERTBOT_IMAGE`, `CROWDSEC_IMAGE`, `FAIL2BAN_IMAGE`, `CLOUDFLARED_IMAGE`) to `.env`, then
 `docker compose up -d`.
 
 ## Upgrades and backups
 
 ```bash
-sudo /opt/kinora/install.sh --upgrade
+sudo /opt/vibe/install.sh --upgrade
 ```
 
 pulls new images, refreshes the deploy files from the same branch or tag (`MEDIAMAX_REF`), rebuilds Caddy with the
@@ -504,7 +504,7 @@ CrowdSec module, restarts what changed and waits for `/health`. To do this weekl
 question (or pass `--auto-upgrade`); it writes `/etc/cron.d/mediamax-upgrade`:
 
 ```cron
-17 4 * * 0 root /opt/kinora/install.sh --dir /opt/kinora --upgrade --yes >>/opt/kinora/logs/upgrade.log 2>&1
+17 4 * * 0 root /opt/vibe/install.sh --dir /opt/vibe --upgrade --yes >>/opt/vibe/logs/upgrade.log 2>&1
 ```
 
 **Backups.** Vibe backs itself up (Admin → Backups: on demand or on a schedule), into `config/backups/`.
@@ -544,7 +544,7 @@ bouncer is installed (`systemctl status crowdsec-firewall-bouncer`). With Caddy,
 `mediamax-caddy` with a recent "last API pull"; if not, re-run the installer.
 
 **fail2ban doesn't ban.** `docker compose exec fail2ban fail2ban-client status mediamax` and
-`fail2ban-regex /opt/kinora/config/logs/security.log /opt/kinora/fail2ban/filter.d/mediamax.conf`. Docker's
+`fail2ban-regex /opt/vibe/config/logs/security.log /opt/vibe/fail2ban/filter.d/mediamax.conf`. Docker's
 optional nftables firewall backend has no `DOCKER-USER` chain; keep the iptables backend (the default) or use
 CrowdSec.
 
@@ -563,7 +563,7 @@ and run the installer again. Then check Admin → Server settings → Transcodin
 needs `network_mode: host` on Vibe, which this installer doesn't set up (the proxy reaches Vibe over the
 Docker network). Use the plain Docker setup in [INSTALL.md](INSTALL.md) if you need DLNA.
 
-**Start over** (keeps your data): `sudo /opt/kinora/install.sh --uninstall`, then run the installer again.
+**Start over** (keeps your data): `sudo /opt/vibe/install.sh --uninstall`, then run the installer again.
 
 ## Security dashboard (Admin → Security)
 

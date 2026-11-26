@@ -43,4 +43,4 @@ From the server's console:
 | CrowdSec | `cscli decisions delete --ip 203.0.113.9` |
 | fail2ban | `fail2ban-client set mediamax unbanip 203.0.113.9` |
 
-In the deploy kit run these with `docker compose exec crowdsec …` or `docker compose exec fail2ban …` from `/opt/kinora`.
+In the deploy kit run these with `docker compose exec crowdsec …` or `docker compose exec fail2ban …` from the install folder (`/opt/vibe`, or `/opt/kinora` for older installs).

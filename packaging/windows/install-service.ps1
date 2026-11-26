@@ -96,7 +96,7 @@ function Stop-Kinora {
   if ($task) {
     Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
   }
-  # Also stop copies started by hand (Kinora.cmd) from the install folder, so files can be replaced.
+  # Also stop copies started by hand (Vibe.cmd) from the install folder, so files can be replaced.
   $exe = Join-Path $InstallDir 'kinora.exe'
   Get-Process -Name 'kinora' -ErrorAction SilentlyContinue |
     Where-Object { $_.Path -and ($_.Path -ieq $exe) } |
@@ -148,6 +148,7 @@ $target = (Resolve-Path $InstallDir).Path.TrimEnd('\')
 if ($source -ine $target) {
   if (Test-Path (Join-Path $target 'web')) { Remove-Item -Recurse -Force (Join-Path $target 'web') }
   Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
+  Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $target 'Kinora.cmd')   # renamed to Vibe.cmd
   Write-Host "Installed Vibe to $target."
 }
 $exe = Join-Path $target 'kinora.exe'

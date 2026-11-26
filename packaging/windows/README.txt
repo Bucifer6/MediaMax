@@ -10,7 +10,7 @@ vibe-@VERSION@-windows-x64-setup.exe from the same Releases page instead of this
   kinora.exe            the server (Node.js is built in)
   web\                  the web app it serves (keep it next to kinora.exe)
   ffmpeg.exe, ffprobe.exe   FFmpeg, used for transcoding, thumbnails and live TV
-  Kinora.cmd            starts Vibe and opens it in your browser
+  Vibe.cmd            starts Vibe and opens it in your browser
   install-service.ps1   runs Vibe at boot in the background (Task Scheduler, as SYSTEM)
   LICENSE.txt           Vibe licence (MIT). FFmpeg is GPL: see FFMPEG-LICENSE.txt.
 
@@ -19,7 +19,7 @@ Full guide (Docker, NAS units, upgrades, backups): https://github.com/Bucifer6/M
 
 Try it
 ------
-Double-click Kinora.cmd. A minimised "Vibe server" window starts and your browser opens
+Double-click Vibe.cmd. A minimised "Vibe server" window starts and your browser opens
 http://localhost:8484 where the setup wizard runs. Close that window to stop Vibe.
 
 Windows SmartScreen may warn about an unrecognised app the first time: choose "More info" > "Run anyway".

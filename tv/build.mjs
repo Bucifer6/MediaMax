@@ -3,7 +3,7 @@
  * Assemble the Samsung Tizen, LG webOS and Hisense VIDAA wrapper apps into tv/dist/{tizen,webos,vidaa}.
  * All are small "enter your server address" pages that then load the Vibe web app in TV mode (?tv=1).
  *
- *   node tv/build.mjs [--icon path/to/square.png] [--name "Brand"] [--url https://tv.example.com/kinora/]
+ *   node tv/build.mjs [--icon path/to/square.png] [--name "Brand"] [--url https://tv.example.com/vibe/]
  *
  * --url is where you will host tv/dist/vidaa (VIDAA apps are hosted web apps); it makes the URLs in
  * tv/dist/vidaa/vidaa-app.json absolute, ready for the VIDAA submission form or a developer-mode install.

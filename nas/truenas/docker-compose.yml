@@ -1,15 +1,15 @@
 # Vibe on TrueNAS SCALE 24.10 (Electric Eel) or newer: Apps -> Discover Apps -> ⋮ -> Install via YAML,
-# name it "kinora" and paste this file. Guide: docs/INSTALL.md#truenas-scale
+# name it "vibe" and paste this file. Guide: docs/INSTALL.md#truenas-scale
 #
 # Before you start:
-#   1. Datasets -> create tank/apps/kinora (Apps preset) with children config, transcode and recordings.
+#   1. Datasets -> create tank/apps/vibe (Apps preset) with children config, transcode and recordings.
 #   2. PUID/PGID 568 is TrueNAS's built-in "apps" user. Give it read access to your media datasets
 #      (dataset -> Permissions -> add an ACL entry for "apps"), or use your own user's uid/gid instead.
 #   3. Change "tank" and the media paths to your pool and datasets.
 services:
-  kinora:
-    image: ghcr.io/bucifer6/kinora:latest
-    container_name: kinora
+  vibe:
+    image: ghcr.io/bucifer6/vibe:latest
+    container_name: vibe
     restart: unless-stopped
     ports:
       - "8484:8484"
@@ -18,8 +18,8 @@ services:
       - PGID=568
       - TZ=Europe/London
     volumes:
-      - /mnt/tank/apps/kinora/config:/config
-      - /mnt/tank/apps/kinora/recordings:/recordings
+      - /mnt/tank/apps/vibe/config:/config
+      - /mnt/tank/apps/vibe/recordings:/recordings
       - /mnt/tank/media/movies:/media/movies:ro
       - /mnt/tank/media/tv:/media/tv:ro
       - /mnt/tank/media/music:/media/music:ro
