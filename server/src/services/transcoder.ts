@@ -187,7 +187,9 @@ let autoDetectFor: string | null = null;
 
 export function detectCacheKey(): string {
   const s = getSettings().transcoding;
-  return JSON.stringify({ hwAccel: s.hwAccel, vaapiDevice: s.vaapiDevice, gpuIndex: s.gpuIndex ?? 0, ffmpeg: ffmpegVersionString() });
+  // Not keyed on hwAccel: detection tests every method whichever one is selected, so switching between them must not
+  // throw the report away and re-run a minute of test transcodes.
+  return JSON.stringify({ vaapiDevice: s.vaapiDevice, gpuIndex: s.gpuIndex ?? 0, ffmpeg: ffmpegVersionString() });
 }
 
 /** Background detection is skipped under `node --test`, with KINORA_NO_HWDETECT=1 (MEDIAMAX_ alias), and without ffmpeg. */
@@ -268,9 +270,9 @@ export function encoderWorks(hw: HwAccel, codec: TranscodeVideoCodec): boolean {
   return m ? m.encode[codec].works : true;
 }
 
-/** The detect step found this VA-API encoder only works with -low_power 1 (VDEnc-only GPUs). */
+/** The detect step found this VA-API / QSV encoder only works with -low_power 1 (VDEnc-only GPUs). */
 export function encoderLowPower(hw: HwAccel, codec: TranscodeVideoCodec): boolean {
-  if (hw !== 'vaapi') return false;
+  if (hw !== 'vaapi' && hw !== 'qsv') return false;
   return !!(detectedMethod(hw)?.encode[codec] as { lowPower?: boolean } | undefined)?.lowPower;
 }
 

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { lowPriority } from '../util/lowPriority.js';
 import type { TrickplayInfo } from '@mediamax/shared';
 import { db } from '../db.js';
 import { config } from '../config.js';
@@ -57,10 +58,10 @@ export function generate(mediaId: string, file: string, durationMs: number, widt
   const tmp = dir + '.tmp';
   fs.rmSync(tmp, { recursive: true, force: true });
   fs.mkdirSync(tmp, { recursive: true });
-  const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-skip_frame', 'nokey', '-i', file, '-an', '-sn',
+  const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-threads', '2', '-skip_frame', 'nokey', '-i', file, '-an', '-sn',
     '-vf', `fps=1/${interval},scale=${w}:${h},tile=${COLS}x${ROWS}`, '-fps_mode', 'vfr', '-q:v', '5', path.join(tmp, '%d.jpg')];
   return new Promise((resolve) => {
-    const p = spawn(config.ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const p = lowPriority(spawn(config.ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] }));
     let err = '';
     p.stderr.on('data', (d) => (err = (err + d).slice(-1000)));
     p.on('error', () => resolve(false));

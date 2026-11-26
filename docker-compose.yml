@@ -20,7 +20,9 @@ services:
       - /path/to/music:/media/music:ro
     tmpfs:
       - /transcode:size=8G                  # fast RAM disk for HLS segments
-    # Intel / AMD hardware transcoding:
+    # Intel Quick Sync / AMD hardware transcoding: uncomment these two lines. Without /dev/dri the container
+    # cannot see the GPU and everything is encoded on the CPU. Vibe tests the GPU on start-up and switches
+    # hardware transcoding on by itself (Admin → Transcoding shows the result).
     # devices:
     #   - /dev/dri:/dev/dri
     # Raspberry Pi 4 (V4L2 M2M) instead: the decoder and encoder nodes
