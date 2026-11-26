@@ -1,5 +1,5 @@
 // Vibe tray app for Windows: runs the server in the background and puts an icon in the notification area,
-// like other Windows media servers. Installed next to kinora.exe by the setup program (kinora.iss).
+// like other Windows media servers. Installed next to kinora.exe by the setup program (vibe.iss).
 //
 // Built on the Windows release runner with the C# compiler that ships with the .NET Framework
 // (scripts/build-installer.mjs), so it must stay C# 5: no string interpolation, no ?. operator.

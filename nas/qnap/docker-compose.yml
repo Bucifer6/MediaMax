@@ -2,13 +2,13 @@
 # Guide: docs/INSTALL.md#qnap
 #
 # Before you start:
-#   1. File Station: create /Container/kinora with subfolders config, transcode and recordings.
+#   1. File Station: create /Container/vibe with subfolders config, transcode and recordings.
 #   2. PUID/PGID: SSH in and run `id <username>` (QNAP users usually start at uid 1000; group "everyone" = 100).
 #   3. Change the /share/... paths below to your shared folders (keep the right-hand side as is).
 services:
-  kinora:
-    image: ghcr.io/bucifer6/kinora:latest
-    container_name: kinora
+  vibe:
+    image: ghcr.io/bucifer6/vibe:latest
+    container_name: vibe
     restart: unless-stopped
     ports:
       - "8484:8484"
@@ -17,9 +17,9 @@ services:
       - PGID=100
       - TZ=Europe/London
     volumes:
-      - /share/Container/kinora/config:/config
-      - /share/Container/kinora/transcode:/transcode
-      - /share/Container/kinora/recordings:/recordings
+      - /share/Container/vibe/config:/config
+      - /share/Container/vibe/transcode:/transcode
+      - /share/Container/vibe/recordings:/recordings
       - /share/Multimedia/Movies:/media/movies:ro
       - /share/Multimedia/TV:/media/tv:ro
       - /share/Multimedia/Music:/media/music:ro

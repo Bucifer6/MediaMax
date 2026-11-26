@@ -15,7 +15,7 @@ setup wizard creates the first administrator.
 Downloads are on the [Releases page](https://github.com/Bucifer6/MediaMax/releases/latest). The Windows and
 Linux archives include FFmpeg; the Docker image includes [jellyfin-ffmpeg](https://github.com/jellyfin/jellyfin-ffmpeg)
 (FFmpeg with the extra GPU tone-mapping and Rockchip support the hardware paths use) and Intel/AMD GPU drivers. The image is
-`ghcr.io/bucifer6/kinora` for both `linux/amd64` and `linux/arm64`, tagged `latest` and with each version
+`ghcr.io/bucifer6/vibe` for both `linux/amd64` and `linux/arm64`, tagged `latest` and with each version
 (for example `0.2.0`).
 
 Contents: [Docker](#docker) · [Windows](#windows) · [Linux](#linux) · [Synology](#synology) · [QNAP](#qnap) ·
@@ -34,9 +34,9 @@ Contents: [Docker](#docker) · [Windows](#windows) · [Linux](#linux) · [Synolo
 ```yaml
 # docker-compose.yml
 services:
-  kinora:
-    image: ghcr.io/bucifer6/kinora:latest
-    container_name: kinora
+  vibe:
+    image: ghcr.io/bucifer6/vibe:latest
+    container_name: vibe
     restart: unless-stopped
     ports:
       - "8484:8484"
@@ -63,11 +63,11 @@ docker compose up -d
 Or with plain Docker:
 
 ```bash
-docker run -d --name kinora --restart unless-stopped -p 8484:8484 \
+docker run -d --name vibe --restart unless-stopped -p 8484:8484 \
   -e PUID=1000 -e PGID=1000 -e TZ=Europe/London \
-  -v /srv/kinora/config:/config -v /srv/kinora/recordings:/recordings \
+  -v /srv/vibe/config:/config -v /srv/vibe/recordings:/recordings \
   -v /srv/media:/media:ro \
-  ghcr.io/bucifer6/kinora:latest
+  ghcr.io/bucifer6/vibe:latest
 ```
 
 When you add a library in Vibe, use the path **inside** the container (`/media/movies`), not the host path.
@@ -90,10 +90,10 @@ DLNA, replace `ports:` with `network_mode: host`.
 docker compose pull && docker compose up -d
 ```
 
-To stay on a version, use a version tag (`ghcr.io/bucifer6/kinora:0.2.0`) instead of `latest`.
+To stay on a version, use a version tag (`ghcr.io/bucifer6/vibe:0.5.1`) instead of `latest`.
 
 **Build it yourself** (also for arm64): `docker compose up -d --build` with the `docker-compose.yml` in the
-repository, or `docker buildx build --platform linux/amd64,linux/arm64 -t kinora .`.
+repository, or `docker buildx build --platform linux/amd64,linux/arm64 -t vibe .`.
 
 ---
 
@@ -128,7 +128,7 @@ with `"C:\Program Files\Vibe\unins000.exe" /VERYSILENT` (keeps the data; older i
 ### Portable zip
 
 1. Download `vibe-<version>-windows-x64.zip` and extract it (right-click → Extract All).
-2. **Try it:** double-click `Kinora.cmd`. It starts Vibe in a minimised window and opens your browser.
+2. **Try it:** double-click `Vibe.cmd`. It starts Vibe in a minimised window and opens your browser.
 3. **Run at boot:** open PowerShell **as Administrator** in the extracted folder and run
 
    ```powershell
@@ -219,11 +219,11 @@ read-only, and add libraries using the container paths (`/media/...`).
 DSM 7.2 or newer with **Container Manager** (Package Center). Works on Intel and AMD "+" models and arm64
 models that offer Container Manager. Template: [`nas/synology/docker-compose.yml`](../nas/synology/docker-compose.yml).
 
-1. In **File Station**, create `docker/kinora` on `volume1` with the subfolders `config`, `transcode` and `recordings`.
+1. In **File Station**, create `docker/vibe` on `volume1` with the subfolders `config`, `transcode` and `recordings`.
 2. Find your user's ids: **Control Panel → Terminal & SNMP → Enable SSH**, then `ssh you@nas` and `id you`.
    The first DSM user is usually `uid=1026`, group `users` is `100`. Use them as `PUID`/`PGID`. The user needs
    read permission on your media shared folders (Control Panel → Shared Folder → Edit → Permissions).
-3. **Container Manager → Project → Create**: name `kinora`, path `/volume1/docker/kinora`, source
+3. **Container Manager → Project → Create**: name `vibe`, path `/volume1/docker/vibe`, source
    **Create docker-compose.yml**, and paste the template. Change the `/volume1/...` media paths to your shared
    folders (for example `/volume1/video/Movies:/media/movies:ro`).
 4. **Next → Done.** Container Manager pulls the image and starts it. Open `http://<nas>:8484`.
@@ -239,32 +239,32 @@ Firewall: if the DSM firewall is on, allow TCP 8484. Reverse proxy / HTTPS: **Co
 Advanced → Reverse Proxy** to `localhost:8484` (enable WebSocket headers under Custom Header), and set **Public
 URL** in Admin → Settings.
 
-Upgrade: **Container Manager → Project → kinora → Action → Stop**, then **Image → ghcr.io/bucifer6/kinora →
+Upgrade: **Container Manager → Project → vibe → Action → Stop**, then **Image → ghcr.io/bucifer6/vibe →
 Update** (or **Action → Build** on the project, which pulls `latest` again), then **Start**.
 
 ### QNAP
 
 QTS 5 / QuTS hero with **Container Station 3**. Template: [`nas/qnap/docker-compose.yml`](../nas/qnap/docker-compose.yml).
 
-1. In **File Station**, create `Container/kinora` with `config`, `transcode` and `recordings`.
+1. In **File Station**, create `Container/vibe` with `config`, `transcode` and `recordings`.
 2. Find your ids over SSH: `id <username>` (users usually start at `1000`; the `everyone` group is `100`).
-3. **Container Station → Applications → Create**, name `kinora`, paste the template, adjust the
+3. **Container Station → Applications → Create**, name `vibe`, paste the template, adjust the
    `/share/...` paths, **Validate**, then **Create**.
 4. Open `http://<nas>:8484`.
 
 Hardware transcoding on Intel models: uncomment `devices: - /dev/dri:/dev/dri`. Upgrade: **Applications →
-kinora → ⋮ → Recreate** with "pull latest image" ticked (or edit the YAML to a new version tag).
+vibe → ⋮ → Recreate** with "pull latest image" ticked (or edit the YAML to a new version tag).
 
 ### Unraid
 
-Template: [`nas/unraid/kinora.xml`](../nas/unraid/kinora.xml) (Community Applications format).
+Template: [`nas/unraid/vibe.xml`](../nas/unraid/vibe.xml) (Community Applications format).
 
 1. Until Vibe is listed in **Apps**, copy the template to the flash drive as
-   `/boot/config/plugins/dockerMan/templates-user/my-Kinora.xml` (for example with
-   `wget -O /boot/config/plugins/dockerMan/templates-user/my-Kinora.xml https://raw.githubusercontent.com/Bucifer6/MediaMax/main/nas/unraid/kinora.xml`).
+   `/boot/config/plugins/dockerMan/templates-user/my-Vibe.xml` (for example with
+   `wget -O /boot/config/plugins/dockerMan/templates-user/my-Vibe.xml https://raw.githubusercontent.com/Bucifer6/MediaMax/main/nas/unraid/vibe.xml`).
 2. **Docker → Add Container → Template: Vibe**.
-3. Check the paths: `/config` → `/mnt/user/appdata/kinora` (cache pool), `/media` → your media share,
-   `/recordings`, and `/transcode` → `/tmp/kinora` (RAM). `PUID 99` / `PGID 100` (nobody/users) match Unraid's
+3. Check the paths: `/config` → `/mnt/user/appdata/vibe` (cache pool), `/media` → your media share,
+   `/recordings`, and `/transcode` → `/tmp/vibe` (RAM). `PUID 99` / `PGID 100` (nobody/users) match Unraid's
    share permissions.
 4. **Apply**, then **WebUI**.
 
@@ -278,16 +278,16 @@ Hardware transcoding: install **Intel GPU TOP** (Intel) or **Radeon TOP** (AMD) 
 TrueNAS SCALE 24.10 (Electric Eel) or newer, which runs apps on Docker. Template:
 [`nas/truenas/docker-compose.yml`](../nas/truenas/docker-compose.yml).
 
-1. **Datasets**: create `apps/kinora` (preset **Apps**) with child datasets `config` and `recordings`.
+1. **Datasets**: create `apps/vibe` (preset **Apps**) with child datasets `config` and `recordings`.
 2. Ids: the template uses `568:568`, TrueNAS's built-in **apps** user. Give it read access to your media
    datasets (**Datasets → media → Permissions → Edit → Add item: User apps, Read**), or use your own user's ids.
-3. **Apps → Discover Apps → ⋮ → Install via YAML**, name `kinora`, paste the template with your pool name
+3. **Apps → Discover Apps → ⋮ → Install via YAML**, name `vibe`, paste the template with your pool name
    instead of `tank`, **Save**.
 4. Open `http://<truenas>:8484`.
 
 GPU: Intel/AMD, uncomment `/dev/dri`. NVIDIA: **Apps → Configuration → Settings → Install NVIDIA Drivers**,
-then uncomment the `deploy:` block. Upgrade: **Apps → kinora → Update** when offered, or **Edit** and pull.
-On TrueNAS SCALE 24.04 and older (Kubernetes apps), use **Custom App** with image `ghcr.io/bucifer6/kinora`,
+then uncomment the `deploy:` block. Upgrade: **Apps → vibe → Update** when offered, or **Edit** and pull.
+On TrueNAS SCALE 24.04 and older (Kubernetes apps), use **Custom App** with image `ghcr.io/bucifer6/vibe`,
 port 8484, the environment variables and host-path volumes from the template.
 
 ### OpenMediaVault
@@ -298,7 +298,7 @@ OMV 7 with **omv-extras** and the **openmediavault-compose** plugin. Template:
 1. **Storage → Shared Folders**: make sure you have folders for app data and media; note their absolute paths
    (`/srv/dev-disk-by-uuid-…/…`, shown in the shared folder list).
 2. Ids: **Users → Users** shows the uid; `id <username>` in a shell. Typically `1000` and group `users` = `100`.
-3. **Services → Compose → Files → Create**: name `kinora`, paste the template with your paths, **Save**, then
+3. **Services → Compose → Files → Create**: name `vibe`, paste the template with your paths, **Save**, then
    select it and press **Up**.
 4. Open `http://<omv>:8484`.
 
@@ -312,7 +312,7 @@ Vibe can leave NAS hard drives asleep while nobody is watching. Settings live in
 
 1. **Put Vibe's own files on an SSD.** The data folder (database, artwork cache, thumbnails, scrub previews, downloaded subtitles, backups) and the transcode folder are written all the time; keep them off the spinning array.
    * **Synology:** map `/config` (and `KINORA_TRANSCODE_DIR`) to a folder on an SSD volume, or at least a different volume from the media.
-   * **Unraid:** use the cache pool — `/mnt/cache/appdata/kinora`, *not* `/mnt/user/appdata` (the FUSE user share can wake array disks). Set the appdata share to *Use cache pool: Only/Prefer*.
+   * **Unraid:** use the cache pool — `/mnt/cache/appdata/vibe`, *not* `/mnt/user/appdata` (the FUSE user share can wake array disks). Set the appdata share to *Use cache pool: Only/Prefer*.
    * **TrueNAS SCALE:** put the app's config/transcode datasets on an SSD pool (or the apps pool), and media on the HDD pool.
    * **QNAP / OMV:** the same idea — config on the system SSD / cache volume.
 2. **Don't poll.** File-change detection uses inotify on directories (no per-file watches, no polling) and never touches a sleeping disk. Only choose *Poll folder timestamps* for NFS/SMB mounts whose changes inotify cannot see, and keep the interval long (minimum 60 minutes). If inotify runs out of watches (very large libraries), raise `fs.inotify.max_user_watches` on the host (e.g. `sysctl fs.inotify.max_user_watches=524288`); the Storage page shows the error.
@@ -375,7 +375,7 @@ admin dashboard shows the reason on the session.
 
 ```yaml
 services:
-  kinora:
+  vibe:
     devices:
       - /dev/dri:/dev/dri
     group_add:
@@ -396,7 +396,7 @@ on the host, then:
 
 ```yaml
 services:
-  kinora:
+  vibe:
     deploy:
       resources:
         reservations:
@@ -462,7 +462,7 @@ and your media are not needed for a restore. DVR recordings are wherever `KINORA
 one `.tar.gz` in `<data>/backups/` with a consistent snapshot of the database plus artwork, branding, avatars,
 subtitles and plugins; you can download it from the same page. Copy backups off the machine (Hyper Backup,
 a NAS snapshot task, or any file backup of the `backups/` folder). To restore, upload or pick a backup on the same
-page, then restart Vibe (`docker restart kinora`, `sudo systemctl restart kinora`, or on Windows
+page, then restart Vibe (`docker restart vibe`, `sudo systemctl restart kinora`, or on Windows
 `Stop-ScheduledTask Kinora; Start-ScheduledTask Kinora`). The restore is applied as it starts, and a
 "pre-restore" backup of what it replaced is kept.
 
@@ -562,7 +562,7 @@ plus the Windows setup program (`scripts/build-installer.mjs`: Inno Setup, with 
 The AI DJ works with no extra setup. For richer requests and a more natural voice, run these free, open-source services next to the server. Pick the language model under **Admin → AI** (it is shared with Ask, recaps and subtitle translation) and the voice under **Admin → Server settings → AI DJ**:
 
 ```yaml
-# Add to your docker-compose.yml next to the kinora service.
+# Add to your docker-compose.yml next to the vibe service.
   ollama:                      # local language model (CPU is fine for small models)
     image: ollama/ollama
     volumes: [ "./ollama:/root/.ollama" ]

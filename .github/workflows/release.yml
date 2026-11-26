@@ -142,7 +142,7 @@ jobs:
           $dir = Join-Path $env:RUNNER_TEMP 'smoke'
           Expand-Archive "release/vibe-$env:VERSION-windows-x64.zip" -DestinationPath $dir
           Get-ChildItem $dir | Format-Table Name, Length
-          foreach ($f in 'kinora.exe','ffmpeg.exe','ffprobe.exe','Kinora.cmd','install-service.ps1','README.txt','web\index.html') {
+          foreach ($f in 'kinora.exe','ffmpeg.exe','ffprobe.exe','Vibe.cmd','install-service.ps1','README.txt','web\index.html') {
             if (-not (Test-Path (Join-Path $dir $f))) { throw "$f missing from the zip" }
           }
           & (Join-Path $dir 'ffmpeg.exe') -hide_banner -version | Select-Object -First 1
@@ -326,7 +326,7 @@ jobs:
         shell: bash
         run: |
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          echo "IMAGE=ghcr.io/$owner/kinora" >> "$GITHUB_ENV"
+          echo "IMAGE=ghcr.io/$owner/vibe" >> "$GITHUB_ENV"
       - uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
@@ -339,7 +339,7 @@ jobs:
           context: .
           platforms: linux/amd64
           load: true
-          tags: kinora:release-test
+          tags: vibe:release-test
           cache-from: type=gha,scope=release
           cache-to: type=gha,scope=release,mode=max
       - name: Smoke test image (incl. PUID/PGID)
@@ -347,7 +347,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/config"
-          docker run -d --name mm -p 8484:8484 -e PUID=1234 -e PGID=2345 -v "$RUNNER_TEMP/config:/config" kinora:release-test
+          docker run -d --name mm -p 8484:8484 -e PUID=1234 -e PGID=2345 -v "$RUNNER_TEMP/config:/config" vibe:release-test
           for i in $(seq 1 30); do curl -sf http://localhost:8484/api/v1/system/info && break; sleep 2; done
           echo
           curl -sf http://localhost:8484/api/v1/system/info | grep -q setupRequired
@@ -363,13 +363,13 @@ jobs:
           context: .
           platforms: linux/arm64
           load: true
-          tags: kinora:release-test-arm64
+          tags: vibe:release-test-arm64
           cache-from: type=gha,scope=release
       - name: Smoke test arm64 image
         shell: bash
         run: |
           set -euo pipefail
-          docker run -d --platform linux/arm64 --name mm-arm -p 8485:8484 kinora:release-test-arm64
+          docker run -d --platform linux/arm64 --name mm-arm -p 8485:8484 vibe:release-test-arm64
           for i in $(seq 1 60); do curl -sf http://localhost:8485/api/v1/system/info && break; sleep 2; done
           echo
           curl -sf http://localhost:8485/api/v1/system/info | grep -q setupRequired
@@ -386,11 +386,11 @@ jobs:
         if: needs.version.outputs.publish == 'true'
         shell: bash
         run: |
-          # Published as "vibe" (the app's name) and still as "kinora", so existing installs keep getting updates.
-          vibe="${IMAGE%/kinora}/vibe"
-          tags="$vibe:$VERSION,$IMAGE:$VERSION"
+          # Also published under the former name "kinora", for anyone who pulled it before the rename.
+          kinora="${IMAGE%/vibe}/kinora"
+          tags="$IMAGE:$VERSION,$kinora:$VERSION"
           # Pre-releases (1.2.0-beta.1) never move "latest".
-          if [[ "${{ needs.version.outputs.prerelease }}" != "true" ]]; then tags="$tags,$vibe:latest,$IMAGE:latest"; fi
+          if [[ "${{ needs.version.outputs.prerelease }}" != "true" ]]; then tags="$tags,$IMAGE:latest,$kinora:latest"; fi
           echo "TAGS=$tags" >> "$GITHUB_ENV"
           echo "$tags"
       - name: Build and push multi-arch image

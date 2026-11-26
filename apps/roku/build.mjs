@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds the Vibe Roku channel into apps/roku/dist/Kinora.zip and optionally sideloads it.
+// Builds the Vibe Roku channel into apps/roku/dist/Vibe.zip and optionally sideloads it.
 //
 //   node apps/roku/build.mjs                                  # zip only
 //   node apps/roku/build.mjs --images                         # re-render icons / splash from tv/shared/brand first
@@ -18,7 +18,7 @@ const repo = path.resolve(here, '../..');
 const brand = path.join(repo, 'tv/shared/brand');
 const imagesDir = path.join(here, 'images');
 const distDir = path.join(here, 'dist');
-const zipPath = path.join(distDir, 'Kinora.zip');
+const zipPath = path.join(distDir, 'Vibe.zip');
 
 function parseArgs(argv) {
   const out = { images: false, imagesOnly: false, deploy: null, password: process.env.ROKU_DEV_PASSWORD ?? null, user: 'rokudev' };
@@ -129,7 +129,7 @@ function digestHeader(challenge, { user, password, method, uri }) {
 function installForm() {
   const form = new FormData();
   form.append('mysubmit', 'Install');
-  form.append('archive', new Blob([fs.readFileSync(zipPath)], { type: 'application/zip' }), 'Kinora.zip');
+  form.append('archive', new Blob([fs.readFileSync(zipPath)], { type: 'application/zip' }), 'Vibe.zip');
   return form;
 }
 

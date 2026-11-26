@@ -25,12 +25,13 @@ V cut through it, in a sunset-to-evening gradient; the interface stays quiet so 
 
 > [!NOTE]
 > **Renamed to Vibe.** The product was called MediaMax, then Kinora. Only the name and logo changed. For compatibility
-> these keep their old names: the `KINORA_*` and `MEDIAMAX_*` environment variables, the Docker image
-> `ghcr.io/bucifer6/kinora`, the systemd unit and user (`kinora`), the Windows task and registry key
+> these keep their old names: the `KINORA_*` and `MEDIAMAX_*` environment variables, the systemd unit and user (`kinora`), the Windows task and registry key
 > (`Kinora`; existing installs also stay in `C:\Program Files\Kinora`, new ones go to `C:\Program Files\Vibe`), data
 > folders and the database (`mediamax.db`), the `X-Kinora-*` / `X-MediaMax-*` headers, the app URL schemes
 > (`kinora://`, `mediamax://`), package names (`@mediamax/*`), app bundle ids (`uk.burdujeni82.kinora`) and this
-> GitHub repository. Existing installs, apps and links keep working without changes.
+> GitHub repository. The Docker image is now `ghcr.io/bucifer6/vibe` (`…/kinora` is still published with the same
+> tags), and the deploy kit installs to `/opt/vibe` (an existing `/opt/kinora` is kept). Existing installs, apps and
+> links keep working without changes.
 
 Vibe brings together the features people love in **Plex, Jellyfin and Emby** and the polish of the big streaming services. It adds first-class **Xtream Codes IPTV** and **TV tuners**, a beat-matching **DJ mode** with an optional **AI DJ**, built-in **requests** and **profiles**, **Home Assistant** and **Play to** support, and a **one-command secure deployment** that fits next to the reverse proxy you already run. Every client (web, iOS, Android, Apple TV, Android TV, Fire TV, Samsung and LG TVs) takes its logo, colours, fonts, home layout and features from your server, applied live with no app rebuild.
 
@@ -200,7 +201,7 @@ FFmpeg is included in every option. Then open `http://<server>:8484` and follow 
 | Platform | How |
 |---|---|
 | **Linux server, secure & public** | `curl -fsSL https://raw.githubusercontent.com/Bucifer6/MediaMax/main/deploy/install.sh \| sudo bash` sets up Docker, **CrowdSec** and/or **fail2ban**, your media folders read-only, hardware transcoding and hardened defaults. It installs **no reverse proxy by default** (`--proxy none`), so it fits behind the one you already run; add `--proxy caddy` or `--proxy nginx` for HTTPS with a free certificate, `--proxy tunnel` for Cloudflare Tunnel, or `--builtin-https` to turn on Vibe's own HTTPS later from **Admin → Network**. See [docs/DEPLOY.md](docs/DEPLOY.md) |
-| **Docker** (amd64, arm64) | `docker run -d -p 8484:8484 -v "$PWD/config:/config" -v /path/to/media:/media:ro ghcr.io/bucifer6/kinora` |
+| **Docker** (amd64, arm64) | `docker run -d -p 8484:8484 -v "$PWD/config:/config" -v /path/to/media:/media:ro ghcr.io/bucifer6/vibe` |
 | **NAS**: Synology, QNAP, Unraid, TrueNAS SCALE, OpenMediaVault | ready-made templates in [`nas/`](nas) |
 | **Windows** x64 | `vibe-<version>-windows-x64-setup.exe` from [Releases](https://github.com/Bucifer6/MediaMax/releases/latest): a setup wizard that runs Vibe as a tray app or as a background service (a portable zip is there too) |
 | **Linux** x64 / arm64 | `vibe-<version>-linux-<arch>.tar.gz`: run `./kinora`, or install the included systemd unit |

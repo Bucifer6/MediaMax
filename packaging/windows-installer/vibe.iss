@@ -2,7 +2,7 @@
 ;
 ; Built by scripts/build-installer.mjs on the Windows release runner from the same files as the zip:
 ;   iscc /DAppVersion=0.5.0 /DNumericVersion=0.5.0.0 /DSourceDir=<unpacked zip> /DTrayExe=<VibeTray.exe>
-;        /DOutputDir=release /DOutputBase=vibe-0.5.0-windows-x64-setup kinora.iss
+;        /DOutputDir=release /DOutputBase=vibe-0.5.0-windows-x64-setup vibe.iss
 ;
 ; What it does (like other Windows media servers):
 ;   - installs to C:\Program Files\Vibe; an upgrade keeps the folder already in use (C:\Program Files\Kinora for
@@ -57,7 +57,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 WizardStyle=modern
-SetupIconFile=kinora.ico
+SetupIconFile=vibe.ico
 UninstallDisplayIcon={app}\VibeTray.exe
 UninstallDisplayName=Vibe
 LicenseFile={#SourceDir}\LICENSE.txt
@@ -84,6 +84,8 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 ; Old web app and help builds: their file names change with every release.
 Type: filesandordirs; Name: "{app}\web"
 Type: filesandordirs; Name: "{app}\help"
+; The portable launcher was called Kinora.cmd before it became Vibe.cmd.
+Type: files; Name: "{app}\Kinora.cmd"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

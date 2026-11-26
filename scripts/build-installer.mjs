@@ -12,7 +12,7 @@
  *   --zip <file>        default: release/vibe-<version>-windows-x64.zip
  *   --out <dir>         default: release/
  *
- * The installer itself is packaging/windows-installer/kinora.iss; the tray app is VibeTray.cs next to it.
+ * The installer itself is packaging/windows-installer/vibe.iss; the tray app is VibeTray.cs next to it.
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -81,13 +81,13 @@ function main() {
 
   // 2. Tray app (x64, so it sees the same registry view as the 64-bit installer).
   const tray = path.join(work, 'VibeTray.exe');
-  run(csc, ['/nologo', '/target:winexe', '/platform:x64', '/optimize+', `/win32icon:${path.join(srcDir, 'kinora.ico')}`,
+  run(csc, ['/nologo', '/target:winexe', '/platform:x64', '/optimize+', `/win32icon:${path.join(srcDir, 'vibe.ico')}`,
     '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', `/out:${tray}`, path.join(srcDir, 'VibeTray.cs')]);
 
   // 3. Setup program.
   const base = `vibe-${version}-windows-x64-setup`;
   run(iscc, ['/Qp', `/DAppVersion=${version}`, `/DNumericVersion=${numeric}`, `/DSourceDir=${app}`, `/DTrayExe=${tray}`,
-    `/DOutputDir=${outDir}`, `/DOutputBase=${base}`, path.join(srcDir, 'kinora.iss')]);
+    `/DOutputDir=${outDir}`, `/DOutputBase=${base}`, path.join(srcDir, 'vibe.iss')]);
   const exe = path.join(outDir, `${base}.exe`);
   const hash = createHash('sha256').update(fs.readFileSync(exe)).digest('hex');
   fs.writeFileSync(`${exe}.sha256`, `${hash}  ${path.basename(exe)}\n`);

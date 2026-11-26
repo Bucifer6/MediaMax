@@ -17,10 +17,10 @@ if [ "$(id -u)" != "0" ] || [ -z "${PUID:-}${PGID:-}" ]; then
 fi
 
 if [ -z "${PUID:-}" ] || [ -z "${PGID:-}" ]; then
-  echo "kinora: set both PUID and PGID (or neither)" >&2; exit 1
+  echo "vibe: set both PUID and PGID (or neither)" >&2; exit 1
 fi
 case "$PUID$PGID" in
-  *[!0-9]*) echo "kinora: PUID and PGID must be numbers (got PUID='$PUID' PGID='$PGID')" >&2; exit 1 ;;
+  *[!0-9]*) echo "vibe: PUID and PGID must be numbers (got PUID='$PUID' PGID='$PGID')" >&2; exit 1 ;;
 esac
 if [ "$PUID" = "0" ] && [ "$PGID" = "0" ]; then
   exec "$@"
@@ -34,9 +34,9 @@ fix_owner() {
   [ -d "$dir" ] || return 0
   [ "$(stat -c %u:%g "$dir")" = "$PUID:$PGID" ] && return 0
   if [ "$recursive" = "yes" ]; then
-    chown -R "$PUID:$PGID" "$dir" 2>/dev/null || echo "kinora: could not change the owner of $dir (read-only or NFS root squash?)" >&2
+    chown -R "$PUID:$PGID" "$dir" 2>/dev/null || echo "vibe: could not change the owner of $dir (read-only or NFS root squash?)" >&2
   else
-    chown "$PUID:$PGID" "$dir" 2>/dev/null || echo "kinora: could not change the owner of $dir" >&2
+    chown "$PUID:$PGID" "$dir" 2>/dev/null || echo "vibe: could not change the owner of $dir" >&2
   fi
 }
 fix_owner "${MEDIAMAX_DATA:-/config}" yes
@@ -51,7 +51,7 @@ for dev in /dev/dri/renderD* /dev/dri/card* /dev/nvidia0; do
 done
 if [ -n "${MEDIAMAX_EXTRA_GIDS:-}" ]; then
   case "$MEDIAMAX_EXTRA_GIDS" in
-    *[!0-9,]*) echo "kinora: MEDIAMAX_EXTRA_GIDS must be numbers separated by commas" >&2; exit 1 ;;
+    *[!0-9,]*) echo "vibe: MEDIAMAX_EXTRA_GIDS must be numbers separated by commas" >&2; exit 1 ;;
   esac
   groups="$groups,$MEDIAMAX_EXTRA_GIDS"
 fi

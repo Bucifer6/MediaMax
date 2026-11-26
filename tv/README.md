@@ -14,7 +14,7 @@ TV mode (`web/src/tv/spatial.ts` and `web/src/styles/tv.css`) works in any brows
 ```bash
 node tv/build.mjs                                   # → tv/dist/tizen, tv/dist/webos and tv/dist/vidaa
 node tv/build.mjs --name "Smith Cinema" --icon brand/icon.png   # white-label
-node tv/build.mjs --url https://tv.example.com/kinora/        # where you'll host tv/dist/vidaa (absolute URLs in vidaa-app.json)
+node tv/build.mjs --url https://tv.example.com/vibe/        # where you'll host tv/dist/vidaa (absolute URLs in vidaa-app.json)
 ```
 
 Without options the wrappers use the stock Vibe artwork in `tv/shared/brand/` (app icon at 512/130/80 px and the 1920×1080 splash, rendered by `node scripts/brand-export.mjs`) and show the outlined Vibe wordmark on the start screen. With `--icon`, the script letterboxes your square icon with `ffmpeg` (already required by the server); with `--name`, the start screen shows your name as text.
@@ -28,7 +28,7 @@ Without options the wrappers use the stock Vibe artwork in `tv/shared/brand/` (a
    ```
 3. Turn on developer mode on the TV (Apps → type 12345 → enter your PC's IP), then install:
    ```bash
-   sdb connect <tv-ip> && tizen install -n Kinora.wgt -t <tv-name>
+   sdb connect <tv-ip> && tizen install -n Vibe.wgt -t <tv-name>
    ```
 4. Store release: submit the `.wgt` through Samsung Seller Office. Change `tizen:application id`/`package` in
    `tv/tizen/config.xml` to the ones Samsung assigns.

@@ -10,7 +10,7 @@
 #   sudo bash install.sh
 #
 # It asks a few questions (domain, reverse proxy, CrowdSec/fail2ban, media folders, ...), writes .env and a
-# docker-compose.yml into the install folder (default /opt/kinora, or /opt/mediamax when an install made before
+# docker-compose.yml into the install folder (default /opt/vibe, or /opt/kinora or /opt/mediamax when an install made before
 # the rename is there), starts everything and waits until
 # Vibe answers. Re-running it reconfigures or upgrades without touching your data. See docs/DEPLOY.md.
 #
@@ -55,8 +55,8 @@ Actions (default: install or reconfigure)
   --uninstall             stop and remove the containers; data stays (add --purge to delete it too)
 
 Options (each can also be given as the environment variable in brackets; the original MEDIAMAX_* names work too)
-  --dir DIR               install folder (KINORA_INSTALL_DIR, default /opt/kinora; an existing
-                          /opt/mediamax install is picked up when /opt/kinora does not exist)
+  --dir DIR               install folder (KINORA_INSTALL_DIR, default /opt/vibe; an existing
+                          /opt/kinora or /opt/mediamax install is picked up when /opt/vibe does not exist)
   --domain NAME           public name, e.g. media.example.com (KINORA_DOMAIN)
   --no-domain             no domain: plain http://<server-ip>:8484
   --email ADDR            e-mail for Let's Encrypt expiry notices (ACME_EMAIL)
@@ -75,7 +75,7 @@ Options (each can also be given as the environment variable in brackets; the ori
   --proxy-ip IP           with --proxy existing on another machine: that proxy's address
   --firewall-bouncer      also install the CrowdSec firewall bouncer on this host (nginx/none/existing)
   --auto-upgrade          add a weekly cron job running install.sh --upgrade
-  --image IMAGE           Vibe image (KINORA_IMAGE, default ghcr.io/bucifer6/kinora:latest)
+  --image IMAGE           Vibe image (KINORA_IMAGE, default ghcr.io/bucifer6/vibe:latest)
   --ref REF               git branch/tag the deploy files come from (KINORA_REF, default main)
   --staging               use Let's Encrypt's staging CA (testing; certificates are not trusted)
   --no-start              write the files only; don't pull or start anything
@@ -88,7 +88,7 @@ Examples
   sudo bash install.sh
   sudo bash install.sh -y --domain media.example.com --email me@example.com --media /srv/movies --media /srv/tv
   sudo bash install.sh -y --no-domain --proxy none --security fail2ban --media /mnt/nas/media
-  sudo /opt/kinora/install.sh --upgrade
+  sudo /opt/vibe/install.sh --upgrade
 EOF
 }
 
@@ -130,8 +130,9 @@ OPT_PORT="${MEDIAMAX_HTTP_PORT:-}"
 OPT_IMAGE="${MEDIAMAX_IMAGE:-}"
 OPT_REF="${MEDIAMAX_REF:-}"
 if [ -n "${MEDIAMAX_INSTALL_DIR:-}" ]; then DIR="$MEDIAMAX_INSTALL_DIR"
-elif [ ! -e /opt/kinora ] && [ -f /opt/mediamax/.env ]; then DIR=/opt/mediamax   # installed before the rename
-else DIR=/opt/kinora; fi
+elif [ ! -e /opt/vibe ] && [ -f /opt/kinora/.env ]; then DIR=/opt/kinora         # installed before the rename
+elif [ ! -e /opt/vibe ] && [ ! -e /opt/kinora ] && [ -f /opt/mediamax/.env ]; then DIR=/opt/mediamax
+else DIR=/opt/vibe; fi
 
 need_arg() { [ "$#" -ge 2 ] && [ -n "$2" ] || die "$1 needs a value (see --help)"; }
 while [ "$#" -gt 0 ]; do
@@ -483,7 +484,7 @@ configure() {
   [ -n "$OPT_PORT" ] && HTTP_PORT="$OPT_PORT"
   : "${HTTP_PORT:=8484}"
   case "$HTTP_PORT" in *[!0-9]*|"") die "--port must be a number" ;; esac
-  : "${IMAGE:=ghcr.io/bucifer6/kinora:latest}"
+  : "${IMAGE:=ghcr.io/bucifer6/vibe:latest}"
   : "${PROXY:=none}"
   : "${HWACCEL:=auto}"
 
@@ -791,7 +792,7 @@ write_compose() {
 # docker compose automatically). Settings for Vibe itself go in mediamax.env.
 #
 # Optional services are switched on by COMPOSE_PROFILES in .env (caddy, nginx, crowdsec, fail2ban, tunnel).
-# Pin versions by adding e.g. MEDIAMAX_IMAGE=ghcr.io/bucifer6/kinora:0.3.0, CADDY_IMAGE=caddy:2.11,
+# Pin versions by adding e.g. MEDIAMAX_IMAGE=ghcr.io/bucifer6/vibe:0.5.1, CADDY_IMAGE=caddy:2.11,
 # NGINX_IMAGE, CERTBOT_IMAGE, CROWDSEC_IMAGE, FAIL2BAN_IMAGE or CLOUDFLARED_IMAGE to .env.
 # Backups: Vibe makes its own (Admin → Backups), stored in ./config/backups. Copy that folder off this
 # machine now and then.
@@ -818,7 +819,7 @@ volumes:
 
 services:
   mediamax:
-    image: ${MEDIAMAX_IMAGE:-ghcr.io/bucifer6/kinora:latest}
+    image: ${MEDIAMAX_IMAGE:-ghcr.io/bucifer6/vibe:latest}
     container_name: mediamax
     restart: unless-stopped
     networks: [mediamax]
@@ -1367,7 +1368,7 @@ setup_firewall_bouncer() {
     mkdir -p /etc/crowdsec/bouncers
     umask 077
     cat >"$conf.local" <<EOF
-# Written by Kinora install.sh: connect to the CrowdSec container and also block in DOCKER-USER, because
+# Written by Vibe install.sh: connect to the CrowdSec container and also block in DOCKER-USER, because
 # Docker-published ports bypass the INPUT chain.
 api_url: http://127.0.0.1:$LAPI_PORT/
 api_key: $key
@@ -1534,7 +1535,7 @@ load_settings_quietly() {
   HTTP_PORT="$(env_get MEDIAMAX_HTTP_PORT)"; : "${HTTP_PORT:=8484}"
   [ -n "$OPT_IMAGE" ] && IMAGE="$OPT_IMAGE"
   : "${PROXY:=none}" "${SECURITY:=none}" "${HWACCEL:=none}" "${PUID:=1000}" "${PGID:=1000}" "${TZONE:=Etc/UTC}"
-  : "${IMAGE:=ghcr.io/bucifer6/kinora:latest}" "${FIREWALL_BOUNCER:=no}" "${AUTO_UPGRADE:=no}"
+  : "${IMAGE:=ghcr.io/bucifer6/vibe:latest}" "${FIREWALL_BOUNCER:=no}" "${AUTO_UPGRADE:=no}"
   derive
 }
 
@@ -1619,7 +1620,7 @@ do_uninstall() {
   else dc down --remove-orphans || true; fi
   docker image rm mediamax-caddy:crowdsec >/dev/null 2>&1 || true
   rm -f "$CRON_FILE"
-  if [ -f /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml.local ] && grep -q "Kinora install.sh" /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml.local; then
+  if [ -f /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml.local ] && grep -qE "(Vibe|Kinora) install.sh" /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml.local; then
     systemctl stop crowdsec-firewall-bouncer >/dev/null 2>&1 || true
     rm -f /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml.local
     warn "the CrowdSec firewall bouncer package is still installed; remove it with your package manager (crowdsec-firewall-bouncer-iptables)"

@@ -66,7 +66,7 @@ its sessions and devices as **Roku**.
 cd apps/roku
 npm install            # BrighterScript, for the static check below (this folder is not a root workspace)
 npm run lint           # bsc: parses and validates every BrightScript / XML file
-node build.mjs         # → apps/roku/dist/Kinora.zip
+node build.mjs         # → apps/roku/dist/Vibe.zip
 node build.mjs --images  # re-render images/ from tv/shared/brand with ffmpeg, then zip
 ```
 
@@ -84,11 +84,11 @@ in `tv/shared/brand/`. Replace them (same names and sizes) for a white-label cha
    ```bash
    node apps/roku/build.mjs --deploy 192.168.1.50 --password <dev-password>
    ```
-   This POSTs the zip to `http://<roku-ip>/plugin_install` (multipart `mysubmit=Install`, `archive=@Kinora.zip`)
+   This POSTs the zip to `http://<roku-ip>/plugin_install` (multipart `mysubmit=Install`, `archive=@Vibe.zip`)
    with HTTP digest authentication as user `rokudev`. You can also open `http://<roku-ip>` in a browser, sign in as
-   `rokudev` and upload `dist/Kinora.zip`, or use curl:
+   `rokudev` and upload `dist/Vibe.zip`, or use curl:
    ```bash
-   curl --user rokudev:<dev-password> --digest -F "mysubmit=Install" -F "archive=@apps/roku/dist/Kinora.zip" http://<roku-ip>/plugin_install
+   curl --user rokudev:<dev-password> --digest -F "mysubmit=Install" -F "archive=@apps/roku/dist/Vibe.zip" http://<roku-ip>/plugin_install
    ```
    The password can also come from `ROKU_DEV_PASSWORD`.
 
