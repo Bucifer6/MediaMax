@@ -26,7 +26,8 @@ V cut through it, in a sunset-to-evening gradient; the interface stays quiet so 
 > [!NOTE]
 > **Renamed to Vibe.** The product was called MediaMax, then Kinora. Only the name and logo changed. For compatibility
 > these keep their old names: the `KINORA_*` and `MEDIAMAX_*` environment variables, the Docker image
-> `ghcr.io/bucifer6/kinora`, the systemd unit and user (`kinora`), the Windows task and folders (`Kinora`), data
+> `ghcr.io/bucifer6/kinora`, the systemd unit and user (`kinora`), the Windows task and registry key
+> (`Kinora`; existing installs also stay in `C:\Program Files\Kinora`, new ones go to `C:\Program Files\Vibe`), data
 > folders and the database (`mediamax.db`), the `X-Kinora-*` / `X-MediaMax-*` headers, the app URL schemes
 > (`kinora://`, `mediamax://`), package names (`@mediamax/*`), app bundle ids (`uk.burdujeni82.kinora`) and this
 > GitHub repository. Existing installs, apps and links keep working without changes.

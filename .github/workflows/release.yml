@@ -193,7 +193,7 @@ jobs:
           if ($LASTEXITCODE) { throw "uninstall failed ($LASTEXITCODE)" }
           if (Get-ScheduledTask -TaskName Kinora -ErrorAction SilentlyContinue) { throw 'task still registered' }
           if (Get-NetFirewallRule -DisplayName 'Kinora*' -ErrorAction SilentlyContinue) { throw 'firewall rules left behind' }
-          if (Test-Path "$env:ProgramFiles\Kinora") { throw 'install folder left behind' }
+          if (Test-Path "$env:ProgramFiles\Vibe") { throw 'install folder left behind' }
 
       - name: Smoke test setup program (Windows)
         if: runner.os == 'Windows'
@@ -203,7 +203,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           Remove-Item Env:\MEDIAMAX_PORT -ErrorAction SilentlyContinue
           $setup = (Resolve-Path "release/vibe-$env:VERSION-windows-x64-setup.exe").Path
-          $app = Join-Path $env:ProgramFiles 'Kinora'
+          $app = Join-Path $env:ProgramFiles 'Vibe'
           $envKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
           function Install([string[]]$extra, [string]$name) {
             $log = Join-Path $env:RUNNER_TEMP "setup-$name.log"
