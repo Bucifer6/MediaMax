@@ -13,7 +13,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import type { HwAccel, HwDetectReport, HwDevice, HwMethodResult, HwTestResult, ToneMapPath, TranscodeVideoCodec } from '@mediamax/shared';
 import { config } from '../config.js';
 import { logger } from '../util/log.js';
-import { getSettings } from './settings.js';
+import { getKv, getSettings, setKv, updateSettings } from './settings.js';
 import { ffmpegFeatures, initDetectReport, listCaps, setDetectReport, getDetectReport } from './transcoder.js';
 import { HW_LABELS, TONEMAP_FILTERS, buildVideoPipeline, encoderArgs, encoderFor, hwInputArgs, rateArgs, toneMapCandidates, type FfmpegFeatures, type HwTarget } from './hwaccel.js';
 
@@ -284,8 +284,11 @@ export function decodeTestArgs(t: HwTarget, input: string, swFormats: string[] =
   return ['-y', ...inArgs, '-i', input, '-t', '2', '-an', '-vf', `hwdownload,format=${['nv12', 'p010le', ...swFormats].join('|')}`, '-f', 'null', '-'];
 }
 
-/** VA-API encoders that only expose the low-power (VDEnc) entrypoint fail without -low_power 1 (Jasper Lake, N100, Arc). */
-const LOW_POWER_RETRY: Partial<Record<HwAccel, true>> = { vaapi: true };
+/**
+ * Encoders that only expose the low-power (VDEnc) entrypoint fail without -low_power 1 (Jasper Lake, Alder Lake-N /
+ * N100, Arc): VA-API always, and Quick Sync with some driver / oneVPL runtime combinations.
+ */
+const LOW_POWER_RETRY: Partial<Record<HwAccel, true>> = { vaapi: true, qsv: true };
 
 async function testMethod(cand: Candidate, ctx: { platform: string; encoders: Set<string>; filters: Set<string>; pixFmts: Set<string>; features: FfmpegFeatures; samples: { h264: string | null; hdr: string | null } }): Promise<HwMethodResult> {
   const id = `${cand.hwAccel}:${cand.device ?? cand.gpuIndex ?? 'default'}`;
@@ -369,9 +372,38 @@ export const cachedReport = () => getDetectReport();
 export function initHardwareDetection(): void {
   try {
     initDetectReport();
+    const cached = getDetectReport();
+    if (cached) autoApplyRecommendation(cached);
   } catch (e) {
     log.warn(`Hardware detect cache: ${(e as Error).message}`);
   }
+}
+
+const AUTO_APPLIED_KEY = 'hwAccelAutoApplied';
+
+/**
+ * Out of the box transcoding is set to software (hwAccel 'none'), so a server with a working Quick Sync / VA-API /
+ * NVENC device still encoded every stream on the CPU until an admin opened Transcoding settings and picked it.
+ * When detection recommends a hardware method and nobody has chosen one yet (setting still 'none', no
+ * KINORA_HWACCEL / MEDIAMAX_HWACCEL in the environment), switch to it once. The flag makes it a one-time step: an admin
+ * who later sets Software on purpose keeps it. Returns true when the setting changed.
+ */
+export function autoApplyRecommendation(report: HwDetectReport, env: NodeJS.ProcessEnv = process.env): boolean {
+  const rec = report.recommendation;
+  if (!rec || rec.hwAccel === 'none') return false;
+  if (env.MEDIAMAX_HWACCEL) return false;
+  if (getKv<boolean>(AUTO_APPLIED_KEY, false)) return false;
+  const t = getSettings().transcoding;
+  if (t.hwAccel !== 'none') return false;
+  const next = { ...t, hwAccel: rec.hwAccel };
+  if (rec.device && (rec.hwAccel === 'vaapi' || rec.hwAccel === 'qsv')) next.vaapiDevice = rec.device;
+  if (rec.gpuIndex != null) next.gpuIndex = rec.gpuIndex;
+  updateSettings({ transcoding: next });
+  setKv(AUTO_APPLIED_KEY, true);
+  // The report is keyed on the device settings: re-save it under the new key instead of detecting again.
+  if (next.vaapiDevice !== t.vaapiDevice || next.gpuIndex !== t.gpuIndex) setDetectReport(report);
+  log.info(`Hardware transcoding switched on automatically: ${rec.reason}`);
+  return true;
 }
 
 /** Run detection (concurrent callers share one run). The result is cached until the next run. */
@@ -409,6 +441,7 @@ async function runDetection(): Promise<HwDetectReport> {
   // Observed build features (not part of the shared type; kept in the persisted report for diagnostics).
   Object.assign(report.ffmpeg, { features: { openclBt2390: !!features.openclBt2390 } });
   setDetectReport(report);
+  autoApplyRecommendation(report);
   log.info(`Hardware detection: ${methods.filter((m) => m.works).map((m) => m.id).join(', ') || 'nothing works'} — recommend ${recommendation.hwAccel} (${report.durationMs} ms)`);
   return report;
 }

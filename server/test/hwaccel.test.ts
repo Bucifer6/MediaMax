@@ -178,7 +178,7 @@ test('libx264: zerolatency only for live, H.264 level from output size and frame
   assert.equal(level(null, null), '4.1');
   assert.deepEqual(encoderArgs('h264_vaapi', { ...o, lowPower: true }), ['-c:v', 'h264_vaapi', '-low_power', '1']);
   assert.deepEqual(encoderArgs('hevc_vaapi', { ...o, lowPower: true }), ['-c:v', 'hevc_vaapi', '-low_power', '1', '-tag:v', 'hvc1']);
-  assert.deepEqual(encoderArgs('h264_qsv', { ...o, lowPower: true }), ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-forced_idr', '1']);
+  assert.deepEqual(encoderArgs('h264_qsv', { ...o, lowPower: true }), ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-forced_idr', '1', '-low_power', '1']);
 });
 
 test('keyframes: time-based at segment boundaries, GOP of one segment when the frame rate is known', () => {
@@ -614,6 +614,44 @@ test('detect report is persisted, keyed on device settings + ffmpeg build, and n
     fs.writeFileSync(file, JSON.stringify({ key: saved.key.replace(/ffmpeg version [^"]*/, 'ffmpeg version 0.0'), report: r }));
     loadDetectReport();
     assert.equal(getDetectReport(), null); // other ffmpeg build → stale
+  } finally {
+    setDetectReport(null);
+    updateSettings({ transcoding: { hwAccel: 'none' } as any });
+  }
+});
+
+test('detect: a recommended hardware method is switched on once when transcoding is still on software', async () => {
+  const { setKv, getSettings } = await import('../src/services/settings.ts');
+  const qsv = { ...fakeReport([{ id: 'qsv:' + DEV, hwAccel: 'qsv', device: DEV }]), recommendation: { id: 'qsv:' + DEV, hwAccel: 'qsv' as HwAccel, device: DEV, gpuIndex: null, reason: 'Intel Quick Sync' } };
+  setKv('hwAccelAutoApplied', false);
+  updateSettings({ transcoding: { hwAccel: 'none', vaapiDevice: DEV } as any });
+  try {
+    // An explicit KINORA_HWACCEL / MEDIAMAX_HWACCEL wins.
+    assert.equal(det.autoApplyRecommendation(qsv as any, { MEDIAMAX_HWACCEL: 'none' }), false);
+    assert.equal(getSettings().transcoding.hwAccel, 'none');
+    // Nothing recommended: stays on software.
+    assert.equal(det.autoApplyRecommendation(fakeReport([]) as any, {}), false);
+    assert.equal(det.autoApplyRecommendation(qsv as any, {}), true);
+    assert.equal(getSettings().transcoding.hwAccel, 'qsv');
+    // One time only: an admin who goes back to Software keeps it.
+    updateSettings({ transcoding: { hwAccel: 'none' } as any });
+    assert.equal(det.autoApplyRecommendation(qsv as any, {}), false);
+    assert.equal(getSettings().transcoding.hwAccel, 'none');
+  } finally {
+    setKv('hwAccelAutoApplied', false);
+    transcoderMod.setDetectReport(null);
+    updateSettings({ transcoding: { hwAccel: 'none' } as any });
+  }
+});
+
+test('detect report survives switching the accelerator (no re-detection)', () => {
+  const { setDetectReport, getDetectReport } = transcoderMod;
+  updateSettings({ transcoding: { hwAccel: 'vaapi', vaapiDevice: DEV } as any });
+  try {
+    const r = fakeReport([{ id: 'qsv:' + DEV, hwAccel: 'qsv', device: DEV }]);
+    setDetectReport(r as any);
+    updateSettings({ transcoding: { hwAccel: 'qsv' } as any });
+    assert.equal(getDetectReport()?.ranAt, r.ranAt);
   } finally {
     setDetectReport(null);
     updateSettings({ transcoding: { hwAccel: 'none' } as any });

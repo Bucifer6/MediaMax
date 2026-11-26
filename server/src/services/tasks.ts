@@ -39,7 +39,8 @@ import { identifyUntagged } from './music/acoustid.js';
 import { flushQueue as flushListenBrainz } from './listenbrainz.js';
 import { getMusicSettings } from './music/settings.js';
 import { checkForUpdates } from './updates.js';
-import { planScheduledRun, taskRunFinished, isDiskTask, getStorageSettings, type PathFilter, type RunPlan } from './storage/storage.js';
+import { planScheduledRun, taskRunFinished, isDiskTask, getStorageSettings, DISK_TASKS, type PathFilter, type RunPlan } from './storage/storage.js';
+import { lowPriority } from '../util/lowPriority.js';
 
 const log = logger('tasks');
 
@@ -63,7 +64,7 @@ interface TaskState {
 
 function grabThumb(file: string, atSec: number, dest: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const p = spawn(config.ffmpeg, ['-v', 'error', '-y', '-ss', String(atSec), '-i', file, '-frames:v', '1', '-vf', "scale='min(640,iw)':-2", '-q:v', '4', dest]);
+    const p = lowPriority(spawn(config.ffmpeg, ['-v', 'error', '-y', '-threads', '1', '-ss', String(atSec), '-i', file, '-frames:v', '1', '-vf', "scale='min(640,iw)':-2", '-q:v', '4', dest]));
     p.on('error', () => resolve(false));
     p.on('exit', (c) => resolve(c === 0 && fs.existsSync(dest)));
   });
@@ -387,6 +388,10 @@ export async function runTask(id: string, filter?: PathFilter, plan?: RunPlan): 
   }
 }
 
+/** Scheduled tasks that keep the CPU busy for a long time: at most one of them runs at once (manual runs are not held back). */
+const HEAVY_TASKS = new Set([...DISK_TASKS, 'ask-embeddings', 'identify-untagged', 'auto-subtitles', 'refresh-metadata']);
+export const isHeavyTask = (id: string) => HEAVY_TASKS.has(id);
+
 let timers: NodeJS.Timeout[] = [];
 
 export function startScheduler() {
@@ -414,6 +419,9 @@ export function startScheduler() {
         if (last && Date.now() - Date.parse(last) <= iv * 60000) continue;
         // Disk-friendly: one media-disk job at a time (scan first), instead of all of them at window start.
         if (isDiskTask(d.id) && getStorageSettings().diskFriendly && [...running.keys()].some(isDiskTask)) continue;
+        // CPU-heavy jobs (decoding media, fingerprinting, embeddings) run one at a time whatever the disk mode, so a
+        // fresh start or a big library doesn't launch scans, thumbnails, intro detection and music analysis together.
+        if (isHeavyTask(d.id) && [...running.keys()].some(isHeavyTask)) continue;
         const plan = await planScheduledRun(d.id).catch(() => ({ run: true }) as RunPlan);
         if (!plan.run) continue;
         if (plan.filter && !d.diskFilter) continue; // can't split this one by disk: wait for the window

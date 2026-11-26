@@ -342,7 +342,7 @@ export interface EncoderOptions {
   height?: number | null;
   /** Output frame rate when known, for the H.264 level. */
   fps?: number | null;
-  /** VA-API low-power (VDEnc) entrypoint: the only one on Jasper Lake / Alder Lake-N (N100) / Arc (from the detect step). */
+  /** VA-API / QSV low-power (VDEnc) entrypoint: the only one on Jasper Lake / Alder Lake-N (N100) / Arc (from the detect step). */
   lowPower?: boolean;
 }
 
@@ -375,6 +375,7 @@ export function encoderArgs(encoder: string, o: EncoderOptions): string[] {
       break;
     case 'h264_qsv': case 'hevc_qsv': case 'av1_qsv':
       a.push('-preset', 'veryfast', '-forced_idr', '1');
+      if (o.lowPower) a.push('-low_power', '1');
       break;
     case 'h264_amf': case 'hevc_amf': case 'av1_amf':
       a.push('-usage', 'transcoding', '-quality', 'speed', '-rc', 'vbr_peak');

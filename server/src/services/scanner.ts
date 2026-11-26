@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn } from 'node:child_process';
+import { lowPriority } from '../util/lowPriority.js';
 import type { DateAddedSource, ExtraType, Library, LibraryType, SubtitleStream } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { config } from '../config.js';
@@ -454,7 +455,7 @@ async function scanShows(ctx: ScanCtx, files: FileEntry[]) {
 
 function extractCover(file: string, dest: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const p = spawn(config.ffmpeg, ['-v', 'error', '-y', '-i', file, '-an', '-map', '0:v:0', '-frames:v', '1', dest]);
+    const p = lowPriority(spawn(config.ffmpeg, ['-v', 'error', '-y', '-i', file, '-an', '-map', '0:v:0', '-frames:v', '1', dest]));
     p.on('error', () => resolve(false));
     p.on('exit', (c) => resolve(c === 0 && fs.existsSync(dest)));
   });

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { lowPriority } from '../util/lowPriority.js';
 import type { Marker } from '@mediamax/shared';
 import { db } from '../db.js';
 import { config } from '../config.js';
@@ -20,7 +21,7 @@ export function fingerprint(file: string, startSec: number, durationSec: number)
     const args = ['-hide_banner', '-loglevel', 'error', '-nostdin'];
     if (startSec > 0) args.push('-ss', String(startSec));
     args.push('-t', String(durationSec), '-i', file, '-vn', '-ac', '1', '-ar', '11025', '-f', 'chromaprint', '-fp_format', 'raw', '-');
-    const p = spawn(config.ffmpeg, args);
+    const p = lowPriority(spawn(config.ffmpeg, args));
     const chunks: Buffer[] = [];
     p.stdout.on('data', (d) => chunks.push(d));
     p.on('error', reject);
