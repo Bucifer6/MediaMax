@@ -61,6 +61,47 @@ export interface SystemInfo {
   oidc: { enabled: boolean; buttonLabel: string } | null;
 }
 
+/**
+ * How this server was installed, which decides whether it can update itself:
+ *  windows-setup     installed by the setup program: downloads the new setup and runs it (self-update);
+ *  windows-portable  the zip, run by hand or with install-service.ps1;
+ *  linux             the standalone binary (tarball, systemd);
+ *  docker            a container (Docker, Compose, NAS, deploy kit);
+ *  source            run from a checkout (npm).
+ */
+export type UpdateInstallKind = 'windows-setup' | 'windows-portable' | 'linux' | 'docker' | 'source';
+
+export interface UpdateRelease {
+  version: string;
+  name: string;
+  /** Release notes (Markdown, may be shortened). */
+  notes: string;
+  publishedAt: string | null;
+  prerelease: boolean;
+  /** The release page on GitHub. */
+  url: string;
+}
+
+/** GET /admin/updates (and the `update.status` event). */
+export interface UpdateStatus {
+  currentVersion: string;
+  /** Newest release found by the last check (null before the first check). */
+  latest: UpdateRelease | null;
+  updateAvailable: boolean;
+  checkedAt: string | null;
+  /** The last check or install failed with this message. */
+  lastError: string | null;
+  install: UpdateInstallKind;
+  /** Update now can download and install the release on this server. */
+  canSelfUpdate: boolean;
+  /** For installs that can't update themselves: how to update instead. */
+  manualSteps: string | null;
+  state: 'idle' | 'checking' | 'downloading' | 'installing';
+  /** Download progress 0..1 while state is 'downloading'. */
+  progress: number | null;
+  autoCheck: boolean;
+}
+
 export interface SetupRequest {
   serverName: string;
   username: string;
@@ -1790,6 +1831,13 @@ export interface ServerSettings {
     /** How many automatic backups to keep. */
     keep: number;
   };
+  /** Server updates from GitHub releases (Admin → Updates). */
+  updates: {
+    /** Look for a new release every 12 hours (installing always waits for an admin). */
+    autoCheck: boolean;
+    /** Also offer pre-releases (1.2.0-beta.1). */
+    includePrereleases: boolean;
+  };
   /** DLNA / UPnP media server for smart TVs, consoles and players on the local network. */
   dlna: {
     enabled: boolean;
@@ -1890,6 +1938,8 @@ export type ServerEvent =
   | { type: 'branding.updated'; revision: number }
   | { type: 'userdata.updated'; itemId: string; userData: UserItemData }
   | { type: 'task.updated'; task: ScheduledTask }
+  /** Admins only: the server update status changed (check finished, download progress, install started). */
+  | { type: 'update.status'; status: UpdateStatus }
   /** Admins: progress of an import from another server (Admin → Import from another server). */
   | { type: 'import.updated'; job: ImportJob }
   /** Same, for older clients (Emby imports only). */

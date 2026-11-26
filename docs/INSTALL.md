@@ -116,7 +116,8 @@ Windows 10/11 or Server 2019+ (x64).
    connections on Public networks* to open it everywhere), adds a **Vibe** Start menu shortcut, and on the last page
    starts Vibe and opens the setup wizard in your browser.
 
-**Upgrade:** take a backup (Admin → Backups), then run the new setup: it stops Vibe, replaces the program files,
+**Upgrade:** press **Update now** on **Admin → Updates** when Vibe finds a new release (it checks GitHub every 12 hours),
+or take a backup (Admin → Backups) and run the new setup yourself: it stops Vibe, replaces the program files,
 keeps your choices and starts it again. It also takes over a folder set up by hand with the zip and
 `install-service.ps1`. **Uninstall:** Settings → Apps → Vibe. It asks whether to delete your data as well (default:
 keep it). You can switch between tray app and service by running setup again.

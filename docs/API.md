@@ -665,6 +665,10 @@ Repositories: `ServerSettings.plugins.repositories`. Plugin routes: `/api/v1/plu
 * `GET/POST /admin/backups` → `BackupInfo[]` / new backup · `GET /admin/backups/:id/download` · `DELETE /admin/backups/:id` ·
   `POST /admin/backups/:id/restore` or `POST /admin/backups/restore-upload` (multipart) → `{ restartRequired: true }`;
   the restore is applied on the next start (a `pre-restore` backup is taken first). `POST /admin/restart` exits so Docker/systemd restarts it.
+* `GET /admin/updates` → `UpdateStatus` (current and latest version, release notes, install kind, whether Update now works here,
+  manual steps otherwise). `POST /admin/updates/check` asks GitHub now. `POST /admin/updates/install` (Windows setup installs only)
+  downloads the release's setup program, verifies it against `SHA256SUMS.txt` and runs it; `409` elsewhere. Admin sockets get
+  `update.status` events with download progress. Releases come from `KINORA_UPDATE_REPO` (default `Bucifer6/MediaMax`).
   Scheduled backups: `ServerSettings.backups`.
 * `GET /admin/remote-access` → `RemoteAccessStatus` · `POST /admin/remote-access/refresh`. UPnP port mapping: `ServerSettings.remoteAccess`
   (needs host networking in Docker).

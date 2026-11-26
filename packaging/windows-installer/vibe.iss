@@ -99,7 +99,9 @@ Name: "{autodesktop}\Vibe"; Filename: "{app}\VibeTray.exe"; Parameters: "--open"
 ; Sign-in start is a per-user setting (HKCU Run), so set it as the user who started setup, not the elevated admin.
 Filename: "{app}\VibeTray.exe"; Parameters: "--autostart on"; Flags: runasoriginaluser waituntilterminated; Tasks: tray\autostart
 Filename: "{app}\VibeTray.exe"; Parameters: "--autostart off"; Flags: runasoriginaluser waituntilterminated; Tasks: not tray\autostart
-Filename: "{app}\VibeTray.exe"; Parameters: "--open"; Description: "Start Vibe and open it in my browser"; Flags: postinstall nowait runasoriginaluser; Tasks: tray
+Filename: "{app}\VibeTray.exe"; Parameters: "--open"; Description: "Start Vibe and open it in my browser"; Flags: postinstall nowait runasoriginaluser skipifsilent; Tasks: tray
+; Silent installs (unattended, and updates started from Admin → Updates): start the tray app without opening another browser tab.
+Filename: "{app}\VibeTray.exe"; Flags: nowait runasoriginaluser; Tasks: tray; Check: WizardSilent
 Filename: "http://localhost:{code:GetPort}/"; Description: "Open Vibe in my browser"; Flags: postinstall shellexec nowait skipifsilent runasoriginaluser; Tasks: service
 
 [Code]

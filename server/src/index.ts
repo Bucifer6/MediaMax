@@ -20,6 +20,7 @@ import { stopAllSessions } from './services/playback.js';
 import { stopActiveRecordings } from './services/dvr.js';
 import { stopNetwork } from './services/network.js';
 import { initHardwareDetection } from './services/hwdetect.js';
+import { cleanupAfterUpdate } from './services/updates.js';
 
 const log = logger('main');
 
@@ -42,6 +43,7 @@ async function main() {
   initHomeAssistant();
   startRenderers();
   initHardwareDetection(); // loads the cached GPU report, or re-detects in the background
+  cleanupAfterUpdate(); // old update downloads and the one-off "Vibe update" task
   await loadPlugins().catch((e) => log.error('Plugin loading failed', e));
   let shuttingDown = false;
   const shutdown = async (sig: string) => {

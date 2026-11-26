@@ -41,6 +41,7 @@ export const ADMIN_NAV: AdminNavEntry[] = [
   { to: '/admin/network', label: 'Network & HTTPS', icon: 'link', group: 'System', keywords: 'ports certificate tls proxy' },
   { to: '/admin/remote', label: 'Remote access', icon: 'globe', group: 'System', keywords: 'upnp port forwarding outside' },
   { to: '/admin/security', label: 'Security', icon: 'shield', group: 'System', keywords: 'ban ip failed logins fail2ban' },
+  { to: '/admin/updates', label: 'Updates', icon: 'download', group: 'System', keywords: 'upgrade new version release github install' },
   { to: '/admin/backups', label: 'Backups', icon: 'layers', group: 'System', keywords: 'restore export' },
   { to: '/admin/plugins', label: 'Plugins', icon: 'puzzle', group: 'System', keywords: 'extensions repositories' },
   { to: '/admin/smarthome', label: 'Smart home', icon: 'zap', group: 'System', keywords: 'home assistant mqtt webhooks' },

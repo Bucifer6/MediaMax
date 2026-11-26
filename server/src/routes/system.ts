@@ -16,6 +16,7 @@ import { syncDlna } from '../services/dlna.js';
 import { oidcEnabled } from '../services/oidc.js';
 import * as backup from '../services/backup.js';
 import * as remote from '../services/remote.js';
+import * as updates from '../services/updates.js';
 import { recentLogLines } from '../util/log.js';
 import { badRequest, forbidden } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
@@ -151,6 +152,20 @@ export default async function systemRoutes(app: FastifyInstance) {
     logActivity('server', 'Restart requested', { userId: a.user.id, userName: a.user.displayName, severity: 'warning' });
     setTimeout(() => process.kill(process.pid, 'SIGTERM'), 500);
     return { ok: true };
+  });
+
+  /* Server updates (Admin → Updates) */
+  app.get('/admin/updates', async (req) => {
+    requireAdmin(req);
+    return updates.updateStatus();
+  });
+  app.post('/admin/updates/check', async (req) => {
+    requireAdmin(req);
+    return updates.checkForUpdates();
+  });
+  app.post('/admin/updates/install', async (req) => {
+    const a = requireAdmin(req);
+    return updates.installUpdate(a.user);
   });
 
   /* Remote access */

@@ -38,6 +38,7 @@ import { backfillVideoRanges } from './hdrBackfill.js';
 import { identifyUntagged } from './music/acoustid.js';
 import { flushQueue as flushListenBrainz } from './listenbrainz.js';
 import { getMusicSettings } from './music/settings.js';
+import { checkForUpdates } from './updates.js';
 import { planScheduledRun, taskRunFinished, isDiskTask, getStorageSettings, type PathFilter, type RunPlan } from './storage/storage.js';
 
 const log = logger('tasks');
@@ -246,6 +247,14 @@ const DEFS: TaskDef[] = [
     interval: () => 24 * 60,
     run: async (progress) => {
       await backfillVideoRanges(progress);
+    },
+  },
+  {
+    id: 'check-updates', name: 'Check for Vibe updates', description: 'Look for a new Vibe release on GitHub (Admin → Updates). Installing it always waits for an admin.',
+    interval: () => (getSettings().updates.autoCheck ? 12 * 60 : null),
+    run: async () => {
+      const s = await checkForUpdates();
+      if (s.lastError) throw new Error(s.lastError);
     },
   },
   {

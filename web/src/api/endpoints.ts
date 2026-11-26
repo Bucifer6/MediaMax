@@ -9,7 +9,7 @@ import type {
   UpdateUserRequest, User, UserItemData, UserStats,
   ArrOptions, CreateMediaRequest, DjMix, DjMixRequest, DjStatus, TrackAnalysis, DjHostRequest, DjHostLine, DjFeedback, StarterLook, ApiKey, CreatedApiKey, TotpSetup, TotpEnabled, Invite, CreateInviteRequest, InvitePreview, AcceptInviteRequest,
   CalendarResponse, NotificationsResponse,
-  BackupInfo, RemoteAccessStatus, Bookmark, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
+  BackupInfo, UpdateStatus, RemoteAccessStatus, Bookmark, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
 import type { DjOrderRequest, DjOrderResponse, DjTransitionsRequest, DjTransitionsResponse } from '@mediamax/shared';
 import type { ManualRendererRequest, Renderer, RendererAction, RendererAdminView, RendererCommandRequest, RendererPlayRequest, RendererSettings, RendererState } from '@mediamax/shared';
@@ -307,6 +307,9 @@ export const api = {
     saveRepositories: (repositories: string[]) => http.put<ServerSettings>('/settings', { plugins: { repositories } }),
     saveSettingsPatch: (patch: Partial<ServerSettings>) => http.put<ServerSettings>('/settings', patch),
     restart: () => http.post<Ok>('/admin/restart'),
+    updates: () => http.get<UpdateStatus>('/admin/updates'),
+    checkUpdates: () => http.post<UpdateStatus>('/admin/updates/check'),
+    installUpdate: () => http.post<UpdateStatus>('/admin/updates/install'),
     backups: () => http.get<BackupInfo[]>('/admin/backups'),
     createBackup: () => http.post<BackupInfo>('/admin/backups'),
     removeBackup: (id: string) => http.del<Ok>(`/admin/backups/${enc(id)}`),
