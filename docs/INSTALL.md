@@ -111,7 +111,11 @@ Windows 10/11 or Server 2019+ (x64).
      Double-click the icon to open Vibe; right-click it for *Restart server*, *Open data folder*, *Open logs*,
      *Start Vibe when I sign in* and *Exit*.
    - **As a background service** (for a home server): Vibe starts with Windows, before anyone signs in, as the
-     **Kinora** task in Task Scheduler running as SYSTEM (the same setup as `install-service.ps1` below).
+     **Kinora** task in Task Scheduler running as SYSTEM (the same setup as `install-service.ps1` below). If your
+     media is on a NAS share that needs a password, enter a Windows account on the **Service account** page that
+     follows: SYSTEM is usually refused by those shares and has no mapped drive letters. Add the share to a library by
+     its network path (`\\nas\media`). Unattended: `/SERVICEUSER=nasuser /SERVICEPASSWORDFILE=C:\pw.txt` (the file is
+     deleted).
 3. Pick the port (default 8484). Setup opens it in Windows Firewall for Private/Domain networks (tick *Also allow
    connections on Public networks* to open it everywhere), adds a **Vibe** Start menu shortcut, and on the last page
    starts Vibe and opens the setup wizard in your browser.

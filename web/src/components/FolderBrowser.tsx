@@ -4,17 +4,7 @@ import { api } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import { Icon } from './Icon';
 import { Modal, Spinner } from './ui';
-
-function parentOf(p: string): string | null {
-  if (!p || p === '/') return null;
-  const win = /^[A-Za-z]:\\?$/.test(p);
-  if (win) return '';
-  const sep = p.includes('\\') && !p.includes('/') ? '\\' : '/';
-  const trimmed = p.endsWith(sep) ? p.slice(0, -1) : p;
-  const i = trimmed.lastIndexOf(sep);
-  if (i <= 0) return sep;
-  return trimmed.slice(0, i);
-}
+import { parentOf } from '../utils/paths';
 
 export function FolderBrowser({ open, onClose, onPick, initialPath }: { open: boolean; onClose: () => void; onPick: (path: string) => void; initialPath?: string }) {
   const [path, setPath] = useState(initialPath ?? '');
@@ -30,7 +20,7 @@ export function FolderBrowser({ open, onClose, onPick, initialPath }: { open: bo
     setError(null);
     api.system
       .browse(path || undefined)
-      .then((e) => !cancelled && setEntries(e.filter((x) => x.isDirectory && x.name !== '..').sort((a, b) => a.name.localeCompare(b.name))))
+      .then((e) => !cancelled && setEntries(e.filter((x) => x.isDirectory && x.name !== '..').sort((a, b) => (a.kind === 'network' ? 1 : 0) - (b.kind === 'network' ? 1 : 0) || a.name.localeCompare(b.name))))
       .catch((e) => !cancelled && setError(errorMessage(e)))
       .finally(() => !cancelled && setLoading(false));
     setTyped(path);
@@ -57,7 +47,7 @@ export function FolderBrowser({ open, onClose, onPick, initialPath }: { open: bo
     >
       <form className="fb-path" onSubmit={(e) => { e.preventDefault(); setPath(typed.trim()); }}>
         <Icon name="folder" size={18} />
-        <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="/media" aria-label="Path" />
+        <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={path === '' && entries.some((e) => e.kind) ? 'C:\\Media or \\\\nas\\media' : '/media'} aria-label="Path" />
         <button className="btn btn-sm">Go</button>
       </form>
       <div className="fb-list">
@@ -74,11 +64,18 @@ export function FolderBrowser({ open, onClose, onPick, initialPath }: { open: bo
           <p className="muted center-pad">No sub-folders</p>
         ) : (
           entries.map((e) => (
-            <button key={e.path} className="fb-entry" onClick={() => setPath(e.path)}>
-              <Icon name="folder" size={18} /> <span>{e.name}</span>
+            <button key={e.path} className={`fb-entry ${e.error ? 'fb-unavailable' : ''}`} onClick={() => setPath(e.path)} title={e.kind === 'network' ? e.path : undefined}>
+              <Icon name={e.kind === 'network' ? 'globe' : e.kind === 'drive' ? 'server' : 'folder'} size={18} />
+              <span className="fb-name">
+                {e.name}
+                {e.kind === 'network' && <small className="muted">{e.error ?? 'Mapped network drive, added by its network path'}</small>}
+              </span>
               <Icon name="chevronRight" size={16} className="fb-chev" />
             </button>
           ))
+        )}
+        {path === '' && !loading && entries.some((e) => e.kind) && (
+          <p className="muted fb-tip">Media on a NAS or another PC? Type its network path above, for example <code>\\nas\media</code>.</p>
         )}
       </div>
     </Modal>

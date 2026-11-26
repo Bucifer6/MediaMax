@@ -35,7 +35,9 @@ Run at boot (recommended for a home server)
 
 This copies Vibe to C:\Program Files\Vibe (or updates an earlier install in C:\Program Files\Kinora), registers a "Kinora" scheduled task (names kept from before the rename to Vibe) that starts at
 boot as SYSTEM (no sign-in needed) and opens TCP 8484 (and UDP 1900 for DLNA) in Windows Firewall.
-Options: -Port 9000, -AllNetworkProfiles (also open the firewall on "Public" networks).
+Options: -Port 9000, -AllNetworkProfiles (also open the firewall on "Public" networks),
+-User nasuser (run as that Windows account instead of SYSTEM, for NAS shares that need a password; asks for
+its password, or -PasswordFile pw.txt), -System (back to SYSTEM).
 
   Stop:       Disable-ScheduledTask Kinora; Stop-ScheduledTask Kinora
   Start:      Enable-ScheduledTask Kinora; Start-ScheduledTask Kinora
