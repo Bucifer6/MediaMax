@@ -522,3 +522,7 @@
 @media (max-width: 700px) {
   .search-field { height: 52px; padding-left: var(--s-4, 16px); }
 }
+.fb-entry .fb-name { display: flex; flex-direction: column; min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.fb-entry .fb-name small { font-size: 0.8rem; }
+.fb-entry.fb-unavailable .fb-name small { color: var(--c-warning); }
+.fb-tip { padding: 10px 14px; margin: 0; font-size: 0.85rem; }

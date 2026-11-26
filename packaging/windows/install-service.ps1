@@ -31,6 +31,19 @@
   HTTP port (default 8484). A non-default port is stored in the machine environment variable KINORA_PORT
   (the server also reads the original MEDIAMAX_PORT; KINORA_PORT wins).
 
+.PARAMETER User
+  Run the service as this Windows account (for example "nasuser", "PC-NAME\nasuser" or "DOMAIN\nasuser")
+  instead of SYSTEM. Needed for network shares (\\nas\media) that ask for a username and password: SYSTEM
+  connects as the computer and is usually refused, and has no mapped drive letters. The account's password is
+  read from -PasswordFile, or asked for. Use an administrator account if Admin > Updates should be able to install
+  updates by itself.
+
+.PARAMETER PasswordFile
+  A file holding the -User account's password (one line). It is deleted after reading.
+
+.PARAMETER System
+  Go back to running the service as SYSTEM. Without -User or -System, an existing install keeps its account.
+
 .PARAMETER AllNetworkProfiles
   Also open the firewall on networks Windows classifies as Public. By default only Private and Domain
   networks are opened.
@@ -39,6 +52,8 @@
   .\install-service.ps1
 .EXAMPLE
   .\install-service.ps1 -Port 9000 -AllNetworkProfiles
+.EXAMPLE
+  .\install-service.ps1 -User nasuser
 .EXAMPLE
   .\install-service.ps1 -Uninstall
 #>
@@ -49,7 +64,10 @@ param(
   [ValidateRange(1, 65535)][int]$Port = 8484,
   # Default: Program Files\Vibe, or Program Files\Kinora when an earlier install is already there (see below).
   [string]$InstallDir = '',
-  [switch]$AllNetworkProfiles
+  [switch]$AllNetworkProfiles,
+  [string]$User = '',
+  [string]$PasswordFile = '',
+  [switch]$System
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,6 +108,10 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
   Write-Host 'Please run this script as Administrator (right-click PowerShell > Run as administrator).' -ForegroundColor Red
   exit 1
 }
+
+# The account an existing service runs as (kept on upgrade unless -User or -System says otherwise).
+$existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+$existingUser = if ($existingTask) { $existingTask.Principal.UserId } else { $null }
 
 function Stop-Kinora {
   $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -160,19 +182,48 @@ if ($Port -ne 8484) {
   [Environment]::SetEnvironmentVariable('KINORA_PORT', "$Port", 'Machine')
 }
 
-# 3. Scheduled task: at boot, as SYSTEM, no time limit. Task Scheduler's "restart on failure" only covers a
+# 3. Scheduled task: at boot, as SYSTEM (or -User), no time limit. Task Scheduler's "restart on failure" only covers a
 #    launch that fails, so a second trigger re-checks every 5 minutes; with MultipleInstances IgnoreNew it
 #    does nothing while Kinora runs and starts it again if it has exited.
 $action = New-ScheduledTaskAction -Execute $exe -WorkingDirectory $target
 $watchdog = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) -RepetitionInterval (New-TimeSpan -Minutes 5)
 $trigger = @((New-ScheduledTaskTrigger -AtStartup), $watchdog)
-$runAs = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 `
   -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -AllowStartIfOnBatteries `
   -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $runAs -Settings $settings `
-  -Description 'Vibe media server (installed by install-service.ps1)' -Force | Out-Null
-Write-Host "Registered scheduled task '$TaskName' (starts at boot as SYSTEM)."
+$description = 'Vibe media server (installed by install-service.ps1)'
+if ($User) {
+  # A Windows account: its password is stored by Task Scheduler (Windows grants it "log on as a batch job"), so the
+  # server can sign in to network shares as that account even when nobody is signed in.
+  $plain = $null
+  if ($PasswordFile) {
+    $plain = (Get-Content -Raw -LiteralPath $PasswordFile).TrimEnd("`r", "`n")
+    Remove-Item -Force -LiteralPath $PasswordFile -ErrorAction SilentlyContinue
+  } else {
+    $secure = Read-Host -AsSecureString "Password for $User"
+    $plain = [Runtime.InteropServices.Marshal]::PtrToStringUni([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+  }
+  try {
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -User $User `
+      -Password $plain -RunLevel Highest -Description $description -Force -ErrorAction Stop | Out-Null
+  } catch {
+    Write-Host "Could not register the service as '$User': $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host 'Check the user name and password (for a Microsoft account, the account password, not the PIN).' -ForegroundColor Red
+    exit 2
+  } finally { $plain = $null }
+  # The server writes its database, artwork and logs here as that account.
+  & icacls $DataDir /grant "${User}:(OI)(CI)M" /T /C /Q | Out-Null
+  Write-Host "Registered scheduled task '$TaskName' (starts at boot as $User)."
+} elseif (-not $System -and $existingUser -and $existingUser -notmatch '^(NT AUTHORITY\\)?SYSTEM$') {
+  # Upgrade of a service that runs as a Windows account: keep it (re-registering would need its password). The
+  # program path is unchanged, so the task still starts the new version.
+  Write-Host "Keeping scheduled task '$TaskName' (runs as $existingUser)."
+} else {
+  $runAs = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+  Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $runAs -Settings $settings `
+    -Description $description -Force | Out-Null
+  Write-Host "Registered scheduled task '$TaskName' (starts at boot as SYSTEM)."
+}
 
 # 4. Firewall.
 Remove-FirewallRules

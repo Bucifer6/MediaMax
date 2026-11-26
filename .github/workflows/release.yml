@@ -195,6 +195,35 @@ jobs:
           if (Get-NetFirewallRule -DisplayName 'Kinora*' -ErrorAction SilentlyContinue) { throw 'firewall rules left behind' }
           if (Test-Path "$env:ProgramFiles\Vibe") { throw 'install folder left behind' }
 
+          # Service as a Windows account (network shares that need a password): runs as it, keeps it on upgrade,
+          # refuses a wrong password with exit code 2.
+          $pw = 'Vb!7' + [guid]::NewGuid().ToString('N').Substring(0, 16)
+          net user vibesvc $pw /add | Out-Null
+          net localgroup Administrators vibesvc /add | Out-Null
+          $account = "$env:COMPUTERNAME\vibesvc"
+          $pwFile = Join-Path $env:RUNNER_TEMP 'service-pw.txt'
+          Set-Content -NoNewline -LiteralPath $pwFile -Value $pw
+          & powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\install-service.ps1" -User $account -PasswordFile $pwFile
+          if ($LASTEXITCODE) { throw "install as $account failed ($LASTEXITCODE)" }
+          if (Test-Path $pwFile) { throw 'password file left behind' }
+          if ((Get-ScheduledTask -TaskName Kinora).Principal.UserId -notmatch 'vibesvc') { throw 'task should run as vibesvc' }
+          $info = $null
+          for ($i = 0; $i -lt 30 -and -not $info; $i++) {
+            try { $info = Invoke-RestMethod http://127.0.0.1:8484/api/v1/system/info } catch { Start-Sleep 1 }
+          }
+          if (-not $info) { throw 'the task did not start Vibe as vibesvc' }
+          $owner = (Get-Process kinora -IncludeUserName).UserName
+          if ($owner -notmatch 'vibesvc') { throw "kinora.exe runs as $owner, not vibesvc" }
+          & powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\install-service.ps1"
+          if ($LASTEXITCODE) { throw "upgrade failed ($LASTEXITCODE)" }
+          if ((Get-ScheduledTask -TaskName Kinora).Principal.UserId -notmatch 'vibesvc') { throw 'an upgrade must keep the account' }
+          Set-Content -NoNewline -LiteralPath $pwFile -Value 'not-the-password'
+          & powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\install-service.ps1" -User $account -PasswordFile $pwFile
+          if ($LASTEXITCODE -ne 2) { throw "a wrong password should exit with 2, got $LASTEXITCODE" }
+          & powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\install-service.ps1" -Uninstall
+          if ($LASTEXITCODE) { throw "uninstall failed ($LASTEXITCODE)" }
+          net user vibesvc /delete | Out-Null
+
       - name: Smoke test setup program (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

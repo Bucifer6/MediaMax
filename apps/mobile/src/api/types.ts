@@ -1924,6 +1924,10 @@ export interface DirectoryEntry {
   name: string;
   path: string;
   isDirectory: boolean;
+  /** Top-level Windows entries: a drive (C:\) or a mapped network drive, offered as its \\server\share path. */
+  kind?: 'drive' | 'network';
+  /** A network share this server's Windows account can't open (shown, with the reason). */
+  error?: string | null;
 }
 
 /* ------------------------------------------------------------------ */

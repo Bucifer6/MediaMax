@@ -17,6 +17,7 @@ import { oidcEnabled } from '../services/oidc.js';
 import * as backup from '../services/backup.js';
 import * as remote from '../services/remote.js';
 import * as updates from '../services/updates.js';
+import { mappedDrives, networkPathHint, serverAccount, statWithin } from '../util/winpaths.js';
 import { recentLogLines } from '../util/log.js';
 import { badRequest, forbidden } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
@@ -74,7 +75,7 @@ export default async function systemRoutes(app: FastifyInstance) {
     try {
       entries = fs.readdirSync(abs, { withFileTypes: true });
     } catch (e) {
-      throw badRequest(`Cannot open ${abs}: ${(e as Error).message}`);
+      throw badRequest(`Cannot open ${abs}: ${(e as Error).message}.${networkPathHint(abs)}`);
     }
     const out: DirectoryEntry[] = [];
     if (path.dirname(abs) !== abs) out.push({ name: '..', path: path.dirname(abs), isDirectory: true });
@@ -215,16 +216,29 @@ export default async function systemRoutes(app: FastifyInstance) {
   });
 }
 
-/** Drive letters that are present right now (local, removable with media inserted, and mapped network drives). */
+/**
+ * Windows' top level: the drives present right now (local, and removable ones with media inserted), then the
+ * network drives mapped by this account or any signed-in user, offered as their \\server\share path so they
+ * work whichever account Vibe runs as.
+ */
 async function listWindowsDrives(): Promise<DirectoryEntry[]> {
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  const mapped = await mappedDrives().catch(() => []);
+  const mappedLetters = new Set(mapped.map((m) => m.letter));
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').filter((l) => !mappedLetters.has(l));
   const found = await Promise.all(letters.map(async (l) => {
     const root = `${l}:\\`;
-    try {
-      return (await fs.promises.stat(root)).isDirectory() ? root : null;
-    } catch {
-      return null;
-    }
+    return (await statWithin(root, 2000))?.isDirectory() ? root : null;
   }));
-  return found.filter((r): r is string => r !== null).map((r) => ({ name: r, path: r, isDirectory: true }));
+  const drives: DirectoryEntry[] = found.filter((r): r is string => r !== null).map((r) => ({ name: r, path: r, isDirectory: true, kind: 'drive' }));
+  const account = serverAccount();
+  const network = await Promise.all(mapped.map(async (m): Promise<DirectoryEntry> => {
+    const ok = (await statWithin(m.remotePath))?.isDirectory() ?? false;
+    return {
+      name: `${m.letter}: ${m.remotePath}`, path: m.remotePath, isDirectory: true, kind: 'network',
+      error: ok ? null : account === 'SYSTEM'
+        ? 'Vibe runs as SYSTEM, which this share refuses. Run setup again and choose a Windows account for the service.'
+        : `Vibe runs as ${account}, which can't open this share. Check that account can open it in File Explorer.`,
+    };
+  }));
+  return [...drives, ...network];
 }

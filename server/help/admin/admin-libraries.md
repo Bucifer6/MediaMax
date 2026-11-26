@@ -3,7 +3,7 @@ title: Libraries, scanning and folder naming
 summary: Add libraries, name folders so titles match correctly, and control scanning.
 section: admin
 audience: admin
-keywords: library, add library, folder, scan, rescan, naming, file names, movies, tv shows, music, audiobooks, photos, home videos, nfo, artwork, extras, trailers, editions, refresh metadata
+keywords: library, add library, folder, network share, nas, smb, unc, mapped drive, scan, rescan, naming, file names, movies, tv shows, music, audiobooks, photos, home videos, nfo, artwork, extras, trailers, editions, refresh metadata
 related: admin-metadata, missing-items, admin-storage
 order: 2
 ---
@@ -14,6 +14,20 @@ order: 2
 2. Choose the type: **Movies**, **TV Shows**, **Music**, **Audiobooks**, **Photos** or **Home videos**.
 3. Give it a name and add one or more **Folders**. The server must be able to read them (in Docker, the folders must be mounted into the container).
 4. Leave **Fetch online metadata** on to get posters, plots and cast.
+
+### Network shares (NAS, another PC)
+
+On Windows, add a share by its network path: type `\\nas\media\Movies` in the folder box and press Enter, or in
+**Browse** type it at the top and press **Go**. **Browse** also lists the network drives mapped on this PC
+(`Z: \\nas\media`) and adds them by their network path, because drive letters belong to one Windows sign-in.
+
+{{product}} opens shares as the Windows account it runs as:
+
+- **Tray app:** your own account, with the passwords Windows has saved for you.
+- **Background service:** SYSTEM by default, which most NAS shares refuse. Run setup again, keep **As a background
+  service**, and on the **Service account** page enter a Windows account that can open the share in File Explorer
+  (an administrator, so Admin → Updates can still install updates). Sign in to the share once as that account and
+  tick *Remember my credentials*, or use the same user name and password on the NAS.
 
 Each library has **Scan** (look for new and changed files) and, under **More**, **Edit**, **Refresh all metadata** and **Delete**. Use the arrows to change the order in the sidebar. Deleting a library never deletes your files.
 

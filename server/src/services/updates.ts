@@ -27,6 +27,7 @@ import { events } from './events.js';
 import { logActivity } from './activity.js';
 import { logger } from '../util/log.js';
 import { HttpError, conflict } from '../util/errors.js';
+import { runningAsSystem } from '../util/winpaths.js';
 
 const log = logger('updates');
 
@@ -243,7 +244,12 @@ export async function downloadVerified(picked: { setup: Asset; sums: Asset }, di
   return dest;
 }
 
-const runningAsSystem = () => /\\systemprofile\\?$/i.test(process.env.USERPROFILE ?? '') || /\$$/.test(process.env.USERNAME ?? '');
+/** Installed as the background service (SYSTEM, or a Windows account chosen in setup), as setup records it. */
+async function isServiceMode(): Promise<boolean> {
+  if (runningAsSystem()) return true;
+  const r = await run(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'reg.exe'), ['query', 'HKLM\\SOFTWARE\\Kinora', '/v', 'ServiceMode']);
+  return r.code === 0 && /ServiceMode\s+REG_DWORD\s+0x1\b/i.test(r.out);
+}
 
 function run(exe: string, args: string[]): Promise<{ code: number; out: string }> {
   return new Promise((resolve) => {
@@ -258,10 +264,14 @@ function run(exe: string, args: string[]): Promise<{ code: number; out: string }
 async function launchSetup(setup: string) {
   const sys = process.env.SystemRoot ?? 'C:\\Windows';
   const args = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG';
-  if (runningAsSystem()) {
+  if (await isServiceMode()) {
+    // The service (SYSTEM, or an administrator account running with highest privileges) can register a SYSTEM task.
     const schtasks = path.join(sys, 'System32', 'schtasks.exe');
     const created = await run(schtasks, ['/Create', '/F', '/TN', UPDATE_TASK, '/SC', 'ONCE', '/ST', '00:00', '/RU', 'SYSTEM', '/RL', 'HIGHEST', '/TR', `"${setup}" ${args}`]);
-    if (created.code) throw new Error(`Could not schedule the update: ${created.out || `schtasks exited with ${created.code}`}`);
+    if (created.code) {
+      throw new Error(`Could not schedule the update: ${created.out || `schtasks exited with ${created.code}`}. ` +
+        'If the service runs as a Windows account, that account must be an administrator; or run the new setup program yourself.');
+    }
     const started = await run(schtasks, ['/Run', '/TN', UPDATE_TASK]);
     if (started.code) throw new Error(`Could not start the update: ${started.out || `schtasks exited with ${started.code}`}`);
     return;
@@ -282,7 +292,7 @@ export function cleanupAfterUpdate() {
   } catch {
     /* nothing downloaded yet */
   }
-  if (detectInstall() === 'windows-setup' && runningAsSystem()) {
+  if (detectInstall() === 'windows-setup') {
     const child = spawn(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'schtasks.exe'), ['/Delete', '/TN', UPDATE_TASK, '/F'], { stdio: 'ignore', windowsHide: true });
     child.on('error', () => {});
   }

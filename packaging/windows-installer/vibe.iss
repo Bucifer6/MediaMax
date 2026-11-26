@@ -16,6 +16,8 @@
 ; Data lives in %ProgramData%\Kinora (or %ProgramData%\MediaMax after an upgrade from MediaMax) in both modes.
 ;
 ; Silent install: vibe-<version>-windows-x64-setup.exe /VERYSILENT [/TASKS="service"] [/PORT=9000]
+;   service as a Windows account: add /SERVICEUSER=nasuser /SERVICEPASSWORDFILE=C:\path\pw.txt (the file is deleted);
+;   /SERVICEUSER=SYSTEM switches back to SYSTEM. Without them an upgrade keeps the account the service runs as.
 
 #ifndef AppVersion
   #error Pass /DAppVersion=x.y.z
@@ -112,6 +114,7 @@ const
 
 var
   PortPage: TInputQueryWizardPage;
+  AccountPage: TInputQueryWizardPage;
   ServiceWasInstalled: Boolean;
   TasksPagePrepared: Boolean;
 
@@ -174,6 +177,11 @@ begin
   Result := True;
 end;
 
+function StoredServiceUser: String;
+begin
+  if not RegQueryStringValue(HKLM, VibeKey, 'ServiceUser', Result) then Result := '';
+end;
+
 procedure InitializeWizard;
 begin
   PortPage := CreateInputQueryPage(wpSelectTasks, 'Network port',
@@ -181,6 +189,23 @@ begin
     'Other devices on your network (phones, TVs, browsers) connect to this port. Keep 8484 unless something else already uses it.');
   PortPage.Add('&Port:', False);
   PortPage.Values[0] := CurrentPort;
+
+  AccountPage := CreateInputQueryPage(PortPage.ID, 'Service account',
+    'Which Windows account should the background service run as?',
+    'Leave the user name empty to run as SYSTEM. Choose a Windows account (one that is an administrator, so ' +
+    'Admin > Updates can install updates) when your media is on a network share that needs a username and ' +
+    'password, such as \\nas\media: SYSTEM is usually refused by those, and has no mapped drive letters.' + #13#10#13#10 +
+    'Upgrading: leave the password empty to keep the current account.');
+  AccountPage.Add('&User name (for example nasuser or PC-NAME\nasuser):', False);
+  AccountPage.Add('&Password:', True);
+  AccountPage.Values[0] := ExpandConstant('{param:SERVICEUSER|}');
+  if AccountPage.Values[0] = '' then AccountPage.Values[0] := StoredServiceUser;
+  if CompareText(AccountPage.Values[0], 'SYSTEM') = 0 then AccountPage.Values[0] := '';
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (AccountPage <> nil) and (PageID = AccountPage.ID) and not WizardIsTaskSelected('service');
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
@@ -205,6 +230,17 @@ begin
     if (P < 1) or (P > 65535) then
     begin
       MsgBox('Enter a port number between 1 and 65535.', mbError, MB_OK);
+      Result := False;
+    end;
+  end;
+  if (AccountPage <> nil) and (CurPageID = AccountPage.ID) then
+  begin
+    AccountPage.Values[0] := Trim(AccountPage.Values[0]);
+    // A new account needs its password; the current one can be kept without it.
+    if (AccountPage.Values[0] <> '') and (AccountPage.Values[1] = '') and
+       (CompareText(AccountPage.Values[0], StoredServiceUser) <> 0) then
+    begin
+      MsgBox('Enter the password of ' + AccountPage.Values[0] + '.', mbError, MB_OK);
       Result := False;
     end;
   end;
@@ -260,6 +296,7 @@ begin
   if TaskExists then
     ServiceScript('-Uninstall');
   RegWriteDWordValue(HKLM, VibeKey, 'ServiceMode', 0);
+  RegDeleteValue(HKLM, VibeKey, 'ServiceUser');
   SetPortVariable(Port);
 
   // The server now runs as the signed-in user: let users write the data folder (it may have been created by
@@ -282,16 +319,48 @@ end;
 
 procedure SetupServiceMode(const Port: String);
 var
-  Args: String;
+  Args, User, PwFile: String;
+  Code: Integer;
+  Lines: TArrayOfString;
 begin
   Args := '-Port ' + Port;
   if WizardIsTaskSelected('publicfw') then Args := Args + ' -AllNetworkProfiles';
-  if ServiceScript(Args) <> 0 then
+
+  // Which account: SYSTEM (user name cleared), a new one (its password goes in a file the script deletes, so it never
+  // appears on a command line or in the setup log), or no change (install-service.ps1 keeps the current account).
+  User := Trim(AccountPage.Values[0]);
+  PwFile := ExpandConstant('{param:SERVICEPASSWORDFILE|}');
+  if User = '' then
+  begin
+    if StoredServiceUser <> '' then Args := Args + ' -System';
+  end
+  else if AccountPage.Values[1] <> '' then
+  begin
+    PwFile := ExpandConstant('{tmp}\service-account.txt');
+    SetArrayLength(Lines, 1);
+    Lines[0] := AccountPage.Values[1];
+    SaveStringsToUTF8File(PwFile, Lines, False);
+    Lines[0] := '';
+    Args := Args + ' -User "' + User + '" -PasswordFile "' + PwFile + '"';
+  end
+  else if (PwFile <> '') and FileExists(PwFile) then
+    Args := Args + ' -User "' + User + '" -PasswordFile "' + PwFile + '"';
+  AccountPage.Values[1] := '';
+
+  Code := ServiceScript(Args);
+  if Code = 2 then
+    SuppressibleMsgBox('Vibe was installed, but Windows did not accept the user name or password for ' + User + '. ' +
+      'Run setup again and check them (for a Microsoft account, use its password, not the PIN).', mbError, MB_OK, IDOK)
+  else if Code <> 0 then
     SuppressibleMsgBox('Vibe was installed, but registering the background service failed. ' +
       'See the setup log, or run install-service.ps1 from ' + ExpandConstant('{app}') + ' as administrator.',
       mbError, MB_OK, IDOK)
   else
+  begin
     RegWriteDWordValue(HKLM, VibeKey, 'ServiceMode', 1);
+    if Pos(' -System', Args) > 0 then RegDeleteValue(HKLM, VibeKey, 'ServiceUser')
+    else if Pos(' -User ', Args) > 0 then RegWriteStringValue(HKLM, VibeKey, 'ServiceUser', User);
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
