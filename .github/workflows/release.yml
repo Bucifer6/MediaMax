@@ -197,9 +197,12 @@ jobs:
 
           # Service as a Windows account (network shares that need a password): runs as it, keeps it on upgrade,
           # refuses a wrong password with exit code 2.
-          $pw = 'Vb!7' + [guid]::NewGuid().ToString('N').Substring(0, 16)
-          net user vibesvc $pw /add | Out-Null
-          net localgroup Administrators vibesvc /add | Out-Null
+          # 14 characters at most: net user asks "longer than 14 characters, continue?" otherwise.
+          $pw = 'Vb!7' + [guid]::NewGuid().ToString('N').Substring(0, 10)
+          net user vibesvc $pw /add
+          if ($LASTEXITCODE) { throw 'could not create the test account' }
+          net localgroup Administrators vibesvc /add
+          if ($LASTEXITCODE) { throw 'could not make the test account an administrator' }
           $account = "$env:COMPUTERNAME\vibesvc"
           $pwFile = Join-Path $env:RUNNER_TEMP 'service-pw.txt'
           Set-Content -NoNewline -LiteralPath $pwFile -Value $pw
