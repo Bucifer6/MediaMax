@@ -125,6 +125,10 @@
 .tp .tp-lower > .recap-ask.btn-glass:not(.on-media) { color: #fff; background: rgb(255 255 255 / 0.14); border-color: rgb(255 255 255 / 0.2); margin: 0; }
 .tp-lower > .recap-card .btn-glass { background: rgb(255 255 255 / 0.14); border-color: rgb(255 255 255 / 0.2); }
 
+/* The hero is its own stacking context (isolation) and the body sits above it (z-index: 1), so a menu opened in the
+   hero (More actions, Download) would be painted under the episodes and rows below it. Lift the hero while one is open. */
+.tp-hero:has(.menu) { z-index: 2; }
+
 /* ---------- Page body ---------- */
 .tp-body { position: relative; z-index: 1; display: flex; flex-direction: column; gap: var(--section-gap, 40px); padding-top: var(--s-6); }
 .tp-body > .row { margin-bottom: 0; }
