@@ -198,6 +198,9 @@ const finishing = new Set<string>();
 /** ffmpeg processes joining parts; killed on shutdown like the recordings themselves. */
 const joining = new Set<ChildProcess>();
 let shuttingDown = false;
+
+/** Something is being recorded (or a finished recording's parts are being joined) right now. */
+export const recordingInProgress = () => active.size > 0 || joining.size > 0;
 let legacyChecked = false;
 /** Smaller files are failed starts (no stream), not recordings. */
 const MIN_PART_BYTES = 100_000;

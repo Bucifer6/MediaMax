@@ -81,7 +81,8 @@ beforeEach(() => {
   updates.resetUpdateState();
   failWith = 0;
   releases = [];
-  updateSettings({ updates: { autoCheck: true, includePrereleases: false } });
+  updateSettings({ updates: { autoCheck: true, autoInstall: true, includePrereleases: false } });
+  updates.setUpdateEnvironment({ updaterTask: false, serviceMode: false });
 });
 
 test('compareSemver orders releases and pre-releases', () => {
@@ -139,7 +140,7 @@ test('the current version is up to date, and pre-releases are offered only when 
   assert.equal(s.updateAvailable, false);
   assert.equal(s.latest?.version, config.version);
 
-  updateSettings({ updates: { autoCheck: true, includePrereleases: true } });
+  updateSettings({ updates: { autoCheck: true, autoInstall: true, includePrereleases: true } });
   s = await updates.checkForUpdates();
   assert.equal(s.updateAvailable, true);
   assert.equal(s.latest?.version, `${NEXT}-beta.1`);
@@ -192,4 +193,38 @@ test('admin routes: status, check now, and update now refused where the server c
   const install = await app.inject({ method: 'POST', url: '/api/v1/admin/updates/install', headers: auth(admin.id) });
   assert.equal(install.statusCode, 409);
   assert.match(install.json().message, /can't update itself/);
+});
+
+test('automatic updates are on by default but only run where no one has to be at the server', async () => {
+  releases = [release(NEXT)];
+  const s = await updates.checkForUpdates();
+  assert.equal(s.autoInstall, true);
+  assert.equal(s.canAutoInstall, false, 'tests run from source, not a Windows setup install');
+  // Even with the updater task "found", a source checkout can't install anything.
+  updates.setUpdateEnvironment({ updaterTask: true });
+  assert.equal(updates.updateStatus().canAutoInstall, false);
+  assert.equal(await updates.maybeAutoInstall(false), 'skipped');
+  assert.equal(updates.updateStatus().state, 'idle');
+  updateSettings({ updates: { autoCheck: true, autoInstall: false, includePrereleases: false } });
+  assert.equal(updates.updateStatus().autoInstall, false);
+});
+
+test('readUpdaterResult reads what update-vibe.ps1 writes (UTF-8 with a byte order mark)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-upd-'));
+  const file = path.join(dir, 'result.json');
+  assert.equal(updates.readUpdaterResult(file), null);
+  fs.writeFileSync(file, '\uFEFF{"ok":false,"version":"9.0.0","message":"Checksum mismatch","at":"2026-11-27T10:00:00.1234567Z"}\r\n');
+  assert.deepEqual(updates.readUpdaterResult(file), { ok: false, version: '9.0.0', message: 'Checksum mismatch', at: '2026-11-27T10:00:00.1234567Z' });
+  fs.writeFileSync(file, 'not json');
+  assert.equal(updates.readUpdaterResult(file), null);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('the tray helper starts the updater task, waits for it, then starts the tray app again', () => {
+  const script = updates.trayRelaunchScript("C:\\Program Files\\O'Brien\\VibeTray.exe");
+  assert.match(script, /schtasks\.exe" \/Run \/TN 'Vibe updater'/);
+  assert.match(script, /GetTask\('Vibe updater'\)/);
+  assert.match(script, /State -eq 4/);
+  assert.ok(script.includes("Start-Process -FilePath 'C:\\Program Files\\O''Brien\\VibeTray.exe'"), 'single quotes are doubled');
+  assert.match(script, /Get-Process VibeTray/, 'not started twice when the update failed before setup stopped it');
 });

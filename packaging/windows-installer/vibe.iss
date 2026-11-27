@@ -18,6 +18,11 @@
 ; Silent install: vibe-<version>-windows-x64-setup.exe /VERYSILENT [/TASKS="service"] [/PORT=9000]
 ;   service as a Windows account: add /SERVICEUSER=nasuser /SERVICEPASSWORDFILE=C:\path\pw.txt (the file is deleted);
 ;   /SERVICEUSER=SYSTEM switches back to SYSTEM. Without them an upgrade keeps the account the service runs as.
+;
+; Updates: setup registers the on-demand "Vibe updater" scheduled task (update-vibe.ps1, running as SYSTEM, startable
+; by any signed-in user), so Admin > Updates installs new releases without a Windows permission prompt or anyone at
+; the server. That task runs setup with /FROMUPDATER=1: setup then leaves the task as it is and does not start the
+; tray app (it would run as SYSTEM); the server's helper starts it again for the signed-in user.
 
 #ifndef AppVersion
   #error Pass /DAppVersion=x.y.z
@@ -89,6 +94,10 @@ Type: filesandordirs; Name: "{app}\help"
 ; The portable launcher was called Kinora.cmd before it became Vibe.cmd.
 Type: files; Name: "{app}\Kinora.cmd"
 
+[UninstallDelete]
+; Downloads and the result of the last update made by the "Vibe updater" task.
+Type: filesandordirs; Name: "{app}\updates"
+
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#TrayExe}"; DestDir: "{app}"; Flags: ignoreversion
@@ -99,11 +108,13 @@ Name: "{autodesktop}\Vibe"; Filename: "{app}\VibeTray.exe"; Parameters: "--open"
 
 [Run]
 ; Sign-in start is a per-user setting (HKCU Run), so set it as the user who started setup, not the elevated admin.
-Filename: "{app}\VibeTray.exe"; Parameters: "--autostart on"; Flags: runasoriginaluser waituntilterminated; Tasks: tray\autostart
-Filename: "{app}\VibeTray.exe"; Parameters: "--autostart off"; Flags: runasoriginaluser waituntilterminated; Tasks: not tray\autostart
+; Not when the "Vibe updater" task (SYSTEM) runs setup: the user's choice is already set, and SYSTEM has no sign-in.
+Filename: "{app}\VibeTray.exe"; Parameters: "--autostart on"; Flags: runasoriginaluser waituntilterminated; Tasks: tray\autostart; Check: not FromUpdater
+Filename: "{app}\VibeTray.exe"; Parameters: "--autostart off"; Flags: runasoriginaluser waituntilterminated; Tasks: not tray\autostart; Check: not FromUpdater
 Filename: "{app}\VibeTray.exe"; Parameters: "--open"; Description: "Start Vibe and open it in my browser"; Flags: postinstall nowait runasoriginaluser skipifsilent; Tasks: tray
 ; Silent installs (unattended, and updates started from Admin → Updates): start the tray app without opening another browser tab.
-Filename: "{app}\VibeTray.exe"; Flags: nowait runasoriginaluser; Tasks: tray; Check: WizardSilent
+; From the "Vibe updater" task the server's helper starts it for the signed-in user instead.
+Filename: "{app}\VibeTray.exe"; Flags: nowait runasoriginaluser; Tasks: tray; Check: WizardSilent and not FromUpdater
 Filename: "http://localhost:{code:GetPort}/"; Description: "Open Vibe in my browser"; Flags: postinstall shellexec nowait skipifsilent runasoriginaluser; Tasks: service
 
 [Code]
@@ -132,6 +143,12 @@ begin
     Code := -1;
   Log('Exit code: ' + IntToStr(Code));
   Result := Code;
+end;
+
+// Started by the "Vibe updater" scheduled task (update-vibe.ps1) rather than by a person.
+function FromUpdater: Boolean;
+begin
+  Result := ExpandConstant('{param:FROMUPDATER|0}') = '1';
 end;
 
 function RunPS(const Command: String): Integer;
@@ -363,6 +380,12 @@ begin
   end;
 end;
 
+function UpdaterScript(const Args: String): Integer;
+begin
+  Result := RunHidden(PowerShell, '-NoProfile -ExecutionPolicy Bypass -File "' +
+    ExpandConstant('{app}\update-vibe.ps1') + '" ' + Args);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Port: String;
@@ -371,6 +394,10 @@ begin
   begin
     Port := GetPort('');
     if WizardIsTaskSelected('service') then SetupServiceMode(Port) else SetupTrayMode(Port);
+    // Updates without a permission prompt (Admin > Updates). Left alone while that task is the one running setup.
+    if not FromUpdater then
+      if UpdaterScript('-Register') <> 0 then
+        Log('Registering the Vibe updater task failed: Update now will ask for permission in tray app mode.');
   end;
 end;
 
@@ -388,6 +415,7 @@ begin
         Args := Args + ' -RemoveData';
     // Removes the boot-time task (if any), the firewall rules and the port variable; keeps {app} for the uninstaller.
     ServiceScript(Args);
+    UpdaterScript('-Unregister');
     RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Vibe');
     RegDeleteKeyIncludingSubkeys(HKLM, VibeKey);
   end;

@@ -100,6 +100,10 @@ export interface UpdateStatus {
   /** Download progress 0..1 while state is 'downloading'. */
   progress: number | null;
   autoCheck: boolean;
+  /** Install new releases by themselves (settings: updates.autoInstall). */
+  autoInstall: boolean;
+  /** Installing needs nobody at the server: no Windows permission prompt (the "Vibe updater" task, or the service). */
+  canAutoInstall: boolean;
 }
 
 export interface SetupRequest {
@@ -1842,8 +1846,10 @@ export interface ServerSettings {
   };
   /** Server updates from GitHub releases (Admin → Updates). */
   updates: {
-    /** Look for a new release every 12 hours (installing always waits for an admin). */
+    /** Look for a new release every 12 hours. */
     autoCheck: boolean;
+    /** Install a new release by itself when nothing is playing or recording (Windows setup installs that can update without a prompt). */
+    autoInstall: boolean;
     /** Also offer pre-releases (1.2.0-beta.1). */
     includePrereleases: boolean;
   };
