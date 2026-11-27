@@ -2,9 +2,14 @@
  * Minimal stale-while-revalidate data hook (no extra dependency).
  * Results are cached per server+user so navigating back is instant.
  */
+import * as Network from 'expo-network';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { useSession } from '@/state/session';
-import type { MediaMaxClient } from './client';
+import { isNetworkError, type MediaMaxClient } from './client';
+
+/** Waits between automatic retries after a network error (the last one repeats). */
+const NETWORK_RECOVERY_DELAYS_MS = [3000, 10000, 30000];
 
 interface Entry {
   data: unknown;
@@ -95,6 +100,48 @@ export function useQuery<T>(
     await run(ctrl.signal, true);
     if (refreshCtrlRef.current === ctrl) refreshCtrlRef.current = null;
   }, [run]);
+
+  // A network error is usually temporary (the device was asleep, Wi-Fi is reconnecting): retry on our own
+  // instead of leaving "Network error" on screen until someone presses Try again. Retries back off, and also
+  // run as soon as the app returns to the foreground or the network comes back.
+  const networkFailed = isNetworkError(error);
+  useEffect(() => {
+    if (!networkFailed || !fullKey) return;
+    let attempt = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let ctrl: AbortController | null = null;
+    const retry = () => {
+      if (timer) clearTimeout(timer);
+      ctrl?.abort();
+      ctrl = new AbortController();
+      void run(ctrl.signal, false);
+    };
+    const schedule = () => {
+      timer = setTimeout(() => {
+        attempt++;
+        retry();
+        schedule();
+      }, NETWORK_RECOVERY_DELAYS_MS[Math.min(attempt, NETWORK_RECOVERY_DELAYS_MS.length - 1)]);
+    };
+    schedule();
+    const appSub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') retry();
+    });
+    let netSub: { remove(): void } | null = null;
+    try {
+      netSub = Network.addNetworkStateListener((n) => {
+        if (n.isConnected) retry();
+      });
+    } catch {
+      /* expo-network unavailable: the timer and foreground retries still run */
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+      ctrl?.abort();
+      appSub.remove();
+      netSub?.remove();
+    };
+  }, [networkFailed, fullKey, run]);
 
   const setData = useCallback(
     (updater: (prev: T | undefined) => T | undefined) => {

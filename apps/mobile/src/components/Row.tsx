@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { FlatList, View } from 'react-native';
 import type { Channel, Item } from '@/api/types';
 import { useTheme } from '@/theme';
@@ -27,7 +27,7 @@ export function RowHeader({ title, onSeeAll }: { title: string; onSeeAll?: () =>
   );
 }
 
-export function ItemRow({
+export const ItemRow = memo(function ItemRow({
   title,
   items,
   variant = 'auto',
@@ -76,9 +76,9 @@ export function ItemRow({
       />
     </View>
   );
-}
+});
 
-export function ChannelRow({ title, channels, onSeeAll }: { title: string; channels: Channel[]; onSeeAll?: () => void }) {
+export const ChannelRow = memo(function ChannelRow({ title, channels, onSeeAll }: { title: string; channels: Channel[]; onSeeAll?: () => void }) {
   const t = useTheme();
   if (!channels.length) return null;
   return (
@@ -95,4 +95,4 @@ export function ChannelRow({ title, channels, onSeeAll }: { title: string; chann
       />
     </View>
   );
-}
+});

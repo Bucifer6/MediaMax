@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { TextInput, View, type TextInputProps } from 'react-native';
 import { useTheme } from '@/theme';
+import { usePreferredFocus } from '@/tv/focusGate';
 import { Icon, type IconName } from './Icon';
 import { T } from './Text';
 
@@ -9,6 +10,7 @@ export type TextInputRef = React.ComponentRef<typeof TextInput>;
 export function Input({ label, icon, style, onFocus, onBlur, ref, ...rest }: TextInputProps & { label?: string; icon?: IconName; ref?: React.Ref<TextInputRef> }) {
   const t = useTheme();
   const [focused, setFocused] = useState(false);
+  const preferred = usePreferredFocus(rest.hasTVPreferredFocus);
   return (
     <View style={{ gap: t.space.xs }}>
       {label ? (
@@ -43,6 +45,7 @@ export function Input({ label, icon, style, onFocus, onBlur, ref, ...rest }: Tex
           }}
           style={[{ flex: 1, color: t.colors.text, fontSize: t.text.body, paddingVertical: t.isTV ? t.s(14) : 13, fontFamily: t.font }, style]}
           {...rest}
+          hasTVPreferredFocus={preferred}
         />
       </View>
     </View>

@@ -1,12 +1,13 @@
 import { BlurView } from 'expo-blur';
 import type { Tabs } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCapabilities, useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 import { formatTime } from '@/utils/format';
-import { Focusable } from './Focusable';
+import { setTabBarFocused } from '@/tv/focusGate';
+import { Focusable, type FocusableRef } from './Focusable';
 import { Icon, type IconName } from './Icon';
 import { BrandWordmark } from './BrandWordmark';
 import { Img } from './Img';
@@ -55,6 +56,13 @@ export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
   const visible = useVisibleTabs();
   const { branding, user } = useSession();
   const routes = state.routes.filter((r) => visible(r.name));
+  const switchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const itemRefs = useRef<Record<string, FocusableRef | null>>({});
+  const lastIdx = useRef<number | null>(null);
+  const lastSwitch = useRef(0);
+  useEffect(() => () => {
+    if (switchTimer.current) clearTimeout(switchTimer.current);
+  }, []);
   const go = (key: string, focused: boolean) => {
     const event = emitter.emit({ type: 'tabPress', target: key, canPreventDefault: true });
     if (!focused && !event.defaultPrevented) navigateToTab(key);
@@ -66,15 +74,45 @@ export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: t.space.gutter, paddingTop: t.s(24), paddingBottom: t.s(8), gap: t.space.lg, backgroundColor: 'transparent' }}>
         {logo ? <Img path={logo} width={t.s(160)} contentFit="contain" style={{ width: t.s(150), height: t.s(40) }} /> : <BrandWordmark name={branding?.serverName} width={t.s(150)} textVariant="heading" />}
         <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'center', gap: t.s(8) }}>
-          {routes.map((route) => {
+          {routes.map((route, idx) => {
             const focused = state.routes[state.index]?.key === route.key;
             const meta = TAB_META[route.name];
             return (
               <Focusable
                 key={route.key}
-                onPress={() => go(route.key, focused)}
-                // Apple-TV style: moving focus across the top bar switches tabs.
-                onFocus={() => !focused && navigateToTab(route.key)}
+                ref={(v: FocusableRef | null) => {
+                  itemRefs.current[route.key] = v;
+                }}
+                onPress={() => {
+                  if (switchTimer.current) clearTimeout(switchTimer.current);
+                  go(route.key, focused);
+                }}
+                // Apple-TV style: resting focus on a tab switches to it. Only once focus rests, so
+                // passing over tabs on the way to another one doesn't open each screen in turn.
+                onFocus={() => {
+                  setTabBarFocused(true);
+                  if (switchTimer.current) clearTimeout(switchTimer.current);
+                  // Opening a screen with a text field (Search, Discover) can make Android drop focus
+                  // onto the first focusable view: the Home tab. The D-pad only moves one tab at a
+                  // time, so a jump of more than one tab right after a switch is not the user: put
+                  // focus back on the active tab instead of switching to Home.
+                  const jumped = lastIdx.current !== null && Math.abs(idx - lastIdx.current) > 1;
+                  if (jumped && Date.now() - lastSwitch.current < 1500) {
+                    const active = state.routes[state.index]?.key;
+                    (active ? itemRefs.current[active] : null)?.requestTVFocus?.();
+                    return;
+                  }
+                  lastIdx.current = idx;
+                  if (!focused)
+                    switchTimer.current = setTimeout(() => {
+                      lastSwitch.current = Date.now();
+                      navigateToTab(route.key);
+                    }, 400);
+                }}
+                onBlur={() => {
+                  setTabBarFocused(false);
+                  if (switchTimer.current) clearTimeout(switchTimer.current);
+                }}
                 ringRadius={999}
                 focusScale={1.06}
                 style={{ paddingHorizontal: t.s(20), paddingVertical: t.s(10), borderRadius: 999, backgroundColor: focused ? t.alpha(t.colors.text, 0.14) : 'transparent', flexDirection: 'row', alignItems: 'center', gap: t.s(8) }}

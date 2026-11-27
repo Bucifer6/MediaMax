@@ -135,6 +135,8 @@ export default function NowPlaying() {
         {m.mix && !m.castingTo ? <PanelChip icon="sync-outline" label="Endless" active={m.endless} onPress={() => m.setEndless(!m.endless)} /> : null}
         {isTrack && !m.castingTo && advancedDj ? <PanelChip icon="disc-outline" label="DJ mix" active={false} onPress={() => openDj(cur)} /> : null}
         {canPlayOn && t.isTV ? <PanelChip icon="phone-portrait-outline" label="Play on…" active={false} onPress={() => setPlayOn(true)} /> : null}
+        {/* Phones stop from the header (hidden on TV, where Back only leaves the screen and the music keeps going). */}
+        {t.isTV ? <PanelChip icon="stop-circle-outline" label="Stop" active={false} onPress={() => { m.stop(); router.back(); }} /> : null}
       </View>
       {m.error ? <T tone="danger">{m.error}</T> : null}
     </View>
