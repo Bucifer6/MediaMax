@@ -223,12 +223,16 @@ export default function NowPlaying() {
       {t.isTV ? (
         // TV: artwork, controls and the queue / lyrics panel side by side. Stacked, the artwork plus the controls (with
         // the Your DJ card) were taller than the screen and the art and transport were cut off.
-        <View style={{ flex: 1, flexDirection: 'row', padding: t.space.gutter, gap: t.space.xl, alignItems: 'center' }}>
-          <View style={{ width: tvArt, height: tvArt, borderRadius: t.radius, overflow: 'hidden', backgroundColor: '#222', shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 30 }}>
-            {art ? <Img path={art} width={tvArt} style={{ width: '100%', height: '100%' }} /> : null}
+        // Children stretch to the full height (the side panel needs it: with alignSelf 'stretch' in a centred row it
+        // collapsed to 2 px on Android TV, invisible but still taking the focus); art and controls centre themselves.
+        <View style={{ flex: 1, flexDirection: 'row', padding: t.space.gutter, gap: t.space.xl, alignItems: 'stretch' }}>
+          <View style={{ justifyContent: 'center' }}>
+            <View style={{ width: tvArt, height: tvArt, borderRadius: t.radius, overflow: 'hidden', backgroundColor: '#222', shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 30 }}>
+              {art ? <Img path={art} width={tvArt} style={{ width: '100%', height: '100%' }} /> : null}
+            </View>
           </View>
-          {controls}
-          <View style={{ flex: 1, alignSelf: 'stretch' }}>{sidePanel ?? queue}</View>
+          <View style={{ justifyContent: 'center' }}>{controls}</View>
+          <View style={{ flex: 1 }}>{sidePanel ?? queue}</View>
         </View>
       ) : t.wide ? (
         <View style={{ flex: 1, flexDirection: 'row', padding: t.space.gutter, gap: t.space.xxl, alignItems: 'center' }}>
