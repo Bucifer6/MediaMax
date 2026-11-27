@@ -75,15 +75,44 @@ function safeIsDir(p: string) {
 /** Sidecar subtitles next to a video (and in Subs/Subtitles folders). Ones Vibe downloaded get 3000+. */
 export function sidecarSubs(videoPath: string, mediaId?: string): SubtitleStream[] {
   const dir = path.dirname(videoPath);
-  const base = stripExt(path.basename(videoPath));
   let files: string[] = [];
   try {
     files = usableNames(dir);
   } catch {
     return [];
   }
-  const subsDirs = ['subs', 'subtitles', 'Subs', 'Subtitles'].map((d) => path.join(dir, d)).filter(safeIsDir);
+  const subsDirs = SUBS_DIRS.map((d) => path.join(dir, d)).filter(safeIsDir);
   const candidates = [...files.map((f) => path.join(dir, f)), ...subsDirs.flatMap((d) => usableNames(d).map((f) => path.join(d, f)))];
+  return subsFromCandidates(videoPath, candidates, mediaId);
+}
+
+const SUBS_DIRS = ['subs', 'subtitles', 'Subs', 'Subtitles'];
+
+/**
+ * sidecarSubs without blocking the server (the scanner runs it for every file, usually on a network share). The
+ * sub-folders are found in the folder listing, so a name matches exactly once even on a case-insensitive disk.
+ */
+export async function sidecarSubsAsync(videoPath: string, mediaId?: string, listing?: string[] | null): Promise<SubtitleStream[]> {
+  const dir = path.dirname(videoPath);
+  const list = async (d: string) => (await fs.promises.readdir(d, { encoding: 'buffer' })).filter(isValidUtf8Name).map((b) => b.toString('utf8'));
+  let names: string[];
+  if (listing) names = listing;
+  else {
+    try {
+      names = await list(dir);
+    } catch {
+      return [];
+    }
+  }
+  // A listed name that is a file, not a folder, fails to list and adds nothing.
+  const subsDirs = names.filter((n) => SUBS_DIRS.includes(n)).map((n) => path.join(dir, n));
+  const inDirs = await Promise.all(subsDirs.map((d) => list(d).then((ns) => ns.map((n) => path.join(d, n)), () => [] as string[])));
+  return subsFromCandidates(videoPath, [...names.map((f) => path.join(dir, f)), ...inDirs.flat()], mediaId);
+}
+
+function subsFromCandidates(videoPath: string, candidates: string[], mediaId?: string): SubtitleStream[] {
+  const dir = path.dirname(videoPath);
+  const base = stripExt(path.basename(videoPath));
   const rec = mediaId ? recorded(mediaId) : new Map<string, { provider: string }>();
   const out: StoredSub[] = [];
   let n = 0;
@@ -108,6 +137,11 @@ export function sidecarSubs(videoPath: string, mediaId?: string): SubtitleStream
 /** Sidecar + downloaded subtitle entries for a media file (what the scanner and a download both store). */
 export function externalSubs(mediaId: string, videoPath: string | null): SubtitleStream[] {
   return [...(videoPath ? sidecarSubs(videoPath, mediaId) : []), ...downloadedSubs(mediaId, 2000)];
+}
+
+/** externalSubs for the scanner: the media folder is read asynchronously (downloads live in the local data dir). */
+export async function externalSubsAsync(mediaId: string, videoPath: string | null, listing?: string[] | null): Promise<SubtitleStream[]> {
+  return [...(videoPath ? await sidecarSubsAsync(videoPath, mediaId, listing) : []), ...downloadedSubs(mediaId, 2000)];
 }
 
 /** Re-merge sidecar and downloaded subtitles into the media row (embedded entries are kept). */

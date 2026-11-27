@@ -30,10 +30,10 @@ export function DjSwitchButton({ withLabel = false, onDark = true }: { withLabel
       disabled={!m.yourDj || busy}
       ringRadius={999}
       accessibilityLabel="Switch it up: Your DJ plays something different"
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 4, paddingRight: withLabel ? 14 : 4, paddingVertical: 4, borderRadius: 999, borderWidth: 2, borderColor: t.colors.primary, backgroundColor: t.alpha(t.colors.primary, 0.18) }}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: t.s(8), paddingLeft: t.s(4), paddingRight: withLabel ? t.s(14) : t.s(4), paddingVertical: t.s(4), borderRadius: 999, borderWidth: 2, borderColor: t.colors.primary, backgroundColor: t.alpha(t.colors.primary, 0.18) }}
     >
-      <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: t.colors.primary }}>
-        {busy ? <ActivityIndicator color={t.colors.primaryText} size="small" /> : <Icon name="disc" size={20} color={t.colors.primaryText} />}
+      <View style={{ width: t.s(36), height: t.s(36), borderRadius: t.s(18), alignItems: 'center', justifyContent: 'center', backgroundColor: t.colors.primary }}>
+        {busy ? <ActivityIndicator color={t.colors.primaryText} size="small" /> : <Icon name="disc" size={t.s(20)} color={t.colors.primaryText} />}
       </View>
       {withLabel ? <T variant="small" weight="800" color={fg}>Switch it up</T> : null}
     </Focusable>

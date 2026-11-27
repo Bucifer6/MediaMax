@@ -91,7 +91,7 @@ test('Recalculate date added re-applies the rule to items scanned with "scan tim
   await scanLibrary('da-movies');
   const scanTime = Date.parse(added("library_id = 'da-movies' AND type = 'movie'"));
   assert.ok(now - scanTime < DAY, 'scan time used');
-  assert.equal(recalculateDateAdded('da-movies'), 0, 'scan rule: nothing to recalculate');
+  assert.equal(await recalculateDateAdded('da-movies'), 0, 'scan rule: nothing to recalculate');
 
   let r = await app.inject({ method: 'PATCH', url: '/api/v1/libraries/da-movies', headers: auth, payload: { dateAdded: 'modified' } });
   assert.equal(r.statusCode, 200);

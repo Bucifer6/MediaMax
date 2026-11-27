@@ -9,6 +9,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setImmediate as nextTurn } from 'node:timers/promises';
+import { withTimeout } from '../../util/timeout.js';
 
 /** Folders nobody wants scanned (NAS metadata, recycle bins, snapshots). */
 export const IGNORED_DIRS = /^(\..*|@eaDir|@Recycle|#recycle|#snapshot|\$RECYCLE\.BIN|System Volume Information|lost\+found|\.snapshots?)$/i;
@@ -19,6 +20,11 @@ export interface DirWatchResult { directories: number; error: string | null }
 /** Folder walks (walkFolders) give the event loop a turn every this many folders, and read this many at once. */
 const YIELD_EVERY = 200;
 const WALK_CONCURRENCY = 4;
+/** How long a library root gets to answer before it counts as unreachable (a sleeping network share can take minutes). */
+export const rootCheck = { timeoutMs: 15000 };
+
+/** Whether `root` can be reached, without blocking and without waiting on an unreachable share for long. */
+const reachable = (root: string) => withTimeout(fs.promises.access(root).then(() => true, () => false), rootCheck.timeoutMs, false);
 
 export class DirWatcher {
   private watchers = new Map<string, fs.FSWatcher>();
@@ -29,6 +35,13 @@ export class DirWatcher {
 
   async start(): Promise<DirWatchResult> {
     if (process.platform === 'darwin' || process.platform === 'win32') {
+      // fs.watch opens the folder synchronously: on a sleeping network share that blocks the whole server until
+      // Windows gives up. Check (asynchronously, with a time limit) that it answers first; syncWatchers retries later.
+      if (!(await reachable(this.root))) {
+        this.error = 'Folder not reachable (network share offline or asleep?)';
+        return this.result();
+      }
+      if (this.closed) return this.result();
       try {
         const w = fs.watch(this.root, { recursive: true, persistent: false }, (_ev, file) => {
           if (file && !IGNORED_FILES.test(String(file)) && !String(file).split(/[\\/]/).some((p) => IGNORED_DIRS.test(p))) this.onChange(String(file));
@@ -81,14 +94,11 @@ export class DirWatcher {
     if (name && (IGNORED_FILES.test(name) || IGNORED_DIRS.test(name))) return;
     const full = name ? path.join(dir, name) : dir;
     if (ev === 'rename' && name) {
-      // Something appeared or vanished: the disk is awake anyway, so a stat is free.
-      let isDir = false;
-      try {
-        isDir = fs.statSync(full).isDirectory();
-      } catch {
-        this.dropTree(full);
-      }
-      if (isDir) void this.addTree(full);
+      // Something appeared or vanished: watch a new folder, drop the watches of one that's gone. Never a blocking
+      // stat in an event handler: on a slow disk or share it would hold up every request.
+      void fs.promises.stat(full).then((st) => {
+        if (st.isDirectory() && !this.closed) void this.addTree(full);
+      }, () => this.dropTree(full));
     }
     this.onChange(path.relative(this.root, full));
   }
@@ -116,7 +126,7 @@ export class DirWatcher {
  * time), not the joined list: that was a multi-MB string per big library, kept between polls.
  */
 export async function folderSignature(root: string, maxDirs = 100000): Promise<string | null> {
-  if (!fs.existsSync(root)) return null;
+  if (!(await reachable(root))) return null;
   // Folders are read a few at a time, in no fixed order: each folder's digest is XORed into the total, so the same
   // tree always gives the same signature (paths are unique, so entries can't cancel out).
   const sum = Buffer.alloc(20);

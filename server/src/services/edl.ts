@@ -26,6 +26,24 @@ export function importSidecarEdl(itemId: string, mediaPath: string): number {
   } catch {
     return 0;
   }
+  return applyEdl(itemId, text);
+}
+
+/** importSidecarEdl without blocking the server: the scanner checks every file, usually on a network share. */
+export async function importSidecarEdlAsync(itemId: string, mediaPath: string): Promise<number> {
+  const edl = edlPathFor(mediaPath);
+  let text: string;
+  try {
+    const st = await fs.promises.stat(edl);
+    if (!st.isFile() || st.size > 1024 * 1024) return 0;
+    text = await fs.promises.readFile(edl, 'utf8');
+  } catch {
+    return 0;
+  }
+  return applyEdl(itemId, text);
+}
+
+function applyEdl(itemId: string, text: string): number {
   const commercials = parseEdl(text);
   const row = db.get<{ markers: string }>('SELECT markers FROM items WHERE id = ?', itemId);
   if (!row) return 0;

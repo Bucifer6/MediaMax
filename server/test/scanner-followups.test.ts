@@ -103,7 +103,8 @@ test('a scan requested while one runs triggers one more scan afterwards (request
   const late: Promise<void>[] = [];
   (fs.promises as any).readdir = async function (p: any, ...rest: any[]) {
     const r = await (orig as any).call(this, p, ...rest);
-    if (String(p) === root && ++rootReads === 1) {
+    // Count the walk's listings only (with file types), not the async root checks.
+    if (String(p) === root && rest[0]?.withFileTypes && ++rootReads === 1) {
       // The walk has listed the folder; a file lands and the watcher asks for scans (three times).
       touch(path.join(root, 'two.mkv'));
       late.push(scanLibrary('sf-co'), scanLibrary('sf-co'), scanLibrary('sf-co'));
@@ -226,7 +227,8 @@ test('a partial scan walks and prunes only the changed folders; too many or outs
   const orig = fs.promises.readdir;
   const read: string[] = [];
   (fs.promises as any).readdir = function (p: any, ...rest: any[]) {
-    read.push(String(p));
+    // The walk lists folders with file types; root checks and artwork listings are plain readdirs.
+    if (rest[0]?.withFileTypes) read.push(String(p));
     return (orig as any).call(this, p, ...rest);
   };
   try {
@@ -247,10 +249,10 @@ test('watcher events are debounced into one scan of the changed top-level folder
   touch(path.join(root, 'Show B', 'Show B S01E01.mkv'));
   addLib('sf-watch', 'shows', [root]);
   await scanLibrary('sf-watch');
-  assert.deepEqual(changedUnits(root, path.join('Show A', 'Season 1', 'x.mkv')), [path.join(root, 'Show A')]);
-  assert.deepEqual(changedUnits(root, 'Show A'), [path.join(root, 'Show A')]);
-  assert.deepEqual(changedUnits(root, 'gone.mkv'), [path.join(root, 'gone.mkv'), root], 'a root-level file: the root\'s own files too');
-  assert.equal(changedUnits(root, ''), null, 'an event on the root itself: full scan');
+  assert.deepEqual(await changedUnits(root, path.join('Show A', 'Season 1', 'x.mkv')), [path.join(root, 'Show A')]);
+  assert.deepEqual(await changedUnits(root, 'Show A'), [path.join(root, 'Show A')]);
+  assert.deepEqual(await changedUnits(root, 'gone.mkv'), [path.join(root, 'gone.mkv'), root], 'a root-level file: the root\'s own files too');
+  assert.equal(await changedUnits(root, ''), null, 'an event on the root itself: full scan');
 
   const saved = watchTiming.settleMs;
   watchTiming.settleMs = 20;
@@ -272,4 +274,223 @@ test('watcher events are debounced into one scan of the changed top-level folder
   } finally {
     watchTiming.settleMs = saved;
   }
+});
+
+test('a scan makes no blocking filesystem calls on the library folders (a slow NAS must not freeze the server)', async () => {
+  const root = mkRoot('nosync');
+  touch(path.join(root, 'Show A', 'Season 1', 'Show A S01E01.mkv'));
+  fs.writeFileSync(path.join(root, 'Show A', 'tvshow.nfo'), '<tvshow><title>Show A From NFO</title></tvshow>');
+  fs.writeFileSync(path.join(root, 'Show A', 'poster.jpg'), 'img');
+  fs.writeFileSync(path.join(root, 'Show A', 'Season 1', 'Show A S01E01.nfo'), '<episodedetails><title>Pilot From NFO</title></episodedetails>');
+  addLib('sf-nosync', 'shows', [root]);
+  const names = ['existsSync', 'statSync', 'lstatSync', 'readdirSync', 'readFileSync', 'realpathSync', 'accessSync', 'openSync'] as const;
+  const orig = new Map(names.map((n) => [n, (fs as any)[n]]));
+  const blocked: string[] = [];
+  for (const n of names) {
+    (fs as any)[n] = function (p: any, ...rest: any[]) {
+      if (String(p).startsWith(root)) blocked.push(`${n} ${p}`);
+      return orig.get(n).call(this, p, ...rest);
+    };
+  }
+  try {
+    await scanLibrary('sf-nosync');
+  } finally {
+    for (const n of names) (fs as any)[n] = orig.get(n);
+  }
+  assert.deepEqual(blocked, []);
+  assert.equal(db.get<{ title: string }>("SELECT title FROM items WHERE library_id = 'sf-nosync' AND type = 'show'")?.title, 'Show A From NFO');
+  assert.equal(db.get<{ title: string }>("SELECT title FROM items WHERE library_id = 'sf-nosync' AND type = 'episode'")?.title, 'Pilot From NFO');
+  assert.ok(db.get("SELECT poster FROM items WHERE library_id = 'sf-nosync' AND type = 'show'")?.poster, 'show poster found');
+});
+
+/* ------------- slow network shares: nothing may block the event loop ------------- */
+
+const SYNC_FS = ['existsSync', 'statSync', 'lstatSync', 'readdirSync', 'readFileSync', 'realpathSync', 'accessSync', 'openSync'] as const;
+
+/** Record every synchronous fs call on a path under `root` while `fn` runs. */
+async function syncCallsUnder(root: string, fn: () => Promise<unknown>): Promise<string[]> {
+  const orig = new Map(SYNC_FS.map((n) => [n, (fs as any)[n]]));
+  const blocked: string[] = [];
+  for (const n of SYNC_FS) {
+    (fs as any)[n] = function (p: any, ...rest: any[]) {
+      if (String(p).startsWith(root)) blocked.push(`${n} ${p}`);
+      return orig.get(n).call(this, p, ...rest);
+    };
+  }
+  try {
+    await fn();
+  } finally {
+    for (const n of SYNC_FS) (fs as any)[n] = orig.get(n);
+  }
+  return blocked;
+}
+
+/** Make the async fs calls named in `names` on paths under `root` take `ms` longer; returns the restore function. */
+function slowFs(root: string, ms: number, names: ('readdir' | 'stat' | 'lstat' | 'access' | 'realpath')[]) {
+  const orig = new Map(names.map((n) => [n, (fs.promises as any)[n]]));
+  for (const n of names) {
+    (fs.promises as any)[n] = async function (p: any, ...rest: any[]) {
+      if (String(p).startsWith(root)) await new Promise((r) => setTimeout(r, ms));
+      return orig.get(n).call(this, p, ...rest);
+    };
+  }
+  return () => {
+    for (const n of names) (fs.promises as any)[n] = orig.get(n);
+  };
+}
+
+test('a slow network share does not freeze the server while a scan reads it', async () => {
+  // A movies library with symlinked folders and a name that is not valid UTF-8 (the walk's other code paths), music
+  // with album art and an audiobook with a description: every folder read takes 150 ms, as on a slow SMB share.
+  const root = mkRoot('slow');
+  touch(path.join(root, 'Avatar (2009)', 'Avatar (2009).mkv'));
+  fs.writeFileSync(path.join(root, 'Avatar (2009)', 'poster.jpg'), 'img');
+  touch(path.join(root, 'Collection', 'Heat (1995)', 'Heat (1995).mkv'));
+  let linked = true;
+  try {
+    fs.symlinkSync(path.join(root, 'Collection'), path.join(root, 'Linked'), 'junction');
+  } catch {
+    linked = false; // no symlink rights (Windows without developer mode)
+  }
+  // "fé (2001)" in Latin-1: not valid UTF-8 (Windows names are always Unicode, so only elsewhere).
+  if (process.platform !== 'win32') {
+    const bad = Buffer.concat([Buffer.from(root + path.sep), Buffer.from([0x66, 0xe9]), Buffer.from(' (2001)')]);
+    fs.mkdirSync(bad);
+    fs.writeFileSync(Buffer.concat([bad, Buffer.from(path.sep + 'film.mkv')]), 'x');
+  }
+  addLib('sf-slow', 'movies', [root]);
+  const music = mkRoot('slow-music');
+  touch(path.join(music, 'Artist', 'Album', '01 Song.mp3'));
+  fs.writeFileSync(path.join(music, 'Artist', 'Album', 'cover.jpg'), 'img');
+  addLib('sf-slow-music', 'music', [music]);
+  const books = mkRoot('slow-books');
+  touch(path.join(books, 'Author', 'Book', '01.mp3'));
+  fs.writeFileSync(path.join(books, 'Author', 'Book', 'desc.txt'), 'A book.');
+  addLib('sf-slow-books', 'audiobooks', [books]);
+
+  const restore = [root, music, books].map((r) => slowFs(r, 150, ['readdir', 'stat', 'lstat', 'access', 'realpath']));
+  // Event-loop delay sampled every 10 ms while the scans run: a blocking call on the share would show up as a stall.
+  let worst = 0;
+  let last = performance.now();
+  const sampler = setInterval(() => {
+    const now = performance.now();
+    worst = Math.max(worst, now - last - 10);
+    last = now;
+  }, 10);
+  const t0 = performance.now();
+  let blocked: string[];
+  try {
+    blocked = await syncCallsUnder(os.tmpdir(), () => Promise.all([scanLibrary('sf-slow'), scanLibrary('sf-slow-music'), scanLibrary('sf-slow-books')]));
+  } finally {
+    clearInterval(sampler);
+    restore.forEach((r) => r());
+  }
+  const took = performance.now() - t0;
+  assert.ok(took > 600, `the slow reads were awaited (${took.toFixed(0)} ms)`);
+  assert.ok(worst < 300, `the event loop kept running during the scans (worst stall ${worst.toFixed(0)} ms)`);
+  assert.deepEqual(blocked.filter((b) => [root, music, books].some((r) => b.split(' ').slice(1).join(' ').startsWith(r))), []);
+  const movies = mediaPaths('sf-slow').map((p) => path.relative(root, p));
+  assert.ok(movies.includes(path.join('Avatar (2009)', 'Avatar (2009).mkv')));
+  // Through the junction or the real folder, whichever the walk reaches first: once only.
+  assert.ok(movies.some((m) => m.endsWith(path.join('Heat (1995)', 'Heat (1995).mkv'))));
+  if (linked) assert.equal(movies.length, 2, 'the symlinked folder is not imported twice');
+  assert.ok(db.get("SELECT poster FROM items WHERE library_id = 'sf-slow' AND type = 'movie' AND path LIKE '%Avatar%'")?.poster, 'movie poster found');
+  assert.ok(db.get("SELECT poster FROM items WHERE library_id = 'sf-slow-music' AND type = 'album'")?.poster, 'album cover found');
+  assert.equal(db.get<{ overview: string }>("SELECT overview FROM items WHERE library_id = 'sf-slow-books' AND type = 'audiobook'")?.overview, 'A book.');
+});
+
+test('a library folder that does not answer is reported offline after the time limit and nothing is removed', async () => {
+  const { rootTiming } = await import('../src/services/scanner.ts');
+  const root = mkRoot('offline');
+  touch(path.join(root, 'Avatar (2009)', 'Avatar (2009).mkv'));
+  addLib('sf-offline', 'movies', [root]);
+  await scanLibrary('sf-offline');
+  assert.equal(mediaPaths('sf-offline').length, 1);
+
+  // The share stops answering: every call on it hangs far longer than the time limit.
+  const saved = rootTiming.timeoutMs;
+  rootTiming.timeoutMs = 100;
+  const restore = slowFs(root, 3000, ['readdir', 'stat', 'lstat', 'access', 'realpath']);
+  const t0 = performance.now();
+  try {
+    await scanLibrary('sf-offline');
+  } finally {
+    restore();
+    rootTiming.timeoutMs = saved;
+  }
+  const took = performance.now() - t0;
+  assert.ok(took < 1500, `the scan did not wait for the share (${took.toFixed(0)} ms)`);
+  assert.equal(mediaPaths('sf-offline').length, 1, 'items on the offline share are kept');
+});
+
+test('watcher events touch no library folder synchronously', async () => {
+  const root = mkRoot('watch-nosync');
+  touch(path.join(root, 'Artist', 'Album', '01 Song.mp3'));
+  addLib('sf-watch-nosync', 'music', [root]);
+  await scanLibrary('sf-watch-nosync');
+  const saved = watchTiming.settleMs;
+  watchTiming.settleMs = 20;
+  try {
+    touch(path.join(root, 'loose.mp3'));
+    db.run("UPDATE libraries SET last_scan_at = NULL WHERE id = 'sf-watch-nosync'");
+    const blocked = await syncCallsUnder(root, async () => {
+      // A burst of events, as an app writing into the folder sends: files directly in the root and in sub-folders.
+      for (let i = 0; i < 20; i++) changed('sf-watch-nosync', 'sf-watch-nosync', root, i % 2 ? 'loose.mp3' : path.join('Artist', 'Album', '01 Song.mp3'));
+      await settle('sf-watch-nosync');
+    });
+    assert.deepEqual(blocked, []);
+    assert.deepEqual(mediaPaths('sf-watch-nosync').map((p) => path.relative(root, p)).sort(), [path.join('Artist', 'Album', '01 Song.mp3'), 'loose.mp3'].sort());
+  } finally {
+    watchTiming.settleMs = saved;
+  }
+});
+
+test('poll-mode signature and the folder watcher check an unreachable folder without blocking', async () => {
+  const { folderSignature, DirWatcher, rootCheck } = await import('../src/services/storage/dirwatch.ts');
+  const root = mkRoot('sig');
+  touch(path.join(root, 'A', 'x.mkv'));
+  assert.equal(await folderSignature(path.join(root, 'missing')), null);
+  assert.equal(typeof (await folderSignature(root)), 'string');
+  const saved = rootCheck.timeoutMs;
+  rootCheck.timeoutMs = 50;
+  const restore = slowFs(root, 2000, ['access']);
+  try {
+    const t0 = performance.now();
+    assert.equal(await folderSignature(root), null, 'a share that does not answer is skipped');
+    if (process.platform === 'win32' || process.platform === 'darwin') {
+      const w = new DirWatcher(root, () => {});
+      const r = await w.start();
+      w.close();
+      assert.match(r.error ?? '', /not reachable/);
+    }
+    assert.ok(performance.now() - t0 < 1500);
+  } finally {
+    restore();
+    rootCheck.timeoutMs = saved;
+  }
+});
+
+test('poll mode reads every root at once: one share that does not answer does not hold up the others', async () => {
+  const { pollOnce } = await import('../src/services/watcher.ts');
+  const { rootCheck } = await import('../src/services/storage/dirwatch.ts');
+  const fast = mkRoot('poll-fast');
+  const dead = mkRoot('poll-dead');
+  touch(path.join(fast, 'A', 'a.mkv'));
+  touch(path.join(dead, 'B', 'b.mkv'));
+  addLib('sf-poll-dead', 'movies', [dead]);
+  addLib('sf-poll-fast', 'movies', [fast]);
+  const saved = rootCheck.timeoutMs;
+  rootCheck.timeoutMs = 200;
+  const restore = slowFs(dead, 3000, ['access', 'stat', 'readdir']);
+  try {
+    await pollOnce(); // first signatures
+    touch(path.join(fast, 'C', 'c.mkv'));
+    const t0 = performance.now();
+    assert.ok((await pollOnce()) >= 1, 'the change on the reachable root is found');
+    assert.ok(performance.now() - t0 < 1500, 'without waiting on the dead share');
+  } finally {
+    restore();
+    rootCheck.timeoutMs = saved;
+  }
+  await settle('sf-poll-fast');
 });
