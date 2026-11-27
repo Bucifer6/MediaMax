@@ -232,7 +232,8 @@ export default function NowPlaying() {
             </View>
           </View>
           <View style={{ justifyContent: 'center' }}>{controls}</View>
-          <View style={{ flex: 1 }}>{sidePanel ?? queue}</View>
+          {/* Explicit height: stretching alone still left this panel 2 px tall on Fire TV (the row's views get flattened). */}
+          <View style={{ flex: 1, height: t.height - t.space.gutter * 2 }}>{sidePanel ?? queue}</View>
         </View>
       ) : t.wide ? (
         <View style={{ flex: 1, flexDirection: 'row', padding: t.space.gutter, gap: t.space.xxl, alignItems: 'center' }}>
