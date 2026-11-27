@@ -228,3 +228,18 @@ test('the tray helper starts the updater task, waits for it, then starts the tra
   assert.ok(script.includes("Start-Process -FilePath 'C:\\Program Files\\O''Brien\\VibeTray.exe'"), 'single quotes are doubled');
   assert.match(script, /Get-Process VibeTray/, 'not started twice when the update failed before setup stopped it');
 });
+
+test('tray helper launch: a detached cmd /c start runs the PowerShell script (Windows)', { skip: process.platform !== 'win32' }, async () => {
+  const { spawn } = await import('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-helper-'));
+  const out = path.join(dir, 'ran.txt');
+  const script = `Set-Content -LiteralPath '${out.replace(/'/g, "''")}' -Value 'ran'`;
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  const sys = process.env.SystemRoot ?? 'C:\Windows';
+  const ps = path.join(sys, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const child = spawn(path.join(sys, 'System32', 'cmd.exe'), ['/d', '/c', ...updates.helperStartArgs(ps, encoded)], { detached: true, stdio: 'ignore', windowsHide: true });
+  child.unref();
+  for (let i = 0; i < 60 && !fs.existsSync(out); i++) await new Promise((r) => setTimeout(r, 250));
+  assert.ok(fs.existsSync(out), 'the helper script ran (a bare detached powershell.exe exits without running it)');
+  fs.rmSync(dir, { recursive: true, force: true });
+});

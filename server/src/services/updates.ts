@@ -311,6 +311,11 @@ export function trayRelaunchScript(trayExe: string): string {
   ].join('\n');
 }
 
+/** `start` arguments (after `cmd /d /c`) that run the tray helper script in its own hidden PowerShell console. */
+export function helperStartArgs(powershellExe: string, encodedScript: string): string[] {
+  return ['start', '""', '/min', powershellExe, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', encodedScript];
+}
+
 /** Ask the "Vibe updater" task to install `version` (see update-vibe.ps1). */
 async function startUpdaterTask(version: string) {
   fs.writeFileSync(path.join(config.dataDir, 'update-request.json'), JSON.stringify({ version }));
@@ -323,7 +328,10 @@ async function startUpdaterTask(version: string) {
   // Tray app: setup stops the tray app and this server, so a detached helper starts the tray app again afterwards.
   const tray = path.join(path.dirname(process.execPath), 'VibeTray.exe');
   const encoded = Buffer.from(trayRelaunchScript(tray), 'utf16le').toString('base64');
-  const child = spawn(powershell(), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], {
+  // Detached so it outlives this process (setup stops it). But a detached child gets no console, and PowerShell 5.1
+  // exits without running anything then: Update now never started the updater task. `cmd /c start` gives PowerShell
+  // its own (minimised, then hidden) console window, outside this process's job object.
+  const child = spawn(path.join(sysRoot(), 'System32', 'cmd.exe'), ['/d', '/c', ...helperStartArgs(powershell(), encoded)], {
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
