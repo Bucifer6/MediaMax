@@ -62,6 +62,9 @@ import type {
   MediaRequest,
   Paged,
   CalendarResponse,
+  HelpArticle,
+  HelpIndex,
+  HelpSearchResponse,
   PinLoginRequest,
   PlaybackInfo,
   PlaybackRequest,
@@ -420,6 +423,16 @@ export class MediaMaxClient {
   /** "Not interested": hidden from recommendation, because-you-watched and trending rows. */
   setNotInterested(id: string, on: boolean) {
     return on ? this.post<UserItemData>(`/items/${encodeURIComponent(id)}/not-interested`) : this.del<UserItemData>(`/items/${encodeURIComponent(id)}/not-interested`);
+  }
+  /** Help Centre: sections and article titles the caller may read. */
+  helpIndex(signal?: AbortSignal) {
+    return this.get<HelpIndex>('/help', undefined, signal);
+  }
+  helpSearch(q: string, signal?: AbortSignal) {
+    return this.get<HelpSearchResponse>('/help/search', { q }, signal);
+  }
+  helpArticle(slug: string, signal?: AbortSignal) {
+    return this.get<HelpArticle>(`/help/${encodeURIComponent(slug)}`, undefined, signal);
   }
   /** Upcoming episodes (TMDB) and recently added ones, by day (default: the last 7 days to 30 days ahead). */
   calendar(q: { from?: string; to?: string } = {}, signal?: AbortSignal) {

@@ -103,14 +103,8 @@ export default function SettingsScreen() {
     ]);
   };
 
-  // The server's Help Centre (/help works without signing in): in-app browser on phones; TVs have no browser.
-  const helpUrl = `${(info?.publicUrl ?? server?.url ?? '').replace(/\/+$/, '')}/help`;
-  const openHelp = () => {
-    const wb = webBrowser();
-    if (wb) return void wb.openBrowserAsync(helpUrl).catch(() => Linking.openURL(helpUrl));
-    if (t.isTV) return Alert.alert('Help Centre', `On your phone or computer, open:\n\n${helpUrl}`);
-    void Linking.openURL(helpUrl).catch(() => Alert.alert('Help Centre', helpUrl));
-  };
+  // The server's Help Centre, read in the app (phones and TVs: TVs have no browser).
+  const openHelp = () => router.push('/help' as never);
 
   const maxW = t.isTV ? t.s(820) : undefined;
   return (
