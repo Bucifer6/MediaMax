@@ -61,6 +61,7 @@ import type {
   LoginRequest,
   MediaRequest,
   Paged,
+  CalendarResponse,
   PinLoginRequest,
   PlaybackInfo,
   PlaybackRequest,
@@ -411,6 +412,22 @@ export class MediaMaxClient {
   }
   setFavorite(id: string, favorite: boolean) {
     return favorite ? this.post<UserItemData>(`/items/${encodeURIComponent(id)}/favorite`) : this.del<UserItemData>(`/items/${encodeURIComponent(id)}/favorite`);
+  }
+  /** My List (watchlist). */
+  setWatchlist(id: string, on: boolean) {
+    return on ? this.post<UserItemData>(`/items/${encodeURIComponent(id)}/watchlist`) : this.del<UserItemData>(`/items/${encodeURIComponent(id)}/watchlist`);
+  }
+  /** "Not interested": hidden from recommendation, because-you-watched and trending rows. */
+  setNotInterested(id: string, on: boolean) {
+    return on ? this.post<UserItemData>(`/items/${encodeURIComponent(id)}/not-interested`) : this.del<UserItemData>(`/items/${encodeURIComponent(id)}/not-interested`);
+  }
+  /** Upcoming episodes (TMDB) and recently added ones, by day (default: the last 7 days to 30 days ahead). */
+  calendar(q: { from?: string; to?: string } = {}, signal?: AbortSignal) {
+    return this.get<CalendarResponse>('/calendar', q, signal);
+  }
+  /** The viewer's My List, newest first. */
+  watchlist(q: { limit?: number; offset?: number } = {}) {
+    return this.get<Paged<Item>>('/watchlist', q);
   }
   rate(id: string, rating: number | null) {
     return this.post<UserItemData>(`/items/${encodeURIComponent(id)}/rating`, { rating });

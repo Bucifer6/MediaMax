@@ -38,19 +38,27 @@ export function useUserDataActions(item: Item | undefined, onChange: (ud: UserIt
       onChange(prev);
     }
   };
-  const toggle = async (kind: 'played' | 'favorite') => {
+  const toggle = async (kind: 'played' | 'favorite' | 'watchlist' | 'notInterested') => {
     if (!item) return;
     const prev = item.userData;
-    const next = kind === 'played' ? { ...prev, played: !prev.played, positionMs: prev.played ? prev.positionMs : 0 } : { ...prev, favorite: !prev.favorite };
+    const next =
+      kind === 'played' ? { ...prev, played: !prev.played, positionMs: prev.played ? prev.positionMs : 0 }
+      : kind === 'favorite' ? { ...prev, favorite: !prev.favorite }
+      : kind === 'watchlist' ? { ...prev, inWatchlist: !prev.inWatchlist }
+      : { ...prev, notInterested: !prev.notInterested };
     onChange(next);
     try {
-      const ud = kind === 'played' ? await api.setPlayed(item.id, !prev.played) : await api.setFavorite(item.id, !prev.favorite);
+      const ud =
+        kind === 'played' ? await api.setPlayed(item.id, !prev.played)
+        : kind === 'favorite' ? await api.setFavorite(item.id, !prev.favorite)
+        : kind === 'watchlist' ? await api.setWatchlist(item.id, !prev.inWatchlist)
+        : await api.setNotInterested(item.id, !prev.notInterested);
       if (ud) onChange(ud);
     } catch {
       onChange(prev);
     }
   };
-  return { togglePlayed: () => toggle('played'), toggleFavorite: () => toggle('favorite'), setRating };
+  return { togglePlayed: () => toggle('played'), toggleFavorite: () => toggle('favorite'), toggleWatchlist: () => toggle('watchlist'), toggleNotInterested: () => toggle('notInterested'), setRating };
 }
 
 /**
@@ -191,6 +199,8 @@ export function ActionBar({
   playLabel,
   togglePlayed,
   toggleFavorite,
+  toggleWatchlist,
+  toggleNotInterested,
   extra,
   downloadable,
   downloadItems,
@@ -204,6 +214,10 @@ export function ActionBar({
   playLabel?: string;
   togglePlayed: () => void;
   toggleFavorite: () => void;
+  /** Show the My List toggle (films and shows). */
+  toggleWatchlist?: () => void;
+  /** Show "Not interested" (hide from recommendations), next to the rating. */
+  toggleNotInterested?: () => void;
   extra?: React.ReactNode;
   downloadable?: boolean;
   /** For seasons/albums: what "Download" grabs. */
@@ -267,6 +281,9 @@ export function ActionBar({
         {onPlay ? <Button label={playLabel ?? 'Play'} icon="play" onPress={onPlay} size="lg" hasTVPreferredFocus /> : null}
         {onRestart ? <Button label={t.isTV ? 'From start' : undefined} icon="refresh" variant="secondary" size="lg" onPress={onRestart} accessibilityLabel="Play from start" /> : null}
         <Button icon={item.userData.played ? 'checkmark-done-circle' : 'checkmark-circle-outline'} variant="secondary" size="lg" onPress={togglePlayed} accessibilityLabel={item.userData.played ? 'Mark unwatched' : 'Mark watched'} />
+        {toggleWatchlist ? (
+          <Button icon={item.userData.inWatchlist ? 'checkmark' : 'add'} label={t.isTV ? 'My List' : undefined} variant="secondary" size="lg" onPress={toggleWatchlist} accessibilityLabel={item.userData.inWatchlist ? 'Remove from My List' : 'Add to My List'} />
+        ) : null}
         <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" size="lg" onPress={toggleFavorite} accessibilityLabel={item.userData.favorite ? 'Remove favourite' : 'Add favourite'} />
         {canDownload ? <Button icon={dlIcon} label={dlLabel} variant="secondary" size="lg" onPress={onDownload} loading={busy} accessibilityLabel="Download" /> : null}
         {item.trailerUrl || trailer ? <Button icon="film-outline" label={t.isTV ? 'Trailer' : undefined} variant="secondary" size="lg" onPress={() => void openTrailer({ trailerUrl: item.trailerUrl, local: trailer, tv: t.isTV })} accessibilityLabel="Play trailer" /> : null}
@@ -288,7 +305,21 @@ export function ActionBar({
           />
         ) : null}
       </View>
-      {onRate ? <RatingStars rating={item.userData.rating} onRate={onRate} /> : null}
+      {onRate || toggleNotInterested ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.space.md }}>
+          {onRate ? <RatingStars rating={item.userData.rating} onRate={onRate} /> : null}
+          {toggleNotInterested ? (
+            <Button
+              icon={item.userData.notInterested ? 'eye-outline' : 'eye-off-outline'}
+              label={item.userData.notInterested ? 'Show in recommendations' : 'Not interested'}
+              variant="ghost"
+              size="sm"
+              onPress={toggleNotInterested}
+              accessibilityLabel={item.userData.notInterested ? 'Show in recommendations again' : 'Not interested: hide from recommendations'}
+            />
+          ) : null}
+        </View>
+      ) : null}
       {canPlayOn && playOn ? <PlayOnSheet visible={playOnSheet} what={playOn} onClose={() => setPlayOnSheet(false)} /> : null}
       {playlistItems ? (
         <AddToPlaylistSheet visible={playlistSheet} title={item.title} getItemIds={playlistItems === true ? () => [item.id] : playlistItems} onClose={() => setPlaylistSheet(false)} />

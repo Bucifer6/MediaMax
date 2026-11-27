@@ -40,6 +40,8 @@ function variantFor(row: HomeRow): CardVariant {
 function seeAllFor(row: HomeRow): (() => void) | undefined {
   const l = row.link;
   if (!l) return undefined;
+  if (l.page === 'watchlist') return () => router.push('/my-list' as never);
+  if (l.page === 'calendar') return () => router.push('/calendar' as never);
   if (l.libraryId) {
     const q = new URLSearchParams();
     if (l.sort) q.set('sort', l.sort);

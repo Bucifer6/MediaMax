@@ -22,7 +22,8 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
   const versions = item.media ?? [];
   const [mediaId, setMediaId] = useState<string | undefined>(undefined);
   const versionLabel = (m: (typeof versions)[number]) => [m.edition, m.resolutionLabel, m.hdr ? 'HDR' : null].filter(Boolean).join(' · ') || m.container?.toUpperCase() || 'Version';
-  const { togglePlayed, toggleFavorite, setRating } = useUserDataActions(item, onUserData);
+  const { togglePlayed, toggleFavorite, toggleWatchlist, toggleNotInterested, setRating } = useUserDataActions(item, onUserData);
+  const isMovie = item.type === 'movie';
   // Instant play: the server decides and starts the stream while the user reads the page.
   const api = useApi();
   const { user } = useSession();
@@ -40,7 +41,7 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
     ) : null;
 
   const actions = (
-    <ActionBar item={item} onPlay={play} onRestart={restart} playLabel={resumable ? 'Resume' : 'Play'} togglePlayed={togglePlayed} toggleFavorite={toggleFavorite} downloadable extra={showLink} onRate={setRating} playlistItems playOn={{ itemId: item.id, positionMs: resumable ? item.userData.positionMs : undefined, title: item.title }} />
+    <ActionBar item={item} onPlay={play} onRestart={restart} playLabel={resumable ? 'Resume' : 'Play'} togglePlayed={togglePlayed} toggleFavorite={toggleFavorite} toggleWatchlist={isMovie ? toggleWatchlist : undefined} toggleNotInterested={isMovie ? toggleNotInterested : undefined} downloadable extra={showLink} onRate={setRating} playlistItems playOn={{ itemId: item.id, positionMs: resumable ? item.userData.positionMs : undefined, title: item.title }} />
   );
 
   const versionPicker = versions.length > 1 ? (
