@@ -524,6 +524,10 @@ export class MediaMaxClient {
   searchPodcasts(q: string, signal?: AbortSignal) {
     return this.request<PodcastSearchResult[]>('GET', '/podcasts/search', { query: { q }, signal, timeoutMs: 30000 });
   }
+  /** Subscribe to every feed in an OPML export from another podcast app. */
+  importOpml(opml: string) {
+    return this.post<{ added: number; skipped: number; failed: string[] }>('/podcasts/import', { opml }, { timeoutMs: 180000 });
+  }
   subscribePodcast(feedUrl: string, autoDownload = false) {
     return this.post<PodcastSubscription>('/podcasts', { feedUrl, autoDownload }, { timeoutMs: 60000 });
   }
