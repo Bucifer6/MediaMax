@@ -104,3 +104,15 @@ their own licences; FFmpeg is run as a separate program (LGPL/GPL).
 - LGPL note: FriBidi is used unmodified and runs inside a separately loaded WebAssembly module, so it can be replaced
   with a modified build; its source is available from github.com/fribidi/fribidi. jassub's licence files are served
   next to the worker in the web build.
+
+## FFmpeg audio decoder for Android (`org.jellyfin.media3:media3-ffmpeg-decoder` 1.9.0+1, in the Android / Android TV apps)
+
+- What: Media3's FFmpeg decoder extension, built by the Jellyfin project with FFmpeg's audio decoders. The Android
+  player (expo-video / Media3) uses it to decode DTS, DTS-HD, TrueHD, MP2 and other audio formats in software when the
+  device has no decoder and no passthrough for them.
+- Where: native libraries (`libffmpegJNI.so`) in the Android APKs; added by `apps/mobile/modules/mediamax-media/android/build.gradle`.
+- Source: github.com/jellyfin/jellyfin-androidx-media (build scripts), github.com/androidx/media (extension, Apache-2.0),
+  ffmpeg.org (FFmpeg).
+- Licence: the artifact is published under **GPL-3.0**, so Android APKs that include it are distributed under the
+  GPL-3.0 as a whole (Vibe's own MIT code is GPL-compatible; its source is this repository). Build without it with
+  `VIBE_FFMPEG=0` (then DTS / TrueHD are transcoded by the server, as before).
