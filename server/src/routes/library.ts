@@ -102,7 +102,7 @@ export default async function libraryRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>('/libraries/:id/recalculate-date-added', async (req) => {
     requireAdmin(req);
     if (!db.get('SELECT 1 FROM libraries WHERE id = ?', req.params.id)) throw notFound('Library not found');
-    return { ok: true, changed: recalculateDateAdded(req.params.id) };
+    return { ok: true, changed: await recalculateDateAdded(req.params.id) };
   });
 
   app.post('/libraries/scan', async (req) => {

@@ -65,6 +65,11 @@ export function UpdatesAdmin() {
     if (ev.type === 'update.status') status.setData(ev.status);
   });
 
+  // An automatic update (or one started from another browser) began: wait for the new version too.
+  useEffect(() => {
+    if (status.data?.state === 'installing' && status.data.latest && !waitFor) setWaitFor(status.data.latest.version);
+  }, [status.data, waitFor]);
+
   // Opening the page with no check yet (new install, or automatic checks off): look once.
   useEffect(() => {
     if (status.data && !status.data.checkedAt && !checkedOnce.current) {
@@ -93,7 +98,8 @@ export function UpdatesAdmin() {
     if (!s?.latest) return;
     const ok = await confirm({
       title: `Update to Vibe ${s.latest.version}?`,
-      message: 'Vibe downloads the new version, checks it, installs it and restarts. Playback stops for a minute or two; your library, users and settings are kept. If Vibe runs as the tray app, Windows asks for permission first.',
+      message: 'Vibe downloads the new version, checks it, installs it and restarts. Playback stops for a minute or two; your library, users and settings are kept.' +
+        (s.canAutoInstall ? '' : ' This copy runs as the tray app and was installed before updates could run unattended, so Windows on the server asks for permission this one time; later updates do not.'),
       confirmLabel: 'Update now',
     });
     if (!ok) return;
@@ -116,6 +122,15 @@ export function UpdatesAdmin() {
     try {
       settings.setData(await api.admin.saveSettingsPatch({ updates: { ...settings.data.updates, autoCheck: on } }));
       status.setData((s) => (s ? { ...s, autoCheck: on } : s));
+    } catch (e) {
+      toast.error(e);
+    }
+  };
+  const setAutoInstall = async (on: boolean) => {
+    if (!settings.data) return;
+    try {
+      settings.setData(await api.admin.saveSettingsPatch({ updates: { ...settings.data.updates, autoInstall: on } }));
+      status.setData((s) => (s ? { ...s, autoInstall: on } : s));
     } catch (e) {
       toast.error(e);
     }
@@ -198,7 +213,18 @@ export function UpdatesAdmin() {
 
           <div className="settings-card">
             <h2>Checking for updates</h2>
-            <Switch checked={s.autoCheck} onChange={setAutoCheck} disabled={!settings.data} label="Check for new versions automatically" hint="Every 12 hours. Updates are only installed when you press Update now." />
+            <Switch checked={s.autoCheck} onChange={setAutoCheck} disabled={!settings.data} label="Check for new versions automatically" hint="Every 12 hours." />
+            {s.install === 'windows-setup' && (
+              <Switch
+                checked={s.autoInstall}
+                onChange={setAutoInstall}
+                disabled={!settings.data || !s.autoCheck}
+                label="Install updates automatically"
+                hint={s.canAutoInstall
+                  ? 'When a new version is found, Vibe installs it by itself as soon as nothing is playing or recording. No one needs to be at the server.'
+                  : 'Available after the next update: this copy was installed before updates could run without a Windows permission prompt. Press Update now once (approve the prompt on the server); after that, updates install by themselves.'}
+              />
+            )}
             <Switch checked={!!settings.data?.updates.includePrereleases} onChange={setPrereleases} disabled={!settings.data} label="Include pre-releases" hint="Offer test versions (for example 1.2.0-beta.1) as well." />
           </div>
         </>

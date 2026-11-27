@@ -4,14 +4,20 @@
  * Finding: the "check-updates" scheduled task (every 12 hours unless Admin → Updates turns it off) and the
  * Check now button read the repository's releases and remember the newest one.
  *
- * Installing (Update now, admins only, never automatic): only an install made by the Windows setup program
- * updates itself. It downloads the new release's setup program, checks it against the SHA256SUMS.txt
- * published with the release, and runs it silently. Setup stops Vibe, upgrades it in the folder it is in
- * (keeping tray or service mode, the port and the data) and starts it again:
- *   - background service (running as SYSTEM): through a one-off "Vibe update" scheduled task, so setup is not
- *     part of the server's own task, which setup ends;
- *   - tray app (running as the signed-in user): with Start-Process -Verb RunAs, so Windows asks that user for
- *     permission, as setup needs administrator rights.
+ * Installing (Update now, or automatically when Admin → Updates allows it): only an install made by the Windows
+ * setup program updates itself. Setup stops Vibe, upgrades it in the folder it is in (keeping tray or service mode,
+ * the port and the data) and starts it again. Three ways to run setup, best first:
+ *   - the "Vibe updater" scheduled task that setup registers (update-vibe.ps1, running as SYSTEM, startable by any
+ *     signed-in user): the server only writes the version wanted to <data>/update-request.json and starts the task,
+ *     which downloads the release from GitHub itself, checks it against SHA256SUMS.txt and runs setup. No Windows
+ *     permission prompt and nobody at the server. In tray mode a small helper, running as the signed-in user, waits
+ *     for the task and starts the tray app again (setup can't: it runs as SYSTEM there);
+ *   - background service without that task (installs made before it existed): the server downloads and checks
+ *     setup and runs it through a one-off "Vibe update" scheduled task, so setup is not part of the server's own
+ *     task, which setup ends;
+ *   - tray app without that task: with Start-Process -Verb RunAs, so Windows asks that user for permission, as
+ *     setup needs administrator rights. Such installs are never updated automatically; installing this way once
+ *     registers the task, and later updates need no prompt.
  * Docker, the Linux binary and the portable zip cannot replace themselves (the image, or root-owned files),
  * so they get the steps to update instead.
  */
@@ -35,6 +41,7 @@ const log = logger('updates');
 export const updateRepo = () => process.env.MEDIAMAX_UPDATE_REPO || 'Bucifer6/MediaMax';
 const apiBase = () => (process.env.MEDIAMAX_UPDATE_API || 'https://api.github.com').replace(/\/+$/, '');
 const UPDATE_TASK = 'Vibe update';
+const UPDATER_TASK = 'Vibe updater';
 
 /* ------------------------------ versions ------------------------------ */
 
@@ -87,14 +94,26 @@ const MANUAL_STEPS: Record<Exclude<UpdateInstallKind, 'windows-setup'>, string> 
 export interface Asset { name: string; browser_download_url: string; size: number }
 interface GhRelease { tag_name: string; name: string | null; body: string | null; html_url: string; published_at: string | null; prerelease: boolean; draft: boolean; assets: Asset[] }
 
-interface Saved { latest: UpdateRelease | null; checkedAt: string | null; lastError: string | null; notifiedVersion: string | null }
+interface Saved {
+  latest: UpdateRelease | null;
+  checkedAt: string | null;
+  lastError: string | null;
+  notifiedVersion: string | null;
+  /** The last automatic install: which version and when, so a failing one is not retried every half hour. */
+  autoTried: { version: string; at: string } | null;
+  /** `at` of the updater task's result.json already reported. */
+  resultSeen: string | null;
+}
 
 const KV_KEY = 'updates.lastCheck';
-const EMPTY: Saved = { latest: null, checkedAt: null, lastError: null, notifiedVersion: null };
+const EMPTY: Saved = { latest: null, checkedAt: null, lastError: null, notifiedVersion: null, autoTried: null, resultSeen: null };
 let saved: Saved | null = null;
 let assets: Asset[] = [];
 let state: UpdateStatus['state'] = 'idle';
 let progress: number | null = null;
+/** Found at start-up (Windows setup installs): the "Vibe updater" task exists, and Vibe runs as the background service. */
+let updaterTask = false;
+let serviceMode = false;
 
 function load(): Saved {
   if (saved) return saved;
@@ -123,7 +142,14 @@ export function updateStatus(): UpdateStatus {
     state,
     progress,
     autoCheck: getSettings().updates.autoCheck,
+    autoInstall: getSettings().updates.autoInstall,
+    canAutoInstall: canAutoInstall(install),
   };
+}
+
+/** Installing needs nobody at the server: the updater task, or the service (which can run setup itself). */
+function canAutoInstall(install = detectInstall()) {
+  return install === 'windows-setup' && (updaterTask || serviceMode);
 }
 
 function publish() {
@@ -260,11 +286,60 @@ function run(exe: string, args: string[]): Promise<{ code: number; out: string }
   });
 }
 
+const sysRoot = () => process.env.SystemRoot ?? 'C:\\Windows';
+const powershell = () => path.join(sysRoot(), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+const schtasksExe = () => path.join(sysRoot(), 'System32', 'schtasks.exe');
+/** Where the updater task keeps its downloads and result.json (the program folder: only administrators write there). */
+const updaterDir = () => path.join(path.dirname(process.execPath), 'updates');
+
+/**
+ * The PowerShell the helper runs as the signed-in user (tray mode): start the updater task, wait for it to finish,
+ * then start the tray app again unless it is already running (the update failed before setup stopped it).
+ */
+export function trayRelaunchScript(trayExe: string): string {
+  const exe = trayExe.replace(/'/g, "''");
+  return [
+    "$ErrorActionPreference = 'SilentlyContinue'",
+    `& "$env:SystemRoot\\System32\\schtasks.exe" /Run /TN '${UPDATER_TASK}' | Out-Null`,
+    "$svc = New-Object -ComObject 'Schedule.Service'; $svc.Connect()",
+    `$task = $svc.GetFolder('\\').GetTask('${UPDATER_TASK}')`,
+    // 4 = running. Give it a moment to start, then wait (at most an hour, the task's own limit) for it to end.
+    '$t = 0; while ($task.State -ne 4 -and $t -lt 30) { Start-Sleep 1; $t++ }',
+    '$t = 0; while ($task.State -eq 4 -and $t -lt 3600) { Start-Sleep 2; $t += 2 }',
+    'Start-Sleep 2',
+    `if (-not (Get-Process VibeTray)) { Start-Process -FilePath '${exe}' }`,
+  ].join('\n');
+}
+
+/** Ask the "Vibe updater" task to install `version` (see update-vibe.ps1). */
+async function startUpdaterTask(version: string) {
+  fs.writeFileSync(path.join(config.dataDir, 'update-request.json'), JSON.stringify({ version }));
+  if (serviceMode) {
+    // Setup ends the server's own task (and what it started), but not this separate one.
+    const started = await run(schtasksExe(), ['/Run', '/TN', UPDATER_TASK]);
+    if (started.code) throw new Error(`Could not start the update: ${started.out || `schtasks exited with ${started.code}`}`);
+    return;
+  }
+  // Tray app: setup stops the tray app and this server, so a detached helper starts the tray app again afterwards.
+  const tray = path.join(path.dirname(process.execPath), 'VibeTray.exe');
+  const encoded = Buffer.from(trayRelaunchScript(tray), 'utf16le').toString('base64');
+  const child = spawn(powershell(), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  await new Promise<void>((resolve, reject) => {
+    child.once('error', (e) => reject(new Error(`Could not start the update: ${e.message}`)));
+    child.once('spawn', () => resolve());
+  });
+  child.unref();
+}
+
 /** Start the downloaded setup program so that it outlives this process. */
 async function launchSetup(setup: string) {
-  const sys = process.env.SystemRoot ?? 'C:\\Windows';
+  const sys = sysRoot();
   const args = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG';
-  if (await isServiceMode()) {
+  if (serviceMode || (await isServiceMode())) {
     // The service (SYSTEM, or an administrator account running with highest privileges) can register a SYSTEM task.
     const schtasks = path.join(sys, 'System32', 'schtasks.exe');
     const created = await run(schtasks, ['/Create', '/F', '/TN', UPDATE_TASK, '/SC', 'ONCE', '/ST', '00:00', '/RU', 'SYSTEM', '/RL', 'HIGHEST', '/TR', `"${setup}" ${args}`]);
@@ -284,6 +359,31 @@ async function launchSetup(setup: string) {
   if (r.code) throw new HttpError(409, 'The update was not started: Windows did not get permission to run the setup program.', 'update_cancelled');
 }
 
+/** The outcome the updater task wrote (update-vibe.ps1), if any. */
+export function readUpdaterResult(file = path.join(updaterDir(), 'result.json')): { ok: boolean; version: string; message: string; at: string } | null {
+  try {
+    const r = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')) as Record<string, unknown>;
+    return { ok: r.ok === true, version: String(r.version ?? ''), message: String(r.message ?? ''), at: String(r.at ?? '') };
+  } catch {
+    return null;
+  }
+}
+
+/** Windows setup installs: is the updater task there, does Vibe run as the service, and how did the last update go. */
+export async function initUpdates() {
+  cleanupAfterUpdate();
+  if (detectInstall() !== 'windows-setup') return;
+  const [task, service] = await Promise.all([run(schtasksExe(), ['/Query', '/TN', UPDATER_TASK]), isServiceMode()]);
+  updaterTask = task.code === 0;
+  serviceMode = service;
+  const result = readUpdaterResult();
+  if (result && result.at && result.at !== load().resultSeen) {
+    save({ resultSeen: result.at, ...(!result.ok && result.message ? { lastError: `The last update did not install: ${result.message}` } : {}) });
+  }
+  log.info(`Updates: ${updaterTask ? 'installed by the Vibe updater task' : serviceMode ? 'installed by the service' : 'need permission on this PC (no Vibe updater task)'}`);
+  publish();
+}
+
 /** Remove what an earlier update left behind (old downloads, the one-off scheduled task). */
 export function cleanupAfterUpdate() {
   const dir = path.join(config.cacheDir, 'updates');
@@ -293,13 +393,13 @@ export function cleanupAfterUpdate() {
     /* nothing downloaded yet */
   }
   if (detectInstall() === 'windows-setup') {
-    const child = spawn(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'schtasks.exe'), ['/Delete', '/TN', UPDATE_TASK, '/F'], { stdio: 'ignore', windowsHide: true });
+    const child = spawn(schtasksExe(), ['/Delete', '/TN', UPDATE_TASK, '/F'], { stdio: 'ignore', windowsHide: true });
     child.on('error', () => {});
   }
 }
 
-/** Update now: download, verify and start the new release's setup program (Windows setup installs only). */
-export async function installUpdate(actor: { id: string; displayName: string }): Promise<UpdateStatus> {
+/** Update now (or an automatic update, with no actor): install the newest release (Windows setup installs only). */
+export async function installUpdate(actor: { id: string; displayName: string } | null): Promise<UpdateStatus> {
   const st = updateStatus();
   if (!st.canSelfUpdate) throw conflict(`This server can't update itself. ${st.manualSteps}`);
   if (state !== 'idle') throw conflict('An update check or install is already running');
@@ -309,24 +409,54 @@ export async function installUpdate(actor: { id: string; displayName: string }):
   const picked = pickWindowsAssets(assets, version);
   if (!picked) throw new HttpError(502, `Release ${version} has no Windows setup program or SHA256SUMS.txt`, 'update_assets');
 
-  state = 'downloading';
-  progress = 0;
-  publish();
+  const who = actor ? { userId: actor.id, userName: actor.displayName } : {};
+  const how = actor ? '' : ' (automatic update)';
   try {
-    const dest = await downloadVerified(picked);
-
-    state = 'installing';
-    progress = null;
-    publish();
-    logActivity('server', `Updating Vibe ${config.version} → ${version}`, { userId: actor.id, userName: actor.displayName, severity: 'warning' });
-    await launchSetup(dest);
+    if (updaterTask) {
+      // The updater task downloads and checks the release itself; it trusts nothing this process downloads.
+      state = 'installing';
+      progress = null;
+      publish();
+      logActivity('server', `Updating Vibe ${config.version} → ${version}${how}`, { ...who, severity: 'warning' });
+      const startedAt = new Date().toISOString();
+      await startUpdaterTask(version);
+      // A failure before setup stops Vibe (download, checksum) leaves this server running: show it straight away.
+      const watch = setInterval(() => {
+        const r = readUpdaterResult();
+        if (state !== 'installing') return clearInterval(watch);
+        if (!r || !(Date.parse(r.at) > Date.parse(startedAt)) || r.ok) return;
+        clearInterval(watch);
+        state = 'idle';
+        save({ resultSeen: r.at, lastError: `The update did not install: ${r.message}` });
+        logActivity('server', `Updating Vibe to ${version} failed: ${r.message}`, { severity: 'error' });
+        publish();
+      }, 5000);
+      watch.unref();
+    } else {
+      state = 'downloading';
+      progress = 0;
+      publish();
+      const dest = await downloadVerified(picked);
+      state = 'installing';
+      progress = null;
+      publish();
+      logActivity('server', `Updating Vibe ${config.version} → ${version}${how}`, { ...who, severity: 'warning' });
+      await launchSetup(dest);
+    }
     // Setup now stops this process, installs, and starts Vibe again; clients wait for the new version.
     save({ lastError: null });
     // Still running long after that: setup failed or was cancelled, so allow another try.
     setTimeout(() => {
       if (state !== 'installing') return;
       state = 'idle';
-      save({ lastError: 'The setup program did not restart Vibe. See its log (Setup Log *.txt in the Windows temp folder).' });
+      const r = updaterTask ? readUpdaterResult() : null;
+      save({
+        lastError: r && !r.ok && r.message
+          ? `The update did not install: ${r.message}`
+          : updaterTask
+            ? `The setup program did not restart Vibe. See its log (${path.join(updaterDir(), 'setup.log')}).`
+            : 'The setup program did not restart Vibe. See its log (Setup Log *.txt in the Windows temp folder).',
+      });
       publish();
     }, 10 * 60000).unref();
     return updateStatus();
@@ -339,6 +469,28 @@ export async function installUpdate(actor: { id: string; displayName: string }):
     publish();
     throw e instanceof HttpError ? e : new HttpError(502, msg, 'update_failed');
   }
+}
+
+/**
+ * Automatic updates (scheduled, every half hour): install a newer release when Admin → Updates allows it, nobody
+ * needs to be at the server for it, and nothing would be interrupted (`busy`: playback or recordings). A version
+ * that failed to install automatically is tried again a day later at the soonest.
+ */
+export async function maybeAutoInstall(busy: boolean, now = Date.now()): Promise<'installed' | 'skipped'> {
+  const st = updateStatus();
+  if (!st.autoInstall || !st.canAutoInstall || !st.updateAvailable || !st.latest || state !== 'idle' || busy) return 'skipped';
+  const tried = load().autoTried;
+  if (tried && tried.version === st.latest.version && now - Date.parse(tried.at) < 24 * 3600_000) return 'skipped';
+  save({ autoTried: { version: st.latest.version, at: new Date(now).toISOString() } });
+  log.info(`Installing Vibe ${st.latest.version} automatically`);
+  await installUpdate(null);
+  return 'installed';
+}
+
+/** For tests: pretend the updater task / service mode was found at start-up. */
+export function setUpdateEnvironment(env: { updaterTask?: boolean; serviceMode?: boolean }) {
+  if (env.updaterTask !== undefined) updaterTask = env.updaterTask;
+  if (env.serviceMode !== undefined) serviceMode = env.serviceMode;
 }
 
 /** For tests. */

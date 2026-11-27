@@ -142,7 +142,7 @@ jobs:
           $dir = Join-Path $env:RUNNER_TEMP 'smoke'
           Expand-Archive "release/vibe-$env:VERSION-windows-x64.zip" -DestinationPath $dir
           Get-ChildItem $dir | Format-Table Name, Length
-          foreach ($f in 'kinora.exe','ffmpeg.exe','ffprobe.exe','Vibe.cmd','install-service.ps1','README.txt','web\index.html') {
+          foreach ($f in 'kinora.exe','ffmpeg.exe','ffprobe.exe','Vibe.cmd','install-service.ps1','update-vibe.ps1','README.txt','web\index.html') {
             if (-not (Test-Path (Join-Path $dir $f))) { throw "$f missing from the zip" }
           }
           & (Join-Path $dir 'ffmpeg.exe') -hide_banner -version | Select-Object -First 1

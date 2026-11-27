@@ -6,6 +6,10 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { Animated, Pressable, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 import { useTheme } from '@/theme';
+import { usePreferredFocus } from '@/tv/focusGate';
+
+/** The view behind a Focusable; on TV builds it also has `requestTVFocus()`. */
+export type FocusableRef = React.ComponentRef<typeof Pressable> & { requestTVFocus?: () => void };
 
 export interface FocusableProps extends Omit<PressableProps, 'children' | 'style'> {
   style?: StyleProp<ViewStyle>;
@@ -18,6 +22,8 @@ export interface FocusableProps extends Omit<PressableProps, 'children' | 'style
   ring?: boolean;
   ringRadius?: number;
   hasTVPreferredFocus?: boolean;
+  /** The underlying view (e.g. to call `requestTVFocus()`). */
+  ref?: React.Ref<FocusableRef>;
 }
 
 export function Focusable({
@@ -31,9 +37,11 @@ export function Focusable({
   onBlur,
   onPressIn,
   onPressOut,
+  hasTVPreferredFocus,
   ...rest
 }: FocusableProps) {
   const t = useTheme();
+  const preferred = usePreferredFocus(hasTVPreferredFocus);
   const scale = useRef(new Animated.Value(1)).current;
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -50,6 +58,7 @@ export function Focusable({
     <Animated.View style={[containerStyle, { transform: [{ scale }] }, focused && t.isTV ? { zIndex: 10 } : null]}>
       <Pressable
         {...rest}
+        hasTVPreferredFocus={preferred}
         onFocus={(e) => {
           setFocused(true);
           animate(target);
@@ -72,15 +81,13 @@ export function Focusable({
         }}
         style={[
           style,
-          focused && ring && t.isTV
+          // The ring's border is always there (transparent until focused) so moving focus never
+          // changes layout. No elevation/shadow: on Fire TV / Android TV GPUs re-rasterising a
+          // shadow on every focus move costs frames, and the border + scale already show focus.
+          ring && t.isTV
             ? {
-                borderColor: t.colors.primary,
+                borderColor: focused ? t.colors.primary : 'transparent',
                 borderWidth: t.s(3),
-                shadowColor: t.colors.primary,
-                shadowOpacity: 0.7,
-                shadowRadius: t.s(18),
-                shadowOffset: { width: 0, height: 0 },
-                elevation: 12,
                 borderRadius: ringRadius ?? t.radius,
               }
             : null,

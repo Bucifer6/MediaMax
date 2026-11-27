@@ -15,8 +15,8 @@ import { recalculateDateAdded, scanLibrary } from './scanner.js';
 import { refreshDueSources, refreshSource, pruneOldPrograms, liveJobIds } from './livetv/livetv.js';
 import { pruneActivity } from './activity.js';
 import { pruneImageCache, registerImage } from './images.js';
-import { reapSessions, transcodeDirInUse } from './playback.js';
-import { tick as dvrTick, applyRules } from './dvr.js';
+import { listSessions, reapSessions, transcodeDirInUse } from './playback.js';
+import { tick as dvrTick, applyRules, recordingInProgress } from './dvr.js';
 import { detectAll } from './introdetect.js';
 import { enrichLibrary } from './metadata/index.js';
 import { syncWatchers } from './watcher.js';
@@ -38,7 +38,7 @@ import { backfillVideoRanges } from './hdrBackfill.js';
 import { identifyUntagged } from './music/acoustid.js';
 import { flushQueue as flushListenBrainz } from './listenbrainz.js';
 import { getMusicSettings } from './music/settings.js';
-import { checkForUpdates } from './updates.js';
+import { checkForUpdates, maybeAutoInstall, updateStatus } from './updates.js';
 import { planScheduledRun, taskRunFinished, isDiskTask, getStorageSettings, DISK_TASKS, type PathFilter, type RunPlan } from './storage/storage.js';
 import { lowPriority } from '../util/lowPriority.js';
 
@@ -70,6 +70,9 @@ function grabThumb(file: string, atSec: number, dest: string): Promise<boolean> 
   });
 }
 
+/** Updating now would interrupt someone: something is playing or recording. */
+const serverBusy = () => listSessions().length > 0 || recordingInProgress();
+
 const DEFS: TaskDef[] = [
   {
     id: 'scan-libraries', name: 'Scan all libraries', description: 'Look for new, changed and removed media in every library.',
@@ -90,7 +93,7 @@ const DEFS: TaskDef[] = [
     description: 'Re-apply each library\'s "Date added" rule (file creation or modification time) to the items it already has, without a full rescan.',
     interval: () => null,
     run: async () => {
-      const n = recalculateDateAdded();
+      const n = await recalculateDateAdded();
       log.info(`Recalculate date added changed ${n} item(s)`);
     },
   },
@@ -251,11 +254,22 @@ const DEFS: TaskDef[] = [
     },
   },
   {
-    id: 'check-updates', name: 'Check for Vibe updates', description: 'Look for a new Vibe release on GitHub (Admin → Updates). Installing it always waits for an admin.',
+    id: 'check-updates', name: 'Check for Vibe updates', description: 'Look for a new Vibe release on GitHub (Admin → Updates), and install it when automatic updates are on.',
     interval: () => (getSettings().updates.autoCheck ? 12 * 60 : null),
     run: async () => {
       const s = await checkForUpdates();
       if (s.lastError) throw new Error(s.lastError);
+      await maybeAutoInstall(serverBusy());
+    },
+  },
+  {
+    id: 'auto-update', name: 'Install Vibe updates', description: 'Install a new Vibe release found by the update check once nothing is playing or recording (Admin → Updates → Install updates automatically).',
+    interval: () => {
+      const s = updateStatus();
+      return s.autoInstall && s.canAutoInstall ? 30 : null;
+    },
+    run: async () => {
+      await maybeAutoInstall(serverBusy());
     },
   },
   {
