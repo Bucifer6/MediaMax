@@ -9,6 +9,7 @@ import { config } from '../config.js';
 import { stableId } from '../util/ids.js';
 import { nowIso, parseJson, pool, sortTitle } from '../util/misc.js';
 import { logger } from '../util/log.js';
+import { withTimeout } from '../util/timeout.js';
 import { displayName, isValidUtf8Name } from '../util/fsnames.js';
 import { probe, type ProbeResult } from './probe.js';
 import { registerImage } from './images.js';
@@ -53,12 +54,12 @@ export interface SkippedName {
 const IGNORED_NAMES = new Set(['@eaDir', '#recycle', '$RECYCLE.BIN']);
 const isIgnoredName = (n: string) => n.startsWith('.') || IGNORED_NAMES.has(n);
 
-/** Count media files below a folder whose own name can't be used (walked by raw bytes). */
-function countMediaBelow(dir: Buffer, accept: (e: string) => boolean, depth = 0): number {
+/** Count media files below a folder whose own name can't be used (walked by raw bytes, without blocking). */
+async function countMediaBelow(dir: Buffer, accept: (e: string) => boolean, depth = 0): Promise<number> {
   if (depth > 20) return 0;
   let entries: fs.Dirent<Buffer>[];
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true, encoding: 'buffer' });
+    entries = await fs.promises.readdir(dir, { withFileTypes: true, encoding: 'buffer' });
   } catch {
     return 0;
   }
@@ -67,7 +68,7 @@ function countMediaBelow(dir: Buffer, accept: (e: string) => boolean, depth = 0)
     const name = e.name.toString('utf8');
     if (isIgnoredName(name)) continue;
     const p = Buffer.concat([dir, Buffer.from(path.sep), e.name]);
-    if (e.isDirectory() || (e.isSymbolicLink() && safeIsDir(p))) n += countMediaBelow(p, accept, depth + 1);
+    if (e.isDirectory() || (e.isSymbolicLink() && (await isDir(p)))) n += await countMediaBelow(p, accept, depth + 1);
     else if (accept(ext(name))) n++;
   }
   return n;
@@ -87,6 +88,21 @@ interface WalkOpts {
   visited?: Set<string>;
   /** Folders (and files) that could not be read: what was under them must not count as deleted. */
   failed?: string[];
+}
+
+const STAT_CONCURRENCY = 16;
+
+/** `fn` over `items`, at most `limit` at once; results in input order. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const k = next++;
+      out[k] = await fn(items[k]);
+    }
+  }));
+  return out;
 }
 
 async function walk(root: string, accept: (e: string) => boolean, skipped: SkippedName[] = [], o: WalkOpts = {}): Promise<FileEntry[]> {
@@ -118,22 +134,24 @@ async function walk(root: string, accept: (e: string) => boolean, skipped: Skipp
       if (!isValidUtf8Name(raw)) {
         const rawPath = Buffer.concat([Buffer.from(dir + path.sep), raw]);
         const shown = path.join(dir, displayName(raw));
-        if (e.isDirectory() || (e.isSymbolicLink() && safeIsDir(rawPath))) {
-          const files = countMediaBelow(rawPath, accept);
+        if (e.isDirectory() || (e.isSymbolicLink() && (await isDir(rawPath)))) {
+          const files = await countMediaBelow(rawPath, accept);
           if (files) skipped.push({ path: shown + path.sep, files });
         } else if (accept(ext(lossy))) skipped.push({ path: shown });
         continue;
       }
       const p = path.join(dir, lossy);
-      if (e.isDirectory() || (e.isSymbolicLink() && safeIsDir(p))) {
+      if (e.isDirectory() || (e.isSymbolicLink() && (await isDir(p)))) {
         if (!o.shallow) stack.push(p);
       } else if (accept(ext(lossy))) files.push(p);
     }
-    // Keep the order of a synchronous walk (directory listing order) while statting a folder's files in parallel.
-    const stats = await Promise.all(files.map((p) => fs.promises.stat(p).catch((e: NodeJS.ErrnoException) => {
+    // Keep the order of a synchronous walk (directory listing order) while statting a folder's files in parallel, at
+    // most STAT_CONCURRENCY at once: each pending stat holds a libuv thread, and on a share that stopped answering a
+    // folder of a thousand files would otherwise leave no thread for anything else (static files, HLS segments).
+    const stats = await mapLimit(files, STAT_CONCURRENCY, (p) => fs.promises.stat(p).catch((e: NodeJS.ErrnoException) => {
       if (e.code !== 'ENOENT') o.failed?.push(p);
       return null;
-    })));
+    }));
     files.forEach((p, k) => {
       const st = stats[k];
       if (st) out.push({ path: p, rel: path.relative(root, p), root, size: st.size, mtime: Math.floor(st.mtimeMs), birthtime: Math.floor(st.birthtimeMs || 0) });
@@ -152,18 +170,8 @@ function logSkippedNames(libName: string, skipped: SkippedName[]) {
   if (skipped.length > MAX) log.warn(`Library "${libName}": ...and ${skipped.length - MAX} more file(s)/folder(s) with names that are not valid UTF-8 (listed under Admin > Libraries)`);
 }
 
-function safeIsDir(p: string | Buffer) {
-  try {
-    return fs.statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-/** Entry names of a folder that can be used as paths (names that are not valid UTF-8 are left out; see walk()). */
-function usableNames(dir: string): string[] {
-  return fs.readdirSync(dir, { encoding: 'buffer' }).filter(isValidUtf8Name).map((b) => b.toString('utf8'));
-}
+/** Whether a path (a symlink's target) is a folder, without blocking; false when it can't be read. */
+const isDir = (p: string | Buffer) => fs.promises.stat(p).then((st) => st.isDirectory(), () => false);
 
 /**
  * Folder listings for findFile, kept for one scan (artwork lookups list the same folder several times per file).
@@ -173,6 +181,18 @@ const scanListings = new AsyncLocalStorage<Map<string, Map<string, string> | nul
 
 /** Async existence check: on a sleeping or unreachable network share a blocking one can freeze the server for minutes. */
 const exists = (p: string) => fs.promises.access(p).then(() => true, () => false);
+
+/**
+ * How long a library root gets to answer before it counts as offline. Windows waits on an SMB share whose PC is asleep
+ * for a minute or more; the scan reports it (and skips it, or keeps its items) instead of waiting that long.
+ */
+export const rootTiming = { timeoutMs: 15000 };
+
+const withinRootTimeout = <T>(p: Promise<T>, fallback: T, onTimeout?: () => void) => withTimeout(p, rootTiming.timeoutMs, fallback, onTimeout);
+
+/** Root existence check with a time limit: an unreachable share is reported offline rather than waited for. */
+const rootExists = (p: string) =>
+  withinRootTimeout(exists(p), false, () => log.warn(`Library path not responding after ${rootTiming.timeoutMs / 1000}s (network share offline or asleep?): ${p}`));
 
 /**
  * List, without blocking, the folders findFile will look in for a file's artwork and NFOs: its own folder and the ones
@@ -204,17 +224,14 @@ async function nfoIn(dir: string, names: string[]): Promise<NfoData | null> {
   return p ? readNfoAsync(p) : null;
 }
 
+/**
+ * A file named one of `names` (any case) in `dir`, from the listing prefetchListings made: every folder looked in is
+ * the file's own or one above it, so it was listed (asynchronously) beforehand. It never lists a folder itself: a
+ * blocking readdir on a sleeping network share froze the whole server.
+ */
 function findFile(dir: string, names: string[]): string | null {
-  const cache = scanListings.getStore();
-  let lower = cache?.get(dir);
-  if (lower === undefined) {
-    try {
-      lower = new Map(usableNames(dir).map((f) => [f.toLowerCase(), f]));
-    } catch {
-      lower = null;
-    }
-    cache?.set(dir, lower);
-  }
+  const lower = scanListings.getStore()?.get(dir);
+  if (lower === undefined) log.debug(`No folder listing for ${dir} (not prefetched)`);
   if (!lower) return null;
   for (const n of names) {
     const hit = lower.get(n.toLowerCase());
@@ -800,7 +817,7 @@ const PARENT_LEVELS: [string, string][] = [['season', 'episode'], ['album', 'tra
  * Apply a library's "date added" rule. `since` = only items added at or after it (the ones a scan just created),
  * null = every item (Recalculate date added). `files` saves a stat per file during a scan. Returns items changed.
  */
-export function applyDateAdded(libId: string, since: string | null, files?: Map<string, { birthtime: number; mtime: number }>): number {
+export async function applyDateAdded(libId: string, since: string | null, files?: Map<string, { birthtime: number; mtime: number }>): Promise<number> {
   const lib = db.get<{ type: string; date_added: string }>('SELECT type, date_added FROM libraries WHERE id = ?', libId);
   if (!lib || lib.type.startsWith('iptv-') || lib.type === 'podcasts') return 0;
   const rule = libraryDateAdded(lib.date_added);
@@ -813,16 +830,17 @@ export function applyDateAdded(libId: string, since: string | null, files?: Map<
     libId, ...sinceParams);
   // Items with several files (movie versions) take the earliest file.
   const best = new Map<string, { ms: number; cur: string }>();
+  // Files the scan didn't stat (all of them for Recalculate date added) are statted without blocking, a few at a time:
+  // they're often on a network share. The rows are then handled in their original order, as before.
+  const stats = new Map<string, { birthtime: number; mtime: number } | null>();
+  const toStat = [...new Set(rows.filter((r) => !files?.get(r.path)).map((r) => r.path))];
+  await pool(toStat, 8, async (p) => {
+    const s = await fs.promises.stat(p).catch(() => null);
+    stats.set(p, s ? { birthtime: Math.floor(s.birthtimeMs || 0), mtime: Math.floor(s.mtimeMs) } : null);
+  });
   for (const r of rows) {
-    let st = files?.get(r.path) ?? null;
-    if (!st) {
-      try {
-        const s = fs.statSync(r.path);
-        st = { birthtime: Math.floor(s.birthtimeMs || 0), mtime: Math.floor(s.mtimeMs) };
-      } catch {
-        continue;
-      }
-    }
+    const st = files?.get(r.path) ?? stats.get(r.path) ?? null;
+    if (!st) continue;
     const ms = fileAddedMs(rule, st, now);
     if (ms === null) continue;
     const b = best.get(r.id);
@@ -850,10 +868,10 @@ export function applyDateAdded(libId: string, since: string | null, files?: Map<
 }
 
 /** Re-apply the "date added" rule to every item of one library (or all libraries) without rescanning. */
-export function recalculateDateAdded(libId?: string): number {
+export async function recalculateDateAdded(libId?: string): Promise<number> {
   const ids = libId ? [libId] : db.all<{ id: string }>('SELECT id FROM libraries').map((l) => l.id);
   let n = 0;
-  for (const id of ids) n += applyDateAdded(id, null);
+  for (const id of ids) n += await applyDateAdded(id, null);
   if (n) for (const id of ids) events.broadcast({ type: 'library.updated', libraryId: id });
   return n;
 }
@@ -973,7 +991,7 @@ async function doScan(libId: string, opts: ScanOptions) {
   // Checked in parallel and without blocking: a library spread over several NAS shares, one of them asleep or offline,
   // used to freeze the whole server (every request, the tray's health check) while each path timed out in turn.
   const libPaths = parseJson<string[]>(lib.paths, []);
-  const present = await Promise.all(libPaths.map(exists));
+  const present = await Promise.all(libPaths.map(rootExists));
   const paths = libPaths.filter((p, k) => {
     if (!present[k]) log.warn(`Library path missing: ${p}`);
     return present[k];
@@ -1055,9 +1073,10 @@ async function doScan(libId: string, opts: ScanOptions) {
     // An empty root counts as unreachable: an unmounted NAS share usually leaves its empty mount-point folder behind,
     // and treating that as "everything was deleted" would drop every item along with everyone's watch history.
     const roots = parseJson<string[]>(lib.paths, []);
-    const rootOk = (p: string) => fs.promises.readdir(p).then((e) => e.length > 0, () => false);
+    // A root that doesn't answer in time counts as unreachable too: nothing is removed.
+    const rootOk = (p: string) => withinRootTimeout(fs.promises.readdir(p).then((e) => e.length > 0, () => false), false);
     const allRootsOk = roots.length > 0 && (await Promise.all(roots.map(rootOk))).every(Boolean);
-    if (!allRootsOk && (await Promise.all(roots.map(exists))).some(Boolean)) log.warn(`Library "${lib.name}": a folder is missing or empty (unmounted?), so nothing was removed`);
+    if (!allRootsOk && (await Promise.all(roots.map(rootExists))).some(Boolean)) log.warn(`Library "${lib.name}": a folder is missing or empty (unmounted?), so nothing was removed`);
     if (allRootsOk) {
       // Below a folder that could not be read nothing is known, so nothing there counts as deleted.
       const unreadable = (p: string | null) => !!p && failed.some((f) => p === f || p.startsWith(f + path.sep));
@@ -1075,7 +1094,7 @@ async function doScan(libId: string, opts: ScanOptions) {
       });
     }
     // Items found by this scan take their date added from their files (per the library's rule).
-    applyDateAdded(libId, startedIso, new Map(allFiles.map((f) => [f.path, f])));
+    await applyDateAdded(libId, startedIso, new Map(allFiles.map((f) => [f.path, f])));
     events.toAdmins({ type: 'library.scan', libraryId: libId, status: 'progress', progress: 85, message: 'Fetching metadata' });
     if (lib.fetch_metadata) {
       await enrichLibrary(libId, { refresh: !!opts.refreshMetadata, onProgress: (d, t) => events.toAdmins({ type: 'library.scan', libraryId: libId, status: 'progress', progress: 85 + Math.round((d / Math.max(t, 1)) * 15), message: `Metadata ${d}/${t}` }) });
