@@ -301,6 +301,8 @@ test('artwork next to media is served from a copy in the data dir', async () => 
   const { registerImage, resolveImage } = await import('../src/services/images.ts');
   const { config } = await import('../src/config.ts');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-art-'));
+  // Artwork is only read from library folders (or the data dir): this folder is a library's.
+  db.run('INSERT INTO libraries (id, name, type, paths, created_at) VALUES (?, ?, ?, ?, ?)', 'art-lib', 'Art', 'movies', JSON.stringify([dir]), new Date().toISOString());
   const poster = path.join(dir, 'poster.jpg');
   fs.writeFileSync(poster, 'v1');
   const id = registerImage(poster)!;

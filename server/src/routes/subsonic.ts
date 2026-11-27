@@ -17,6 +17,7 @@ import { parseJson } from '../util/misc.js';
 import { logger } from '../util/log.js';
 import { sha256 } from '../util/ids.js';
 import { Pending, sweepExpired, type Failure } from '../util/lockout.js';
+import { fileExists } from '../util/fileAsync.js';
 
 /**
  * Subsonic / OpenSubsonic API (music) at /rest/*.view — lets Symfonium, Feishin, play:Sub, Amperfy, Substreamer,
@@ -429,7 +430,7 @@ export default async function subsonicRoutes(app: FastifyInstance) {
     if (!u.allowRemote && !u.isAdmin && req.ip && !isLocalAddress(req.ip)) throw new SubsonicError(50, 'Your account can only stream on the home network');
     const t = ensureType(u, param(req, 'id'), 'track');
     const m = db.get('SELECT * FROM media WHERE item_id = ? LIMIT 1', t.id);
-    if (!m?.path || !fs.existsSync(m.path)) throw new SubsonicError(70, 'File not found');
+    if (!m?.path || !(await fileExists(m.path))) throw new SubsonicError(70, 'File not found');
     const maxBitRate = Number(param(req, 'maxBitRate') ?? 0);
     const format = param(req, 'format');
     const needTranscode = (format && format !== 'raw' && format !== m.container) || (maxBitRate > 0 && (m.bitrate ?? 0) > maxBitRate);

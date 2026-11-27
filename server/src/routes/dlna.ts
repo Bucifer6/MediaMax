@@ -7,6 +7,7 @@ import { assertCanSee } from '../services/items.js';
 import { subtitleVtt } from '../services/playback.js';
 import { sendFileRange } from './playback.js';
 import { forbidden, notFound } from '../util/errors.js';
+import { fileExists } from '../util/fileAsync.js';
 
 const CDS = 'urn:schemas-upnp-org:service:ContentDirectory:1';
 const CMS = 'urn:schemas-upnp-org:service:ConnectionManager:1';
@@ -83,7 +84,7 @@ export default async function dlnaRoutes(app: FastifyInstance) {
     guard(req);
     const mediaId = req.params.file.replace(/\.[^.]+$/, '');
     const m = db.get('SELECT * FROM media WHERE id = ?', mediaId);
-    if (!m?.path || !fs.existsSync(m.path)) throw notFound();
+    if (!m?.path || !(await fileExists(m.path))) throw notFound();
     const user = dlnaUser();
     if (!user) throw forbidden();
     assertCanSee(user, m.item_id);

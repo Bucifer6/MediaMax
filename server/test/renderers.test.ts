@@ -275,7 +275,7 @@ const now = new Date().toISOString();
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-renderer-'));
 const file = path.join(dir, 'movie.mp4');
 fs.writeFileSync(file, Buffer.alloc(4096, 7));
-db.insert('libraries', { id: 'lib-r', name: 'Movies', type: 'movies', paths: '[]', created_at: now });
+db.insert('libraries', { id: 'lib-r', name: 'Movies', type: 'movies', paths: JSON.stringify([dir]), created_at: now });
 db.insert('items', { id: 'mov-r', library_id: 'lib-r', type: 'movie', title: 'Tom & Jerry <Live>', sort_title: 'tom', year: 2020, added_at: now, updated_at: now });
 db.insert('media', { id: 'med-r', item_id: 'mov-r', path: file, container: 'mp4', duration_ms: 7_200_000, size: 4096, width: 1920, height: 1080, video_codec: 'h264', audio: JSON.stringify([{ index: 1, codec: 'aac', channels: 2, default: true, language: 'en' }]), subs: '[]' });
 const alice = await createUser({ username: 'ralice', password: 'pass1234' });

@@ -140,7 +140,7 @@ test('a no-op rescan writes no media rows', async () => {
 });
 
 test('image resizes run at most RESIZE_CONCURRENCY ffmpeg processes at once; each size is made once', async (tt) => {
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-resize-'));
+  const work = fs.mkdtempSync(path.join(config.dataDir, 'mm-resize-')); // artwork is only served from library folders or the data dir
   const fake = path.join(work, 'ffmpeg');
   // Last argument is the output file; take a moment like a real resize.
   fs.writeFileSync(fake, '#!/bin/sh\nfor a; do out="$a"; done\nsleep 0.15\necho resized > "$out"\n');

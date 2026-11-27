@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -6,8 +6,15 @@ import path from 'node:path';
 import Fastify from 'fastify';
 import { inflightSummary, startWatchdog, trackRequests } from '../src/util/watchdog.js';
 import { readId3Extras } from '../src/services/music/tags.js';
+import { db } from '../src/db.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// The watchdog starts once per process: every stall test reads the same log file.
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kinora-watchdog-'));
+const file = path.join(dir, 'mediamax.log');
+const logText = () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
+after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 test('requests in progress are listed (path only, no query) and forgotten when they finish', async () => {
   const app = Fastify();
@@ -33,8 +40,6 @@ test('requests in progress are listed (path only, no query) and forgotten when t
 });
 
 test('a blocked main thread is reported in the log file by the watchdog thread while it is still blocked', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kinora-watchdog-'));
-  const file = path.join(dir, 'mediamax.log');
   startWatchdog(dir, 600);
   await sleep(1200); // worker up, first heartbeats sent
   // Block the event loop (a named function, so the captured stack can be checked).
@@ -46,10 +51,17 @@ test('a blocked main thread is reported in the log file by the watchdog thread w
   }
   blockMainThreadForTest(4000);
   // The report is written during the stall, not after it: check before yielding to the event loop again.
-  const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  const text = logText();
   assert.match(text, /watchdog: Main thread stack: blockMainThreadForTest \(watchdog\.test\.ts:\d+\)/, text);
   assert.match(text, /watchdog: The server has not responded for \d+ s \(main thread blocked\)\. Last known memory: heap \d+ MB of \d+ MB, process \d+ MB\. Requests in progress: none/);
-  fs.rmSync(dir, { recursive: true, force: true });
+  assert.doesNotMatch(text, /Database query running/, 'no query was running');
+});
+
+test('a database query that holds the main thread is named in the log while it runs', async () => {
+  await sleep(1500); // the previous stall is over
+  // Runs for seconds inside SQLite (native code): the stack can't be read, the query can.
+  db.get('WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 60000000) SELECT count(*) n FROM c');
+  assert.match(logText(), /Database query running: WITH RECURSIVE c\(x\) AS \(SELECT 1 UNION ALL SELECT x \+ 1 FROM c WHERE x < 60000000\) SELECT count\(\*\) n FROM c/, logText());
 });
 
 test('readId3Extras is asynchronous and never throws on a missing file', async () => {
