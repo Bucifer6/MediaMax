@@ -63,6 +63,9 @@ import { isAudioItem, isSpokenAudio } from '@/utils/library';
 import { useDownloads } from './downloads';
 import { useSession } from './session';
 
+/** Waits before asking /dj/status again after a failure (the last one repeats). */
+const DJ_STATUS_RETRY_MS = [3000, 10000, 30000, 60000];
+
 export type RepeatMode = 'off' | 'all' | 'one';
 export const SPEEDS = [0.8, 1, 1.1, 1.25, 1.5, 1.75, 2];
 
@@ -191,6 +194,8 @@ interface MusicValue {
   yourDj: YourDjState | null;
   /** Can Your DJ start (server reachable, AI DJ on)? `hidden` = don't show the card; `note` = why it's disabled. */
   yourDjAvailability: { available: boolean; hidden: boolean; note: string | null };
+  /** The server hasn't said yet whether Your DJ is on; pressing Play asks it again. */
+  yourDjChecking: boolean;
   yourDjStarting: boolean;
   /** One tap: a personal set from the library (server), played as an endless Automix mix. `message` when it couldn't start. */
   startYourDj: () => Promise<{ ok: boolean; message?: string }>;
@@ -402,21 +407,46 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   /** The server answered 403 to /dj/session or /dj/break: the admin switched the AI DJ off. */
   const [aiForbidden, setAiForbidden] = useState(false);
   useEffect(() => setAiForbidden(false), [api]);
+  /** Bumped to ask /dj/status again (a failed check, the app coming back to the foreground, a press on Play). */
+  const [djStatusTick, setDjStatusTick] = useState(0);
+  const djStatusFails = useRef(0);
+  const recheckDjStatus = useCallback(() => setDjStatusTick((n) => n + 1), []);
   useEffect(() => {
     // Only the Vibe server is asked, and only while it can be reached (no requests offline / downloads-only).
     if (!api || !signedIn || !online) {
       setDjStatus(null);
+      djStatusFails.current = 0;
       return;
     }
     let alive = true;
+    let retry: ReturnType<typeof setTimeout> | null = null;
     api
       .djStatus()
-      .then((st) => alive && setDjStatus(st))
-      .catch(() => alive && setDjStatus(null));
+      .then((st) => {
+        if (!alive) return;
+        djStatusFails.current = 0;
+        setDjStatus(st);
+      })
+      .catch(() => {
+        if (!alive) return;
+        // One failed check (a slow or restarting server at launch) used to leave Your DJ disabled for good: try again.
+        const delay = DJ_STATUS_RETRY_MS[Math.min(djStatusFails.current, DJ_STATUS_RETRY_MS.length - 1)]!;
+        djStatusFails.current++;
+        retry = setTimeout(() => alive && setDjStatusTick((n) => n + 1), delay);
+      });
     return () => {
       alive = false;
+      if (retry) clearTimeout(retry);
     };
-  }, [api, signedIn, online]);
+  }, [api, signedIn, online, djStatusTick]);
+  const djStatusKnown = !!djStatus;
+  useEffect(() => {
+    if (djStatusKnown) return;
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') setDjStatusTick((n) => n + 1);
+    });
+    return () => sub.remove();
+  }, [djStatusKnown]);
   const aiOn = aiDjOn({ signedIn, online, status: djStatus, forbidden: aiForbidden });
   const yourDjAvail = useMemo(
     () => yourDjAvailability({ signedIn, online, status: djStatus, forbidden: aiForbidden, hasMusic: true }),
@@ -440,6 +470,8 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       : hostPrefs.enabled && djStatus?.ai?.radioHost !== false ? 'radio' : null;
   const djRef = useRef({ aiOn, hostMode, hostVoice: hostPrefs.voice ?? null, commentary, activePresetId, available: yourDjAvail.available, signedIn, online });
   djRef.current = { aiOn, hostMode, hostVoice: hostPrefs.voice ?? null, commentary, activePresetId, available: yourDjAvail.available, signedIn, online };
+  /** /dj/status hasn't answered yet: Play stays pressable (and focusable on TV) and asks again. */
+  const yourDjChecking = signedIn && online && !djStatus && !aiForbidden;
   const [hostState, setHostState] = useState<HostSnapshot>({ caption: null, speaking: false, kind: null });
   const [hostMuted, setHostMutedState] = useState(false);
   /** Third player: the server-rendered host clips (never the lock-screen player). */
@@ -1849,7 +1881,24 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   const startYourDj = useCallback(async (): Promise<{ ok: boolean; message?: string }> => {
     const a = apiRef.current;
     const d = djRef.current;
-    if (!a || !d.available) return { ok: false };
+    if (!a) return { ok: false };
+    if (!d.available) {
+      if (!d.signedIn || !d.online) return { ok: false };
+      // Status still unknown: ask now, and start straight away if the server says Your DJ is on.
+      setYourDjStarting(true);
+      try {
+        const st = await a.djStatus();
+        setDjStatus(st);
+        if (!yourDjAvailability({ signedIn: true, online: true, status: st, forbidden: false, hasMusic: true }).available) {
+          return { ok: false, message: "Your DJ is switched off on this server." };
+        }
+      } catch {
+        recheckDjStatus();
+        return { ok: false, message: "Couldn't reach your Vibe server. Try again in a moment." };
+      } finally {
+        setYourDjStarting(false);
+      }
+    }
     setYourDjStarting(true);
     try {
       const presetId = d.activePresetId;
@@ -2176,6 +2225,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       blend,
       yourDj,
       yourDjAvailability: yourDjAvail,
+      yourDjChecking,
       yourDjStarting,
       startYourDj,
       djSwitch,
@@ -2199,7 +2249,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     }),
     [queue, index, current, status, durationMs, mode.longTrack, shuffle, repeat, error, spoken, rate, chapters, playQueue, livePlayer, report, advance, playing, castOn, castState, ours, cast.positionMs, cast.mediaStatus, cast.deviceName, seekAny, pauseAny, volume, sleep, sleepRemainingMs, setSleep, altSource,
       automixOn, automixPref, mixStyle, mixSession, playAsMix, endless, blend, abortBlend, completeBlend, releaseStandby, updatePreferences, user?.preferences.automix,
-      yourDj, yourDjAvail, yourDjStarting, startYourDj, djSwitch, djRequest, djLove, dispatchDj, aiOn, djStatus, hostState, hostMuted, hostMode, setHostMuted, swapAtEnd],
+      yourDj, yourDjAvail, yourDjChecking, yourDjStarting, startYourDj, djSwitch, djRequest, djLove, dispatchDj, aiOn, djStatus, hostState, hostMuted, hostMode, setHostMuted, swapAtEnd],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

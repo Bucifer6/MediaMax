@@ -45,7 +45,10 @@ export function YourDjCard({ hasMusic, style }: { hasMusic?: boolean; style?: ob
   if (!music || features.music === false || avail.hidden) return null;
   const live = !!m.yourDj;
   const seg = live ? segmentOf(m.yourDj, m.current?.id) ?? m.yourDj!.segments[m.yourDj!.segmentId] : null;
+  // While the server's answer is pending the card still looks muted, but Play stays pressable (and reachable with the
+  // remote): a press asks the server again instead of leaving a dead button on screen.
   const disabled = !avail.available && !live;
+  const playDisabled = disabled && !m.yourDjChecking;
   const start = async () => {
     setMessage(null);
     const r = await m.startYourDj();
@@ -82,8 +85,8 @@ export function YourDjCard({ hasMusic, style }: { hasMusic?: boolean; style?: ob
           </>
         ) : (
           <Focusable
-            onPress={disabled || m.yourDjStarting ? undefined : () => void start()}
-            disabled={disabled || m.yourDjStarting}
+            onPress={playDisabled || m.yourDjStarting ? undefined : () => void start()}
+            disabled={playDisabled}
             ringRadius={999}
             accessibilityLabel={m.yourDjStarting ? 'Your DJ is warming up' : 'Play Your DJ'}
             style={{ flexDirection: 'row', alignItems: 'center', gap: t.s(8), paddingHorizontal: t.s(20), paddingVertical: t.s(10), borderRadius: 999, backgroundColor: t.colors.primary }}
