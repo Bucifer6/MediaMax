@@ -29,9 +29,15 @@ export function registerImage(source: string | null | undefined): string | null 
   if (!/^https?:\/\//i.test(source) && !isLocalImagePath(source)) return null;
   const id = stableId('img', source);
   db.run('INSERT OR IGNORE INTO images (id, source, created_at) VALUES (?, ?, ?)', id, source, nowIso());
-  if (!/^https?:\/\//i.test(source)) refreshLocalCopy(id, source);
+  if (!/^https?:\/\//i.test(source) && !refreshing.has(id)) {
+    const p = refreshLocalCopy(id, source).finally(() => refreshing.delete(id));
+    refreshing.set(id, p);
+  }
   return id;
 }
+
+/** Copy checks still running (resolveImage waits for one so it never serves a copy that is about to be dropped). */
+const refreshing = new Map<string, Promise<void>>();
 
 /** Media-folder artwork is copied into the data dir on first use (see resolveImage). */
 const isInDataDir = (p: string) => path.resolve(p).startsWith(config.dataDir + path.sep);
@@ -49,15 +55,21 @@ function cacheLocalCopy(id: string, source: string): string {
   }
 }
 
-/** Called while scanning (the disk is awake then): drop the copy if the original artwork changed. */
-function refreshLocalCopy(id: string, source: string) {
+/**
+ * Called while scanning (the disk is awake then): drop the copy if the original artwork changed. Asynchronous: the
+ * original is usually on a network share, and a blocking stat there can stall every request for seconds.
+ */
+async function refreshLocalCopy(id: string, source: string) {
   const row = db.get<{ cached: string | null }>('SELECT cached FROM images WHERE id = ?', id);
   if (!row?.cached) return;
+  const cached = row.cached;
   try {
-    if (fs.statSync(source).mtimeMs > fs.statSync(row.cached).mtimeMs) {
-      fs.rmSync(row.cached, { force: true });
-      db.run('UPDATE images SET cached = NULL WHERE id = ?', id);
-      for (const f of fs.readdirSync(path.join(config.imageCacheDir, 'w')).filter((f) => f.startsWith(id + '_'))) fs.rmSync(path.join(config.imageCacheDir, 'w', f), { force: true });
+    const [src, copy] = await Promise.all([fs.promises.stat(source), fs.promises.stat(cached)]);
+    if (src.mtimeMs > copy.mtimeMs) {
+      await fs.promises.rm(cached, { force: true });
+      db.run('UPDATE images SET cached = NULL WHERE id = ? AND cached = ?', id, cached);
+      const wDir = path.join(config.imageCacheDir, 'w');
+      for (const f of (await fs.promises.readdir(wDir)).filter((f) => f.startsWith(id + '_'))) await fs.promises.rm(path.join(wDir, f), { force: true });
     }
   } catch {
     /* source gone or cache dir missing */
@@ -148,6 +160,7 @@ function runResize(src: string, dest: string, width: number): Promise<void> {
 }
 
 export async function resolveImage(id: string, width?: number): Promise<{ path: string; mime: string }> {
+  await refreshing.get(id);
   const row = db.get('SELECT * FROM images WHERE id = ?', id);
   if (!row) throw notFound('Image not found');
   let file: string;

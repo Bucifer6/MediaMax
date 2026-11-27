@@ -12,8 +12,8 @@ import { logger } from '../util/log.js';
 import { displayName, isValidUtf8Name } from '../util/fsnames.js';
 import { probe, type ProbeResult } from './probe.js';
 import { registerImage } from './images.js';
-import { readNfo, type NfoData } from './metadata/nfo.js';
-import { importSidecarEdl } from './edl.js';
+import { readNfoAsync, type NfoData } from './metadata/nfo.js';
+import { importSidecarEdlAsync } from './edl.js';
 import { parseReplayGain, gainTags } from '../util/replaygain.js';
 import {
   AUDIO_EXT, IMAGE_EXT, VIDEO_EXT, ext, isExtra, parseEpisodeName, parseMovieName, parseSeasonFolder, parseShowFolder,
@@ -22,7 +22,7 @@ import {
 import { events, bus } from './events.js';
 import { enrichLibrary } from './metadata/index.js';
 import { logActivity } from './activity.js';
-import { externalSubs } from './subtitleProviders/storage.js';
+import { externalSubsAsync } from './subtitleProviders/storage.js';
 import { applyPluginMetadata } from './plugins.js';
 import { mbTagSubset, parseMbTags, tagsWithId3, type MbTags } from './music/tags.js';
 import { rebuildCredits } from './music/credits.js';
@@ -171,6 +171,39 @@ function usableNames(dir: string): string[] {
  */
 const scanListings = new AsyncLocalStorage<Map<string, Map<string, string> | null>>();
 
+/** Async existence check: on a sleeping or unreachable network share a blocking one can freeze the server for minutes. */
+const exists = (p: string) => fs.promises.access(p).then(() => true, () => false);
+
+/**
+ * List, without blocking, the folders findFile will look in for a file's artwork and NFOs: its own folder and the ones
+ * above it up to the library root (show, season, artist and album folders). Each folder is listed once per scan.
+ */
+async function prefetchListings(f: FileEntry): Promise<void> {
+  const cache = scanListings.getStore();
+  if (!cache) return;
+  const dirs: string[] = [];
+  for (let d = path.dirname(f.path); ; d = path.dirname(d)) {
+    dirs.push(d);
+    if (d === f.root || path.dirname(d) === d || !d.startsWith(f.root)) break;
+  }
+  await Promise.all(dirs.filter((d) => !cache.has(d)).map(async (d) => {
+    let lower: Map<string, string> | null;
+    try {
+      const names = (await fs.promises.readdir(d, { encoding: 'buffer' })).filter(isValidUtf8Name).map((b) => b.toString('utf8'));
+      lower = new Map(names.map((n) => [n.toLowerCase(), n]));
+    } catch {
+      lower = null;
+    }
+    if (!cache.has(d)) cache.set(d, lower);
+  }));
+}
+
+/** The NFO named `name` in `dir`, read without blocking; null when the folder listing has no such file. */
+async function nfoIn(dir: string, names: string[]): Promise<NfoData | null> {
+  const p = findFile(dir, names);
+  return p ? readNfoAsync(p) : null;
+}
+
 function findFile(dir: string, names: string[]): string | null {
   const cache = scanListings.getStore();
   let lower = cache?.get(dir);
@@ -260,14 +293,16 @@ function nfoFields(n: NfoData | null): Row {
 async function upsertMedia(itemId: string, f: FileEntry, force = false, preProbed?: ProbeResult | null): Promise<{ mediaId: string; probe: ProbeResult | null; changed: boolean }> {
   const existing = db.get('SELECT * FROM media WHERE path = ?', f.path);
   const id = existing?.id ?? stableId('media', f.path);
-  const subsSide = externalSubs(id, f.path);
+  // The folder listing the artwork lookups already made (null: the folder could not be read; undefined: not listed).
+  const listed = scanListings.getStore()?.get(path.dirname(f.path));
+  const subsSide = await (listed === null ? externalSubsAsync(id, null) : externalSubsAsync(id, f.path, listed ? [...listed.values()] : undefined));
   if (existing && existing.mtime === f.mtime && existing.size === f.size && !force && existing.probed_at) {
     // Keep sidecar subtitles fresh even when the file itself is unchanged.
     const embedded = parseJson<SubtitleStream[]>(existing.subs, []).filter((s) => !s.external);
     const subs = JSON.stringify([...embedded, ...subsSide]);
     // Only when something changed: a no-op rescan must not rewrite every media row.
     db.run('UPDATE media SET item_id = ?, subs = ? WHERE id = ? AND (item_id IS NOT ? OR subs IS NOT ?)', itemId, subs, id, itemId, subs);
-    importSidecarEdl(itemId, f.path);
+    await importSidecarEdlAsync(itemId, f.path);
     return { mediaId: id, probe: null, changed: false };
   }
   let pr: ProbeResult | null = preProbed ?? null;
@@ -283,7 +318,7 @@ async function upsertMedia(itemId: string, f: FileEntry, force = false, preProbe
     mtime: f.mtime, probed_at: pr ? nowIso() : null, chapters: JSON.stringify(pr?.chapters ?? []),
   };
   db.upsert('media', row);
-  importSidecarEdl(itemId, f.path);
+  await importSidecarEdlAsync(itemId, f.path);
   return { mediaId: id, probe: pr, changed: true };
 }
 
@@ -306,6 +341,7 @@ interface ScanCtx {
 async function scanMovies(ctx: ScanCtx, files: FileEntry[]) {
   let done = 0;
   await pool(files, 4, async (f) => {
+    await prefetchListings(f);
     const dir = path.dirname(f.path);
     const inOwnFolder = dir !== f.root;
     const folderParse = inOwnFolder ? parseMovieName(path.basename(dir)) : null;
@@ -319,8 +355,7 @@ async function scanMovies(ctx: ScanCtx, files: FileEntry[]) {
     const ownFolder = inOwnFolder && !!folderParse?.title && (p === folderParse || sameTitle(folderParse.title, fileParse.title));
     const key = ownFolder ? dir : `${p.title.toLowerCase()}|${p.year ?? ''}`;
     const id = stableId(ctx.lib.id, 'movie', key);
-    const nfoPath = findFile(dir, [`${stripExt(path.basename(f.path))}.nfo`, ...(ownFolder ? ['movie.nfo'] : [])]);
-    const nfo = nfoPath ? readNfo(nfoPath) : null;
+    const nfo = await nfoIn(dir, [`${stripExt(path.basename(f.path))}.nfo`, ...(ownFolder ? ['movie.nfo'] : [])]);
     const base = stripExt(path.basename(f.path));
     const poster = findFile(dir, imgNames([`${base}-poster`, ...(ownFolder ? ['poster', 'folder', 'cover', 'movie'] : [])]));
     const backdrop = findFile(dir, imgNames([`${base}-fanart`, `${base}-backdrop`, ...(ownFolder ? ['fanart', 'backdrop', 'background', 'art'] : [])]));
@@ -387,10 +422,12 @@ async function scanExtras(ctx: ScanCtx, extras: FileEntry[]) {
 
 async function scanShows(ctx: ScanCtx, files: FileEntry[]) {
   let done = 0;
-  const showCache = new Map<string, string>();
+  // A show is created once; the other episodes of it wait for that (its NFO is read asynchronously) before their season.
+  const showCache = new Map<string, Promise<void>>();
   const seasonCache = new Map<string, string>();
   // Process sequentially per show folder to avoid races creating parents; probe in parallel.
   await pool(files, 4, async (f) => {
+    await prefetchListings(f);
     const parts = f.rel.split(path.sep);
     const showFolder = parts.length > 1 ? parts[0] : null;
     const ep = parseEpisodeName(path.basename(f.path));
@@ -398,22 +435,26 @@ async function scanShows(ctx: ScanCtx, files: FileEntry[]) {
     const showDir = showFolder ? path.join(f.root, showFolder) : f.root;
     const showKey = showFolder ? showDir : `${f.root}|${showName.toLowerCase()}`;
     const showId = stableId(ctx.lib.id, 'show', showKey);
-    if (!showCache.has(showId)) {
-      showCache.set(showId, showId);
-      const sp = parseShowFolder(showName);
-      const nfo = showFolder ? readNfo(path.join(showDir, 'tvshow.nfo')) : null;
-      const ids = { ...(sp.tvdbId ? { tvdb: sp.tvdbId } : {}), ...(sp.tmdbId ? { tmdb: sp.tmdbId } : {}) };
-      const existed = !!db.get('SELECT 1 FROM items WHERE id = ?', showId);
-      ensureItem({
-        id: showId, library_id: ctx.lib.id, type: 'show', title: sp.title || showName, year: sp.year, path: showKey,
-        ...(Object.keys(ids).length ? { external_ids: JSON.stringify(ids) } : {}),
-        ...nfoFields(nfo),
-        poster: showFolder ? registerImage(findFile(showDir, imgNames(['poster', 'folder', 'cover', 'show']))) : null,
-        backdrop: showFolder ? registerImage(findFile(showDir, imgNames(['fanart', 'backdrop', 'background', 'art']))) : null,
-        logo: showFolder ? registerImage(findFile(showDir, imgNames(['logo', 'clearlogo']))) : null,
-      });
-      if (!existed) ctx.newItems.push(showId);
+    let show = showCache.get(showId);
+    if (!show) {
+      show = (async () => {
+        const sp = parseShowFolder(showName);
+        const nfo = showFolder ? await nfoIn(showDir, ['tvshow.nfo']) : null;
+        const ids = { ...(sp.tvdbId ? { tvdb: sp.tvdbId } : {}), ...(sp.tmdbId ? { tmdb: sp.tmdbId } : {}) };
+        const existed = !!db.get('SELECT 1 FROM items WHERE id = ?', showId);
+        ensureItem({
+          id: showId, library_id: ctx.lib.id, type: 'show', title: sp.title || showName, year: sp.year, path: showKey,
+          ...(Object.keys(ids).length ? { external_ids: JSON.stringify(ids) } : {}),
+          ...nfoFields(nfo),
+          poster: showFolder ? registerImage(findFile(showDir, imgNames(['poster', 'folder', 'cover', 'show']))) : null,
+          backdrop: showFolder ? registerImage(findFile(showDir, imgNames(['fanart', 'backdrop', 'background', 'art']))) : null,
+          logo: showFolder ? registerImage(findFile(showDir, imgNames(['logo', 'clearlogo']))) : null,
+        });
+        if (!existed) ctx.newItems.push(showId);
+      })();
+      showCache.set(showId, show);
     }
+    await show;
     ctx.seenItems.add(showId);
     // Season: from folder ("Season 2") or episode tag.
     const seasonFolder = parts.length > 2 ? parts[parts.length - 2] : null;
@@ -435,7 +476,7 @@ async function scanShows(ctx: ScanCtx, files: FileEntry[]) {
     const epKey = epNum !== null ? `e${epNum}` : `f:${stripExt(path.basename(f.path)).toLowerCase()}`;
     const epId = stableId(seasonId, 'episode', epKey);
     const base = stripExt(path.basename(f.path));
-    const nfo = readNfo(path.join(path.dirname(f.path), `${base}.nfo`));
+    const nfo = await nfoIn(path.dirname(f.path), [`${base}.nfo`]);
     const thumb = findFile(path.dirname(f.path), imgNames([`${base}-thumb`, base]));
     const existed = !!db.get('SELECT 1 FROM items WHERE id = ?', epId);
     ensureItem({
@@ -467,6 +508,7 @@ async function scanMusic(ctx: ScanCtx, files: FileEntry[]) {
   fs.mkdirSync(coverDir, { recursive: true });
   const albumArtDone = new Set<string>();
   await pool(files, 4, async (f) => {
+    await prefetchListings(f);
     const m0 = db.get('SELECT * FROM media WHERE path = ?', f.path);
     const unchanged = m0 && m0.mtime === f.mtime && m0.size === f.size && m0.probed_at && !ctx.force;
     let pr: ProbeResult | null = null;
@@ -644,6 +686,7 @@ async function scanAudiobooks(ctx: ScanCtx, files: FileEntry[]) {
   for (const [key, list] of books) {
     list.sort((a, b) => a.rel.localeCompare(b.rel, undefined, { numeric: true }));
     const first = list[0];
+    await prefetchListings(first);
     let pr: ProbeResult | null = null;
     try {
       pr = await probe(first.path, first.path);
@@ -674,12 +717,13 @@ async function scanAudiobooks(ctx: ScanCtx, files: FileEntry[]) {
       if (fs.existsSync(dest) || (await extractCover(first.path, dest))) cover = dest;
     }
     const descFile = findFile(dir, ['desc.txt', 'description.txt']);
+    const desc = descFile ? await fs.promises.readFile(descFile, 'utf8').catch(() => null) : null;
     const people = [{ name: author, role: 'Author', kind: 'writer' }, ...(narrator ? [{ name: narrator, role: 'Narrator', kind: 'actor' }] : [])];
     ensureItem({
       id: bookId, library_id: ctx.lib.id, type: 'audiobook', title, year, path: key, poster: registerImage(cover),
       people: JSON.stringify(people), studios: JSON.stringify(tags.publisher ? [tags.publisher] : []),
       genres: JSON.stringify(tags.genre ? tags.genre.split(/[;/,]/).map((g) => g.trim()).filter(Boolean) : ['Audiobook']),
-      overview: descFile ? fs.readFileSync(descFile, 'utf8').trim().slice(0, 4000) : tags.comment || tags.description || null,
+      overview: desc != null ? desc.trim().slice(0, 4000) : tags.comment || tags.description || null,
       extra: JSON.stringify({ parentTitle: author, author, narrator, ...(series ? { series } : {}) }),
     });
     if (!existed) ctx.newItems.push(bookId);
@@ -885,7 +929,7 @@ export function scanLibrary(libId: string, opts: ScanOptions = {}): Promise<void
 interface ScanScope { deep: string[]; shallow: string[] }
 
 /** The folders a partial scan walks, or null for a full scan. */
-function scanScope(roots: string[], changed: string[]): ScanScope | null {
+async function scanScope(roots: string[], changed: string[]): Promise<ScanScope | null> {
   const deep = new Set<string>();
   const shallow = new Set<string>();
   for (const raw of changed) {
@@ -897,12 +941,8 @@ function scanScope(roots: string[], changed: string[]): ScanScope | null {
       continue;
     }
     const top = path.join(root, path.relative(root, p).split(path.sep)[0]);
-    let st: fs.Stats | null = null;
-    try {
-      st = fs.lstatSync(top);
-    } catch {
-      /* gone: whatever was below it is removed */
-    }
+    // gone (null): whatever was below it is removed
+    const st = await fs.promises.lstat(top).catch(() => null);
     // A symlinked folder may point anywhere in the library (even back at the root): a full walk sorts out duplicates.
     if (st?.isSymbolicLink()) return null;
     deep.add(top);
@@ -930,14 +970,15 @@ async function doScan(libId: string, opts: ScanOptions) {
   }
   const started = Date.now();
   const startedIso = new Date(started).toISOString();
-  const paths = parseJson<string[]>(lib.paths, []).filter((p) => {
-    if (!fs.existsSync(p)) {
-      log.warn(`Library path missing: ${p}`);
-      return false;
-    }
-    return true;
+  // Checked in parallel and without blocking: a library spread over several NAS shares, one of them asleep or offline,
+  // used to freeze the whole server (every request, the tray's health check) while each path timed out in turn.
+  const libPaths = parseJson<string[]>(lib.paths, []);
+  const present = await Promise.all(libPaths.map(exists));
+  const paths = libPaths.filter((p, k) => {
+    if (!present[k]) log.warn(`Library path missing: ${p}`);
+    return present[k];
   });
-  const scope = opts.paths ? scanScope(paths.map((p) => path.resolve(p)), opts.paths) : null;
+  const scope = opts.paths ? await scanScope(paths.map((p) => path.resolve(p)), opts.paths) : null;
   log.info(`Scanning library "${lib.name}" (${type})${scope ? `: ${[...scope.deep, ...scope.shallow.map((r) => `${r} (files only)`)].join(', ')}` : ''}`);
   events.toAdmins({ type: 'library.scan', libraryId: libId, status: 'started', progress: 0 });
   const accept = ACCEPT[type] ?? ((e: string) => VIDEO_EXT.has(e));
@@ -953,8 +994,10 @@ async function doScan(libId: string, opts: ScanOptions) {
     const deep = scope.deep.filter((d) => path.dirname(d) === r);
     if (!deep.length && !scope.shallow.includes(r)) continue;
     let rootEntries: string[];
+    let realRoot: string;
     try {
-      rootEntries = fs.readdirSync(r);
+      rootEntries = await fs.promises.readdir(r);
+      realRoot = await fs.promises.realpath(r);
     } catch (e) {
       failed.push(r);
       log.warn(`Cannot read ${r}: ${(e as Error).message}`);
@@ -963,9 +1006,9 @@ async function doScan(libId: string, opts: ScanOptions) {
     // A full scan imports nothing below an ignore marker in the root.
     if (rootEntries.some((n) => IGNORE_MARKERS.includes(n))) continue;
     // The root counts as walked, as in a full scan (a link inside pointing back at it is not followed).
-    const visited = new Set([fs.realpathSync(r)]);
+    const visited = new Set([realRoot]);
     if (scope.shallow.includes(r)) allFiles.push(...(await walk(root, accept, skipped, { shallow: true, failed })));
-    for (const d of deep) if (fs.existsSync(d)) allFiles.push(...(await walk(root, accept, skipped, { start: d, visited, failed })));
+    for (const d of deep) if (await exists(d)) allFiles.push(...(await walk(root, accept, skipped, { start: d, visited, failed })));
   }
   // Media a partial scan may remove: only below the folders it walked.
   const inScope = (p: string) => !scope || scope.deep.some((d) => p.startsWith(d + path.sep)) || scope.shallow.includes(path.dirname(p));
@@ -1012,15 +1055,9 @@ async function doScan(libId: string, opts: ScanOptions) {
     // An empty root counts as unreachable: an unmounted NAS share usually leaves its empty mount-point folder behind,
     // and treating that as "everything was deleted" would drop every item along with everyone's watch history.
     const roots = parseJson<string[]>(lib.paths, []);
-    const rootOk = (p: string) => {
-      try {
-        return fs.readdirSync(p).length > 0;
-      } catch {
-        return false;
-      }
-    };
-    const allRootsOk = roots.length > 0 && roots.every(rootOk);
-    if (!allRootsOk && roots.some((p) => fs.existsSync(p))) log.warn(`Library "${lib.name}": a folder is missing or empty (unmounted?), so nothing was removed`);
+    const rootOk = (p: string) => fs.promises.readdir(p).then((e) => e.length > 0, () => false);
+    const allRootsOk = roots.length > 0 && (await Promise.all(roots.map(rootOk))).every(Boolean);
+    if (!allRootsOk && (await Promise.all(roots.map(exists))).some(Boolean)) log.warn(`Library "${lib.name}": a folder is missing or empty (unmounted?), so nothing was removed`);
     if (allRootsOk) {
       // Below a folder that could not be read nothing is known, so nothing there counts as deleted.
       const unreadable = (p: string | null) => !!p && failed.some((f) => p === f || p.startsWith(f + path.sep));
