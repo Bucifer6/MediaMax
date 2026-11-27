@@ -52,7 +52,7 @@ const isInDataDir = (p: string) => path.resolve(p).startsWith(config.dataDir + p
 async function cacheLocalCopy(id: string, source: string): Promise<string | null> {
   // Only artwork inside a library folder or the data folder is ever read.
   const file = confinedPath(source);
-  if (!file || !(await fileExists(file))) return null;
+  if (!/^[\w-]+$/.test(id) || !file || !(await fileExists(file))) return null;
   if (isInDataDir(file)) return file;
   try {
     // The copy's name comes from the image id and a fixed extension list, never from the original's path.
@@ -222,7 +222,7 @@ export async function resolveImage(id: string, width?: number): Promise<{ path: 
     file = row.cached;
   } else {
     if (!isLocalImagePath(row.source)) throw notFound('Image file missing');
-    file = await localArtwork(id, row.source);
+    file = await localArtwork(String(row.id), row.source); // the stored id names the cache copy, not the URL's
   }
   const ext = path.extname(file).toLowerCase();
   if (ext === '.svg') throw notFound('Image unavailable');
