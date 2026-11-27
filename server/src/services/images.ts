@@ -10,6 +10,7 @@ import { notFound } from '../util/errors.js';
 import { logger } from '../util/log.js';
 import { safeFetch } from '../util/net.js';
 import { fileExists } from '../util/fileAsync.js';
+import { confinedPath } from '../util/servablePaths.js';
 
 const log = logger('images');
 
@@ -49,16 +50,18 @@ const isInDataDir = (p: string) => path.resolve(p).startsWith(config.dataDir + p
  * woke up (each poster on a home screen is one request). Resolves to null when the original is missing.
  */
 async function cacheLocalCopy(id: string, source: string): Promise<string | null> {
-  if (!(await fileExists(source))) return null;
-  if (isInDataDir(source)) return source;
+  // Only artwork inside a library folder or the data folder is ever read.
+  const file = confinedPath(source);
+  if (!file || !(await fileExists(file))) return null;
+  if (isInDataDir(file)) return file;
   try {
-    const dest = path.join(config.imageCacheDir, 'local', id.slice(0, 2), id + path.extname(source).toLowerCase());
+    const dest = path.join(config.imageCacheDir, 'local', id.slice(0, 2), id + path.extname(file).toLowerCase());
     await fs.promises.mkdir(path.dirname(dest), { recursive: true });
-    await fs.promises.copyFile(source, dest);
+    await fs.promises.copyFile(file, dest);
     db.run('UPDATE images SET cached = ? WHERE id = ?', dest, id);
     return dest;
   } catch {
-    return source;
+    return file;
   }
 }
 

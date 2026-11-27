@@ -18,6 +18,7 @@ import { logActivity } from '../services/activity.js';
 import { events } from '../services/events.js';
 import { renditionRequest } from '../services/abr.js';
 import { pollDelay } from '../services/transcoder.js';
+import { confinedPath } from '../util/servablePaths.js';
 import { doviMasterForJob } from '../services/dovi.js';
 import { serveSubtitle } from './streaming.js';
 
@@ -27,8 +28,13 @@ const MIME: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic',
 };
 
-/** Serve a file with Range support. Asynchronous stat: media on a sleeping NAS must not hold up other requests. */
-export async function sendFileRange(req: FastifyRequest, reply: FastifyReply, file: string, mime: string, download?: string) {
+/**
+ * Serve a file with Range support. Only files inside a folder the server serves from (servablePaths, plus
+ * `extraRoots`); asynchronous stat, so media on a sleeping NAS doesn't hold up other requests.
+ */
+export async function sendFileRange(req: FastifyRequest, reply: FastifyReply, requested: string, mime: string, download?: string, extraRoots: string[] = []) {
+  const file = confinedPath(requested, extraRoots);
+  if (!file) throw notFound('File is missing from disk');
   const stat = await fs.promises.stat(file).catch(() => null);
   if (!stat) throw notFound('File is missing from disk');
   const size = stat.size;

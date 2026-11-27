@@ -9,8 +9,13 @@ import path from 'node:path';
 import * as images from '../src/services/images.js';
 import { sendFileRange } from '../src/routes/playback.js';
 import { config } from '../src/config.js';
+import { db } from '../src/db.js';
+import { forgetServableRoots } from '../src/util/servablePaths.js';
 
 const share = fs.mkdtempSync(path.join(os.tmpdir(), 'kinora-share-'));
+// The "share" is a library folder, like \NAS\Media\Movies on a real server.
+db.run('INSERT INTO libraries (id, name, type, paths, created_at) VALUES (?, ?, ?, ?, ?)', 'nas-lib', 'Movies', 'movies', JSON.stringify([share]), new Date().toISOString());
+forgetServableRoots();
 
 /** Make every synchronous fs call on `dir` fail the test while `fn` runs. */
 async function withoutSyncFsOn<T>(dir: string, fn: () => Promise<T>): Promise<T> {
@@ -58,6 +63,25 @@ test('a share that does not answer in time gives "unavailable" instead of holdin
   await new Promise((r) => setTimeout(r, 200));
   const r = await images.resolveImage(id);
   assert.ok(r.path.startsWith(config.imageCacheDir), r.path);
+});
+
+test('files outside every library and the data folder are never read', async () => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'kinora-outside-'));
+  const poster = path.join(outside, 'poster.jpg');
+  fs.writeFileSync(poster, 'secret');
+  const id = images.registerImage(poster)!;
+  await assert.rejects(images.resolveImage(id), (e: any) => e.statusCode === 404);
+  // A sibling folder whose name merely starts like the library's is outside too.
+  const sibling = share + '2';
+  fs.mkdirSync(sibling, { recursive: true });
+  fs.writeFileSync(path.join(sibling, 'poster.jpg'), 'x');
+  await assert.rejects(images.resolveImage(images.registerImage(path.join(sibling, 'poster.jpg'))!), (e: any) => e.statusCode === 404);
+  const req = { headers: {} } as any;
+  const reply = { header: () => reply, status: () => reply, send: () => reply } as any;
+  await assert.rejects(sendFileRange(req, reply, poster, 'image/jpeg'), (e: any) => e.statusCode === 404);
+  await assert.rejects(sendFileRange(req, reply, path.join(share, '..', path.basename(outside), 'poster.jpg'), 'image/jpeg'), (e: any) => e.statusCode === 404);
+  fs.rmSync(outside, { recursive: true, force: true });
+  fs.rmSync(sibling, { recursive: true, force: true });
 });
 
 test('direct play of a file missing from the share is a 404, without a blocking stat', async () => {

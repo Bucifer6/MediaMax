@@ -176,7 +176,7 @@ export default async function karaokeRoutes(app: FastifyInstance) {
     if (!dir) throw notFound('The AI runtime (onnxruntime-web) has not been downloaded yet');
     if (!/^ort[\w.-]*\.(mjs|wasm)$/.test(name) || name.includes('..') || !fs.existsSync(path.join(dir, name))) throw notFound();
     reply.header('Cross-Origin-Resource-Policy', 'same-origin');
-    return sendFileRange(req, reply, path.join(dir, name), name.endsWith('.wasm') ? 'application/wasm' : 'text/javascript; charset=utf-8');
+    return sendFileRange(req, reply, path.join(dir, name), name.endsWith('.wasm') ? 'application/wasm' : 'text/javascript; charset=utf-8', undefined, [dir]);
   });
 
   app.get<{ Params: { id: string } }>('/items/:id/stems', async (req) => {
