@@ -42,12 +42,13 @@ const refreshing = new Map<string, Promise<void>>();
 /** Media-folder artwork is copied into the data dir on first use (see resolveImage). */
 const isInDataDir = (p: string) => path.resolve(p).startsWith(config.dataDir + path.sep);
 
-function cacheLocalCopy(id: string, source: string): string {
+/** Async: the original is usually on a network share, and a blocking copy from a slow NAS stalls every request. */
+async function cacheLocalCopy(id: string, source: string): Promise<string> {
   if (isInDataDir(source)) return source;
   try {
     const dest = path.join(config.imageCacheDir, 'local', id.slice(0, 2), id + path.extname(source).toLowerCase());
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.copyFileSync(source, dest);
+    await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+    await fs.promises.copyFile(source, dest);
     db.run('UPDATE images SET cached = ? WHERE id = ?', dest, id);
     return dest;
   } catch {
@@ -185,8 +186,8 @@ export async function resolveImage(id: string, width?: number): Promise<{ path: 
     file = row.cached;
   } else {
     file = row.source;
-    if (!isLocalImagePath(file) || !fs.existsSync(file)) throw notFound('Image file missing');
-    file = cacheLocalCopy(id, file);
+    if (!isLocalImagePath(file) || !(await exists(file))) throw notFound('Image file missing');
+    file = await cacheLocalCopy(id, file);
   }
   const ext = path.extname(file).toLowerCase();
   if (ext === '.svg') throw notFound('Image unavailable');

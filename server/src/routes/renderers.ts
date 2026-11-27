@@ -107,7 +107,7 @@ async function deviceStream(req: FastifyRequest<{ Params: { key: string; file: s
   reply.header('Cache-Control', 'no-store').header('transferMode.dlna.org', 'Streaming');
 
   if (c.f === 'srt') {
-    const vtt = fs.readFileSync(await subtitleVtt(c.m, Number(c.a)), 'utf8');
+    const vtt = await fs.promises.readFile(await subtitleVtt(c.m, Number(c.a)), 'utf8');
     return reply.type('text/srt; charset=utf-8').header('transferMode.dlna.org', 'Interactive').send(vttToSrt(vtt, c.t * 1000));
   }
   const fmt = target.entry.format;
@@ -115,7 +115,7 @@ async function deviceStream(req: FastifyRequest<{ Params: { key: string; file: s
   if (sub && req.headers['getcaptioninfo.sec']) reply.header('CaptionInfo.sec', sub);
 
   if (c.f === 'direct') {
-    if (!m.path || !fs.existsSync(m.path)) throw notFound('File is missing');
+    if (!m.path) throw notFound('File is missing');
     reply.header('contentFeatures.dlna.org', dlnaFeatures({ pn: fmt.pn, transcoded: false }));
     return sendFileRange(req, reply, m.path, fmt.mime);
   }

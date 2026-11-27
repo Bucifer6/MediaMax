@@ -27,9 +27,17 @@ const MIME: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic',
 };
 
-export function sendFileRange(req: FastifyRequest, reply: FastifyReply, file: string, mime: string, download?: string) {
-  const stat = fs.statSync(file);
-  const size = stat.size;
+/**
+ * Async on purpose: media usually lives on a network share, and a blocking stat on a slow or sleeping NAS stalls every
+ * request (the tray then shows "Starting..." and remote apps drop). A file that has gone is a 404.
+ */
+export async function sendFileRange(req: FastifyRequest, reply: FastifyReply, file: string, mime: string, download?: string) {
+  let size: number;
+  try {
+    size = (await fs.promises.stat(file)).size;
+  } catch {
+    throw notFound('File is missing from disk');
+  }
   reply.header('Accept-Ranges', 'bytes').header('Content-Type', mime).header('Cache-Control', 'private, max-age=3600');
   if (download) reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(download)}`);
   const range = req.headers.range;
@@ -192,10 +200,7 @@ export default async function playbackRoutes(app: FastifyInstance) {
     assertCanSee(user, m.item_id);
     if (req.query.session) touchSession(req.query.session);
     const mime = MIME[(m.container ?? path.extname(m.path ?? '').slice(1)).toLowerCase()] ?? 'application/octet-stream';
-    if (m.path) {
-      if (!fs.existsSync(m.path)) throw notFound('File is missing from disk');
-      return sendFileRange(req, reply, m.path, mime);
-    }
+    if (m.path) return sendFileRange(req, reply, m.path, mime);
     const ua = db.get<{ user_agent: string | null }>('SELECT s.user_agent FROM live_sources s JOIN libraries l ON l.source_id = s.id JOIN items i ON i.library_id = l.id WHERE i.id = ?', m.item_id)?.user_agent;
     return proxyRemote(req, reply, m.remote_url, ua || 'Kinora/1.0', mime, isUntrustedMedia(m.item_id));
   });

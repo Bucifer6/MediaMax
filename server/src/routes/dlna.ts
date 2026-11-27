@@ -83,7 +83,7 @@ export default async function dlnaRoutes(app: FastifyInstance) {
     guard(req);
     const mediaId = req.params.file.replace(/\.[^.]+$/, '');
     const m = db.get('SELECT * FROM media WHERE id = ?', mediaId);
-    if (!m?.path || !fs.existsSync(m.path)) throw notFound();
+    if (!m?.path) throw notFound();
     const user = dlnaUser();
     if (!user) throw forbidden();
     assertCanSee(user, m.item_id);
@@ -97,7 +97,7 @@ export default async function dlnaRoutes(app: FastifyInstance) {
     const media = db.get('SELECT item_id FROM media WHERE id = ?', req.params.mediaId);
     if (!user || !media) throw notFound();
     assertCanSee(user, media.item_id);
-    const vtt = fs.readFileSync(await subtitleVtt(req.params.mediaId, parseInt(req.params.file, 10)), 'utf8');
+    const vtt = await fs.promises.readFile(await subtitleVtt(req.params.mediaId, parseInt(req.params.file, 10)), 'utf8');
     // Convert WebVTT → SRT (most DLNA renderers want SRT).
     let n = 0;
     const srt = vtt.replace(/^WEBVTT.*\n+/, '').split(/\n{2,}/).filter((b) => b.includes('-->')).map((b) => `${++n}\n${b.replace(/(\d{2}:)?(\d{2}):(\d{2})\.(\d{3})/g, (_m, h, mm, ss, ms) => `${h ?? '00:'}${mm}:${ss},${ms}`)}`).join('\n\n');
