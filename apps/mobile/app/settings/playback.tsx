@@ -18,6 +18,9 @@ import { rulesSummary } from '@/player/djRules';
 import { DEVICE_VOICE, radioHostPrefs, wantsDeviceVoice, withHostPatch } from '@/player/radioHost';
 import { yourDjCommentary } from '@/player/yourDj';
 import { useMusic } from '@/state/music';
+import { EXTERNAL_PLAYERS, externalPlayerLabel } from '@/player/external';
+import { externalPlayerSupported, frameRateMatchingSupported, setExternalPlayer, setMatchFrameRate, useExternalPlayer, useMatchFrameRate } from '@/player/deviceSettings';
+import { MediaMaxMedia } from '../../modules/mediamax-media';
 
 const TRICKPLAY_MODES: { key: TrickplayMode; label: string; description: string }[] = [
   { key: 'always', label: 'Always', description: 'Load preview images when a video starts (data saver kicks in on slow connections)' },
@@ -69,7 +72,19 @@ const COMMENTARY: { key: YourDjCommentary; label: string; description: string }[
   { key: 'full', label: 'Full', description: 'Intros, plus a little between songs' },
 ];
 
-type Sheet = 'quality' | 'subMode' | 'audioLang' | 'subLang' | 'rg' | 'lipSync' | 'trickplay' | 'mixStyle' | 'hostLevel' | 'hostVoice' | 'commentary' | null;
+type Sheet = 'quality' | 'subMode' | 'audioLang' | 'subLang' | 'rg' | 'lipSync' | 'trickplay' | 'mixStyle' | 'hostLevel' | 'hostVoice' | 'commentary' | 'externalPlayer' | null;
+
+/** External players offered: "Ask every time" plus the ones installed (all of them on builds that can't tell). */
+function externalChoices(): typeof EXTERNAL_PLAYERS {
+  const pkgs = EXTERNAL_PLAYERS.flatMap((p) => (p.packageName ? [p.packageName] : []));
+  let installed: string[] | null = null;
+  try {
+    installed = MediaMaxMedia?.installedPlayers?.(pkgs) ?? null;
+  } catch {
+    installed = null;
+  }
+  return installed ? EXTERNAL_PLAYERS.filter((p) => !p.packageName || installed.includes(p.packageName)) : EXTERNAL_PLAYERS;
+}
 
 export default function PlaybackSettings() {
   const t = useTheme();
@@ -77,6 +92,8 @@ export default function PlaybackSettings() {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [error, setError] = useState<string | null>(null);
   const trickMode = useTrickplayMode();
+  const ext = useExternalPlayer();
+  const matchFrameRate = useMatchFrameRate();
   const m = useMusic();
   const [rulesOpen, setRulesOpen] = useState(false);
   const { active: activeRules, prefs: rulePrefs } = useRulePresets();
@@ -119,7 +136,22 @@ export default function PlaybackSettings() {
             <SettingRow icon="flash-outline" label="Skip intros automatically" toggle={p.skipIntros} onToggle={(v) => set({ skipIntros: v })} />
             <SettingRow icon="film-outline" label="Cinema mode (trailers before movies)" toggle={p.cinemaMode !== false} onToggle={(v) => set({ cinemaMode: v })} />
             <SettingRow icon="images-outline" label="Scrub previews" value={TRICKPLAY_MODES.find((m) => m.key === trickMode)?.label} onPress={() => setSheet('trickplay')} />
+            {frameRateMatchingSupported ? (
+              <SettingRow icon="tv-outline" label="Match frame rate" toggle={matchFrameRate} onToggle={(v) => void setMatchFrameRate(v)} />
+            ) : null}
           </SettingSection>
+          {externalPlayerSupported ? (
+            <SettingSection title="External player">
+              <SettingRow icon="open-outline" label="Open videos in another app" toggle={ext.enabled} onToggle={(v) => void setExternalPlayer({ ...ext, enabled: v })} />
+              {ext.enabled ? <SettingRow icon="apps-outline" label="Player" value={externalPlayerLabel(ext.packageName)} onPress={() => setSheet('externalPlayer')} /> : null}
+              <T tone="muted" style={{ marginTop: t.space.xs, marginHorizontal: t.space.sm }}>
+                For files the built-in player can’t handle: Vibe asks the server for the original file and hands it to VLC,
+                Kodi, Just Player, MX Player or mpv. VLC, Just Player, MX Player and mpv send the position back, so resume
+                and watched state stay right; with Kodi they don’t change. Downloads still play here. Dolby Vision plays
+                best in the built-in player.
+              </T>
+            </SettingSection>
+          ) : null}
           <SettingSection title="Audio">
             <SettingRow icon="moon-outline" label="Night mode (softer loud scenes)" toggle={!!audio.nightMode} onToggle={(v) => set({ audio: { ...audio, nightMode: v } })} />
             <SettingRow icon="chatbubbles-outline" label="Dialogue boost" toggle={!!audio.dialogueBoost} onToggle={(v) => set({ audio: { ...audio, dialogueBoost: v } })} />
@@ -186,6 +218,21 @@ export default function PlaybackSettings() {
       <OptionSheet visible={sheet === 'quality'} title="Maximum quality" options={QUALITY_OPTIONS.map((q) => ({ key: String(q.kbps ?? 'orig'), label: q.label, selected: q.kbps === p.maxBitrate }))} onSelect={(k) => set({ maxBitrate: k === 'orig' ? null : Number(k) })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'lipSync'} title="Lip-sync on this device" options={LIP_SYNC_OPTIONS.map((ms) => ({ key: String(ms), label: formatDelay(ms), selected: ms === lipSync }))} onSelect={(k) => deviceId && set({ audioDevices: { [deviceId]: Number(k) ? { delayMs: Number(k) } : {} } })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'trickplay'} title="Scrub previews" options={TRICKPLAY_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === trickMode }))} onSelect={(k) => { setSheet(null); void setTrickplayMode(k as TrickplayMode); }} onClose={() => setSheet(null)} />
+      <OptionSheet
+        visible={sheet === 'externalPlayer'}
+        title="External player"
+        options={(sheet === 'externalPlayer' ? externalChoices() : EXTERNAL_PLAYERS).map((o) => ({
+          key: o.packageName ?? '__ask',
+          label: o.label,
+          description: o.packageName ? (o.returnsPosition ? 'Sends your position back' : 'Doesn’t send your position back') : 'Android asks which app to use',
+          selected: o.packageName === ext.packageName,
+        }))}
+        onSelect={(k) => {
+          setSheet(null);
+          void setExternalPlayer({ ...ext, packageName: k === '__ask' ? null : k });
+        }}
+        onClose={() => setSheet(null)}
+      />
       <OptionSheet visible={sheet === 'mixStyle'} title="Transition style" options={MIX_STYLES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === (p.automixStyle ?? 'auto') }))} onSelect={(k) => set({ automixStyle: k as DjTransitionPreference })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'hostLevel'} title="Radio Host" options={HOST_LEVELS.map((l) => ({ key: l.key, label: l.label, description: l.description, selected: l.key === host.chattiness }))} onSelect={(k) => setHost({ chattiness: k as HostChattiness })} onClose={() => setSheet(null)} />
       <OptionSheet

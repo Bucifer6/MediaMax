@@ -200,8 +200,10 @@ is off by default**. It isn't included now.
   shows wrong colours, as before.
 - **HDR-preserving transcodes:** transcodes are SDR. A 10-bit HEVC/AV1 HDR10 encode for HDR clients would keep HDR
   when lowering the bitrate.
-- **Android TV refresh-rate switching:** Media3 changes the frame rate only when the switch is seamless
-  (`videoChangeFrameRateStrategy: 'onlyIfSeamless'`, the expo-video default). Full mode switching (Android 12+
-  `Surface.setFrameRate` with `CHANGE_FRAME_RATE_ALWAYS`) needs access to the player's surface, which expo-video
-  doesn't expose.
+- **Android TV refresh-rate switching:** Media3 changes the frame rate when the switch is seamless
+  (`videoChangeFrameRateStrategy: 'onlyIfSeamless'`, the expo-video default). With **Settings › Playback › Match frame
+  rate** on (Android TV / Fire TV, off by default), the app also switches the HDMI mode to the video's frame rate or a
+  whole multiple at the current resolution (`WindowManager.LayoutParams.preferredDisplayModeId`, see
+  `modules/mediamax-media/android/.../DisplayMatch.kt`); Fire OS only does it with its own "Match original frame rate"
+  on. HDR mode switching is still left to the platform (it follows the stream).
 - **Samsung AVPlay:** see above. If it is added, it must stay opt-in.
