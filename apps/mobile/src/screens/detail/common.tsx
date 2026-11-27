@@ -1,8 +1,9 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';
-import { Alert, FlatList, Linking, View } from 'react-native';
+import { Alert, FlatList, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { DownloadQuality, Item, Person, UserItemData } from '@/api/types';
+import { useQuery } from '@/api/useQuery';
 import { AddToPlaylistSheet } from '@/components/AddToPlaylistSheet';
 import { Button } from '@/components/Button';
 import { Focusable } from '@/components/Focusable';
@@ -21,6 +22,7 @@ import { useRemote } from '@/state/remote';
 import { useApi, useCapabilities, useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 import { formatClock, progressFraction } from '@/utils/format';
+import { localTrailer, openTrailer } from '@/utils/trailer';
 
 /** Played / favourite toggles and the star rating, with optimistic updates. */
 export function useUserDataActions(item: Item | undefined, onChange: (ud: UserItemData) => void) {
@@ -224,6 +226,9 @@ export function ActionBar({
   const [busy, setBusy] = useState(false);
   const [pickQuality, setPickQuality] = useState(false);
   const [playlistSheet, setPlaylistSheet] = useState(false);
+  // A local trailer extra plays in-app (the only way on Fire TV / Android TV, which have no browser for YouTube links).
+  const extras = useQuery(item.type === 'movie' || item.type === 'show' ? `extras:${item.id}` : null, (a) => a.extras(item.id), { staleMs: 300000 });
+  const trailer = localTrailer(extras.data);
   const canDownload = downloadable && caps.downloads && downloads.supported;
   const isAudio = item.type === 'track' || item.type === 'album' || item.type === 'audiobook' || item.type === 'bookpart' || item.type === 'podcast' || item.type === 'podcastepisode';
 
@@ -264,7 +269,7 @@ export function ActionBar({
         <Button icon={item.userData.played ? 'checkmark-done-circle' : 'checkmark-circle-outline'} variant="secondary" size="lg" onPress={togglePlayed} accessibilityLabel={item.userData.played ? 'Mark unwatched' : 'Mark watched'} />
         <Button icon={item.userData.favorite ? 'heart' : 'heart-outline'} variant="secondary" size="lg" onPress={toggleFavorite} accessibilityLabel={item.userData.favorite ? 'Remove favourite' : 'Add favourite'} />
         {canDownload ? <Button icon={dlIcon} label={dlLabel} variant="secondary" size="lg" onPress={onDownload} loading={busy} accessibilityLabel="Download" /> : null}
-        {item.trailerUrl ? <Button icon="film-outline" label={t.isTV ? 'Trailer' : undefined} variant="secondary" size="lg" onPress={() => Linking.openURL(item.trailerUrl!)} accessibilityLabel="Trailer" /> : null}
+        {item.trailerUrl || trailer ? <Button icon="film-outline" label={t.isTV ? 'Trailer' : undefined} variant="secondary" size="lg" onPress={() => void openTrailer({ trailerUrl: item.trailerUrl, local: trailer, tv: t.isTV })} accessibilityLabel="Play trailer" /> : null}
         {playlistItems ? <Button icon="list-outline" label={t.isTV ? 'Playlist' : undefined} variant="secondary" size="lg" onPress={() => setPlaylistSheet(true)} accessibilityLabel="Add to playlist" /> : null}
         {canPlayOn ? <Button icon="phone-portrait-outline" label={t.isTV ? 'Play on…' : undefined} variant="secondary" size="lg" onPress={() => setPlayOnSheet(true)} accessibilityLabel="Play on another device" /> : null}
         {extra}

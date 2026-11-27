@@ -2,16 +2,20 @@
  * The one-tap "Your DJ" card (Home and the music library screen). Starts a personal set picked by the Vibe server
  * (POST /dj/session with the active play-rules preset); while it plays, the card shows the segment and the DJ button.
  * Server only: offline, or with the AI DJ switched off by the admin, the card is disabled with a short note (or hidden).
+ * On TV every control is a remote-focusable pill, the card is width-capped, and "DJ mode" opens the DJ booth when the
+ * Advanced DJ preference is on (the TV has no other obvious way in).
  */
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useQuery } from '@/api/useQuery';
 import { DjSwitchButton } from '@/player/YourDjPanel';
+import { useAdvancedDj } from '@/state/dj';
 import { segmentOf } from '@/player/yourDj';
 import { useMusic } from '@/state/music';
 import { useSession } from '@/state/session';
 import { useTheme } from '@/theme';
+import { openDj } from '@/utils/nav';
 import { Focusable } from './Focusable';
 import { Icon } from './Icon';
 import { PlayRulesSheet, useRulePresets } from './PlayRulesSheet';
@@ -36,8 +40,9 @@ export function YourDjCard({ hasMusic, style }: { hasMusic?: boolean; style?: ob
   const { active } = useRulePresets();
   const [rulesOpen, setRulesOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const advancedDj = useAdvancedDj();
   const avail = m.yourDjAvailability;
-  if (!music || features.music === false || avail.hidden || t.isTV) return null;
+  if (!music || features.music === false || avail.hidden) return null;
   const live = !!m.yourDj;
   const seg = live ? segmentOf(m.yourDj, m.current?.id) ?? m.yourDj!.segments[m.yourDj!.segmentId] : null;
   const disabled = !avail.available && !live;
@@ -49,14 +54,14 @@ export function YourDjCard({ hasMusic, style }: { hasMusic?: boolean; style?: ob
   return (
     <View
       style={[
-        { marginHorizontal: t.space.gutter, marginVertical: t.space.sm, padding: t.space.md, borderRadius: t.radius * 1.2, gap: t.space.sm, backgroundColor: t.alpha(t.colors.primary, t.dark ? 0.16 : 0.1), borderWidth: 1, borderColor: t.alpha(t.colors.primary, 0.35), opacity: disabled ? 0.65 : 1 },
+        { marginHorizontal: t.space.gutter, marginVertical: t.space.sm, padding: t.space.md, maxWidth: t.isTV ? t.s(900) : undefined, borderRadius: t.radius * 1.2, gap: t.space.sm, backgroundColor: t.alpha(t.colors.primary, t.dark ? 0.16 : 0.1), borderWidth: 1, borderColor: t.alpha(t.colors.primary, 0.35), opacity: disabled ? 0.65 : 1 },
         style,
       ]}
       accessibilityLabel="Your DJ"
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.md }}>
-        <View style={{ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: t.colors.primary }}>
-          <Icon name="disc" size={30} color={t.colors.primaryText} />
+        <View style={{ width: t.s(52), height: t.s(52), borderRadius: t.s(26), alignItems: 'center', justifyContent: 'center', backgroundColor: t.colors.primary }}>
+          <Icon name="disc" size={t.s(30)} color={t.colors.primaryText} />
         </View>
         <View style={{ flex: 1, gap: 2 }}>
           <T variant="caption" tone="primary" weight="800" style={{ textTransform: 'uppercase' }}>{live ? 'Playing now' : 'Made for you'}</T>
@@ -69,8 +74,8 @@ export function YourDjCard({ hasMusic, style }: { hasMusic?: boolean; style?: ob
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.sm, flexWrap: 'wrap' }}>
         {live ? (
           <>
-            <Focusable onPress={() => router.push('/music')} ringRadius={999} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, backgroundColor: t.alpha(t.colors.text, 0.1) }} accessibilityLabel="Open Now Playing">
-              <Icon name="expand-outline" size={16} />
+            <Focusable onPress={() => router.push('/music')} ringRadius={999} style={{ flexDirection: 'row', alignItems: 'center', gap: t.s(6), paddingHorizontal: t.s(16), paddingVertical: t.s(9), borderRadius: 999, backgroundColor: t.alpha(t.colors.text, 0.1) }} accessibilityLabel="Open Now Playing">
+              <Icon name="expand-outline" size={t.s(16)} />
               <T variant="small" weight="700">Open</T>
             </Focusable>
             <DjSwitchButton withLabel onDark={t.dark} />
@@ -81,14 +86,20 @@ export function YourDjCard({ hasMusic, style }: { hasMusic?: boolean; style?: ob
             disabled={disabled || m.yourDjStarting}
             ringRadius={999}
             accessibilityLabel={m.yourDjStarting ? 'Your DJ is warming up' : 'Play Your DJ'}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999, backgroundColor: t.colors.primary }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: t.s(8), paddingHorizontal: t.s(20), paddingVertical: t.s(10), borderRadius: 999, backgroundColor: t.colors.primary }}
           >
-            {m.yourDjStarting ? <ActivityIndicator color={t.colors.primaryText} size="small" /> : <Icon name="play" size={18} color={t.colors.primaryText} />}
+            {m.yourDjStarting ? <ActivityIndicator color={t.colors.primaryText} size="small" /> : <Icon name="play" size={t.s(18)} color={t.colors.primaryText} />}
             <T weight="800" color={t.colors.primaryText}>{m.yourDjStarting ? 'Warming up…' : 'Play'}</T>
           </Focusable>
         )}
-        <Focusable onPress={() => setRulesOpen(true)} disabled={status !== 'signed-in'} ringRadius={999} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6 }} accessibilityLabel="Choose what Your DJ may play">
-          <Icon name="options-outline" size={14} color={t.colors.textMuted} />
+        {advancedDj ? (
+          <Focusable onPress={() => openDj()} ringRadius={999} style={{ flexDirection: 'row', alignItems: 'center', gap: t.s(6), paddingHorizontal: t.s(16), paddingVertical: t.s(9), borderRadius: 999, backgroundColor: t.alpha(t.colors.text, 0.1) }} accessibilityLabel="Open DJ mode">
+            <Icon name="disc-outline" size={t.s(16)} />
+            <T variant="small" weight="700">DJ mode</T>
+          </Focusable>
+        ) : null}
+        <Focusable onPress={() => setRulesOpen(true)} disabled={status !== 'signed-in'} ringRadius={999} style={{ flexDirection: 'row', alignItems: 'center', gap: t.s(4), paddingHorizontal: t.s(10), paddingVertical: t.s(6) }} accessibilityLabel="Choose what Your DJ may play">
+          <Icon name="options-outline" size={t.s(14)} color={t.colors.textMuted} />
           <T variant="caption" tone="muted" numberOfLines={1}>{active ? active.name : 'Play rules: everything'}</T>
         </Focusable>
       </View>
