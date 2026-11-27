@@ -139,6 +139,24 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   }
 }
 
+/** Waits before each retry of a GET that failed at the network level. */
+const NETWORK_RETRY_DELAYS_MS = [600, 2000];
+
+function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+/** A request that failed before reaching the server (no connection, DNS, timeout). */
+export function isNetworkError(e: unknown): boolean {
+  return e instanceof ApiError && e.code === 'network';
+}
+
 /** Validate a server by calling /system/info. Returns the working base URL. */
 export async function probeServer(input: string): Promise<{ baseUrl: string; info: SystemInfo }> {
   let lastErr: unknown = null;
@@ -234,12 +252,22 @@ export class MediaMaxClient {
     const url = `${this.baseUrl}${API_PREFIX}${path}${buildQuery(opts.query)}`;
     const init: RequestInit = { method, headers: this.headers(opts.body !== undefined), signal: opts.signal };
     if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
-    let res: Response;
-    try {
-      res = await fetchWithTimeout(url, init, opts.timeoutMs ?? 20000);
-    } catch (e) {
-      if ((e as Error)?.name === 'AbortError' && opts.signal?.aborted) throw e;
-      throw new ApiError(0, 'network', 'Network error — is the server reachable?');
+    // Reads are retried on a network failure. After a device has been idle (TV sticks and phones that
+    // slept, Wi-Fi that is still reconnecting, a keep-alive connection the server or a proxy closed) the
+    // first request often fails although the server is fine; the next attempt reconnects.
+    const retryDelays = method === 'GET' || method === 'HEAD' ? NETWORK_RETRY_DELAYS_MS : [];
+    let res!: Response;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        res = await fetchWithTimeout(url, init, opts.timeoutMs ?? 20000);
+        break;
+      } catch (e) {
+        if (opts.signal?.aborted) throw e;
+        const delay = retryDelays[attempt];
+        if (delay === undefined) throw new ApiError(0, 'network', 'Network error — is the server reachable?');
+        await sleep(delay, opts.signal);
+        if (opts.signal?.aborted) throw e;
+      }
     }
     if (res.status === 204) return undefined as T;
     const text = await res.text();
