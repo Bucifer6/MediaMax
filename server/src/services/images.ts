@@ -55,7 +55,8 @@ async function cacheLocalCopy(id: string, source: string): Promise<string | null
   if (!file || !(await fileExists(file))) return null;
   if (isInDataDir(file)) return file;
   try {
-    const dest = path.join(config.imageCacheDir, 'local', id.slice(0, 2), id + path.extname(file).toLowerCase());
+    // The copy's name comes from the image id and a fixed extension list, never from the original's path.
+    const dest = path.join(config.imageCacheDir, 'local', id.slice(0, 2), id + (CACHE_EXT[path.extname(file).toLowerCase()] ?? '.jpg'));
     await fs.promises.mkdir(path.dirname(dest), { recursive: true });
     await fs.promises.copyFile(file, dest);
     db.run('UPDATE images SET cached = ? WHERE id = ?', dest, id);
@@ -64,6 +65,11 @@ async function cacheLocalCopy(id: string, source: string): Promise<string | null
     return file;
   }
 }
+
+const CACHE_EXT: Record<string, string> = {
+  '.jpg': '.jpg', '.jpeg': '.jpeg', '.png': '.png', '.webp': '.webp', '.gif': '.gif', '.tbn': '.tbn', '.avif': '.avif',
+  '.bmp': '.bmp', '.heic': '.heic', '.heif': '.heif', '.tiff': '.tiff',
+};
 
 /** How long a request waits for artwork on a slow share before answering "unavailable" (the copy carries on). */
 export const LOCAL_ARTWORK_WAIT_MS = 8000;

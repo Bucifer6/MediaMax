@@ -10,32 +10,33 @@ import { parseJson } from './misc.js';
  * from the database (scanned media, registered artwork), never directly from a request, but a path outside every one
  * of these folders is refused anyway: a bad row or a future bug must not turn into reading arbitrary files.
  */
-let cached: { at: number; roots: string[] } | null = null;
-const TTL_MS = 5000;
+let cached: { key: string; roots: string[] } | null = null;
 
 const asPrefix = (root: string) => {
   const r = path.resolve(root);
   return r.endsWith(path.sep) ? r : r + path.sep;
 };
 
+/** Read on every call (a tiny table), so a library added a moment ago is served at once. */
 export function servableRoots(): string[] {
-  const now = Date.now();
-  if (cached && now - cached.at < TTL_MS) return cached.roots;
-  const libs = db.all<{ paths: string }>('SELECT paths FROM libraries').flatMap((l) => parseJson<string[]>(l.paths, []));
+  const libPaths = db.all<{ paths: string }>('SELECT paths FROM libraries ORDER BY id').map((l) => l.paths);
   let recordings: string | null = null;
   try {
     recordings = getSettings().dvr?.recordingsPath ?? null;
   } catch {
     recordings = null;
   }
+  const key = JSON.stringify([libPaths, recordings]);
+  if (cached?.key === key) return cached.roots;
+  const libs = libPaths.flatMap((p) => parseJson<string[]>(p, []));
   const roots = [...libs, config.dataDir, config.recordingsDir, recordings, config.webDir, process.env.MEDIAMAX_ORT_DIR]
     .filter((p): p is string => typeof p === 'string' && p.trim() !== '')
     .map(asPrefix);
-  cached = { at: now, roots: [...new Set(roots)] };
+  cached = { key, roots: [...new Set(roots)] };
   return cached.roots;
 }
 
-/** Drop the cached folder list (a library was added or changed; tests). */
+/** Drop the cached folder list (tests). */
 export function forgetServableRoots() {
   cached = null;
 }
