@@ -37,13 +37,17 @@ test('a blocked main thread is reported in the log file by the watchdog thread w
   const file = path.join(dir, 'mediamax.log');
   startWatchdog(dir, 600);
   await sleep(1200); // worker up, first heartbeats sent
-  // Block the event loop the way a synchronous read on a stalled network share does.
-  const until = Date.now() + 2500;
-  while (Date.now() < until) {
-    /* busy */
+  // Block the event loop (a named function, so the captured stack can be checked).
+  function blockMainThreadForTest(ms: number) {
+    const until = Date.now() + ms;
+    while (Date.now() < until) {
+      /* busy */
+    }
   }
+  blockMainThreadForTest(4000);
   // The report is written during the stall, not after it: check before yielding to the event loop again.
   const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  assert.match(text, /watchdog: Main thread stack: blockMainThreadForTest \(watchdog\.test\.ts:\d+\)/, text);
   assert.match(text, /watchdog: The server has not responded for \d+ s \(main thread blocked\)\. Last known memory: heap \d+ MB of \d+ MB, process \d+ MB\. Requests in progress: none/);
   fs.rmSync(dir, { recursive: true, force: true });
 });

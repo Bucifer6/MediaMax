@@ -1,7 +1,7 @@
 {
   "name": "mediamax",
   "private": true,
-  "version": "0.6.6",
+  "version": "0.6.7",
   "license": "MIT",
   "description": "Vibe - all-in-one self-hosted media server with Xtream IPTV, live TV, DVR and fully server-driven branding.",
   "workspaces": [
