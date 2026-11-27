@@ -111,7 +111,7 @@ test('keys, effects, server cue points and plan sanitising', () => {
   assert.equal(phaseNudge(5, 1), null);
 });
 
-test('effects as volume shapes: equal-power crossfade, bounded overlap, every shape from (1,0) to (0,1)', () => {
+test('effects as volume shapes: every shape an equal-power crossfade from (1,0) to (0,1), crossing on the swap line', () => {
   for (const fx of ['none', 'bassSwap', 'filter', 'echo']) {
     const s = fxGains(fx, 0, 0.5, 0.75);
     const e = fxGains(fx, 1, 0.5, 0.75);
@@ -121,9 +121,12 @@ test('effects as volume shapes: equal-power crossfade, bounded overlap, every sh
       const g = fxGains(fx, i / 100, 0.5, 0.75);
       assert.ok(g.out >= 0 && g.out <= 1 && g.inc >= 0 && g.inc <= 1);
       assert.ok(g.out + g.inc <= 2 + 1e-9);
-      if (fx === 'none') assert.ok(Math.abs(g.out ** 2 + g.inc ** 2 - 1) < 1e-9, 'equal power');
+      assert.ok(Math.abs(g.out ** 2 + g.inc ** 2 - 1) < 1e-9, `${fx}: equal power (no stacked full-level tracks, no cut)`);
     }
   }
+  const swap = fxGains('bassSwap', 0.3, 0.3, 0.75);
+  assert.ok(Math.abs(swap.out - swap.inc) < 1e-9, 'bass swap: equal level on the swap line');
+  assert.ok(fxGains('echo', 0.9, 0.5, 0.75).out > 0.05, 'echo-out: the old track still fading, not cut, just before its drop-out');
   assert.equal(automixLabel({ fx: 'none', style: 'fade' }), 'Crossfade');
   assert.equal(automixLabel({ fx: 'bassSwap', style: 'blend' }), 'Beat-matched swap');
 });
