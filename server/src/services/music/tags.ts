@@ -128,20 +128,24 @@ export function parseMbTags(tags: Record<string, string | undefined | null>): Mb
 /**
  * Minimal ID3v2.3/2.4 reader for what ffprobe drops: the UFID "http://musicbrainz.org" frame (recording id) and
  * every value of multi-valued TXXX frames. Reads at most the tag (capped at 1 MiB). Never throws.
+ *
+ * Asynchronous on purpose: music libraries often live on another PC's share (\PC\Music). A synchronous read there
+ * blocks the whole server — every request, stream and the health check — for as long as Windows waits for the
+ * share (up to a minute when that PC is busy or waking up).
  */
-export function readId3Extras(file: string): Record<string, string> {
+export async function readId3Extras(file: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
-  let fd: number | null = null;
+  let fh: fs.promises.FileHandle | null = null;
   try {
-    fd = fs.openSync(file, 'r');
+    fh = await fs.promises.open(file, 'r');
     const head = Buffer.alloc(10);
-    if (fs.readSync(fd, head, 0, 10, 0) < 10 || head.toString('latin1', 0, 3) !== 'ID3') return out;
+    if ((await fh.read(head, 0, 10, 0)).bytesRead < 10 || head.toString('latin1', 0, 3) !== 'ID3') return out;
     const ver = head[3];
     if (ver !== 3 && ver !== 4) return out;
     const size = ((head[6] & 0x7f) << 21) | ((head[7] & 0x7f) << 14) | ((head[8] & 0x7f) << 7) | (head[9] & 0x7f);
     const len = Math.min(size, 1 << 20);
     const buf = Buffer.alloc(len);
-    fs.readSync(fd, buf, 0, len, 10);
+    await fh.read(buf, 0, len, 10);
     let pos = 0;
     if (head[5] & 0x40) {
       // Extended header: skip it.
@@ -167,7 +171,7 @@ export function readId3Extras(file: string): Record<string, string> {
   } catch {
     /* unreadable: no extras */
   } finally {
-    if (fd !== null) fs.closeSync(fd);
+    await fh?.close().catch(() => {});
   }
   return out;
 }
@@ -187,9 +191,9 @@ function decodeText(b: Buffer, enc: number): string {
 }
 
 /** ffprobe tags + the raw ID3 extras for MP3s (extras win: they carry every value). */
-export function tagsWithId3(file: string, tags: Record<string, string>): Record<string, string> {
+export async function tagsWithId3(file: string, tags: Record<string, string>): Promise<Record<string, string>> {
   if (!/\.mp3$/i.test(file)) return tags;
-  const extra = readId3Extras(file);
+  const extra = await readId3Extras(file);
   return Object.keys(extra).length ? { ...tags, ...extra } : tags;
 }
 

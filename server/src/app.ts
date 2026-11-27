@@ -10,6 +10,7 @@ import fastifyStatic from '@fastify/static';
 import { config } from './config.js';
 import { HttpError } from './util/errors.js';
 import { logger } from './util/log.js';
+import { trackRequests } from './util/watchdog.js';
 import { authHook } from './http.js';
 import { dbPerf } from './db.js';
 import systemRoutes from './routes/system.js';
@@ -144,6 +145,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       reply.header('X-MM-Time', ((performance.now() - ((req as any).perfT ?? 0))).toFixed(2));
     });
   }
+  trackRequests(app);
   app.addHook('onRequest', authHook);
   app.addHook('onSend', async (req, reply, payload) => compressPayload(req, reply, payload));
   app.addHook('onSend', async (_req, reply) => {

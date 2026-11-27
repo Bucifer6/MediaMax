@@ -140,6 +140,7 @@ namespace Vibe.Tray
         bool announced;
         int quickExits;
         DateTime startedAt;
+        readonly object consoleLock = new object();
 
         public TrayContext(bool open)
         {
@@ -239,6 +240,9 @@ namespace Vibe.Tray
             psi.WorkingDirectory = Settings.AppDir;
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
+            // The server's error output: the only place a fatal crash (out of memory, a native fault) is written,
+            // since the process dies before its own log is flushed. Kept in logs\server-console.log with each exit code.
+            psi.RedirectStandardError = true;
             // Pass on the machine-wide settings the installer wrote, which a tray started from an older
             // environment block (e.g. right after setup) would not have inherited.
             psi.EnvironmentVariables["KINORA_PORT"] = Settings.Port.ToString();
@@ -246,15 +250,49 @@ namespace Vibe.Tray
             if (data != null) psi.EnvironmentVariables["KINORA_DATA"] = data;
             try
             {
-                server = Process.Start(psi);
-                server.EnableRaisingEvents = true;
-                server.Exited += delegate { ui.Post(delegate { OnServerExited(); }, null); };
+                Process p = Process.Start(psi);
+                server = p;
+                p.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs ev) { if (ev.Data != null) ConsoleLog(ev.Data); };
+                p.BeginErrorReadLine();
+                p.EnableRaisingEvents = true;
+                p.Exited += delegate
+                {
+                    // WaitForExit() also waits for the redirected output to be read to the end.
+                    try { p.WaitForExit(); } catch { }
+                    int code = -1;
+                    try { code = p.ExitCode; } catch { }
+                    ConsoleLog("[tray] Server exited with code " + code + " (0x" + code.ToString("X8") + ") after " + Math.Round((DateTime.UtcNow - startedAt).TotalSeconds) + " s");
+                    ui.Post(delegate { OnServerExited(); }, null);
+                };
                 startedAt = DateTime.UtcNow;
+                ConsoleLog("[tray] Server started (process " + p.Id + ")");
             }
             catch (Exception e)
             {
                 server = null;
                 icon.ShowBalloonTip(10000, "Vibe could not start", e.Message, ToolTipIcon.Error);
+            }
+        }
+
+        /// <summary>Appends a timestamped line to logs\server-console.log (rotated at 5 MB). Never throws.</summary>
+        void ConsoleLog(string line)
+        {
+            lock (consoleLock)
+            {
+                try
+                {
+                    string dir = Path.Combine(Settings.DataDir, "logs");
+                    Directory.CreateDirectory(dir);
+                    string file = Path.Combine(dir, "server-console.log");
+                    FileInfo fi = new FileInfo(file);
+                    if (fi.Exists && fi.Length > 5 * 1024 * 1024)
+                    {
+                        File.Copy(file, file + ".1", true);
+                        File.Delete(file);
+                    }
+                    File.AppendAllText(file, DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ") + " " + line + Environment.NewLine);
+                }
+                catch { }
             }
         }
 

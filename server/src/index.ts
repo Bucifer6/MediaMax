@@ -22,10 +22,12 @@ import { stopActiveRecordings } from './services/dvr.js';
 import { stopNetwork } from './services/network.js';
 import { initHardwareDetection } from './services/hwdetect.js';
 import { initUpdates } from './services/updates.js';
+import { startWatchdog } from './util/watchdog.js';
 
 const log = logger('main');
 
 async function main() {
+  startWatchdog(config.logDir); // first: stalls and crashes during start-up are recorded too
   if (!ffmpegAvailable()) log.warn('ffmpeg was not found — transcoding, live TV remuxing and DVR will not work. Set KINORA_FFMPEG.');
   cleanupTranscodeDir();
   initWebhooks();
