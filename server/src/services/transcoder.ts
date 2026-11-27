@@ -397,11 +397,8 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
     args.push('-c:a', 'copy');
     if (o.audioPlan?.codec === 'copy' && !o.audioPlan.bsf && o.audioPlan.sourceCodec === 'truehd') args.push('-strict', '-2');
     // Encoded video starts exactly at the seek point, but copied audio would start at the keyframe before it (up to a
-    // few seconds earlier). In fMP4 that start difference only lives in the edit lists, which ExoPlayer (Android TV /
-    // Fire TV) and hls.js ignore in fragmented MP4: they played the sound ~1-2 s late. Drop the audio before the seek
-    // point, and write no edit lists so every player reads the same (correct) sample times.
+    // few seconds earlier): ExoPlayer (Android TV / Fire TV) played the sound ~1-2 s late. Drop the audio before it.
     if (encodeVideo && seekSec) args.push('-copypriorss:a', '0');
-    if (encodeVideo && segmentType === 'fmp4') args.push('-hls_segment_options', 'use_editlist=0');
   } else if (o.audioPlan && o.hasVideo) {
     args.push(...audioArgs(o.audioPlan));
     audioCodec = o.audioPlan.codec;
@@ -412,6 +409,11 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
   }
   if (o.mode === 'transcode' && o.startSec > 0) args.push('-output_ts_offset', o.startSec.toFixed(3));
   if (o.mode !== 'live') args.push('-max_muxing_queue_size', '2048');
+  // fMP4 fragments otherwise count time from where this ffmpeg started and keep the real position (the seek point)
+  // only in the edit lists, which hls.js and ExoPlayer ignore in fragmented MP4: after a seek the web player put the
+  // new segments at the start of the film and jumped back there. frag_discont stamps every fragment with its real
+  // time, so all players agree with the playlist.
+  if (segmentType === 'fmp4' && o.mode !== 'live') args.push('-hls_segment_options', 'movflags=+frag_discont');
 
   args.push('-f', 'hls', '-hls_time', String(seg));
   if (segmentType === 'fmp4') args.push('-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', 'init.mp4');
