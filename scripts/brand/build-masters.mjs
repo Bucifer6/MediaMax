@@ -214,6 +214,13 @@ for (const [nm, bg] of [['dark', bgDark], ['light', bgLight]]) {
   put(`app-icon-${nm}.svg`, svg(1024, 1024, `<defs>${bg('aibg', 512, 512)}${m.defs}</defs><rect width="512" height="512" fill="url(#aibg)"/>${m.body}`, { vb: '0 0 512 512' }));
 }
 
+// Android TV / Fire TV icon: Fire TV builds a sideloaded app's 16:9 home-screen tile from this square icon by cropping
+// its middle band, so the disc sits well inside the centre 56% (about 46% of the width).
+{
+  const m = centered(markFull('tv'), (0.46 * 256) / RADIUS);
+  put('tv-icon.svg', svg(1024, 1024, `<defs>${bgDark('tvibg', 512, 512)}${m.defs}</defs><rect width="512" height="512" fill="url(#tvibg)"/>${m.body}`, { vb: '0 0 512 512' }));
+}
+
 // Android adaptive icon: 108 dp canvas, 72 dp visible, 66 dp safe circle. The disc is 48 dp across: well inside the
 // safe circle and about two thirds of the visible mask, like the iOS icon.
 const ADAPTIVE = ((48 / 108) * 256) / RADIUS;

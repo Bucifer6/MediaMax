@@ -80,7 +80,7 @@ const JOBS = [
   ['wordmark-light.svg', `${MOBILE}/brand/wordmark-light.png`, 960],
   ['mark.svg', `${MOBILE}/brand/mark.png`, 512],
   ['tv-banner.svg', `${MOBILE}/tv/tv-banner.png`, 320, 180],
-  ['app-icon-dark.svg', `${MOBILE}/tv/tv-icon.png`, 512],
+  ['tv-icon.svg', `${MOBILE}/tv/tv-icon.png`, 512],
   ['appletv-icon-front.svg', `${MOBILE}/tv/appletv-icon-front-1280x768.png`, 1280, 768],
   ['appletv-icon-back.svg', `${MOBILE}/tv/appletv-icon-back-1280x768.png`, 1280, 768],
   ['appletv-icon-front.svg', `${MOBILE}/tv/appletv-icon-front-400x240.png`, 400, 240],
