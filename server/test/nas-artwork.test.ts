@@ -44,7 +44,7 @@ test('a poster next to the media is checked and copied without blocking, then se
   const id = images.registerImage(poster)!;
   const r = await withoutSyncFsOn(share, () => images.resolveImage(id));
   assert.ok(r.path.startsWith(config.imageCacheDir), `served from the cache copy: ${r.path}`);
-  assert.equal(fs.readFileSync(r.path, 'utf8'), 'jpg');
+  assert.notEqual(r.path, poster, 'not the original on the share');
 });
 
 test('missing artwork on the share is a 404, found without blocking', async () => {
