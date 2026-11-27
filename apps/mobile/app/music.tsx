@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { FlatList, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Visualizer } from '@/player/Visualizer';
 import { CastButton } from '@/cast';
 import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
@@ -25,7 +26,7 @@ import { useTVRemote } from '@/tv';
 import { formatClock } from '@/utils/format';
 import { openDj } from '@/utils/nav';
 
-type Panel = 'queue' | 'lyrics' | 'chapters' | 'bookmarks' | 'yourdj';
+type Panel = 'queue' | 'lyrics' | 'chapters' | 'bookmarks' | 'yourdj' | 'visualizer';
 const speedLabel = (r: number) => `${r}x`;
 const SLEEP_MINUTES = [5, 15, 30, 45, 60];
 
@@ -47,7 +48,7 @@ export default function NowPlaying() {
   const lyrics = useLyrics(isTrack && panel === 'lyrics' ? cur.id : null);
   // A panel that no longer applies (track ↔ episode) falls back to the queue.
   useEffect(() => {
-    if ((panel === 'lyrics' && !isTrack) || (panel === 'chapters' && !m.chapters.length) || (panel === 'bookmarks' && !m.spoken) || (panel === 'yourdj' && !m.yourDj)) setPanel('queue');
+    if (((panel === 'lyrics' || panel === 'visualizer') && !isTrack) || (panel === 'chapters' && !m.chapters.length) || (panel === 'bookmarks' && !m.spoken) || (panel === 'yourdj' && !m.yourDj)) setPanel('queue');
   }, [panel, isTrack, m.chapters.length, m.spoken, m.yourDj]);
   useTVRemote((e) => {
     if (e.eventType === 'playPause') m.toggle();
@@ -126,6 +127,7 @@ export default function NowPlaying() {
         <PanelChip icon="list" label="Up next" active={panel === 'queue'} onPress={() => setPanel('queue')} />
         {m.yourDj ? <PanelChip icon="disc-outline" label="Your DJ" active={panel === 'yourdj'} onPress={() => setPanel(panel === 'yourdj' ? 'queue' : 'yourdj')} /> : null}
         {isTrack ? <PanelChip icon="chatbubble-ellipses-outline" label="Lyrics" active={panel === 'lyrics'} onPress={() => setPanel(panel === 'lyrics' ? 'queue' : 'lyrics')} /> : null}
+        {isTrack ? <PanelChip icon="pulse-outline" label="Visualiser" active={panel === 'visualizer'} onPress={() => setPanel(panel === 'visualizer' ? 'queue' : 'visualizer')} /> : null}
         {m.chapters.length ? <PanelChip icon="bookmarks-outline" label="Chapters" active={panel === 'chapters'} onPress={() => setPanel(panel === 'chapters' ? 'queue' : 'chapters')} /> : null}
         {/* Long music: the ±15/30 s buttons took the shuffle / repeat places on the transport row. */}
         {m.longTrack ? <PanelChip icon="shuffle" label="Shuffle" active={m.shuffle} onPress={() => m.setShuffle(!m.shuffle)} /> : null}
@@ -167,7 +169,7 @@ export default function NowPlaying() {
       <YourDjPanel />
     </ScrollView>
   );
-  const sidePanel = panel === 'lyrics' ? lyricsPanel : panel === 'chapters' ? chapterList : panel === 'bookmarks' ? <BookmarksPanel /> : panel === 'yourdj' && m.yourDj ? djPanel : null;
+  const sidePanel = panel === 'visualizer' ? <Visualizer art={art} /> : panel === 'lyrics' ? lyricsPanel : panel === 'chapters' ? chapterList : panel === 'bookmarks' ? <BookmarksPanel /> : panel === 'yourdj' && m.yourDj ? djPanel : null;
 
   const queue = (
     <FlatList

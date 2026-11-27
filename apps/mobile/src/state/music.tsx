@@ -197,6 +197,8 @@ interface MusicValue {
   /** The server hasn't said yet whether Your DJ is on; pressing Play asks it again. */
   yourDjChecking: boolean;
   yourDjStarting: boolean;
+  /** BPM / beat grid / energy of a track (cached; null when it can't be analysed). Drives the visualiser. */
+  analysisFor: (id: string) => Promise<TrackAnalysis | null>;
   /** One tap: a personal set from the library (server), played as an endless Automix mix. `message` when it couldn't start. */
   startYourDj: () => Promise<{ ok: boolean; message?: string }>;
   /** "Switch it up": a different segment, starting with the next track. */
@@ -2226,6 +2228,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       yourDj,
       yourDjAvailability: yourDjAvail,
       yourDjChecking,
+      analysisFor,
       yourDjStarting,
       startYourDj,
       djSwitch,
@@ -2249,7 +2252,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     }),
     [queue, index, current, status, durationMs, mode.longTrack, shuffle, repeat, error, spoken, rate, chapters, playQueue, livePlayer, report, advance, playing, castOn, castState, ours, cast.positionMs, cast.mediaStatus, cast.deviceName, seekAny, pauseAny, volume, sleep, sleepRemainingMs, setSleep, altSource,
       automixOn, automixPref, mixStyle, mixSession, playAsMix, endless, blend, abortBlend, completeBlend, releaseStandby, updatePreferences, user?.preferences.automix,
-      yourDj, yourDjAvail, yourDjChecking, yourDjStarting, startYourDj, djSwitch, djRequest, djLove, dispatchDj, aiOn, djStatus, hostState, hostMuted, hostMode, setHostMuted, swapAtEnd],
+      yourDj, yourDjAvail, yourDjChecking, analysisFor, yourDjStarting, startYourDj, djSwitch, djRequest, djLove, dispatchDj, aiOn, djStatus, hostState, hostMuted, hostMode, setHostMuted, swapAtEnd],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
