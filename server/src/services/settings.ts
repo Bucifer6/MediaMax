@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS: ServerSettings = {
     segmentSeconds: 4,
     toneMapHdr: true,
     gpuIndex: 0,
+    qsvApi: 'd3d11',
     preferredCodecs: ['hevc', 'h264'],
     allowHevcEncoding: true,
     allowAv1Encoding: false,
@@ -341,6 +342,7 @@ function normaliseTranscoding(t: ServerSettings['transcoding']): ServerSettings[
     ...t,
     hwAccel: HW_ACCELS.includes(t.hwAccel) ? t.hwAccel : 'none',
     gpuIndex: Math.max(0, Math.min(15, Math.floor(Number(t.gpuIndex) || 0))),
+    qsvApi: t.qsvApi === 'dxva2' ? 'dxva2' : 'd3d11',
     preferredCodecs: [...new Set(codecs)],
   };
 }

@@ -11,6 +11,7 @@ type T = ServerSettings['transcoding'];
 /** True when this result card describes the accelerator and device currently set in the form. */
 function isCurrent(m: HwMethodResult, t: T) {
   if (m.hwAccel !== t.hwAccel) return false;
+  if (m.qsvApi && m.qsvApi !== (t.qsvApi ?? 'd3d11')) return false;
   if (m.device && (m.hwAccel === 'vaapi' || m.hwAccel === 'qsv')) return m.device === t.vaapiDevice;
   if (m.gpuIndex != null) return m.gpuIndex === (t.gpuIndex ?? 0);
   return true;
@@ -35,7 +36,7 @@ function Card({ m, current, onUse }: { m: HwMethodResult; current: boolean; onUs
       <div className="hwd-head">
         <div>
           <div className="hwd-title">{m.label}</div>
-          <div className="muted hwd-dev">{[m.deviceName, m.device, m.gpuIndex != null ? `GPU ${m.gpuIndex}` : null].filter(Boolean).join(' · ') || '—'}</div>
+          <div className="muted hwd-dev">{[m.deviceName, m.device, m.gpuIndex != null ? `GPU ${m.gpuIndex}` : null, m.qsvApi === 'dxva2' ? 'DXVA2' : null].filter(Boolean).join(' · ') || '—'}</div>
         </div>
         <div className="hwd-badges">
           {m.recommended && <Badge tone="primary">Recommended</Badge>}
@@ -93,6 +94,7 @@ export function HardwareDetect({ value, onUse }: { value: T; onUse: (patch: Part
     const patch: Partial<T> = { hwAccel: m.hwAccel };
     if (m.device && (m.hwAccel === 'vaapi' || m.hwAccel === 'qsv')) patch.vaapiDevice = m.device;
     if (m.gpuIndex != null) patch.gpuIndex = m.gpuIndex;
+    if (m.qsvApi) patch.qsvApi = m.qsvApi;
     onUse(patch);
     toast.success(`${m.label} selected — save changes to apply`);
   };

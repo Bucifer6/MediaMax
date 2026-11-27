@@ -188,8 +188,9 @@ let autoDetectFor: string | null = null;
 export function detectCacheKey(): string {
   const s = getSettings().transcoding;
   // Not keyed on hwAccel: detection tests every method whichever one is selected, so switching between them must not
-  // throw the report away and re-run a minute of test transcodes.
-  return JSON.stringify({ vaapiDevice: s.vaapiDevice, gpuIndex: s.gpuIndex ?? 0, ffmpeg: ffmpegVersionString() });
+  // throw the report away and re-run a minute of test transcodes. `v` changes when detection itself learns something new
+  // (v2: Windows QSV falls back to DXVA2), so reports made by an older version are re-run once after an upgrade.
+  return JSON.stringify({ v: 2, vaapiDevice: s.vaapiDevice, gpuIndex: s.gpuIndex ?? 0, ffmpeg: ffmpegVersionString() });
 }
 
 /** Background detection is skipped under `node --test`, with KINORA_NO_HWDETECT=1 (MEDIAMAX_ alias), and without ffmpeg. */
@@ -259,7 +260,7 @@ export function detectedMethod(hw: HwAccel): HwMethodResult | null {
   const win = process.platform === 'win32';
   return detectReport.methods.find((m) => m.hwAccel === hw && m.available && (
     m.device ? m.device === s.vaapiDevice : m.gpuIndex == null || m.gpuIndex === s.gpuIndex || (!win && hw !== 'nvenc')
-  )) ?? null;
+  ) && (!m.qsvApi || m.qsvApi === (s.qsvApi ?? 'd3d11'))) ?? null;
 }
 
 /** Whether an encoder can be used: in this ffmpeg build, and not failed in the detect step. */
@@ -347,7 +348,7 @@ export function buildArgs(o: TranscodeOptions, outDir: string, startNumber: numb
     const gpuPossible = !overlay && swFilters.length === 0;
     const dv5 = o.videoRange?.dolbyVision?.profile === 5;
     const toneMap = !wantToneMap ? null : ctx.toneMap === undefined || ctx.toneMap === 'auto' ? pickToneMap(hw, platform, gpuPossible, dv5) : ctx.toneMap;
-    const target = { hw, platform, vaapiDevice: s.vaapiDevice, gpuIndex: s.gpuIndex ?? 0 };
+    const target = { hw, platform, vaapiDevice: s.vaapiDevice, gpuIndex: s.gpuIndex ?? 0, qsvApi: s.qsvApi };
     // Image subtitles are overlaid on the CPU (hybrid pipeline): the hardware decoder still decodes, into system memory.
     const vr = o.videoRange;
     const sourceColor = vr ? { transfer: vr.colorTransfer, primaries: vr.colorPrimaries, matrix: vr.colorSpace } : null;

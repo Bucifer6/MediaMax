@@ -13,7 +13,7 @@
  *            surfaces → hardware encode. Used for burn-in, CPU tone-mapping, and for accelerators that take
  *            system-memory frames anyway (VideoToolbox, AMF, V4L2 M2M).
  */
-import type { HwAccel, ToneMapPath, TranscodeVideoCodec } from '@mediamax/shared';
+import type { HwAccel, QsvWindowsApi, ToneMapPath, TranscodeVideoCodec } from '@mediamax/shared';
 
 export interface HwTarget {
   hw: HwAccel;
@@ -22,7 +22,12 @@ export interface HwTarget {
   vaapiDevice: string;
   /** GPU / adapter index for NVENC, and QSV / AMF on Windows. */
   gpuIndex: number;
+  /** QSV on Windows: the graphics API under it (default d3d11). */
+  qsvApi?: QsvWindowsApi;
 }
+
+/** QSV on Windows over DXVA2 (older Intel runtimes, 6th–10th gen iGPUs). */
+const qsvDxva2 = (t: HwTarget) => t.hw === 'qsv' && t.platform === 'win32' && t.qsvApi === 'dxva2';
 
 export const HW_LABELS: Record<HwAccel, string> = {
   none: 'Software (CPU)',
@@ -214,6 +219,12 @@ export function hwInputArgs(t: HwTarget, mode: 'full' | 'hybrid', decode: boolea
       return a;
     }
     case 'qsv': {
+      if (win && t.qsvApi === 'dxva2') {
+        // The old Intel runtime cannot use D3D11 texture arrays (fixed frame pools, decoder surfaces); DXVA2 works.
+        const a = ['-init_hw_device', `dxva2=dx9:${idx}`, '-init_hw_device', 'qsv=qs@dx9', '-filter_hw_device', 'qs'];
+        if (decode) a.push('-hwaccel', 'dxva2', '-hwaccel_device', 'dx9', ...(full ? ['-hwaccel_output_format', 'dxva2_vld'] : []));
+        return a;
+      }
       if (win) {
         const a = ['-init_hw_device', `d3d11va=dx11:${idx}`, '-init_hw_device', 'qsv=qs@dx11', '-filter_hw_device', full ? 'dx11' : 'qs'];
         if (decode) a.push('-hwaccel', 'd3d11va', '-hwaccel_device', 'dx11', ...(full ? ['-hwaccel_output_format', 'd3d11'] : []));
@@ -304,7 +315,8 @@ export function buildVideoPipeline(p: PipelineInput): VideoPipeline {
     // Pass decoded surfaces through; frames the GPU could not decode are uploaded instead of failing.
     if (hw === 'vaapi') filters.push('format=nv12|p010le|vaapi', 'hwupload');
     else if (hw === 'nvenc') filters.push('format=nv12|p010le|cuda', 'hwupload');
-    else if (hw === 'qsv') filters.push(`format=nv12|p010le|${win ? 'd3d11' : 'vaapi'}`, 'hwupload');
+    // DXVA2 surfaces map straight to QSV (an upload step there fails on the old runtime).
+    else if (hw === 'qsv' && !qsvDxva2(t)) filters.push(`format=nv12|p010le|${win ? 'd3d11' : 'vaapi'}`, 'hwupload');
     if (gpuDeint && hw === 'vaapi') filters.push('deinterlace_vaapi=rate=field');
     if (gpuDeint && hw === 'nvenc') filters.push('yadif_cuda=mode=send_field:parity=auto:deint=interlaced');
     // QSV on Linux can tone-map on the VA-API side before mapping to QSV.

@@ -433,6 +433,70 @@ test('recommend: highest-priority working method, else software', () => {
   assert.match(r.reason, /tone-mapping: qsv/);
 });
 
+/* ----------------------- Windows QSV over DXVA2 ----------------------- */
+
+const QDX = { ...T('qsv', 'win32', 0), qsvApi: 'dxva2' as const };
+
+test('Windows QSV over DXVA2: device args, full and hybrid pipelines', () => {
+  assert.deepEqual(hwInputArgs(QDX, 'full', true), ['-init_hw_device', 'dxva2=dx9:0', '-init_hw_device', 'qsv=qs@dx9', '-filter_hw_device', 'qs', '-hwaccel', 'dxva2', '-hwaccel_device', 'dx9', '-hwaccel_output_format', 'dxva2_vld']);
+  assert.deepEqual(hwInputArgs(QDX, 'hybrid', false), ['-init_hw_device', 'dxva2=dx9:0', '-init_hw_device', 'qsv=qs@dx9', '-filter_hw_device', 'qs']);
+  // Full: decoder surfaces map straight to QSV (no upload step), then QSV tone-map / scale.
+  const full = buildVideoPipeline({ target: QDX, codec: 'h264', height: 720, sourceHeight: 2160, toneMap: 'qsv', decode: true });
+  assert.equal(full.mode, 'full');
+  assert.deepEqual(full.filters, ['hwmap=derive_device=qsv', 'format=qsv', 'vpp_qsv=tonemap=1:format=nv12', 'scale_qsv=w=round(iw*720/ih/2)*2:h=720:format=nv12']);
+  const hyb = buildVideoPipeline({ target: QDX, codec: 'h264', height: 720, sourceHeight: 1080, toneMap: null, swFilters: ['subtitles=x.srt'], decode: true });
+  assert.deepEqual(hyb.filters, ['scale=-2:720', 'subtitles=x.srt', 'format=nv12', 'hwupload=extra_hw_frames=64']);
+  // qsvApi is ignored off Windows and for other accelerators.
+  assert.deepEqual(hwInputArgs({ ...QDX, platform: 'linux' }, 'hybrid', false), hwInputArgs(T('qsv'), 'hybrid', false));
+  assert.deepEqual(hwInputArgs({ ...QDX, hw: 'nvenc' }, 'hybrid', false), hwInputArgs(T('nvenc', 'win32'), 'hybrid', false));
+});
+
+test('buildArgs uses the qsvApi setting on Windows', () => {
+  updateSettings({ transcoding: { qsvApi: 'dxva2' } } as any);
+  try {
+    const q = buildArgs(opts() as any, '/t', 0, { hw: 'qsv', codec: 'h264', toneMap: null, platform: 'win32' });
+    assert.ok(q.args.includes('dxva2=dx9:0'));
+    assert.equal(q.args[q.args.indexOf('-vf') + 1], 'hwmap=derive_device=qsv,format=qsv,scale_qsv=w=round(iw*1080/ih/2)*2:h=1080:format=nv12');
+  } finally {
+    updateSettings({ transcoding: { qsvApi: 'd3d11' } } as any);
+  }
+});
+
+test('planCandidates: Windows QSV starts on D3D11', () => {
+  const w = det.planCandidates('win32', [{ kind: 'windows-gpu', path: null, name: 'Intel(R) HD Graphics 630', driver: null, vendor: 'intel', index: 0 }], allEnc);
+  assert.equal(w.find((x) => x.hwAccel === 'qsv')!.qsvApi, 'd3d11');
+});
+
+test('withQsvFallback: retries Windows QSV over DXVA2 only when D3D11 fails', async () => {
+  const cand = { hwAccel: 'qsv' as const, label: 'Intel Quick Sync', device: null, gpuIndex: 0, deviceName: 'HD 630', unavailable: null, qsvApi: 'd3d11' as const };
+  const calls: string[] = [];
+  const ok = (c: typeof cand) => { calls.push(c.qsvApi); return Promise.resolve(method({ hwAccel: 'qsv', qsvApi: c.qsvApi, notes: [] })); };
+  const bad = (c: typeof cand) => { calls.push(c.qsvApi); return Promise.resolve(method({ hwAccel: 'qsv', qsvApi: c.qsvApi, works: false, error: `${c.qsvApi} failed`, notes: [] })); };
+
+  // D3D11 works → no retry.
+  assert.equal((await det.withQsvFallback(method({ hwAccel: 'qsv', qsvApi: 'd3d11' }), cand, ok)).qsvApi, 'd3d11');
+  assert.deepEqual(calls, []);
+  // D3D11 fails, DXVA2 works → the DXVA2 result, with a note.
+  const r = await det.withQsvFallback(method({ hwAccel: 'qsv', qsvApi: 'd3d11', works: false, error: 'd3d11 failed' }), cand, ok);
+  assert.equal(r.qsvApi, 'dxva2');
+  assert.equal(r.works, true);
+  assert.match(r.notes[0], /DXVA2.*d3d11 failed/);
+  // Both fail → keep the D3D11 result and say DXVA2 was tried.
+  const f = await det.withQsvFallback(method({ hwAccel: 'qsv', qsvApi: 'd3d11', works: false, error: 'd3d11 failed', notes: [] }), cand, bad);
+  assert.equal(f.qsvApi, 'd3d11');
+  assert.match(f.notes.at(-1)!, /Also tried over DXVA2: dxva2 failed/);
+  // Not tested at all (unavailable), or not Windows QSV → untouched.
+  calls.length = 0;
+  await det.withQsvFallback(method({ hwAccel: 'qsv', available: false, works: false }), cand, ok);
+  await det.withQsvFallback(method({ hwAccel: 'vaapi', works: false }), { ...cand, hwAccel: 'vaapi' as any, qsvApi: undefined as any }, ok);
+  assert.deepEqual(calls, []);
+});
+
+test('recommend carries the QSV API', () => {
+  const r = det.recommend([method({ id: 'none:default' }), method({ id: 'qsv:0', hwAccel: 'qsv', gpuIndex: 0, qsvApi: 'dxva2' })]);
+  assert.equal(r.qsvApi, 'dxva2');
+});
+
 test('detect test commands are built from the playback pipeline', () => {
   const a = det.testArgs(T('vaapi'), { codec: 'hevc', input: 'testsrc', toneMap: null, decode: false });
   assert.deepEqual(a, ['-y', '-init_hw_device', `vaapi=va:${DEV}`, '-filter_hw_device', 'va', '-f', 'lavfi', '-i', 'testsrc2=size=1920x1080:rate=30', '-t', '2', '-an',
@@ -725,4 +789,12 @@ test('local ffmpeg parses every GPU filter the pipelines build (only missing-dev
     checked++;
   }
   assert.ok(checked > 0 || !hf('scale_vaapi'));
+});
+
+test('decode-only test over DXVA2 downloads in the clip\'s exact format; other targets keep the list', () => {
+  const vf = (a: string[] | null) => a![a!.indexOf('-vf') + 1];
+  assert.equal(vf(det.decodeTestArgs(QDX, '/h264.mp4')), 'hwdownload,format=nv12');
+  assert.equal(vf(det.decodeTestArgs(QDX, '/hdr.mp4', [], true)), 'hwdownload,format=p010le');
+  assert.equal(vf(det.decodeTestArgs(T('qsv', 'win32'), '/hdr.mp4', [], true)), 'hwdownload,format=nv12|p010le');
+  assert.equal(vf(det.decodeTestArgs(T('vaapi'), '/hdr.mp4', ['nv15'], true)), 'hwdownload,format=nv12|p010le|nv15');
 });
