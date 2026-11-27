@@ -218,7 +218,7 @@ test('Picard tags from a real FLAC (Vorbis comments, multi-value ids and names)'
     BARCODE: '5099749534728', CATALOGNUMBER: 'XL-1', LABEL: 'XL Recordings', MUSICBRAINZ_ALBUMID_BAD: 'not-a-uuid',
   });
   const pr = await probe(f, f);
-  const mb = tags.parseMbTags(tags.tagsWithId3(f, pr.tags));
+  const mb = tags.parseMbTags(await tags.tagsWithId3(f, pr.tags));
   assert.equal(mb.recording, ID.recA);
   assert.equal(mb.releaseTrack, ID.rec1);
   assert.equal(mb.release, ID.rel21);
@@ -245,7 +245,7 @@ test('Picard tags from a real MP3: ID3v2.4 TXXX via ffprobe, plus UFID and every
   }, ['-id3v2_version', '4']);
   const pr = await probe(f, f);
   assert.ok(Object.keys(pr.tags).some((k) => /musicbrainz album id/i.test(k)), 'ffprobe exposes TXXX by description');
-  const mb = tags.parseMbTags(tags.tagsWithId3(f, pr.tags));
+  const mb = tags.parseMbTags(await tags.tagsWithId3(f, pr.tags));
   assert.equal(mb.release, ID.rel21);
   assert.equal(mb.releaseGroup, ID.rg21);
   assert.deepEqual(mb.releaseTypes, ['single']);
@@ -268,9 +268,9 @@ test('Picard tags from a real MP3: ID3v2.4 TXXX via ffprobe, plus UFID and every
   const pr2 = await probe(withTag, withTag);
   assert.equal(pr2.tags.title, 'Raw Song');
   assert.equal(tags.parseMbTags(pr2.tags).recording, null, 'ffprobe alone misses the UFID');
-  const extra = tags.readId3Extras(withTag);
+  const extra = await tags.readId3Extras(withTag);
   assert.equal(extra.ufid, ID.recA);
-  const mb2 = tags.parseMbTags(tags.tagsWithId3(withTag, pr2.tags));
+  const mb2 = tags.parseMbTags(await tags.tagsWithId3(withTag, pr2.tags));
   assert.equal(mb2.recording, ID.recA);
   assert.deepEqual(mb2.artists, [ID.artA, ID.artB]);
   assert.deepEqual(mb2.artistNames, ['Artist A', 'Artist B']);

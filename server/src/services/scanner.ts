@@ -540,7 +540,7 @@ async function scanMusic(ctx: ScanCtx, files: FileEntry[]) {
       try {
         pr = await probe(f.path, f.path);
         tags = pr.tags;
-        mbRaw = mbTagSubset(tagsWithId3(f.path, pr.tags));
+        mbRaw = mbTagSubset(await tagsWithId3(f.path, pr.tags));
       } catch (e) {
         log.warn(`Probe failed for ${f.path}: ${(e as Error).message}`);
         if (cachedExtra) tags = cachedExtra.tags ?? {};
