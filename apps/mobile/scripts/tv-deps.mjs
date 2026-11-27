@@ -12,12 +12,13 @@
  * The tvOS fork publishes versions as <rn-version>-<patch>, e.g. 0.88.1-0, so we
  * keep the same React Native minor that the Expo SDK pins.
  *
- * package.json also carries `"overrides": { "react-native": "$react-native" }`. Without it, npm
- * satisfies the `react-native` peer dependency of @react-native-tvos/virtualized-lists with a second,
- * stock copy nested under node_modules/react-native/node_modules. Both copies end up in the TV
- * bundle, `fetch` is still undefined when expo-router wraps it, and the app dies at launch with
- * "TypeError: Cannot convert undefined value to object". The override pins every `react-native`
- * request to whatever the root dependency is (stock or the tvOS alias).
+ * package.json also carries `overrides["react-native"]`, which this script keeps equal to the
+ * `react-native` dependency. Without it, npm satisfies the `react-native` peer dependency of
+ * @react-native-tvos/virtualized-lists with a second, stock copy nested under
+ * node_modules/react-native/node_modules. Both copies end up in the TV bundle, `fetch` is still
+ * undefined when expo-router wraps it, and the app dies at launch with "TypeError: Cannot convert
+ * undefined value to object". The override pins every `react-native` request to the root flavour.
+ * It is a literal spec, not "$react-native": npm 10 cannot resolve that reference to an alias.
  */
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -39,10 +40,11 @@ let target = current;
 if (mode === 'on' || (mode === 'auto' && isTvEnv)) target = `npm:react-native-tvos@${TVOS}`;
 else if (mode === 'off') target = STOCK;
 
-if (target === current) {
+if (target === current && pkg.overrides?.['react-native'] === target) {
   console.log(`[tv-deps] react-native already ${current}`);
 } else {
   pkg.dependencies['react-native'] = target;
+  pkg.overrides = { ...pkg.overrides, 'react-native': target };
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
   // The lockfile pins the other flavour; drop it so EAS / npm resolve the alias.
   const lock = path.join(root, 'package-lock.json');
