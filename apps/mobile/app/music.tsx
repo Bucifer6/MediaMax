@@ -58,6 +58,8 @@ export default function NowPlaying() {
 
   const art = cur.posterUrl ?? cur.thumbUrl;
   const size = t.isTV ? t.s(panel === 'queue' ? 420 : 300) : Math.min(t.width - 64, t.height * (panel === 'queue' || t.wide ? 0.42 : 0.22), 420);
+  /** TV artwork: its own column, so it may use most of the height but must leave room for the controls and the queue. */
+  const tvArt = Math.round(Math.min(t.s(420), t.height * 0.55, t.width * 0.24));
   const transportIcon = t.isTV ? t.s(34) : 32;
   const canPlayOn = remote.enabled && status === 'signed-in';
   const sleepLabel = m.sleep ? (m.sleepRemainingMs != null ? `Sleep ${formatClock(m.sleepRemainingMs)}` : m.sleep.mode === 'time' ? 'Sleep' : 'Sleep · end') : 'Sleep';
@@ -216,7 +218,17 @@ export default function NowPlaying() {
           </Focusable>
         </View>
       ) : null}
-      {t.isTV || t.wide ? (
+      {t.isTV ? (
+        // TV: artwork, controls and the queue / lyrics panel side by side. Stacked, the artwork plus the controls (with
+        // the Your DJ card) were taller than the screen and the art and transport were cut off.
+        <View style={{ flex: 1, flexDirection: 'row', padding: t.space.gutter, gap: t.space.xl, alignItems: 'center' }}>
+          <View style={{ width: tvArt, height: tvArt, borderRadius: t.radius, overflow: 'hidden', backgroundColor: '#222', shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 30 }}>
+            {art ? <Img path={art} width={tvArt} style={{ width: '100%', height: '100%' }} /> : null}
+          </View>
+          {controls}
+          <View style={{ flex: 1, alignSelf: 'stretch' }}>{sidePanel ?? queue}</View>
+        </View>
+      ) : t.wide ? (
         <View style={{ flex: 1, flexDirection: 'row', padding: t.space.gutter, gap: t.space.xxl, alignItems: 'center' }}>
           <View style={{ gap: t.space.xl, alignItems: 'flex-start' }}>
             <View style={{ width: size, height: size, borderRadius: t.radius, overflow: 'hidden', backgroundColor: '#222', shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 30 }}>
