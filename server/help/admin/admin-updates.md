@@ -3,7 +3,7 @@ title: Updating {{product}} and getting support
 summary: How to update the server on Docker, Windows and Linux, and how to collect diagnostics for a bug report.
 section: admin
 audience: admin
-keywords: update, upgrade, version, update now, check for updates, github, docker pull, release, new version, pre-release, diagnostics, logs, bug report, support, zip
+keywords: update, upgrade, version, update now, automatic updates, install updates automatically, permission prompt, uac, check for updates, github, docker pull, release, new version, pre-release, diagnostics, logs, bug report, support, zip
 related: admin-backups, admin-setup
 order: 17
 ---
@@ -15,19 +15,34 @@ You're running version **{{version}}**. The version is shown on **Admin → Over
 {{product}} looks for a new release on GitHub every 12 hours. When there is one, **Admin → Overview** shows a banner
 and **Admin → Updates** shows the new version and its release notes. Press **Check now** to look straight away.
 Turn off **Check for new versions automatically** on that page to stop the checks, or turn on **Include
-pre-releases** to be offered test versions too. Nothing is ever installed until you press **Update now**.
+pre-releases** to be offered test versions too.
+
+## Automatic updates (Windows)
+
+On a server installed with the Windows setup program, **Install updates automatically** (on **Admin → Updates**, on
+by default) installs a new version by itself once nothing is playing or recording. Nobody needs to be at the server
+and Windows shows no permission prompt, in tray app and background service mode alike. Turn it off to install only
+when you press **Update now**. A version that fails to install is tried again a day later at the soonest; the reason
+is shown on **Admin → Updates**.
 
 ## Update now (Windows)
 
-On a server installed with the Windows setup program, press **Update now** on **Admin → Updates**. {{product}}
-downloads the new setup program from the GitHub release, checks it against the release's `SHA256SUMS.txt`, and runs
-it. Setup stops {{product}}, installs the new version in the same folder (keeping tray app or background service mode
-and the port) and starts it again. Playback stops for a minute or two, and the page reloads when the server is back.
+On a server installed with the Windows setup program, press **Update now** on **Admin → Updates** (from any
+browser; you don't need to be at the server). The new setup program is downloaded from the GitHub release, checked
+against the release's `SHA256SUMS.txt`, and run. Setup stops {{product}}, installs the new version in the same folder
+(keeping tray app or background service mode and the port) and starts it again. Playback stops for a minute or two,
+and the page reloads when the server is back.
 
-- **Tray app:** Windows asks for permission first (setup needs administrator rights). Choosing **No** cancels the update.
-- **Background service:** setup runs without asking, through a one-off **Vibe update** scheduled task.
-- If the server does not come back, the setup log is in the Windows temp folder (`Setup Log *.txt`); run the setup
-  program from the release page by hand.
+Setup registers a **Vibe updater** scheduled task that runs as SYSTEM and that signed-in users may start but not
+change. Updates go through it, so Windows doesn't ask for permission. It only ever installs a newer official release
+from GitHub that matches its checksum. Its download, log (`setup.log`) and last result are in the `updates` folder
+inside the {{product}} program folder.
+
+- **Installed before the updater task existed, tray app mode:** the first update still makes Windows on the server
+  ask for permission (choosing **No** cancels it). That update adds the task, and later ones need no prompt.
+- **Same case, background service mode:** setup runs without asking, through a one-off **Vibe update** scheduled task.
+- If the server does not come back, see `updates\setup.log` in the program folder (or `Setup Log *.txt` in the
+  Windows temp folder), or run the setup program from the release page by hand.
 
 Other installs can't replace themselves (a container image, or program files only an administrator can write), so
 **Admin → Updates** shows the steps below instead.
