@@ -14,6 +14,12 @@ export type Param = SQLInputValue | boolean | undefined;
  */
 export const dbPerf = { enabled: process.env.MEDIAMAX_PERF === '1', queries: 0, slowMs: Number(process.env.MEDIAMAX_PERF_SLOW_MS ?? 20) };
 
+/**
+ * Set by the watchdog (util/watchdog.ts): called around every statement, so a query that holds the main thread for
+ * minutes is named in the log while it is still running, and slow ones are logged when they finish.
+ */
+export const dbTrace: { start?: (sql: string) => void; end?: (sql: string, ms: number) => void } = {};
+
 class Database {
   readonly raw: DatabaseSync;
   private stmtCache = new Map<string, ReturnType<DatabaseSync['prepare']>>();
@@ -49,16 +55,29 @@ class Database {
     return r;
   }
 
+  private traced<R>(sql: string, fn: () => R): R {
+    const t = performance.now();
+    dbTrace.start?.(sql);
+    try {
+      return fn();
+    } finally {
+      dbTrace.end?.(sql, performance.now() - t);
+    }
+  }
+
   all<T = Row>(sql: string, ...params: Param[]): T[] {
     if (dbPerf.enabled) return this.timed(sql, () => this.stmt(sql).all(...this.norm(params)) as T[]);
+    if (dbTrace.start) return this.traced(sql, () => this.stmt(sql).all(...this.norm(params)) as T[]);
     return this.stmt(sql).all(...this.norm(params)) as T[];
   }
   get<T = Row>(sql: string, ...params: Param[]): T | undefined {
     if (dbPerf.enabled) return this.timed(sql, () => this.stmt(sql).get(...this.norm(params)) as T | undefined);
+    if (dbTrace.start) return this.traced(sql, () => this.stmt(sql).get(...this.norm(params)) as T | undefined);
     return this.stmt(sql).get(...this.norm(params)) as T | undefined;
   }
   run(sql: string, ...params: Param[]) {
     if (dbPerf.enabled) return this.timed(sql, () => this.stmt(sql).run(...this.norm(params)));
+    if (dbTrace.start) return this.traced(sql, () => this.stmt(sql).run(...this.norm(params)));
     return this.stmt(sql).run(...this.norm(params));
   }
   exec(sql: string) {

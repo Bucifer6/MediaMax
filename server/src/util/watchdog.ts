@@ -4,6 +4,7 @@ import v8 from 'node:v8';
 import { Worker } from 'node:worker_threads';
 import type { FastifyInstance } from 'fastify';
 import { logger } from './log.js';
+import { dbTrace } from '../db.js';
 
 /**
  * Leaves a trace when the server stops answering or dies, which the normal log can't do by itself: a blocked main
@@ -11,7 +12,8 @@ import { logger } from './log.js';
  *
  * - A watchdog thread notices when the main thread misses its heartbeat and writes, straight to mediamax.log, how
  *   long it has been stuck, the last known memory use, which requests were in progress and the main thread's
- *   JavaScript stack at that moment (read through the inspector).
+ *   JavaScript stack at that moment (read through the inspector), and the database query running, if any.
+ * - Database queries slower than 2 s are logged with their SQL when they finish.
  * - After a stall the main thread logs how long it was blocked.
  * - The JavaScript heap nearing its limit is logged (with the requests in progress) before it becomes a crash.
  * - A fatal error writes a Node diagnostic report (stack, heap, handles) into the logs folder.
@@ -25,6 +27,9 @@ export const STALL_REPORT_MS = 10_000;
 const HEARTBEAT_MS = 500;
 const SLOTS = 4; // Float64: heartbeat time, heap used, heap limit, rss
 const INFLIGHT_BYTES = 4096;
+const QUERY_BYTES = 2048;
+/** Queries slower than this are logged with their SQL when they finish. */
+export const SLOW_QUERY_MS = 2000;
 
 const inflight = new Map<object, { label: string; at: number }>();
 
@@ -61,6 +66,8 @@ const inspector = require('node:inspector');
 const nums = new Float64Array(workerData.nums);
 const lenArr = new Int32Array(workerData.len);
 const text = new Uint8Array(workerData.text);
+const qLen = new Int32Array(workerData.qLen);
+const qText = new Uint8Array(workerData.qText);
 const mb = (n) => Math.round(n / 1048576) + ' MB';
 const write = (line) => { try { fs.appendFileSync(workerData.logFile, new Date().toISOString() + ' ' + line + '\\n'); } catch {} };
 
@@ -105,9 +112,11 @@ setInterval(() => {
   nextReportAt = Date.now() + 30000;
   const n = Atomics.load(lenArr, 0);
   const reqs = Buffer.from(text.slice(0, n)).toString('utf8') || 'none';
+  const qn = Atomics.load(qLen, 0);
+  const query = qn > 0 ? Buffer.from(qText.slice(0, qn)).toString('utf8') : null;
   write('[ERROR] watchdog: The server has not responded for ' + Math.round(stuck / 1000) +
     ' s (main thread blocked). Last known memory: heap ' + mb(nums[1]) + ' of ' + mb(nums[2]) + ', process ' + mb(nums[3]) +
-    '. Requests in progress: ' + reqs);
+    '. Requests in progress: ' + reqs + (query ? '. Database query running: ' + query : ''));
   captureStack((stack) => write('[ERROR] watchdog: Main thread stack: ' + stack));
 }, 1000); // keeps this thread alive; the main side unrefs the worker, so it never holds the process open
 `;
@@ -147,6 +156,25 @@ export function startWatchdog(logDir: string, stallMs = STALL_REPORT_MS) {
   const nums = new Float64Array(numsBuf);
   const lenArr = new Int32Array(lenBuf);
   const text = new Uint8Array(textBuf);
+  const qLenBuf = new SharedArrayBuffer(4);
+  const qTextBuf = new SharedArrayBuffer(QUERY_BYTES);
+  const qLen = new Int32Array(qLenBuf);
+  const qText = new Uint8Array(qTextBuf);
+  // The statement running now (one line, capped), readable by the watchdog thread while the main thread is stuck.
+  const oneLine = new Map<string, Buffer>();
+  dbTrace.start = (sql) => {
+    let b = oneLine.get(sql);
+    if (!b) {
+      b = Buffer.from(sql.replace(/\s+/g, ' ').trim(), 'utf8').subarray(0, QUERY_BYTES);
+      if (oneLine.size < 5000) oneLine.set(sql, b);
+    }
+    qText.set(b);
+    Atomics.store(qLen, 0, b.length);
+  };
+  dbTrace.end = (sql, ms) => {
+    Atomics.store(qLen, 0, 0);
+    if (ms >= SLOW_QUERY_MS) log.warn(`Slow database query (${(ms / 1000).toFixed(1)} s): ${sql.replace(/\s+/g, ' ').trim().slice(0, 1500)}. Requests in progress: ${inflightSummary()}`);
+  };
   const limit = v8.getHeapStatistics().heap_size_limit;
 
   let last = Date.now();
@@ -175,7 +203,7 @@ export function startWatchdog(logDir: string, stallMs = STALL_REPORT_MS) {
   try {
     const w = new Worker(WORKER_SRC, {
       eval: true,
-      workerData: { nums: numsBuf, len: lenBuf, text: textBuf, logFile, stallMs },
+      workerData: { nums: numsBuf, len: lenBuf, text: textBuf, qLen: qLenBuf, qText: qTextBuf, logFile, stallMs },
       resourceLimits: { maxOldGenerationSizeMb: 16 },
     });
     w.unref();

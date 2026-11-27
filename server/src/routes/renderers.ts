@@ -19,6 +19,7 @@ import {
 } from '../services/renderers/index.js';
 import { SOFTWARE_TONEMAP, transcodeArgs, verifyStream, vttToSrt } from '../services/renderers/stream.js';
 import { dlnaFeatures } from '../services/renderers/xml.js';
+import { fileExists } from '../util/fileAsync.js';
 
 const ACTIONS = new Set(['pause', 'resume', 'stop', 'seek', 'volume', 'next', 'previous']);
 let lastDiscover = 0;
@@ -115,7 +116,7 @@ async function deviceStream(req: FastifyRequest<{ Params: { key: string; file: s
   if (sub && req.headers['getcaptioninfo.sec']) reply.header('CaptionInfo.sec', sub);
 
   if (c.f === 'direct') {
-    if (!m.path || !fs.existsSync(m.path)) throw notFound('File is missing');
+    if (!m.path || !(await fileExists(m.path))) throw notFound('File is missing');
     reply.header('contentFeatures.dlna.org', dlnaFeatures({ pn: fmt.pn, transcoded: false }));
     return sendFileRange(req, reply, m.path, fmt.mime);
   }

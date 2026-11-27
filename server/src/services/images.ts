@@ -9,6 +9,7 @@ import { nowIso } from '../util/misc.js';
 import { notFound } from '../util/errors.js';
 import { logger } from '../util/log.js';
 import { safeFetch } from '../util/net.js';
+import { fileExists } from '../util/fileAsync.js';
 
 const log = logger('images');
 
@@ -42,18 +43,45 @@ const refreshing = new Map<string, Promise<void>>();
 /** Media-folder artwork is copied into the data dir on first use (see resolveImage). */
 const isInDataDir = (p: string) => path.resolve(p).startsWith(config.dataDir + path.sep);
 
-function cacheLocalCopy(id: string, source: string): string {
+/**
+ * The copy of media-folder artwork in the data dir, made on first use. Fully asynchronous: the original is usually
+ * on a NAS or another PC, and a blocking check or copy there froze the whole server for minutes while the share
+ * woke up (each poster on a home screen is one request). Resolves to null when the original is missing.
+ */
+async function cacheLocalCopy(id: string, source: string): Promise<string | null> {
+  if (!(await fileExists(source))) return null;
   if (isInDataDir(source)) return source;
   try {
     const dest = path.join(config.imageCacheDir, 'local', id.slice(0, 2), id + path.extname(source).toLowerCase());
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.copyFileSync(source, dest);
+    await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+    await fs.promises.copyFile(source, dest);
     db.run('UPDATE images SET cached = ? WHERE id = ?', dest, id);
     return dest;
   } catch {
     return source;
   }
 }
+
+/** How long a request waits for artwork on a slow share before answering "unavailable" (the copy carries on). */
+export const LOCAL_ARTWORK_WAIT_MS = 8000;
+const copying = new Map<string, Promise<string | null>>();
+
+/** cacheLocalCopy, once per image at a time, waited for at most LOCAL_ARTWORK_WAIT_MS. */
+async function localArtwork(id: string, source: string, waitMs = LOCAL_ARTWORK_WAIT_MS): Promise<string> {
+  let p = copying.get(id);
+  if (!p) {
+    p = cacheLocalCopy(id, source).finally(() => copying.delete(id));
+    copying.set(id, p);
+  }
+  let timer: NodeJS.Timeout | undefined;
+  const slow = new Promise<'slow'>((r) => (timer = setTimeout(() => r('slow'), waitMs)));
+  const file = await Promise.race([p, slow]).finally(() => clearTimeout(timer));
+  if (file === 'slow') throw notFound('Image unavailable: its disk is not responding');
+  if (!file) throw notFound('Image file missing');
+  return file;
+}
+/** Tests only. */
+export const _localArtwork = localArtwork;
 
 /**
  * Called while scanning (the disk is awake then): drop the copy if the original artwork changed. Asynchronous: the
@@ -184,9 +212,8 @@ export async function resolveImage(id: string, width?: number): Promise<{ path: 
     // never wakes a sleeping NAS disk. The scanner refreshes the copy when the original changes.
     file = row.cached;
   } else {
-    file = row.source;
-    if (!isLocalImagePath(file) || !fs.existsSync(file)) throw notFound('Image file missing');
-    file = cacheLocalCopy(id, file);
+    if (!isLocalImagePath(row.source)) throw notFound('Image file missing');
+    file = await localArtwork(id, row.source);
   }
   const ext = path.extname(file).toLowerCase();
   if (ext === '.svg') throw notFound('Image unavailable');
