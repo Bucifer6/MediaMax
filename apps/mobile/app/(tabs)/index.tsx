@@ -175,6 +175,7 @@ function TVHome({ rows }: { rows: HomeRow[] }) {
       <ScrollView contentContainerStyle={{ paddingBottom: t.space.xxl }} showsVerticalScrollIndicator={false}>
         <TVSpotlightInfo item={t.theme.heroStyle === 'none' ? null : focused} height={spotlightHeight} />
         <DecideChips />
+        <YourDjCard />
         {rows.map((row, idx) =>
           row.type === 'live-now' || row.type === 'favorite-channels' ? (
             <ChannelRow key={row.id} title={row.title || DEFAULT_TITLES[row.type]} channels={row.channels ?? []} />
