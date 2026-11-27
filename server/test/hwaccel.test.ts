@@ -318,7 +318,7 @@ test('buildArgs: VA-API HEVC with GPU tone-mapping on fMP4 HLS', () => {
     '-vf', 'format=nv12|p010le|vaapi,hwupload,tonemap_vaapi=format=nv12:p=bt709:t=bt709:m=bt709,scale_vaapi=w=-2:h=1080:format=nv12',
     '-c:v', 'hevc_vaapi', '-tag:v', 'hvc1', '-b:v', '5200k', '-maxrate', '5200k', '-bufsize', '10400k',
     '-force_key_frames', 'expr:gte(t,n_forced*4)', '-sc_threshold', '0',
-    '-c:a', 'aac', '-ac', '2', '-b:a', '192k', '-output_ts_offset', '8.000', '-max_muxing_queue_size', '2048',
+    '-c:a', 'aac', '-ac', '2', '-b:a', '192k', '-output_ts_offset', '8.000', '-max_muxing_queue_size', '2048', '-hls_segment_options', 'movflags=+frag_discont',
     '-f', 'hls', '-hls_time', '4', '-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', 'init.mp4', '-start_number', '2', '-hls_segment_filename', '/t/seg%d.m4s',
     '-hls_list_size', '0', '-hls_playlist_type', 'event', '-hls_flags', 'independent_segments+temp_file', '/t/ff.m3u8',
   ]);
