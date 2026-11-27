@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { HomeRow, Item } from '@/api/types';
@@ -163,10 +163,21 @@ function TVHome({ rows }: { rows: HomeRow[] }) {
     return () => clearInterval(timer);
   }, [hero, userMoved, t.theme.heroStyle]);
 
-  const onFocusItem = useCallback((item: Item) => {
-    setUserMoved(true);
-    setFocused(item);
+  // Update the spotlight only once focus settles. Holding DOWN/RIGHT moves focus several times a
+  // second, and each spotlight change swaps the full-screen backdrop; doing that per step makes the
+  // native scroll stutter on Fire TV / Android TV sticks.
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (settle.current) clearTimeout(settle.current);
   }, []);
+  const onFocusItem = useCallback((item: Item) => {
+    if (settle.current) clearTimeout(settle.current);
+    settle.current = setTimeout(() => {
+      setUserMoved(true);
+      setFocused(item);
+    }, 300);
+  }, []);
+  const seeAll = useMemo(() => new Map(rows.map((r) => [r.id, seeAllFor(r)])), [rows]);
 
   const spotlightHeight = Math.round(t.height * (t.theme.heroStyle === 'none' ? 0.3 : 0.42));
   return (
@@ -184,7 +195,7 @@ function TVHome({ rows }: { rows: HomeRow[] }) {
               title={row.type === 'hero' ? row.title || 'Featured' : row.title || DEFAULT_TITLES[row.type] || ''}
               items={row.items}
               variant={row.type === 'hero' ? 'landscape' : variantFor(row)}
-              onSeeAll={seeAllFor(row)}
+              onSeeAll={seeAll.get(row.id)}
               onFocusItem={onFocusItem}
               firstPreferred={idx === 0}
             />

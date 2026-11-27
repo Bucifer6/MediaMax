@@ -128,7 +128,7 @@ export function TVSpotlightBackground({ item }: { item: Item | null }) {
   const t = useTheme();
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="none">
-      {item ? <Img path={item.backdropUrl ?? item.thumbUrl ?? item.posterUrl} width={t.width} style={{ position: 'absolute', top: 0, right: 0, width: '78%', height: '78%' }} transition={700} priority="high" /> : null}
+      {item ? <Img path={item.backdropUrl ?? item.thumbUrl ?? item.posterUrl} width={t.width} style={{ position: 'absolute', top: 0, right: 0, width: '78%', height: '78%' }} transition={350} priority="high" /> : null}
       <LinearGradient
         colors={[t.colors.background, t.alpha(t.colors.background, 0.85), 'transparent']}
         locations={[0, 0.35, 0.75]}
