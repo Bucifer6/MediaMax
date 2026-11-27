@@ -160,6 +160,7 @@ export default function SettingsScreen() {
           </SettingSection>
 
           <SettingSection title="Devices">
+            {t.isTV ? <SettingRow icon="phone-portrait-outline" label="Use your phone as remote" value="Scan a QR code" onPress={() => router.push('/pair-phone' as never)} /> : null}
             {caps.linkCodes && !t.isTV ? <SettingRow icon="tv-outline" label="Link a TV" value="Enter a code" onPress={() => router.push('/link-tv' as never)} /> : null}
             <SettingRow icon="phone-portrait-outline" label="Signed-in devices" onPress={() => router.push('/settings/devices' as never)} />
             {downloads.supported && (caps.downloads || downloads.records.length) ? <SettingRow icon="download-outline" label="Downloads" value={formatBytes(downloads.totalBytes) || 'None'} onPress={() => router.push('/(tabs)/downloads')} /> : null}

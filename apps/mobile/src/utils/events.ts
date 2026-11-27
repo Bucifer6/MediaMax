@@ -6,6 +6,8 @@ type AppEvents = {
   recording: Recording;
   libraryUpdated: { libraryId: string };
   sessionTerminated: { sessionId: string; reason: string };
+  /** A phone paired with (or unpaired from) this device. */
+  pairUpdated: { status: string };
 };
 
 type Handler<T> = (payload: T) => void;

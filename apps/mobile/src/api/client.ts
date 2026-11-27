@@ -63,6 +63,8 @@ import type {
   Paged,
   CalendarResponse,
   HelpArticle,
+  PairStartResponse,
+  Pairing,
   HelpIndex,
   HelpSearchResponse,
   PinLoginRequest,
@@ -423,6 +425,21 @@ export class MediaMaxClient {
   /** "Not interested": hidden from recommendation, because-you-watched and trending rows. */
   setNotInterested(id: string, on: boolean) {
     return on ? this.post<UserItemData>(`/items/${encodeURIComponent(id)}/not-interested`) : this.del<UserItemData>(`/items/${encodeURIComponent(id)}/not-interested`);
+  }
+  /** TV side of phone pairing: a fresh QR code / 6-character code (expires after a few minutes). */
+  pairStart() {
+    return this.post<PairStartResponse>('/pair/start');
+  }
+  /** Phones paired with this device (role 'tv': phones that control it). */
+  pairings() {
+    return this.get<Pairing[]>('/pair/pairings');
+  }
+  unpair(id: string) {
+    return this.del<{ ok: true }>(`/pair/pairings/${encodeURIComponent(id)}`);
+  }
+  /** A guest (other account) asked to control this TV: accept or decline. */
+  respondPair(id: string, accept: boolean) {
+    return this.post<{ status: string }>(`/pair/requests/${encodeURIComponent(id)}`, { accept });
   }
   /** Help Centre: sections and article titles the caller may read. */
   helpIndex(signal?: AbortSignal) {
