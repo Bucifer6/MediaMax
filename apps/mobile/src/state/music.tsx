@@ -691,7 +691,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       const cur = currentRef.current;
       if (!s && cur && spokenRef.current && positionMs > 0) downloadsRef.current.updateLocalPosition(cur.id, positionMs);
       if (!api || !s) return;
-      const body = { positionMs, durationMs, state, sessionId: s.sessionId };
+      const body = { positionMs, durationMs, state, sessionId: s.sessionId, itemId: cur?.id };
       api.sessionProgress(s.sessionId, body).catch(() => undefined);
       if (state === 'stopped') api.stopSession(s.sessionId).catch(() => undefined);
     },

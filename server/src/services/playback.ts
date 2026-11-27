@@ -185,9 +185,20 @@ export function stopSession(id: string, reason = 'stopped', notify = true) {
   broadcastSessions();
 }
 
-export function sessionProgress(ctx: AuthContext, id: string, positionMs: number, state: 'playing' | 'paused' | 'stopped', durationMs?: number, subtitleIndex?: number | null) {
+export function sessionProgress(ctx: AuthContext, id: string, positionMs: number, state: 'playing' | 'paused' | 'stopped', durationMs?: number, subtitleIndex?: number | null, itemId?: string) {
   const s = sessions.get(id);
-  if (!s) return { ok: false };
+  if (!s) {
+    // Sessions live in memory: after a server restart the player keeps reporting for a session we no longer know.
+    // Still keep the resume point (and watched state) when it says which item it is playing.
+    if (itemId) {
+      try {
+        reportProgress(ctx.user, itemId, Math.max(0, positionMs), durationMs, state);
+      } catch {
+        /* unknown or hidden item: nothing to keep */
+      }
+    }
+    return { ok: false };
+  }
   if (s.ctx.user.id !== ctx.user.id) throw forbidden();
   s.lastActivity = Date.now();
   if (subtitleIndex !== undefined && s.details && s.subs) s.details = withSubtitle(s.details, s.subs, subtitleIndex == null ? null : Number(subtitleIndex));

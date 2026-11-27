@@ -594,7 +594,7 @@ export function DjProvider({ children }: { children: React.ReactNode }) {
     const a = apiRef.current;
     if (!s || !a) return;
     d.lastReport = Date.now();
-    const body = { positionMs: mediaPos(d), durationMs: trackDuration(d.track) || undefined, state, sessionId: s.sessionId };
+    const body = { positionMs: mediaPos(d), durationMs: trackDuration(d.track) || undefined, state, sessionId: s.sessionId, itemId: d.track?.item.id };
     a.sessionProgress(s.sessionId, body).catch(() => undefined);
     if (state === 'stopped') {
       a.stopSession(s.sessionId).catch(() => undefined);
