@@ -39,6 +39,21 @@ export function readNfo(file: string): NfoData | null {
   } catch {
     return null;
   }
+  return parseNfo(xml);
+}
+
+/** readNfo without blocking the server: a read from a slow or sleeping network share can take many seconds. */
+export async function readNfoAsync(file: string): Promise<NfoData | null> {
+  let xml: string;
+  try {
+    xml = await fs.promises.readFile(file, 'utf8');
+  } catch {
+    return null;
+  }
+  return parseNfo(xml);
+}
+
+export function parseNfo(xml: string): NfoData | null {
   // Some NFOs are just a URL (IMDb/TMDB link).
   if (!xml.trimStart().startsWith('<')) {
     const imdb = xml.match(/tt\d{7,9}/)?.[0];

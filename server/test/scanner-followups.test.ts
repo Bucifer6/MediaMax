@@ -103,7 +103,8 @@ test('a scan requested while one runs triggers one more scan afterwards (request
   const late: Promise<void>[] = [];
   (fs.promises as any).readdir = async function (p: any, ...rest: any[]) {
     const r = await (orig as any).call(this, p, ...rest);
-    if (String(p) === root && ++rootReads === 1) {
+    // Count the walk's listings only (with file types), not the async root checks.
+    if (String(p) === root && rest[0]?.withFileTypes && ++rootReads === 1) {
       // The walk has listed the folder; a file lands and the watcher asks for scans (three times).
       touch(path.join(root, 'two.mkv'));
       late.push(scanLibrary('sf-co'), scanLibrary('sf-co'), scanLibrary('sf-co'));
@@ -226,7 +227,8 @@ test('a partial scan walks and prunes only the changed folders; too many or outs
   const orig = fs.promises.readdir;
   const read: string[] = [];
   (fs.promises as any).readdir = function (p: any, ...rest: any[]) {
-    read.push(String(p));
+    // The walk lists folders with file types; root checks and artwork listings are plain readdirs.
+    if (rest[0]?.withFileTypes) read.push(String(p));
     return (orig as any).call(this, p, ...rest);
   };
   try {
@@ -272,4 +274,31 @@ test('watcher events are debounced into one scan of the changed top-level folder
   } finally {
     watchTiming.settleMs = saved;
   }
+});
+
+test('a scan makes no blocking filesystem calls on the library folders (a slow NAS must not freeze the server)', async () => {
+  const root = mkRoot('nosync');
+  touch(path.join(root, 'Show A', 'Season 1', 'Show A S01E01.mkv'));
+  fs.writeFileSync(path.join(root, 'Show A', 'tvshow.nfo'), '<tvshow><title>Show A From NFO</title></tvshow>');
+  fs.writeFileSync(path.join(root, 'Show A', 'poster.jpg'), 'img');
+  fs.writeFileSync(path.join(root, 'Show A', 'Season 1', 'Show A S01E01.nfo'), '<episodedetails><title>Pilot From NFO</title></episodedetails>');
+  addLib('sf-nosync', 'shows', [root]);
+  const names = ['existsSync', 'statSync', 'lstatSync', 'readdirSync', 'readFileSync', 'realpathSync', 'accessSync', 'openSync'] as const;
+  const orig = new Map(names.map((n) => [n, (fs as any)[n]]));
+  const blocked: string[] = [];
+  for (const n of names) {
+    (fs as any)[n] = function (p: any, ...rest: any[]) {
+      if (String(p).startsWith(root)) blocked.push(`${n} ${p}`);
+      return orig.get(n).call(this, p, ...rest);
+    };
+  }
+  try {
+    await scanLibrary('sf-nosync');
+  } finally {
+    for (const n of names) (fs as any)[n] = orig.get(n);
+  }
+  assert.deepEqual(blocked, []);
+  assert.equal(db.get<{ title: string }>("SELECT title FROM items WHERE library_id = 'sf-nosync' AND type = 'show'")?.title, 'Show A From NFO');
+  assert.equal(db.get<{ title: string }>("SELECT title FROM items WHERE library_id = 'sf-nosync' AND type = 'episode'")?.title, 'Pilot From NFO');
+  assert.ok(db.get("SELECT poster FROM items WHERE library_id = 'sf-nosync' AND type = 'show'")?.poster, 'show poster found');
 });
