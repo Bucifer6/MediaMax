@@ -439,7 +439,8 @@ export function doviMuxSupported(ffmpeg = config.ffmpeg): Promise<boolean> {
       const ok = await new Promise<boolean>((resolve) => {
         const p = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-i', input, '-map', '0:v:0', '-c:v', 'copy', ...doviMuxArgs('dvh1'),
           '-f', 'hls', '-hls_time', '1', '-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', 'init.mp4',
-          '-hls_segment_filename', path.join(dir, 'seg%d.m4s'), '-hls_list_size', '0', path.join(dir, 'out.m3u8')], { stdio: 'ignore' });
+          // cwd: ffmpeg writes init.mp4 relative to its working directory when the paths use backslashes (Windows).
+          '-hls_segment_filename', path.join(dir, 'seg%d.m4s'), '-hls_list_size', '0', path.join(dir, 'out.m3u8')], { stdio: 'ignore', cwd: dir });
         const t = setTimeout(() => p.kill('SIGKILL'), 15000);
         p.on('error', () => { clearTimeout(t); resolve(false); });
         p.on('exit', (code) => { clearTimeout(t); resolve(code === 0); });

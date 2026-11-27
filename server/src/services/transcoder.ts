@@ -510,7 +510,10 @@ export class TranscodeJob {
     this.info = { ...info, hwFallback: this.fallbackReason };
     if (changed) this.onInfoChange?.();
     log.debug(`ffmpeg ${args.join(' ')}`);
-    const p = spawn(config.ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    // Run in the session folder: ffmpeg writes the fMP4 init segment (-hls_fmp4_init_filename) relative to its working
+    // directory when the playlist path uses backslashes (Windows), so it landed in the program folder (Permission
+    // denied, or a stream that never starts) instead of next to the segments.
+    const p = spawn(config.ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'], cwd: this.dir });
     this.proc = p;
     p.stderr?.on('data', (d) => {
       this.stderr = (this.stderr + d.toString()).slice(-4000);
@@ -769,7 +772,10 @@ export class TranscodeJob {
   stop() {
     this.killed = true;
     this.stopProcess();
-    setTimeout(() => fs.rmSync(this.dir, { recursive: true, force: true }), 2000);
+    setTimeout(() => {
+      // A segment still being sent keeps its file open on Windows (EBUSY): never let that crash the server.
+      fs.promises.rm(this.dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 1000 }).catch((e) => log.debug(`Could not remove ${this.dir}: ${(e as Error).message}`));
+    }, 2000);
   }
 }
 
