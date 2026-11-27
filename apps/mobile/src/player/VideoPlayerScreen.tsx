@@ -205,7 +205,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       }
       const pi = infoRef.current;
       if (!pi) return;
-      api.sessionProgress(pi.sessionId, { positionMs, durationMs: durRef.current || undefined, state, sessionId: pi.sessionId }).catch(() => undefined);
+      api.sessionProgress(pi.sessionId, { positionMs, durationMs: durRef.current || undefined, state, sessionId: pi.sessionId, itemId: target.kind === 'vod' ? target.itemId : undefined }).catch(() => undefined);
     },
     [api, target, offlineUri],
   );

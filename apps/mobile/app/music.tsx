@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { FlatList, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Visualizer } from '@/player/Visualizer';
 import { CastButton } from '@/cast';
 import { Focusable } from '@/components/Focusable';
 import { Icon } from '@/components/Icon';
@@ -25,7 +26,7 @@ import { useTVRemote } from '@/tv';
 import { formatClock } from '@/utils/format';
 import { openDj } from '@/utils/nav';
 
-type Panel = 'queue' | 'lyrics' | 'chapters' | 'bookmarks' | 'yourdj';
+type Panel = 'queue' | 'lyrics' | 'chapters' | 'bookmarks' | 'yourdj' | 'visualizer';
 const speedLabel = (r: number) => `${r}x`;
 const SLEEP_MINUTES = [5, 15, 30, 45, 60];
 
@@ -47,7 +48,7 @@ export default function NowPlaying() {
   const lyrics = useLyrics(isTrack && panel === 'lyrics' ? cur.id : null);
   // A panel that no longer applies (track ↔ episode) falls back to the queue.
   useEffect(() => {
-    if ((panel === 'lyrics' && !isTrack) || (panel === 'chapters' && !m.chapters.length) || (panel === 'bookmarks' && !m.spoken) || (panel === 'yourdj' && !m.yourDj)) setPanel('queue');
+    if (((panel === 'lyrics' || panel === 'visualizer') && !isTrack) || (panel === 'chapters' && !m.chapters.length) || (panel === 'bookmarks' && !m.spoken) || (panel === 'yourdj' && !m.yourDj)) setPanel('queue');
   }, [panel, isTrack, m.chapters.length, m.spoken, m.yourDj]);
   useTVRemote((e) => {
     if (e.eventType === 'playPause') m.toggle();
@@ -58,6 +59,8 @@ export default function NowPlaying() {
 
   const art = cur.posterUrl ?? cur.thumbUrl;
   const size = t.isTV ? t.s(panel === 'queue' ? 420 : 300) : Math.min(t.width - 64, t.height * (panel === 'queue' || t.wide ? 0.42 : 0.22), 420);
+  /** TV artwork: its own column, so it may use most of the height but must leave room for the controls and the queue. */
+  const tvArt = Math.round(Math.min(t.s(420), t.height * 0.55, t.width * 0.24));
   const transportIcon = t.isTV ? t.s(34) : 32;
   const canPlayOn = remote.enabled && status === 'signed-in';
   const sleepLabel = m.sleep ? (m.sleepRemainingMs != null ? `Sleep ${formatClock(m.sleepRemainingMs)}` : m.sleep.mode === 'time' ? 'Sleep' : 'Sleep · end') : 'Sleep';
@@ -124,6 +127,7 @@ export default function NowPlaying() {
         <PanelChip icon="list" label="Up next" active={panel === 'queue'} onPress={() => setPanel('queue')} />
         {m.yourDj ? <PanelChip icon="disc-outline" label="Your DJ" active={panel === 'yourdj'} onPress={() => setPanel(panel === 'yourdj' ? 'queue' : 'yourdj')} /> : null}
         {isTrack ? <PanelChip icon="chatbubble-ellipses-outline" label="Lyrics" active={panel === 'lyrics'} onPress={() => setPanel(panel === 'lyrics' ? 'queue' : 'lyrics')} /> : null}
+        {isTrack ? <PanelChip icon="pulse-outline" label="Visualiser" active={panel === 'visualizer'} onPress={() => setPanel(panel === 'visualizer' ? 'queue' : 'visualizer')} /> : null}
         {m.chapters.length ? <PanelChip icon="bookmarks-outline" label="Chapters" active={panel === 'chapters'} onPress={() => setPanel(panel === 'chapters' ? 'queue' : 'chapters')} /> : null}
         {/* Long music: the ±15/30 s buttons took the shuffle / repeat places on the transport row. */}
         {m.longTrack ? <PanelChip icon="shuffle" label="Shuffle" active={m.shuffle} onPress={() => m.setShuffle(!m.shuffle)} /> : null}
@@ -165,7 +169,7 @@ export default function NowPlaying() {
       <YourDjPanel />
     </ScrollView>
   );
-  const sidePanel = panel === 'lyrics' ? lyricsPanel : panel === 'chapters' ? chapterList : panel === 'bookmarks' ? <BookmarksPanel /> : panel === 'yourdj' && m.yourDj ? djPanel : null;
+  const sidePanel = panel === 'visualizer' ? <Visualizer art={art} /> : panel === 'lyrics' ? lyricsPanel : panel === 'chapters' ? chapterList : panel === 'bookmarks' ? <BookmarksPanel /> : panel === 'yourdj' && m.yourDj ? djPanel : null;
 
   const queue = (
     <FlatList
@@ -216,7 +220,21 @@ export default function NowPlaying() {
           </Focusable>
         </View>
       ) : null}
-      {t.isTV || t.wide ? (
+      {t.isTV ? (
+        // TV: artwork, controls and the queue / lyrics panel side by side. Stacked, the artwork plus the controls (with
+        // the Your DJ card) were taller than the screen and the art and transport were cut off.
+        // Children stretch to the full height (the side panel needs it: with alignSelf 'stretch' in a centred row it
+        // collapsed to 2 px on Android TV, invisible but still taking the focus); art and controls centre themselves.
+        <View style={{ flex: 1, flexDirection: 'row', padding: t.space.gutter, gap: t.space.xl, alignItems: 'stretch' }}>
+          <View style={{ justifyContent: 'center' }}>
+            <View style={{ width: tvArt, height: tvArt, borderRadius: t.radius, overflow: 'hidden', backgroundColor: '#222', shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 30 }}>
+              {art ? <Img path={art} width={tvArt} style={{ width: '100%', height: '100%' }} /> : null}
+            </View>
+          </View>
+          <View style={{ justifyContent: 'center' }}>{controls}</View>
+          <View style={{ flex: 1 }}>{sidePanel ?? queue}</View>
+        </View>
+      ) : t.wide ? (
         <View style={{ flex: 1, flexDirection: 'row', padding: t.space.gutter, gap: t.space.xxl, alignItems: 'center' }}>
           <View style={{ gap: t.space.xl, alignItems: 'flex-start' }}>
             <View style={{ width: size, height: size, borderRadius: t.radius, overflow: 'hidden', backgroundColor: '#222', shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 30 }}>

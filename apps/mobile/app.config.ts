@@ -195,13 +195,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // Siri media intents are opt-in (`siri` in brand.json or KINORA_SIRI=1): the entitlement needs
       // the Siri capability on the App ID. Simulator CI builds are unsigned, so either way compiles.
       ['./plugins/withMediaMaxCar', { isTV, siri: !isTV && (brand.siri === true || env('SIRI') === '1') }],
+      // Android TV icon: our own plugin (drawable-nodpi), not config-tv's androidTVIcon (see plugins/withTVIcon.js).
+      ['./plugins/withTVIcon', { isTV, icon: tvIcon }],
       [
         '@react-native-tvos/config-tv',
         {
           isTV,
           tvosDeploymentTarget: '16.4',
           ...(tvBanner ? { androidTVBanner: tvBanner } : {}),
-          ...(tvIcon ? { androidTVIcon: tvIcon } : {}),
           ...(hasAppleTVImages ? { appleTVImages } : {}),
         },
       ],

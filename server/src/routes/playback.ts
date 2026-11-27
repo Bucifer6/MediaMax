@@ -143,7 +143,7 @@ export default async function playbackRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { sessionId: string }; Body: ProgressReport }>('/playback/sessions/:sessionId/progress', async (req) => {
     const b = req.body ?? ({} as ProgressReport);
-    return sessionProgress(requireUser(req), req.params.sessionId, Number(b.positionMs) || 0, b.state ?? 'playing', b.durationMs, b.subtitleIndex);
+    return sessionProgress(requireUser(req), req.params.sessionId, Number(b.positionMs) || 0, b.state ?? 'playing', b.durationMs, b.subtitleIndex, typeof b.itemId === 'string' ? b.itemId : undefined);
   });
 
   app.delete<{ Params: { sessionId: string } }>('/playback/sessions/:sessionId', async (req) => {

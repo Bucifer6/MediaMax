@@ -349,3 +349,13 @@ test('Home Assistant webhook preset: flat payload for /api/webhook/<id>, plus RE
     await app.close();
   }
 });
+
+test('progress for a session the server no longer knows (it restarted) still keeps the resume point', () => {
+  const ctx = ctxFor(viewer, 'dev-living', 'Living Room TV') as any;
+  assert.deepEqual(playback.sessionProgress(ctx, 'gone-after-restart', 1_234_000, 'playing', 3_000_000, undefined, 'ep1'), { ok: false });
+  const row = db.get<{ position_ms: number }>('SELECT position_ms FROM user_data WHERE user_id = ? AND item_id = ?', viewer.id, 'ep1');
+  assert.equal(row?.position_ms, 1_234_000);
+  // Without an item id (older apps) nothing is written, and an unknown item is ignored rather than thrown.
+  assert.deepEqual(playback.sessionProgress(ctx, 'gone-after-restart', 5_000, 'playing'), { ok: false });
+  assert.deepEqual(playback.sessionProgress(ctx, 'gone-after-restart', 5_000, 'playing', undefined, undefined, 'no-such-item'), { ok: false });
+});

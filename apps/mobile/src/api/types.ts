@@ -824,6 +824,8 @@ export interface ProgressReport {
   durationMs?: number;
   state: 'playing' | 'paused' | 'stopped';
   sessionId?: string;
+  /** The item being played: lets the server keep the resume point when it no longer knows the session (it restarted). */
+  itemId?: string;
   /** Subtitle stream the player is showing (null = off); undefined = not reported. Shown on the admin dashboard. */
   subtitleIndex?: number | null;
 }
