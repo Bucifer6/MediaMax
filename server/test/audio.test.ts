@@ -367,3 +367,17 @@ test('real ffmpeg runs the planned args: E-AC-3 5.1, AAC 7.1, DTS core copy, com
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('buildArgs: copied audio next to encoded video starts at the seek point, no fMP4 edit lists (A/V sync on ExoPlayer / hls.js)', () => {
+  const plan = planAudio(s(real), TV_ARC);
+  const enc = buildArgs(topts({ mode: 'transcode', videoCopy: false, audioCopy: true, audioPlan: plan, startSec: 900 }) as any, '/tmp/out', 0, 'none');
+  assert.equal(enc.segmentType, 'fmp4');
+  const a = enc.args;
+  assert.equal(a[a.indexOf('-copypriorss:a') + 1], '0', 'audio before the seek point is dropped');
+  assert.equal(a[a.indexOf('-hls_segment_options') + 1], 'use_editlist=0', 'no edit lists');
+  assert.ok(a.indexOf('-copypriorss:a') > a.indexOf('-i'), 'output option');
+  const fromStart = buildArgs(topts({ mode: 'transcode', videoCopy: false, audioCopy: true, audioPlan: plan, startSec: 0 }) as any, '/tmp/out', 0, 'none').args;
+  assert.ok(!fromStart.includes('-copypriorss:a'), 'nothing to drop without a seek');
+  const remux = buildArgs(topts({ audioCopy: true, audioPlan: plan, startSec: 900 }) as any, '/tmp/out', 0, 'none').args;
+  assert.ok(!remux.includes('-copypriorss:a') && !remux.includes('-hls_segment_options'), 'video copy: unchanged');
+});
