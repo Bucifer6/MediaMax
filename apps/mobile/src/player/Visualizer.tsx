@@ -7,7 +7,7 @@
  * once per (half-)beat, so the JS thread does a few calls a second and the Fire TV stick stays smooth.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, Easing, View } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, View, type LayoutChangeEvent } from 'react-native';
 import { Img } from '@/components/Img';
 import { useMusic } from '@/state/music';
 import { useTheme } from '@/theme';
@@ -23,6 +23,12 @@ export function Visualizer({ art }: { art?: string | null }) {
   const playing = m.playing;
   const [grid, setGrid] = useState<BeatGrid>(() => beatGrid(null));
   const [reduceMotion, setReduceMotion] = useState(false);
+  /** The space we were given (a side panel on TV, the screen width on phones): disc and bars are sized to fit. */
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
+  const onLayout = (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    if (!box || Math.abs(box.w - width) > 2 || Math.abs(box.h - height) > 2) setBox({ w: width, h: height });
+  };
 
   const bars = useMemo(() => Array.from({ length: BARS }, () => new Animated.Value(REST)), []);
   const ring = useRef(new Animated.Value(0)).current;
@@ -99,9 +105,12 @@ export function Visualizer({ art }: { art?: string | null }) {
     };
   }, [playing, itemId, grid, reduceMotion, bars, ring]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const disc = t.isTV ? t.s(260) : 200;
-  const barH = t.isTV ? t.s(150) : 110;
-  const barW = t.isTV ? t.s(9) : 6;
+  const w = box?.w ?? (t.isTV ? t.s(600) : t.width);
+  const h = box?.h ?? (t.isTV ? t.s(700) : 480);
+  // Disc + glow (1.5x) and the bars stacked: disc ~55% of the height, bars ~25%, both inside the width.
+  const disc = Math.max(80, Math.min(t.isTV ? t.s(260) : 200, (w * 0.9) / 1.5, (h * 0.55) / 1.5));
+  const barH = Math.max(40, Math.min(t.isTV ? t.s(150) : 110, h * 0.25));
+  const barW = Math.max(3, Math.min(t.isTV ? t.s(9) : 6, (w * 0.9) / (BARS * 1.6)));
   const glowOpacity = ring.interpolate({ inputRange: [0, 1], outputRange: [0.18, 0.55] });
   const glowScale = ring.interpolate({ inputRange: [0, 1], outputRange: [1, 1.35] });
   const ringScale = ring.interpolate({ inputRange: [0, 1], outputRange: [1.04, 1.2] });
@@ -109,7 +118,7 @@ export function Visualizer({ art }: { art?: string | null }) {
   const artScale = ring.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] });
 
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: t.isTV ? t.s(48) : 32 }} accessibilityLabel="Music visualiser" accessible>
+    <View onLayout={onLayout} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: Math.min(t.isTV ? t.s(48) : 32, h * 0.06), overflow: 'hidden' }} accessibilityLabel="Music visualiser" accessible>
       <View style={{ width: disc * 1.5, height: disc * 1.5, alignItems: 'center', justifyContent: 'center' }}>
         <Animated.View style={{ position: 'absolute', width: disc, height: disc, borderRadius: disc / 2, backgroundColor: t.colors.primary, opacity: glowOpacity, transform: [{ scale: glowScale }] }} />
         <Animated.View style={{ position: 'absolute', width: disc, height: disc, borderRadius: disc / 2, borderWidth: t.isTV ? t.s(4) : 3, borderColor: t.colors.primary, opacity: ringOpacity, transform: [{ scale: ringScale }] }} />

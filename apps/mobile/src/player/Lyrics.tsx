@@ -66,7 +66,7 @@ function KaraokeLine({ line, lines, timeMs, size, color }: { line: LrcLine; line
   );
 }
 
-export function LyricsView({ lyrics, positionMs, onSeek }: { lyrics: Lyrics | null | undefined; positionMs: number; onSeek?: (ms: number) => void }) {
+export function LyricsView({ lyrics, positionMs, onSeek, height: fixedHeight }: { lyrics: Lyrics | null | undefined; positionMs: number; onSeek?: (ms: number) => void; height?: number }) {
   const t = useTheme();
   const m = useMusic();
   const { api, user } = useSession();
@@ -112,10 +112,10 @@ export function LyricsView({ lyrics, positionMs, onSeek }: { lyrics: Lyrics | nu
 
   const size = t.isTV ? t.s(30) : t.wide ? 26 : 22;
   return (
-    <View style={{ flex: 1 }}>
+    <View style={fixedHeight ? { height: fixedHeight } : { flex: 1 }}>
       <ScrollView
         ref={scroller}
-        style={{ flex: 1 }}
+        style={fixedHeight ? { height: fixedHeight } : { flex: 1 }}
         onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
         onScrollBeginDrag={() => (userScrolledAt.current = Date.now())}
         contentContainerStyle={{ paddingVertical: t.space.lg, paddingBottom: height / 2, gap: t.isTV ? t.s(12) : 10 }}
