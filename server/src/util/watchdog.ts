@@ -10,7 +10,8 @@ import { logger } from './log.js';
  * thread writes nothing, and a fatal error (out of memory) ends the process before the buffered log reaches disk.
  *
  * - A watchdog thread notices when the main thread misses its heartbeat and writes, straight to mediamax.log, how
- *   long it has been stuck, the last known memory use and which requests were in progress.
+ *   long it has been stuck, the last known memory use, which requests were in progress and the main thread's
+ *   JavaScript stack at that moment (read through the inspector).
  * - After a stall the main thread logs how long it was blocked.
  * - The JavaScript heap nearing its limit is logged (with the requests in progress) before it becomes a crash.
  * - A fatal error writes a Node diagnostic report (stack, heap, handles) into the logs folder.
@@ -56,10 +57,43 @@ const mb = (n: number) => `${Math.round(n / 1048576)} MB`;
 const WORKER_SRC = `
 const { workerData } = require('node:worker_threads');
 const fs = require('node:fs');
+const inspector = require('node:inspector');
 const nums = new Float64Array(workerData.nums);
 const lenArr = new Int32Array(workerData.len);
 const text = new Uint8Array(workerData.text);
 const mb = (n) => Math.round(n / 1048576) + ' MB';
+const write = (line) => { try { fs.appendFileSync(workerData.logFile, new Date().toISOString() + ' ' + line + '\\n'); } catch {} };
+
+// Where the main thread is stuck: pause it through the inspector, read its JavaScript stack, resume it at once.
+// JavaScript that loops is interrupted mid-loop; a single long native call (a read on a stalled share, a database
+// lock, a synchronous child process) only answers when that call returns, which the timeout reports instead.
+let capturing = false;
+function captureStack(cb) {
+  if (capturing) return;
+  let s;
+  try { s = new inspector.Session(); s.connectToMainThread(); } catch (e) { cb('unavailable (' + e.message + ')'); return; }
+  capturing = true;
+  let done = false;
+  const finish = (txt) => {
+    if (done) return;
+    done = true;
+    capturing = false;
+    try { s.post('Debugger.resume'); } catch {}
+    try { s.post('Debugger.disable'); } catch {}
+    try { s.disconnect(); } catch {}
+    cb(txt);
+  };
+  const urls = new Map();
+  s.on('Debugger.scriptParsed', (m) => urls.set(m.params.scriptId, m.params.url));
+  s.on('Debugger.paused', (m) => {
+    const frames = (m.params.callFrames || []).slice(0, 30).map((f) =>
+      (f.functionName || '(anonymous)') + ' (' + String(f.url || urls.get(f.location.scriptId) || '?').split(/[\\\\/]/).pop() + ':' + (f.location.lineNumber + 1) + ')');
+    finish(frames.join(' <- ') || 'no JavaScript frames');
+  });
+  try { s.post('Debugger.enable', () => { try { s.post('Debugger.pause'); } catch {} }); } catch (e) { finish('unavailable (' + e.message + ')'); return; }
+  setTimeout(() => finish('not in JavaScript for 5 s: stuck inside one native call (file system, database or child process)'), 5000);
+}
+
 let reportedFor = 0, nextReportAt = 0;
 setInterval(() => {
   const beat = nums[0];
@@ -71,11 +105,10 @@ setInterval(() => {
   nextReportAt = Date.now() + 30000;
   const n = Atomics.load(lenArr, 0);
   const reqs = Buffer.from(text.slice(0, n)).toString('utf8') || 'none';
-  const line = new Date().toISOString() + ' [ERROR] watchdog: The server has not responded for ' + Math.round(stuck / 1000) +
+  write('[ERROR] watchdog: The server has not responded for ' + Math.round(stuck / 1000) +
     ' s (main thread blocked). Last known memory: heap ' + mb(nums[1]) + ' of ' + mb(nums[2]) + ', process ' + mb(nums[3]) +
-    '. Requests in progress: ' + reqs + '\\n';
-  try { fs.appendFileSync(workerData.logFile, line); } catch {}
-  try { process.stderr.write(line); } catch {}
+    '. Requests in progress: ' + reqs);
+  captureStack((stack) => write('[ERROR] watchdog: Main thread stack: ' + stack));
 }, 1000); // keeps this thread alive; the main side unrefs the worker, so it never holds the process open
 `;
 
