@@ -254,6 +254,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         case 'session.terminated':
           emit('sessionTerminated', { sessionId: evt.sessionId, reason: evt.reason });
           break;
+        case 'notification':
+          emit('notification', { unread: evt.unread });
+          break;
         case 'pair.updated':
           emit('pairUpdated', { status: evt.status });
           break;

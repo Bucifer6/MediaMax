@@ -64,6 +64,7 @@ import type {
   CalendarResponse,
   HelpArticle,
   PairStartResponse,
+  NotificationsResponse,
   Pairing,
   HelpIndex,
   HelpSearchResponse,
@@ -425,6 +426,14 @@ export class MediaMaxClient {
   /** "Not interested": hidden from recommendation, because-you-watched and trending rows. */
   setNotInterested(id: string, on: boolean) {
     return on ? this.post<UserItemData>(`/items/${encodeURIComponent(id)}/not-interested`) : this.del<UserItemData>(`/items/${encodeURIComponent(id)}/not-interested`);
+  }
+  /** In-app notifications (new episodes of followed shows, request and issue updates), newest first. */
+  notifications(q: { limit?: number; unread?: boolean } = {}) {
+    return this.get<NotificationsResponse>('/notifications', q as Query);
+  }
+  /** Mark these (or, with no ids, all) as read; returns the new unread count. */
+  markNotificationsRead(ids?: string[]) {
+    return this.post<{ unread: number }>('/notifications/read', ids ? { ids } : {});
   }
   /** TV side of phone pairing: a fresh QR code / 6-character code (expires after a few minutes). */
   pairStart() {

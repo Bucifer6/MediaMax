@@ -13,6 +13,7 @@ import { DecideChips } from '@/components/DecideChips';
 import { Img } from '@/components/Img';
 import type { CardVariant } from '@/components/MediaCard';
 import { ChannelRow, ItemRow } from '@/components/Row';
+import { NotificationBell } from '@/components/NotificationBell';
 import { EmptyState, ErrorState, Loading } from '@/components/States';
 import { useTabBarSpace } from '@/components/TabBar';
 import { T } from '@/components/Text';
@@ -128,6 +129,7 @@ function PhoneHome({ rows, refreshing, onRefresh }: { rows: HomeRow[]; refreshin
         <View style={{ flex: 1 }}>
           {logo ? <Img path={logo} width={160} contentFit="contain" style={{ width: 140, height: 34 }} /> : <BrandWordmark name={branding?.serverName} width={140} textVariant="heading" />}
         </View>
+        <NotificationBell />
         <Focusable onPress={() => router.push('/(tabs)/search')} style={{ padding: 8 }} accessibilityLabel="Search">
           <Icon name="search" />
         </Focusable>
