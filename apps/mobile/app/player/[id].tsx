@@ -1,7 +1,11 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { VideoPlayerScreen, type IntroChain } from '@/player/VideoPlayerScreen';
+import { ExternalPlayerScreen } from '@/player/ExternalPlayerScreen';
+import { externalPlayerSupported, getExternalPlayer } from '@/player/deviceSettings';
+import { EXTERNAL_DEFAULT, type ExternalPlayerSetting } from '@/player/external';
 import { Loading } from '@/components/States';
+import { useDownloads } from '@/state/downloads';
 import { useApi, useSession } from '@/state/session';
 
 type Params = { id: string; start?: string; then?: string; intros?: string; nointro?: string; media?: string; thenMedia?: string; marathon?: string };
@@ -9,16 +13,31 @@ type Params = { id: string; start?: string; then?: string; intros?: string; noin
 /**
  * Video player route. Cinema mode: a movie started from the beginning first plays the server's intros
  * (trailers, then a pre-roll), chained as /player/<intro>?then=<movie>&intros=<rest>.
+ *
+ * With Settings › Playback › External player on (Android), videos open in VLC / Kodi / … instead (no cinema intros;
+ * downloads still play here).
  */
 export default function PlayerRoute() {
   const { id, start, then, intros, nointro, media, thenMedia, marathon } = useLocalSearchParams<Params>();
   const api = useApi();
   const { user } = useSession();
-  const wantsIntros = !then && !nointro && start == null && user?.preferences.cinemaMode !== false;
-  const [checked, setChecked] = useState(!wantsIntros);
+  const downloaded = useDownloads().get(id)?.state === 'done';
+  const [ext, setExt] = useState<ExternalPlayerSetting | null>(externalPlayerSupported ? null : EXTERNAL_DEFAULT);
+  const [playHere, setPlayHere] = useState(false);
+  useEffect(() => {
+    if (!ext) void getExternalPlayer().then(setExt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const external = !!ext?.enabled && !then && !downloaded && !playHere;
+  const wantsIntros = !!ext && !external && !playHere && !then && !nointro && start == null && user?.preferences.cinemaMode !== false;
+  const [checked, setChecked] = useState(() => !!ext && !wantsIntros);
 
   useEffect(() => {
-    if (!wantsIntros) return;
+    if (!ext) return;
+    if (!wantsIntros) {
+      setChecked(true);
+      return;
+    }
     let alive = true;
     (async () => {
       try {
@@ -39,8 +58,11 @@ export default function PlayerRoute() {
     return () => {
       alive = false;
     };
-  }, [id, wantsIntros, api]);
+  }, [id, wantsIntros, api, ext]);
 
+  if (ext && external) {
+    return <ExternalPlayerScreen key={id} itemId={id} startMs={start ? Number(start) : undefined} mediaId={media} packageName={ext.packageName} onPlayHere={() => setPlayHere(true)} />;
+  }
   if (!checked) {
     return <Loading style={{ flex: 1, backgroundColor: '#000' }} />;
   }

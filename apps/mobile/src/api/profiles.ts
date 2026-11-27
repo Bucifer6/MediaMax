@@ -19,10 +19,12 @@ export function videoDeviceProfile(maxBitrate?: number | null): DeviceProfile {
   return {
     ...base,
     videoCodecs: Platform.OS === 'ios' ? videoCodecs.filter((c) => c !== 'vp9') : videoCodecs,
-    audioCodecs: merge(base.audioCodecs, n.audioCodecs.filter((c) => c !== 'pcm')),
+    // + what Media3's FFmpeg extension decodes in software (DTS / DTS-HD / TrueHD / MP2 …, Android; see docs/HDR.md).
+    audioCodecs: merge(merge(base.audioCodecs, n.audioCodecs.filter((c) => c !== 'pcm')), n.softwareAudioCodecs),
     audioPassthrough: merge(n.audioPassthrough, n.directAudioFormats),
     // Smart audio decisions (E-AC-3 / DTS core / AAC 7.1): only when the native build reports the output channels.
-    ...(n.maxAudioChannels ? { maxAudioChannels: n.maxAudioChannels, multichannelAudioCodecs: n.multichannelAudioCodecs ?? [] } : {}),
+    // FFmpeg decodes every channel, so its codecs count as multichannel.
+    ...(n.maxAudioChannels ? { maxAudioChannels: n.maxAudioChannels, multichannelAudioCodecs: merge(n.multichannelAudioCodecs, n.softwareAudioCodecs) } : {}),
     tenBitCodecs: n.tenBitCodecs,
     maxHeight,
     maxWidth: maxHeight ? Math.max(base.maxWidth ?? 0, Math.round((maxHeight * 16) / 9)) : base.maxWidth,

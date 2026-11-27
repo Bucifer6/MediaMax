@@ -34,6 +34,36 @@ export interface NativeMediaCapabilities {
   directAudioFormats?: string[];
   /** Spatial audio active (Android Spatializer / iOS spatial headphones): Atmos JOC renders spatially. */
   spatialAudio?: boolean;
+  /**
+   * Android: codecs only Media3's FFmpeg extension decodes (software, multichannel PCM out), e.g. ["dts","dts-hd","truehd","mp2"].
+   * Absent on older native builds / builds without the extension.
+   */
+  softwareAudioCodecs?: string[];
+  ffmpegVersion?: string | null;
+}
+
+export interface ExternalPlayerOptions {
+  url: string;
+  title?: string;
+  /** Where to start (stream time, ms). */
+  positionMs?: number;
+  /** null / omitted = Android's chooser. */
+  packageName?: string | null;
+  mimeType?: string;
+}
+
+export interface ExternalPlayerResult {
+  launched: boolean;
+  /** no-player: nothing on the device opens the stream. */
+  reason?: 'no-player';
+  /** The chosen player isn't installed (the chooser was shown instead, or nothing could open it). */
+  requestedMissing?: boolean;
+  resultCode?: number;
+  /** Stream position when the player closed (VLC, MX Player, Just Player, mpv); null when it doesn't say. */
+  positionMs?: number | null;
+  durationMs?: number | null;
+  completed?: boolean;
+  packageName?: string | null;
 }
 
 export type MediaEvents = {
@@ -43,9 +73,16 @@ export type MediaEvents = {
 
 export declare class MediaMaxMediaNativeModule extends NativeModule<MediaEvents> {
   getCapabilities(): NativeMediaCapabilities | null;
-  /** Apple TV (tvOS 17+, "Match Content" on): switch the display to the content's frame rate and range. */
+  /**
+   * Switch the display to the content's frame rate: Apple TV (tvOS 17+, "Match Content" on, also the range) and
+   * Android TV / Fire TV (refresh rate only, preferredDisplayModeId). Resolves false when nothing fits.
+   */
   matchDisplay(frameRate: number, range: 'sdr' | 'hdr10' | 'hlg' | 'dolbyvision'): Promise<boolean>;
   resetDisplay(): Promise<void>;
+  /** Android: open the stream in another player app; resolves when that player returns. Missing on older builds. */
+  openExternalPlayer?(options: ExternalPlayerOptions): Promise<ExternalPlayerResult>;
+  /** Android: which of these packages are installed. */
+  installedPlayers?(packages: string[]): string[];
 }
 
 function load(): MediaMaxMediaNativeModule | null {

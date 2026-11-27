@@ -11,6 +11,7 @@ import android.media.MediaCodecInfo.CodecProfileLevel
 import android.media.MediaCodecList
 import android.os.Build
 import android.view.Display
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -42,10 +43,31 @@ class MediaMaxMediaModule : Module() {
       capabilities(ctx)
     }
 
-    // Apple TV only (AVDisplayCriteria). On Android, Media3 switches the refresh rate when seamless; see docs/HDR.md.
-    // AsyncFunction like iOS: JS awaits both (index.ts types them as Promises).
-    AsyncFunction("matchDisplay") { _: Double, _: String -> false }
-    AsyncFunction("resetDisplay") { }
+    // Frame-rate matching (DisplayMatch.kt): switch the HDMI refresh rate to the content's (or a multiple). The range is
+    // Apple TV only; Android switches HDR itself from the stream. AsyncFunction like iOS (index.ts types them as Promises).
+    AsyncFunction("matchDisplay") { frameRate: Double, _: String ->
+      val activity = appContext.currentActivity ?: return@AsyncFunction false
+      DisplayMatch.match(activity, frameRate)
+    }
+    AsyncFunction("resetDisplay") {
+      appContext.currentActivity?.let { DisplayMatch.reset(it) }
+    }
+
+    // "Open in external player" (ExternalPlayer.kt): resolves when the player returns, with its position if it sends one.
+    AsyncFunction("openExternalPlayer") { options: Map<String, Any?>, promise: Promise ->
+      val activity = appContext.currentActivity
+      if (activity == null) {
+        promise.reject("ERR_EXTERNAL_PLAYER", "No activity", null)
+        return@AsyncFunction
+      }
+      activity.runOnUiThread { ExternalPlayer.open(activity, options, promise) }
+    }
+    Function("installedPlayers") { packages: List<String> ->
+      ExternalPlayer.installedOf(appContext.currentActivity, packages)
+    }
+    OnActivityResult { _, payload ->
+      ExternalPlayer.onResult(payload.requestCode, payload.resultCode, payload.data)
+    }
   }
 
   private fun capabilities(ctx: Context): Map<String, Any?> {
@@ -61,6 +83,8 @@ class MediaMaxMediaModule : Module() {
     val displayHdr = display != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && display.isHdr
 
     val codecs = DecoderScan.scan()
+    // FFmpeg (software) decoders for what MediaCodec lacks; they output every channel, so they count as multichannel.
+    val software = SoftwareAudio.codecs.filter { it !in codecs.audio }
     val hdr10 = hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10)
     val hlg = hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HLG)
     val hdr10Plus = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS)
@@ -84,6 +108,8 @@ class MediaMaxMediaModule : Module() {
       "audioPassthrough" to passthrough(ctx),
       "maxDecodeHeight" to codecs.maxHeight,
       "displayHeight" to physicalHeight,
+      "softwareAudioCodecs" to software,
+      "ffmpegVersion" to SoftwareAudio.version,
     ) + AudioCaps.capabilities(ctx)
   }
 
