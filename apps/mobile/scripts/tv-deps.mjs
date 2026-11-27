@@ -11,6 +11,13 @@
  *
  * The tvOS fork publishes versions as <rn-version>-<patch>, e.g. 0.88.1-0, so we
  * keep the same React Native minor that the Expo SDK pins.
+ *
+ * package.json also carries `"overrides": { "react-native": "$react-native" }`. Without it, npm
+ * satisfies the `react-native` peer dependency of @react-native-tvos/virtualized-lists with a second,
+ * stock copy nested under node_modules/react-native/node_modules. Both copies end up in the TV
+ * bundle, `fetch` is still undefined when expo-router wraps it, and the app dies at launch with
+ * "TypeError: Cannot convert undefined value to object". The override pins every `react-native`
+ * request to whatever the root dependency is (stock or the tvOS alias).
  */
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import { execSync } from 'node:child_process';
