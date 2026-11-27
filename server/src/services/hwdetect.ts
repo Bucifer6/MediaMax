@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import type { HwAccel, HwDetectReport, HwDevice, HwMethodResult, HwTestResult, ToneMapPath, TranscodeVideoCodec } from '@mediamax/shared';
+import type { HwAccel, HwDetectReport, HwDevice, HwMethodResult, HwTestResult, QsvWindowsApi, ToneMapPath, TranscodeVideoCodec } from '@mediamax/shared';
 import { config } from '../config.js';
 import { logger } from '../util/log.js';
 import { getKv, getSettings, setKv, updateSettings } from './settings.js';
@@ -165,6 +165,8 @@ export interface Candidate {
   device: string | null;
   gpuIndex: number | null;
   deviceName: string | null;
+  /** QSV on Windows: the graphics API to test on. */
+  qsvApi?: QsvWindowsApi;
   /** Why it can't be tested here (null = test it). */
   unavailable: string | null;
 }
@@ -200,7 +202,7 @@ export function planCandidates(platform: string, devices: HwDevice[], encoders: 
     const add = (hw: HwAccel, vendor: HwDevice['vendor'], none: string) => {
       const list = pick(vendor);
       if (!list.length) out.push(c(hw, { unavailable: none }));
-      for (const g of list) out.push(c(hw, { gpuIndex: g.index ?? 0, deviceName: g.name, unavailable: missingEnc(hw) }));
+      for (const g of list) out.push(c(hw, { gpuIndex: g.index ?? 0, deviceName: g.name, unavailable: missingEnc(hw), ...(hw === 'qsv' ? { qsvApi: 'd3d11' as const } : {}) }));
     };
     add('nvenc', 'nvidia', 'No NVIDIA GPU found.');
     add('qsv', 'intel', 'No Intel GPU found.');
@@ -226,7 +228,7 @@ export function recommend(methods: HwMethodResult[]): HwDetectReport['recommenda
   const extras = [best.encode.hevc.works && 'HEVC', best.encode.av1.works && 'AV1'].filter(Boolean).join(' and ');
   const tm = best.toneMapping.path ? ` HDR tone-mapping: ${best.toneMapping.path}.` : '';
   return {
-    id: best.id, hwAccel: best.hwAccel, device: best.device, gpuIndex: best.gpuIndex,
+    id: best.id, hwAccel: best.hwAccel, device: best.device, gpuIndex: best.gpuIndex, ...(best.qsvApi ? { qsvApi: best.qsvApi } : {}),
     reason: `${best.label}${best.deviceName ? ` on ${best.deviceName}` : ''} encodes H.264${extras ? ` and ${extras}` : ''}${best.fps ? ` at ${Math.round(best.fps)} fps` : ''}.${tm}`,
   };
 }
@@ -273,15 +275,18 @@ export function testArgs(t: HwTarget, o: { codec: TranscodeVideoCodec; input: st
  * `hwdownload` rejects software frames, so the test only passes when the GPU really decoded. null = the method has no
  * hardware decoding (V4L2 M2M, software). `swFormats`: extra download formats this build has (e.g. Rockchip's nv15).
  */
-export function decodeTestArgs(t: HwTarget, input: string, swFormats: string[] = []): string[] | null {
+export function decodeTestArgs(t: HwTarget, input: string, swFormats: string[] = [], tenBit = false): string[] | null {
   let inArgs: string[];
+  // DXVA2 surfaces only download in their own format: "nv12|p010le" picks nv12 and fails on a 10-bit frame.
+  const exact = t.hw === 'qsv' && t.platform === 'win32' && t.qsvApi === 'dxva2';
   switch (t.hw) {
     case 'vaapi': case 'qsv': case 'nvenc': case 'rkmpp': inArgs = hwInputArgs(t, 'full', true); break;
     case 'amf': inArgs = ['-hwaccel', 'd3d11va', '-hwaccel_device', String(t.gpuIndex ?? 0), '-hwaccel_output_format', 'd3d11']; break;
     case 'videotoolbox': inArgs = ['-hwaccel', 'videotoolbox', '-hwaccel_output_format', 'videotoolbox_vld']; break;
     default: return null;
   }
-  return ['-y', ...inArgs, '-i', input, '-t', '2', '-an', '-vf', `hwdownload,format=${['nv12', 'p010le', ...swFormats].join('|')}`, '-f', 'null', '-'];
+  const formats = exact ? [tenBit ? 'p010le' : 'nv12'] : ['nv12', 'p010le', ...swFormats];
+  return ['-y', ...inArgs, '-i', input, '-t', '2', '-an', '-vf', `hwdownload,format=${formats.join('|')}`, '-f', 'null', '-'];
 }
 
 /**
@@ -295,11 +300,12 @@ async function testMethod(cand: Candidate, ctx: { platform: string; encoders: Se
   const emptyEncode = Object.fromEntries(CODECS.map((c) => [c, { ...skipped('not tested'), encoder: encoderFor(cand.hwAccel, c) }])) as HwMethodResult['encode'];
   const base: HwMethodResult = {
     id, hwAccel: cand.hwAccel, label: cand.label, device: cand.device, gpuIndex: cand.gpuIndex, deviceName: cand.deviceName,
+    ...(cand.qsvApi ? { qsvApi: cand.qsvApi } : {}),
     available: !cand.unavailable, works: false, error: cand.unavailable, encode: emptyEncode, decode: null, tenBit: null,
     toneMapping: { path: null, tried: [] }, fps: null, recommended: false, notes: [],
   };
   if (cand.unavailable) return base;
-  const target: HwTarget = { hw: cand.hwAccel, platform: ctx.platform, vaapiDevice: cand.device ?? getSettings().transcoding.vaapiDevice, gpuIndex: cand.gpuIndex ?? 0 };
+  const target: HwTarget = { hw: cand.hwAccel, platform: ctx.platform, vaapiDevice: cand.device ?? getSettings().transcoding.vaapiDevice, gpuIndex: cand.gpuIndex ?? 0, qsvApi: cand.qsvApi };
   const sw = cand.hwAccel === 'none';
 
   // 1) Encode: testsrc2 → scale → encode, per codec. Software only tests H.264 (HEVC/AV1 are hardware-only at runtime).
@@ -332,14 +338,14 @@ async function testMethod(cand: Candidate, ctx: { platform: string; encoders: Se
 
   // 2) Hardware decode of H.264 (decode-only: the frames must come out of the GPU decoder, see decodeTestArgs).
   const swFormats = ctx.pixFmts.has('nv15') ? ['nv15'] : [];
-  const decodeTest = async (input: string | null, missing: string) => {
+  const decodeTest = async (input: string | null, missing: string, tenBit = false) => {
     if (!input) return skipped(missing);
-    const a = decodeTestArgs(target, input, swFormats);
+    const a = decodeTestArgs(target, input, swFormats, tenBit);
     return a ? fromRun(await runFfmpeg(a)) : skipped(`${cand.label} decodes on the CPU`);
   };
   base.decode = await decodeTest(ctx.samples.h264, 'No H.264 test clip');
   // 3) 10-bit HEVC decode.
-  base.tenBit = await decodeTest(ctx.samples.hdr, 'No 10-bit test clip (needs libx265)');
+  base.tenBit = await decodeTest(ctx.samples.hdr, 'No 10-bit test clip (needs libx265)', true);
   // 4) HDR → SDR tone-mapping: the first path that works is the default. libplacebo is still tested after a GPU path
   //    won, because Dolby Vision profile 5 sources prefer it (only it applies the RPU reshaping).
   for (const path of toneMapCandidates(cand.hwAccel, ctx.platform)) {
@@ -356,6 +362,21 @@ async function testMethod(cand: Candidate, ctx: { platform: string; encoders: Se
   if (cand.hwAccel === 'vaapi' && /amd|radeon|radeonsi/i.test(`${cand.deviceName}`)) base.notes.push('AMD on Linux uses VA-API through Mesa (radeonsi).');
   if (!base.toneMapping.path) base.notes.push('No HDR tone-mapping path works; HDR sources would look washed out on SDR screens.');
   return base;
+}
+
+/**
+ * QSV on Windows: when it fails over D3D11, test it again over DXVA2. Intel's older runtime (6th–10th gen iGPUs) can't
+ * use D3D11 texture arrays, which the upload and decode paths need, but works through DXVA2. Exported for tests.
+ */
+export async function withQsvFallback(first: HwMethodResult, cand: Candidate, test: (c: Candidate) => Promise<HwMethodResult>): Promise<HwMethodResult> {
+  if (cand.hwAccel !== 'qsv' || cand.qsvApi !== 'd3d11' || !first.available || first.works) return first;
+  const second = await test({ ...cand, qsvApi: 'dxva2' });
+  if (second.works) {
+    second.notes.unshift(`Runs over DXVA2: the D3D11 test failed (${first.error ?? 'unknown error'}). This is normal for 6th–10th gen Intel graphics.`);
+    return second;
+  }
+  first.notes.push(`Also tried over DXVA2: ${second.error ?? 'failed'}.`);
+  return first;
 }
 
 /* ------------------------------ public ------------------------------- */
@@ -398,6 +419,7 @@ export function autoApplyRecommendation(report: HwDetectReport, env: NodeJS.Proc
   const next = { ...t, hwAccel: rec.hwAccel };
   if (rec.device && (rec.hwAccel === 'vaapi' || rec.hwAccel === 'qsv')) next.vaapiDevice = rec.device;
   if (rec.gpuIndex != null) next.gpuIndex = rec.gpuIndex;
+  if (rec.qsvApi) next.qsvApi = rec.qsvApi;
   updateSettings({ transcoding: next });
   setKv(AUTO_APPLIED_KEY, true);
   // The report is keyed on the device settings: re-save it under the new key instead of detecting again.
@@ -428,7 +450,8 @@ async function runDetection(): Promise<HwDetectReport> {
   const methods: HwMethodResult[] = [];
   for (const cand of candidates) {
     if (!versionOut) cand.unavailable = `ffmpeg not found at ${config.ffmpeg}`;
-    methods.push(await testMethod(cand, { platform, encoders, filters, pixFmts, features, samples }));
+    const ctx = { platform, encoders, filters, pixFmts, features, samples };
+    methods.push(await withQsvFallback(await testMethod(cand, ctx), cand, (c) => testMethod(c, ctx)));
   }
   const recommendation = recommend(methods);
   for (const m of methods) m.recommended = m.id === recommendation.id;

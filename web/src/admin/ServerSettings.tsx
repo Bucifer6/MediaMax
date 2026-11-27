@@ -211,6 +211,14 @@ export function ServerSettingsAdmin() {
               {(s.transcoding.hwAccel === 'nvenc' || s.transcoding.hwAccel === 'amf' || s.transcoding.hwAccel === 'qsv') && (
                 <Field label="GPU index" hint="NVIDIA, and QSV/AMF on Windows. 0 = first GPU."><input className="input" type="number" min={0} max={15} value={s.transcoding.gpuIndex ?? 0} onChange={(e) => setT({ gpuIndex: Number(e.target.value) })} /></Field>
               )}
+              {s.transcoding.hwAccel === 'qsv' && (
+                <Field label="Quick Sync on Windows" hint="D3D11 for most GPUs. DXVA2 for 6th–10th gen Intel graphics, where D3D11 fails. Hardware detection picks this for you.">
+                  <select className="input" value={s.transcoding.qsvApi ?? 'd3d11'} onChange={(e) => setT({ qsvApi: e.target.value as 'd3d11' | 'dxva2' })}>
+                    <option value="d3d11">D3D11 (default)</option>
+                    <option value="dxva2">DXVA2 (older Intel)</option>
+                  </select>
+                </Field>
+              )}
             </div>
             <HardwareDetect value={s.transcoding} onUse={setT} />
             <div className="form-row">

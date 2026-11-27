@@ -1639,6 +1639,11 @@ export type CreateRecordingRuleRequest = Omit<RecordingRule, 'id' | 'enabled' | 
  * `nvenc` is NVIDIA on Linux and Windows, `rkmpp` is Rockchip (RK3588 etc., needs an ffmpeg-rockchip build).
  */
 export type HwAccel = 'none' | 'vaapi' | 'nvenc' | 'qsv' | 'videotoolbox' | 'v4l2m2m' | 'amf' | 'rkmpp';
+/**
+ * The Windows graphics API Quick Sync runs on. D3D11 is the default and the only one Arc and newer chips support;
+ * the older Intel runtime used by 6th–10th gen iGPUs (Skylake … Comet Lake) often only works through DXVA2.
+ */
+export type QsvWindowsApi = 'd3d11' | 'dxva2';
 /** Video codecs the transcoder can output. HEVC and AV1 are only produced with a hardware encoder. */
 export type TranscodeVideoCodec = 'h264' | 'hevc' | 'av1';
 /** How HDR is tone-mapped to SDR: on the GPU (vaapi/qsv/cuda/opencl/libplacebo) or on the CPU (`software` = zscale+tonemap). */
@@ -1675,6 +1680,8 @@ export interface HwMethodResult {
   device: string | null;
   /** GPU/adapter index for NVENC, and QSV/AMF on Windows. */
   gpuIndex: number | null;
+  /** QSV on Windows: the graphics API the tests passed with. */
+  qsvApi?: QsvWindowsApi;
   deviceName: string | null;
   /** The device/driver/encoder this method needs is present (a test was run). */
   available: boolean;
@@ -1704,7 +1711,7 @@ export interface HwDetectReport {
   ffmpeg: { path: string; version: string | null; hwaccels: string[]; encoders: string[]; filters: string[] };
   devices: HwDevice[];
   methods: HwMethodResult[];
-  recommendation: { id: string; hwAccel: HwAccel; device: string | null; gpuIndex: number | null; reason: string };
+  recommendation: { id: string; hwAccel: HwAccel; device: string | null; gpuIndex: number | null; qsvApi?: QsvWindowsApi; reason: string };
 }
 
 export interface ServerSettings {
@@ -1727,6 +1734,8 @@ export interface ServerSettings {
     toneMapHdr: boolean;
     /** GPU / adapter index for NVENC, and for QSV/AMF on Windows (0 = first). */
     gpuIndex: number;
+    /** QSV on Windows: run on D3D11 (default) or DXVA2 (older Intel iGPUs). Hardware detection picks it. */
+    qsvApi?: QsvWindowsApi;
     /** Output codecs in order of preference; H.264 is always the final fallback. */
     preferredCodecs: TranscodeVideoCodec[];
     /** Encode HEVC (with a hardware encoder) for clients that can play it. */
