@@ -699,6 +699,26 @@ db.raw.function('mm_rating_ok', { deterministic: true }, (r: unknown, max: unkno
 });
 migrate(db);
 
+/**
+ * Re-analyses tables whose query-planner statistics no longer match their size. The performance migration runs
+ * ANALYZE once, which on a new install records the tables as empty; those figures were never refreshed, so the
+ * planner kept picking indexes that suit an empty library. On a library with tens of thousands of tracks one startup
+ * query (the DJ analysis count) then scanned every media path once per track and blocked the server for minutes.
+ * Checks every table (0x10000) and only re-analyses the stale ones: about 1 ms when nothing is stale.
+ */
+export function refreshPlannerStats(d: Database = db): void {
+  const started = Date.now();
+  try {
+    d.exec('PRAGMA optimize=0x10002');
+  } catch (e) {
+    log.warn(`Refreshing query planner statistics failed: ${(e as Error).message}`);
+    return;
+  }
+  const ms = Date.now() - started;
+  if (ms >= 250) log.info(`Refreshed stale query planner statistics (${ms} ms)`);
+}
+refreshPlannerStats();
+
 /*
  * A counter bumped by any change to the item rows that list-wide caches depend on (membership, type, library, genres,
  * ratings). Temp triggers live only on this connection, which is the only one that writes.
