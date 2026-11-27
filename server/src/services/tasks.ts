@@ -90,7 +90,7 @@ const DEFS: TaskDef[] = [
     description: 'Re-apply each library\'s "Date added" rule (file creation or modification time) to the items it already has, without a full rescan.',
     interval: () => null,
     run: async () => {
-      const n = recalculateDateAdded();
+      const n = await recalculateDateAdded();
       log.info(`Recalculate date added changed ${n} item(s)`);
     },
   },
