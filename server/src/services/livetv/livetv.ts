@@ -1,3 +1,4 @@
+import { USER_AGENT } from '../../util/userAgent.js';
 import type {
   Channel, ChannelCategory, ChannelQuery, CreateLiveSourceRequest, GuideResponse, HomeRow, LivePlayRequest, LiveSource, Paged,
   PlaybackInfo, Program, TestSourceResponse, UpdateLiveSourceRequest, User, XtreamAccountInfo,
@@ -267,7 +268,7 @@ export async function testSource(req: CreateLiveSourceRequest): Promise<TestSour
       const lineup = await hdhrLineup(req.url);
       return { ok: true, message: `Found ${lineup.length} channels on the tuner.`, liveCount: lineup.length };
     }
-    const res = await fetch(req.url, { headers: { 'User-Agent': req.userAgent || 'Kinora/1.0' }, signal: AbortSignal.timeout(60000) });
+    const res = await fetch(req.url, { headers: { 'User-Agent': req.userAgent || USER_AGENT }, signal: AbortSignal.timeout(60000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const pl = parseM3u(await res.text());
     if (!pl.entries.length) throw new Error('No channels found in playlist');
@@ -376,7 +377,7 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
         if (src.import_series) await importSeries(src).catch((e) => log.warn(`Series import failed for ${src.name}`, e.message));
         else db.run("DELETE FROM libraries WHERE source_id = ? AND type = 'iptv-shows'", id);
       } else if (src.type === 'm3u') {
-        const res = await fetch(src.url, { headers: { 'User-Agent': src.user_agent || 'Kinora/1.0' }, signal: AbortSignal.timeout(120000) });
+        const res = await fetch(src.url, { headers: { 'User-Agent': src.user_agent || USER_AGENT }, signal: AbortSignal.timeout(120000) });
         if (!res.ok) throw new Error(`Playlist download failed: HTTP ${res.status}`);
         const pl = parseM3u(await res.text());
         const groups = [...new Set(pl.entries.map((e) => e.group).filter(Boolean))] as string[];
@@ -848,7 +849,7 @@ export async function openChannelStream(r: Row, url: string, signal: AbortSignal
 export function channelUserAgent(r: Row): string {
   const custom = parseJson<Record<string, any>>(r.custom, {});
   const src = db.get<{ user_agent: string | null }>('SELECT user_agent FROM live_sources WHERE id = ?', r.source_id);
-  return custom.userAgent || src?.user_agent || 'Kinora/1.0';
+  return custom.userAgent || src?.user_agent || USER_AGENT;
 }
 
 export async function playChannel(ctx: AuthContext, channelId: string, req: LivePlayRequest & { deviceProfile?: { containers?: string[] } }, remoteAddr: string | null, hints?: ClientHints): Promise<PlaybackInfo> {

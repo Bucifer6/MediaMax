@@ -1,3 +1,4 @@
+import { USER_AGENT } from '../util/userAgent.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -106,7 +107,7 @@ const extFor = (url: string, type: string | null) => {
 };
 
 async function fetchFeed(url: string, etag?: string | null): Promise<{ xml: string | null; etag: string | null }> {
-  const res = await safeFetch(url, { headers: { 'User-Agent': `Kinora/${config.version} (podcast client)`, Accept: 'application/rss+xml, application/xml, text/xml, */*', ...(etag ? { 'If-None-Match': etag } : {}) }, signal: AbortSignal.timeout(30000) });
+  const res = await safeFetch(url, { headers: { 'User-Agent': `${USER_AGENT} (podcast client)`, Accept: 'application/rss+xml, application/xml, text/xml, */*', ...(etag ? { 'If-None-Match': etag } : {}) }, signal: AbortSignal.timeout(30000) });
   if (res.status === 304) return { xml: null, etag: etag ?? null };
   if (!res.ok) throw new HttpError(502, 'Could not download that feed', 'feed_error');
   if (Number(res.headers.get('content-length') ?? 0) > 20 * 1024 * 1024) throw new HttpError(502, 'Feed is too large', 'feed_error');
@@ -230,7 +231,7 @@ export async function downloadNew(feedId: string, count: number) {
   for (const e of eps) {
     const dest = path.join(dir, `${e.id}.${e.container || 'mp3'}`);
     try {
-      const res = await safeFetch(e.remote_url, { headers: { 'User-Agent': `Kinora/${config.version}` }, signal: AbortSignal.timeout(30 * 60000) });
+      const res = await safeFetch(e.remote_url, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(30 * 60000) });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       await pipeline(Readable.fromWeb(res.body as any), fs.createWriteStream(dest + '.part'));
       fs.renameSync(dest + '.part', dest);

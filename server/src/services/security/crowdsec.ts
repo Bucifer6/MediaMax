@@ -1,13 +1,13 @@
+import { USER_AGENT } from '../../util/userAgent.js';
 /**
  * CrowdSec Local API client (as a "machine", i.e. the same rights as cscli): alerts, active decisions,
  * manual ban and unban. Credentials come from the deploy installer (cscli machines add mediamax-dashboard).
  */
 export interface CsConfig { url: string; machineId: string; password: string }
 
-import { config } from '../../config.js';
 
 // CrowdSec parses the User-Agent at login and rejects Node's default ("node"); always identify ourselves.
-const UA = () => `Kinora/${config.version}`;
+const UA = () => USER_AGENT;
 
 let tokenCache: { key: string; token: string; until: number } | null = null;
 

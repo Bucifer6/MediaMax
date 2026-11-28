@@ -74,7 +74,7 @@ function parseSsdpReply(reply as dynamic) as string
             if key = "server" then server = value
         end if
     end for
-    if (Instr(1, LCase(server), "kinora") = 0 and Instr(1, LCase(server), "mediamax") = 0) or location = "" then return ""
+    if (Instr(1, LCase(server), "vibe/") = 0 and Instr(1, LCase(server), "kinora") = 0 and Instr(1, LCase(server), "mediamax") = 0) or location = "" then return ""
     cut = Instr(1, location, "/dlna/")
     if cut = 0 then return ""
     return Left(location, cut - 1)

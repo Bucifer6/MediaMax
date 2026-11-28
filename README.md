@@ -33,6 +33,9 @@ V cut through it, in a sunset-to-evening gradient; the interface stays quiet so 
 > tags), and the deploy kit installs to `/opt/vibe` (an existing `/opt/kinora` is kept). Existing installs, apps and
 > links keep working without changes.
 
+For the exact names you will still see in file paths, service tools and integrations, see
+[Rebranding and compatibility names](docs/REBRANDING.md). Do not rename an existing data folder or database by hand.
+
 Vibe brings together the features people love in **Plex, Jellyfin and Emby** and the polish of the big streaming services. It adds first-class **Xtream Codes IPTV** and **TV tuners**, a beat-matching **DJ mode** with an optional **AI DJ**, built-in **requests** and **profiles**, **Home Assistant** and **Play to** support, and a **one-command secure deployment** that fits next to the reverse proxy you already run. Every client (web, iOS, Android, Apple TV, Android TV, Fire TV, Samsung and LG TVs) takes its logo, colours, fonts, home layout and features from your server, applied live with no app rebuild.
 
 > [!NOTE]

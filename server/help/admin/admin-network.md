@@ -22,6 +22,12 @@ order: 4
 
 This box shows how your own request arrived. If it says your request came through a proxy that isn't trusted, add that proxy's address under **Trusted proxies**; otherwise every visitor looks like the proxy, and one person's wrong passwords can lock everyone out.
 
+### Proxy configuration examples
+
+Set **Vibe address seen by your proxy** to the address your proxy can actually reach. The standard Docker Compose
+file uses `vibe:8484`; the deploy kit retains `mediamax:8484`. A proxy running directly on the same machine can use
+`127.0.0.1:8484`. This field changes the copy-ready examples; it does not rename containers or change server settings.
+
 ### Built-in HTTPS needs
 
 - a domain whose DNS points at the server;

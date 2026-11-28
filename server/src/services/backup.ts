@@ -17,7 +17,8 @@ const backupsDir = () => {
   fs.mkdirSync(d, { recursive: true });
   return d;
 };
-const ID_RE = /^mediamax-[\w-]+\.tar\.gz$/;
+// New downloads use Vibe; archives made before the rename remain listed and usable.
+const ID_RE = /^(?:vibe|mediamax)-[\w-]+\.tar\.gz$/;
 
 export function listBackups(): BackupInfo[] {
   return fs.readdirSync(backupsDir()).filter((f) => ID_RE.test(f)).map((f) => {
@@ -48,7 +49,7 @@ export function createBackup(reason: 'manual' | 'scheduled' | 'pre-restore' = 'm
       { name: 'mediamax.db', file: tmpDb },
       ...BACKUP_DIRS.flatMap((d) => walkFiles(path.join(config.dataDir, d), d)),
     ];
-    const id = `mediamax-${stamp}-${reason}.tar.gz`;
+    const id = `vibe-${stamp}-${reason}.tar.gz`;
     fs.writeFileSync(path.join(backupsDir(), id), createTarGz(entries));
     logActivity('backup', `Backup created (${reason})`, { userId: actor?.id, userName: actor?.displayName });
     pruneAutomatic();

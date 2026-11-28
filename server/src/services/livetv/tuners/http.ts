@@ -1,3 +1,4 @@
+import { USER_AGENT } from '../../../util/userAgent.js';
 /**
  * HTTP for tuner boxes on the LAN (TVHeadend, OpenWebif, SAT>IP description files): Basic and Digest
  * authentication (RFC 7616: MD5, MD5-sess, SHA-256, qop=auth), timeouts and friendly errors.
@@ -113,7 +114,7 @@ export class TunerHttp {
   private scheme: 'none' | 'basic' | 'digest' | null = null;
   requests = 0;
 
-  constructor(readonly creds: TunerCreds = {}, readonly userAgent = 'Kinora/1.0') {}
+  constructor(readonly creds: TunerCreds = {}, readonly userAgent = USER_AGENT) {}
 
   get hasCreds() {
     return !!this.creds.username;

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Finds Vibe servers on the LAN. Vibe answers SSDP M-SEARCH for UPnP MediaServer:1 when its DLNA server is on
-  (Settings → DLNA); its SERVER header contains "Kinora/<version>" and LOCATION points at <base>/dlna/description.xml.
+  (Settings → DLNA); its SERVER header identifies Vibe (Kinora/MediaMax also accepted) and LOCATION points at <base>/dlna/description.xml.
   Each hit is confirmed with GET /api/v1/system/info.
 -->
 <component name="DiscoveryTask" extends="Task">

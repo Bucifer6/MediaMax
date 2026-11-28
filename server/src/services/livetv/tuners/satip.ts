@@ -1,3 +1,4 @@
+import { USER_AGENT } from '../../../util/userAgent.js';
 /**
  * SAT>IP servers (DVB-S/S2/T/T2/C over RTSP): Digital Devices Octopus NET, Telestar, Inverto, minisatip,
  * and the AVM FRITZ!Box cable models (6490/6590/6591/6660 Cable…).
@@ -77,7 +78,7 @@ export function descriptionCandidates(url: string, explicit?: string | null): st
   return [...new Set(out)];
 }
 
-export async function describe(s: SatipSourceLike, http = new TunerHttp({}, s.userAgent || 'Kinora/1.0')): Promise<(SatipDescription & { descriptionUrl: string }) | null> {
+export async function describe(s: SatipSourceLike, http = new TunerHttp({}, s.userAgent || USER_AGENT)): Promise<(SatipDescription & { descriptionUrl: string }) | null> {
   // Tried in parallel (closed ports fail fast, a missing host would otherwise cost every timeout in turn); first in order wins.
   const urls = descriptionCandidates(s.url, s.options.descriptionUrl);
   const found = await Promise.all(urls.map(async (u) => {
@@ -105,7 +106,7 @@ export function resolveSatipUrl(entry: string, deviceUrl: string): string {
 }
 
 export async function sync(s: SatipSourceLike): Promise<TunerSync> {
-  const http = new TunerHttp({}, s.userAgent || 'Kinora/1.0');
+  const http = new TunerHttp({}, s.userAgent || USER_AGENT);
   const desc = await describe(s, http);
   const mode = s.options.satipMode ?? (desc?.isFritzBox ? 'fritzbox' : 'm3u');
   const warnings: string[] = [];

@@ -1,3 +1,4 @@
+import { USER_AGENT } from '../../util/userAgent.js';
 import sax from 'sax';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -117,7 +118,7 @@ export async function autoDecompress(src: Readable): Promise<Readable> {
 /** Open an XMLTV guide from an http(s) URL or a local file path, decompressing gzip/xz. */
 export async function openXmltv(input: string, opts: { userAgent?: string | null; timeoutMs?: number } = {}): Promise<Readable> {
   if (/^https?:\/\//i.test(input)) {
-    const res = await fetch(input, { headers: { 'User-Agent': opts.userAgent || 'Kinora/1.0', 'Accept-Encoding': 'gzip' }, signal: AbortSignal.timeout(opts.timeoutMs ?? 300000) }).catch((e: any) => {
+    const res = await fetch(input, { headers: { 'User-Agent': opts.userAgent || USER_AGENT, 'Accept-Encoding': 'gzip' }, signal: AbortSignal.timeout(opts.timeoutMs ?? 300000) }).catch((e: any) => {
       throw new Error(`Could not download the guide: ${e?.cause?.code ?? e?.cause?.message ?? e?.message ?? e}`);
     });
     if (!res.ok || !res.body) throw new Error(`EPG download failed: HTTP ${res.status}`);

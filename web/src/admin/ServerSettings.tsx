@@ -456,7 +456,7 @@ export function ServerSettingsAdmin() {
               {!s.publicUrl && <p className="muted" style={{ marginTop: 8 }}>Set a Public URL on the General tab if people reach the server at a different address.</p>}
             </div>
             <Field label="Issuer URL" hint="The provider’s issuer; Vibe reads /.well-known/openid-configuration from it.">
-              <input className="input mono" value={oi.issuer ?? ''} onChange={(e) => setOi({ issuer: e.target.value.trim() || null })} placeholder="https://auth.example.com/application/o/mediamax/" spellCheck={false} />
+              <input className="input mono" value={oi.issuer ?? ''} onChange={(e) => setOi({ issuer: e.target.value.trim() || null })} placeholder="https://auth.example.com/application/o/vibe/" spellCheck={false} />
             </Field>
             <div className="form-row">
               <Field label="Client ID"><input className="input mono" value={oi.clientId ?? ''} onChange={(e) => setOi({ clientId: e.target.value.trim() || null })} autoComplete="off" spellCheck={false} /></Field>
@@ -466,8 +466,8 @@ export function ServerSettingsAdmin() {
             <Switch checked={oi.autoCreateUsers} onChange={(v) => setOi({ autoCreateUsers: v })} label="Create accounts on first sign-in" hint="When off, only people who already have a Vibe account can use SSO." />
             <div className="form-row form-row-3">
               <Field label="Groups claim" hint="Usually “groups”."><input className="input mono" value={oi.groupsClaim} onChange={(e) => setOi({ groupsClaim: e.target.value })} placeholder="groups" spellCheck={false} /></Field>
-              <Field label="Admin group" hint="Members become administrators."><input className="input" value={oi.adminGroup ?? ''} onChange={(e) => setOi({ adminGroup: e.target.value.trim() || null })} placeholder="mediamax-admins" /></Field>
-              <Field label="Allowed group" hint="If set, only members may sign in."><input className="input" value={oi.allowedGroup ?? ''} onChange={(e) => setOi({ allowedGroup: e.target.value.trim() || null })} placeholder="mediamax-users" /></Field>
+              <Field label="Admin group" hint="Members become administrators."><input className="input" value={oi.adminGroup ?? ''} onChange={(e) => setOi({ adminGroup: e.target.value.trim() || null })} placeholder="vibe-admins" /></Field>
+              <Field label="Allowed group" hint="If set, only members may sign in."><input className="input" value={oi.allowedGroup ?? ''} onChange={(e) => setOi({ allowedGroup: e.target.value.trim() || null })} placeholder="vibe-users" /></Field>
             </div>
           </div>
         )}

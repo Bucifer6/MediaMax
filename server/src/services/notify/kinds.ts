@@ -36,7 +36,7 @@ export const AGENT_KINDS: NotificationAgentKindInfo[] = [
     { key: 'port', label: 'Port', placeholder: '587', hint: '465 = TLS; anything else upgrades with STARTTLS when offered.' },
     { key: 'username', label: 'Username' },
     { key: 'password', label: 'Password', secret: true },
-    { key: 'from', label: 'From address', required: true, placeholder: 'mediamax@example.com' },
+    { key: 'from', label: 'From address', required: true, placeholder: 'vibe@example.com' },
     { key: 'to', label: 'Send to', placeholder: 'admin@example.com, other@example.com', hint: 'Comma separated. Request/issue owners are not emailed individually.' },
     { key: 'insecure', label: 'Allow self-signed certificates', placeholder: 'false' },
   ] },

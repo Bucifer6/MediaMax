@@ -1,3 +1,4 @@
+import { USER_AGENT } from '../../../util/userAgent.js';
 /**
  * Schedules Direct JSON API client (API version 20141201).
  *
@@ -14,7 +15,7 @@ import crypto from 'node:crypto';
 export const SD_DEFAULT_BASE = 'https://json.schedulesdirect.org/20141201';
 /** Overridable for tests and self-hosted mirrors. */
 export const sdBase = () => (process.env.MEDIAMAX_SD_URL || SD_DEFAULT_BASE).replace(/\/+$/, '');
-export const SD_USER_AGENT = 'Kinora/1.0 (self-hosted media server)';
+export const SD_USER_AGENT = `${USER_AGENT} (self-hosted media server)`;
 export const SD_BATCH = 5000;
 export const SD_ARTWORK_BATCH = 500;
 const TOKEN_TTL_MS = 23 * 3600000;

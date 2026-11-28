@@ -25,7 +25,11 @@ Backups are stored in the `backups` folder inside the data folder. Copy that fol
 |---|---|
 | Docker / NAS | whatever you mapped to `/config` |
 | Windows | `C:\ProgramData\Kinora` |
-| Linux service | `/var/lib/mediamax` |
+| Linux service | `/var/lib/kinora` |
+
+The app is called {{product}}, but existing data names are retained for upgrades. Older installations may use
+`C:\ProgramData\MediaMax` or `/var/lib/mediamax`. The database is still named `mediamax.db` inside the data folder;
+do not rename or move it just to match the app's current name.
 
 ## Restoring
 
