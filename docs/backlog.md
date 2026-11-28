@@ -16,3 +16,8 @@ Noticed but deliberately not done. Severity: High / Medium / Low.
 - Low — Trakt and SIMKL share near-identical sign-in polling, status and pull-all code, and three copies of "item → outside ids"; fold into tracking.ts when a third service arrives.
 - Low — After a Trakt / SIMKL sync, open apps don't get `userdata.updated` events (they refresh on the next load); a 50k-episode first sync runs as one blocking transaction.
 - Low — Mobile: SIMKL connect is web-only for now.
+- Low — TV focus trailers don't continue into the detail page yet (the trailer restarts there); mobile TV app has no ambient mode or focus trailers.
+- Low — Letterbox auto-zoom can't sample cross-origin streams (canvas taint): it stays at 1× there.
+- Low — Pillarbox (side bars) detection; only top/bottom bars are removed.
+- Low — Watch together: no per-socket rate limit on syncplay.buffering toggles; `syncplay.command` action / itemId aren't allow-listed (pre-existing).
+- Low — Mobile volume swipe changes the player volume (capped by the device volume) and does nothing while casting.

@@ -42,3 +42,17 @@ test('returned position becomes progress', () => {
   assert.deepEqual(externalProgress({ launched: true, positionMs: 1000 }, { durationMs: 60_000, streamStartMs: 30_000 }), { positionMs: 31_000, durationMs: 60_000 }, 'stream offset added');
   assert.deepEqual(externalProgress({ launched: true, positionMs: 1000, durationMs: 50_000 }, { durationMs: null }), { positionMs: 1000, durationMs: 50_000 }, 'player duration when the server has none');
 });
+
+test('externalSubtitles: preferred track first (switched on), image tracks left out, none when subtitles are off', async () => {
+  const { externalSubtitles } = await import('../src/player/playerPrefs.ts');
+  const tracks = [
+    { index: 1, language: 'spa', default: false, forced: false, title: null, url: '/s/1.vtt' },
+    { index: 2, language: 'eng', default: true, forced: false, title: null, url: '/s/2.vtt' },
+    { index: 3, language: 'eng', default: false, forced: false, title: 'PGS', url: '/s/3.sup', isImage: true },
+  ];
+  assert.deepEqual(externalSubtitles(tracks, { subtitleMode: 'always', subtitleLanguage: 'es' }).map((t) => t.index), [1, 2]);
+  assert.deepEqual(externalSubtitles(tracks, { subtitleMode: 'auto', subtitleLanguage: 'es' }, 'jpn').map((t) => t.index), [1, 2], 'foreign audio');
+  assert.deepEqual(externalSubtitles(tracks.map((t) => ({ ...t, default: false })), { subtitleMode: 'auto', subtitleLanguage: 'es' }, 'spa').map((t) => t.index), [], 'own-language audio: none, as in our player');
+  assert.deepEqual(externalSubtitles(tracks, { subtitleMode: 'off', subtitleLanguage: 'es' }).map((t) => t.index), []);
+  assert.deepEqual(externalSubtitles(tracks, { subtitleMode: 'always', subtitleLanguage: 'en', showOnlyPreferredSubtitles: true }).map((t) => t.index), [2]);
+});

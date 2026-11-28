@@ -1987,6 +1987,8 @@ export type ServerEvent =
   | { type: 'session.message'; from: string; header: string | null; text: string; timeoutMs: number }
   | { type: 'syncplay.state'; room: SyncPlayRoom }
   | { type: 'syncplay.command'; room: string; action: 'play' | 'pause' | 'seek' | 'load'; positionMs: number; itemId?: string; at: number; by: string }
+  /** Reply to syncplay.ping: the client's own send time back with the server's clock (offset estimation). */
+  | { type: 'syncplay.pong'; sentAt: number; serverAt: number }
   | { type: 'error'; message: string }
   /** A command from another of your devices (apply it to the local player). */
   | { type: 'remote.command'; fromDeviceName: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number; trackIndex?: number | null }
@@ -2011,6 +2013,10 @@ export type ClientEvent =
   | { type: 'syncplay.join'; room: string }
   | { type: 'syncplay.leave'; room: string }
   | { type: 'syncplay.command'; room: string; action: 'play' | 'pause' | 'seek' | 'load'; positionMs: number; itemId?: string }
+  /** Clock calibration: the server answers with syncplay.pong. */
+  | { type: 'syncplay.ping'; sentAt: number }
+  /** This member's player started / stopped buffering: the room waits for everyone. */
+  | { type: 'syncplay.buffering'; room: string; buffering: boolean }
   /** Control another of your own devices ("Play on…"). */
   | { type: 'remote.command'; targetDeviceId: string; action: RemoteAction; itemId?: string; channelId?: string; positionMs?: number; volume?: number; trackIndex?: number | null }
   /** Players report what they're doing so other devices can show and control it. Send on change and every ~10 s while playing. */
@@ -2065,11 +2071,15 @@ export interface SyncPlayRoom {
   /** Short code friends type to join. */
   code: string;
   ownerId: string;
-  members: { userId: string; displayName: string }[];
+  /** `buffering`: this member's player is waiting for data (the room holds until everyone is ready). */
+  members: { userId: string; displayName: string; buffering?: boolean }[];
   itemId: string | null;
   state: 'playing' | 'paused';
   positionMs: number;
+  /** Server clock (ms) of the last change; with `positionMs` gives the room's position (see syncClock.ts). */
   updatedAt: number;
+  /** Someone is buffering: the room's clock is held at `positionMs` until they are ready. */
+  waiting?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -6155,4 +6165,18 @@ export interface SystemInfo {
 export interface HomeRowConfig {
   /** mdblist: the list's URL (https://mdblist.com/lists/<user>/<list>) or numeric id. */
   mdblistList?: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Player parity (0.8, phase 3)                                        */
+/* ------------------------------------------------------------------ */
+
+export interface UserPreferences {
+  /** Movies: show "You might also like" from this share of the runtime on (80–100 %, default 96; 100 = never). */
+  postPlayThreshold?: number;
+  /** TV: show the ambient cinema slideshow after this many idle minutes (0 = off, default 0). */
+  ambientMinutes?: number;
+  /** TV: expand the focused poster and play its trailer in the background (muted unless `trailerSound`). Default off. */
+  focusTrailers?: boolean;
+  trailerSound?: boolean;
 }

@@ -35,6 +35,8 @@ import '../styles/screens-player.css';
 import { SubtitleOverlay, type SubtitleStatus } from './subtitles/SubtitleOverlay';
 import { hdrActive, hdrControlsOpacity, hdrSubtitleColor, pickAudio, pickSubtitle, shouldAutoSkip, visibleSubtitles, type SyncMap } from './playerPrefs';
 import { ParentalGuideCard, SegmentSubmit } from './SegmentTools';
+import { EpisodesDrawer, PauseOverlay, PlayerClock, PostPlayRecs, useLetterbox } from './PlayerExtras';
+import { PICTURE_LABELS, PICTURE_MODES, pictureStyle, type PictureMode } from './letterbox';
 import { useAdaptive } from './useAdaptive';
 import { initialBandwidth } from './bandwidth';
 import { formatBps } from './abr';
@@ -49,7 +51,18 @@ import { prepareItem } from './warmup';
 const SWITCH_LEAD_MS = 4000;
 const isTvMode = () => typeof document !== 'undefined' && document.documentElement.classList.contains('tv');
 
-type Menu = null | 'audio' | 'subs' | 'subStyle' | 'sync' | 'quality' | 'speed' | 'together' | 'chapters';
+type Menu = null | 'audio' | 'subs' | 'subStyle' | 'sync' | 'quality' | 'speed' | 'together' | 'chapters' | 'picture';
+
+/** The picture mode is a per-device choice (a TV and a laptop want different ones). */
+const PICTURE_KEY = 'vibe.pictureMode';
+const loadPictureMode = (): PictureMode => {
+  try {
+    const v = localStorage.getItem(PICTURE_KEY) as PictureMode | null;
+    return v && PICTURE_MODES.includes(v) ? v : 'fit';
+  } catch {
+    return 'fit';
+  }
+};
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 /** Subtitle delay range / step (ms), as in VLC's G/H. */
 const SUB_DELAY_MAX = 10000;
@@ -171,6 +184,8 @@ export default function VideoPlayer() {
   const [info, setInfo] = useState<PlaybackInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [buffering, setBuffering] = useState(true);
+  const bufferingRef = useRef(true);
+  bufferingRef.current = buffering;
   const [paused, setPaused] = useState(true);
   const [positionMs, setPositionMs] = useState(0);
   const [bufferedMs, setBufferedMs] = useState(0);
@@ -186,6 +201,17 @@ export default function VideoPlayer() {
   const [rate, setRate] = useState(1);
   const [fullscreen, setFullscreen] = useState(false);
   const [controls, setControls] = useState(true);
+  const [pictureMode, setPictureModeState] = useState<PictureMode>(loadPictureMode);
+  const setPictureMode = (m: PictureMode) => {
+    setPictureModeState(m);
+    try {
+      localStorage.setItem(PICTURE_KEY, m);
+    } catch {
+      /* private mode */
+    }
+  };
+  const [episodesOpen, setEpisodesOpen] = useState(false);
+  const [postPlayDismissed, setPostPlayDismissed] = useState(false);
   const [menu, setMenu] = useState<Menu>(null);
   const [subtitleIndex, setSubtitleIndex] = useState<number | null>(null);
   // The admin dashboard shows which subtitle is on (text subtitles are rendered here, so only the player knows).
@@ -234,6 +260,15 @@ export default function VideoPlayer() {
   const hdrOn = hdrActive(info?.videoRange);
   const hdrSubColor = hdrSubtitleColor(subStyle, hdrOn);
   const controlsDim = hdrControlsOpacity(subStyle, hdrOn);
+  // Picture mode (fit / auto / fill / zoom / stretch) on whichever <video> is showing.
+  const autoZoom = useLetterbox(activeVideo, pictureMode === 'auto', itemId);
+  useEffect(() => {
+    if (!activeVideo) return;
+    const ps = pictureStyle(pictureMode, autoZoom, activeVideo.clientWidth / Math.max(1, activeVideo.clientHeight), (activeVideo.videoWidth || 16) / Math.max(1, activeVideo.videoHeight || 9));
+    activeVideo.style.objectFit = ps.objectFit;
+    activeVideo.style.transform = ps.scale !== 1 ? `scale(${ps.scale})` : '';
+    activeVideo.style.transition = 'transform 0.4s ease';
+  }, [activeVideo, pictureMode, autoZoom]);
   const runAutoSync = async (referenceIndex: number) => {
     const track = activeSubRef.current;
     if (!track || !item || !info?.mediaId) return;
@@ -573,6 +608,8 @@ export default function VideoPlayer() {
     setTrickplay(null);
     setSubSearch(false);
     skippedMarkers.current.clear();
+    setEpisodesOpen(false);
+    setPostPlayDismissed(false);
     setSyncMaps({});
     setMarkersOverride(null);
     const sy = loadSync(itemId);
@@ -999,6 +1036,12 @@ export default function VideoPlayer() {
       if (action === 'pause') v.pause();
     },
     load: (id) => navigate(`/play/${id}?start=0`, { replace: true }),
+    // Drift correction nudges the element's rate around the viewer's chosen speed (watch-together plays at 1×).
+    setRate: (r) => {
+      const v = videoRef.current;
+      if (v && !castingRef.current) v.playbackRate = rate * r;
+    },
+    isBuffering: () => bufferingRef.current,
   });
 
   // Cinema-mode intro chain: ?then=<movie>&intros=<remaining ids>
@@ -1020,6 +1063,16 @@ export default function VideoPlayer() {
     sync.broadcast('load', 0, info.nextItemId);
     navigate(`/play/${info.nextItemId}?start=0`, { replace: true });
   }, [info?.nextItemId, navigate, sync]);
+  /** Play another title (episodes drawer, suggestions): the watch-together room follows, as with Next. */
+  const playOther = useCallback((id: string) => {
+    sync.broadcast('load', 0, id);
+    navigate(`/play/${id}?start=0`, { replace: true });
+  }, [navigate, sync]);
+  // Watch together runs on one clock at 1×: another speed would only make everyone seek.
+  useEffect(() => {
+    if (sync.room && rate !== 1) setRate(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sync.room?.id]);
 
   const exit = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen();
@@ -1263,6 +1316,17 @@ export default function VideoPlayer() {
         case 'I':
           setShowStats((x) => !x);
           break;
+        case 'e':
+        case 'E':
+          if (item?.type === 'episode' && item.parentId) setEpisodesOpen((x) => !x);
+          break;
+        case 'z':
+        case 'Z': {
+          const next = PICTURE_MODES[(PICTURE_MODES.indexOf(pictureMode) + 1) % PICTURE_MODES.length];
+          setPictureMode(next);
+          flash(PICTURE_LABELS[next]);
+          break;
+        }
         case 'n':
         case 'MediaTrackNext':
           goNext();
@@ -1436,6 +1500,10 @@ export default function VideoPlayer() {
         </div>
       )}
       {osd && <div className="player-osd">{osd}</div>}
+      <PauseOverlay item={item} paused={paused && !buffering && !ended} controlsVisible={controls || !!menu} />
+      {episodesOpen && item?.type === 'episode' && <EpisodesDrawer item={item} onClose={() => setEpisodesOpen(false)} onPlay={playOther} />}
+      {item?.type === 'movie' && !info?.nextItemId && !postPlayDismissed && !introThen && durationMs > 0
+        && (prefs.postPlayThreshold ?? 96) < 100 && positionMs / durationMs * 100 >= (prefs.postPlayThreshold ?? 96) && <PostPlayRecs item={item} onDismiss={() => setPostPlayDismissed(true)} onPlay={playOther} />}
       {prefs.parentalGuideOverlay && item && (item.type === 'movie' || item.type === 'episode') && !introThen && <ParentalGuideCard itemId={item.id} positionMs={positionMs} />}
       {syncToast && <div className="player-sync-toast" role="status">{syncToast}</div>}
       {tapSkip && (
@@ -1498,8 +1566,13 @@ export default function VideoPlayer() {
         </div>
         {info && <span className={`badge player-method method-${info.method}`} title="Playback method">{info.method === 'direct' ? 'Direct play' : info.method === 'remux' ? 'Direct stream' : info.method === 'transcode' ? 'Transcoding' : 'Live'}</span>}
         {sync.room && <span className="badge badge-accent"><Icon name="together" size={12} /> {sync.room.members.length} watching</span>}
+        {sync.waiting && <span className="badge" role="status">Waiting for {sync.room?.members.filter((m) => m.buffering).map((m) => m.displayName).join(', ') || 'someone'}…</span>}
         {marathonId && <span className="badge badge-accent"><Icon name="shuffle" size={12} /> Marathon</span>}
         {marathon.sleepButton}
+        <PlayerClock positionMs={positionMs} durationMs={durationMs} rate={rate} />
+        {item?.type === 'episode' && item.parentId && (
+          <button className={`btn-icon ${episodesOpen ? 'active' : ''}`} onClick={() => setEpisodesOpen((o) => !o)} aria-label="Episodes" aria-pressed={episodesOpen} title="Episodes (E)"><Icon name="list" size={22} /></button>
+        )}
         <button className={`btn-icon vp-info-btn ${showStats ? 'active' : ''}`} onClick={() => setShowStats((x) => !x)} aria-label="Playback info" aria-pressed={showStats} title="Playback info (I)"><Icon name="info" size={22} /></button>
       </div>
       {marathon.overlay}
@@ -1603,7 +1676,14 @@ export default function VideoPlayer() {
               </Popover>
             </div>
             <div className="pc-menu">
-              <button className="btn-icon pc-speed" onClick={() => setMenu(menu === 'speed' ? null : 'speed')} aria-label="Playback speed">{rate === 1 ? <Icon name="speed" size={22} /> : <span>{rate}×</span>}</button>
+              <button className={`btn-icon ${pictureMode !== 'fit' ? 'active' : ''}`} onClick={() => setMenu(menu === 'picture' ? null : 'picture')} aria-label="Picture size"><Icon name="fullscreen" size={22} /></button>
+              <Popover open={menu === 'picture'} onClose={() => setMenu(null)}>
+                <OptionList<PictureMode> title="Picture" value={pictureMode} onSelect={(m) => { setPictureMode(m); setMenu(null); flash(PICTURE_LABELS[m]); }}
+                  options={PICTURE_MODES.map((m) => ({ label: PICTURE_LABELS[m], value: m, sub: m === 'auto' && pictureMode === 'auto' && autoZoom > 1 ? `Zoomed ${Math.round((autoZoom - 1) * 100)} %` : undefined }))} />
+              </Popover>
+            </div>
+            <div className="pc-menu">
+              <button className="btn-icon pc-speed" onClick={() => setMenu(menu === 'speed' ? null : 'speed')} aria-label="Playback speed" disabled={!!sync.room} title={sync.room ? 'Watch together plays at normal speed' : undefined}>{rate === 1 ? <Icon name="speed" size={22} /> : <span>{rate}×</span>}</button>
               <Popover open={menu === 'speed'} onClose={() => setMenu(null)}>
                 <OptionList<number> title="Speed" value={rate} onSelect={(r) => { setRate(r); setMenu(null); }} options={SPEEDS.map((s) => ({ label: s === 1 ? 'Normal' : `${s}×`, value: s }))} />
               </Popover>

@@ -99,6 +99,11 @@ How Vibe compares with the features people use most in Plex, Jellyfin and Emby.
 | Two-way Trakt sync (history, resume points, watchlist, ratings) + Trakt comments on detail pages | 🟡 | Plugin | 🟡 | ✅ |
 | SIMKL two-way tracking (movies, shows, anime) | ❌ | Plugin | ❌ | ✅ |
 | MDBList ratings (IMDb, RT critics + audience, Metacritic, Trakt, Letterboxd, MAL) and MDBList Home rows | ❌ | Plugin | ❌ | ✅ |
+| Player: picture modes (fit / fill / zoom / stretch) and automatic black-bar removal (web/TV), in-player episodes list, pause info, clock with end time, end-of-movie suggestions | 🟡 | 🟡 | 🟡 | ✅ |
+| Phone player: brightness / volume swipes, speed, rotation lock, picture fit | 🟡 | 🟡 | 🟡 | ✅ |
+| TV ambient slideshow when idle; trailers on the focused poster | ❌ | ❌ | 🟡 | ✅ |
+| Watch together with clock-offset sync, waiting for buffering members and gentle drift correction | ✅ | 🟡 | ❌ | ✅ |
+| External players get the subtitle files and go on to the next episode | ❌ | 🟡 | ❌ | ✅ |
 | Season × episode ratings grid, studio / network logos linking to Discover, rating-badge posters (RPDB / Top Posters) | ❌ | ❌ | ❌ | ✅ |
 | Skip recaps, previews and ad breaks (comskip / `.edl` markers) | 🟡 | 🟡 (plugins) | 🟡 | ✅ |
 | Cinema mode (trailers + pre-roll before a movie) | ✅ (Pass) | ✅ (plugin) | ✅ | ✅ |

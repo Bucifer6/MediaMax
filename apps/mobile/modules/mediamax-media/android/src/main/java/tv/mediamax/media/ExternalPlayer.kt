@@ -36,12 +36,25 @@ internal object ExternalPlayer {
     val positionMs = (options["positionMs"] as? Number)?.toLong() ?: 0L
     val mimeType = (options["mimeType"] as? String)?.takeIf { it.isNotBlank() } ?: "video/*"
     val requested = (options["packageName"] as? String)?.takeIf { it.isNotBlank() }
+    // Sidecar subtitles to hand over: [{ url, name }], the first one switched on.
+    @Suppress("UNCHECKED_CAST")
+    val subs = (options["subtitles"] as? List<Map<String, Any?>>).orEmpty()
+      .mapNotNull { s -> (s["url"] as? String)?.takeIf { it.isNotBlank() }?.let { it to ((s["name"] as? String) ?: "Subtitles") } }
+      .take(10)
     val pkg = requested?.takeIf { installed(activity, it) }
 
     val intent = Intent(Intent.ACTION_VIEW).apply {
       setDataAndType(Uri.parse(url), mimeType)
       if (pkg != null) setPackage(pkg)
       if (title != null) putExtra("title", title)
+      if (subs.isNotEmpty()) {
+        // MX Player / Just Player / mpv-android: "subs" (all), "subs.name", "subs.enable" (the ones to switch on).
+        putExtra("subs", subs.map { Uri.parse(it.first) }.toTypedArray<android.os.Parcelable>())
+        putExtra("subs.name", subs.map { it.second }.toTypedArray())
+        putExtra("subs.enable", arrayOf<android.os.Parcelable>(Uri.parse(subs.first().first)))
+        // VLC: one subtitle file.
+        putExtra("subtitles_location", subs.first().first)
+      }
       if (pkg == VLC) {
         putExtra("position", positionMs)
         putExtra("from_start", positionMs <= 0)

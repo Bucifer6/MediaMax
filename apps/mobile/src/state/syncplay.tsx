@@ -15,6 +15,7 @@ import { router } from 'expo-router';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { SyncPlayRoom } from '@/api/types';
 import { useCapabilities, useSession } from './session';
+import { clockOffset, driftCorrection, expectedPosition, type ClockSample } from '../player/syncClock';
 
 export type SyncAction = 'play' | 'pause' | 'seek' | 'load';
 type ApplyAction = 'play' | 'pause' | 'seek';
@@ -25,6 +26,10 @@ export interface SyncTarget {
   isPaused: () => boolean;
   /** Apply a remote command to the player. Must NOT broadcast. */
   apply: (action: ApplyAction, positionMs: number, by: string | null) => void;
+  /** Drift correction: a playback rate close to 1. */
+  setRate?: (rate: number) => void;
+  /** The player is waiting for data (the room waits for this member). */
+  isBuffering?: () => boolean;
 }
 
 interface SyncPlayValue {
@@ -71,6 +76,8 @@ export function SyncPlayProvider({ children }: { children: React.ReactNode }) {
   const sent = useRef<{ action: SyncAction; at: number }[]>([]);
   /** server clock − local clock, from our own echoes (best = lowest round trip). */
   const clock = useRef<{ offset: number; rtt: number }>({ offset: 0, rtt: Infinity });
+  /** syncplay.ping / pong samples (the better offset source; echoes are the fallback). */
+  const samples = useRef<ClockSample[]>([]);
   const ownLoad = useRef<string | null>(null);
   const rejoining = useRef(false);
   const socketRef = useRef(socket);
@@ -101,6 +108,10 @@ export function SyncPlayProvider({ children }: { children: React.ReactNode }) {
     const now = Date.now();
     sent.current = [...sent.current.filter((x) => now - x.at < ECHO_WINDOW_MS), { action, at: now }];
     if (action === 'load' && itemId) ownLoad.current = itemId;
+    // Our own move is the room's clock right away (a drift check before the echo must not pull us back).
+    if (action !== 'load') {
+      setRoom({ ...r, positionMs: Math.max(0, Math.round(positionMs)), updatedAt: now + clock.current.offset, state: action === 'pause' ? 'paused' : action === 'play' ? 'playing' : r.state, waiting: action === 'pause' ? false : r.waiting });
+    }
     socketRef.current.send({ type: 'syncplay.command', room: r.id, action, positionMs: Math.max(0, Math.round(positionMs)), itemId });
   }, []);
 
@@ -115,10 +126,24 @@ export function SyncPlayProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!socket) return;
     const off = socket.subscribe((ev) => {
+      if (ev.type === 'syncplay.pong') {
+        samples.current = [...samples.current.slice(-11), { sentAt: ev.sentAt, serverAt: ev.serverAt, receivedAt: Date.now() }];
+        const o = clockOffset(samples.current);
+        if (o != null) clock.current = { offset: o, rtt: 0 };
+        return;
+      }
       if (ev.type === 'syncplay.state') {
         const cur = roomRef.current;
         const p = pendingRef.current;
         if (!p && !(cur && cur.id === ev.room.id)) return;
+        // Someone started / finished buffering: hold here, then resume where the room restarts its clock.
+        if (!p && cur) {
+          const target = targetRef.current;
+          if (ev.room.waiting && !cur.waiting && target && !target.isPaused()) target.apply('pause', ev.room.positionMs, null);
+          if (!ev.room.waiting && cur.waiting && ev.room.state === 'playing' && target) {
+            target.apply('play', expectedPosition(ev.room, Date.now(), clock.current.offset), null);
+          }
+        }
         rejoining.current = false;
         setPending(null);
         setError(null);
@@ -128,11 +153,11 @@ export function SyncPlayProvider({ children }: { children: React.ReactNode }) {
           // Tell everyone where we are; the server starts rooms paused at 0.
           broadcast(target.isPaused() ? 'pause' : 'play', target.getPositionMs());
         } else if (p === 'join') {
-          const pos = ev.room.positionMs + (ev.room.state === 'playing' ? elapsedSince(ev.room.updatedAt) : 0);
+          const pos = expectedPosition(ev.room, Date.now(), clock.current.offset);
           if (ev.room.itemId && target?.itemId !== ev.room.itemId) openItem(ev.room.itemId, pos);
           else if (target) {
             target.apply('seek', pos, null);
-            target.apply(ev.room.state === 'playing' ? 'play' : 'pause', pos, null);
+            target.apply(ev.room.state === 'playing' && !ev.room.waiting ? 'play' : 'pause', pos, null);
           }
         }
         return;
@@ -147,6 +172,7 @@ export function SyncPlayProvider({ children }: { children: React.ReactNode }) {
           updatedAt: ev.at,
           itemId: ev.itemId ?? cur.itemId,
           state: ev.action === 'play' ? 'playing' : ev.action === 'pause' || ev.action === 'load' ? 'paused' : cur.state,
+          waiting: ev.action === 'pause' || ev.action === 'load' ? false : cur.waiting,
         });
         // Our own echo: never re-apply, but learn the clock offset from it.
         const now = Date.now();
@@ -166,6 +192,11 @@ export function SyncPlayProvider({ children }: { children: React.ReactNode }) {
         if (!target || (ev.itemId && ev.itemId !== target.itemId)) return;
         const wasPlaying = cur.state === 'playing';
         const compensate = ev.action === 'play' || (ev.action === 'seek' && wasPlaying);
+        // During a hold a Play only moves the position: the room resumes when everyone is ready.
+        if (ev.action === 'play' && cur.waiting) {
+          target.apply('pause', ev.positionMs, ev.by);
+          return;
+        }
         target.apply(ev.action, ev.positionMs + (compensate ? elapsedSince(ev.at) : 0), ev.by);
         return;
       }
@@ -193,6 +224,45 @@ export function SyncPlayProvider({ children }: { children: React.ReactNode }) {
       offOpen();
     };
   }, [socket, broadcast, openItem, setPending, setRoom]);
+
+  // While in a room: calibrate the clock (5 quick pings, then one a minute), keep the player in step every 2 s with a
+  // small rate change (a seek only when far off), and report buffering so the room waits for this device.
+  const roomId = room?.id ?? null;
+  useEffect(() => {
+    if (!roomId || !socket) return;
+    const ping = () => socket.send({ type: 'syncplay.ping', sentAt: Date.now() });
+    const quick = [0, 300, 600, 900, 1200].map((ms) => setTimeout(ping, ms));
+    const slow = setInterval(ping, 60000);
+    let lastBuffering = false;
+    const buf = setInterval(() => {
+      const b = !!targetRef.current?.isBuffering?.();
+      if (b === lastBuffering) return;
+      lastBuffering = b;
+      socket.send({ type: 'syncplay.buffering', room: roomId, buffering: b });
+    }, 500);
+    const drift = setInterval(() => {
+      const r = roomRef.current;
+      const target = targetRef.current;
+      if (!target) return;
+      if (!r || r.state !== 'playing' || r.waiting || target.isPaused() || target.isBuffering?.()) {
+        target.setRate?.(1);
+        return;
+      }
+      const expected = expectedPosition(r, Date.now(), clock.current.offset);
+      const fix = driftCorrection(target.getPositionMs() - expected);
+      if (fix.kind === 'seek') {
+        target.setRate?.(1);
+        target.apply('seek', expected, null);
+      } else target.setRate?.(fix.rate);
+    }, 2000);
+    return () => {
+      quick.forEach(clearTimeout);
+      clearInterval(slow);
+      clearInterval(buf);
+      clearInterval(drift);
+      targetRef.current?.setRate?.(1);
+    };
+  }, [roomId, socket]);
 
   // Signed out / feature turned off: forget the room.
   useEffect(() => {

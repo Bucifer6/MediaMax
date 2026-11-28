@@ -1,5 +1,5 @@
 # Code map: Vibe (MediaMax)
-Updated: 2026-11-28 (branch claude/phase2-tracking-ratings)
+Updated: 2026-11-28 (branch claude/phase3-player-parity)
 
 ## What this is
 Vibe is a self-hosted media server (movies, TV, live TV/IPTV, DVR, music, audiobooks, podcasts) plus white-label clients:
@@ -69,15 +69,26 @@ Shared API contract: `shared/src/types.ts` (interfaces are extended by declarati
 - Does: extraction/conversion and serving of tracks; online search/download; AutoSync (`autosync.ts`, pure alignment + route glue).
 - Watch out: AutoSync runs on the request thread (~0.3–0.6 s for a film); see docs/backlog.md.
 
+### Watch together (`server/src/services/syncplay.ts`, `web/src/player/syncplay.ts`, `apps/mobile/src/state/syncplay.tsx`)
+- Does: rooms over the WebSocket; ping/pong clock offset, buffering wait (room `waiting`), drift correction by rate.
+- Key files: `shared/src/syncClock.ts` (synced copies: offset, expected position, drift bands) — test `server/test/syncplay.test.ts`.
+- Watch out: rooms are in memory only. Buffering is tracked per socket (a user may have two devices); a hold is released
+  after 15 s at most. Rooms play at 1× (the speed control is off while in one); drift goes through `setRate`, which both
+  players apply on top of the chosen speed. Own commands update the local room clock at once (no drift yank before the echo).
+
 ### Web player (`web/src/player/`)
 - Key files: `VideoPlayer.tsx` (the player), `subtitles/SubtitleOverlay.tsx` + `textRenderer.ts` (our own subtitle renderer),
   `subtitles/prepare.ts` (SDH + AutoSync map applied to parsed cues), `SegmentTools.tsx` (parental guide card, admin segment marking),
-  `subtitleStyle.ts` (style presets / preview). Spoiler blur: `components/Cards.tsx`, `pages/Home.tsx`, `pages/ItemDetail.tsx`
+  `subtitleStyle.ts` (style presets / preview), `PlayerExtras.tsx` (episodes drawer, pause overlay, clock, post-play, letterbox
+  hook), `letterbox.ts` (picture modes, black-bar detection; test `web/test/letterbox.test.ts`). TV ambient mode: `tv/Ambient.tsx`
+  (mounted in `components/Layout.tsx`); focus trailers: `components/Cards.tsx` PosterCard `focusTrailer`. Spoiler blur: `components/Cards.tsx`, `pages/Home.tsx`, `pages/ItemDetail.tsx`
   (CSS in `styles/player.css`).
 - Watch out: libass (ASS via WASM) only takes a constant offset, so AutoSync's rate/group fixes apply in text mode only.
 
 ### Mobile/TV app (`apps/mobile/`)
-- Key files: `src/player/VideoPlayerScreen.tsx` (player, own VTT overlay), `src/player/ParentalGuide.tsx`, `app/settings/playback.tsx`,
+- Key files: `src/player/VideoPlayerScreen.tsx` (player, own VTT overlay; speed / fit / rotation lock / episodes sheet / pause
+  overlay / clock), `src/player/PlayerGestures.tsx` (brightness + volume swipes, expo-brightness), `src/player/ParentalGuide.tsx`,
+  `src/player/ExternalPlayerScreen.tsx` + `modules/mediamax-media/.../ExternalPlayer.kt` (subtitle extras, auto-next), `app/settings/playback.tsx`,
   `src/components/MediaCard.tsx` + `Row.tsx` (spoiler blur), `src/screens/detail/ShowDetail.tsx`.
 - Watch out: separate npm project; types come from the synced `src/api/types.ts`.
 

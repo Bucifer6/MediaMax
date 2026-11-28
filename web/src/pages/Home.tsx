@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import type { HomeResponse, HomeRow, ItemSort } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
+import { isTvMode } from '../player/NowPlaying';
+import { usePreviewsEnabled } from '../components/Preview';
 import { useAsync, useServerEvent } from '../hooks';
 import { Hero, HeroSkeleton } from '../components/Hero';
 import { Row } from '../components/Row';
@@ -38,6 +40,11 @@ function rowLink(row: HomeRow): string | undefined {
 function HomeRowView({ row }: { row: HomeRow }) {
   const { user, system } = useApp();
   const ratingPosters = !!system?.ratingPosterScreens?.home;
+  // TV focus trailers (Settings → Playback → TV); memoised so the memo'd cards don't all re-render.
+  const previews = usePreviewsEnabled();
+  const wantTrailers = isTvMode() && !!user?.preferences.focusTrailers && previews;
+  const trailerSound = !!user?.preferences.trailerSound;
+  const focusTrailer = useMemo(() => (wantTrailers ? { sound: trailerSound } : null), [wantTrailers, trailerSound]);
   if (row.type === 'live-now' || row.type === 'favorite-channels') {
     const channels = row.channels ?? [];
     if (!channels.length) return null;
@@ -69,7 +76,7 @@ function HomeRowView({ row }: { row: HomeRow }) {
   const spoiler = (row.type === 'continue' || row.type === 'nextup') && !!user?.preferences.blurNextUp;
   return (
     <Row title={row.title} link={rowLink(row)} id={row.id} className={`${wide ? 'row-wide' : ''} home-row-${row.type} ${spoiler ? 'row-spoiler' : ''}`}>
-      {row.items.map((it) => (wide ? <LandscapeCard key={it.id} item={it} /> : <PosterCard key={it.id} item={it} ratingPoster={ratingPosters} />))}
+      {row.items.map((it) => (wide ? <LandscapeCard key={it.id} item={it} /> : <PosterCard key={it.id} item={it} ratingPoster={ratingPosters} focusTrailer={focusTrailer} />))}
     </Row>
   );
 }

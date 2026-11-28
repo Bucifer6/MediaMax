@@ -259,6 +259,11 @@ the hardware path) and `toneMap`.
 ## WebSocket
 `GET /api/v1/ws?token=` — server sends `ServerEvent` JSON frames, client may send `ClientEvent`.
 SyncPlay (watch together): `syncplay.create` → server replies `syncplay.state` with a `code`; friends send `syncplay.join` with the room id or code; any member's `syncplay.command` is broadcast to everyone in the room.
+Clock: `syncplay.ping { sentAt }` → `syncplay.pong { sentAt, serverAt }` (clients estimate the server offset from the shortest
+round trips, `syncClock.ts`). Buffering: `syncplay.buffering { room, buffering }` marks the member; while anyone buffers during
+playback the room has `waiting: true` and its clock is held (`positionMs` frozen), and it restarts for everyone when all are
+ready or the buffering member leaves. Clients keep in step every 2 s: drift under 120 ms is left alone, up to 2.5 s is closed
+with a playback rate within ±5 %, beyond that they seek.
 Phone remote: `remote.key` (`up`/`down`/`left`/`right`/`ok`/`back`/`home`/`playPause`/`rewind`/`forward`/`info`/`text`/`backspace`/`submit`) is delivered only to a TV the sending device is QR-paired with. `remote.command` also reaches a paired TV of another user, limited to transport/track actions (`setAudioTrack`, `setSubtitleTrack` with `trackIndex`, `skipSegment`) and `playItem` for titles that user may watch. Paired phones receive `pair.targets` (with the TV's `remote.state`); TVs receive `pair.request` for another account's phone; both sides get `pair.updated`.
 
 ## Phone ↔ TV pairing, second screen, song ID

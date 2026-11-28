@@ -137,7 +137,7 @@ function mergePrefs(stored: Partial<UserPreferences>, patch: Partial<UserPrefere
     for (const k of SKIP_KEYS) if (typeof src[k] === 'boolean') merged[k] = src[k] as boolean;
     prefs.autoSkip = merged;
   }
-  for (const k of ['showOnlyPreferredSubtitles', 'blurUnwatchedEpisodes', 'blurNextUp', 'parentalGuideOverlay'] as const) {
+  for (const k of ['showOnlyPreferredSubtitles', 'blurUnwatchedEpisodes', 'blurNextUp', 'parentalGuideOverlay', 'focusTrailers', 'trailerSound'] as const) {
     if (prefs[k] !== undefined && typeof prefs[k] !== 'boolean') delete prefs[k];
   }
   const xf = Number(prefs.musicCrossfadeSec);
@@ -149,7 +149,7 @@ function mergePrefs(stored: Partial<UserPreferences>, patch: Partial<UserPrefere
   const num = (v: unknown, lo: number, hi: number) => (v === undefined || v === null || !Number.isFinite(Number(v)) ? undefined : Math.max(lo, Math.min(hi, Math.round(Number(v)))));
   if (prefs.nowPlayingView !== undefined && !['cover', 'lyrics', 'visualizer', 'karaoke'].includes(prefs.nowPlayingView)) delete prefs.nowPlayingView;
   if (prefs.visualizerStyle !== undefined && !['ring', 'bars', 'wave', 'particles', 'ambient'].includes(prefs.visualizerStyle)) delete prefs.visualizerStyle;
-  for (const [k, lo, hi] of [['lyricsOffsetMs', -5000, 5000], ['karaokeVocalLevel', 0, 100], ['musicScreensaverMinutes', 0, 120]] as const) {
+  for (const [k, lo, hi] of [['lyricsOffsetMs', -5000, 5000], ['karaokeVocalLevel', 0, 100], ['musicScreensaverMinutes', 0, 120], ['postPlayThreshold', 80, 100], ['ambientMinutes', 0, 120]] as const) {
     if (prefs[k] === undefined) continue;
     const v = num(prefs[k], lo, hi);
     if (v === undefined) delete prefs[k];

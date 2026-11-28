@@ -18,3 +18,7 @@ One line per decision: date — decision — why — who decided.
 - 2026-11-28 — Rating posters are proxied through the server's image cache — the poster service's key would otherwise be visible to every viewer — Claude.
 - 2026-11-28 — Episode ratings: IMDb via OMDb when the admin enabled OMDb, else TMDB — no new outside service; IMDb has no public API — Claude.
 - 2026-11-28 — Trakt pull and push are separate opt-in switches, off for existing and new accounts; SIMKL sync is on once a viewer connects (connecting SIMKL is asking for sync) — PRIVACY.md consent wording — Claude.
+- 2026-11-28 — Mobile adds expo-brightness and expo-screen-orientation (first-party Expo) for the brightness swipe and rotation lock; volume uses the player's own volume (no extra package) — Claude.
+- 2026-11-28 — Picture mode is per device (localStorage on web), not a profile preference — a TV and a laptop want different ones — Claude.
+- 2026-11-28 — Watch-together drift is corrected with a ±5 % rate change, seeking only beyond 2.5 s — invisible to viewers, no rebuffering — Claude.
+- 2026-11-28 — External players get subtitle files (MX / Just Player / mpv "subs" extras, VLC "subtitles_location"); skip markers are not sent — no common intent extra exists for them — Claude.

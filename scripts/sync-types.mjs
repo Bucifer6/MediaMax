@@ -14,6 +14,11 @@ for (const dest of ['server/src/services/playerPrefs.ts', 'web/src/player/player
   copyFileSync('shared/src/playerPrefs.ts', dest);
   console.log(`Synced shared/src/playerPrefs.ts -> ${dest}`);
 }
+// Watch-together clock offset, expected room position and drift correction.
+for (const dest of ['server/src/services/syncClock.ts', 'web/src/player/syncClock.ts', 'apps/mobile/src/player/syncClock.ts']) {
+  copyFileSync('shared/src/syncClock.ts', dest);
+  console.log(`Synced shared/src/syncClock.ts -> ${dest}`);
+}
 // The stem separation DSP and model runner (shared/src/stems/) for the browser worker and the server's separation process.
 for (const dir of ['web/src/stems', 'server/src/services/separation']) {
   mkdirSync(dir, { recursive: true });

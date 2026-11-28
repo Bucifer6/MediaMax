@@ -119,6 +119,20 @@ export function visibleSubtitles<T extends SubtitleChoice>(tracks: T[], prefs: S
   return keep.length ? keep : tracks;
 }
 
+/**
+ * Subtitles to hand to an external player: the track our player would show first (the player switches it on), then
+ * the other text tracks in the viewer's languages; none when our player would show none. Image tracks are left out.
+ */
+export function externalSubtitles<T extends SubtitleChoice & { url: string; isImage?: boolean }>(
+  tracks: T[], prefs: SubtitlePrefs, audioLanguage?: string | null,
+): T[] {
+  // The same choice as our own player (Auto with own-language audio → none); the first track is the one switched on.
+  const text = tracks.filter((t) => !t.isImage && t.url);
+  const first = pickSubtitle(text, prefs, audioLanguage);
+  if (!first) return [];
+  return [first, ...visibleSubtitles(text, prefs).filter((t) => t !== first)];
+}
+
 /* --------------------------------- auto-skip --------------------------------- */
 
 export type SkipType = 'intro' | 'recap' | 'preview' | 'commercial' | 'credits';
