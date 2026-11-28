@@ -50,6 +50,8 @@ export interface ExternalPlayerOptions {
   /** null / omitted = Android's chooser. */
   packageName?: string | null;
   mimeType?: string;
+  /** Sidecar subtitle files (WebVTT / SRT URLs with token) handed to the player; the first is switched on. */
+  subtitles?: { url: string; name: string }[];
 }
 
 export interface ExternalPlayerResult {

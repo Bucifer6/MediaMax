@@ -52,6 +52,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { activeCues, parseVtt, type Cue } from './vtt';
 import { cleanCueText, hdrActive, hdrControlsOpacity, hdrSubtitleColor, pickAudio, pickSubtitle, shouldAutoSkip, visibleSubtitles } from './playerPrefs';
 import { ParentalGuideCard } from './ParentalGuide';
+import { PlayerGestures } from './PlayerGestures';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { measureBandwidth } from './bandwidth';
 import { useMarathon } from './marathon';
 import { videoPlaybackRequest } from './warmup';
@@ -66,7 +68,13 @@ const FAV_ONLY_KEY = 'vibe.live.favOnly';
 const FAV_TOGGLE = '__favOnly';
 const LAST_CHANNEL = '__last';
 
-type SheetKind = 'audio' | 'subs' | 'online' | 'quality' | 'channels' | 'together' | 'playon' | 'sleep' | 'songid' | null;
+type SheetKind = 'audio' | 'subs' | 'online' | 'quality' | 'channels' | 'together' | 'playon' | 'sleep' | 'songid' | 'speed' | 'episodes' | null;
+
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+/** Picture fit: the whole picture (fit), filling the screen (crop), or stretched. */
+const FITS = ['contain', 'cover', 'fill'] as const;
+const FIT_LABEL: Record<(typeof FITS)[number], string> = { contain: 'Fit', cover: 'Fill (crop)', fill: 'Stretch' };
+const FIT_ICON: Record<(typeof FITS)[number], 'contract-outline' | 'expand-outline' | 'resize-outline'> = { contain: 'contract-outline', cover: 'expand-outline', fill: 'resize-outline' };
 
 const langMatch = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.slice(0, 2).toLowerCase() === b.slice(0, 2).toLowerCase();
 
@@ -150,12 +158,25 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
     active: scrubbing || pendingSeek != null,
     atMs: pendingSeek ?? pos,
   });
+  /** The playing title (episodes sheet, pause overlay). */
+  const [vodItem, setVodItem] = useState<Item | null>(offlineRec?.item ?? null);
+  const [episodes, setEpisodes] = useState<Item[]>([]);
+  const [rate, setRate] = useState(1);
+  const rateRef = useRef(1);
+  rateRef.current = rate;
+  const [fit, setFit] = useState<(typeof FITS)[number]>('contain');
+  const [rotationLocked, setRotationLocked] = useState(false);
+  const [pausedLong, setPausedLong] = useState(false);
   /** Chapter names for the scrub preview (PlaybackInfo doesn't carry them; the item does). */
   const [chapters, setChapters] = useState<Chapter[] | null>(offlineRec?.item?.chapters ?? null);
   useEffect(() => {
     if (!vodItemId || offlineUri || !api) return;
     let cancelled = false;
-    api.item(vodItemId).then((it) => !cancelled && setChapters(it.chapters?.length ? it.chapters : null)).catch(() => undefined);
+    api.item(vodItemId).then((it) => {
+      if (cancelled) return;
+      setChapters(it.chapters?.length ? it.chapters : null);
+      setVodItem(it);
+    }).catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -743,6 +764,11 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       getPositionMs: () => posRef.current,
       isPaused: () => (castingRef.current ? !playingRef.current : !player.playing),
       apply: (a, p, by) => applyRef.current(a, p, by),
+      // Watch-together drift correction (a rate within ±5 % of normal) and buffering reports.
+      setRate: (r) => {
+        if (!castingRef.current) player.playbackRate = rateRef.current * r;
+      },
+      isBuffering: () => !castingRef.current && player.status === 'loading',
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [syncOn, vodItemId, sync.register, player]);
@@ -781,6 +807,37 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
     },
     [isLive, surfChannels, surfPreview, channelId, tune, showBanner],
   );
+
+  // ----- player extras: speed, picture fit, rotation lock, episodes, pause overlay -----
+  useEffect(() => {
+    if (!castingRef.current) player.playbackRate = rate;
+  }, [rate, player]);
+  // Watch together runs on one clock at 1×: another speed would only make everyone seek.
+  useEffect(() => {
+    if (inRoom && rate !== 1) setRate(1);
+  }, [inRoom, rate]);
+  useEffect(() => {
+    setPausedLong(false);
+    if (playing || loading) return;
+    const tm = setTimeout(() => setPausedLong(true), 5000);
+    return () => clearTimeout(tm);
+  }, [playing, loading]);
+  useEffect(() => () => {
+    void ScreenOrientation.unlockAsync().catch(() => undefined);
+  }, []);
+  const toggleRotationLock = useCallback(async () => {
+    try {
+      if (rotationLocked) await ScreenOrientation.unlockAsync();
+      else await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+      setRotationLocked((x) => !x);
+    } catch {
+      flash('Rotation lock is not available here');
+    }
+  }, [rotationLocked, flash]);
+  useEffect(() => {
+    if (sheet !== 'episodes' || !vodItem?.parentId) return;
+    api.children(vodItem.parentId, { sort: 'index', order: 'asc', limit: 500 }).then((r) => setEpisodes(r.items)).catch(() => setEpisodes([]));
+  }, [sheet, vodItem?.parentId, api]);
 
   // ----- markers & up next -----
   const markers: Marker[] = info?.markers ?? offlineItem?.markers ?? [];
@@ -1124,6 +1181,9 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
     ...surfChannels.map((c) => ({ key: c.id, label: `${c.number != null ? `${c.number}  ` : ''}${c.name}`, description: c.nowPlaying?.title, selected: c.id === channelId })),
   ];
   const title = info?.title ?? offlineItem?.title ?? channel?.name ?? '';
+  // OSD clock: the time now and when this ends (at the current speed).
+  const clockNow = new Date();
+  const clockText = `${clockNow.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${dur > 0 && !isLive ? ` · ends ${new Date(clockNow.getTime() + Math.max(0, dur - pos) / (rate || 1)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}`;
   const subtitle = isLive ? (catchup ? `Catch-up · ${formatTime(catchup.start)}` : channel?.nowPlaying?.title ?? null) : info?.subtitle ?? null;
   // ----- remote control (other devices) -----
   const remoteInfo = useRef({ title, subtitle, poster: null as string | null });
@@ -1211,7 +1271,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
         ref={viewRef}
         player={player}
         style={StyleSheet.absoluteFill}
-        contentFit="contain"
+        contentFit={fit}
         nativeControls={false}
         allowsPictureInPicture={pipSupported}
         startsPictureInPictureAutomatically={pipSupported}
@@ -1233,7 +1293,27 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       ) : null}
 
       {/* Tap layer (phones) */}
-      {!t.isTV ? <Pressable style={StyleSheet.absoluteFill} onPress={() => (controls ? setControls(false) : poke())} /> : null}
+      {!t.isTV ? (
+        <PlayerGestures
+          height={t.height}
+          onTap={() => (controls ? setControls(false) : poke())}
+          getVolume={() => player.volume}
+          setVolume={(v) => {
+            player.volume = v;
+            player.muted = v === 0;
+          }}
+        />
+      ) : null}
+
+      {/* Paused for a while: what this is (title, episode, synopsis). */}
+      {pausedLong && !showControls && !sheet && vodItem ? (
+        <View pointerEvents="none" style={{ position: 'absolute', left: t.space.gutter, right: '30%', bottom: t.isTV ? t.s(120) : 60, gap: 4 }}>
+          <T variant="caption" color="rgba(255,255,255,0.7)">Paused</T>
+          <T variant="title" color="#fff" numberOfLines={2}>{vodItem.title}</T>
+          {vodItem.type === 'episode' ? <T color="rgba(255,255,255,0.85)">{`${vodItem.grandparentTitle ?? ''} · S${vodItem.parentIndex ?? '?'} E${vodItem.index ?? '?'}`}</T> : null}
+          {vodItem.overview ? <T variant="small" color="rgba(255,255,255,0.8)" numberOfLines={4}>{vodItem.overview}</T> : null}
+        </View>
+      ) : null}
 
       {/* Subtitles */}
       {subtitleText ? (
@@ -1304,6 +1384,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
                 </T>
               ) : null}
             </View>
+            <T variant="small" color="rgba(255,255,255,0.85)" accessibilityLabel={`Time ${clockText}`}>{clockText}</T>
             {isLive && !catchup ? (
               <View style={{ backgroundColor: t.colors.danger, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 4 }}>
                 <T variant="caption" color="#fff">
@@ -1395,6 +1476,10 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
                 </>
               ) : null}
               <View style={{ flex: 1 }} />
+              {!isLive && !inRoom ? <CtrlButton icon="speedometer" label={t.isTV || t.wide ? (rate === 1 ? 'Speed' : `${rate}×`) : rate === 1 ? undefined : `${rate}×`} onPress={() => setSheet('speed')} size={iconSize} /> : null}
+              {!casting ? <CtrlButton icon={FIT_ICON[fit]} label={t.isTV || t.wide ? FIT_LABEL[fit] : undefined} onPress={() => { const next = FITS[(FITS.indexOf(fit) + 1) % FITS.length]; setFit(next); flash(FIT_LABEL[next]); }} size={iconSize} /> : null}
+              {!t.isTV ? <CtrlButton icon={rotationLocked ? 'lock-closed' : 'phone-landscape-outline'} onPress={() => void toggleRotationLock()} size={iconSize} color={rotationLocked ? t.colors.primary : undefined} /> : null}
+              {vodItem?.type === 'episode' && vodItem.parentId ? <CtrlButton icon="albums-outline" label={t.isTV || t.wide ? 'Episodes' : undefined} onPress={() => setSheet('episodes')} size={iconSize} /> : null}
               {audioStreams.length > 1 ? <CtrlButton icon="musical-note-outline" label={t.isTV || t.wide ? 'Audio' : undefined} onPress={() => setSheet('audio')} size={iconSize} /> : null}
               {(info?.subtitles.length ?? 0) + embeddedSubs.length > 0 || onlineVod ? <CtrlButton icon={sub.kind === 'off' ? 'chatbox-outline' : 'chatbox'} label={t.isTV || t.wide ? 'Subtitles' : undefined} onPress={() => setSheet('subs')} size={iconSize} /> : null}
               {!offlineUri && !isLive ? <CtrlButton icon="speedometer-outline" label={t.isTV || t.wide ? (autoQuality ? 'Auto' : maxBitrate ? `${Math.round(maxBitrate / 1000)} Mbps` : 'Quality') : undefined} onPress={() => setSheet('quality')} size={iconSize} /> : null}
@@ -1513,6 +1598,11 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       {marathon.card && !error ? <UpNextCard item={marathon.card.item} seconds={marathon.card.seconds} onPlay={marathon.play} onCancel={marathon.cancel} /> : null}
       {marathon.stillWatching}
       <OptionSheet visible={sheet === 'quality'} title="Quality" options={qualityOptions} onSelect={selectQuality} onClose={() => setSheet(null)} />
+      <OptionSheet visible={sheet === 'speed'} title="Playback speed" options={SPEEDS.map((s) => ({ key: String(s), label: s === 1 ? 'Normal' : `${s}×`, selected: s === rate }))}
+        onSelect={(k) => { setSheet(null); setRate(Number(k)); }} onClose={() => setSheet(null)} />
+      <OptionSheet visible={sheet === 'episodes'} title={vodItem?.parentTitle ?? 'Episodes'}
+        options={episodes.map((e) => ({ key: e.id, label: `${e.index ?? '?'}. ${e.title}`, description: e.userData.played ? 'Watched' : undefined, selected: e.id === vodItemId }))}
+        onSelect={(id) => { setSheet(null); if (id !== vodItemId) goNext(id); }} onClose={() => setSheet(null)} />
       <OptionSheet
         visible={sheet === 'channels'}
         title={tunedChannel?.radio ? 'Radio stations' : 'Channels'}

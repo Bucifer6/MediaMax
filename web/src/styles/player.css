@@ -310,3 +310,28 @@ body:has(.miniplayer) .renderer-bar { bottom: 92px; }
 .tp-ep.spoiler .tp-ep-overview { filter: blur(5px); user-select: none; }
 .row-spoiler .card-landscape[data-type='episode'] .card-art img { filter: blur(16px) brightness(0.8); transform: scale(1.08); }
 .tp-ep.spoiler .tp-ep-still, .row-spoiler .card-landscape[data-type='episode'] .card-art { overflow: hidden; }
+
+/* Player extras (PlayerExtras.tsx): clock, pause overlay, episodes drawer, post-play suggestions. */
+.player-clock { font-variant-numeric: tabular-nums; font-weight: 600; opacity: 0.9; white-space: nowrap; }
+.player-clock small { font-weight: 400; opacity: 0.75; }
+.pause-overlay { position: absolute; left: 6%; bottom: 18%; z-index: 4; max-width: min(640px, 70%); pointer-events: none; animation: fadeIn 0.4s both; text-shadow: 0 2px 8px rgb(0 0 0 / 0.8); }
+.pause-overlay h2 { margin: 4px 0; font-size: clamp(1.4rem, 3vw, 2.4rem); }
+.pause-overlay .pause-sub { margin: 0 0 8px; opacity: 0.85; }
+.pause-overlay .pause-overview { margin: 0; line-height: 1.5; opacity: 0.85; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.episodes-drawer { position: absolute; top: 0; right: 0; bottom: 0; z-index: 8; width: min(380px, 90vw); display: flex; flex-direction: column; background: rgb(10 10 14 / 0.92); backdrop-filter: blur(12px); animation: fadeIn 0.2s both; }
+.episodes-drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid rgb(255 255 255 / 0.1); }
+.episodes-drawer ol { list-style: none; margin: 0; padding: 8px; overflow-y: auto; }
+.episodes-drawer li button { display: flex; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 8px; background: none; color: inherit; text-align: left; cursor: pointer; }
+.episodes-drawer li button:hover, .episodes-drawer li button:focus-visible { background: rgb(255 255 255 / 0.08); }
+.episodes-drawer li.current button { background: rgb(255 255 255 / 0.14); }
+.episodes-drawer .ed-still { flex: none; width: 112px; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; background: #222; }
+.episodes-drawer .ed-text { display: grid; gap: 2px; align-content: center; }
+.episodes-drawer .ed-title { font-weight: 600; }
+.postplay { position: absolute; right: 24px; bottom: 120px; z-index: 6; width: min(560px, 92vw); padding: 12px; border-radius: 14px; background: rgb(10 10 14 / 0.85); backdrop-filter: blur(12px); animation: fadeIn 0.3s both; }
+.postplay-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.postplay-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.postplay-card { display: grid; gap: 4px; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; font-size: 0.75rem; text-align: left; }
+.postplay-card .img, .postplay-card img { aspect-ratio: 2 / 3; width: 100%; border-radius: 6px; object-fit: cover; }
+.postplay-card span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.postplay-card:focus-visible { outline: 2px solid var(--c-primary, #d23a72); outline-offset: 2px; border-radius: 6px; }
+.player-video-host { overflow: hidden; }

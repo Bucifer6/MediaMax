@@ -13,8 +13,10 @@ import { Loading } from '@/components/States';
 import { T } from '@/components/Text';
 import { useApi, useSession } from '@/state/session';
 import { useTheme } from '@/theme';
+import { languageName } from '@/utils/format';
 import { useBackHandler } from '@/tv';
 import { MediaMaxMedia } from '../../modules/mediamax-media';
+import { externalSubtitles } from './playerPrefs';
 import { externalPlayerLabel, externalPlayerProfile, externalProgress, externalSeekMs, type ExternalResult } from './external';
 
 /** Keeps the server session alive while the other app plays (the server reaps sessions idle for 5 min). */
@@ -88,7 +90,10 @@ export function ExternalPlayerScreen({ itemId, startMs, mediaId, packageName, on
       heartbeat = setInterval(ping, HEARTBEAT_MS);
       let result: ExternalResult;
       try {
-        result = await open({ url: api.withAuthQuery(pi.url), title: pi.subtitle ? `${pi.title} · ${pi.subtitle}` : pi.title, positionMs: seekMs, packageName, mimeType: mime });
+        result = await open({
+          url: api.withAuthQuery(pi.url), title: pi.subtitle ? `${pi.title} · ${pi.subtitle}` : pi.title, positionMs: seekMs, packageName, mimeType: mime,
+          subtitles: externalSubtitles(pi.subtitles, user?.preferences ?? {}, (pi.audioStreams.find((a) => a.default) ?? pi.audioStreams[0])?.language ?? null).map((s) => ({ url: api.withAuthQuery(s.url), name: s.title || languageName(s.language) })),
+        });
       } catch (e) {
         result = { launched: false, reason: e instanceof Error ? e.message : undefined };
       }
@@ -101,7 +106,10 @@ export function ExternalPlayerScreen({ itemId, startMs, mediaId, packageName, on
         setPhase({ kind: 'failed', message: 'No app on this device can open this video. Install VLC or Just Player, or play it here.' });
         return;
       }
-      await finish(result);
+      // Finished in the other app: on to the next episode there too (when autoplay is on), as in our own player.
+      const next = result.completed && pi.nextItemId && user?.preferences.autoplayNext !== false ? pi.nextItemId : null;
+      await finish(result, !next);
+      if (next && alive) router.replace(`/player/${next}?start=0` as never);
     })();
     return () => {
       alive = false;

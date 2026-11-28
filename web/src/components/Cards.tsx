@@ -1,4 +1,5 @@
-import { memo, useEffect, useState, type MouseEvent } from 'react';
+import { memo, useEffect, useRef, useState, type FocusEvent, type MouseEvent } from 'react';
+import { TrailerPreview } from './Preview';
 import { Link, useNavigate } from 'react-router-dom';
 import type { CalendarEntry, Channel, Item } from '@mediamax/shared';
 import { Icon } from './Icon';
@@ -150,12 +151,36 @@ function fallbackIcon(item: Item) {
  * Media card: poster (2:3), square (music, photos) or landscape (16:9 episodes / videos). Always shows watched state,
  * unplayed count and progress; hover / focus reveals quick actions (play, My List, watched) and badges (new, quality).
  */
-export const PosterCard = memo(function PosterCard({ item, shape, showProgress = true, width, quickActions = true, ratingPoster }: {
+/** The peek handlers plus the focus-trailer ones (both run: spreading one bag after the other would drop ours). */
+function withTrailerFocus<H extends { onFocus?: (e: FocusEvent<HTMLElement>) => void; onBlur?: (e: FocusEvent<HTMLElement>) => void }>(
+  h: H, on: boolean, focus: () => void, blur: () => void,
+): H {
+  if (!on) return h;
+  return {
+    ...h,
+    onFocus: (e: FocusEvent<HTMLElement>) => {
+      h.onFocus?.(e);
+      if (e.currentTarget === e.target) focus();
+    },
+    onBlur: (e: FocusEvent<HTMLElement>) => {
+      h.onBlur?.(e);
+      blur();
+    },
+  };
+}
+
+export const PosterCard = memo(function PosterCard({ item, shape, showProgress = true, width, quickActions = true, ratingPoster, focusTrailer }: {
   item: Item; shape?: 'poster' | 'square' | 'landscape'; showProgress?: boolean; width?: string; quickActions?: boolean;
   /** Use the server's rating poster (the page knows whether the admin turned it on for that screen). */
   ratingPoster?: boolean;
+  /** TV: grow and play the trailer after a moment of focus ({ sound } = unmuted). */
+  focusTrailer?: { sound: boolean } | null;
 }) {
   const play = usePlayItem();
+  const [trailerOn, setTrailerOn] = useState(false);
+  const focusTimer = useRef(0);
+  const canTrailer = !!focusTrailer && (item.type === 'movie' || item.type === 'show');
+  useEffect(() => () => window.clearTimeout(focusTimer.current), []);
   const s = shape ?? (isSquare(item) ? 'square' : item.type === 'episode' || item.type === 'video' ? 'landscape' : 'poster');
   const img = s === 'landscape' ? landscapeFor(item) : (ratingPoster && item.ratingPosterUrl) || posterFor(item);
   const [played, setPlayed] = useState(!!item.userData?.played);
@@ -174,16 +199,23 @@ export const PosterCard = memo(function PosterCard({ item, shape, showProgress =
   return (
     <Link
       to={itemLink(item)}
-      className={`card card-${s}`}
+      className={`card card-${s} ${trailerOn ? 'focus-trailer' : ''}`}
       style={width ? { width } : undefined}
       data-nav
       title={item.title}
-      {...peekHandlers(item)}
+      {...withTrailerFocus(peekHandlers(item), canTrailer, () => {
+        window.clearTimeout(focusTimer.current);
+        focusTimer.current = window.setTimeout(() => setTrailerOn(true), 1500);
+      }, () => {
+        window.clearTimeout(focusTimer.current);
+        setTrailerOn(false);
+      })}
       // Poster → title page as a shared-element transition where the browser supports it (utils/viewTransition.ts).
       onClick={s === 'poster' ? (e) => posterTransition(e, navigate, itemLink(item), item) : undefined}
     >
       <div className="card-art">
         <Img src={img} width={s === 'landscape' ? 400 : 260} alt={item.title} fallback={<Fallback title={item.title} icon={fallbackIcon(item)} />} />
+        {trailerOn && <TrailerPreview itemId={item.id} active muted={!focusTrailer?.sound} onEnded={() => setTrailerOn(false)} />}
         {quickActions && (
           <div className="card-hover">
             <div className="card-hover-badges">

@@ -9,6 +9,7 @@ import { PRODUCT_NAME } from '../brand/product';
 import { MiniPlayer } from '../player/MiniPlayer';
 import { RendererBar } from '../player/RendererBar';
 import { useMusic } from '../player/music';
+import { AmbientMode } from '../tv/Ambient';
 import { isTypingTarget } from '../hooks';
 import { useSpatialNav } from '../hooks/spatialNav';
 import { isIptvLibrary } from '../utils/items';
@@ -178,6 +179,7 @@ export function Layout() {
         </main>
       </div>
       <PeekLayer />
+      <AmbientMode />
       <MiniPlayer />
       <RendererBar />
       <nav className="bottom-nav tabbar" aria-label="Quick navigation">

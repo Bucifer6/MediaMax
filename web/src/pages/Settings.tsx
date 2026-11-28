@@ -382,6 +382,25 @@ function Playback() {
           <Switch key={type} checked={shouldAutoSkip(prefs, type)} onChange={(v) => save({ autoSkip: { [type]: v } })} label={label} hint={hint} />
         ))}
       </div>
+      <div className="form-row">
+        <Field label="Suggestions near the end of a movie" hint="“You might also like” from this point of the runtime.">
+          <select className="select" value={String(prefs.postPlayThreshold ?? 96)} onChange={(e) => save({ postPlayThreshold: Number(e.target.value) })}>
+            {[90, 94, 96, 98, 100].map((v) => <option key={v} value={v}>{v === 100 ? 'Never' : `At ${v} %`}</option>)}
+          </select>
+        </Field>
+      </div>
+      <h3>TV</h3>
+      <div className="form-row">
+        <Field label="Ambient mode" hint="On TVs: a slideshow of your library's artwork when nothing happens for a while.">
+          <select className="select" value={String(prefs.ambientMinutes ?? 0)} onChange={(e) => save({ ambientMinutes: Number(e.target.value) })}>
+            {[0, 2, 5, 10, 20, 30].map((v) => <option key={v} value={v}>{v ? `After ${v} min` : 'Off'}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div className="switch-group">
+        <Switch checked={!!prefs.focusTrailers} onChange={(v) => save({ focusTrailers: v })} label="Play trailers on the focused poster (TV)" hint="After a moment on a poster, it grows and plays its trailer." />
+        {prefs.focusTrailers && <Switch checked={!!prefs.trailerSound} onChange={(v) => save({ trailerSound: v })} label="With sound" />}
+      </div>
       <h3>Spoilers</h3>
       <div className="switch-group">
         <Switch checked={!!prefs.blurUnwatchedEpisodes} onChange={(v) => save({ blurUnwatchedEpisodes: v })} label="Blur unwatched episodes" hint="Episode stills and descriptions stay hidden until you've watched them." />

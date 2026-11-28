@@ -85,3 +85,4 @@ export function externalProgress(result: ExternalResult, info: Pick<PlaybackInfo
   const pos = Math.round(result.positionMs + offset);
   return { positionMs: duration ? Math.min(pos, duration) : pos, ...(duration ? { durationMs: duration } : {}) };
 }
+

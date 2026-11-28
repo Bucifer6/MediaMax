@@ -16,4 +16,9 @@
 - Why: another session switched the shared checkout to main mid-change, so the phase 1 commit landed on local main (2026-11-28).
 - Areas: git | Added 2026-11-28 | Last confirmed 2026-11-28
 
+### L4: Spreading a handler bag after your own props replaces them
+- Do: compose event handlers (call both) instead of `onFocus={…} {...peekHandlers(item)}`.
+- Why: the TV focus trailers never started because `peekHandlers` came later with its own onFocus/onBlur (review, 2026-11-28).
+- Areas: web/src/components | Added 2026-11-28 | Last confirmed 2026-11-28
+
 ## Retired
