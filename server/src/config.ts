@@ -102,7 +102,7 @@ function bundledTool(name: string): string {
 const dataDir = path.resolve(process.env.MEDIAMAX_DATA ?? defaultDataDir());
 
 export const config = {
-  version: '0.7.1',
+  version: '0.7.2',
   port: Number(process.env.MEDIAMAX_PORT ?? process.env.PORT ?? 8484),
   host: process.env.MEDIAMAX_HOST ?? '0.0.0.0',
   dataDir: dir(dataDir),
