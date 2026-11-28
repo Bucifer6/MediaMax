@@ -842,6 +842,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   }, [zap]);
   useTVRemote((evt) => {
     const type = evt.eventType;
+    console.log('DBGSURF key', type, 'controls', controls, 'sheet', sheet, 'list', channelList.length, 'surf', surfChannels.length, 'tuned', tunedChannel?.id ?? null);
     if (type === 'channelUp' || type === 'pageUp') return zapOnce(1);
     if (type === 'channelDown' || type === 'pageDown') return zapOnce(-1);
     if (type === 'playPause') {

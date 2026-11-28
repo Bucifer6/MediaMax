@@ -188,6 +188,7 @@ const { parseChallenge, digestHeader, TunerHttp } = await import('../src/service
 const satip = await import('../src/services/livetv/tuners/satip.ts');
 const { piconName, isMarker } = await import('../src/services/livetv/tuners/enigma2.ts');
 const disc = await import('../src/services/livetv/tuners/discovery.ts');
+const { updateSettings } = await import('../src/services/settings.ts');
 const { createUser, issueToken } = await import('../src/services/auth.ts');
 const { buildApp } = await import('../src/app.ts');
 
@@ -445,11 +446,14 @@ test('SAT>IP: generic server with an M3U (sat.ip placeholder, bare queries), HTT
   assert.equal(st.statusCode, 200);
   assert.equal(satipHttpStreams, 1);
   // RTSP: FFmpeg remux; a dead server becomes a readable 502, not an empty 200.
+  // (Separate sources: in fallback mode another test source's copy of this channel would take over.)
+  updateSettings({ liveTvSourceMode: 'separate' });
   db.run('UPDATE channels SET stream_url = ? WHERE id = ?', 'rtsp://127.0.0.1:1/?src=1&freq=1', list[0].id);
   const play2 = await req('POST', `/livetv/channels/${list[0].id}/play`, { deviceProfile: { containers: ['ts'] } });
   const st2 = await app.inject({ method: 'GET', url: play2.json.url });
   assert.equal(st2.statusCode, 502);
   assert.match(JSON.parse(st2.body).message ?? JSON.parse(st2.body).error, /tuner refused|FFmpeg/i);
+  updateSettings({ liveTvSourceMode: 'failover' });
   // Missing playlist: a helpful error.
   const t = await req('POST', '/livetv/sources/test', { name: 'x', type: 'satip', url: 'http://127.0.0.1:1', options: { satipMode: 'm3u' } });
   assert.equal(t.json.ok, false);
