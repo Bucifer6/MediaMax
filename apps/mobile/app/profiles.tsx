@@ -120,6 +120,11 @@ export default function ProfilesScreen() {
       setError(null);
       return true;
     }
+    // Opened from Settings (already in a profile): Back returns to the app instead of closing it.
+    if (list?.some((p) => p.current)) {
+      void completeProfilePick();
+      return true;
+    }
     return false;
   });
 
