@@ -4,7 +4,7 @@ import { badRequest, forbidden, notFound } from '../util/errors.js';
 import { parseJson } from '../util/misc.js';
 import { logger } from '../util/log.js';
 import { getSettings } from './settings.js';
-import { baseUrl, providerFetch, ProviderError } from './metadata/http.js';
+import { baseUrl, providerFetch, userAgent } from './metadata/http.js';
 
 const log = logger('skip-segments');
 
@@ -138,6 +138,8 @@ export async function markersWithCrowd(itemId: string, local: Marker[]): Promise
 export function markersForPlayback(itemId: string, local: Marker[], waitMs = 1200): Promise<Marker[]> {
   const cfg = getSettings().skipSegments;
   if (!cfg?.introDb && !cfg?.aniSkip) return Promise.resolve(local);
+  // The file already has every type the crowd sources could add.
+  if ((['intro', 'recap', 'credits'] as const).every((t) => local.some((m) => m.type === t))) return Promise.resolve(local);
   return Promise.race([markersWithCrowd(itemId, local), new Promise<Marker[]>((r) => setTimeout(() => r(local), waitMs).unref?.())]);
 }
 
@@ -184,14 +186,20 @@ async function sendToIntroDb(ids: Ids, type: SegmentType, startMs: number, endMs
     end_sec: endMs / 1000,
     ...(ids.isMovie ? { is_movie: true } : { season: ids.season, episode: ids.episode }),
   };
+  // One plain request, never retried: a retry after a timeout could submit the same timestamps twice.
+  let status: number;
   try {
-    await providerFetch('introdb', `${baseUrl('introdb')}/submit`, { service: 'introdb-submit', method: 'POST', body, headers: { 'X-API-Key': key }, ttlHours: 0, timeoutMs: 10000 });
-    return { sent: true, message: null };
-  } catch (e) {
-    const status = e instanceof ProviderError ? e.status : null;
-    const message = status === 401 ? 'IntroDB refused the API key' : status === 429 ? 'IntroDB: too many submissions this hour' : status === 400 ? 'IntroDB rejected these timestamps' : 'IntroDB could not be reached';
-    return { sent: false, message };
+    const res = await fetch(`${baseUrl('introdb')}/submit`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'User-Agent': userAgent(), 'X-API-Key': key }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000),
+    });
+    await res.body?.cancel().catch(() => undefined);
+    status = res.status;
+  } catch {
+    return { sent: false, message: 'IntroDB could not be reached (it may still have received them)' };
   }
+  if (status >= 200 && status < 300) return { sent: true, message: null };
+  const message = status === 401 || status === 403 ? 'IntroDB refused the API key' : status === 429 ? 'IntroDB: too many submissions this hour' : status === 400 ? 'IntroDB rejected these timestamps' : `IntroDB answered HTTP ${status}`;
+  return { sent: false, message };
 }
 
 /* ------------------------------ parental guide ------------------------------ */
@@ -232,7 +240,7 @@ export async function parentalGuide(itemId: string): Promise<ParentalGuide> {
   if (!template || !ids.imdb || !IMDB.test(ids.imdb)) return out;
   try {
     const r = await providerFetch<{ parentsGuide?: { category?: string; severityBreakdowns?: { severityLevel?: string; voteCount?: number }[] }[] }>(
-      'parentalGuide', template.replace('{imdb}', encodeURIComponent(ids.imdb)), { timeoutMs: 6000 },
+      'parentalGuide', template.replace('{imdb}', encodeURIComponent(ids.imdb)), { timeoutMs: 6000, manualRedirect: true },
     );
     for (const c of r.data?.parentsGuide ?? []) {
       const category = GUIDE_CATEGORIES[String(c.category ?? '').toUpperCase()];

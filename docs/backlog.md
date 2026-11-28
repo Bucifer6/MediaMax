@@ -7,3 +7,5 @@ Noticed but deliberately not done. Severity: High / Medium / Low.
 - Low — AniSkip for anime without a MAL id in the NFO needs an id mapping (TMDB/TVDB → MAL); arm.haglund.dev was unreachable when tried.
 - Low — Mobile player: AutoSync and admin "Mark segment" are web-only for now (the server endpoints are client-neutral).
 - Low — Web: libass (ASS) only takes AutoSync's constant offset; rate / group fixes need the text renderer.
+- Low — Web: the HDR comfort colour doesn't reach libass (ASS drawn with the file's own styles).
+- Low — Parental guide URL: block private / LAN addresses (admin-set today, so admin-trusted).

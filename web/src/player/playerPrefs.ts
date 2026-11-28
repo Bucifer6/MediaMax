@@ -24,7 +24,9 @@ export function lang2(l: string | null | undefined): string {
   const s = (l ?? '').trim().toLowerCase();
   if (!s || s === 'und' || s === 'mul' || s === 'zxx') return '';
   if (TO2[s]) return TO2[s];
-  return s.split(/[-_]/)[0].slice(0, 2);
+  const base = s.split(/[-_]/)[0];
+  // An unknown 3-letter code stays whole: cutting it to 2 letters would match other languages (mal/mar → "ma").
+  return base.length === 2 ? base : TO2[base] ?? base;
 }
 
 export function sameLanguage(a: string | null | undefined, b: string | null | undefined): boolean {

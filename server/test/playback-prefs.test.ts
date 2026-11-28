@@ -14,6 +14,8 @@ const { markersWithCrowd, mergeMarkers, submitMarker, parentalGuide, dominantSev
 const { alignSpans, vttSpans } = await import('../src/services/autosync.ts');
 const pp = await import('../src/services/playerPrefs.ts');
 const { originalLanguageOf } = await import('../src/services/items.ts');
+const { issueToken } = await import('../src/services/auth.ts');
+const { buildApp } = await import('../src/app.ts');
 
 /* --------------------------------- helpers ---------------------------------- */
 
@@ -30,6 +32,11 @@ test('audio choice: primary, secondary and "original" languages', () => {
   assert.equal(pp.pickAudio(streams, { audioLanguage: 'original' }, null), null);
   assert.equal(pp.pickAudio(streams, { audioLanguage: 'original', secondaryAudioLanguage: 'fra' }, null)?.index, 3);
   assert.equal(pp.pickAudio(streams, { audioLanguage: null }), null);
+  // Unknown 3-letter codes stay whole: Malayalam must not match Marathi.
+  assert.equal(pp.sameLanguage('mal', 'mar'), false);
+  assert.equal(pp.sameLanguage('mal', 'mal'), true);
+  assert.equal(pp.sameLanguage('pt-BR', 'por'), true);
+  assert.equal(pp.lang2('und'), '');
 });
 
 test('subtitle choice by mode, with secondary language and foreign-audio auto', () => {
@@ -308,4 +315,25 @@ test('AutoSync: already in sync stays put; VTT timings parse', () => {
   const r = alignSpans(ref, ref);
   assert.deepEqual(r.map, { ratio: 1, offsetMs: 0, groups: [] });
   assert.deepEqual(vttSpans('WEBVTT\n\n00:00:01.500 --> 00:00:03.000\nHi\n\n01:02.25 --> 01:04.000 line:90%\nThere\n'), [[1500, 3000], [62250, 64000]]);
+});
+
+test("routes: items the viewer can't see are refused; marker saving is admin-only", async () => {
+  db.insert('libraries', { id: 'pp-secret', name: 'Secret', type: 'movies', paths: '[]', created_at: iso });
+  db.insert('items', { id: 'pp-hidden', library_id: 'pp-secret', type: 'movie', title: 'Hidden', sort_title: 'hidden', added_at: iso, updated_at: iso });
+  const viewer = await createUser({ username: 'pp-routes', password: 'pass1234', libraryIds: ['pp-lib'] });
+  const token = issueToken(viewer.id, { deviceId: 'pp-r', deviceName: 'test', platform: 'web' }).token;
+  const app = await buildApp();
+  const call = (method: 'GET' | 'POST', url: string, payload?: unknown) =>
+    app.inject({ method, url: `/api/v1${url}`, headers: { authorization: `Bearer ${token}` }, ...(payload ? { payload } : {}) });
+  for (const [method, url, body] of [
+    ['GET', '/items/pp-hidden/parental-guide'],
+    ['POST', '/items/pp-hidden/markers', { type: 'intro', startMs: 0, endMs: 30000 }],
+    ['POST', '/items/pp-hidden/subtitles/autosync', { mediaId: 'x', subtitleIndex: 0, referenceIndex: 1 }],
+  ] as const) {
+    const r = await call(method, url, body);
+    assert.ok(r.statusCode === 403 || r.statusCode === 404, `${url} → ${r.statusCode}`);
+  }
+  assert.equal((await call('POST', '/items/pp-e2/markers', { type: 'intro', startMs: 0, endMs: 30000 })).statusCode, 403, 'viewers cannot save markers');
+  assert.equal((await call('GET', '/items/pp-e2/parental-guide')).statusCode, 200);
+  await app.close();
 });

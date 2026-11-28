@@ -11,4 +11,9 @@
 - Why: a heredoc holding JSX with quotes/backticks failed to parse and applied nothing (2026-11-28).
 - Areas: tooling | Added 2026-11-28 | Last confirmed 2026-11-28
 
+### L3: Work in your own worktree when other sessions may share the checkout
+- Do: `git worktree add ../mediamax-nuvio <branch>` and work only there; never commit in a folder someone else switches branches in.
+- Why: another session switched the shared checkout to main mid-change, so the phase 1 commit landed on local main (2026-11-28).
+- Areas: git | Added 2026-11-28 | Last confirmed 2026-11-28
+
 ## Retired

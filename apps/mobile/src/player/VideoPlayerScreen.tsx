@@ -50,7 +50,7 @@ import { ChannelBanner } from './ChannelBanner';
 import { BANNER_MS, SURF_TUNE_MS, channelLabel, matchNumber, stepChannel, surfList } from './surf';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { activeCues, parseVtt, type Cue } from './vtt';
-import { cleanCueText, hdrActive, hdrControlsOpacity, hdrSubtitleColor, pickSubtitle, shouldAutoSkip, visibleSubtitles } from './playerPrefs';
+import { cleanCueText, hdrActive, hdrControlsOpacity, hdrSubtitleColor, pickAudio, pickSubtitle, shouldAutoSkip, visibleSubtitles } from './playerPrefs';
 import { ParentalGuideCard } from './ParentalGuide';
 import { measureBandwidth } from './bandwidth';
 import { useMarathon } from './marathon';
@@ -242,7 +242,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       if (firstLoad.current) {
         firstLoad.current = false;
         // Shared rules (primary + secondary language; foreign audio turns full subtitles on in Auto).
-        const audioNow = pi.audioStreams.find((a) => a.default) ?? pi.audioStreams[0];
+        const audioNow = pickAudio(pi.audioStreams, prefs ?? {}, pi.originalLanguage ?? null) ?? pi.audioStreams.find((a) => a.default) ?? pi.audioStreams[0];
         const pick = pickSubtitle(pi.subtitles, prefs ?? {}, audioNow?.language ?? null);
         setSub(pick ? { kind: 'server', track: pick } : { kind: 'off' });
       }
@@ -795,7 +795,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
     skipped.current.add(key);
     // End credits (when asked for): straight to the next episode, else past them.
     if (activeMarker.type === 'credits') {
-      if (nextId && !marathon.active) goNext(nextId);
+      if (nextId && !marathon.active && prefs?.autoplayNext !== false) goNext(nextId);
       else seekTo(activeMarker.endMs);
       return;
     }

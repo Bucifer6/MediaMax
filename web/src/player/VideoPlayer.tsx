@@ -603,7 +603,9 @@ export default function VideoPlayer() {
       // Preferred audio languages (an episode's "Original" language is only known to the server, which then picks).
       let ai: number | undefined;
       const media = it?.media?.[0];
-      if (media) {
+      // An episode's "Original" language is only known to the server (it's stored on the show), so let it pick.
+      const originalUnknown = prefs.audioLanguage === 'original' && !it?.originalLanguage;
+      if (media && !originalUnknown) {
         const match = pickAudio(media.audioStreams, prefs, it?.originalLanguage ?? null);
         if (match && !match.default) ai = match.index;
       }
@@ -691,7 +693,9 @@ export default function VideoPlayer() {
   useEffect(() => {
     if (!info || burned) return;
     const subs = info.subtitles;
-    const audioNow = info.audioStreams.find((a) => a.index === optsRef.current.audioIndex) ?? info.audioStreams.find((a) => a.default) ?? info.audioStreams[0];
+    // The track that is actually playing: the one asked for, else what the server's preference rules chose.
+    const audioNow = info.audioStreams.find((a) => a.index === optsRef.current.audioIndex)
+      ?? pickAudio(info.audioStreams, prefs, info.originalLanguage ?? null) ?? info.audioStreams.find((a) => a.default) ?? info.audioStreams[0];
     const pick = pickSubtitle(subs, prefs, audioNow?.language ?? null)?.index ?? null;
     const wanted = pendingSubPick.current;
     pendingSubPick.current = null;
@@ -1309,7 +1313,7 @@ export default function VideoPlayer() {
     const key = `credits-${inCredits.startMs}`;
     if (skippedMarkers.current.has(key)) return;
     skippedMarkers.current.add(key);
-    if (info?.nextItemId) goNext();
+    if (info?.nextItemId && prefs.autoplayNext) goNext();
     else seekTo(inCredits.endMs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inCredits?.startMs]);
@@ -1726,7 +1730,7 @@ export default function VideoPlayer() {
                   );
                 })()}
                 {user?.isAdmin && item && (item.type === 'episode' || item.type === 'movie') && (
-                  <SegmentSubmit itemId={item.id} positionMs={positionMs} onSaved={(m) => setMarkersOverride(m)} />
+                  <SegmentSubmit itemId={item.id} positionMs={positionMs} onSaved={(saved) => setMarkersOverride([...saved, ...markers.filter((m) => m.source && m.source !== 'user' && !saved.some((s) => s.type === m.type))])} />
                 )}
             </div>
           ) : (

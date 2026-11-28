@@ -49,7 +49,11 @@ Shared API contract: `shared/src/types.ts` (interfaces are extended by declarati
 - Does: IntroDB / AniSkip lookups merged under local markers; admin marker submission (+ IntroDB upload); parental guide card data.
 - Owns data: writes `items.markers` only on an admin submission (`source: 'user'`); crowd answers live in `metadata_cache`.
 - Side effects: outbound HTTP to api.introdb.app / api.aniskip.com / the admin's guide URL, only when enabled in `ServerSettings.skipSegments`.
+- Routes: `server/src/routes/extras.ts` (`/items/:id/markers`, `/items/:id/parental-guide`, `/items/:id/subtitles/autosync`).
 - Watch out: IntroDB wants the **series** IMDb id for episodes; AniSkip needs a MAL id (NFO `<uniqueid type="mal">`).
+  Crowd answers use the metadata cache TTL (admin setting, default a week). `introdetect.ts` keeps `source: 'user'` markers even
+  on a forced re-scan and re-reads markers before writing. The parental-guide URL is admin-set and fetched without following
+  redirects (admin-trusted; it is not checked against private addresses). IntroDB submissions are one un-retried POST.
 
 ### Subtitles (`server/src/services/subtitles.ts`, `autosync.ts`, `subtitleProviders/`)
 - Does: extraction/conversion and serving of tracks; online search/download; AutoSync (`autosync.ts`, pure alignment + route glue).
@@ -58,11 +62,13 @@ Shared API contract: `shared/src/types.ts` (interfaces are extended by declarati
 ### Web player (`web/src/player/`)
 - Key files: `VideoPlayer.tsx` (the player), `subtitles/SubtitleOverlay.tsx` + `textRenderer.ts` (our own subtitle renderer),
   `subtitles/prepare.ts` (SDH + AutoSync map applied to parsed cues), `SegmentTools.tsx` (parental guide card, admin segment marking),
-  `subtitleStyle.ts` (style presets / preview).
+  `subtitleStyle.ts` (style presets / preview). Spoiler blur: `components/Cards.tsx`, `pages/Home.tsx`, `pages/ItemDetail.tsx`
+  (CSS in `styles/player.css`).
 - Watch out: libass (ASS via WASM) only takes a constant offset, so AutoSync's rate/group fixes apply in text mode only.
 
 ### Mobile/TV app (`apps/mobile/`)
-- Key files: `src/player/VideoPlayerScreen.tsx` (player, own VTT overlay), `app/settings/playback.tsx`, `src/components/MediaCard.tsx`.
+- Key files: `src/player/VideoPlayerScreen.tsx` (player, own VTT overlay), `src/player/ParentalGuide.tsx`, `app/settings/playback.tsx`,
+  `src/components/MediaCard.tsx` + `Row.tsx` (spoiler blur), `src/screens/detail/ShowDetail.tsx`.
 - Watch out: separate npm project; types come from the synced `src/api/types.ts`.
 
 ### Other areas (not yet mapped in detail)

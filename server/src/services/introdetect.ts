@@ -115,7 +115,11 @@ export async function detectSeason(seasonId: string, force = false): Promise<num
   for (const e of todo) {
     const fa = intros.get(e.id);
     if (!fa) continue;
-    const markers = e.markers.filter((m) => (force ? m.type !== 'intro' && m.type !== 'credits' : true));
+    // Re-read: the fingerprinting above takes minutes, and an admin may have saved timestamps meanwhile. Those
+    // (source 'user') are kept even by a forced re-scan.
+    const current = parseJson<Marker[]>(db.get<{ markers: string }>('SELECT markers FROM items WHERE id = ?', e.id)?.markers, e.markers);
+    e.markers = current;
+    const markers = current.filter((m) => (force ? m.source === 'user' || (m.type !== 'intro' && m.type !== 'credits') : true));
     // Compare with up to 3 neighbours, keep the best (longest plausible) match.
     const others = eps.filter((o) => o.id !== e.id && intros.has(o.id)).slice(0, 4);
     let intro: { start: number; end: number } | null = null;
