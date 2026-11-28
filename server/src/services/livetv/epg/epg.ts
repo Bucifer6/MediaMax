@@ -25,6 +25,7 @@ import { AUTO_THRESHOLD, SUGGEST_THRESHOLD, GuideIndex, normalizeName, nameSimil
 import { SdClient, SdError, sha1Hex, sdChannelNumber, sdEpisodeNum, pickArtwork, type SdAiring, type SdLineupDetail, type SdProgram } from './schedulesdirect.js';
 import { deviceAuth, fetchHdhrGuide } from './hdhomerun.js';
 import { findPreset } from './presets.js';
+import { setupEpgshare } from './epgshare.js';
 
 const log = logger('epg');
 
@@ -1018,6 +1019,13 @@ export function materializeShifts() {
 }
 
 /** After a live source's channel list changed: match its channels against every guide and resolve. */
+/**
+ * epgshare01 guides for the live channels (see epgshare.ts). `auto` runs after a live source sync: once per server.
+ */
+export function autoGuides(opts: { auto?: boolean } = {}) {
+  return setupEpgshare((p) => createEpgSource({ name: p.name, kind: 'xmltv', config: { preset: p.id } }), opts);
+}
+
 export function afterChannelSync(liveSourceId: string) {
   const ids = new Set(db.all<{ id: string }>('SELECT id FROM channels WHERE source_id = ?', liveSourceId).map((r) => r.id));
   for (const g of db.all('SELECT * FROM epg_sources WHERE channel_count > 0')) {

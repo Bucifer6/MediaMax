@@ -14,6 +14,7 @@ export const epgApi = {
   remove: (id: string) => http.del<{ ok: true }>(`/livetv/epg-sources/${enc(id)}`),
   refresh: (id: string) => http.post<{ ok: true }>(`/livetv/epg-sources/${enc(id)}/refresh`),
   presets: () => http.get<EpgPreset[]>('/livetv/epg-presets'),
+  auto: () => http.post<{ added: string[]; scores: { file: string; score: number }[] }>('/livetv/epg-sources/auto'),
   sdStatus: (id: string) => http.get<SdStatus>(`/livetv/epg-sources/${enc(id)}/sd/status`),
   sdHeadends: (id: string, country: string, postalcode: string) => http.get<SdHeadend[]>(`/livetv/epg-sources/${enc(id)}/sd/headends`, { country, postalcode }),
   sdAddLineup: (id: string, lineup: string) => http.put<{ status: SdStatus; changesRemaining: number | null }>(`/livetv/epg-sources/${enc(id)}/sd/lineups/${enc(lineup)}`),

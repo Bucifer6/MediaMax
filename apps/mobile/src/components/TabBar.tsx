@@ -59,6 +59,13 @@ export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
   const routes = state.routes.filter((r) => visible(r.name));
   const itemRefs = useRef<Record<string, FocusableRef | null>>({});
   const lastSwitch = useRef(0);
+  // For a moment after a tab opens, the other tabs show no ring or zoom: focus that Android drops on them (usually
+  // Home) is sent straight back (see onFocus) and shouldn't flash on the way.
+  const [settling, setSettling] = useState(false);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+  }, []);
   const go = (key: string, focused: boolean) => {
     const event = emitter.emit({ type: 'tabPress', target: key, canPreventDefault: true });
     if (!focused && !event.defaultPrevented) navigateToTab(key);
@@ -81,6 +88,11 @@ export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
                 }}
                 onPress={() => {
                   lastSwitch.current = Date.now();
+                  if (!focused) {
+                    setSettling(true);
+                    if (settleTimer.current) clearTimeout(settleTimer.current);
+                    settleTimer.current = setTimeout(() => setSettling(false), 1200);
+                  }
                   go(route.key, focused);
                 }}
                 // Tabs open on OK (not on resting focus: passing over them loaded each screen and felt janky).
@@ -94,8 +106,9 @@ export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
                   }
                 }}
                 onBlur={() => setTabBarFocused(false)}
+                ring={!(settling && !focused)}
                 ringRadius={999}
-                focusScale={1.06}
+                focusScale={settling && !focused ? 1 : 1.06}
                 style={{ paddingHorizontal: t.s(20), paddingVertical: t.s(10), borderRadius: 999, backgroundColor: focused ? t.alpha(t.colors.text, 0.14) : 'transparent', flexDirection: 'row', alignItems: 'center', gap: t.s(8) }}
               >
                 {route.name === 'search' ? <Icon name="search" size={t.s(22)} color={focused ? t.colors.text : t.colors.textMuted} /> : null}
