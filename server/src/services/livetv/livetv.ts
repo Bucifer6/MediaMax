@@ -415,7 +415,11 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
         for (const w of r.warnings) log.warn(`${src.name}: ${w}`);
       }
     }
-    if (!opts.epgOnly) epg.afterChannelSync(id);
+    if (!opts.epgOnly) {
+      epg.afterChannelSync(id);
+      // The default guide (epgshare01): the first time there are channels, find the country files that carry them.
+      void epg.autoGuides({ auto: true }).catch((e) => log.warn(`Automatic guide setup failed: ${(e as Error).message}`));
+    }
     // The source's EPG-URL guides and the provider's own guide (lowest priority) are guide sources too; see epg/epg.ts.
     if (opts.epgOnly && !providerEpg.length) {
       if (src.type === 'xtream') providerEpg = [xt.epgUrl(creds(src))];

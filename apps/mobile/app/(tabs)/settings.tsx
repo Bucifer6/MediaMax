@@ -168,7 +168,11 @@ export default function SettingsScreen() {
           </SettingSection>
 
           <SettingSection title="Account">
-            {caps.profilePicker || user?.profileCount || user?.parentUserId ? <SettingRow icon="people-outline" label="Switch profile" onPress={() => void switchProfile()} /> : null}
+            {caps.profilePicker || user?.profileCount || user?.parentUserId ? (
+              <SettingRow icon="people-outline" label="Switch profile" onPress={() => void switchProfile()} />
+            ) : (
+              <SettingRow icon="people-outline" label="Profiles" value="Add profiles for everyone who watches" onPress={() => void switchProfile({ manage: true })} />
+            )}
             {!lockServer ? <SettingRow icon="server-outline" label="Switch server" value={server?.name} onPress={() => router.push('/connect')} /> : null}
             <SettingRow icon="log-out-outline" label="Sign out" destructive onPress={confirmSignOut} chevron={false} />
           </SettingSection>

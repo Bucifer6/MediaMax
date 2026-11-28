@@ -1248,7 +1248,7 @@ export type UpdateEpgSourceRequest = Partial<CreateEpgSourceRequest>;
 
 export interface EpgPreset {
   id: string;
-  provider: 'iptv-org' | 'epg.pw';
+  provider: 'iptv-org' | 'epg.pw' | 'epgshare01';
   country: string;
   countryName: string;
   name: string;

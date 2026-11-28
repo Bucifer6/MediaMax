@@ -4,6 +4,11 @@
  */
 import type {
   ApiError as ApiErrorBody,
+  BuiltinAvatar,
+  CreateProfileRequest,
+  Profile,
+  ProfileSettings,
+  UpdateProfileRequest,
   DownloadPlan,
   DownloadPlanRequest,
   DownloadRule,
@@ -334,6 +339,25 @@ export class MediaMaxClient {
   /** "Who's watching?": the signed-in account's profiles (owner first). */
   accountProfiles() {
     return this.get<AccountProfile[]>('/auth/account/profiles');
+  }
+  /** Profiles the account owner manages (owner only), the server's profile rules and the built-in avatars. */
+  manageableProfiles() {
+    return this.get<Profile[]>('/profiles');
+  }
+  profileSettings() {
+    return this.get<ProfileSettings>('/profiles/settings');
+  }
+  avatars() {
+    return this.get<BuiltinAvatar[]>('/avatars');
+  }
+  createProfile(body: CreateProfileRequest) {
+    return this.post<Profile>('/profiles', body);
+  }
+  updateProfile(id: string, body: UpdateProfileRequest) {
+    return this.patch<Profile>(`/profiles/${encodeURIComponent(id)}`, body);
+  }
+  deleteProfile(id: string) {
+    return this.del<{ ok: boolean }>(`/profiles/${encodeURIComponent(id)}`);
   }
   /** Switch this device to another profile of the account (401 `pin_required` / `pin_invalid` for PIN profiles). */
   switchProfile(id: string, pin?: string) {

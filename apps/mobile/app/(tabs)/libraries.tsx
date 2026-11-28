@@ -70,6 +70,8 @@ export default function LibrariesScreen() {
           {visible.map((lib, i) => (
             <LibraryTile key={lib.id} lib={lib} width={tileW} index={i} />
           ))}
+          {/* Your DJ (it used to be a card on Home): a tile next to the libraries when there is music. */}
+          {features.music && visible.some((l) => l.type === 'music') ? <YourDjTile width={tileW} index={visible.length} /> : null}
         </View>
         {collections.data?.length ? <ItemRow title="Collections" items={collections.data} variant="poster" /> : null}
         {playlists.data?.length ? (
@@ -83,6 +85,32 @@ export default function LibrariesScreen() {
       </ScrollView>
       <SmartPlaylistSheet visible={smartSheet} onClose={() => setSmartSheet(false)} onSaved={(pl) => { void playlists.refresh(); openItem(pl); }} />
     </Screen>
+  );
+}
+
+function YourDjTile({ width, index }: { width: number; index: number }) {
+  const t = useTheme();
+  const height = Math.round(width * 0.56);
+  const tint = index % 2 ? t.colors.accent : t.colors.primary;
+  return (
+    <Focusable
+      onPress={() => router.push('/your-dj' as never)}
+      ringRadius={t.radius}
+      accessibilityLabel="Your DJ"
+      style={{ width, height, borderRadius: t.shapeRadius(width, height) > height / 2 ? height / 2 : t.radius, overflow: 'hidden' }}
+    >
+      <LinearGradient colors={[mix(tint, t.colors.surface, 0.25), mix(tint, t.colors.background, 0.75)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, padding: t.space.md, justifyContent: 'space-between' }}>
+        <Icon name="disc" size={t.isTV ? t.s(34) : 28} color="#fff" />
+        <View>
+          <T variant="heading" color="#fff" numberOfLines={1}>
+            Your DJ
+          </T>
+          <T variant="caption" color="rgba(255,255,255,0.8)">
+            A set picked from your music
+          </T>
+        </View>
+      </LinearGradient>
+    </Focusable>
   );
 }
 
