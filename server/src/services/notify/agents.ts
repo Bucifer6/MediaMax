@@ -1,9 +1,9 @@
-import { USER_AGENT } from '../../util/userAgent.js';
 /**
  * Outbound notification agents: Discord, Slack, Telegram, ntfy, Gotify, Pushover, email (SMTP) and a JSON webhook.
  * Each agent has per-event toggles (ServerSettings.notificationAgents). Self-contained so a later reporting/notifications
  * effort can add events or agents here.
  */
+import { USER_AGENT } from '../../util/userAgent.js';
 import type { NotificationAgent, NotificationTestResult, NotifyEvent } from '@mediamax/shared';
 import { getKv, getSettings } from '../settings.js';
 import { logger } from '../../util/log.js';

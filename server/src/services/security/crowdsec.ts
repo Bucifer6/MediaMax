@@ -1,10 +1,10 @@
-import { USER_AGENT } from '../../util/userAgent.js';
 /**
  * CrowdSec Local API client (as a "machine", i.e. the same rights as cscli): alerts, active decisions,
  * manual ban and unban. Credentials come from the deploy installer (cscli machines add mediamax-dashboard).
  */
-export interface CsConfig { url: string; machineId: string; password: string }
+import { USER_AGENT } from '../../util/userAgent.js';
 
+export interface CsConfig { url: string; machineId: string; password: string }
 
 // CrowdSec parses the User-Agent at login and rejects Node's default ("node"); always identify ourselves.
 const UA = () => USER_AGENT;

@@ -1,4 +1,3 @@
-import { USER_AGENT } from '../../../util/userAgent.js';
 /**
  * TVHeadend (https://tvheadend.org) client — HTTP API on port 9981:
  *   /api/serverinfo, /api/channel/grid, /api/channeltag/grid, /api/status/inputs, /api/profile/list,
@@ -6,6 +5,7 @@ import { USER_AGENT } from '../../../util/userAgent.js';
  *   channel icons at /imagecache/<id>. Falls back to /playlist/channels.m3u when the channel grid is not allowed.
  * Authentication: Digest (TVHeadend's default) or plain/Basic, handled by TunerHttp.
  */
+import { USER_AGENT } from '../../../util/userAgent.js';
 import { parseM3u } from '../m3u.js';
 import { TunerHttp, TunerHttpError, baseUrl, withUserInfo } from './http.js';
 import { isoFromUnix, type GuideSink, type TunerCategory, type TunerChannel, type TunerDevice, type TunerOptions, type TunerSync } from './types.js';

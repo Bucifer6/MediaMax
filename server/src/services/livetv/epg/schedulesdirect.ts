@@ -1,4 +1,3 @@
-import { USER_AGENT } from '../../../util/userAgent.js';
 /**
  * Schedules Direct JSON API client (API version 20141201).
  *
@@ -10,6 +9,7 @@ import { USER_AGENT } from '../../../util/userAgent.js';
  *  - at most 5000 stations / programme ids per request, requests are sequential (no parallel hammering);
  *  - a descriptive User-Agent on every request.
  */
+import { USER_AGENT } from '../../../util/userAgent.js';
 import crypto from 'node:crypto';
 
 export const SD_DEFAULT_BASE = 'https://json.schedulesdirect.org/20141201';

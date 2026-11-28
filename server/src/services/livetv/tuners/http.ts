@@ -1,10 +1,10 @@
-import { USER_AGENT } from '../../../util/userAgent.js';
 /**
  * HTTP for tuner boxes on the LAN (TVHeadend, OpenWebif, SAT>IP description files): Basic and Digest
  * authentication (RFC 7616: MD5, MD5-sess, SHA-256, qop=auth), timeouts and friendly errors.
  *
  * Node's fetch rejects URLs with credentials, so credentials travel separately and are applied here.
  */
+import { USER_AGENT } from '../../../util/userAgent.js';
 import crypto from 'node:crypto';
 
 export type AuthType = 'auto' | 'basic' | 'digest';

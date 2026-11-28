@@ -1,9 +1,9 @@
-import { USER_AGENT } from '../../../util/userAgent.js';
 /**
  * HDHomeRun guide data: free for HDHomeRun owners. The tuner's discover.json carries a DeviceAuth token,
  * which the SiliconDust guide API accepts: https://api.hdhomerun.com/api/guide.php?DeviceAuth=…
  * Each call returns a few hours per channel; `Start=<unix time>` pages forward.
  */
+import { USER_AGENT } from '../../../util/userAgent.js';
 export const HDHR_DEFAULT_GUIDE = 'https://api.hdhomerun.com/api/guide.php';
 export const hdhrGuideUrl = () => process.env.MEDIAMAX_HDHR_GUIDE_URL || HDHR_DEFAULT_GUIDE;
 

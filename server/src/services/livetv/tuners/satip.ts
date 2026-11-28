@@ -1,4 +1,3 @@
-import { USER_AGENT } from '../../../util/userAgent.js';
 /**
  * SAT>IP servers (DVB-S/S2/T/T2/C over RTSP): Digital Devices Octopus NET, Telestar, Inverto, minisatip,
  * and the AVM FRITZ!Box cable models (6490/6590/6591/6660 Cable…).
@@ -7,6 +6,7 @@ import { USER_AGENT } from '../../../util/userAgent.js';
  * FRITZ!Box, from its built-in lists at /dvb/m3u/tvhd.m3u, tvsd.m3u and radio.m3u. The tuner count comes from the
  * device description's <satip:X_SATIPCAP> ("DVBS2-2,DVBT-2" = two satellite and two terrestrial tuners).
  */
+import { USER_AGENT } from '../../../util/userAgent.js';
 import { parseM3u } from '../m3u.js';
 import { TunerHttp, TunerHttpError, baseUrl } from './http.js';
 import type { TunerCategory, TunerChannel, TunerDevice, TunerOptions, TunerSync } from './types.js';

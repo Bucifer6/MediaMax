@@ -1,4 +1,3 @@
-import { USER_AGENT } from '../../../util/userAgent.js';
 /**
  * Enigma2 receivers (Vu+, Dreambox, Zgemma, Octagon, GigaBlue…) through OpenWebif:
  *   /api/deviceinfo (/api/about), /api/getservices (bouquets), /api/getservices?sRef=<bouquet> (services),
@@ -6,6 +5,7 @@ import { USER_AGENT } from '../../../util/userAgent.js';
  *   picons at /picon/<sref with _>.png; streams on port 8001 (http://box:8001/<sRef>), transcoding on 8002.
  * OpenWebif authentication is HTTP Basic; "streamauth" puts the same Basic login on port 8001.
  */
+import { USER_AGENT } from '../../../util/userAgent.js';
 import { TunerHttp, TunerHttpError, baseUrl, withUserInfo } from './http.js';
 import { isoFromUnix, type GuideSink, type TunerCategory, type TunerChannel, type TunerDevice, type TunerOptions, type TunerSync } from './types.js';
 
