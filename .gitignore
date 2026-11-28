@@ -11,3 +11,5 @@ coverage/
 tv/dist/
 release/
 build/
+# HLS init segment ffmpeg can leave in its working folder during tests (see dovi.ts)
+init.mp4
