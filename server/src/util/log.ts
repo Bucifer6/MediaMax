@@ -10,8 +10,29 @@ const logFile = path.join(config.logDir, 'vibe.log');
 let stream: fs.WriteStream | null = null;
 try {
   stream = fs.createWriteStream(logFile, { flags: 'a' });
+  // A failing log file (disk full, folder removed) must not turn into an uncaught exception that is logged again.
+  stream.on('error', () => (stream = null));
 } catch {
   stream = null;
+}
+
+/*
+ * The console can go away while the server keeps running: the tray app that started it (and reads its output) quits
+ * before setup stops the server during an update, or a terminal is closed. Writes then fail with EPIPE, emitted as an
+ * 'error' event; without a listener that is an uncaught exception, which is logged, which writes to the console again,
+ * and so on: an update filled vibe.log with ~100,000 lines in 16 seconds. Stop using the console once it has failed;
+ * the log file keeps everything.
+ */
+let consoleOpen = true;
+for (const s of [process.stdout, process.stderr]) s.on('error', () => (consoleOpen = false));
+
+function toConsole(level: Level, line: string) {
+  if (!consoleOpen) return;
+  try {
+    (level === 'error' || level === 'warn' ? process.stderr : process.stdout).write(line + '\n');
+  } catch {
+    consoleOpen = false;
+  }
 }
 
 function write(level: Level, scope: string, msg: string, extra?: unknown) {
@@ -22,7 +43,7 @@ function write(level: Level, scope: string, msg: string, extra?: unknown) {
   }
   ring.push(line);
   if (ring.length > 2000) ring.shift();
-  (level === 'error' || level === 'warn' ? process.stderr : process.stdout).write(line + '\n');
+  toConsole(level, line);
   stream?.write(line + '\n');
 }
 
