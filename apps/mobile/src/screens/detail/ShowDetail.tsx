@@ -17,6 +17,7 @@ import { SmartDownloadButton } from './SmartDownloadButton';
 import { useTheme } from '@/theme';
 import { formatDuration, progressFraction } from '@/utils/format';
 import { openItem, playItem } from '@/utils/nav';
+import { EpisodeRatingsGrid, RatingChips, TraktComments } from './Community';
 import { ActionBar, CastRow, DetailBackdrop, Overview, TVDetailBackground, TitleBlock, useUserDataActions } from './common';
 
 export function ShowDetail({ show, initialSeasonId, onUserData }: { show: Item; initialSeasonId?: string; onUserData: (ud: UserItemData) => void }) {
@@ -83,6 +84,7 @@ export function ShowDetail({ show, initialSeasonId, onUserData }: { show: Item; 
           <View style={{ minHeight: t.height * 0.6, justifyContent: 'flex-end', paddingHorizontal: t.space.gutter, paddingBottom: t.space.lg, gap: t.space.md, maxWidth: t.width * 0.62 }}>
             <TitleBlock item={show} />
             <Overview text={show.overview} />
+            <RatingChips item={show} />
             {actions}
           </View>
           {seasonChips}
@@ -94,7 +96,9 @@ export function ShowDetail({ show, initialSeasonId, onUserData }: { show: Item; 
             contentContainerStyle={{ paddingHorizontal: t.space.gutter, gap: t.card.gap, paddingVertical: t.s(16) }}
             renderItem={({ item }) => <MediaCard item={item} variant="landscape" onPress={(e) => openItem(e)} />}
           />
+          <EpisodeRatingsGrid showId={show.id} />
           <CastRow people={show.people} />
+          <TraktComments item={show} />
           {similar.data?.length ? <ItemRow title="More like this" items={similar.data} /> : null}
         </ScrollView>
       </View>
@@ -108,6 +112,7 @@ export function ShowDetail({ show, initialSeasonId, onUserData }: { show: Item; 
         <TitleBlock item={show} />
         {actions}
         <Overview text={show.overview} />
+        <RatingChips item={show} />
       </View>
       {seasonChips}
       <View style={{ paddingHorizontal: t.space.gutter, gap: t.space.md, marginBottom: t.space.xl }}>
@@ -115,7 +120,9 @@ export function ShowDetail({ show, initialSeasonId, onUserData }: { show: Item; 
           <EpisodeRow key={e.id} ep={e} />
         ))}
       </View>
+      <EpisodeRatingsGrid showId={show.id} />
       <CastRow people={show.people} />
+      <TraktComments item={show} />
       {similar.data?.length ? <ItemRow title="More like this" items={similar.data} /> : null}
     </ScrollView>
   );

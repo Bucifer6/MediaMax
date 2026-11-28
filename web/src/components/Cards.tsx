@@ -150,10 +150,14 @@ function fallbackIcon(item: Item) {
  * Media card: poster (2:3), square (music, photos) or landscape (16:9 episodes / videos). Always shows watched state,
  * unplayed count and progress; hover / focus reveals quick actions (play, My List, watched) and badges (new, quality).
  */
-export const PosterCard = memo(function PosterCard({ item, shape, showProgress = true, width, quickActions = true }: { item: Item; shape?: 'poster' | 'square' | 'landscape'; showProgress?: boolean; width?: string; quickActions?: boolean }) {
+export const PosterCard = memo(function PosterCard({ item, shape, showProgress = true, width, quickActions = true, ratingPoster }: {
+  item: Item; shape?: 'poster' | 'square' | 'landscape'; showProgress?: boolean; width?: string; quickActions?: boolean;
+  /** Use the server's rating poster (the page knows whether the admin turned it on for that screen). */
+  ratingPoster?: boolean;
+}) {
   const play = usePlayItem();
   const s = shape ?? (isSquare(item) ? 'square' : item.type === 'episode' || item.type === 'video' ? 'landscape' : 'poster');
-  const img = s === 'landscape' ? landscapeFor(item) : posterFor(item);
+  const img = s === 'landscape' ? landscapeFor(item) : (ratingPoster && item.ratingPosterUrl) || posterFor(item);
   const [played, setPlayed] = useState(!!item.userData?.played);
   useEffect(() => setPlayed(!!item.userData?.played), [item.id, item.userData?.played]);
   const pct = showProgress ? progressPct(item) : 0;

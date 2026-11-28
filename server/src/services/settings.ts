@@ -1,4 +1,4 @@
-import type { ArrInstance, ArrKind, ArrService, ServerSettings, SignInScreenSettings, SkipSegmentSettings, SubtitleSettings } from '@mediamax/shared';
+import type { ArrInstance, ArrKind, ArrService, ServerSettings, RatingPosterSettings, SignInScreenSettings, SkipSegmentSettings, SubtitleSettings } from '@mediamax/shared';
 import { db } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
@@ -82,6 +82,9 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   signInScreen: { showUsers: true, homeNetworkOnly: true },
   karaoke: { stemsEnabled: false, stemsModelUrl: null, stemsModelSha256: null, writeLrcSidecars: false },
   skipSegments: { introDb: false, aniSkip: false, introDbApiKey: null, parentalGuideUrl: null },
+  simkl: { clientId: null },
+  mdblist: { apiKey: null, ratings: false },
+  ratingPosters: { urlTemplate: null, home: false, search: false, detail: false },
   ai: DEFAULT_AI,
 };
 
@@ -177,6 +180,9 @@ export function getSettings(): ServerSettings {
     oidc: { ...DEFAULT_SETTINGS.oidc, ...(stored.oidc ?? {}) },
     karaoke: { ...DEFAULT_SETTINGS.karaoke!, ...(stored.karaoke ?? {}) },
     skipSegments: { ...DEFAULT_SETTINGS.skipSegments!, ...(stored.skipSegments ?? {}) },
+    simkl: { ...DEFAULT_SETTINGS.simkl!, ...(stored.simkl ?? {}) },
+    mdblist: { ...DEFAULT_SETTINGS.mdblist!, ...(stored.mdblist ?? {}) },
+    ratingPosters: { ...DEFAULT_SETTINGS.ratingPosters!, ...(stored.ratingPosters ?? {}) },
     webhooks: stored.webhooks ?? [],
     arr: Array.isArray(stored.arr) ? stored.arr : legacyArrInstances(stored.requests),
     notificationAgents: Array.isArray(stored.notificationAgents) ? stored.notificationAgents : [],
@@ -194,7 +200,7 @@ export const SECRET_MASK = '••••';
 /** Other write-only secrets: [section, key] (section null = top level). Sent masked, a masked value back keeps them. */
 const SECRET_FIELDS: [keyof ServerSettings | null, string][] = [
   [null, 'tmdbApiKey'], ['openSubtitles', 'apiKey'], ['openSubtitles', 'password'], ['trakt', 'clientSecret'], ['lastfm', 'sharedSecret'], ['oidc', 'clientSecret'],
-  ['skipSegments', 'introDbApiKey'],
+  ['skipSegments', 'introDbApiKey'], ['mdblist', 'apiKey'], ['ratingPosters', 'urlTemplate'],
 ];
 
 /** Settings as sent to the admin UI: service keys, passwords and client secrets are write-only. */
@@ -269,6 +275,12 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     signInScreen: signInScreenOf({ ...cur.signInScreen, ...(patch.signInScreen ?? {}) }),
     karaoke: { ...DEFAULT_SETTINGS.karaoke!, ...(cur.karaoke ?? {}), ...(patch.karaoke ?? {}) },
     skipSegments: normaliseSkipSegments(cur.skipSegments ?? DEFAULT_SETTINGS.skipSegments!, patch.skipSegments),
+    simkl: { clientId: patch.simkl?.clientId !== undefined ? (String(patch.simkl.clientId ?? '').trim().slice(0, 200) || null) : cur.simkl?.clientId ?? null },
+    mdblist: {
+      apiKey: patch.mdblist?.apiKey !== undefined ? (String(patch.mdblist.apiKey ?? '').trim().slice(0, 200) || null) : cur.mdblist?.apiKey ?? null,
+      ratings: typeof patch.mdblist?.ratings === 'boolean' ? patch.mdblist.ratings : !!cur.mdblist?.ratings,
+    },
+    ratingPosters: normaliseRatingPosters(cur.ratingPosters ?? DEFAULT_SETTINGS.ratingPosters!, patch.ratingPosters),
     webhooks: (patch.webhooks ?? cur.webhooks).map((w) => ({ ...w, id: w.id || newId() })),
     arr: patch.arr !== undefined ? normaliseArr(patch.arr, cur.arr) : cur.arr,
     notificationAgents: patch.notificationAgents !== undefined ? mergeAgents(patch.notificationAgents, cur.notificationAgents, newId) : cur.notificationAgents ?? [],
@@ -305,6 +317,20 @@ export function normaliseSkipSegments(cur: SkipSegmentSettings, patch: Partial<S
     introDbApiKey: key,
     parentalGuideUrl: url,
   };
+}
+
+/** Rating posters: an http(s) template with {imdb} or {tmdb} (it usually holds the service's key, so it is write-only). */
+export function normaliseRatingPosters(cur: RatingPosterSettings, patch: Partial<RatingPosterSettings> | undefined | null): RatingPosterSettings {
+  const p = patch && typeof patch === 'object' ? patch : {};
+  let url = cur.urlTemplate;
+  if (p.urlTemplate !== undefined) {
+    const v = typeof p.urlTemplate === 'string' ? p.urlTemplate.trim() : '';
+    if (!v) url = null;
+    else if (/^https?:\/\/\S+$/i.test(v) && (v.includes('{imdb}') || v.includes('{tmdb}')) && v.length <= 500) url = v;
+    else throw badRequest('The poster URL must start with http:// or https:// and contain {imdb} or {tmdb}');
+  }
+  const flag = (k: 'home' | 'search' | 'detail') => (typeof p[k] === 'boolean' ? (p[k] as boolean) : !!cur[k]);
+  return { urlTemplate: url, home: flag('home'), search: flag('search'), detail: flag('detail') };
 }
 
 /** Whole number in [min, max]; anything else (NaN, '', a cleared form field) keeps the current value or the default. */

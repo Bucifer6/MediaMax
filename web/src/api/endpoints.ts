@@ -11,6 +11,7 @@ import type {
   CalendarResponse, NotificationsResponse,
   BackupInfo, UpdateStatus, RemoteAccessStatus, Bookmark, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
+import type { EpisodeRatings, SimklPin, SimklStatus, TraktComment, TrackingSyncResult } from '@mediamax/shared';
 import type { AutoSyncRequest, AutoSyncResponse, ParentalGuide, SubmitMarkerRequest, SubmitMarkerResponse } from '@mediamax/shared';
 import type { DjOrderRequest, DjOrderResponse, DjTransitionsRequest, DjTransitionsResponse } from '@mediamax/shared';
 import type { ManualRendererRequest, Renderer, RendererAction, RendererAdminView, RendererCommandRequest, RendererPlayRequest, RendererSettings, RendererState } from '@mediamax/shared';
@@ -182,8 +183,24 @@ export const api = {
   trakt: {
     status: () => http.get<TraktStatus>('/trakt'),
     connect: () => http.post<TraktDeviceCode>('/trakt/connect'),
-    update: (body: { scrobble: boolean }) => http.patch<TraktStatus>('/trakt', body),
+    update: (body: { scrobble?: boolean; pull?: boolean; push?: boolean }) => http.patch<TraktStatus>('/trakt', body),
     disconnect: () => http.del<TraktStatus>('/trakt'),
+    /** Pull history, resume points, watchlist and ratings now. */
+    sync: () => http.post<TrackingSyncResult>('/trakt/sync'),
+  },
+
+  simkl: {
+    status: () => http.get<SimklStatus>('/simkl'),
+    connect: () => http.post<SimklPin>('/simkl/connect'),
+    cancelConnect: () => http.del<SimklStatus>('/simkl/connect'),
+    update: (body: { push?: boolean; pull?: boolean }) => http.patch<SimklStatus>('/simkl', body),
+    sync: () => http.post<TrackingSyncResult>('/simkl/sync'),
+    disconnect: () => http.del<SimklStatus>('/simkl'),
+  },
+
+  community: {
+    comments: (itemId: string, sort: 'likes' | 'newest' = 'likes', signal?: AbortSignal) => http.get<TraktComment[]>(`/items/${enc(itemId)}/comments`, { sort }, signal),
+    episodeRatings: (showId: string, signal?: AbortSignal) => http.get<EpisodeRatings>(`/items/${enc(showId)}/episode-ratings`, undefined, signal),
   },
 
   collections: {

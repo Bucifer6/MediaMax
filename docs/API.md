@@ -403,6 +403,26 @@ When Settings → DLNA is on, the server announces itself over SSDP and serves U
 ## Trakt
 * `GET /trakt` → `TraktStatus` · `POST /trakt/connect` → `TraktDeviceCode` (show `userCode` + `verificationUrl`; poll `GET /trakt` until `connected`) · `PATCH /trakt` `{ scrobble }` · `DELETE /trakt`.
 * Admin sets `ServerSettings.trakt.clientId/clientSecret` (create an app at trakt.tv/oauth/applications). Playback start/pause/stop and "mark watched" are scrobbled automatically.
+* Two-way (opt-in, both off by default): `PATCH /trakt` also takes `{ pull, push }`; `POST /trakt/sync` → `TrackingSyncResult` pulls watched movies/episodes, resume points
+  (`/sync/playback`), the watchlist (→ My List) and ratings now (also every 6 h, task `tracking-sync`). Imports only add — never
+  un-watch, remove or overwrite the viewer's own rating — and are never pushed back. With `push` on, My List and rating changes are sent
+  (`/sync/watchlist`, `/sync/watchlist/remove`, `/sync/ratings`, `/sync/ratings/remove`).
+* `GET /items/:id/comments?sort=likes|newest` → `TraktComment[]` (movie, show or episode; needs only the app's client id; cached 6 h).
+
+## SIMKL
+* `GET /simkl` → `SimklStatus` · `POST /simkl/connect` → `SimklPin` (show `userCode` at `verificationUrl`; poll `GET /simkl`) ·
+  `PATCH /simkl` `{ push?, pull? }` · `DELETE /simkl/connect` (cancel a pending PIN) · `POST /simkl/sync` → `TrackingSyncResult` · `DELETE /simkl`. Admin sets `ServerSettings.simkl.clientId`.
+  Push: plays → `/sync/history`, My List additions → `/sync/add-to-list` (plantowatch). Pull: `/sync/all-items/{movies,shows,anime}`.
+
+## Ratings, logos & posters
+* `Item.ratings` may carry MDBList sources (`trakt`, `audience`, `letterboxd`, `mal` plus imdb / rottenTomatoes / metacritic / tmdb)
+  when `ServerSettings.mdblist` has a key and `ratings` on (daily task `mdblist-ratings`, ≤900 titles/day, refreshed monthly).
+* Home row type `mdblist` (`HomeRowConfig.mdblistList` = list URL, `user/slug` or numeric id): the list's titles in the viewer's libraries.
+* `Item.companies` (`ItemCompany[]`: studios for movies, networks for shows, TMDB ids + logos) → link to `/discover?list=studio-<id>` / `network-<id>`.
+* `Item.ratingPosterUrl` when `ServerSettings.ratingPosters.urlTemplate` is set (`{imdb}`, `{tmdb}`, `{type}`; write-only): a proxied
+  `/api/v1/images/<id>`, so the poster service's key never reaches clients. `SystemInfo.ratingPosterScreens` says where to use it.
+* `GET /items/:id/episode-ratings` (shows) → `EpisodeRatings`: IMDb per episode through OMDb when enabled (one cached request per
+  season), else TMDB scores for the seasons in the library.
 
 ## Lyrics
 * `GET /items/:id/lyrics` → `Lyrics`. 404 when none. Sources, first synced hit wins (a plain hit keeps looking for a synced one):

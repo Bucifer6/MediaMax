@@ -7,7 +7,9 @@ import { sheetPath, trickplayInfo } from '../services/trickplay.js';
 import { serverStats, userStats } from '../services/stats.js';
 import { deleteDownloadedSubtitle, downloadSubtitle, providerInfos, searchSubtitles } from '../services/subtitleProviders/index.js';
 import { subtitleTools } from '../services/subtitleProviders/tools.js';
-import { disconnect, setScrobble, startDeviceAuth, traktStatus } from '../services/trakt.js';
+import { disconnect, itemComments, pullFromTrakt, setPull, setPush, setScrobble, startDeviceAuth, traktStatus } from '../services/trakt.js';
+import { cancelSimklPin, disconnectSimkl, pullFromSimkl, setSimklOptions, simklStatus, startSimklPin } from '../services/simkl.js';
+import { episodeRatings } from '../services/episodeRatings.js';
 import { notFound, badRequest, forbidden } from '../util/errors.js';
 import { toInt } from '../util/misc.js';
 import { newId } from '../util/ids.js';
@@ -315,10 +317,48 @@ export default async function extraRoutes(app: FastifyInstance) {
   /* -------------------------------- trakt --------------------------- */
   app.get('/trakt', async (req) => traktStatus(requireUser(req).user.id));
   app.post('/trakt/connect', async (req) => startDeviceAuth(requireUser(req).user.id));
-  app.patch<{ Body: { scrobble: boolean } }>('/trakt', async (req) => {
+  app.patch<{ Body: { scrobble?: boolean; pull?: boolean; push?: boolean } }>('/trakt', async (req) => {
     const { user } = requireUser(req);
-    setScrobble(user.id, !!req.body?.scrobble);
+    if (typeof req.body?.scrobble === 'boolean') setScrobble(user.id, req.body.scrobble);
+    if (typeof req.body?.pull === 'boolean') setPull(user.id, req.body.pull);
+    if (typeof req.body?.push === 'boolean') setPush(user.id, req.body.push);
     return traktStatus(user.id);
+  });
+  /** Pull history, resume points, watchlist and ratings from Trakt now. */
+  app.post('/trakt/sync', async (req) => pullFromTrakt(requireUser(req).user.id));
+
+  /* -------------------------------- SIMKL --------------------------- */
+  app.get('/simkl', async (req) => simklStatus(requireUser(req).user.id));
+  app.post('/simkl/connect', async (req) => startSimklPin(requireUser(req).user.id));
+  app.patch<{ Body: { push?: boolean; pull?: boolean } }>('/simkl', async (req) => {
+    const { user } = requireUser(req);
+    setSimklOptions(user.id, req.body ?? {});
+    return simklStatus(user.id);
+  });
+  app.post('/simkl/sync', async (req) => pullFromSimkl(requireUser(req).user.id));
+  app.delete('/simkl/connect', async (req) => {
+    const { user } = requireUser(req);
+    cancelSimklPin(user.id);
+    return simklStatus(user.id);
+  });
+  app.delete('/simkl', async (req) => {
+    const { user } = requireUser(req);
+    disconnectSimkl(user.id);
+    return simklStatus(user.id);
+  });
+
+  /* ------------------------- community & ratings -------------------- */
+  /** Trakt community comments and reviews (spoilers flagged). */
+  app.get<{ Params: { id: string }; Querystring: { sort?: string } }>('/items/:id/comments', async (req) => {
+    const { user } = requireUser(req);
+    assertCanSee(user, req.params.id);
+    return itemComments(req.params.id, req.query.sort === 'newest' ? 'newest' : 'likes');
+  });
+  /** Season × episode ratings grid for a show. */
+  app.get<{ Params: { id: string } }>('/items/:id/episode-ratings', async (req) => {
+    const { user } = requireUser(req);
+    assertCanSee(user, req.params.id);
+    return episodeRatings(req.params.id);
   });
   app.delete('/trakt', async (req) => {
     const { user } = requireUser(req);

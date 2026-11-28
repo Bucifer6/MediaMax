@@ -42,11 +42,13 @@ function applyMeta(item: Row, meta: tmdb.RemoteMeta, touched?: Set<string>) {
   if (takeArt(item, 'poster', locked, meta.poster)) patch.poster = registerImage(meta.poster);
   if (takeArt(item, 'backdrop', locked, meta.backdrop)) patch.backdrop = registerImage(meta.backdrop);
   if (takeArt(item, 'logo', locked, meta.logo)) patch.logo = registerImage(meta.logo);
-  // The original language drives the "Original" audio preference (kept in the extra JSON: no column needed).
-  if (meta.originalLanguage && /^[a-z]{2,3}$/i.test(meta.originalLanguage)) {
-    const extra = parseJson<Record<string, unknown>>(item.extra, {});
-    if (extra.originalLanguage !== meta.originalLanguage.toLowerCase()) patch.extra = JSON.stringify({ ...extra, originalLanguage: meta.originalLanguage.toLowerCase() });
-  }
+  // Kept in the extra JSON (no columns needed): the original language drives the "Original" audio preference; the
+  // studios / networks with logos are shown on detail pages (logos registered as images, served by the proxy).
+  const extra = parseJson<Record<string, unknown>>(item.extra, {});
+  const nextExtra = { ...extra };
+  if (meta.originalLanguage && /^[a-z]{2,3}$/i.test(meta.originalLanguage)) nextExtra.originalLanguage = meta.originalLanguage.toLowerCase();
+  if (meta.companies?.length) nextExtra.companies = meta.companies.map((c) => ({ id: c.id, name: c.name, kind: c.kind, logo: registerImage(c.logo) }));
+  if (JSON.stringify(nextExtra) !== JSON.stringify(extra)) patch.extra = JSON.stringify(nextExtra);
   if (meta.rating && !locked.has('ratings')) patch.ratings = JSON.stringify({ ...parseJson<Record<string, number>>(item.ratings, {}), tmdb: meta.rating });
   db.update('items', item.id, patch);
   Object.assign(item, patch);

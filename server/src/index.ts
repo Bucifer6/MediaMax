@@ -7,6 +7,7 @@ import { startScheduler, stopScheduler } from './services/tasks.js';
 import { cleanupTranscodeDir, ffmpegAvailable } from './services/transcoder.js';
 import { initWebhooks } from './services/webhooks.js';
 import { initTrakt } from './services/trakt.js';
+import { initSimkl } from './services/simkl.js';
 import { initLastfm } from './services/lastfm.js';
 import { initListenBrainz } from './services/listenbrainz.js';
 import { serverId } from './services/settings.js';
@@ -32,6 +33,7 @@ async function main() {
   cleanupTranscodeDir();
   initWebhooks();
   initTrakt();
+  initSimkl();
   initLastfm();
   initListenBrainz();
   initStorage();

@@ -29,6 +29,7 @@ const DEFAULT_BASE: Record<string, string> = {
   acoustid: 'https://api.acoustid.org',
   introdb: 'https://api.introdb.app',
   aniskip: 'https://api.aniskip.com/v2',
+  mdblist: 'https://api.mdblist.com',
 };
 
 /** Env overrides, e.g. MEDIAMAX_TVDB_API_BASE (used by tests and for self-hosted mirrors). */
@@ -49,6 +50,7 @@ const ENV: Record<string, string> = {
   acoustid: 'MEDIAMAX_ACOUSTID_API_BASE',
   introdb: 'MEDIAMAX_INTRODB_API_BASE',
   aniskip: 'MEDIAMAX_ANISKIP_API_BASE',
+  mdblist: 'MEDIAMAX_MDBLIST_API_BASE',
 };
 
 /** Minimum gap between two requests to the same service (client-side rate limit). */
@@ -68,7 +70,7 @@ const MIN_INTERVAL_MS: Record<string, number> = {
 };
 
 /** Hard daily caps of free tiers (counted per server process). */
-const DAILY_CAP: Record<string, number> = { omdb: 1000 };
+const DAILY_CAP: Record<string, number> = { omdb: 1000, mdblist: 1000 };
 
 const overrides: Record<string, { base?: string; minIntervalMs?: number }> = {};
 

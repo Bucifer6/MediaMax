@@ -213,7 +213,8 @@ export async function resolveImage(id: string, width?: number): Promise<{ path: 
       try {
         file = await p;
       } catch (e) {
-        log.debug(`Remote image failed ${row.source}`, e);
+        // Host only: a rating-poster URL carries the service's key.
+        log.debug(`Remote image failed (${(() => { try { return new URL(row.source).host; } catch { return 'unknown host'; } })()})`, e);
         throw notFound('Image unavailable');
       }
     }

@@ -54,6 +54,7 @@ const ROW_TYPES: { value: HomeRowType; label: string; hint: string }[] = [
   { value: 'watchlist', label: 'My List', hint: "The viewer's watchlist" },
   { value: 'upcoming', label: 'Coming soon', hint: 'Next airing episodes of shows in the libraries (needs a TMDB key)' },
   { value: 'spotlight', label: 'Random spotlight', hint: 'Random movies and/or shows from the libraries you pick. Add several, e.g. “Random Movie”, “Random Series”, “Kids Spotlight”. Viewers only see titles they are allowed to' },
+  { value: 'mdblist', label: 'MDBList list', hint: 'The titles of a public MDBList list that are in your libraries, in list order (needs an MDBList key in Server settings → Ratings & posters)' },
 ];
 
 const FEATURE_LABELS: { key: keyof FeatureFlags; label: string; hint: string; icon: IconName }[] = [
@@ -428,6 +429,10 @@ function RowBuilder({ rows, onChange }: { rows: HomeRowConfig[]; onChange: (r: H
                     {libraries.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
                 </>
+              )}
+              {r.type === 'mdblist' && (
+                <input className="input" value={r.mdblistList ?? ''} placeholder="https://mdblist.com/lists/user/list-name" aria-label="MDBList list URL"
+                  onChange={(e) => update(i, { mdblistList: e.target.value.trim() || undefined })} />
               )}
               {r.type === 'top10' && <PinnedTitles ids={r.pinnedItemIds ?? []} onChange={(pinnedItemIds) => update(i, { pinnedItemIds: pinnedItemIds.length ? pinnedItemIds : undefined })} />}
               {r.type === 'spotlight' && (

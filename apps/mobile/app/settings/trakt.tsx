@@ -23,6 +23,7 @@ export default function TraktScreen() {
   const [code, setCode] = useState<TraktDeviceCode | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -107,9 +108,17 @@ export default function TraktScreen() {
           </View>
           <SettingSection title="Sync">
             <SettingRow icon="radio-outline" label="Scrobble what I watch" toggle={status.scrobble} onToggle={(v) => void setScrobble(v)} hasTVPreferredFocus />
+            <SettingRow icon="cloud-upload-outline" label="Send My List and ratings" toggle={!!status.push} onToggle={(v) => void run(async () => setStatus(await api.traktSetPush(v)), 'Could not save')} />
+            <SettingRow icon="download-outline" label="Bring my Trakt history in" toggle={!!status.pull} onToggle={(v) => void run(async () => setStatus(await api.traktSetPull(v)), 'Could not save')} />
+            <SettingRow icon="sync-outline" label="Sync now" value={status.lastPullAt ? `Last: ${new Date(status.lastPullAt).toLocaleString()}` : undefined} onPress={() => void run(async () => {
+              const r = await api.traktSync();
+              setStatus(await api.trakt());
+              setNote(`${r.watched} watched, ${r.resumed} resumed, ${r.watchlist} added to My List, ${r.rated} rated`);
+            }, 'Sync failed')} />
           </SettingSection>
+          {note ? <T variant="small" tone="muted" style={{ paddingHorizontal: t.space.sm, marginBottom: t.space.sm }}>{note}</T> : null}
           <T variant="small" tone="muted" style={{ marginBottom: t.space.lg, paddingHorizontal: t.space.sm }}>
-            When on, playback start, pause and stop plus “mark watched” are sent to Trakt automatically.
+            Scrobbling sends playback start, pause and stop plus “mark watched”. “Send My List and ratings” also updates your Trakt watchlist and ratings; “Bring my Trakt history in” adds what you watched elsewhere.
           </T>
           <SettingSection>
             <SettingRow icon="unlink-outline" label="Disconnect Trakt" destructive chevron={false} onPress={() => void disconnect()} />

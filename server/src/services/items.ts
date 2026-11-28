@@ -2,13 +2,15 @@ import type {
   HomeLayout, HomeRow, HomeRowConfig, Item, MusicInfo, SubtitleStream, Chapter, ItemQuery, ItemSort, MediaSource, Marker, Paged, Person, User, UserItemData, UpdateItemRequest, VideoRangeInfo,
 } from '@mediamax/shared';
 import { db, itemsVersion, type Param, type Row } from '../db.js';
-import { imageUrl } from './images.js';
+import { imageUrl, registerImage } from './images.js';
+import { stableId } from '../util/ids.js';
 import { forbidden, notFound } from '../util/errors.js';
 import { nowIso, parseJson, ratingLevel, resolutionLabel, sortTitle, toInt } from '../util/misc.js';
 import { getBranding } from './branding.js';
 import { events, bus } from './events.js';
 import { getSettings } from './settings.js';
 import { creditsFor } from './music/credits.js';
+import { mdblistRowIds } from './mdblist.js';
 
 /* ----------------------------- access ------------------------------ */
 
@@ -198,9 +200,34 @@ export function rowToItem(r: Row): Item {
     ...(!(extra as any).series && r.provider_meta && r.provider_meta !== '{}' && parseJson<any>(r.provider_meta, {}).series ? { series: parseJson<any>(r.provider_meta, {}).series } : {}),
     ...(r.ratings ? { ratings: parseJson(r.ratings, null) } : {}),
     ...(typeof extra.originalLanguage === 'string' ? { originalLanguage: extra.originalLanguage } : {}),
+    ...(Array.isArray(extra.companies) ? { companies: (extra.companies as { id: string; name: string; kind: 'studio' | 'network'; logo: string | null }[]).map((c) => ({ id: c.id, name: c.name, kind: c.kind, logoUrl: imageUrl(c.logo) })) } : {}),
+    ...ratingPoster(r),
     ...(r.type === 'album' || r.type === 'track' ? musicInfo(r, extra) : {}),
     ...(r.type === 'show' ? { episodeOrder: (extra as any).episodeOrder === 'dvd' || (extra as any).episodeOrder === 'absolute' ? (extra as any).episodeOrder : 'aired' } : {}),
   };
+}
+
+/** Image ids already registered by this process (rating posters), so lists don't write a row per item per request. */
+const posterIds = new Set<string>();
+
+/**
+ * Poster with rating badges from the admin's poster service (ServerSettings.ratingPosters): the URL (which usually
+ * holds the service's key) is registered as a server image, so clients only ever see /api/v1/images/<id>.
+ */
+function ratingPoster(r: Row): { ratingPosterUrl?: string } {
+  if (r.type !== 'movie' && r.type !== 'show') return {};
+  const rp = getSettings().ratingPosters;
+  const t = rp?.urlTemplate;
+  if (!t || !(rp.home || rp.search || rp.detail)) return {};
+  const ids = parseJson<Record<string, string>>(r.external_ids, {});
+  if ((t.includes('{imdb}') && !ids.imdb) || (t.includes('{tmdb}') && !ids.tmdb)) return {};
+  const url = t.replaceAll('{imdb}', encodeURIComponent(ids.imdb ?? '')).replaceAll('{tmdb}', encodeURIComponent(ids.tmdb ?? '')).replaceAll('{type}', r.type === 'show' ? 'tv' : 'movie');
+  const id = stableId('img', url);
+  if (!posterIds.has(id)) {
+    registerImage(url);
+    posterIds.add(id);
+  }
+  return { ratingPosterUrl: imageUrl(id)! };
 }
 
 /** A title's original language; episodes and seasons use their show's. null when TMDB never said. */
@@ -563,6 +590,7 @@ export function setRating(user: User, itemId: string, rating: number | null): Us
   const r = rating === null ? null : Math.max(0, Math.min(10, Number(rating)));
   db.run('UPDATE user_data SET rating = ? WHERE user_id = ? AND item_id = ?', r, user.id, itemId);
   bus.emit('userdata.changed', { userId: user.id, itemId });
+  bus.emit('rating.changed', { user, itemId, rating: r });
   return emitUd(user, itemId);
 }
 
@@ -576,6 +604,7 @@ export function setWatchlist(user: User, itemId: string, on: boolean): UserItemD
     db.run('UPDATE user_data SET not_interested = 0 WHERE user_id = ? AND item_id = ?', user.id, itemId);
   }
   bus.emit('userdata.changed', { userId: user.id, itemId });
+  bus.emit('watchlist.changed', { user, itemId, on });
   return emitUd(user, itemId);
 }
 
@@ -924,6 +953,13 @@ function buildHomeRows(user: User): HomeRow[] {
         case 'watchlist': {
           const items = listWatchlist(user, limit).items;
           if (items.length) rows.push({ id: cfg.id, type: cfg.type, title, items, link: { page: 'watchlist' } });
+          break;
+        }
+        case 'mdblist': {
+          // A public MDBList list: its titles that this viewer can see, in list order (fetched in the background).
+          const ids = mdblistRowIds(cfg.mdblistList);
+          const items = ids.length ? itemsByIds(user, ids).slice(0, limit) : [];
+          if (items.length) rows.push({ id: cfg.id, type: cfg.type, title: title || 'From MDBList', items });
           break;
         }
         case 'recommended':

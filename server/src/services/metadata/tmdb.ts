@@ -15,6 +15,8 @@ export interface RemoteMeta {
   originalTitle?: string | null;
   /** ISO 639-1, e.g. "ja" (TMDB original_language). */
   originalLanguage?: string | null;
+  /** Production companies (movies) or networks (shows) with TMDB ids and logo URLs. */
+  companies?: { id: string; name: string; kind: 'studio' | 'network'; logo: string | null }[];
   overview?: string | null;
   tagline?: string | null;
   year?: number | null;
@@ -176,6 +178,7 @@ export async function movieDetails(id: string): Promise<RemoteMeta | null> {
     contentRating: cert,
     genres: (m.genres ?? []).map((g: any) => g.name),
     studios: (m.production_companies ?? []).slice(0, 3).map((c: any) => c.name),
+    companies: (m.production_companies ?? []).slice(0, 4).map((c: any) => ({ id: String(c.id), name: String(c.name), kind: 'studio' as const, logo: img(c.logo_path, 'w300') })),
     people: credits(m.credits),
     runtimeMin: m.runtime ?? null,
     poster: img(m.poster_path, 'w780'),
@@ -220,6 +223,7 @@ export async function tvDetails(id: string): Promise<RemoteMeta | null> {
     contentRating: cr?.rating ?? null,
     genres: (t.genres ?? []).map((g: any) => g.name),
     studios: (t.networks ?? []).slice(0, 3).map((c: any) => c.name),
+    companies: (t.networks ?? []).slice(0, 4).map((c: any) => ({ id: String(c.id), name: String(c.name), kind: 'network' as const, logo: img(c.logo_path, 'w300') })),
     people,
     runtimeMin: t.episode_run_time?.[0] ?? null,
     poster: img(t.poster_path, 'w780'),

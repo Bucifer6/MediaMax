@@ -11,6 +11,7 @@ import { progressFraction } from '@/utils/format';
 import { playItem } from '@/utils/nav';
 import { prepareVideo } from '@/player/warmup';
 import { useApi, useSession } from '@/state/session';
+import { RatingChips, TraktComments } from './Community';
 import { ActionBar, CastRow, DetailBackdrop, Overview, ResumeInfo, TVDetailBackground, TitleBlock, useUserDataActions } from './common';
 
 export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud: UserItemData) => void }) {
@@ -58,6 +59,7 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
       {extras.data?.length ? <ItemRow title="Extras" items={extras.data} variant="landscape" /> : null}
       {siblings.data?.items.length ? <ItemRow title={item.parentTitle ?? 'Episodes'} items={siblings.data.items} variant="landscape" /> : null}
       <CastRow people={item.people} />
+      {item.type === 'movie' || item.type === 'episode' ? <TraktComments item={item} /> : null}
       {similar.data?.length ? <ItemRow title="More like this" items={similar.data} /> : null}
     </>
   );
@@ -70,6 +72,7 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
           <View style={{ minHeight: t.height * 0.72, justifyContent: 'flex-end', paddingHorizontal: t.space.gutter, paddingBottom: t.space.xl, gap: t.space.md, maxWidth: t.width * 0.62 }}>
             <TitleBlock item={item} />
             <Overview text={item.overview} />
+            <RatingChips item={item} />
             <ResumeInfo item={item} />
             {versionPicker}
             {actions}
@@ -91,6 +94,7 @@ export function VideoDetail({ item, onUserData }: { item: Item; onUserData: (ud:
         {actions}
         {item.type === 'episode' ? <RecapCard itemId={item.id} /> : null}
         <Overview text={item.overview} />
+        <RatingChips item={item} />
       </View>
       {below}
     </ScrollView>

@@ -1,5 +1,5 @@
 # Code map: Vibe (MediaMax)
-Updated: 2026-11-28 (branch claude/phase1-subtitles-skip)
+Updated: 2026-11-28 (branch claude/phase2-tracking-ratings)
 
 ## What this is
 Vibe is a self-hosted media server (movies, TV, live TV/IPTV, DVR, music, audiobooks, podcasts) plus white-label clients:
@@ -55,6 +55,16 @@ Shared API contract: `shared/src/types.ts` (interfaces are extended by declarati
   on a forced re-scan and re-reads markers before writing. The parental-guide URL is admin-set and fetched without following
   redirects (admin-trusted; it is not checked against private addresses). IntroDB submissions are one un-retried POST.
 
+### Tracking & ratings (`server/src/services/tracking.ts`, `trakt.ts`, `simkl.ts`, `mdblist.ts`, `episodeRatings.ts`)
+- Does: two-way Trakt / SIMKL (scrobble + push of plays, My List, ratings; pull imports), Trakt comments, MDBList ratings and
+  list rows, episode ratings grid. Routes in `routes/extras.ts`; tasks `tracking-sync` (6 h) and `mdblist-ratings` (daily) in `tasks.ts`.
+- Owns data: `trakt_accounts` (+ `pull` and `push`, both off until the viewer turns them on; `last_pull*`), `simkl_accounts`; writes `user_data` / `watchlist` only through `tracking.ts`.
+- Watch out: imports write the database directly (never via setPlayed / setWatchlist / setRating) so they aren't pushed back;
+  pushes listen to `items.played`, `watchlist.changed`, `rating.changed` (emitted in `items.ts`). Imports only add.
+  `buildHome` is synchronous, so MDBList rows read a 6 h in-memory cache that loads in the background (first load shows nothing).
+  Studio logos are written to `items.extra.companies` by `metadata/index.ts applyMeta`; rating posters are computed in
+  `rowToItem` (only when a screen uses them) and registered as images; `images.ts` logs remote-image failures by host only.
+
 ### Subtitles (`server/src/services/subtitles.ts`, `autosync.ts`, `subtitleProviders/`)
 - Does: extraction/conversion and serving of tracks; online search/download; AutoSync (`autosync.ts`, pure alignment + route glue).
 - Watch out: AutoSync runs on the request thread (~0.3–0.6 s for a film); see docs/backlog.md.
@@ -72,7 +82,7 @@ Shared API contract: `shared/src/types.ts` (interfaces are extended by declarati
 - Watch out: separate npm project; types come from the synced `src/api/types.ts`.
 
 ### Other areas (not yet mapped in detail)
-`server/src/services/`: livetv/, dvr.ts, music/, dj/, ai/, arr/, metadata/, plugins.ts, trakt.ts, syncplay.ts, smarthome/ …
+`server/src/services/`: livetv/, dvr.ts, music/, dj/, ai/, arr/, metadata/, plugins.ts, syncplay.ts, smarthome/ …
 `web/src/`: admin/, pages/, components/, tv/ · `plugins/` (SDK + examples) · `tv/` (Tizen/webOS packaging) · `docker/`, `packaging/`.
 
 ## Change -> retest
@@ -80,10 +90,12 @@ Shared API contract: `shared/src/types.ts` (interfaces are extended by declarati
 |---|---|---|
 | `shared/src/playerPrefs.ts` | run sync-types; web + mobile players' track choice and skip | `server/test/playback-prefs.test.ts`, web + mobile test suites |
 | `UserPreferences` / `SubtitleStyle` fields | `auth.ts mergePrefs` / `normalizeSubtitleStyle`, web Settings, mobile settings | `playback-prefs.test.ts`, `home-layout.test.ts` |
+| `trakt.ts` / `simkl.ts` / `tracking.ts` | the push listeners never fire on imports; My List / ratings | `server/test/tracking.test.ts` |
 | `ServerSettings` sections | `settings.ts` getSettings/updateSettings/publicSettings (masking) | `playback-prefs.test.ts`, `qa-api.test.ts` |
 | playback start (`startPlayback`) | markers, track choice, warm-up | `qa-playback.test.ts`, `instant-play.test.ts` |
 
 ## Shared things
-- Env overrides for outside services: `MEDIAMAX_<SERVICE>_API_BASE` (e.g. `MEDIAMAX_INTRODB_API_BASE`, `MEDIAMAX_ANISKIP_API_BASE`).
+- Env overrides for outside services: `MEDIAMAX_<SERVICE>_API_BASE` (e.g. `MEDIAMAX_INTRODB_API_BASE`, `MEDIAMAX_ANISKIP_API_BASE`,
+  `MEDIAMAX_MDBLIST_API_BASE`, `MEDIAMAX_TRAKT_API_BASE`, `MEDIAMAX_SIMKL_API_BASE`).
 - Write-only secrets: `settings.ts SECRET_FIELDS` + `SECRET_MASK` ('••••'): a masked value sent back keeps the stored one.
 - Errors: `server/src/util/errors.ts` (`HttpError`, `badRequest`, `forbidden`, `notFound`).

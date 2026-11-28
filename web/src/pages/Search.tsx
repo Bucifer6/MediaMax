@@ -100,7 +100,7 @@ function moveFocus(e: ReactKeyboardEvent<HTMLElement>, container: HTMLElement | 
 }
 
 export function SearchPage() {
-  const { features } = useApp();
+  const { features, system } = useApp();
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState(params.get('q') ?? '');
   const debounced = useDebounced(q.trim(), 250);
@@ -327,7 +327,7 @@ export function SearchPage() {
               <section key={g.key} className="search-group" aria-labelledby={`sg-${g.key}`}>
                 <h2 className="search-section-title" id={`sg-${g.key}`}>{g.label} <span className="search-count">{g.items.length}</span></h2>
                 <div className={`grid grid-${g.key === 'more' ? 'poster' : gridFor(g.types)}`}>
-                  {g.items.map((it: Item) => <PosterCard key={it.id} item={it} width="100%" />)}
+                  {g.items.map((it: Item) => <PosterCard key={it.id} item={it} width="100%" ratingPoster={!!system?.ratingPosterScreens?.search} />)}
                 </div>
               </section>
             ))}
