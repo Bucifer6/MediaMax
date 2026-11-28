@@ -1,8 +1,10 @@
 /**
  * "Who's watching?" — shown after signing in to an account that has profiles, and from Settings → Switch profile.
  * Large focusable tiles for the TV remote; PIN-protected profiles ask for their PIN. Same API as the web app.
+ * The account owner can add profiles here and, with "Manage profiles", edit or delete them (app/profile-edit.tsx).
  */
-import { useEffect, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ApiError } from '@/api/client';
@@ -17,7 +19,26 @@ import { useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 import { useBackHandler } from '@/tv';
 
-function ProfileTile({ p, size, focusFirst, busy, onPress }: { p: AccountProfile; size: number; focusFirst: boolean; busy: boolean; onPress: () => void }) {
+/** "Add profile": a tile like the others with a plus. */
+function AddTile({ size, onPress }: { size: number; onPress: () => void }) {
+  const t = useTheme();
+  return (
+    <Focusable onPress={onPress} ring={false} focusScale={t.isTV ? 1.12 : 1} style={{ alignItems: 'center', gap: t.space.sm, width: size + 24 }} accessibilityLabel="Add profile">
+      {({ focused }) => (
+        <>
+          <View style={{ borderRadius: size * 0.3, borderWidth: t.s(4), borderColor: focused ? t.colors.primary : 'transparent', padding: 2 }}>
+            <View style={{ width: size, height: size, borderRadius: size * 0.24, borderWidth: 2, borderStyle: 'dashed', borderColor: t.colors.border, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="add" size={size * 0.4} color={t.colors.textMuted} />
+            </View>
+          </View>
+          <T weight={focused ? '800' : '600'} tone={focused ? 'default' : 'muted'} center>Add profile</T>
+        </>
+      )}
+    </Focusable>
+  );
+}
+
+function ProfileTile({ p, size, focusFirst, busy, editing, onPress }: { p: AccountProfile; size: number; focusFirst: boolean; busy: boolean; editing?: boolean; onPress: () => void }) {
   const t = useTheme();
   return (
     <Focusable onPress={onPress} hasTVPreferredFocus={focusFirst} ring={false} focusScale={t.isTV ? 1.12 : 1} style={{ alignItems: 'center', gap: t.space.sm, width: size + 24 }}
@@ -35,6 +56,11 @@ function ProfileTile({ p, size, focusFirst, busy, onPress }: { p: AccountProfile
             {busy ? (
               <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
                 <ActivityIndicator color="#fff" />
+              </View>
+            ) : null}
+            {editing ? (
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: size * 0.24 }}>
+                <Icon name="pencil" size={size * 0.3} color="#fff" />
               </View>
             ) : null}
             {p.hasPin && !p.current ? (
@@ -66,13 +92,28 @@ export default function ProfilesScreen() {
   const [pin, setPin] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [managing, setManaging] = useState(false);
+  const [canAdd, setCanAdd] = useState(false);
 
+  // Reloaded whenever the screen shows again (after adding or editing a profile).
+  useFocusEffect(
+    useCallback(() => {
+      if (!api) return;
+      api.accountProfiles().then(setList).catch((e) => setError(e instanceof Error ? e.message : 'Could not load profiles'));
+    }, [api]),
+  );
+  // Only the account owner manages profiles, while the server allows them and there is room for another.
+  const isOwner = !!list?.find((p) => p.current)?.isOwner;
   useEffect(() => {
-    if (!api) return;
-    api.accountProfiles().then(setList).catch((e) => setError(e instanceof Error ? e.message : 'Could not load profiles'));
-  }, [api]);
+    if (!api || !isOwner) return setCanAdd(false);
+    api.profileSettings().then((s) => setCanAdd(s.enabled && (list?.length ?? 0) < s.maxPerAccount)).catch(() => setCanAdd(false));
+  }, [api, isOwner, list?.length]);
 
   useBackHandler(() => {
+    if (managing) {
+      setManaging(false);
+      return true;
+    }
     if (pinFor) {
       setPinFor(null);
       setPin('');
@@ -118,13 +159,25 @@ export default function ProfilesScreen() {
         </View>
       ) : (
         <>
-          <T variant="title" center>Who's watching?</T>
+          <T variant="title" center>{managing ? 'Manage profiles' : "Who's watching?"}</T>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: t.isTV ? t.s(40) : 18, maxWidth: t.isTV ? t.s(1400) : 640 }}>
             {(list ?? []).map((p, i) => (
-              <ProfileTile key={p.id} p={p} size={size} focusFirst={list!.some((x) => x.current) ? p.current : i === 0} busy={busyId === p.id} onPress={() => void enter(p)} />
+              <ProfileTile
+                key={p.id}
+                p={p}
+                size={size}
+                focusFirst={list!.some((x) => x.current) ? p.current : i === 0}
+                busy={busyId === p.id}
+                editing={managing && !p.isOwner}
+                onPress={() => (managing ? (p.isOwner ? undefined : router.push(`/profile-edit?id=${encodeURIComponent(p.id)}` as never)) : void enter(p))}
+              />
             ))}
+            {canAdd && !managing ? <AddTile size={size} onPress={() => router.push('/profile-edit' as never)} /> : null}
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.space.sm, justifyContent: 'center' }}>
+            {isOwner && (list?.length ?? 0) > 1 ? (
+              <Button label={managing ? 'Done' : 'Manage profiles'} variant="secondary" icon={managing ? 'checkmark' : 'pencil'} onPress={() => setManaging((m) => !m)} />
+            ) : null}
             <Button label="Sign out" variant="ghost" icon="log-out-outline" onPress={() => void signOut()} />
           </View>
         </>
