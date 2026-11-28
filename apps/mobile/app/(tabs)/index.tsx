@@ -17,7 +17,6 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { EmptyState, ErrorState, Loading } from '@/components/States';
 import { useTabBarSpace } from '@/components/TabBar';
 import { T } from '@/components/Text';
-import { YourDjCard } from '@/components/YourDjCard';
 import { useCapabilities, useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 import { on } from '@/utils/events';
@@ -99,9 +98,6 @@ function PhoneHome({ rows, refreshing, onRefresh }: { rows: HomeRow[]; refreshin
   const hero = heroStyle !== 'none' ? rows.find((r) => r.type === 'hero') : undefined;
   const logo = branding?.logoWideUrl ?? branding?.logoUrl;
   const bodyRows = rows.filter((r) => r !== hero && r.type !== 'hero');
-  // Your DJ sits right below Continue Watching / Listening and Next Up.
-  let djAt = 0;
-  while (djAt < bodyRows.length && (bodyRows[djAt]!.type === 'continue' || bodyRows[djAt]!.type === 'nextup' || /listen/i.test(bodyRows[djAt]!.id))) djAt++;
 
   return (
     <View style={{ flex: 1 }}>
@@ -112,9 +108,8 @@ function PhoneHome({ rows, refreshing, onRefresh }: { rows: HomeRow[]; refreshin
       >
         {hero ? <HeroCarousel items={hero.items} style={heroStyle === 'static' ? 'static' : 'carousel'} /> : null}
         <DecideChips />
-        {bodyRows.map((row, i) => (
+        {bodyRows.map((row) => (
           <Fragment key={row.id}>
-            {i === djAt ? <YourDjCard /> : null}
             {row.type === 'live-now' || row.type === 'favorite-channels' ? (
               <ChannelRow title={row.title || DEFAULT_TITLES[row.type]} channels={row.channels ?? []} onSeeAll={() => router.push('/(tabs)/live')} />
             ) : (
@@ -122,7 +117,6 @@ function PhoneHome({ rows, refreshing, onRefresh }: { rows: HomeRow[]; refreshin
             )}
           </Fragment>
         ))}
-        {djAt >= bodyRows.length ? <YourDjCard /> : null}
       </ScrollView>
       {/* Floating translucent header */}
       <LinearGradient colors={[t.alpha(t.colors.background, 0.85), 'transparent']} pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top + 6, paddingBottom: 18, paddingHorizontal: t.space.gutter, flexDirection: 'row', alignItems: 'center' }}>
@@ -190,7 +184,6 @@ function TVHome({ rows }: { rows: HomeRow[] }) {
       <ScrollView contentContainerStyle={{ paddingBottom: t.space.xxl }} showsVerticalScrollIndicator={false}>
         <TVSpotlightInfo item={t.theme.heroStyle === 'none' ? null : focused} height={spotlightHeight} />
         <DecideChips />
-        <YourDjCard />
         {rows.map((row, idx) =>
           row.type === 'live-now' || row.type === 'favorite-channels' ? (
             <ChannelRow key={row.id} title={row.title || DEFAULT_TITLES[row.type]} channels={row.channels ?? []} />

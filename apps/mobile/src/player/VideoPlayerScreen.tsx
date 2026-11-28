@@ -771,6 +771,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   /** Up/down: show the next channel in the banner and tune it once you rest on it (OK tunes it straight away). */
   const zap = useCallback(
     (dir: 1 | -1) => {
+      
       if (!isLive || surfChannels.length < 2) return;
       const next = stepChannel(surfChannels, surfPreview?.id ?? channelId, dir);
       if (!next) return;
@@ -1185,6 +1186,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   const pipSupported = !t.isTV && !casting && isPictureInPictureSupported();
   // The receiver is the screen while casting: keep the remote-control UI up.
   const showControls = (controls || casting) && !error;
+  const skipShown = !!activeMarker && !upNext && !error && (activeMarker.type !== 'credits' || !nextId);
   const iconSize = t.isTV ? t.s(30) : 26;
 
   return (
@@ -1202,6 +1204,18 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       />
 
       {casting ? <CastingPanel deviceName={cast.deviceName} title={title} art={info?.backdropUrl ?? info?.posterUrl ?? channel?.logoUrl ?? null} /> : null}
+
+      {/* TV: with the controls hidden nothing else can hold focus, and react-native-tvos only reports remote keys
+          (D-pad, OK) while a view has it: surfing, seeking and OK did nothing. This invisible layer holds it. */}
+      {t.isTV && !showControls && !sheet && !upNext && !skipShown && !error ? (
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          focusable
+          {...({ hasTVPreferredFocus: true } as object)}
+          onPress={() => undefined}
+          accessibilityLabel="Player"
+        />
+      ) : null}
 
       {/* Tap layer (phones) */}
       {!t.isTV ? <Pressable style={StyleSheet.absoluteFill} onPress={() => (controls ? setControls(false) : poke())} /> : null}
@@ -1401,7 +1415,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       ) : null}
 
       {/* Skip intro / credits */}
-      {activeMarker && !upNext && !error && (activeMarker.type !== 'credits' || !nextId) ? (
+      {skipShown ? (
         <View style={{ position: 'absolute', right: t.isTV ? t.space.gutter : Math.max(insets.right, 20), bottom: controls ? (t.isTV ? t.s(200) : 140) : t.isTV ? t.s(60) : 40 }}>
           <Button
             label={({ intro: 'Skip Intro', recap: 'Skip Recap', credits: 'Skip Credits', preview: 'Skip Preview', commercial: 'Skip Ad Break' } as const)[activeMarker.type]}
