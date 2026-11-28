@@ -75,7 +75,7 @@ export default async function liveRoutes(app: FastifyInstance) {
     return live.listChannels(requireUser(req).user, { ...q, limit: toInt(q.limit, 200, 1, 2000), offset: toInt(q.offset, 0, 0), favorite: q.favorite as any, withEpg: q.withEpg === undefined ? true : String(q.withEpg) !== 'false', guideStatus: String(q.guideStatus) === 'true' });
   });
   app.get<{ Params: { id: string } }>('/livetv/channels/:id', async (req) => live.getChannel(requireUser(req).user, req.params.id));
-  app.patch<{ Params: { id: string }; Body: { number?: number; name?: string; hidden?: boolean; epgChannelId?: string; logoUrl?: string } }>('/livetv/channels/:id', async (req) => {
+  app.patch<{ Params: { id: string }; Body: { number?: number; name?: string; hidden?: boolean; epgChannelId?: string; logoUrl?: string; radio?: boolean | null } }>('/livetv/channels/:id', async (req) => {
     const a = requireAdmin(req);
     live.updateChannel(req.params.id, req.body ?? {});
     return live.getChannel(a.user, req.params.id);
@@ -83,7 +83,7 @@ export default async function liveRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>('/livetv/channels/:id/favorite', async (req) => live.setChannelFavorite(requireUser(req).user, req.params.id, true));
   app.delete<{ Params: { id: string } }>('/livetv/channels/:id/favorite', async (req) => live.setChannelFavorite(requireUser(req).user, req.params.id, false));
   app.get<{ Params: { id: string }; Querystring: { start?: string; end?: string } }>('/livetv/channels/:id/programs', async (req) => live.channelPrograms(requireUser(req).user, req.params.id, req.query.start, req.query.end));
-  app.get<{ Querystring: { start?: string; end?: string; categoryId?: string; favorite?: string; offset?: string; limit?: string; sourceId?: string } }>('/livetv/guide', async (req) => {
+  app.get<{ Querystring: { start?: string; end?: string; categoryId?: string; favorite?: string; offset?: string; limit?: string; sourceId?: string; kind?: 'tv' | 'radio' } }>('/livetv/guide', async (req) => {
     const q = req.query;
     return live.guide(requireUser(req).user, { ...q, offset: toInt(q.offset, 0, 0), limit: toInt(q.limit, 300, 1, 1000) });
   });
@@ -100,33 +100,48 @@ export default async function liveRoutes(app: FastifyInstance) {
       if (s && s.ctx.user.id !== a.user.id) throw forbidden();
     }
     if (req.query.catchupStart && !r.has_archive) throw forbidden('This channel does not support catch-up');
-    const src = live.getSourceRow(r.source_id);
-    if (!src.proxy_streams) throw forbidden('This source is not restreamed by the server');
     const start = req.query.catchupStart ? new Date(req.query.catchupStart) : null;
     if (start && (Number.isNaN(start.getTime()) || start.getTime() > Date.now())) throw forbidden('Invalid catch-up time');
-    const url = live.channelStreamUrl(r, start ? { start, durationMin: toInt(req.query.duration, 60, 1, 600) } : undefined);
-    // Check and reserve in one step (no await in between), so concurrent requests can't all pass the limit.
-    live.checkConnectionLimit(src);
-    live.trackUpstream(r.source_id, 1);
+    // Fallback mode: the same channel on the next source when this one's tuners are busy or it won't start.
+    const rows = await live.channelCandidates(r, { catchup: !!start });
     const ctrl = new AbortController();
     let keepAlive: ReturnType<typeof setInterval> | null = null;
     let released = false;
+    let reserved: string | null = null;
+    const unreserve = () => {
+      if (reserved) live.trackUpstream(reserved, -1);
+      reserved = null;
+    };
     const release = () => {
       if (released) return;
       released = true;
-      live.trackUpstream(r.source_id, -1);
+      unreserve();
       if (keepAlive) clearInterval(keepAlive);
       ctrl.abort();
     };
     // Registered before opening: a client that leaves while the provider is still connecting frees the slot.
     req.raw.on('close', release);
-    let body: Awaited<ReturnType<typeof live.openChannelStream>>;
-    try {
-      body = await live.openChannelStream(r, url, ctrl.signal);
-    } catch (e) {
-      release();
-      // An unreachable provider is a bad gateway, not a server error.
-      throw e instanceof HttpError ? e : new HttpError(502, `Could not reach the provider: ${(e as Error).message}`, 'stream_failed');
+    let body: Awaited<ReturnType<typeof live.openChannelStream>> | null = null;
+    for (let i = 0; !body; i++) {
+      const row = rows[i]!;
+      try {
+        const src = live.getSourceRow(row.source_id);
+        if (!src.proxy_streams) throw forbidden('This source is not restreamed by the server');
+        const url = live.channelStreamUrl(row, start ? { start, durationMin: toInt(req.query.duration, 60, 1, 600) } : undefined);
+        // Check and reserve in one step (no await in between), so concurrent requests can't all pass the limit.
+        live.checkConnectionLimit(src);
+        live.trackUpstream(row.source_id, 1);
+        reserved = row.source_id;
+        body = await live.openChannelStream(row, url, ctrl.signal);
+      } catch (e) {
+        unreserve();
+        // An unreachable provider is a bad gateway, not a server error.
+        const err = e instanceof HttpError ? e : new HttpError(502, `Could not reach the provider: ${(e as Error).message}`, 'stream_failed');
+        if (released || i >= rows.length - 1 || !(live.isTunerFailure(err) || err.statusCode === 403)) {
+          release();
+          throw err;
+        }
+      }
     }
     if (released) {
       body.destroy();

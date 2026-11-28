@@ -104,7 +104,7 @@ export default function GuidePage() {
       setLoading(true);
       setError(null);
       try {
-        const g = await api.livetv.guide({ start: new Date(start).toISOString(), end: new Date(end).toISOString(), categoryId: categoryId || undefined, favorite: fav || undefined, offset, limit: PAGE });
+        const g = await api.livetv.guide({ start: new Date(start).toISOString(), end: new Date(end).toISOString(), categoryId: categoryId || undefined, favorite: fav || undefined, offset, limit: PAGE, kind: 'tv' });
         if (id !== req.current) return;
         setChannels((c) => (offset ? [...c, ...g.channels] : g.channels));
         setPrograms((prev) => {

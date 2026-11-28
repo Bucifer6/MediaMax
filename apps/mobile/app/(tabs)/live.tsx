@@ -19,7 +19,8 @@ import { formatTime, programProgress } from '@/utils/format';
 import { playChannel } from '@/utils/nav';
 
 const PAGE = 100;
-type Cat = 'all' | 'fav' | string;
+/** 'radio': the radio stations (a tuner's audio-only services); everything else lists TV channels. */
+type Cat = 'all' | 'fav' | 'radio' | string;
 
 export default function LiveScreen() {
   const t = useTheme();
@@ -28,6 +29,8 @@ export default function LiveScreen() {
   const bottom = useTabBarSpace();
   const cats = useQuery('livetv:categories', (a) => a.categories(), { staleMs: 300000 });
   const [cat, setCat] = useState<Cat>('all');
+  const radio = useQuery('livetv:radio-count', (a) => a.channels({ kind: 'radio', limit: 1, withEpg: false }).then((r) => r.total), { staleMs: 300000 });
+  const hasRadio = (radio.data ?? 0) > 0;
   const [channels, setChannels] = useState<Channel[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -37,7 +40,11 @@ export default function LiveScreen() {
   const [, setTick] = useState(0);
 
   const query = useCallback(
-    (offset: number) => api.channels({ categoryId: cat !== 'all' && cat !== 'fav' ? cat : undefined, favorite: cat === 'fav' ? true : undefined, limit: PAGE, offset, withEpg: true }),
+    (offset: number) =>
+      api.channels({
+        categoryId: cat !== 'all' && cat !== 'fav' && cat !== 'radio' ? cat : undefined, favorite: cat === 'fav' ? true : undefined, limit: PAGE, offset, withEpg: true,
+        kind: cat === 'radio' ? 'radio' : 'tv',
+      }),
     [api, cat],
   );
 
@@ -93,8 +100,9 @@ export default function LiveScreen() {
     [api, cat, reload],
   );
 
-  const categories = (cats.data ?? []).filter((c) => !c.hidden).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
-  const categoryId = cat !== 'all' && cat !== 'fav' ? cat : undefined;
+  // A tuner's own "Radio" group is the Radio chip.
+  const categories = (cats.data ?? []).filter((c) => !c.hidden && !(hasRadio && /^radio$/i.test(c.name))).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+  const categoryId = cat !== 'all' && cat !== 'fav' && cat !== 'radio' ? cat : undefined;
 
   return (
     <Screen padTop={!t.isTV}>
@@ -111,6 +119,7 @@ export default function LiveScreen() {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: t.space.sm, paddingHorizontal: t.space.gutter, paddingVertical: t.space.sm }}>
         <Chip label="All channels" selected={cat === 'all'} onPress={() => setCat('all')} hasTVPreferredFocus />
         <Chip label="Favourites" icon="star" selected={cat === 'fav'} onPress={() => setCat('fav')} />
+        {hasRadio ? <Chip label="Radio" icon="radio-outline" selected={cat === 'radio'} onPress={() => setCat('radio')} /> : null}
         {categories.map((c) => (
           <Chip key={c.id} label={c.name} selected={cat === c.id} onPress={() => setCat(c.id)} />
         ))}
@@ -121,7 +130,7 @@ export default function LiveScreen() {
       ) : error && !channels.length ? (
         <ErrorState error={error} onRetry={reload} />
       ) : !channels.length ? (
-        <EmptyState icon="tv-outline" title={cat === 'fav' ? 'No favourites yet' : 'No channels'} message={cat === 'fav' ? 'Tap the star on a channel to pin it here.' : 'Your administrator has not added any live TV sources yet.'} />
+        <EmptyState icon="tv-outline" title={cat === 'fav' ? 'No favourites yet' : cat === 'radio' ? 'No radio stations' : 'No channels'} message={cat === 'fav' ? 'Tap the star on a channel to pin it here.' : 'Your administrator has not added any live TV sources yet.'} />
       ) : (
         <FlatList
           data={channels}

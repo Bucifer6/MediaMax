@@ -660,6 +660,9 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS dj_host_log_user ON dj_host_log(user_id, kind, at);
   CREATE TABLE IF NOT EXISTS dj_cache (key TEXT PRIMARY KEY, data TEXT NOT NULL, fetched_at TEXT NOT NULL);
   `,
+  /* Live TV: radio stations (audio-only services from a tuner lineup or radio="true" in an M3U) are listed apart from TV. */ `
+  ALTER TABLE channels ADD COLUMN radio INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 function migrate(db: Database) {

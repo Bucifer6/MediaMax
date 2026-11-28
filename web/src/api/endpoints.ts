@@ -280,7 +280,7 @@ export const api = {
     setFavorite: (id: string, fav: boolean) =>
       fav ? http.post<{ favorite: boolean }>(`/livetv/channels/${enc(id)}/favorite`) : http.del<{ favorite: boolean }>(`/livetv/channels/${enc(id)}/favorite`),
     programs: (id: string, start?: string, end?: string) => http.get<Program[]>(`/livetv/channels/${enc(id)}/programs`, { start, end }),
-    guide: (q: { start?: string; end?: string; categoryId?: string; favorite?: boolean; offset?: number; limit?: number }, signal?: AbortSignal) =>
+    guide: (q: { start?: string; end?: string; categoryId?: string; favorite?: boolean; offset?: number; limit?: number; kind?: 'tv' | 'radio' }, signal?: AbortSignal) =>
       http.get<GuideResponse>('/livetv/guide', q, signal),
     play: (id: string, body: LivePlayRequest = {}) => http.post<PlaybackInfo>(`/livetv/channels/${enc(id)}/play`, body),
   },

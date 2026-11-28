@@ -11,6 +11,8 @@ export interface M3uEntry {
   catchupSource: string | null;
   catchupDays: number;
   userAgent: string | null;
+  /** radio="true" (Kodi/TVHeadend playlists): an audio-only station. */
+  radio?: boolean;
 }
 
 export interface M3uPlaylist {
@@ -59,6 +61,7 @@ export function parseM3u(text: string): M3uPlaylist {
         catchupSource: attrs['catchup-source'] || null,
         catchupDays: Number(attrs['catchup-days'] || attrs['timeshift'] || 0) || 0,
         userAgent: attrs['user-agent'] || null,
+        radio: /^(true|1|yes)$/i.test(attrs['radio'] ?? ''),
       };
       continue;
     }

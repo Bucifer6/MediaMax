@@ -19,29 +19,29 @@ export const BUILTIN_THEMES: Theme[] = [
   // 'mediamax-light' so existing settings and preferences keep working. The rose is the AA-safe shade for a white label
   // (≥ 4.5:1); the web app derives the brighter spec rose (#F0588C) from it for highlights on dark surfaces.
   {
-    ...base, id: 'mediamax', name: 'Vibe Rose', mode: 'dark', radius: 14, heroStyle: 'static', brandGradient: ['#FF8A5C', '#E2498A', '#7C5CFF'],
+    ...base, id: 'mediamax', name: 'Vibe Rose', mode: 'dark', radius: 14, heroStyle: 'carousel', brandGradient: ['#FF8A5C', '#E2498A', '#7C5CFF'],
     colors: { primary: '#D23A72', primaryText: '#FFFFFF', background: '#0C0C10', surface: '#15151B', surfaceAlt: '#1D1D25', text: '#F2F1F6', textMuted: '#B4B2C2', accent: '#8C6BFF', border: '#2A2A33', success: '#3DD68C', warning: '#F5B53D', danger: '#FF5D6C', overlay: '#0C0C10' },
   },
   {
-    ...base, id: 'mediamax-light', name: 'Vibe Rose Light', mode: 'light', radius: 14, heroStyle: 'static', brandGradient: ['#FF8A5C', '#E2498A', '#7C5CFF'],
+    ...base, id: 'mediamax-light', name: 'Vibe Rose Light', mode: 'light', radius: 14, heroStyle: 'carousel', brandGradient: ['#FF8A5C', '#E2498A', '#7C5CFF'],
     colors: { primary: '#C8336A', primaryText: '#FFFFFF', background: '#F7F6FA', surface: '#FFFFFF', surfaceAlt: '#F0EEF5', text: '#15131C', textMuted: '#4E4B5C', accent: '#6A4BF0', border: '#E1DEEA', success: '#15803D', warning: '#B45309', danger: '#D12A4A', overlay: '#F7F6FA' },
   },
   // Vibe colour-scheme alternatives: same graphite approach, a different accent family. Aurora is cool (teal + sky),
   // Ember is warm (orange + amber); each has an AA-checked dark and light version (server/test/brand.test.ts).
   {
-    ...base, id: 'vibe-aurora', name: 'Vibe Aurora', mode: 'dark', radius: 14, heroStyle: 'static', brandGradient: ['#7CF0D2', '#2BC4B0', '#5A8CFF'],
+    ...base, id: 'vibe-aurora', name: 'Vibe Aurora', mode: 'dark', radius: 14, heroStyle: 'carousel', brandGradient: ['#7CF0D2', '#2BC4B0', '#5A8CFF'],
     colors: { primary: '#2BC4B0', primaryText: '#04201C', background: '#0A0E11', surface: '#121820', surfaceAlt: '#1A222C', text: '#EEF5F7', textMuted: '#A9B8C2', accent: '#5AA2FF', border: '#26303B', success: '#3DD68C', warning: '#F5B53D', danger: '#FF5D6C', overlay: '#0A0E11' },
   },
   {
-    ...base, id: 'vibe-aurora-light', name: 'Vibe Aurora Light', mode: 'light', radius: 14, heroStyle: 'static', brandGradient: ['#7CF0D2', '#2BC4B0', '#5A8CFF'],
+    ...base, id: 'vibe-aurora-light', name: 'Vibe Aurora Light', mode: 'light', radius: 14, heroStyle: 'carousel', brandGradient: ['#7CF0D2', '#2BC4B0', '#5A8CFF'],
     colors: { primary: '#0B7F73', primaryText: '#FFFFFF', background: '#F4F8F9', surface: '#FFFFFF', surfaceAlt: '#E9F0F2', text: '#0E1A1F', textMuted: '#45565E', accent: '#2563EB', border: '#D9E3E6', success: '#15803D', warning: '#B45309', danger: '#D12A4A', overlay: '#F4F8F9' },
   },
   {
-    ...base, id: 'vibe-ember', name: 'Vibe Ember', mode: 'dark', radius: 14, heroStyle: 'static', brandGradient: ['#FFD166', '#FF8A4C', '#F0506E'],
+    ...base, id: 'vibe-ember', name: 'Vibe Ember', mode: 'dark', radius: 14, heroStyle: 'carousel', brandGradient: ['#FFD166', '#FF8A4C', '#F0506E'],
     colors: { primary: '#FF8A4C', primaryText: '#241004', background: '#0F0C0A', surface: '#1A1512', surfaceAlt: '#241D19', text: '#F8F2EE', textMuted: '#C2B3A9', accent: '#FFC15E', border: '#352B25', success: '#3DD68C', warning: '#F5B53D', danger: '#FF5D6C', overlay: '#0F0C0A' },
   },
   {
-    ...base, id: 'vibe-ember-light', name: 'Vibe Ember Light', mode: 'light', radius: 14, heroStyle: 'static', brandGradient: ['#FFD166', '#FF8A4C', '#F0506E'],
+    ...base, id: 'vibe-ember-light', name: 'Vibe Ember Light', mode: 'light', radius: 14, heroStyle: 'carousel', brandGradient: ['#FFD166', '#FF8A4C', '#F0506E'],
     colors: { primary: '#B8460F', primaryText: '#FFFFFF', background: '#FBF7F3', surface: '#FFFFFF', surfaceAlt: '#F3ECE5', text: '#1E140E', textMuted: '#5C4B40', accent: '#A15C00', border: '#E8DED5', success: '#15803D', warning: '#B45309', danger: '#D12A4A', overlay: '#FBF7F3' },
   },
   {
@@ -101,7 +101,7 @@ export const BUILTIN_THEMES: Theme[] = [
     colors: { primary: '#39ff14', primaryText: '#04110a', background: '#07090c', surface: '#0f1318', surfaceAlt: '#171d24', text: '#e6ffe0', textMuted: '#86a58a', accent: '#ff3cac', border: '#1f2a33', success: '#39ff14', warning: '#ffe600', danger: '#ff3860', overlay: '#07090c' },
   },
   {
-    ...base, id: 'noir', name: 'Film Noir', mode: 'dark', radius: 2, posterShape: 'square', heroStyle: 'static',
+    ...base, id: 'noir', name: 'Film Noir', mode: 'dark', radius: 2, posterShape: 'square', heroStyle: 'carousel',
     fontFamily: "'Playfair Display', Georgia, serif", fontUrl: 'https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700;800&display=swap',
     colors: { primary: '#e8e3d9', primaryText: '#0c0c0c', background: '#0c0c0c', surface: '#161616', surfaceAlt: '#202020', text: '#f1ede4', textMuted: '#9c978d', accent: '#c8a96a', border: '#2a2a2a', success: '#9ccf8d', warning: '#d9b45a', danger: '#d46a6a', overlay: '#0c0c0c' },
   },
@@ -115,11 +115,11 @@ export const BUILTIN_THEMES: Theme[] = [
     colors: { primary: '#d4a373', primaryText: '#1a120b', background: '#15100c', surface: '#1f1812', surfaceAlt: '#2a2119', text: '#f6eee6', textMuted: '#b4a596', accent: '#e9c46a', border: '#352a21', success: '#90c695', warning: '#e9c46a', danger: '#e76f51', overlay: '#15100c' },
   },
   {
-    ...base, id: 'slate', name: 'Slate Pro', mode: 'dark', radius: 8, heroStyle: 'static', cardSize: 'small',
+    ...base, id: 'slate', name: 'Slate Pro', mode: 'dark', radius: 8, heroStyle: 'carousel', cardSize: 'small',
     colors: { primary: '#60a5fa', primaryText: '#06162b', background: '#0f1115', surface: '#171a20', surfaceAlt: '#1f232b', text: '#e5e7eb', textMuted: '#9ca3af', accent: '#f59e0b', border: '#2a2f38', success: '#22c55e', warning: '#f59e0b', danger: '#ef4444', overlay: '#0f1115' },
   },
   {
-    ...base, id: 'paper', name: 'Paper White', mode: 'light', radius: 10, heroStyle: 'static',
+    ...base, id: 'paper', name: 'Paper White', mode: 'light', radius: 10, heroStyle: 'carousel',
     fontFamily: "'Source Serif 4', Georgia, serif", fontUrl: 'https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&display=swap',
     colors: { primary: '#1f2937', primaryText: '#ffffff', background: '#fbfaf7', surface: '#ffffff', surfaceAlt: '#f1efe9', text: '#1c1917', textMuted: '#6b6560', accent: '#b45309', border: '#e7e3da', success: '#15803d', warning: '#b45309', danger: '#b91c1c', overlay: '#fbfaf7' },
   },
@@ -138,12 +138,12 @@ export const BUILTIN_THEMES: Theme[] = [
     colors: { primary: '#2563eb', primaryText: '#ffffff', background: '#fffbea', surface: '#ffffff', surfaceAlt: '#fff1c2', text: '#1e293b', textMuted: '#64748b', accent: '#f97316', border: '#fde68a', success: '#16a34a', warning: '#ea580c', danger: '#dc2626', overlay: '#fffbea' },
   },
   {
-    ...base, id: 'contrast', name: 'High Contrast', mode: 'dark', radius: 6, posterShape: 'square', cardSize: 'large', heroStyle: 'static',
+    ...base, id: 'contrast', name: 'High Contrast', mode: 'dark', radius: 6, posterShape: 'square', cardSize: 'large', heroStyle: 'carousel',
     fontFamily: "'Atkinson Hyperlegible', system-ui, sans-serif", fontUrl: 'https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap',
     colors: { primary: '#ffd400', primaryText: '#000000', background: '#000000', surface: '#0d0d0d', surfaceAlt: '#1a1a1a', text: '#ffffff', textMuted: '#d6d6d6', accent: '#00e5ff', border: '#ffffff', success: '#00ff7f', warning: '#ffd400', danger: '#ff6b6b', overlay: '#000000' },
   },
   {
-    ...base, id: 'stadium', name: 'Stadium (Sports)', mode: 'dark', radius: 8, heroStyle: 'static',
+    ...base, id: 'stadium', name: 'Stadium (Sports)', mode: 'dark', radius: 8, heroStyle: 'carousel',
     fontFamily: "'Barlow', system-ui, sans-serif", fontUrl: 'https://fonts.googleapis.com/css2?family=Barlow:wght@500;600;800&display=swap',
     colors: { primary: '#22c55e', primaryText: '#04130a', background: '#0b0f0c', surface: '#121a14', surfaceAlt: '#1a241c', text: '#f0fdf4', textMuted: '#94a99a', accent: '#facc15', border: '#233026', success: '#22c55e', warning: '#facc15', danger: '#ef4444', overlay: '#0b0f0c' },
   },

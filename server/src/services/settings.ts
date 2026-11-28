@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   metadataLanguage: 'en-US',
   scanIntervalMinutes: 360,
   epgRefreshHours: 12,
+  liveTvSourceMode: 'failover',
   transcoding: {
     enabled: true,
     hwAccel: (process.env.MEDIAMAX_HWACCEL as ServerSettings['transcoding']['hwAccel']) ?? 'none',
@@ -294,6 +295,7 @@ function normaliseNumbers(s: ServerSettings) {
   const d = DEFAULT_SETTINGS;
   s.scanIntervalMinutes = clampInt(s.scanIntervalMinutes, 0, 7 * 24 * 60, d.scanIntervalMinutes);
   s.epgRefreshHours = clampInt(s.epgRefreshHours, 1, 24 * 7, d.epgRefreshHours);
+  if (s.liveTvSourceMode !== 'separate') s.liveTvSourceMode = 'failover';
   s.sessionTimeoutDays = clampInt(s.sessionTimeoutDays, 0, 3650, d.sessionTimeoutDays ?? 90); // 0 = never expire
   const t = s.transcoding;
   t.maxConcurrent = clampInt(t.maxConcurrent, 1, 64, d.transcoding.maxConcurrent);

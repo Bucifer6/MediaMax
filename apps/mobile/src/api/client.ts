@@ -779,7 +779,7 @@ export class MediaMaxClient {
   channelPrograms(id: string, start?: string, end?: string) {
     return this.get<Program[]>(`/livetv/channels/${encodeURIComponent(id)}/programs`, { start, end });
   }
-  guide(q: { start?: string; end?: string; categoryId?: string; favorite?: boolean; offset?: number; limit?: number }, signal?: AbortSignal) {
+  guide(q: { start?: string; end?: string; categoryId?: string; favorite?: boolean; offset?: number; limit?: number; kind?: 'tv' | 'radio' }, signal?: AbortSignal) {
     return this.get<GuideResponse>('/livetv/guide', q, signal);
   }
   playChannel(id: string, body: LivePlayRequest = {}) {
