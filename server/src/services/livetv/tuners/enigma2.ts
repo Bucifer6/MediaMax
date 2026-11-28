@@ -5,6 +5,7 @@
  *   picons at /picon/<sref with _>.png; streams on port 8001 (http://box:8001/<sRef>), transcoding on 8002.
  * OpenWebif authentication is HTTP Basic; "streamauth" puts the same Basic login on port 8001.
  */
+import { USER_AGENT } from '../../../util/userAgent.js';
 import { TunerHttp, TunerHttpError, baseUrl, withUserInfo } from './http.js';
 import { isoFromUnix, type GuideSink, type TunerCategory, type TunerChannel, type TunerDevice, type TunerOptions, type TunerSync } from './types.js';
 
@@ -19,7 +20,7 @@ export interface E2SourceLike {
 export interface E2Service { servicereference: string; servicename: string; pos?: number; picon?: string; program?: number }
 interface E2Event { sref?: string; sname?: string; title?: string; shortdesc?: string; longdesc?: string; begin_timestamp?: number; duration_sec?: number; genre?: string; id?: number }
 
-export const client = (s: E2SourceLike) => new TunerHttp({ username: s.username, password: s.password, authType: s.options.authType ?? 'auto' }, s.userAgent || 'Kinora/1.0');
+export const client = (s: E2SourceLike) => new TunerHttp({ username: s.username, password: s.password, authType: s.options.authType ?? 'auto' }, s.userAgent || USER_AGENT);
 const api = (s: E2SourceLike, path: string, params: Record<string, string> = {}) => {
   const u = new URL(`${baseUrl(s.url)}${path}`);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);

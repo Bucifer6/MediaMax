@@ -1,5 +1,5 @@
 // Vibe tray app for Windows: runs the server in the background and puts an icon in the notification area,
-// like other Windows media servers. Installed next to kinora.exe by the setup program (vibe.iss).
+// like other Windows media servers. Installed next to vibe.exe by the setup program (vibe.iss).
 //
 // Built on the Windows release runner with the C# compiler that ships with the .NET Framework
 // (scripts/build-installer.mjs), so it must stay C# 5: no string interpolation, no ?. operator.
@@ -9,7 +9,7 @@
 //   VibeTray.exe --autostart on   start at sign-in (HKCU Run) on/off, then exit (used by the installer)
 //   VibeTray.exe --quit           stop a running tray app (and the server it started), then exit
 //
-// When Vibe is installed as a background service (the "Kinora" scheduled task, running as SYSTEM), the tray
+// When Vibe is installed as a background service (the "Vibe" scheduled task, running as SYSTEM), the tray
 // app never starts a second server: it only shows the status and opens the web app.
 using System;
 using System.Diagnostics;
@@ -93,10 +93,12 @@ namespace Vibe.Tray
     {
         internal static string Env(string name)
         {
-            string v = Environment.GetEnvironmentVariable("KINORA_" + name);
+            // VIBE_, then the names used before the rename (KINORA_, MEDIAMAX_).
+            string v = Environment.GetEnvironmentVariable("VIBE_" + name);
+            if (String.IsNullOrEmpty(v)) v = Environment.GetEnvironmentVariable("KINORA_" + name);
             if (String.IsNullOrEmpty(v)) v = Environment.GetEnvironmentVariable("MEDIAMAX_" + name);
             // The installer stores the port machine-wide; a tray started before that change still sees it.
-            if (String.IsNullOrEmpty(v)) v = Environment.GetEnvironmentVariable("KINORA_" + name, EnvironmentVariableTarget.Machine);
+            if (String.IsNullOrEmpty(v)) v = Environment.GetEnvironmentVariable("VIBE_" + name, EnvironmentVariableTarget.Machine);
             return String.IsNullOrEmpty(v) ? null : v;
         }
 
@@ -118,8 +120,13 @@ namespace Vibe.Tray
                 string d = Env("DATA");
                 if (d != null) return d;
                 string pd = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-                string fresh = Path.Combine(pd, "Kinora"), legacy = Path.Combine(pd, "MediaMax");
-                return !Directory.Exists(fresh) && Directory.Exists(legacy) ? legacy : fresh;
+                // %ProgramData%\Vibe; a folder still named Kinora or MediaMax (not yet moved by setup) is used as it is.
+                foreach (string n in new string[] { "Vibe", "Kinora", "MediaMax" })
+                {
+                    string d2 = Path.Combine(pd, n);
+                    if (Directory.Exists(d2)) return d2;
+                }
+                return Path.Combine(pd, "Vibe");
             }
         }
 
@@ -133,7 +140,7 @@ namespace Vibe.Tray
         readonly System.Windows.Forms.Timer timer;
         readonly SynchronizationContext ui;
         readonly EventWaitHandle quitEvent;
-        Process server;          // the kinora.exe this tray app started, if any
+        Process server;          // the vibe.exe this tray app started, if any
         bool stopping;
         bool openWhenReady;
         bool lastUp;
@@ -194,14 +201,19 @@ namespace Vibe.Tray
 
         static bool ServiceInstalled()
         {
-            // Set by the installer when it registers the boot-time "Kinora" task (service mode). A task registered
+            // Set by the installer when it registers the boot-time "Vibe" task (service mode). A task registered
             // by hand with install-service.ps1 is not seen here, but then the server answers and is left alone.
             try
             {
-                using (RegistryKey k = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Kinora"))
+                // SOFTWARE\Kinora until setup moved it to SOFTWARE\Vibe.
+                foreach (string name in new string[] { @"SOFTWARE\Vibe", @"SOFTWARE\Kinora" })
                 {
-                    return k != null && Convert.ToInt32(k.GetValue("ServiceMode", 0)) == 1;
+                    using (RegistryKey k = Registry.LocalMachine.OpenSubKey(name))
+                    {
+                        if (k != null) return Convert.ToInt32(k.GetValue("ServiceMode", 0)) == 1;
+                    }
                 }
+                return false;
             }
             catch { return false; }
         }
@@ -230,10 +242,10 @@ namespace Vibe.Tray
         {
             if (stopping || (server != null && !server.HasExited)) return;
             if (ServiceInstalled() || Healthy()) return; // someone else runs it
-            string exe = Path.Combine(Settings.AppDir, "kinora.exe");
+            string exe = Path.Combine(Settings.AppDir, "vibe.exe");
             if (!File.Exists(exe))
             {
-                icon.ShowBalloonTip(10000, "Vibe", "kinora.exe was not found next to VibeTray.exe. Reinstall Vibe.", ToolTipIcon.Error);
+                icon.ShowBalloonTip(10000, "Vibe", "vibe.exe was not found next to VibeTray.exe. Reinstall Vibe.", ToolTipIcon.Error);
                 return;
             }
             ProcessStartInfo psi = new ProcessStartInfo(exe);
@@ -245,9 +257,9 @@ namespace Vibe.Tray
             psi.RedirectStandardError = true;
             // Pass on the machine-wide settings the installer wrote, which a tray started from an older
             // environment block (e.g. right after setup) would not have inherited.
-            psi.EnvironmentVariables["KINORA_PORT"] = Settings.Port.ToString();
+            psi.EnvironmentVariables["VIBE_PORT"] = Settings.Port.ToString();
             string data = Settings.Env("DATA");
-            if (data != null) psi.EnvironmentVariables["KINORA_DATA"] = data;
+            if (data != null) psi.EnvironmentVariables["VIBE_DATA"] = data;
             try
             {
                 Process p = Process.Start(psi);

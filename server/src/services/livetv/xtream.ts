@@ -1,3 +1,4 @@
+import { USER_AGENT } from '../../util/userAgent.js';
 import type { XtreamAccountInfo } from '@mediamax/shared';
 
 /** Minimal, robust Xtream Codes (player_api.php) client. */
@@ -20,7 +21,7 @@ async function getJson<T>(c: XtreamCreds, params: Record<string, string>, timeou
   url.searchParams.set('username', c.username);
   url.searchParams.set('password', c.password);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const res = await fetch(url, { headers: { 'User-Agent': c.userAgent || 'Kinora/1.0', Accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
+  const res = await fetch(url, { headers: { 'User-Agent': c.userAgent || USER_AGENT, Accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new Error(`Provider returned HTTP ${res.status}`);
   const text = await res.text();
   if (!text.trim()) return [] as unknown as T;

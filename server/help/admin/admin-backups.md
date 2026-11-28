@@ -24,8 +24,12 @@ Backups are stored in the `backups` folder inside the data folder. Copy that fol
 | Install | Data folder |
 |---|---|
 | Docker / NAS | whatever you mapped to `/config` |
-| Windows | `C:\ProgramData\Kinora` |
-| Linux service | `/var/lib/mediamax` |
+| Windows | `C:\ProgramData\Vibe` |
+| Linux service | `/var/lib/vibe` |
+
+The database is `vibe.db` inside the data folder. Upgrading from an install made before the rename to Vibe moves
+`C:\ProgramData\Kinora` (or `\MediaMax`) to `C:\ProgramData\Vibe` and renames `mediamax.db` to `vibe.db`
+automatically; there is no need to rename or move anything by hand. Backups made before the rename restore normally.
 
 ## Restoring
 

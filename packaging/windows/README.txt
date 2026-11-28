@@ -7,8 +7,8 @@ Everything Vibe needs is in this folder. Nothing else has to be installed.
 Prefer a normal Windows installer (tray icon, Start menu, uninstaller)? Download
 vibe-@VERSION@-windows-x64-setup.exe from the same Releases page instead of this zip.
 
-  kinora.exe            the server (Node.js is built in)
-  web\                  the web app it serves (keep it next to kinora.exe)
+  vibe.exe              the server (Node.js is built in)
+  web\                  the web app it serves (keep it next to vibe.exe)
   ffmpeg.exe, ffprobe.exe   FFmpeg, used for transcoding, thumbnails and live TV
   Vibe.cmd            starts Vibe and opens it in your browser
   install-service.ps1   runs Vibe at boot in the background (Task Scheduler, as SYSTEM)
@@ -33,14 +33,14 @@ Run at boot (recommended for a home server)
 
      powershell -ExecutionPolicy Bypass -File .\install-service.ps1
 
-This copies Vibe to C:\Program Files\Vibe (or updates an earlier install in C:\Program Files\Kinora), registers a "Kinora" scheduled task (names kept from before the rename to Vibe) that starts at
-boot as SYSTEM (no sign-in needed) and opens TCP 8484 (and UDP 1900 for DLNA) in Windows Firewall.
+This copies Vibe to C:\Program Files\Vibe (or updates an earlier install in C:\Program Files\Kinora), registers a "Vibe"
+scheduled task that starts at boot as SYSTEM (no sign-in needed) and opens TCP 8484 (and UDP 1900 for DLNA) in Windows Firewall.
 Options: -Port 9000, -AllNetworkProfiles (also open the firewall on "Public" networks),
 -User nasuser (run as that Windows account instead of SYSTEM, for NAS shares that need a password; asks for
 its password, or -PasswordFile pw.txt), -System (back to SYSTEM).
 
-  Stop:       Disable-ScheduledTask Kinora; Stop-ScheduledTask Kinora
-  Start:      Enable-ScheduledTask Kinora; Start-ScheduledTask Kinora
+  Stop:       Disable-ScheduledTask Vibe; Stop-ScheduledTask Vibe
+  Start:      Enable-ScheduledTask Vibe; Start-ScheduledTask Vibe
   Uninstall:  .\install-service.ps1 -Uninstall          (add -RemoveData to delete the data as well)
 
 Running as SYSTEM, Vibe cannot see drive letters mapped by a user. Add NAS folders as UNC paths
@@ -56,11 +56,12 @@ the files in this folder.
 
 Where the data lives
 --------------------
-%ProgramData%\Kinora (usually C:\ProgramData\Kinora): database, artwork, branding, logs, backups.
-A computer that ran MediaMax before keeps using %ProgramData%\MediaMax (as long as there is no
-%ProgramData%\Kinora folder), so nothing has to be moved. Set the environment variable KINORA_DATA to
-use another folder.
+%ProgramData%\Vibe (usually C:\ProgramData\Vibe): database (vibe.db), artwork, branding, logs, backups.
+Upgrading a computer set up before the rename to Vibe (Kinora or MediaMax) moves %ProgramData%\Kinora or
+%ProgramData%\MediaMax to %ProgramData%\Vibe while Vibe is stopped, and replaces the old "Kinora" task and
+firewall rules; the database is renamed from mediamax.db to vibe.db the first time the new version starts.
+Set the environment variable VIBE_DATA to use another folder.
 
-Other settings (environment variables): KINORA_PORT, KINORA_TRANSCODE_DIR, KINORA_RECORDINGS,
-KINORA_FFMPEG / KINORA_FFPROBE (default: the copies in this folder), KINORA_WEB_DIR.
-The original MEDIAMAX_* names still work; when both are set the KINORA_* one wins.
+Other settings (environment variables): VIBE_PORT, VIBE_TRANSCODE_DIR, VIBE_RECORDINGS,
+VIBE_FFMPEG / VIBE_FFPROBE (default: the copies in this folder), VIBE_WEB_DIR.
+The former KINORA_* and MEDIAMAX_* names still work; when more than one is set the VIBE_* one wins.

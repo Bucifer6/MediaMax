@@ -3,9 +3,9 @@
  * Each agent has per-event toggles (ServerSettings.notificationAgents). Self-contained so a later reporting/notifications
  * effort can add events or agents here.
  */
+import { USER_AGENT } from '../../util/userAgent.js';
 import type { NotificationAgent, NotificationTestResult, NotifyEvent } from '@mediamax/shared';
 import { getKv, getSettings } from '../settings.js';
-import { config } from '../../config.js';
 import { logger } from '../../util/log.js';
 import { sendMail } from './smtp.js';
 
@@ -23,7 +23,7 @@ export interface NotifyMessage {
   data?: Record<string, unknown>;
 }
 
-const UA = () => `Kinora/${config.version}`;
+const UA = () => USER_AGENT;
 
 async function post(url: string, body: unknown, headers: Record<string, string> = {}) {
   const res = await fetch(url, {

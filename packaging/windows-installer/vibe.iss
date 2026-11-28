@@ -9,11 +9,17 @@
 ;     installs made before this default changed, including ones set up by hand with install-service.ps1);
 ;   - "Tray app" mode (default): VibeTray.exe runs the server for the signed-in user, shows an icon in the
 ;     notification area and starts at sign-in;
-;   - "Background service" mode: the boot-time "Kinora" scheduled task running as SYSTEM (install-service.ps1),
+;   - "Background service" mode: the boot-time "Vibe" scheduled task running as SYSTEM (install-service.ps1),
 ;     for a headless home server;
 ;   - opens the port in Windows Firewall, adds Start menu (and optionally desktop) shortcuts, and an
 ;     uninstaller in Settings > Apps that keeps the library data unless asked to delete it.
-; Data lives in %ProgramData%\Kinora (or %ProgramData%\MediaMax after an upgrade from MediaMax) in both modes.
+; Data lives in %ProgramData%\Vibe in both modes.
+;
+; Upgrading an install from before the rename to Vibe (kinora.exe, the "Kinora" task, SOFTWARE\Kinora,
+; %ProgramData%\Kinora or \MediaMax, KINORA_PORT): with Vibe stopped, setup moves the registry settings to
+; SOFTWARE\Vibe, renames the data folder to %ProgramData%\Vibe (left in place, and still used, if Windows refuses),
+; replaces the old task and firewall rules and removes kinora.exe. The server renames mediamax.db to vibe.db itself.
+; The AppId below never changes: it is how setup and the "Vibe updater" task find the installed version.
 ;
 ; Silent install: vibe-<version>-windows-x64-setup.exe /VERYSILENT [/TASKS="service"] [/PORT=9000]
 ;   service as a Windows account: add /SERVICEUSER=nasuser /SERVICEPASSWORDFILE=C:\path\pw.txt (the file is deleted);
@@ -31,7 +37,7 @@
   #define NumericVersion "0.0.0.0"
 #endif
 #ifndef SourceDir
-  #error Pass /DSourceDir=<folder with kinora.exe>
+  #error Pass /DSourceDir=<folder with vibe.exe>
 #endif
 #ifndef TrayExe
   #define TrayExe SourceDir + "\VibeTray.exe"
@@ -78,7 +84,7 @@ CloseApplications=no
 SetupLogging=yes
 
 [Messages]
-WelcomeLabel2=This will install Vibe {#AppVersion}, your self-hosted media server, on this computer.%n%nIf Vibe (or MediaMax) is already installed it is upgraded in place; your library, users and settings are kept.
+WelcomeLabel2=This will install Vibe {#AppVersion}, your self-hosted media server, on this computer.%n%nIf Vibe (or Kinora, or MediaMax) is already installed it is upgraded in place; your library, users and settings are kept.
 
 [Tasks]
 Name: "tray"; Description: "As a tray app (recommended for a PC you use): runs while you are signed in, with an icon next to the clock"; GroupDescription: "How should Vibe run?"; Flags: exclusive
@@ -91,8 +97,9 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 ; Old web app and help builds: their file names change with every release.
 Type: filesandordirs; Name: "{app}\web"
 Type: filesandordirs; Name: "{app}\help"
-; The portable launcher was called Kinora.cmd before it became Vibe.cmd.
+; Renamed in earlier releases: the portable launcher Kinora.cmd is Vibe.cmd, the server kinora.exe is vibe.exe.
 Type: files; Name: "{app}\Kinora.cmd"
+Type: files; Name: "{app}\kinora.exe"
 
 [UninstallDelete]
 ; Downloads and the result of the last update made by the "Vibe updater" task.
@@ -120,8 +127,11 @@ Filename: "http://localhost:{code:GetPort}/"; Description: "Open Vibe in my brow
 [Code]
 const
   EnvKey = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
-  VibeKey = 'SOFTWARE\Kinora';
-  TaskName = 'Kinora';
+  VibeKey = 'SOFTWARE\Vibe';
+  TaskName = 'Vibe';
+  // Names used before the rename to Vibe (moved or replaced on upgrade).
+  LegacyKey = 'SOFTWARE\Kinora';
+  LegacyTaskName = 'Kinora';
 
 var
   PortPage: TInputQueryWizardPage;
@@ -156,9 +166,15 @@ begin
   Result := RunHidden(PowerShell, '-NoProfile -ExecutionPolicy Bypass -Command "' + Command + '"');
 end;
 
+function NamedTaskExists(const Name: String): Boolean;
+begin
+  Result := RunHidden(ExpandConstant('{sys}\schtasks.exe'), '/Query /TN ' + Name) = 0;
+end;
+
+// The boot-time service task, under its current name or the one used before the rename.
 function TaskExists: Boolean;
 begin
-  Result := RunHidden(ExpandConstant('{sys}\schtasks.exe'), '/Query /TN ' + TaskName) = 0;
+  Result := NamedTaskExists(TaskName) or NamedTaskExists(LegacyTaskName);
 end;
 
 function CurrentPort: String;
@@ -167,7 +183,8 @@ var
 begin
   Result := ExpandConstant('{param:PORT|}');
   if Result = '' then
-    if RegQueryStringValue(HKLM, EnvKey, 'KINORA_PORT', S) and (S <> '') then Result := S
+    if RegQueryStringValue(HKLM, EnvKey, 'VIBE_PORT', S) and (S <> '') then Result := S
+    else if RegQueryStringValue(HKLM, EnvKey, 'KINORA_PORT', S) and (S <> '') then Result := S
     else if RegQueryStringValue(HKLM, EnvKey, 'MEDIAMAX_PORT', S) and (S <> '') then Result := S
     else Result := '8484';
 end;
@@ -177,7 +194,7 @@ end;
 // install never get here: Inno Setup reuses the previous folder (UsePreviousAppDir).
 function DefaultInstallDir(Param: String): String;
 begin
-  if FileExists(ExpandConstant('{autopf}\Kinora\kinora.exe')) then
+  if FileExists(ExpandConstant('{autopf}\Kinora\kinora.exe')) or FileExists(ExpandConstant('{autopf}\Kinora\vibe.exe')) then
     Result := ExpandConstant('{autopf}\Kinora')
   else
     Result := ExpandConstant('{autopf}\Vibe');
@@ -196,7 +213,8 @@ end;
 
 function StoredServiceUser: String;
 begin
-  if not RegQueryStringValue(HKLM, VibeKey, 'ServiceUser', Result) then Result := '';
+  if not RegQueryStringValue(HKLM, VibeKey, 'ServiceUser', Result) then
+    if not RegQueryStringValue(HKLM, LegacyKey, 'ServiceUser', Result) then Result := '';
 end;
 
 procedure InitializeWizard;
@@ -269,27 +287,87 @@ begin
     RunHidden(AppDir + '\VibeTray.exe', '--quit');
   Sleep(1500);
   RunHidden(ExpandConstant('{sys}\taskkill.exe'), '/F /IM VibeTray.exe');
-  if TaskExists then
+  if NamedTaskExists(TaskName) then
     RunHidden(ExpandConstant('{sys}\schtasks.exe'), '/End /TN ' + TaskName);
-  RunPS('Get-Process kinora,mediamax -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue');
+  if NamedTaskExists(LegacyTaskName) then
+    RunHidden(ExpandConstant('{sys}\schtasks.exe'), '/End /TN ' + LegacyTaskName);
+  RunPS('Get-Process vibe,kinora,mediamax -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue');
   Sleep(1500);
+end;
+
+// A data folder chosen with VIBE_DATA (or the former KINORA_DATA / MEDIAMAX_DATA), else ''.
+function CustomDataDir: String;
+var
+  S: String;
+begin
+  Result := '';
+  if RegQueryStringValue(HKLM, EnvKey, 'VIBE_DATA', S) and (S <> '') then Result := S
+  else if RegQueryStringValue(HKLM, EnvKey, 'KINORA_DATA', S) and (S <> '') then Result := S
+  else if RegQueryStringValue(HKLM, EnvKey, 'MEDIAMAX_DATA', S) and (S <> '') then Result := S;
+end;
+
+// Same rule as the server (server/src/config.ts): %ProgramData%\Vibe, else a folder not yet moved from an older name.
+function DataDir: String;
+begin
+  Result := CustomDataDir;
+  if Result <> '' then exit;
+  Result := ExpandConstant('{commonappdata}\Vibe');
+  if DirExists(Result) then exit;
+  if DirExists(ExpandConstant('{commonappdata}\Kinora')) then Result := ExpandConstant('{commonappdata}\Kinora')
+  else if DirExists(ExpandConstant('{commonappdata}\MediaMax')) then Result := ExpandConstant('{commonappdata}\MediaMax')
+  else Result := ExpandConstant('{commonappdata}\Vibe');
+end;
+
+procedure MoveRegValue(const Name: String);
+var
+  S: String;
+  D: Cardinal;
+begin
+  if RegQueryDWordValue(HKLM, LegacyKey, Name, D) then
+  begin
+    if not RegValueExists(HKLM, VibeKey, Name) then RegWriteDWordValue(HKLM, VibeKey, Name, D);
+  end
+  else if RegQueryStringValue(HKLM, LegacyKey, Name, S) then
+    if not RegValueExists(HKLM, VibeKey, Name) then RegWriteStringValue(HKLM, VibeKey, Name, S);
+end;
+
+// Upgrade from before the rename to Vibe; runs with Vibe stopped. Each step is skipped when already done.
+procedure MigrateLegacyNames;
+var
+  NewDir, OldDir: String;
+begin
+  // Registry settings (service mode, service account, update repository).
+  if RegKeyExists(HKLM, LegacyKey) then
+  begin
+    MoveRegValue('ServiceMode');
+    MoveRegValue('ServiceUser');
+    MoveRegValue('UpdateRepo');
+    RegDeleteKeyIncludingSubkeys(HKLM, LegacyKey);
+    Log('Moved the registry settings from ' + LegacyKey + ' to ' + VibeKey + '.');
+  end;
+  // Data folder: a rename on the same drive, so nothing is copied. If Windows refuses (a file still open), the old
+  // folder stays where it is and the server keeps using it.
+  if CustomDataDir = '' then
+  begin
+    NewDir := ExpandConstant('{commonappdata}\Vibe');
+    if not DirExists(NewDir) then
+    begin
+      OldDir := ExpandConstant('{commonappdata}\Kinora');
+      if not DirExists(OldDir) then OldDir := ExpandConstant('{commonappdata}\MediaMax');
+      if DirExists(OldDir) then
+        if RenameFile(OldDir, NewDir) then Log('Moved the data folder ' + OldDir + ' to ' + NewDir + '.')
+        else Log('Could not rename ' + OldDir + ' to ' + NewDir + '; Vibe keeps using ' + OldDir + '.');
+    end;
+  end;
+  // The server's old program file (also removed by [InstallDelete]; this covers a folder setup did not create).
+  DeleteFile(ExpandConstant('{app}\kinora.exe'));
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   StopVibe(ExpandConstant('{app}'));
+  MigrateLegacyNames;
   Result := '';
-end;
-
-function DataDir: String;
-var
-  Fresh, Legacy, S: String;
-begin
-  if RegQueryStringValue(HKLM, EnvKey, 'KINORA_DATA', S) and (S <> '') then begin Result := S; exit; end;
-  if RegQueryStringValue(HKLM, EnvKey, 'MEDIAMAX_DATA', S) and (S <> '') then begin Result := S; exit; end;
-  Fresh := ExpandConstant('{commonappdata}\Kinora');
-  Legacy := ExpandConstant('{commonappdata}\MediaMax');
-  if not DirExists(Fresh) and DirExists(Legacy) then Result := Legacy else Result := Fresh;
 end;
 
 function ServiceScript(const Args: String): Integer;
@@ -301,8 +379,9 @@ end;
 procedure SetPortVariable(const Port: String);
 begin
   RegDeleteValue(HKLM, EnvKey, 'MEDIAMAX_PORT');
-  if Port = '8484' then RegDeleteValue(HKLM, EnvKey, 'KINORA_PORT')
-  else RegWriteExpandStringValue(HKLM, EnvKey, 'KINORA_PORT', Port);
+  RegDeleteValue(HKLM, EnvKey, 'KINORA_PORT');
+  if Port = '8484' then RegDeleteValue(HKLM, EnvKey, 'VIBE_PORT')
+  else RegWriteExpandStringValue(HKLM, EnvKey, 'VIBE_PORT', Port);
 end;
 
 procedure SetupTrayMode(const Port: String);
@@ -325,12 +404,12 @@ begin
   RunHidden(ExpandConstant('{sys}\icacls.exe'), Grant);
 
   // Firewall: same rule names as install-service.ps1, so either one can remove them.
-  Exe := ExpandConstant('{app}\kinora.exe');
+  Exe := ExpandConstant('{app}\vibe.exe');
   if WizardIsTaskSelected('publicfw') then Profiles := 'Any' else Profiles := 'Domain,Private';
-  RunPS('Get-NetFirewallRule -DisplayName ''Kinora*'' -ErrorAction SilentlyContinue | Remove-NetFirewallRule; ' +
-    'New-NetFirewallRule -DisplayName ''Kinora (HTTP ' + Port + ')'' -Direction Inbound -Action Allow -Protocol TCP -LocalPort ' + Port +
+  RunPS('Get-NetFirewallRule -DisplayName ''Vibe (*'',''Kinora*'',''MediaMax*'' -ErrorAction SilentlyContinue | Remove-NetFirewallRule; ' +
+    'New-NetFirewallRule -DisplayName ''Vibe (HTTP ' + Port + ')'' -Direction Inbound -Action Allow -Protocol TCP -LocalPort ' + Port +
     ' -Program ''' + Exe + ''' -Profile ' + Profiles + ' | Out-Null; ' +
-    'New-NetFirewallRule -DisplayName ''Kinora (DLNA discovery)'' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 1900' +
+    'New-NetFirewallRule -DisplayName ''Vibe (DLNA discovery)'' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 1900' +
     ' -Program ''' + Exe + ''' -Profile ' + Profiles + ' | Out-Null');
 end;
 
@@ -418,5 +497,6 @@ begin
     UpdaterScript('-Unregister');
     RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Vibe');
     RegDeleteKeyIncludingSubkeys(HKLM, VibeKey);
+    RegDeleteKeyIncludingSubkeys(HKLM, LegacyKey);
   end;
 end;

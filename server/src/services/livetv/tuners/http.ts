@@ -4,6 +4,7 @@
  *
  * Node's fetch rejects URLs with credentials, so credentials travel separately and are applied here.
  */
+import { USER_AGENT } from '../../../util/userAgent.js';
 import crypto from 'node:crypto';
 
 export type AuthType = 'auto' | 'basic' | 'digest';
@@ -113,7 +114,7 @@ export class TunerHttp {
   private scheme: 'none' | 'basic' | 'digest' | null = null;
   requests = 0;
 
-  constructor(readonly creds: TunerCreds = {}, readonly userAgent = 'Kinora/1.0') {}
+  constructor(readonly creds: TunerCreds = {}, readonly userAgent = USER_AGENT) {}
 
   get hasCreds() {
     return !!this.creds.username;

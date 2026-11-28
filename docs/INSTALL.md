@@ -78,7 +78,7 @@ the numbers with `id <username>` on the host. On start, the container gives `/co
 the owner differs) and the top folder of `/recordings` and `/transcode`; it never changes the owner of your
 media or existing recordings. It also joins the groups that own `/dev/dri` (and `/dev/nvidia0`) automatically, so
 hardware transcoding keeps working. Add more groups (for example a group that may read a share) with
-`KINORA_EXTRA_GIDS=1001,1002`. Leave both unset to run as root, as earlier images did. Docker's own
+`VIBE_EXTRA_GIDS=1001,1002`. Leave both unset to run as root, as earlier images did. Docker's own
 `user: "1000:1000"` also works; then `/config` must already be writable by that user.
 
 **DLNA.** Smart TVs find DLNA servers by multicast, which does not cross Docker's bridge network. If you want
@@ -111,7 +111,7 @@ Windows 10/11 or Server 2019+ (x64).
      Double-click the icon to open Vibe; right-click it for *Restart server*, *Open data folder*, *Open logs*,
      *Start Vibe when I sign in* and *Exit*.
    - **As a background service** (for a home server): Vibe starts with Windows, before anyone signs in, as the
-     **Kinora** task in Task Scheduler running as SYSTEM (the same setup as `install-service.ps1` below). If your
+     **Vibe** task in Task Scheduler running as SYSTEM (the same setup as `install-service.ps1` below). If your
      media is on a NAS share that needs a password, enter a Windows account on the **Service account** page that
      follows: SYSTEM is usually refused by those shares and has no mapped drive letters. Add the share to a library by
      its network path (`\\nas\media`). Unattended: `/SERVICEUSER=nasuser /SERVICEPASSWORDFILE=C:\pw.txt` (the file is
@@ -142,7 +142,7 @@ with `"C:\Program Files\Vibe\unins000.exe" /VERYSILENT` (keeps the data; older i
 
    This copies Vibe to `C:\Program Files\Vibe` (a folder only administrators can change; an earlier install in
    `C:\Program Files\Kinora` is updated where it is), registers a
-   **Kinora** task (the name is kept from before the rename to Vibe) in Task Scheduler that starts at boot as SYSTEM without anyone signing in, opens TCP 8484 (and
+   **Vibe** task in Task Scheduler that starts at boot as SYSTEM without anyone signing in, opens TCP 8484 (and
    UDP 1900 for DLNA) in Windows Firewall for Private/Domain networks, and starts it. If Vibe ever exits,
    the task starts it again within 5 minutes. Options: `-Port 9000`, `-AllNetworkProfiles` (also open the
    firewall on networks Windows calls Public).
@@ -152,8 +152,8 @@ with `"C:\Program Files\Vibe\unins000.exe" /VERYSILENT` (keeps the data; older i
 
    | | |
    |---|---|
-   | Stop | `Disable-ScheduledTask Kinora; Stop-ScheduledTask Kinora` |
-   | Start | `Enable-ScheduledTask Kinora; Start-ScheduledTask Kinora` |
+   | Stop | `Disable-ScheduledTask Vibe; Stop-ScheduledTask Vibe` |
+   | Start | `Enable-ScheduledTask Vibe; Start-ScheduledTask Vibe` |
    | Uninstall | `.\install-service.ps1 -Uninstall` (keeps your data; add `-RemoveData` to delete it) |
 
 **Network shares.** Running as SYSTEM, Vibe can't see drive letters a user mapped. Add NAS folders as UNC
@@ -162,7 +162,7 @@ paths (`\\nas\media\movies`); the share must allow this computer's account (`DOM
 **Upgrade (zip).** Back up (Admin → Backups), extract the new zip and run `install-service.ps1` from it again: it
 stops Vibe, replaces the program files and starts it. Without the task, close Vibe and replace the files.
 
-**Data:** `C:\ProgramData\Kinora` (`%ProgramData%\Kinora`), whether started by hand or by the task.
+**Data:** `C:\ProgramData\Vibe` (`%ProgramData%\Vibe`), whether started by hand or by the task.
 
 ---
 
@@ -174,38 +174,38 @@ For x64 and arm64 Linux with glibc 2.28 or newer (Debian 10+, Ubuntu 20.04+, RHE
 ```bash
 tar -xzf vibe-<version>-linux-x64.tar.gz      # or -linux-arm64
 cd vibe-<version>-linux-x64
-./kinora                                         # try it; Ctrl+C stops it
+./vibe                                         # try it; Ctrl+C stops it
 ```
 
-Run on its own like this, data goes to `~/.local/share/kinora`.
+Run on its own like this, data goes to `~/.local/share/vibe`.
 
 **Run at boot with systemd:**
 
 ```bash
-sudo mkdir -p /opt/kinora && sudo cp -r ./* /opt/kinora/
-sudo useradd --system --home-dir /var/lib/kinora --shell /usr/sbin/nologin kinora
-sudo cp /opt/kinora/kinora.service /etc/systemd/system/
+sudo mkdir -p /opt/vibe && sudo cp -r ./* /opt/vibe/
+sudo useradd --system --home-dir /var/lib/vibe --shell /usr/sbin/nologin vibe
+sudo cp /opt/vibe/vibe.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now kinora
+sudo systemctl enable --now vibe
 ```
 
-The service runs as the dedicated `kinora` user, keeps its data in `/var/lib/kinora` (systemd creates it
-with `StateDirectory=kinora`) and restarts on failure. Then:
+The service runs as the dedicated `vibe` user, keeps its data in `/var/lib/vibe` (systemd creates it
+with `StateDirectory=vibe`) and restarts on failure. Then:
 
-- the `kinora` user needs read access to your media (for example `sudo setfacl -R -m u:kinora:rX /srv/media`,
+- the `vibe` user needs read access to your media (for example `sudo setfacl -R -m u:vibe:rX /srv/media`,
   or add it to the group that owns the files);
-- hardware transcoding: `sudo usermod -aG render,video kinora && sudo systemctl restart kinora`;
-- logs: `journalctl -u kinora -f`;
-- other settings: `sudo systemctl edit kinora` and add `Environment=KINORA_PORT=9000` under `[Service]`;
+- hardware transcoding: `sudo usermod -aG render,video vibe && sudo systemctl restart vibe`;
+- logs: `journalctl -u vibe -f`;
+- other settings: `sudo systemctl edit vibe` and add `Environment=VIBE_PORT=9000` under `[Service]`;
 - firewall: `sudo ufw allow 8484/tcp` (or `firewall-cmd --add-port=8484/tcp --permanent && firewall-cmd --reload`).
 
 **Upgrade:**
 
 ```bash
-sudo systemctl stop kinora
-sudo rm -rf /opt/kinora/web
-sudo cp -r ./* /opt/kinora/       # from the new, extracted archive
-sudo systemctl start kinora
+sudo systemctl stop vibe
+sudo rm -rf /opt/vibe/web
+sudo cp -r ./* /opt/vibe/       # from the new, extracted archive
+sudo systemctl start vibe
 ```
 
 **From source** (any OS with Node.js 22.5+ and FFmpeg on the PATH): `npm install && npm run build && npm start`.
@@ -316,7 +316,7 @@ Upgrade: select the file and press **Pull**, then **Up**. Hardware transcoding: 
 Vibe can leave NAS hard drives asleep while nobody is watching. Settings live in **Admin → Storage & disks**.
 
 1. **Put Vibe's own files on an SSD.** The data folder (database, artwork cache, thumbnails, scrub previews, downloaded subtitles, backups) and the transcode folder are written all the time; keep them off the spinning array.
-   * **Synology:** map `/config` (and `KINORA_TRANSCODE_DIR`) to a folder on an SSD volume, or at least a different volume from the media.
+   * **Synology:** map `/config` (and `VIBE_TRANSCODE_DIR`) to a folder on an SSD volume, or at least a different volume from the media.
    * **Unraid:** use the cache pool — `/mnt/cache/appdata/vibe`, *not* `/mnt/user/appdata` (the FUSE user share can wake array disks). Set the appdata share to *Use cache pool: Only/Prefer*.
    * **TrueNAS SCALE:** put the app's config/transcode datasets on an SSD pool (or the apps pool), and media on the HDD pool.
    * **QNAP / OMV:** the same idea — config on the system SSD / cache volume.
@@ -337,7 +337,7 @@ hardware decoding, 10-bit HEVC decoding and HDR → SDR tone mapping. Each card 
 or shows FFmpeg's error. Press **Use this** on the recommended card and **Save changes**. Results are saved
 (`<data>/cache/hwdetect/report.json`) and reused after a restart as long as the transcoding device settings and the
 FFmpeg build (`ffmpeg -version`) are unchanged; otherwise detection re-runs by itself in the background shortly after
-start-up (set `KINORA_NO_HWDETECT=1` to turn that off). Press **Re-run detection** after changing drivers or devices.
+start-up (set `VIBE_NO_HWDETECT=1` to turn that off). Press **Re-run detection** after changing drivers or devices.
 
 The decode tests only pass when the GPU itself decoded (frames must come out of the hardware decoder), so
 "Hardware decoding failed" on a card is real, not a guess. Intel GPUs that only have the low-power encoder (Jasper
@@ -417,7 +417,7 @@ NVENC/NVDEC, `compute` the CUDA filters (`scale_cuda`, `yadif_cuda`, `tonemap_cu
 
 ### Linux service
 
-`sudo usermod -aG render,video kinora && sudo systemctl restart kinora`. Install the VA-API driver
+`sudo usermod -aG render,video vibe && sudo systemctl restart vibe`. Install the VA-API driver
 (`intel-media-va-driver-non-free` or `mesa-va-drivers`) and optionally `vainfo` so detection can show the driver
 name. NVIDIA: the proprietary driver (`nvidia-smi` must work).
 
@@ -451,24 +451,27 @@ Pi 4: `v4l2m2m` (H.264 encode, about one 1080p30 stream). In Docker add `--devic
 | Install | Data folder |
 |---|---|
 | Docker / NAS | whatever you mapped to `/config` |
-| Windows | `C:\ProgramData\Kinora` |
-| Linux service | `/var/lib/kinora` |
-| Linux, started by hand | `~/.local/share/kinora` |
+| Windows | `C:\ProgramData\Vibe` |
+| Linux service | `/var/lib/vibe` |
+| Linux, started by hand | `~/.local/share/vibe` |
 | From source | `./data` |
 
-`KINORA_DATA` overrides all of these. **Upgrading from MediaMax** (the product's former name): a standalone install
-keeps using its existing folder (`C:\ProgramData\MediaMax`, `~/.local/share/mediamax`, or `/var/lib/mediamax` when
-the Kinora folder holds no database yet) as long as the Kinora folder doesn't exist, so nothing has to be moved;
-Docker and source installs use the folder you mapped / `./data` as before. The data folder holds the database (`mediamax.db`), artwork and branding
+`VIBE_DATA` overrides all of these. **Upgrading from Kinora or MediaMax** (the product's former names): the Windows
+setup program and `install-service.ps1` rename `C:\ProgramData\Kinora` (or `\MediaMax`) to `C:\ProgramData\Vibe`
+while Vibe is stopped. Until a folder has been moved (on Linux, see [the service section](#linux)), a standalone install
+keeps using `…\Kinora` / `…\MediaMax`, `~/.local/share/kinora` / `mediamax`, or `/var/lib/kinora` / `mediamax`
+when the Vibe folder doesn't exist (for systemd: holds no database). The first start of this version renames the
+database from `mediamax.db` to `vibe.db`. Docker and source installs use the folder you mapped / `./data` as before.
+The data folder holds the database (`vibe.db`), artwork and branding
 assets, avatars, subtitles, plugins, logs and `backups/`. Caches (`cache/`), streaming segments (`transcodes/`)
-and your media are not needed for a restore. DVR recordings are wherever `KINORA_RECORDINGS` / `/recordings` points.
+and your media are not needed for a restore. DVR recordings are wherever `VIBE_RECORDINGS` / `/recordings` points.
 
 **Backups.** **Admin → Backups** creates a backup on demand or on a schedule (keeping the last N). A backup is
 one `.tar.gz` in `<data>/backups/` with a consistent snapshot of the database plus artwork, branding, avatars,
 subtitles and plugins; you can download it from the same page. Copy backups off the machine (Hyper Backup,
 a NAS snapshot task, or any file backup of the `backups/` folder). To restore, upload or pick a backup on the same
-page, then restart Vibe (`docker restart vibe`, `sudo systemctl restart kinora`, or on Windows
-`Stop-ScheduledTask Kinora; Start-ScheduledTask Kinora`). The restore is applied as it starts, and a
+page, then restart Vibe (`docker restart vibe`, `sudo systemctl restart vibe`, or on Windows
+`Stop-ScheduledTask Vibe; Start-ScheduledTask Vibe`). The restore is applied as it starts, and a
 "pre-restore" backup of what it replaced is kept.
 
 **Moving to another machine or install type** (for example from Windows to a NAS): create a backup, install
@@ -477,21 +480,21 @@ on the new machine, edit the libraries' folders in the admin dashboard.
 
 ## Settings
 
-Environment variables (Docker `environment:`, `systemctl edit kinora`, or Windows system environment variables):
+Environment variables (Docker `environment:`, `systemctl edit vibe`, or Windows system environment variables):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `KINORA_PORT` | `8484` | HTTP port |
-| `KINORA_DATA` | see above | Data folder |
-| `KINORA_TRANSCODE_DIR` | `<data>/transcodes` (`/transcode` in Docker) | Streaming segment scratch space; a RAM disk is ideal |
-| `KINORA_RECORDINGS` | `<data>/recordings` (`/recordings` in Docker) | DVR output |
-| `KINORA_FFMPEG` / `KINORA_FFPROBE` | bundled copy next to the binary, else `ffmpeg` / `ffprobe` on the PATH | Use another FFmpeg (e.g. jellyfin-ffmpeg) |
-| `KINORA_WEB_DIR` | `web/` next to the binary (`web/dist` from source) | Serve the web app from elsewhere |
-| `KINORA_HWACCEL` | `none` | Initial hardware accelerator |
-| `PUID` / `PGID` / `KINORA_EXTRA_GIDS` | unset (root) | Docker only: user, group and extra groups to run as |
+| `VIBE_PORT` | `8484` | HTTP port |
+| `VIBE_DATA` | see above | Data folder |
+| `VIBE_TRANSCODE_DIR` | `<data>/transcodes` (`/transcode` in Docker) | Streaming segment scratch space; a RAM disk is ideal |
+| `VIBE_RECORDINGS` | `<data>/recordings` (`/recordings` in Docker) | DVR output |
+| `VIBE_FFMPEG` / `VIBE_FFPROBE` | bundled copy next to the binary, else `ffmpeg` / `ffprobe` on the PATH | Use another FFmpeg (e.g. jellyfin-ffmpeg) |
+| `VIBE_WEB_DIR` | `web/` next to the binary (`web/dist` from source) | Serve the web app from elsewhere |
+| `VIBE_HWACCEL` | `none` | Initial hardware accelerator |
+| `PUID` / `PGID` / `VIBE_EXTRA_GIDS` | unset (root) | Docker only: user, group and extra groups to run as |
 
-Each variable also works under its original `MEDIAMAX_*` name (e.g. `MEDIAMAX_PORT`); when both are set, the
-`KINORA_*` one wins. The full list is under "Configuration (environment variables)" in the
+Each variable also works under its former `KINORA_*` and original `MEDIAMAX_*` names (e.g. `MEDIAMAX_PORT`); when
+more than one is set, the `VIBE_*` one wins. The full list is under "Configuration (environment variables)" in the
 [README](../README.md#install).
 
 ## Play to devices

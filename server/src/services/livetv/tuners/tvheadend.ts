@@ -5,6 +5,7 @@
  *   channel icons at /imagecache/<id>. Falls back to /playlist/channels.m3u when the channel grid is not allowed.
  * Authentication: Digest (TVHeadend's default) or plain/Basic, handled by TunerHttp.
  */
+import { USER_AGENT } from '../../../util/userAgent.js';
 import { parseM3u } from '../m3u.js';
 import { TunerHttp, TunerHttpError, baseUrl, withUserInfo } from './http.js';
 import { isoFromUnix, type GuideSink, type TunerCategory, type TunerChannel, type TunerDevice, type TunerOptions, type TunerSync } from './types.js';
@@ -34,7 +35,7 @@ export interface TvhRecording {
   start?: number; stop?: number; start_real?: number; stop_real?: number; filesize?: number; url?: string; status?: string;
 }
 
-export const client = (s: TvhSourceLike) => new TunerHttp({ username: s.username, password: s.password, authType: s.options.authType ?? 'auto' }, s.userAgent || 'Kinora/1.0');
+export const client = (s: TvhSourceLike) => new TunerHttp({ username: s.username, password: s.password, authType: s.options.authType ?? 'auto' }, s.userAgent || USER_AGENT);
 const api = (s: TvhSourceLike, path: string) => `${baseUrl(s.url)}${path}`;
 
 /** DVB content descriptor (ETSI EN 300 468) top-level nibble → genre. */

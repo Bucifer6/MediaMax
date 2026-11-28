@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { BackupInfo, User } from '@mediamax/shared';
-import { config } from '../config.js';
+import { config, DB_FILE, LEGACY_DB_FILES } from '../config.js';
 import { db } from '../db.js';
 import { getSettings, serverId } from './settings.js';
 import { createTarGz, extractTarGz, walkFiles } from '../util/tar.js';
@@ -17,7 +17,8 @@ const backupsDir = () => {
   fs.mkdirSync(d, { recursive: true });
   return d;
 };
-const ID_RE = /^mediamax-[\w-]+\.tar\.gz$/;
+// New downloads use Vibe; archives made before the rename remain listed and usable.
+const ID_RE = /^(?:vibe|mediamax)-[\w-]+\.tar\.gz$/;
 
 export function listBackups(): BackupInfo[] {
   return fs.readdirSync(backupsDir()).filter((f) => ID_RE.test(f)).map((f) => {
@@ -45,10 +46,10 @@ export function createBackup(reason: 'manual' | 'scheduled' | 'pre-restore' = 'm
   try {
     const entries = [
       { name: 'backup.json', file: manifest },
-      { name: 'mediamax.db', file: tmpDb },
+      { name: DB_FILE, file: tmpDb },
       ...BACKUP_DIRS.flatMap((d) => walkFiles(path.join(config.dataDir, d), d)),
     ];
-    const id = `mediamax-${stamp}-${reason}.tar.gz`;
+    const id = `vibe-${stamp}-${reason}.tar.gz`;
     fs.writeFileSync(path.join(backupsDir(), id), createTarGz(entries));
     logActivity('backup', `Backup created (${reason})`, { userId: actor?.id, userName: actor?.displayName });
     pruneAutomatic();
@@ -76,7 +77,7 @@ export function stageRestore(archive: Buffer, actor: User): { restartRequired: t
   try {
     extractTarGz(archive, check, { maxFiles: 200000, maxBytes: 8 * 1024 * 1024 * 1024 });
     const mf = path.join(check, 'backup.json');
-    if (!fs.existsSync(mf) || !fs.existsSync(path.join(check, 'mediamax.db'))) throw badRequest('That file is not a Vibe backup');
+    if (!fs.existsSync(mf) || ![DB_FILE, ...LEGACY_DB_FILES].some((f) => fs.existsSync(path.join(check, f)))) throw badRequest('That file is not a Vibe backup');
     const m = JSON.parse(fs.readFileSync(mf, 'utf8'));
     if (m.format !== 1) throw badRequest('Unsupported backup format');
   } finally {

@@ -16,7 +16,7 @@ services:
       - PUID=1026
       - PGID=100
       - TZ=Europe/London
-      # - KINORA_HWACCEL=vaapi          # or qsv; then pick it in Admin -> Settings -> Transcoding
+      # - VIBE_HWACCEL=vaapi          # or qsv; then pick it in Admin -> Settings -> Transcoding
     volumes:
       - /volume1/docker/vibe/config:/config
       - /volume1/docker/vibe/transcode:/transcode   # most DS units have little RAM, so use disk, not tmpfs

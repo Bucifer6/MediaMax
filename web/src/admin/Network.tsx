@@ -1,3 +1,4 @@
+import { proxySnippets } from './networkSnippets';
 import { useEffect, useMemo, useState } from 'react';
 import type { NetworkSettings, NetworkStatus } from '@mediamax/shared';
 import { http } from '../api/client';
@@ -17,76 +18,6 @@ const MODES: { id: Mode; title: string; text: string }[] = [
   { id: 'builtin', title: 'Built-in HTTPS', text: 'Vibe runs Caddy itself and gets a free Let’s Encrypt certificate. Needs ports 80 and 443 and a domain pointing here.' },
 ];
 
-/** Copy-ready configs for the common proxies. `up` is how the proxy reaches Vibe. */
-function snippets(domain: string, up: string): { id: string; label: string; code: string }[] {
-  return [
-    { id: 'nginx', label: 'Nginx', code: `server {
-    listen 443 ssl;
-    http2 on;
-    server_name ${domain};
-    # ssl_certificate / ssl_certificate_key …
-
-    client_max_body_size 0;          # uploads, subtitle and artwork changes
-    location / {
-        proxy_pass http://${up};
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Upgrade $http_upgrade;      # live updates, SyncPlay
-        proxy_set_header Connection $connection_upgrade;
-        proxy_buffering off;                          # smooth streaming
-        proxy_read_timeout 1h;
-    }
-}
-# in the http {} block:
-map $http_upgrade $connection_upgrade { default upgrade; '' close; }` },
-    { id: 'caddy', label: 'Caddy', code: `${domain} {
-    reverse_proxy ${up} {
-        flush_interval -1
-    }
-}` },
-    { id: 'traefik', label: 'Traefik (Docker labels)', code: `labels:
-  - traefik.enable=true
-  - traefik.http.routers.mediamax.rule=Host(\`${domain}\`)
-  - traefik.http.routers.mediamax.entrypoints=websecure
-  - traefik.http.routers.mediamax.tls.certresolver=letsencrypt
-  - traefik.http.services.mediamax.loadbalancer.server.port=8484` },
-    { id: 'npm', label: 'Nginx Proxy Manager', code: `Proxy Host → Details
-  Domain:            ${domain}
-  Scheme / host:     http  /  ${up.split(':')[0]}
-  Port:              8484
-  Websockets support: ON     Block common exploits: ON
-SSL → Request a new certificate, Force SSL, HTTP/2
-Advanced (optional):
-  proxy_buffering off;
-  client_max_body_size 0;` },
-    { id: 'apache', label: 'Apache', code: `<VirtualHost *:443>
-    ServerName ${domain}
-    ProxyPreserveHost On
-    ProxyPass        / http://${up}/ upgrade=websocket
-    ProxyPassReverse / http://${up}/
-    RequestHeader set X-Forwarded-Proto "https"
-</VirtualHost>` },
-    { id: 'haproxy', label: 'HAProxy', code: `frontend https
-    bind :443 ssl crt /etc/haproxy/certs/
-    http-request set-header X-Forwarded-Proto https
-    option forwardfor
-    use_backend mediamax if { req.hdr(host) -i ${domain} }
-
-backend mediamax
-    timeout tunnel 1h
-    server mm ${up}` },
-    { id: 'cloudflared', label: 'Cloudflare Tunnel', code: `# config.yml for cloudflared
-ingress:
-  - hostname: ${domain}
-    service: http://${up}
-  - service: http_status:404
-# Note: Cloudflare's terms limit video through the free CDN/tunnel. Fine for the
-# web UI and music; for heavy video use a direct port or Tailscale instead.` },
-  ];
-}
 
 function TrustEditor({ value, onChange, locked }: { value: string[]; onChange: (v: string[]) => void; locked: boolean }) {
   const [draft, setDraft] = useState('');
@@ -133,6 +64,7 @@ export function NetworkAdmin() {
   const [draft, setDraft] = useState<NetworkSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [snip, setSnip] = useState('nginx');
+  const [proxyTarget, setProxyTarget] = useState('');
 
   const load = async () => {
     try {
@@ -159,8 +91,8 @@ export function NetworkAdmin() {
   const you = data.you;
   const b = data.builtin;
   const domain = draft.builtinHttps.domain || (data.publicUrl ? new URL(data.publicUrl).host : 'media.example.com');
-  const upstream = `${you.host && !/^(localhost|127\.)/.test(you.host) && draft.mode === 'direct' ? you.host.split(':')[0] : 'mediamax'}:8484`;
-  const list = snippets(domain, upstream);
+  const upstream = proxyTarget.trim() || 'vibe:8484';
+  const list = proxySnippets(domain, upstream);
   const shown = list.find((s) => s.id === snip) ?? list[0];
 
   const save = async () => {
@@ -232,7 +164,7 @@ export function NetworkAdmin() {
           to dodge sign-in limits and bans. <span className="mono">loopback</span>, <span className="mono">linklocal</span> and <span className="mono">uniquelocal</span> cover
           this machine and private networks (Docker networks included), which suits most setups.
         </p>
-        {data.envTrustedProxies && <p className="small warn">Set by KINORA_TRUSTED_PROXIES (or MEDIAMAX_TRUSTED_PROXIES) in the environment; remove that variable to edit the list here.</p>}
+        {data.envTrustedProxies && <p className="small warn">Set by VIBE_TRUSTED_PROXIES (or MEDIAMAX_TRUSTED_PROXIES) in the environment; remove that variable to edit the list here.</p>}
         <TrustEditor value={data.envTrustedProxies ?? draft.trustedProxies} onChange={(v) => set({ trustedProxies: v })} locked={!!data.envTrustedProxies} />
         {!data.envTrustedProxies && (
           <div className="form-row">
@@ -246,6 +178,9 @@ export function NetworkAdmin() {
         <section className="sec-card">
           <h2>Proxy configuration</h2>
           <p className="muted small">Point your proxy at Vibe on port 8484 with buffering off and WebSockets on. Ready-made examples for <span className="mono">{domain}</span>:</p>
+          <Field label="Vibe address seen by your proxy" hint="Use vibe:8484 for the standard Docker Compose file, mediamax:8484 for the deploy kit, or 127.0.0.1:8484 for a proxy on this machine. This only changes the examples below.">
+            <input className="input mono" value={proxyTarget} placeholder="vibe:8484" onChange={(e) => setProxyTarget(e.target.value)} spellCheck={false} />
+          </Field>
           <div className="segmented" role="tablist">
             {list.map((s) => <button key={s.id} role="tab" aria-selected={s.id === shown.id} className={s.id === shown.id ? 'active' : ''} onClick={() => setSnip(s.id)} style={{ textTransform: 'none' }}>{s.label}</button>)}
           </div>

@@ -1,3 +1,5 @@
+import { USER_AGENT } from '../util/userAgent.js';
+import { LEGACY_PRODUCT_NAME } from '../util/product.js';
 import dgram from 'node:dgram';
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -206,7 +208,8 @@ function ssdpTargets(): [string, string][] {
 }
 
 const location = () => `${baseUrl()}/dlna/description.xml`;
-const SERVER_HDR = `${os.type()}/${os.release()} UPnP/1.0 Kinora/${config.version}`;
+// Already-installed Roku channels identify servers by this legacy token. Advertise Vibe first, keep the alias.
+export const SERVER_HDR = `${os.type()}/${os.release()} UPnP/1.0 ${USER_AGENT} ${LEGACY_PRODUCT_NAME}/${config.version}`;
 
 function notify(type: 'ssdp:alive' | 'ssdp:byebye') {
   if (!socket) return;

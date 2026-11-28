@@ -82,8 +82,8 @@ export function detectInstall(opts: { platform?: NodeJS.Platform; sea?: boolean;
 const MANUAL_STEPS: Record<Exclude<UpdateInstallKind, 'windows-setup'>, string> = {
   docker: 'Pull the new image and re-create the container: `docker compose pull && docker compose up -d` (Docker Compose), ' +
     'update the container in your NAS’s container manager, or run `sudo /opt/vibe/install.sh --upgrade` for the deploy kit.',
-  linux: 'Download the new `vibe-<version>-linux-<arch>.tar.gz` from the release page, `sudo systemctl stop kinora`, ' +
-    'remove the old `web` folder, copy the new files over the old ones, then `sudo systemctl start kinora`.',
+  linux: 'Download the new `vibe-<version>-linux-<arch>.tar.gz` from the release page, `sudo systemctl stop vibe`, ' +
+    'remove the old `web` folder, copy the new files over the old ones, then `sudo systemctl start vibe`.',
   'windows-portable': 'This copy was installed from the zip. Download and run the new `vibe-<version>-windows-x64-setup.exe` ' +
     'from the release page (it takes over this install), or extract the new zip and run `install-service.ps1` again.',
   source: 'Pull the new release tag, then `npm ci && npm run build` and restart the server.',
@@ -273,8 +273,12 @@ export async function downloadVerified(picked: { setup: Asset; sums: Asset }, di
 /** Installed as the background service (SYSTEM, or a Windows account chosen in setup), as setup records it. */
 async function isServiceMode(): Promise<boolean> {
   if (runningAsSystem()) return true;
-  const r = await run(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'reg.exe'), ['query', 'HKLM\\SOFTWARE\\Kinora', '/v', 'ServiceMode']);
-  return r.code === 0 && /ServiceMode\s+REG_DWORD\s+0x1\b/i.test(r.out);
+  // Setup keeps this under SOFTWARE\Vibe (SOFTWARE\Kinora before the rename; setup moves it on upgrade).
+  for (const key of ['HKLM\\SOFTWARE\\Vibe', 'HKLM\\SOFTWARE\\Kinora']) {
+    const r = await run(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'reg.exe'), ['query', key, '/v', 'ServiceMode']);
+    if (r.code === 0) return /ServiceMode\s+REG_DWORD\s+0x1\b/i.test(r.out);
+  }
+  return false;
 }
 
 function run(exe: string, args: string[]): Promise<{ code: number; out: string }> {

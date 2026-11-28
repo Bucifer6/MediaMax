@@ -29,7 +29,7 @@ export function buildMessage(m: Mail, date = new Date()): string {
   const body = Buffer.from(m.text.replace(/\r?\n/g, '\r\n')).toString('base64').replace(/.{76}/g, '$&\r\n');
   return [
     `From: ${m.from}`, `To: ${m.to.join(', ')}`, `Subject: ${encWord(m.subject)}`, `Date: ${date.toUTCString()}`,
-    `Message-ID: <${crypto.randomUUID()}@${addr(m.from).split('@')[1] ?? 'mediamax'}>`, 'MIME-Version: 1.0',
+    `Message-ID: <${crypto.randomUUID()}@${addr(m.from).split('@')[1] ?? 'vibe'}>`, 'MIME-Version: 1.0',
     'Content-Type: text/plain; charset=utf-8', 'Content-Transfer-Encoding: base64', '', body, '',
   ].join('\r\n');
 }
@@ -95,7 +95,7 @@ export async function sendMail(cfg: SmtpConfig, m: Mail): Promise<void> {
   };
   try {
     await cmd(null, [220]);
-    const name = os.hostname() || 'mediamax';
+    const name = os.hostname() || 'vibe';
     let ehlo = await cmd(`EHLO ${name}`, [250]);
     if (!(sock instanceof tls.TLSSocket) && /STARTTLS/i.test(ehlo)) {
       await cmd('STARTTLS', [220]);

@@ -170,7 +170,7 @@ For files with no tags (or wrong ones) Vibe can fingerprint the first two minute
 on [AcoustID](https://acoustid.org):
 
 1. **Fingerprinter.** `fpcalc` (Debian/Ubuntu package `libchromaprint-tools`, included in the Docker image) on the
-   `PATH` or at `KINORA_FPCALC`; otherwise an ffmpeg built with `--enable-chromaprint` (`ffmpeg -muxers | grep chromaprint`).
+   `PATH` or at `VIBE_FPCALC`; otherwise an ffmpeg built with `--enable-chromaprint` (`ffmpeg -muxers | grep chromaprint`).
 2. **Key.** AcoustID needs a free *application* key: sign in at acoustid.org, open
    [acoustid.org/new-application](https://acoustid.org/new-application), register "Vibe" (any version / website) and
    paste the API key under Server settings → Metadata → Music identification (write-only, shown as ••••).
@@ -222,9 +222,9 @@ fill only empty fields, so running both is harmless. You can uninstall them once
 ## Self-hosted mirrors and testing
 
 Each service's base URL can be overridden with an env var (used by the test suite's mock servers):
-`KINORA_TVDB_API_BASE`, `KINORA_FANART_API_BASE`, `KINORA_AUDIODB_API_BASE`, `KINORA_AUDNEXUS_API_BASE`,
-`KINORA_OPENLIBRARY_API_BASE`, `KINORA_OPENLIBRARY_COVERS_BASE`, `KINORA_GOOGLEBOOKS_API_BASE`,
-`KINORA_LRCLIB_API_BASE`, `KINORA_OMDB_API_BASE`, `KINORA_MUSICBRAINZ_API_BASE`, `KINORA_COVERART_API_BASE`,
-`KINORA_LISTENBRAINZ_API_BASE` (default for users without their own server URL), `KINORA_LISTENBRAINZ_LABS_BASE`,
-`KINORA_ACOUSTID_API_BASE`
-(and `KINORA_TMDB_API_BASE` / `KINORA_TMDB_IMAGE_BASE` for TMDB's API and image server).
+`VIBE_TVDB_API_BASE`, `VIBE_FANART_API_BASE`, `VIBE_AUDIODB_API_BASE`, `VIBE_AUDNEXUS_API_BASE`,
+`VIBE_OPENLIBRARY_API_BASE`, `VIBE_OPENLIBRARY_COVERS_BASE`, `VIBE_GOOGLEBOOKS_API_BASE`,
+`VIBE_LRCLIB_API_BASE`, `VIBE_OMDB_API_BASE`, `VIBE_MUSICBRAINZ_API_BASE`, `VIBE_COVERART_API_BASE`,
+`VIBE_LISTENBRAINZ_API_BASE` (default for users without their own server URL), `VIBE_LISTENBRAINZ_LABS_BASE`,
+`VIBE_ACOUSTID_API_BASE`
+(and `VIBE_TMDB_API_BASE` / `VIBE_TMDB_IMAGE_BASE` for TMDB's API and image server).

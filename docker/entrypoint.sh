@@ -6,10 +6,13 @@
 # The container can also be started with `--user uid:gid` (or `user:` in compose); then this script does nothing.
 set -eu
 
-# KINORA_<NAME> overrides the original MEDIAMAX_<NAME> (the image's defaults use the MEDIAMAX_ names). The server
-# does the same itself; doing it here too makes this script's own settings follow the new names.
-for kv in $(env | sed -n 's/^KINORA_\([A-Za-z0-9_]*\)=.*/\1/p'); do
-  eval "export MEDIAMAX_$kv=\"\$KINORA_$kv\""
+# VIBE_<NAME> (and the former KINORA_<NAME>) override the original MEDIAMAX_<NAME> (the image's defaults use the
+# MEDIAMAX_ names); VIBE_ wins. The server does the same itself; doing it here too makes this script's own settings
+# follow the new names.
+for prefix in KINORA VIBE; do
+  for kv in $(env | sed -n "s/^${prefix}_\([A-Za-z0-9_]*\)=.*/\1/p"); do
+    eval "export MEDIAMAX_$kv=\"\$${prefix}_$kv\""
+  done
 done
 
 if [ "$(id -u)" != "0" ] || [ -z "${PUID:-}${PGID:-}" ]; then

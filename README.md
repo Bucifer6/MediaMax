@@ -24,14 +24,18 @@ you own, presented like a premium streaming service. The logo is a disc (a scree
 V cut through it, in a sunset-to-evening gradient; the interface stays quiet so the artwork supplies the colour.
 
 > [!NOTE]
-> **Renamed to Vibe.** The product was called MediaMax, then Kinora. Only the name and logo changed. For compatibility
-> these keep their old names: the `KINORA_*` and `MEDIAMAX_*` environment variables, the systemd unit and user (`kinora`), the Windows task and registry key
-> (`Kinora`; existing installs also stay in `C:\Program Files\Kinora`, new ones go to `C:\Program Files\Vibe`), data
-> folders and the database (`mediamax.db`), the `X-Kinora-*` / `X-MediaMax-*` headers, the app URL schemes
+> **Renamed to Vibe.** The product was called MediaMax, then Kinora. Servers now use Vibe names throughout: `vibe.exe` /
+> `vibe`, the `Vibe` Windows task and registry key, the `vibe` systemd unit and user, `%ProgramData%\Vibe`,
+> `/var/lib/vibe`, `vibe.db` and `VIBE_*` environment variables. Upgrading moves an existing install over (the
+> `KINORA_*` / `MEDIAMAX_*` variables keep working). Kept for the apps already installed on phones and TVs: the
+> `X-Kinora-*` / `X-MediaMax-*` headers, the app URL schemes
 > (`kinora://`, `mediamax://`), package names (`@mediamax/*`), app bundle ids (`uk.burdujeni82.kinora`) and this
 > GitHub repository. The Docker image is now `ghcr.io/bucifer6/vibe` (`…/kinora` is still published with the same
 > tags), and the deploy kit installs to `/opt/vibe` (an existing `/opt/kinora` is kept). Existing installs, apps and
 > links keep working without changes.
+
+For the exact names you will still see in file paths, service tools and integrations, see
+[Rebranding and compatibility names](docs/REBRANDING.md). Do not rename an existing data folder or database by hand.
 
 Vibe brings together the features people love in **Plex, Jellyfin and Emby** and the polish of the big streaming services. It adds first-class **Xtream Codes IPTV** and **TV tuners**, a beat-matching **DJ mode** with an optional **AI DJ**, built-in **requests** and **profiles**, **Home Assistant** and **Play to** support, and a **one-command secure deployment** that fits next to the reverse proxy you already run. Every client (web, iOS, Android, Apple TV, Android TV, Fire TV, Samsung and LG TVs) takes its logo, colours, fonts, home layout and features from your server, applied live with no app rebuild.
 
@@ -232,26 +236,26 @@ The server listens on port **8484** and serves the web app and API. For developm
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `KINORA_PORT` | `8484` | HTTP port |
-| `KINORA_HOST` | `0.0.0.0` | Address to listen on (`127.0.0.1` behind a local reverse proxy) |
-| `KINORA_DATA` | `./data` ([binaries and Docker](docs/INSTALL.md#where-your-data-lives-and-backups) differ) | Database, caches, branding assets, logs |
-| `KINORA_TRANSCODE_DIR` | `$DATA/transcodes` | HLS segment scratch space (a RAM disk is ideal) |
-| `KINORA_RECORDINGS` | `$DATA/recordings` | DVR output folder |
-| `KINORA_FFMPEG` / `KINORA_FFPROBE` | bundled, else on the PATH | Custom binaries (e.g. jellyfin-ffmpeg) |
-| `KINORA_HWACCEL` | `none` | Initial hardware accelerator |
-| `KINORA_TRUSTED_PROXIES` | loopback + private ranges | Proxies whose `X-Forwarded-*` headers are trusted |
+| `VIBE_PORT` | `8484` | HTTP port |
+| `VIBE_HOST` | `0.0.0.0` | Address to listen on (`127.0.0.1` behind a local reverse proxy) |
+| `VIBE_DATA` | `./data` ([binaries and Docker](docs/INSTALL.md#where-your-data-lives-and-backups) differ) | Database, caches, branding assets, logs |
+| `VIBE_TRANSCODE_DIR` | `$DATA/transcodes` | HLS segment scratch space (a RAM disk is ideal) |
+| `VIBE_RECORDINGS` | `$DATA/recordings` | DVR output folder |
+| `VIBE_FFMPEG` / `VIBE_FFPROBE` | bundled, else on the PATH | Custom binaries (e.g. jellyfin-ffmpeg) |
+| `VIBE_HWACCEL` | `none` | Initial hardware accelerator |
+| `VIBE_TRUSTED_PROXIES` | loopback + private ranges | Proxies whose `X-Forwarded-*` headers are trusted |
 | `TMDB_API_KEY` | | Online metadata (also settable in the admin UI) |
 | `OPENSUBTITLES_API_KEY`, `SUBSRO_API_KEY`, `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET`, `LASTFM_API_KEY` / `LASTFM_SECRET`, `ACOUSTID_API_KEY` | | Initial integration keys (the admin UI can set them too) |
-| `KINORA_WEB_DIR` / `KINORA_HELP_DIR` | bundled | Serve the web app / Help Centre articles from another folder |
-| `KINORA_ALLOW_PRIVATE_URLS` | unset | `1` lets podcast feeds and other user-supplied URLs point at LAN addresses |
-| `KINORA_CADDY` | bundled in Docker and release archives | Caddy binary for **built-in HTTPS** (Admin → Network) |
-| `KINORA_ORT_DIR` | downloaded on first use | A local copy of onnxruntime-web for AI vocal separation on air-gapped servers |
-| `KINORA_LOG_LEVEL` | `info` | `debug` for verbose logs |
+| `VIBE_WEB_DIR` / `VIBE_HELP_DIR` | bundled | Serve the web app / Help Centre articles from another folder |
+| `VIBE_ALLOW_PRIVATE_URLS` | unset | `1` lets podcast feeds and other user-supplied URLs point at LAN addresses |
+| `VIBE_CADDY` | bundled in Docker and release archives | Caddy binary for **built-in HTTPS** (Admin → Network) |
+| `VIBE_ORT_DIR` | downloaded on first use | A local copy of onnxruntime-web for AI vocal separation on air-gapped servers |
+| `VIBE_LOG_LEVEL` | `info` | `debug` for verbose logs |
 
 More, including the security dashboard and integration variables, is in [docs/INSTALL.md](docs/INSTALL.md) and [docs/DEPLOY.md](docs/DEPLOY.md).
 
-Every `KINORA_*` variable also works under its original `MEDIAMAX_*` name (Vibe was called MediaMax before it was
-renamed), so existing configurations keep working; when both are set, the `KINORA_*` value wins.
+Every `VIBE_*` variable also works under its former `KINORA_*` and original `MEDIAMAX_*` names (Vibe was called
+Kinora and MediaMax before), so existing configurations keep working; when more than one is set, the `VIBE_*` value wins.
 
 </details>
 

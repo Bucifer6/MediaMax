@@ -227,7 +227,7 @@ async function main() {
   const stageName = `vibe-${version}-${target}`;
   const stage = path.join(work, stageName);
   fs.mkdirSync(stage, { recursive: true });
-  const exeName = isWin ? 'kinora.exe' : 'kinora';
+  const exeName = isWin ? 'vibe.exe' : 'vibe';
   const exePath = path.join(stage, exeName);
   fs.copyFileSync(nodeBin, exePath);
   fs.chmodSync(exePath, 0o755);

@@ -241,7 +241,7 @@ function ensureType(u: User, id: string | undefined, type: Item['type']): Item {
 export default async function subsonicRoutes(app: FastifyInstance) {
   const handlers: Record<string, (req: FastifyRequest, reply: FastifyReply, u: User) => unknown> = {
     ping: () => ({}),
-    getLicense: () => ({ license: { valid: true, email: 'mediamax@localhost', licenseExpires: '2099-12-31T00:00:00' } }),
+    getLicense: () => ({ license: { valid: true, email: 'vibe@localhost', licenseExpires: '2099-12-31T00:00:00' } }),
     getOpenSubsonicExtensions: () => ({ openSubsonicExtensions: [{ name: 'apiKeyAuthentication', versions: [1] }, { name: 'songLyrics', versions: [1] }, { name: 'formPost', versions: [1] }] }),
     getUser: (_r, _p, u) => ({
       user: { username: u.username, email: '', scrobblingEnabled: true, adminRole: u.isAdmin, settingsRole: true, downloadRole: u.allowDownloads, uploadRole: false,

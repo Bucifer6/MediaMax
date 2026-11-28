@@ -15,7 +15,7 @@ order: 13
 The data folder (database, artwork cache, thumbnails, scrub previews, subtitles, backups) and the transcode folder are written all the time. Put them on an SSD or cache pool, not on the media disks.
 
 - **Synology**: map `/config` (and the transcode folder) to an SSD volume.
-- **Unraid**: use `/mnt/cache/appdata/mediamax`, not `/mnt/user/appdata`.
+- **Unraid**: use `/mnt/cache/appdata/vibe` for a new install, not `/mnt/user/appdata`. Keep the existing folder mapping when upgrading.
 - **TrueNAS SCALE**: put config and transcode datasets on an SSD pool.
 
 ## 2. Detecting new files
