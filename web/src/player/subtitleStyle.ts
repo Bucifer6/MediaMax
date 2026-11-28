@@ -3,11 +3,24 @@ import type { SubtitleStyle } from '@mediamax/shared';
 
 export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = { size: 'medium', color: 'white', background: 'shadow', font: 'default', position: 'bottom', verticalOffset: 0, edge: 'outline', assStyles: 'auto' };
 
+/** The free-form style fields (unset = the preset look). */
+export const SUBTITLE_FREE_FIELDS = [
+  'fontScale', 'textColor', 'backgroundColor', 'backgroundOpacity', 'outlineColor', 'outlineWidth', 'shadowOpacity', 'shadowBlur', 'cornerRadius', 'bold',
+] as const;
+
+/** "Reset to default": the preset defaults, with every free-form field cleared (the server clears a field sent as null). */
+export const RESET_SUBTITLE_STYLE = {
+  ...DEFAULT_SUBTITLE_STYLE, ...Object.fromEntries(SUBTITLE_FREE_FIELDS.map((k) => [k, null])),
+} as unknown as SubtitleStyle;
+
 export function subtitleStyleOf(s: Partial<SubtitleStyle> | null | undefined): SubtitleStyle {
   return { ...DEFAULT_SUBTITLE_STYLE, ...(s ?? {}) };
 }
 
-export const SUBTITLE_OPTIONS: { [K in keyof SubtitleStyle]-?: { value: SubtitleStyle[K]; label: string }[] } = {
+/** The style fields picked from a list (the free-form ones — scale, colours, outline… — have their own controls). */
+export type SubtitlePresetField = 'size' | 'color' | 'background' | 'font' | 'position' | 'verticalOffset' | 'edge' | 'assStyles';
+
+export const SUBTITLE_OPTIONS: { [K in SubtitlePresetField]-?: { value: SubtitleStyle[K]; label: string }[] } = {
   size: [
     { value: 'small', label: 'Small' },
     { value: 'medium', label: 'Medium' },
@@ -55,7 +68,7 @@ export const SUBTITLE_OPTIONS: { [K in keyof SubtitleStyle]-?: { value: Subtitle
   ],
 };
 
-export const SUBTITLE_FIELD_LABELS: Record<keyof SubtitleStyle, string> = {
+export const SUBTITLE_FIELD_LABELS: Record<SubtitlePresetField, string> = {
   size: 'Size', color: 'Colour', background: 'Background', font: 'Font', position: 'Position',
   verticalOffset: 'Lift from bottom', edge: 'Text edge', assStyles: 'ASS/SSA styling',
 };
@@ -81,14 +94,20 @@ export function subtitleDeclarations(s: SubtitleStyle, base = 'clamp(16px, 2.6vw
     ? edge === 'outline' ? OUTLINE : edge === 'shadow' ? '2px 2px 3px rgb(0 0 0 / 0.9)' : 'none'
     : s.background === 'none' ? 'none' : '0 1px 2px rgb(0 0 0 / 0.6)';
   return {
-    'font-size': `calc(${base} * ${SCALE[s.size]})`,
-    color: COLORS[s.color],
-    'background-color': bg,
-    'text-shadow': shadow,
+    'font-size': `calc(${base} * ${s.fontScale ? s.fontScale / 100 : SCALE[s.size]})`,
+    color: s.textColor ?? COLORS[s.color],
+    'background-color': s.backgroundColor && bg !== 'transparent' ? hexAlpha(s.backgroundColor, s.backgroundOpacity ?? (s.background === 'box' ? 62 : 100)) : bg,
+    'text-shadow': s.outlineColor && shadow === OUTLINE ? OUTLINE.replaceAll('#000', s.outlineColor) : shadow,
     'font-family': FONTS[s.font],
     'line-height': '1.3',
-    'font-weight': s.font === 'mono' ? '500' : '600',
+    'font-weight': s.bold === false ? '400' : s.font === 'mono' ? '500' : '600',
+    'border-radius': s.cornerRadius && bg !== 'transparent' ? `${s.cornerRadius}px` : '0',
   };
+}
+
+function hexAlpha(hex: string, opacity: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgb(${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255} / ${opacity / 100})`;
 }
 
 /** React inline style (camelCased) for the settings preview. */
@@ -96,7 +115,7 @@ export function subtitlePreviewStyle(s: SubtitleStyle, basePx: number): CSSPrope
   const d = subtitleDeclarations(s, `${basePx}px`);
   return {
     fontSize: d['font-size'], color: d.color, backgroundColor: d['background-color'], textShadow: d['text-shadow'],
-    fontFamily: d['font-family'], lineHeight: d['line-height'], fontWeight: Number(d['font-weight']),
+    fontFamily: d['font-family'], lineHeight: d['line-height'], fontWeight: Number(d['font-weight']), borderRadius: d['border-radius'],
   };
 }
 

@@ -45,9 +45,11 @@ export interface MediaCardProps {
   showTitle?: boolean;
   showProgress?: boolean;
   hasTVPreferredFocus?: boolean;
+  /** Spoiler blur: episode stills are blurred (Settings → Playback). */
+  spoiler?: boolean;
 }
 
-export const MediaCard = memo(function MediaCard({ item, variant = 'auto', width, onPress, onFocusItem, showTitle = true, showProgress = true, hasTVPreferredFocus }: MediaCardProps) {
+export const MediaCard = memo(function MediaCard({ item, variant = 'auto', width, onPress, onFocusItem, showTitle = true, showProgress = true, hasTVPreferredFocus, spoiler }: MediaCardProps) {
   const t = useTheme();
   const v = cardVariantFor(item, variant);
   const size = useCardSize(v, width);
@@ -70,7 +72,7 @@ export const MediaCard = memo(function MediaCard({ item, variant = 'auto', width
         style={{ width: size.width, height: size.height, borderRadius: radius, overflow: 'hidden', backgroundColor: t.colors.surfaceAlt }}
       >
         {image ? (
-          <Img path={image} width={size.width} style={{ width: '100%', height: '100%' }} />
+          <Img path={image} width={size.width} style={{ width: '100%', height: '100%' }} blurRadius={spoiler && item.type === 'episode' ? 24 : undefined} />
         ) : (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: t.space.sm }}>
             <Icon name={item.type === 'album' || item.type === 'track' ? 'musical-notes' : item.type === 'audiobook' || item.type === 'bookpart' ? 'book-outline' : item.type === 'podcast' || item.type === 'podcastepisode' ? 'mic-outline' : 'film-outline'} color={t.colors.textMuted} />

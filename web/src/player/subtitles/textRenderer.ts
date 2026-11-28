@@ -42,7 +42,18 @@ export interface TextRenderOptions {
   tv: boolean;
   /** ASS: render the file's own styling (fallback renderer) or plain text in the user's style. */
   assMode: 'file' | 'user';
+  /** HDR comfort: text colour while HDR plays (dimmed), null = the style's own. */
+  hdrColor?: string | null;
 }
+
+/** `#rrggbb` + opacity (0–100) as a CSS colour. */
+function rgba(hex: string, opacity: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgb(${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255} / ${Math.max(0, Math.min(100, opacity)) / 100})`;
+}
+
+/** Size multiplier of the user's style: the continuous scale (50–200 %) when set, else the preset. */
+export const styleScale = (s: SubtitleStyle) => (s.fontScale ? s.fontScale / 100 : SIZE[s.size]);
 
 /** Text outline built from shadows (works everywhere, unlike paint-order on HTML text). */
 function outlineShadow(px: number, color: string, shadow = 0, shadowColor = 'rgba(0,0,0,0.6)'): string {
@@ -92,7 +103,7 @@ export class TextRenderer {
 
   /** Base font size (px) for user-styled text: ~5% of the picture height, bigger in TV mode. */
   private baseSize() {
-    return Math.max(12, this.rect.height * 0.05 * (this.opts.tv ? 1.12 : 1) * SIZE[this.opts.style.size]);
+    return Math.max(12, this.rect.height * 0.05 * (this.opts.tv ? 1.12 : 1) * styleScale(this.opts.style));
   }
 
   private bottomOffsetPct() {
@@ -139,18 +150,26 @@ export class TextRenderer {
     const size = this.baseSize();
     el.style.fontSize = `${size}px`;
     el.style.fontFamily = FONT[s.font];
-    el.style.fontWeight = s.font === 'mono' ? '500' : '600';
-    el.style.color = COLOR[s.color];
+    el.style.fontWeight = s.bold === false ? '400' : s.font === 'mono' ? '500' : '600';
+    el.style.color = this.opts.hdrColor ?? s.textColor ?? COLOR[s.color];
+    // Right-to-left lines take their direction from their own first letter, which keeps end punctuation in place.
+    el.dir = s.rtlFix === false ? '' : 'auto';
     const edge = s.edge ?? 'outline';
-    const box = s.background === 'box' ? 'rgb(0 0 0 / 0.62)' : s.background === 'boxSolid' ? 'rgb(0 0 0 / 1)' : '';
+    const boxBase = s.backgroundColor ?? '#000000';
+    const box = s.background === 'box' ? rgba(boxBase, s.backgroundOpacity ?? 62) : s.background === 'boxSolid' ? rgba(boxBase, s.backgroundOpacity ?? 100) : '';
+    const outlineColor = s.outlineColor ?? '#000000';
+    const outlinePx = s.outlineWidth ? size * 0.0225 * s.outlineWidth : Math.max(1.2, size * 0.045);
+    const shadowOpacity = (s.shadowOpacity ?? 90) / 100;
+    const shadowBlur = s.shadowBlur != null ? (size * 0.016 * s.shadowBlur).toFixed(1) : (size * 0.08).toFixed(1);
     const shadow = s.background === 'none'
       ? 'none'
       : box
         ? '0 1px 2px rgb(0 0 0 / 0.6)'
-        : edge === 'shadow' ? `${(size * 0.05).toFixed(1)}px ${(size * 0.05).toFixed(1)}px ${(size * 0.08).toFixed(1)}px rgb(0 0 0 / 0.9)` : edge === 'none' ? 'none' : outlineShadow(Math.max(1.2, size * 0.045), '#000', size * 0.03);
+        : edge === 'shadow' ? `${(size * 0.05).toFixed(1)}px ${(size * 0.05).toFixed(1)}px ${shadowBlur}px rgb(0 0 0 / ${shadowOpacity})` : edge === 'none' ? 'none' : outlineShadow(outlinePx, outlineColor, size * 0.03);
     for (const span of line) {
       if (box) {
         span.style.backgroundColor = box;
+        if (s.cornerRadius) span.style.borderRadius = `${s.cornerRadius}px`;
         span.style.padding = '0.08em 0.32em';
         (span.style as unknown as Record<string, string>).boxDecorationBreak = 'clone';
         (span.style as unknown as Record<string, string>).webkitBoxDecorationBreak = 'clone';

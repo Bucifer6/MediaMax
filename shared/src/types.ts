@@ -5884,3 +5884,153 @@ export interface DjOrderRequest {
   rules?: DjRules;
   presetId?: string;
 }
+
+/* ------------------------------------------------------------------ */
+/* Subtitle intelligence, HDR comfort and skip segments (0.8)          */
+/* ------------------------------------------------------------------ */
+
+export interface SubtitleStyle {
+  /** Text size in % of the medium size (50–200); overrides `size` when set. */
+  fontScale?: number;
+  /** Custom text colour (#rrggbb); overrides `color` when set. */
+  textColor?: string;
+  /** Box colour (#rrggbb) for the box backgrounds. */
+  backgroundColor?: string;
+  /** Box opacity (0–100) for the box backgrounds. */
+  backgroundOpacity?: number;
+  /** Outline colour (#rrggbb) and width (1–5 px at the medium size) for the outline edge. */
+  outlineColor?: string;
+  outlineWidth?: number;
+  /** Drop shadow opacity (0–100) and blur (0–10 px) for the shadow edge. */
+  shadowOpacity?: number;
+  shadowBlur?: number;
+  /** Box corner radius (0–16 px). */
+  cornerRadius?: number;
+  /** Bold text (default true: subtitles have always been drawn semi-bold). */
+  bold?: boolean;
+  /** Arabic / Hebrew: keep punctuation on the right end of right-to-left lines. Default true. */
+  rtlFix?: boolean;
+  /** Hide hearing-impaired cues ([music], (sighs), "JOHN:" speaker tags). Default false. */
+  stripSdh?: boolean;
+  /** HDR comfort: while HDR / Dolby Vision plays (not tone-mapped), use `hdrTextColor` at `hdrBrightness`. */
+  hdrStyleEnabled?: boolean;
+  /** Subtitle colour during HDR playback (#rrggbb). Default #ffffff. */
+  hdrTextColor?: string;
+  /** Subtitle brightness during HDR playback, 0–100 (mapped to 30–100 % luminance). Default 70. */
+  hdrBrightness?: number;
+  /** Also dim the player controls during HDR playback. */
+  hdrDimPlayerControls?: boolean;
+}
+
+/** Which segments the player skips by itself (unset keys follow the legacy `skipIntros`; credits default off). */
+export interface AutoSkipPrefs {
+  intro?: boolean;
+  recap?: boolean;
+  preview?: boolean;
+  commercial?: boolean;
+  /** End credits: skips to the next episode (or the end). */
+  credits?: boolean;
+}
+
+export interface UserPreferences {
+  // `audioLanguage` may also be 'original': the title's original language (TMDB), falling back to the file's default
+  // track when the original language is unknown.
+  /** Second choice when no track in `audioLanguage` exists. */
+  secondaryAudioLanguage?: string | null;
+  /** Second choice when no subtitle in `subtitleLanguage` exists. */
+  secondarySubtitleLanguage?: string | null;
+  /** List only subtitles in the preferred languages (falls back to all when none match). */
+  showOnlyPreferredSubtitles?: boolean;
+  /** Per-segment auto-skip; replaces `skipIntros` (still read when this is unset). */
+  autoSkip?: AutoSkipPrefs;
+  /** Blur the stills of episodes you haven't watched (show pages, Next up). */
+  blurUnwatchedEpisodes?: boolean;
+  /** Blur the episode stills in Continue watching / Next up rows. */
+  blurNextUp?: boolean;
+  /** Show the parental guide card for a few seconds when playback starts. Default false. */
+  parentalGuideOverlay?: boolean;
+}
+
+export interface Marker {
+  /** Where the marker came from. Absent = local detection (audio fingerprint, chapters, EDL). */
+  source?: 'local' | 'chapters' | 'introdb' | 'aniskip' | 'user';
+}
+
+export interface Item {
+  /** Original language of a movie or show (ISO 639-1, from TMDB); episodes inherit their show's. */
+  originalLanguage?: string | null;
+}
+
+export interface PlaybackInfo {
+  /** The title's original language (ISO 639-1) for the "Original" audio preference. */
+  originalLanguage?: string | null;
+  /** The media file being played (for per-file calls such as subtitle AutoSync). */
+  mediaId?: string;
+}
+
+/** Crowdsourced skip segments (Admin → Playback). Requests are made by the server; off until the admin turns them on. */
+export interface SkipSegmentSettings {
+  /** IntroDB (api.introdb.app): intro / recap / credits by IMDb id. */
+  introDb: boolean;
+  /** AniSkip (api.aniskip.com): anime openings / endings / recaps by MyAnimeList id. */
+  aniSkip: boolean;
+  /** Write-only IntroDB key (idb_…) for sending viewers' "Submit intro" timestamps upstream. */
+  introDbApiKey: string | null;
+  /** Parental guide source: a URL template with {imdb}, answering like imdbapi.dev's /titles/{id}/parentsGuide. null = off. */
+  parentalGuideUrl: string | null;
+}
+
+export interface ServerSettings {
+  skipSegments?: SkipSegmentSettings;
+}
+
+/** POST /items/:id/markers body: a viewer's own segment timestamps. */
+export interface SubmitMarkerRequest {
+  type: 'intro' | 'recap' | 'credits';
+  startMs: number;
+  endMs: number;
+  /** Also send it to IntroDB (needs the admin's IntroDB key; movies and episodes with an IMDb id only). */
+  upstream?: boolean;
+}
+
+export interface SubmitMarkerResponse {
+  markers: Marker[];
+  /** null = not sent; otherwise what IntroDB answered. */
+  upstream: { sent: boolean; message: string | null } | null;
+}
+
+export type ParentalSeverity = 'none' | 'mild' | 'moderate' | 'severe';
+
+/** GET /items/:id/parental-guide */
+export interface ParentalGuide {
+  contentRating: string | null;
+  /** Empty when no guide source is configured or the title isn't known to it. */
+  categories: { category: 'violence' | 'nudity' | 'profanity' | 'alcohol' | 'frightening'; severity: ParentalSeverity }[];
+}
+
+/** POST /items/:id/subtitles/autosync body: retime one subtitle track against another track of the same file. */
+export interface AutoSyncRequest {
+  mediaId: string;
+  /** The out-of-sync track (usually a downloaded sidecar). */
+  subtitleIndex: number;
+  /** An embedded text track with correct timing (any language: only the timing is compared). */
+  referenceIndex: number;
+}
+
+/**
+ * Piecewise time map applied to a subtitle's cue times: t' = t * ratio + offsetMs, then each group adds its own
+ * extra offset from its start time on (per-cue-group drift).
+ */
+export interface SubtitleSyncMap {
+  ratio: number;
+  offsetMs: number;
+  groups: { fromMs: number; offsetMs: number }[];
+}
+
+export interface AutoSyncResponse {
+  map: SubtitleSyncMap;
+  /** Share of the reference's speech time covered after the fix (0–1); below ~0.3 the result is unreliable. */
+  score: number;
+  /** Score before the fix, for comparison. */
+  scoreBefore: number;
+}

@@ -197,9 +197,20 @@ export function rowToItem(r: Row): Item {
     ...((extra as any).replayGain ? { replayGain: (extra as any).replayGain } : {}),
     ...(!(extra as any).series && r.provider_meta && r.provider_meta !== '{}' && parseJson<any>(r.provider_meta, {}).series ? { series: parseJson<any>(r.provider_meta, {}).series } : {}),
     ...(r.ratings ? { ratings: parseJson(r.ratings, null) } : {}),
+    ...(typeof extra.originalLanguage === 'string' ? { originalLanguage: extra.originalLanguage } : {}),
     ...(r.type === 'album' || r.type === 'track' ? musicInfo(r, extra) : {}),
     ...(r.type === 'show' ? { episodeOrder: (extra as any).episodeOrder === 'dvd' || (extra as any).episodeOrder === 'absolute' ? (extra as any).episodeOrder : 'aired' } : {}),
   };
+}
+
+/** A title's original language; episodes and seasons use their show's. null when TMDB never said. */
+export function originalLanguageOf(item: Pick<Item, 'type' | 'originalLanguage' | 'parentId' | 'grandparentId'>): string | null {
+  if (item.originalLanguage) return item.originalLanguage;
+  const showId = item.type === 'episode' ? item.grandparentId : item.type === 'season' ? item.parentId : null;
+  if (!showId) return null;
+  const row = db.get<{ extra: string }>('SELECT extra FROM items WHERE id = ?', showId);
+  const lang = parseJson<Record<string, unknown>>(row?.extra, {}).originalLanguage;
+  return typeof lang === 'string' ? lang : null;
 }
 
 export function mediaRowToSource(m: Row): MediaSource {

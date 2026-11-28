@@ -22,6 +22,8 @@ import { TextRenderer, videoContentRect, type TextRenderOptions } from './textRe
 import { PgsRenderer } from './pgsRenderer';
 import { LibassRenderer, libassSupported } from './assRenderer';
 import type { ParsedText, TextCue } from './types';
+import { prepareText, prepareTimed } from './prepare';
+import type { SyncMap } from '../playerPrefs';
 
 export type RendererKind = 'text' | 'libass' | 'ass-fallback' | 'pgs';
 
@@ -48,6 +50,10 @@ export interface SubtitleOverlayProps {
   controlsVisible?: boolean;
   /** Live captions (CEA-608/708 / WebVTT renditions from hls.js): shown as given, no timing. */
   liveCues?: TextCue[] | null;
+  /** AutoSync's time map for this track (applied to the cues in place: the video never restarts). */
+  syncMap?: SyncMap | null;
+  /** Subtitle colour override while HDR plays (HDR comfort), null = the style's colour. */
+  hdrColor?: string | null;
   onStatus?: (s: SubtitleStatus) => void;
 }
 
@@ -105,13 +111,36 @@ export function SubtitleOverlay(p: SubtitleOverlayProps) {
   const format = p.track?.format ?? (p.track ? 'vtt' : null);
   const url = p.track ? p.track.rawUrl ?? p.track.url : null;
   const useLibass = format === 'ass' && !assFailed && wantLibass(p.style, p.tv);
-  const textOpts: TextRenderOptions = { style: p.style, tv: p.tv, assMode: p.style.assStyles === 'user' ? 'user' : 'file' };
+  const textOpts: TextRenderOptions = { style: p.style, tv: p.tv, assMode: p.style.assStyles === 'user' ? 'user' : 'file', hdrColor: p.hdrColor ?? null };
+  // The track as fetched; what is drawn is this with the viewer's SDH / AutoSync preferences applied.
+  const rawText = useRef<ParsedText | null>(null);
+  const rawPgs = useRef<PgsEvent[] | null>(null);
+  const prep = useRef({ stripSdh: !!p.style.stripSdh, syncMap: p.syncMap ?? null });
+  prep.current = { stripSdh: !!p.style.stripSdh, syncMap: p.syncMap ?? null };
+  const applyPrepared = () => {
+    if (rawText.current) {
+      const parsed = prepareText(rawText.current, prep.current);
+      textIndex.current = new CueIndex(parsed.cues);
+      parsedRef.current = parsed;
+      textRef.current?.setTrack(parsed);
+    }
+    if (rawPgs.current) pgsIndex.current = new CueIndex(prepareTimed(rawPgs.current, prep.current.syncMap));
+  };
+
+  // SDH / AutoSync changes re-time or re-filter the cues already loaded: no refetch, no restart.
+  const syncKey = p.syncMap ? JSON.stringify(p.syncMap) : '';
+  useEffect(() => {
+    applyPrepared();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!p.style.stripSdh, syncKey]);
 
   /* ------------------------- fetch + parse (with partial polling) ------------------------- */
   useEffect(() => {
     textIndex.current = null;
     parsedRef.current = null;
     pgsIndex.current = null;
+    rawText.current = null;
+    rawPgs.current = null;
     setAssContent(null);
     setAssFailed(false);
     if (!url || !format) {
@@ -128,23 +157,20 @@ export function SubtitleOverlay(p: SubtitleOverlayProps) {
         const r = await fetchTrack(url, binary, ctrl.signal);
         if (ctrl.signal.aborted) return;
         if (binary) {
-          pgsIndex.current = new CueIndex(parsePgs(r.data as Uint8Array).events);
+          rawPgs.current = parsePgs(r.data as Uint8Array).events;
+          applyPrepared();
           setKind('pgs');
         } else {
           const text = r.data as string;
           const f = format === 'ass' || sniffTextFormat(text) === 'ass' ? 'ass' : sniffTextFormat(text) === 'vtt' ? 'vtt' : format === 'vtt' ? 'vtt' : 'srt';
           if (f === 'ass') {
             setAssContent(text);
-            const parsed: ParsedText = parseAss(text);
-            textIndex.current = new CueIndex(parsed.cues);
-            parsedRef.current = parsed;
-            textRef.current?.setTrack(parsed);
+            rawText.current = parseAss(text);
+            applyPrepared();
             setKind('ass-fallback');
           } else {
-            const parsed = f === 'vtt' ? parseVtt(text) : parseSrt(text);
-            textIndex.current = new CueIndex(parsed.cues);
-            parsedRef.current = parsed;
-            textRef.current?.setTrack(parsed);
+            rawText.current = f === 'vtt' ? parseVtt(text) : parseSrt(text);
+            applyPrepared();
             setKind('text');
           }
         }
@@ -217,14 +243,15 @@ export function SubtitleOverlay(p: SubtitleOverlayProps) {
   }, [effectiveKind]);
 
   // libass (jassub) — bound to the video element; recreated when the element changes.
-  const libassOffset = (p.streamStartMs - p.delayMs) / 1000;
+  // libass takes one constant offset, so only AutoSync's constant delay reaches it (rate / group fixes need text mode).
+  const libassOffset = (p.streamStartMs - p.delayMs - (p.syncMap && p.syncMap.ratio === 1 ? p.syncMap.offsetMs : 0)) / 1000;
   useEffect(() => {
     if (effectiveKind !== 'libass' || !p.video || assContent == null) return;
     const r = new LibassRenderer({
       video: p.video,
       content: assContent,
       fonts,
-      timeOffset: (live.current.streamStartMs - live.current.delayMs) / 1000,
+      timeOffset: libassOffset,
       lowPower: live.current.tv,
       onError: (e) => {
         console.warn('libass renderer failed, using the simplified ASS renderer', e);

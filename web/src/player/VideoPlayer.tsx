@@ -30,9 +30,11 @@ import { formatClock, languageName } from '../utils/format';
 import { useRemoteTarget } from '../remote/useRemoteTarget';
 import { openPairDialog } from '../remote/api';
 import { isResumable } from '../utils/items';
-import { SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitlePreviewStyle, subtitleStyleOf } from './subtitleStyle';
+import { SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitlePreviewStyle, subtitleStyleOf, type SubtitlePresetField } from './subtitleStyle';
 import '../styles/screens-player.css';
 import { SubtitleOverlay, type SubtitleStatus } from './subtitles/SubtitleOverlay';
+import { hdrActive, hdrControlsOpacity, hdrSubtitleColor, pickAudio, pickSubtitle, shouldAutoSkip, visibleSubtitles, type SyncMap } from './playerPrefs';
+import { ParentalGuideCard, SegmentSubmit } from './SegmentTools';
 import { useAdaptive } from './useAdaptive';
 import { initialBandwidth } from './bandwidth';
 import { formatBps } from './abr';
@@ -144,6 +146,12 @@ export default function VideoPlayer() {
   const subStyle = subtitleStyleOf(prefs.subtitleStyle);
   const subStyleRef = useRef(subStyle);
   subStyleRef.current = subStyle;
+  /** AutoSync results per subtitle track (index → time map), applied to the cues in place. */
+  const [syncMaps, setSyncMaps] = useState<Record<number, SyncMap | null>>({});
+  const [autoRef, setAutoRef] = useState<number | null>(null);
+  const [autoBusy, setAutoBusy] = useState(false);
+  /** Markers saved by an admin during this session (Submit intro) replace the stream's. */
+  const [markersOverride, setMarkersOverride] = useState<Marker[] | null>(null);
 
   /** The <video> currently playing: one of two elements, swapped for seamless quality switches (videoPair.ts). */
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -221,7 +229,30 @@ export default function VideoPlayer() {
   const [tapSkip, setTapSkip] = useState<{ side: 'left' | 'right'; n: number } | null>(null);
 
   const durationMs = info?.durationMs ?? item?.durationMs ?? 0;
-  const markers: Marker[] = info?.markers?.length ? info.markers : item?.markers ?? [];
+  const markers: Marker[] = markersOverride ?? (info?.markers?.length ? info.markers : item?.markers ?? []);
+  // HDR comfort: dimmer subtitles (and controls) while HDR reaches the display.
+  const hdrOn = hdrActive(info?.videoRange);
+  const hdrSubColor = hdrSubtitleColor(subStyle, hdrOn);
+  const controlsDim = hdrControlsOpacity(subStyle, hdrOn);
+  const runAutoSync = async (referenceIndex: number) => {
+    const track = activeSubRef.current;
+    if (!track || !item || !info?.mediaId) return;
+    setAutoBusy(true);
+    try {
+      const r = await api.subtitles.autoSync(item.id, { mediaId: info.mediaId, subtitleIndex: track.index, referenceIndex });
+      if (r.score < 0.3) {
+        toast.show('AutoSync could not find a reliable match with that track.');
+        return;
+      }
+      setSyncMaps((m) => ({ ...m, [track.index]: r.map }));
+      const moved = r.map.groups.length ? 'in parts' : r.map.ratio !== 1 ? 'frame rate fixed' : `${(r.map.offsetMs / 1000).toFixed(2)} s`;
+      flash(`Subtitles synced (${moved})`);
+    } catch (e) {
+      toast.show(`AutoSync: ${errorMessage(e)}`);
+    } finally {
+      setAutoBusy(false);
+    }
+  };
   // "Previously on…" card at the start of an episode (dismissed by the viewer or when it scrolls past 2 minutes).
   const [showRecap, setShowRecap] = useState(true);
   useEffect(() => setShowRecap(true), [itemId]);
@@ -542,6 +573,8 @@ export default function VideoPlayer() {
     setTrickplay(null);
     setSubSearch(false);
     skippedMarkers.current.clear();
+    setSyncMaps({});
+    setMarkersOverride(null);
     const sy = loadSync(itemId);
     setSubDelayMs(sy.sub);
     setAudioDelayMs(Math.max(0, sy.audio));
@@ -567,11 +600,13 @@ export default function VideoPlayer() {
           return;
         }
       }
-      // Preferred audio language.
+      // Preferred audio languages (an episode's "Original" language is only known to the server, which then picks).
       let ai: number | undefined;
       const media = it?.media?.[0];
-      if (media && prefs.audioLanguage) {
-        const match = media.audioStreams.find((a) => a.language?.toLowerCase().startsWith(prefs.audioLanguage!.toLowerCase()));
+      // An episode's "Original" language is only known to the server (it's stored on the show), so let it pick.
+      const originalUnknown = prefs.audioLanguage === 'original' && !it?.originalLanguage;
+      if (media && !originalUnknown) {
+        const match = pickAudio(media.audioStreams, prefs, it?.originalLanguage ?? null);
         if (match && !match.default) ai = match.index;
       }
       setAudioIndex(ai);
@@ -658,12 +693,10 @@ export default function VideoPlayer() {
   useEffect(() => {
     if (!info || burned) return;
     const subs = info.subtitles;
-    let pick: number | null = null;
-    const lang = prefs.subtitleLanguage?.toLowerCase();
-    const byLang = (list: typeof subs) => (lang ? list.find((s) => s.language?.toLowerCase().startsWith(lang)) : undefined);
-    if (prefs.subtitleMode === 'always') pick = (byLang(subs) ?? subs.find((s) => s.default) ?? subs[0])?.index ?? null;
-    else if (prefs.subtitleMode === 'forced') pick = (byLang(subs.filter((s) => s.forced)) ?? subs.find((s) => s.forced))?.index ?? null;
-    else if (prefs.subtitleMode === 'auto') pick = (subs.find((s) => s.forced) ?? subs.find((s) => s.default))?.index ?? null;
+    // The track that is actually playing: the one asked for, else what the server's preference rules chose.
+    const audioNow = info.audioStreams.find((a) => a.index === optsRef.current.audioIndex)
+      ?? pickAudio(info.audioStreams, prefs, info.originalLanguage ?? null) ?? info.audioStreams.find((a) => a.default) ?? info.audioStreams[0];
+    const pick = pickSubtitle(subs, prefs, audioNow?.language ?? null)?.index ?? null;
     const wanted = pendingSubPick.current;
     pendingSubPick.current = null;
     if (wanted != null && subs.some((s) => s.index === wanted)) {
@@ -1263,7 +1296,7 @@ export default function VideoPlayer() {
   const inCredits = markers.find((m) => m.type === 'credits' && positionMs >= m.startMs && positionMs < m.endMs);
 
   useEffect(() => {
-    if (!activeSkip || !prefs.skipIntros) return;
+    if (!activeSkip || !shouldAutoSkip(prefs, activeSkip.type)) return;
     // The viewer asked to watch the recap segment ("Play the recap clip").
     if (activeSkip.type === 'recap' && sp.get('keeprecap')) return;
     const key = `${activeSkip.type}-${activeSkip.startMs}`;
@@ -1273,6 +1306,17 @@ export default function VideoPlayer() {
     flash(`Skipped ${activeSkip.type}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSkip?.startMs]);
+
+  // End credits skipped by themselves (Settings → Playback → Skip automatically): next episode, or the end.
+  useEffect(() => {
+    if (!inCredits || !shouldAutoSkip(prefs, 'credits') || marathon.blockAutoplay) return;
+    const key = `credits-${inCredits.startMs}`;
+    if (skippedMarkers.current.has(key)) return;
+    skippedMarkers.current.add(key);
+    if (info?.nextItemId && prefs.autoplayNext) goNext();
+    else seekTo(inCredits.endMs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inCredits?.startMs]);
 
   const remaining = durationMs ? durationMs - positionMs : Infinity;
   const nearEnd = !!info?.nextItemId && (!!inCredits || remaining < 30000) && positionMs > 0;
@@ -1317,7 +1361,7 @@ export default function VideoPlayer() {
 
   /* Remote control target (your other devices, a paired phone remote / second screen). */
   const remoteSkip = introThen ? { type: 'intro', label: 'Skip to movie' }
-    : activeSkip && !prefs.skipIntros ? { type: activeSkip.type, label: `Skip ${activeSkip.type === 'commercial' ? 'ad break' : activeSkip.type}` }
+    : activeSkip && !shouldAutoSkip(prefs, activeSkip.type) ? { type: activeSkip.type, label: `Skip ${activeSkip.type === 'commercial' ? 'ad break' : activeSkip.type}` }
       : inCredits ? { type: 'credits', label: info?.nextItemId ? 'Next episode' : 'Skip credits' } : null;
   useRemoteTarget(item ? {
     itemId: item.id, title, subtitle: subtitle || null, posterUrl: item.posterUrl ?? null, positionMs, durationMs: durationMs || null, paused, volume: muted ? 0 : volume,
@@ -1342,7 +1386,8 @@ export default function VideoPlayer() {
   return (
     <div
       ref={shellRef}
-      className={`player vp ${controls ? 'show-controls' : 'hide-controls'} ${fullscreen ? 'is-fs' : ''} ${paused ? 'is-paused' : ''}`}
+      className={`player vp ${controls ? 'show-controls' : 'hide-controls'} ${fullscreen ? 'is-fs' : ''} ${paused ? 'is-paused' : ''} ${controlsDim < 1 ? 'hdr-dim' : ''}`}
+      style={controlsDim < 1 ? ({ '--vp-hdr-dim': controlsDim } as React.CSSProperties) : undefined}
       onMouseMove={poke}
       onTouchStart={poke}
     >
@@ -1365,6 +1410,8 @@ export default function VideoPlayer() {
           tv={isTvMode()}
           controlsVisible={controls}
           onStatus={onSubStatus}
+          syncMap={activeSubTrack ? syncMaps[activeSubTrack.index] ?? null : null}
+          hdrColor={hdrSubColor}
         />
       )}
 
@@ -1389,6 +1436,7 @@ export default function VideoPlayer() {
         </div>
       )}
       {osd && <div className="player-osd">{osd}</div>}
+      {prefs.parentalGuideOverlay && item && (item.type === 'movie' || item.type === 'episode') && !introThen && <ParentalGuideCard itemId={item.id} positionMs={positionMs} />}
       {syncToast && <div className="player-sync-toast" role="status">{syncToast}</div>}
       {tapSkip && (
         <div className={`tap-skip tap-skip-${tapSkip.side}`} aria-hidden="true">
@@ -1472,7 +1520,7 @@ export default function VideoPlayer() {
           }} />
         </div>
       )}
-      {activeSkip && !prefs.skipIntros && (
+      {activeSkip && !shouldAutoSkip(prefs, activeSkip.type) && (
         <button className="skip-btn" onClick={() => seekTo(activeSkip.endMs)}>
           Skip {activeSkip.type === 'commercial' ? 'ad break' : activeSkip.type} <Icon name="skipFwd" size={16} />
         </button>
@@ -1617,7 +1665,7 @@ export default function VideoPlayer() {
           </div>
           {menu === 'subStyle' ? (
             <div className="vp-panel-body substyle-body">
-                {(Object.keys(SUBTITLE_OPTIONS) as (keyof SubtitleStyle)[]).map((field) => (
+                {(Object.keys(SUBTITLE_OPTIONS) as SubtitlePresetField[]).map((field) => (
                   <div className="substyle-row" key={field} role="radiogroup" aria-label={SUBTITLE_FIELD_LABELS[field]}>
                     <span className="substyle-label">{SUBTITLE_FIELD_LABELS[field]}</span>
                     <div className="substyle-chips">
@@ -1667,6 +1715,23 @@ export default function VideoPlayer() {
                     <p className="sync-hint">Positive values make subtitles or sound come later. Audio can only be delayed (for sound that runs ahead of the picture).</p>
                   </>
                 )}
+                {activeSubTrack && item && info?.mediaId && (() => {
+                  const refs = textSubs.filter((s) => s.index !== activeSubTrack.index && !s.external && !s.isImage);
+                  if (!refs.length || activeSubTrack.isImage) return null;
+                  return (
+                    <div className="sync-row sync-auto">
+                      <span className="sync-label">AutoSync<small>{syncMaps[activeSubTrack.index] ? 'applied' : 'match an embedded track'}</small></span>
+                      <select className="select select-sm" value={autoRef ?? refs[0].index} onChange={(e) => setAutoRef(Number(e.target.value))} aria-label="Reference track">
+                        {refs.map((r) => <option key={r.index} value={r.index}>{r.title || languageName(r.language)}</option>)}
+                      </select>
+                      <button className="btn btn-glass btn-sm" disabled={autoBusy} onClick={() => void runAutoSync(autoRef ?? refs[0].index)}>{autoBusy ? 'Syncing…' : 'Sync'}</button>
+                      {syncMaps[activeSubTrack.index] && <button className="btn btn-ghost btn-sm" onClick={() => setSyncMaps((m) => ({ ...m, [activeSubTrack.index]: null }))}>Undo</button>}
+                    </div>
+                  );
+                })()}
+                {user?.isAdmin && item && (item.type === 'episode' || item.type === 'movie') && (
+                  <SegmentSubmit itemId={item.id} positionMs={positionMs} onSaved={(saved) => setMarkersOverride([...saved, ...markers.filter((m) => m.source && m.source !== 'user' && !saved.some((s) => s.type === m.type))])} />
+                )}
             </div>
           ) : (
             <div className={`vp-panel-body vp-panel-cols ${audioStreams.length > 0 ? 'two' : ''}`}>
@@ -1708,7 +1773,7 @@ export default function VideoPlayer() {
                   onSelect={(v) => (v === 'off' ? selectSubtitle(null) : selectSubtitle(Number(v.slice(1)), v[0] === 'b'))}
                   options={[
                     { label: 'Off', value: 'off' },
-                    ...textSubs.map((s) => ({ label: s.title || languageName(s.language), value: `t${s.index}`, sub: [s.forced && 'Forced', s.default && 'Default', s.format && s.format !== 'srt' && s.format !== 'vtt' && s.format.toUpperCase()].filter(Boolean).join(' · ') || undefined })),
+                    ...visibleSubtitles(textSubs, prefs).concat(activeSubTrack && !visibleSubtitles(textSubs, prefs).includes(activeSubTrack) ? [activeSubTrack] : []).map((s) => ({ label: s.title || languageName(s.language), value: `t${s.index}`, sub: [s.forced && 'Forced', s.default && 'Default', s.format && s.format !== 'srt' && s.format !== 'vtt' && s.format.toUpperCase()].filter(Boolean).join(' · ') || undefined })),
                     ...burnOnly.map((s) => ({ label: s.title || languageName(s.language), value: `b${s.index}`, sub: `${(s.codec ?? 'bitmap').toUpperCase()} · burn-in (transcodes)` })),
                   ]}
                 />

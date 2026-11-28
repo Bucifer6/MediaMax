@@ -173,7 +173,9 @@ function SeriesRow({ item }: { item: Item }) {
 /* ---------------- Episode list ---------------- */
 function EpisodeList({ seasonId, upNextId }: { seasonId: string; upNextId?: string | null }) {
   const play = usePlayItem();
-  const warm = usePlayWarmup(useApp().user ?? null);
+  const { user } = useApp();
+  const warm = usePlayWarmup(user ?? null);
+  const blurUnwatched = !!user?.preferences.blurUnwatchedEpisodes;
   const eps = useAsync(() => api.items.children(seasonId, { sort: 'index', order: 'asc', limit: 500 }), [seasonId]);
   useServerEvent((ev) => {
     if (ev.type === 'userdata.updated') eps.setData((d) => d && { ...d, items: d.items.map((i) => (i.id === ev.itemId ? { ...i, userData: ev.userData } : i)) });
@@ -200,7 +202,7 @@ function EpisodeList({ seasonId, upNextId }: { seasonId: string; upNextId?: stri
         const left = inProgress && ep.durationMs ? ep.durationMs - ep.userData.positionMs : 0;
         const upNext = ep.id === upNextId;
         return (
-          <li key={ep.id} className={`tp-ep ${ep.userData.played ? 'played' : ''} ${upNext ? 'up-next' : ''}`}>
+          <li key={ep.id} className={`tp-ep ${ep.userData.played ? 'played' : ''} ${upNext ? 'up-next' : ''} ${blurUnwatched && !ep.userData.played && !inProgress ? 'spoiler' : ''}`}>
             <button className="tp-ep-still" onClick={() => play(ep)} aria-label={`${inProgress ? 'Resume' : 'Play'} episode ${ep.index ?? ''}: ${ep.title}`} data-nav {...warm.bind(ep)}>
               <Img src={ep.thumbUrl ?? ep.backdropUrl} width={480} alt="" fallback={<Icon name="shows" size={24} />} />
               <span className="tp-ep-play" aria-hidden="true"><Icon name="play" size={20} /></span>

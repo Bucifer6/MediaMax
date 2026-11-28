@@ -32,6 +32,9 @@ const DEFAULT_TITLES: Record<string, string> = {
   recordings: 'Recordings',
 };
 
+/** Continue watching / Next up stills are blurred when the viewer asked (spoiler protection). */
+const spoilerRow = (row: HomeRow, blurNextUp: boolean | undefined) => !!blurNextUp && (row.type === 'continue' || row.type === 'nextup');
+
 function variantFor(row: HomeRow): CardVariant {
   if (row.type === 'continue' || row.type === 'nextup') return 'landscape';
   return 'auto';
@@ -113,7 +116,7 @@ function PhoneHome({ rows, refreshing, onRefresh }: { rows: HomeRow[]; refreshin
             {row.type === 'live-now' || row.type === 'favorite-channels' ? (
               <ChannelRow title={row.title || DEFAULT_TITLES[row.type]} channels={row.channels ?? []} onSeeAll={() => router.push('/(tabs)/live')} />
             ) : (
-              <ItemRow title={row.title || DEFAULT_TITLES[row.type] || ''} items={row.items} variant={variantFor(row)} onSeeAll={seeAllFor(row)} />
+              <ItemRow title={row.title || DEFAULT_TITLES[row.type] || ''} items={row.items} variant={variantFor(row)} onSeeAll={seeAllFor(row)} spoiler={spoilerRow(row, user?.preferences.blurNextUp)} />
             )}
           </Fragment>
         ))}
@@ -145,6 +148,7 @@ function PhoneHome({ rows, refreshing, onRefresh }: { rows: HomeRow[]; refreshin
 
 function TVHome({ rows }: { rows: HomeRow[] }) {
   const t = useTheme();
+  const { user } = useSession();
   const hero = rows.find((r) => r.type === 'hero');
   const firstItem = hero?.items[0] ?? rows.find((r) => r.items.length)?.items[0] ?? null;
   const [focused, setFocused] = useState<Item | null>(firstItem);
@@ -193,6 +197,7 @@ function TVHome({ rows }: { rows: HomeRow[] }) {
               title={row.type === 'hero' ? row.title || 'Featured' : row.title || DEFAULT_TITLES[row.type] || ''}
               items={row.items}
               variant={row.type === 'hero' ? 'landscape' : variantFor(row)}
+              spoiler={spoilerRow(row, user?.preferences.blurNextUp)}
               onSeeAll={seeAll.get(row.id)}
               onFocusItem={onFocusItem}
               firstPreferred={idx === 0}

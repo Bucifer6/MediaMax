@@ -36,6 +36,7 @@ function rowLink(row: HomeRow): string | undefined {
 }
 
 function HomeRowView({ row }: { row: HomeRow }) {
+  const { user } = useApp();
   if (row.type === 'live-now' || row.type === 'favorite-channels') {
     const channels = row.channels ?? [];
     if (!channels.length) return null;
@@ -63,8 +64,10 @@ function HomeRowView({ row }: { row: HomeRow }) {
     );
   }
   const wide = row.type === 'continue' || row.type === 'nextup' || row.type === 'recordings';
+  // Spoiler blur (Settings → Playback): episode stills in Continue watching / Next up.
+  const spoiler = (row.type === 'continue' || row.type === 'nextup') && !!user?.preferences.blurNextUp;
   return (
-    <Row title={row.title} link={rowLink(row)} id={row.id} className={`${wide ? 'row-wide' : ''} home-row-${row.type}`}>
+    <Row title={row.title} link={rowLink(row)} id={row.id} className={`${wide ? 'row-wide' : ''} home-row-${row.type} ${spoiler ? 'row-spoiler' : ''}`}>
       {row.items.map((it) => (wide ? <LandscapeCard key={it.id} item={it} /> : <PosterCard key={it.id} item={it} />))}
     </Row>
   );

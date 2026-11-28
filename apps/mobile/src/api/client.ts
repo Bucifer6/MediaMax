@@ -4,6 +4,7 @@
  */
 import type {
   ApiError as ApiErrorBody,
+  ParentalGuide,
   BuiltinAvatar,
   CreateProfileRequest,
   Profile,
@@ -570,6 +571,10 @@ export class MediaMaxClient {
 
   /* --------------------- Trickplay / subtitles ---------------------- */
   /** Scrub-preview sprite sheets. 404 (ApiError.status) until generated. */
+  /** Content rating + parental guide severities (when the server has a guide source). */
+  parentalGuide(itemId: string, signal?: AbortSignal) {
+    return this.get<ParentalGuide>(`/items/${encodeURIComponent(itemId)}/parental-guide`, undefined, signal);
+  }
   trickplay(itemId: string, mediaId?: string, signal?: AbortSignal) {
     return this.get<TrickplayInfo>(`/items/${encodeURIComponent(itemId)}/trickplay`, { mediaId }, signal);
   }

@@ -27,6 +27,8 @@ const DEFAULT_BASE: Record<string, string> = {
   listenbrainz: 'https://api.listenbrainz.org',
   listenbrainzLabs: 'https://labs.api.listenbrainz.org',
   acoustid: 'https://api.acoustid.org',
+  introdb: 'https://api.introdb.app',
+  aniskip: 'https://api.aniskip.com/v2',
 };
 
 /** Env overrides, e.g. MEDIAMAX_TVDB_API_BASE (used by tests and for self-hosted mirrors). */
@@ -45,6 +47,8 @@ const ENV: Record<string, string> = {
   listenbrainz: 'MEDIAMAX_LISTENBRAINZ_API_BASE',
   listenbrainzLabs: 'MEDIAMAX_LISTENBRAINZ_LABS_BASE',
   acoustid: 'MEDIAMAX_ACOUSTID_API_BASE',
+  introdb: 'MEDIAMAX_INTRODB_API_BASE',
+  aniskip: 'MEDIAMAX_ANISKIP_API_BASE',
 };
 
 /** Minimum gap between two requests to the same service (client-side rate limit). */

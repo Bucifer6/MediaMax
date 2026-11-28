@@ -50,6 +50,8 @@ import { ChannelBanner } from './ChannelBanner';
 import { BANNER_MS, SURF_TUNE_MS, channelLabel, matchNumber, stepChannel, surfList } from './surf';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { activeCues, parseVtt, type Cue } from './vtt';
+import { cleanCueText, hdrActive, hdrControlsOpacity, hdrSubtitleColor, pickAudio, pickSubtitle, shouldAutoSkip, visibleSubtitles } from './playerPrefs';
+import { ParentalGuideCard } from './ParentalGuide';
 import { measureBandwidth } from './bandwidth';
 import { useMarathon } from './marathon';
 import { videoPlaybackRequest } from './warmup';
@@ -239,13 +241,9 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       }
       if (firstLoad.current) {
         firstLoad.current = false;
-        const mode = prefs?.subtitleMode ?? 'auto';
-        const lang = prefs?.subtitleLanguage;
-        const tracks = pi.subtitles;
-        let pick: SubtitleTrack | undefined;
-        if (mode === 'forced') pick = tracks.find((s) => s.forced);
-        else if (mode === 'always') pick = tracks.find((s) => !s.forced && langMatch(s.language, lang)) ?? tracks.find((s) => s.default) ?? tracks[0];
-        else if (mode === 'auto') pick = tracks.find((s) => s.forced && (!lang || langMatch(s.language, lang))) ?? tracks.find((s) => s.default);
+        // Shared rules (primary + secondary language; foreign audio turns full subtitles on in Auto).
+        const audioNow = pickAudio(pi.audioStreams, prefs ?? {}, pi.originalLanguage ?? null) ?? pi.audioStreams.find((a) => a.default) ?? pi.audioStreams[0];
+        const pick = pickSubtitle(pi.subtitles, prefs ?? {}, audioNow?.language ?? null);
         setSub(pick ? { kind: 'server', track: pick } : { kind: 'off' });
       }
     },
@@ -791,14 +789,19 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   const nextId = info?.nextItemId ?? null;
 
   useEffect(() => {
-    if (!activeMarker || activeMarker.type === 'credits') return;
+    if (!activeMarker) return;
     const key = activeMarker.startMs;
-    if (prefs?.skipIntros && activeMarker.type !== 'preview' && !skipped.current.has(key)) {
-      skipped.current.add(key);
-      seekTo(activeMarker.endMs);
-      flash(activeMarker.type === 'commercial' ? 'Ad break skipped' : activeMarker.type === 'recap' ? 'Recap skipped' : 'Intro skipped');
+    if (!shouldAutoSkip(prefs, activeMarker.type) || skipped.current.has(key)) return;
+    skipped.current.add(key);
+    // End credits (when asked for): straight to the next episode, else past them.
+    if (activeMarker.type === 'credits') {
+      if (nextId && !marathon.active && prefs?.autoplayNext !== false) goNext(nextId);
+      else seekTo(activeMarker.endMs);
+      return;
     }
-  }, [activeMarker, prefs?.skipIntros, seekTo, flash]);
+    seekTo(activeMarker.endMs);
+    flash(({ commercial: 'Ad break skipped', recap: 'Recap skipped', preview: 'Preview skipped', intro: 'Intro skipped' } as Record<string, string>)[activeMarker.type] ?? 'Skipped');
+  }, [activeMarker, prefs, seekTo, flash, nextId, goNext, marathon.active]);
 
   useEffect(() => {
     if (isLive || !nextId || upNext || upNextDismissed || prefs?.autoplayNext === false || dur <= 0 || marathon.active || marathon.sleepOn) return;
@@ -993,7 +996,10 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   };
 
   const subSections = useMemo(() => {
-    const serverTracks = info?.subtitles ?? [];
+    // Only the preferred languages when asked (the track showing now always stays listed).
+    const all = info?.subtitles ?? [];
+    const preferred = visibleSubtitles(all, prefs ?? {});
+    const serverTracks = sub.kind === 'server' && !preferred.includes(sub.track) ? [...preferred, sub.track] : preferred;
     const sections: { title?: string; options: SheetOption<string>[] }[] = [
       { options: [{ key: 'off', label: 'Off', selected: sub.kind === 'off', icon: 'close-circle-outline' }] },
     ];
@@ -1027,7 +1033,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       });
     if (onlineVod) sections.push({ title: 'More', options: [{ key: 'online', label: 'Search online…', description: 'Find and download subtitles from OpenSubtitles', icon: 'cloud-download-outline' }] });
     return sections;
-  }, [info, embeddedSubs, sub, onlineVod, casting]);
+  }, [info, embeddedSubs, sub, onlineVod, casting, prefs]);
   const selectSub = (key: string) => {
     if (key === 'online') return setSheet('online');
     setSheet(null);
@@ -1090,14 +1096,23 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   };
 
   // ----- render -----
-  const subtitleText = sub.kind === 'server' && !casting ? activeCues(cues, pos).map((c) => c.text).join('\n') : '';
   // The user's subtitle style (Settings → Subtitles), as on the web/TV players.
   const ss = prefs?.subtitleStyle;
+  const subtitleText = sub.kind === 'server' && !casting
+    ? activeCues(cues, pos).map((c) => cleanCueText(c.text, ss)).filter(Boolean).join('\n')
+    : '';
+  const hdrOn = hdrActive(info?.videoRange);
+  const boxColor = (opacity: number) => {
+    const n = parseInt((ss?.backgroundColor ?? '#000000').slice(1), 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${(ss?.backgroundOpacity ?? opacity) / 100})`;
+  };
   const subLook = {
-    scale: ({ small: 0.8, medium: 1, large: 1.25, xlarge: 1.5 } as const)[ss?.size ?? 'medium'],
-    color: ({ white: '#fff', yellow: '#ffe94d', cyan: '#5ff2ff', green: '#6dff7a' } as const)[ss?.color ?? 'white'],
-    text: ss?.background === 'box' ? { backgroundColor: 'rgba(0,0,0,0.62)' }
-      : ss?.background === 'boxSolid' ? { backgroundColor: '#000' }
+    scale: ss?.fontScale ? ss.fontScale / 100 : ({ small: 0.8, medium: 1, large: 1.25, xlarge: 1.5 } as const)[ss?.size ?? 'medium'],
+    color: hdrSubtitleColor(ss, hdrOn) ?? ss?.textColor ?? ({ white: '#fff', yellow: '#ffe94d', cyan: '#5ff2ff', green: '#6dff7a' } as const)[ss?.color ?? 'white'],
+    weight: (ss?.bold === false ? '400' : '700') as '400' | '700',
+    radius: ss?.cornerRadius ?? 4,
+    text: ss?.background === 'box' ? { backgroundColor: boxColor(62) }
+      : ss?.background === 'boxSolid' ? { backgroundColor: boxColor(100) }
       : ss?.background === 'none' || ss?.edge === 'none' ? { backgroundColor: 'transparent' }
       : { backgroundColor: 'transparent', textShadowColor: 'rgba(0,0,0,0.95)', textShadowRadius: ss?.edge === 'shadow' ? 3 : 6, textShadowOffset: { width: ss?.edge === 'shadow' ? 2 : 0, height: ss?.edge === 'shadow' ? 2 : 1 } },
   };
@@ -1225,9 +1240,9 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
         <View pointerEvents="none" style={{ position: 'absolute', left: '8%', right: '8%', bottom: (controls ? (t.isTV ? t.s(190) : 130) : t.isTV ? t.s(60) : 36) + subLift, alignItems: 'center' }}>
           <T
             center
-            weight="700"
+            weight={subLook.weight}
             color={subLook.color}
-            style={{ fontSize: (t.isTV ? t.s(30) : t.wide ? 24 : 18) * subLook.scale, lineHeight: (t.isTV ? t.s(40) : t.wide ? 32 : 25) * subLook.scale, ...subLook.text, paddingHorizontal: 8, borderRadius: 4 }}
+            style={{ fontSize: (t.isTV ? t.s(30) : t.wide ? 24 : 18) * subLook.scale, lineHeight: (t.isTV ? t.s(40) : t.wide ? 32 : 25) * subLook.scale, ...subLook.text, paddingHorizontal: 8, borderRadius: subLook.radius }}
           >
             {subtitleText}
           </T>
@@ -1268,8 +1283,10 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       ) : null}
 
       {/* Controls */}
+      {prefs?.parentalGuideOverlay && vodItemId && !isLive ? <ParentalGuideCard itemId={vodItemId} positionMs={pos} /> : null}
+
       {showControls ? (
-        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        <View style={[StyleSheet.absoluteFill, { opacity: hdrControlsOpacity(ss, hdrOn) }]} pointerEvents="box-none">
           <LinearGradient colors={['rgba(0,0,0,0.75)', 'transparent']} pointerEvents="box-none" style={{ paddingTop: t.isTV ? t.s(40) : insets.top + 8, paddingHorizontal: t.isTV ? t.space.gutter : Math.max(insets.left, 12), paddingBottom: 40, flexDirection: 'row', alignItems: 'center', gap: t.space.md }}>
             {!t.isTV ? (
               <Focusable onPress={exit} style={{ padding: 6 }} accessibilityLabel="Close player">
