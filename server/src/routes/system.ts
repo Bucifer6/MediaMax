@@ -73,7 +73,7 @@ export default async function systemRoutes(app: FastifyInstance) {
     const abs = path.resolve(req.query.path || '/');
     let entries: fs.Dirent[];
     try {
-      entries = fs.readdirSync(abs, { withFileTypes: true });
+      entries = await fs.promises.readdir(abs, { withFileTypes: true });
     } catch (e) {
       throw badRequest(`Cannot open ${abs}: ${(e as Error).message}.${networkPathHint(abs)}`);
     }
@@ -85,7 +85,7 @@ export default async function systemRoutes(app: FastifyInstance) {
       let isDir = e.isDirectory();
       if (e.isSymbolicLink()) {
         try {
-          isDir = fs.statSync(full).isDirectory();
+          isDir = (await fs.promises.stat(full)).isDirectory();
         } catch {
           continue;
         }
