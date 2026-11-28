@@ -63,7 +63,7 @@ export default function GuideScreen() {
 
   const fetchPage = useCallback(
     async (offset: number) => {
-      const r = await api.guide({ start: new Date(windowStart).toISOString(), end: new Date(windowEnd).toISOString(), categoryId: params.category, favorite: favOnly || undefined, offset, limit: PAGE });
+      const r = await api.guide({ start: new Date(windowStart).toISOString(), end: new Date(windowEnd).toISOString(), categoryId: params.category, favorite: favOnly || undefined, offset, limit: PAGE, kind: 'tv' });
       const map = new Map<string, Program[]>();
       for (const p of r.programs) {
         const list = map.get(p.channelId) ?? [];

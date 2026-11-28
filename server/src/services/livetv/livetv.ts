@@ -65,8 +65,66 @@ function toChannel(r: Row): Channel {
     hasArchive: !!r.has_archive, archiveDays: r.archive_days ?? 0, favorite: !!r.fav, hidden: !!r.hidden,
     epgChannelId: r.guide_status != null ? (r.guide_key ? r.guide_channel_id ?? null : null) : custom.epgChannelId ?? r.epg_channel_id ?? null,
     epgSourceId: r.guide_key ? r.guide_source_id ?? null : null, guideStatus: r.guide_status ?? null, epgOffsetHours: (r.guide_offset ?? 0) / 60,
+    radio: isRadioRow(r),
   };
 }
+
+/** Radio station: the admin's override (custom.radio) or what the source reported. */
+export const isRadioRow = (r: Row): boolean => {
+  const o = parseJson<Record<string, any>>(r.custom, {}).radio;
+  return typeof o === 'boolean' ? o : !!r.radio;
+};
+const RADIO_SQL = (a: string) => `COALESCE(json_extract(${a}.custom, '$.radio'), ${a}.radio, 0)`;
+
+/* ---------------------- fallback sources (same channel on two tuners) ---------------------- */
+
+/** Every source's copy of a channel shares this key: the name and number the source itself reports (admin renames don't split them). */
+const DUP_KEY = (a: string) => `lower(trim(${a}.name)) || '|' || COALESCE(${a}.number, '')`;
+export const failoverMode = () => getSettings().liveTvSourceMode !== 'separate';
+
+/** Other enabled sources' copies of this channel, in source order (oldest source first). */
+function backupRows(r: Row): Row[] {
+  return db.all(
+    `SELECT c.* FROM channels c JOIN live_sources s ON s.id = c.source_id
+     WHERE s.enabled = 1 AND c.hidden = 0 AND c.source_id <> ? AND ${DUP_KEY('c')} = (SELECT ${DUP_KEY('x')} FROM channels x WHERE x.id = ?) ORDER BY s.rowid`,
+    r.source_id, r.id);
+}
+
+/** HDHomeRun status.json: every tuner is tuned (a busy tuner reports its channel or the client it streams to). */
+export function hdhrAllBusy(status: unknown): boolean {
+  if (!Array.isArray(status)) return false;
+  const list = status.filter((t) => typeof t?.Resource === 'string' && /^tuner/i.test(t.Resource));
+  return list.length > 0 && list.every((t) => !!(t.VctNumber || t.ChannelNumber || t.TargetIP || t.Frequency));
+}
+
+async function sourceBusy(src: Row): Promise<boolean> {
+  if (src.max_connections && activeUpstreams(src.id) >= src.max_connections) return true;
+  if (src.type !== 'hdhomerun') return false;
+  try {
+    const base = src.url.replace(/\/+$/, '').replace(/\/lineup\.json$/, '');
+    const res = await fetch(`${/^https?:/.test(base) ? base : 'http://' + base}/status.json`, { signal: AbortSignal.timeout(1500) });
+    return res.ok && hdhrAllBusy(await res.json());
+  } catch {
+    return false; // unknown: try it
+  }
+}
+
+/**
+ * The copies of a channel to try, best first: in fallback mode the requested one and its backups on other sources,
+ * free tuners before busy ones. Separate mode (or catch-up) only ever uses the requested channel.
+ */
+export async function channelCandidates(r: Row, opts: { catchup?: boolean } = {}): Promise<Row[]> {
+  if (opts.catchup || !failoverMode()) return [r];
+  const all = [r, ...backupRows(r)];
+  if (all.length === 1) return all;
+  const free: Row[] = [];
+  const busy: Row[] = [];
+  for (const c of all) ((await sourceBusy(getSourceRow(c.source_id))) ? busy : free).push(c);
+  return [...free, ...busy];
+}
+
+/** Worth trying the next source: its tuners were all in use or the stream would not start. */
+export const isTunerFailure = (e: unknown) => e instanceof HttpError && (e.code === 'tuner_busy' || e.code === 'stream_failed');
 
 const effEpg = epg.effEpg;
 
@@ -219,7 +277,12 @@ export async function testSource(req: CreateLiveSourceRequest): Promise<TestSour
   }
 }
 
-async function hdhrLineup(url: string): Promise<{ GuideNumber: string; GuideName: string; URL: string; HD?: number }[]> {
+export interface HdhrLineupEntry { GuideNumber: string; GuideName: string; URL: string; HD?: number; VideoCodec?: string; AudioCodec?: string }
+
+/** DVB HDHomeRuns list radio services too: they have an audio codec and no video codec. */
+export const hdhrIsRadio = (l: HdhrLineupEntry) => !!l.AudioCodec && !l.VideoCodec;
+
+async function hdhrLineup(url: string): Promise<HdhrLineupEntry[]> {
   const base = url.replace(/\/+$/, '').replace(/\/lineup\.json$/, '');
   const res = await fetch(`${/^https?:/.test(base) ? base : 'http://' + base}/lineup.json`, { signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error(`HDHomeRun returned HTTP ${res.status}`);
@@ -249,6 +312,7 @@ interface ChannelIn {
   archive: boolean;
   archiveDays: number;
   epgId: string | null;
+  radio?: boolean;
   custom?: Record<string, unknown>;
 }
 
@@ -276,7 +340,7 @@ function syncChannels(sourceId: string, cats: { remoteId: string; name: string }
       const row = {
         source_id: sourceId, remote_id: c.remoteId, number: c.number ?? i + 1, name: c.name, logo: registerRemoteImage(c.logo),
         category_id: c.category ? catIds.get(c.category) ?? null : null, stream_url: c.streamUrl, has_archive: c.archive, archive_days: c.archiveDays,
-        epg_channel_id: c.epgId, sort_order: i,
+        epg_channel_id: c.epgId, sort_order: i, radio: c.radio ? 1 : 0,
       };
       if (db.get('SELECT 1 FROM channels WHERE id = ?', id)) db.update('channels', id, row);
       else db.insert('channels', { id, ...row, hidden: 0, custom: JSON.stringify(c.custom ?? {}) });
@@ -323,7 +387,7 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
         syncChannels(id, groups.map((g) => ({ remoteId: g, name: g })), pl.entries.map((e, i) => ({
           remoteId: remoteIdOf(e),
           name: e.name, number: e.chno ?? i + 1, logo: e.logo, category: e.group, streamUrl: e.url,
-          archive: !!(e.catchup || e.catchupSource), archiveDays: e.catchupDays || (e.catchup ? 7 : 0), epgId: e.tvgId || e.tvgName || null,
+          archive: !!(e.catchup || e.catchupSource), archiveDays: e.catchupDays || (e.catchup ? 7 : 0), epgId: e.tvgId || e.tvgName || null, radio: !!e.radio,
           custom: {}, // keep custom for admin overrides
         })));
         // Store catch-up templates for each channel.
@@ -336,9 +400,11 @@ async function doRefresh(id: string, opts: { epgOnly?: boolean }) {
         providerEpg = splitEpgUrls(pl.epgUrl);
       } else if (src.type === 'hdhomerun') {
         const lineup = await hdhrLineup(src.url);
-        syncChannels(id, [{ remoteId: 'hd', name: 'HD' }, { remoteId: 'sd', name: 'SD' }], lineup.map((l) => ({
-          remoteId: l.GuideNumber, name: l.GuideName, number: parseFloat(l.GuideNumber) || null, logo: null, category: l.HD ? 'hd' : 'sd',
-          streamUrl: l.URL, archive: false, archiveDays: 0, epgId: l.GuideNumber,
+        const cats = [{ remoteId: 'hd', name: 'HD' }, { remoteId: 'sd', name: 'SD' }];
+        if (lineup.some(hdhrIsRadio)) cats.push({ remoteId: 'radio', name: 'Radio' });
+        syncChannels(id, cats, lineup.map((l) => ({
+          remoteId: l.GuideNumber, name: l.GuideName, number: parseFloat(l.GuideNumber) || null, logo: null,
+          category: hdhrIsRadio(l) ? 'radio' : l.HD ? 'hd' : 'sd', streamUrl: l.URL, archive: false, archiveDays: 0, epgId: l.GuideNumber, radio: hdhrIsRadio(l),
         })));
       } else if (tuners.isTunerType(src.type)) {
         const r = await tuners.syncTuner(tuners.sourceIn(src));
@@ -555,7 +621,7 @@ export function updateCategory(id: string, patch: { hidden?: boolean; sortOrder?
   return { id, sourceId: u.source_id, name: u.name, channelCount: n, hidden: !!u.hidden, sortOrder: u.sort_order };
 }
 
-function channelWhere(user: User, q: ChannelQuery & { favorite?: boolean | string }): { sql: string; params: any[] } {
+function channelWhere(user: User, q: ChannelQuery & { favorite?: boolean | string; dedupe?: boolean }): { sql: string; params: any[] } {
   const where = ['s.enabled = 1'];
   const params: any[] = [];
   if (!user.isAdmin) where.push('c.hidden = 0', 'COALESCE((SELECT hidden FROM channel_categories x WHERE x.id = c.category_id), 0) = 0');
@@ -563,6 +629,12 @@ function channelWhere(user: User, q: ChannelQuery & { favorite?: boolean | strin
   if (q.categoryId) where.push('c.category_id = ?'), params.push(q.categoryId);
   if (q.search) where.push('c.name LIKE ?'), params.push(`%${q.search}%`);
   if (String(q.favorite) === 'true') where.push('EXISTS (SELECT 1 FROM channel_favorites f WHERE f.channel_id = c.id AND f.user_id = ?)'), params.push(user.id);
+  if (q.kind === 'radio' || q.kind === 'tv') where.push(`${RADIO_SQL('c')} ${q.kind === 'radio' ? '<>' : '='} 0`);
+  // Fallback mode: one entry per channel, from the oldest source that has it (the others are its backups).
+  if (q.dedupe && !q.sourceId && failoverMode()) {
+    where.push(`NOT EXISTS (SELECT 1 FROM channels d JOIN live_sources ds ON ds.id = d.source_id
+      WHERE ds.enabled = 1 AND d.hidden = 0 AND d.source_id <> c.source_id AND ds.rowid < s.rowid AND ${DUP_KEY('d')} = ${DUP_KEY('c')})`);
+  }
   return { sql: where.join(' AND '), params };
 }
 
@@ -570,16 +642,32 @@ export function listChannels(user: User, q: ChannelQuery & { favorite?: boolean 
   assertLive(user);
   const limit = toInt(q.limit, 200, 1, 2000);
   const offset = toInt(q.offset, 0, 0);
-  const w = channelWhere(user, q);
+  const w = channelWhere(user, { ...q, dedupe: true });
   const total = db.get<{ n: number }>(`SELECT COUNT(*) n FROM channels c JOIN live_sources s ON s.id = c.source_id WHERE ${w.sql}`, ...w.params)!.n;
   const rows = db.all(`${CHANNEL_SELECT} WHERE ${w.sql} ORDER BY COALESCE(json_extract(c.custom,'$.number'), c.number), c.sort_order LIMIT ? OFFSET ?`, user.id, ...w.params, limit, offset);
   const items = rows.map(toChannel);
+  if (failoverMode() && !q.sourceId) attachBackups(items, rows);
   if (String(q.withEpg) !== 'false') attachNowNext(items, rows);
   if (user.isAdmin && String(q.guideStatus) === 'true') {
     const has = epg.channelsWithGuide(items.map((c) => c.id));
     for (const c of items) c.hasGuide = has.has(c.id);
   }
   return { items, total, limit, offset };
+}
+
+/** Fallback mode: how many other sources carry each listed channel. */
+function attachBackups(channels: Channel[], rows: Row[]) {
+  if (!channels.length || db.get<{ n: number }>('SELECT COUNT(*) n FROM live_sources WHERE enabled = 1')!.n < 2) return;
+  const counts = new Map(db.all<{ k: string; n: number }>(
+    `SELECT ${DUP_KEY('c')} k, COUNT(DISTINCT c.source_id) n FROM channels c JOIN live_sources s ON s.id = c.source_id
+     WHERE s.enabled = 1 AND c.hidden = 0 GROUP BY k HAVING n > 1`).map((r) => [r.k, r.n]));
+  if (!counts.size) return;
+  const ids = rows.map((r) => r.id as string);
+  const keys = new Map(db.all<{ id: string; k: string }>(`SELECT c.id, ${DUP_KEY('c')} k FROM channels c WHERE c.id IN (${ids.map(() => '?').join(',')})`, ...ids).map((r) => [r.id, r.k]));
+  channels.forEach((c) => {
+    const n = counts.get(keys.get(c.id) ?? '');
+    if (n) c.backups = n - 1;
+  });
 }
 
 /** A channel row the user may access (hidden channels/categories and disabled sources excluded for non-admins). */
@@ -600,7 +688,7 @@ export function getChannel(user: User, id: string): Channel {
   return c;
 }
 
-export function updateChannel(id: string, patch: { number?: number; name?: string; hidden?: boolean; epgChannelId?: string; logoUrl?: string }): void {
+export function updateChannel(id: string, patch: { number?: number; name?: string; hidden?: boolean; epgChannelId?: string; logoUrl?: string; radio?: boolean | null }): void {
   const r = db.get('SELECT * FROM channels WHERE id = ?', id);
   if (!r) throw notFound('Channel not found');
   const custom = parseJson<Record<string, unknown>>(r.custom, {});
@@ -608,6 +696,7 @@ export function updateChannel(id: string, patch: { number?: number; name?: strin
   if (patch.name !== undefined) custom.name = patch.name || undefined;
   if (patch.epgChannelId !== undefined) custom.epgChannelId = patch.epgChannelId || undefined;
   if (patch.logoUrl !== undefined) custom.logo = patch.logoUrl || undefined;
+  if (patch.radio !== undefined) custom.radio = typeof patch.radio === 'boolean' ? patch.radio : undefined;
   if (patch.epgChannelId !== undefined) {
     // A bare guide id (older API): resolved against the guides by priority. PUT /livetv/channels/:id/match picks a guide too.
     delete custom.epgSourceId;
@@ -641,13 +730,13 @@ export function channelPrograms(user: User, id: string, start?: string, end?: st
   return rows.map((p) => ({ ...toProgram(p, id), recordingId: recs.get(p.id) ?? null }));
 }
 
-export function guide(user: User, q: { start?: string; end?: string; categoryId?: string; favorite?: string; offset?: number; limit?: number; sourceId?: string }): GuideResponse {
+export function guide(user: User, q: { start?: string; end?: string; categoryId?: string; favorite?: string; offset?: number; limit?: number; sourceId?: string; kind?: 'tv' | 'radio' }): GuideResponse {
   assertLive(user);
   const start = q.start ? new Date(q.start) : new Date(Date.now() - 30 * 60000);
   const end = q.end ? new Date(q.end) : new Date(start.getTime() + 6.5 * 3600000);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) throw badRequest('Invalid time range');
   if (end.getTime() - start.getTime() > 3 * 86400000) throw badRequest('Guide window too large (max 3 days)');
-  const ch = listChannels(user, { categoryId: q.categoryId, favorite: q.favorite as any, offset: q.offset, limit: q.limit ?? 300, withEpg: false, sourceId: q.sourceId });
+  const ch = listChannels(user, { categoryId: q.categoryId, favorite: q.favorite as any, offset: q.offset, limit: q.limit ?? 300, withEpg: false, sourceId: q.sourceId, kind: q.kind });
   // Programme keys: the channel's matched guide (with time shift), not the display id.
   const epgByChannel = new Map<string, string>();
   const ids = ch.items.map((c) => c.id);
@@ -751,6 +840,7 @@ export async function openChannelStream(r: Row, url: string, signal: AbortSignal
     }
   }
   const res = await fetch(url, { headers: { 'User-Agent': channelUserAgent(r) }, signal, redirect: 'follow' });
+  if (res.status === 503) throw new HttpError(503, 'All the tuners on this source are in use', 'tuner_busy');
   if (!res.ok || !res.body) throw notFound(`Provider returned ${res.status}`);
   return Readable.fromWeb(res.body as any);
 }
@@ -762,17 +852,34 @@ export function channelUserAgent(r: Row): string {
 }
 
 export async function playChannel(ctx: AuthContext, channelId: string, req: LivePlayRequest & { deviceProfile?: { containers?: string[] } }, remoteAddr: string | null, hints?: ClientHints): Promise<PlaybackInfo> {
-  const r = accessibleChannelRow(ctx.user, channelId);
+  const asked = accessibleChannelRow(ctx.user, channelId);
   assertCanStartSession(ctx, remoteAddr, !!req.multiview && !req.catchupStart);
-  const src = getSourceRow(r.source_id);
   const channel = getChannel(ctx.user, channelId);
   let catchup: { start: Date; durationMin: number } | undefined;
   if (req.catchupStart) {
-    if (!r.has_archive) throw badRequest('This channel does not support catch-up');
+    if (!asked.has_archive) throw badRequest('This channel does not support catch-up');
     const st = new Date(req.catchupStart);
     if (Number.isNaN(st.getTime()) || st.getTime() > Date.now()) throw badRequest('Invalid catch-up start time');
     catchup = { start: st, durationMin: req.catchupDurationMin ?? Math.max(30, Math.ceil((Date.now() - st.getTime()) / 60000)) };
   }
+  // Fallback mode: the same channel on another source when this one's tuners are all in use (or it won't start).
+  const rows = await channelCandidates(asked, { catchup: !!catchup });
+  for (let i = 0; ; i++) {
+    try {
+      return await playChannelOn(ctx, channelId, channel, rows[i]!, req, catchup, remoteAddr, hints);
+    } catch (e) {
+      if (i >= rows.length - 1 || !isTunerFailure(e)) throw e;
+      log.info(`${channel.name}: ${(e as Error).message}; trying "${getSourceRow(rows[i + 1]!.source_id).name}"`);
+    }
+  }
+}
+
+async function playChannelOn(
+  ctx: AuthContext, channelId: string, channel: Channel, r: Row, req: LivePlayRequest & { deviceProfile?: { containers?: string[] } },
+  catchup: { start: Date; durationMin: number } | undefined, remoteAddr: string | null, hints?: ClientHints,
+): Promise<PlaybackInfo> {
+  const src = getSourceRow(r.source_id);
+  const radio = isRadioRow(r);
   const upstream = channelStreamUrl(r, catchup);
   const q = `?token=${encodeURIComponent(ctx.token)}`;
   const wantsTs = !req.forceHls && (req.deviceProfile?.containers ?? []).map((c) => c.toLowerCase()).includes('ts');
@@ -809,13 +916,14 @@ export async function playChannel(ctx: AuthContext, channelId: string, req: Live
     return info(s, `/api/v1/livetv/stream/${channelId}${q}&session=${s.id}${extra}`, 'video/mp2t', false);
   }
   // 3) Remux to HLS (shared between viewers of the same live channel).
-  const key = catchup ? `${channelId}@${catchup.start.getTime()}@${ctx.deviceRowId}` : channelId;
+  // Keyed by the source's own copy, so viewers who reached it through a fallback share it too.
+  const key = catchup ? `${r.id}@${catchup.start.getTime()}@${ctx.deviceRowId}` : r.id;
   let shared = liveShared(key);
   if (!shared) {
     checkConnectionLimit(src);
     const job = new TranscodeJob(newId(), {
       input: upstream, inputArgs: channelInputArgs(r, upstream), startSec: 0, durationSec: null, mode: 'live',
-      audioIndex: null, audioCopy: false, videoCopy: true, bitrate: 8000, maxHeight: null, sourceHeight: null, sourceCodec: null, hdr: false, hasVideo: true,
+      audioIndex: null, audioCopy: false, videoCopy: true, bitrate: 8000, maxHeight: null, sourceHeight: null, sourceCodec: null, hdr: false, hasVideo: !radio,
     });
     job.start(0);
     shared = { job, refs: 0, sourceId: src.id };

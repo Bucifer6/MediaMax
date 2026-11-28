@@ -1142,6 +1142,13 @@ export interface Channel {
   epgOffsetHours?: number;
   /** Admin channel lists with `guideStatus=true`: the channel has guide data from now on. */
   hasGuide?: boolean;
+  /** An audio-only radio station (tuner lineup without video, or radio="true" in an M3U); admins can override it. */
+  radio?: boolean;
+  /**
+   * Fallback mode (`ServerSettings.liveTvSourceMode`): how many other sources carry the same channel. Only the first
+   * source's copy is listed; playback moves to a backup when its tuners are all busy.
+   */
+  backups?: number;
   nowPlaying?: Program | null;
   next?: Program | null;
 }
@@ -1157,6 +1164,8 @@ export interface ChannelQuery {
   withEpg?: boolean;
   /** Admin only: include `hasGuide` (a "missing guide" badge in admin lists). */
   guideStatus?: boolean;
+  /** `tv` or `radio` only; omitted: both (older clients). */
+  kind?: 'tv' | 'radio';
 }
 
 /* ------------------------------ TV guide (EPG) providers ------------------------------ */
@@ -1727,6 +1736,11 @@ export interface ServerSettings {
   metadataLanguage: string;
   scanIntervalMinutes: number;
   epgRefreshHours: number;
+  /**
+   * Live TV sources that carry the same channels (e.g. two HDHomeRuns on one aerial): `failover` lists each channel
+   * once and tunes another source when the first one's tuners are all busy; `separate` lists every source's channels.
+   */
+  liveTvSourceMode?: 'failover' | 'separate';
   transcoding: {
     enabled: boolean;
     hwAccel: HwAccel;

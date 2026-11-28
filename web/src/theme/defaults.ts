@@ -31,7 +31,7 @@ export const DEFAULT_THEME: Theme = {
   fontUrl: null,
   posterShape: 'rounded',
   cardSize: 'medium',
-  heroStyle: 'static',
+  heroStyle: 'carousel',
   builtIn: true,
 };
 

@@ -18,13 +18,13 @@ import '../styles/epg.css';
 const PAGE = 80;
 
 /** Favourites and recently watched channels, as rows of "on now" cards. */
-function useChannelRows(userId: string | undefined) {
-  const favs = useAsync(() => api.livetv.channels({ favorite: true, limit: 30, withEpg: true }).then((r) => r.items), []);
+function useChannelRows(userId: string | undefined, kind: 'tv' | 'radio') {
+  const favs = useAsync(() => api.livetv.channels({ favorite: true, limit: 30, withEpg: true, kind }).then((r) => r.items), [kind]);
   const recent = useAsync(async () => {
     const ids = recentChannelIds(userId).slice(0, 10);
     const list = await Promise.all(ids.map((id) => api.livetv.channel(id).catch(() => null)));
-    return list.filter((c): c is Channel => !!c && !c.hidden);
-  }, [userId]);
+    return list.filter((c): c is Channel => !!c && !c.hidden && !!c.radio === (kind === 'radio'));
+  }, [userId, kind]);
   return { favs, recent };
 }
 
@@ -33,6 +33,9 @@ export default function LiveTvPage() {
   const { user } = useApp();
   const cats = useAsync(() => api.livetv.categories(), []);
   const [category, setCategory] = useState<string>('');
+  // TV and radio stations (a tuner's audio-only services) are listed apart; the Radio tab shows only when there are any.
+  const [kind, setKind] = useState<'tv' | 'radio'>('tv');
+  const radioCount = useAsync(() => api.livetv.channels({ kind: 'radio', limit: 1, withEpg: false }).then((r) => r.total).catch(() => 0), []);
   const [fav, setFav] = useState(false);
   const [search, setSearch] = useState('');
   const q = useDebounced(search.trim(), 250);
@@ -43,7 +46,7 @@ export default function LiveTvPage() {
   const [selected, setSelected] = useState<{ p: Program; c: Channel } | null>(null);
   const req = useRef(0);
   const now = useNow(30000);
-  const rows = useChannelRows(user?.id);
+  const rows = useChannelRows(user?.id, kind);
 
   const load = useCallback(
     async (offset: number) => {
@@ -51,7 +54,7 @@ export default function LiveTvPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await api.livetv.channels({ categoryId: category || undefined, favorite: fav || undefined, search: q || undefined, limit: PAGE, offset, withEpg: true });
+        const res = await api.livetv.channels({ categoryId: category || undefined, favorite: fav || undefined, search: q || undefined, limit: PAGE, offset, withEpg: true, kind });
         if (id !== req.current) return;
         setChannels((c) => (offset ? [...c, ...res.items] : res.items));
         setTotal(res.total);
@@ -61,7 +64,7 @@ export default function LiveTvPage() {
         if (id === req.current) setLoading(false);
       }
     },
-    [category, fav, q],
+    [category, fav, q, kind],
   );
   useEffect(() => {
     void load(0);
@@ -109,6 +112,16 @@ export default function LiveTvPage() {
         )}
       />
 
+      {(radioCount.data ?? 0) > 0 && (
+        <div className="segmented lt-kind" role="tablist" aria-label="TV or radio">
+          {(['tv', 'radio'] as const).map((k) => (
+            <button key={k} role="tab" aria-selected={kind === k} className={kind === k ? 'active' : ''} onClick={() => { setKind(k); filter('', false); }}>
+              <Icon name={k === 'tv' ? 'tv' : 'music'} size={16} /> {k === 'tv' ? 'TV' : 'Radio'}
+            </button>
+          ))}
+        </div>
+      )}
+
       {favList.length > 0 && (
         <div className="lt-section">
           <Row title="Favourites" subtitle={`${favList.length}`} className="lt-row">
@@ -126,7 +139,7 @@ export default function LiveTvPage() {
 
       <section className="lt-on-now" aria-labelledby="lt-on-now">
         <div className="lt-list-head">
-          <h2 id="lt-on-now">On now{total > 0 && <span className="lt-count">{total.toLocaleString()} channel{total === 1 ? '' : 's'}</span>}</h2>
+          <h2 id="lt-on-now">{kind === 'radio' ? 'Radio' : 'On now'}{total > 0 && <span className="lt-count">{total.toLocaleString()} {kind === 'radio' ? 'station' : 'channel'}{total === 1 ? '' : 's'}</span>}</h2>
           <Input icon="search" inputSize="sm" className="lt-search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a channel" aria-label="Search channels" />
         </div>
         <div className="chip-scroller lt-filters" role="group" aria-label="Filter channels">

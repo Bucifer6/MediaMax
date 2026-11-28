@@ -190,6 +190,12 @@ export function ServerSettingsAdmin() {
               <Field label="EPG refresh (hours)"><input className="input" type="number" min={1} value={s.epgRefreshHours} onChange={(e) => set({ epgRefreshHours: Number(e.target.value) })} /></Field>
               <Field label="Session timeout (days)"><input className="input" type="number" min={1} value={s.sessionTimeoutDays} onChange={(e) => set({ sessionTimeoutDays: Number(e.target.value) })} /></Field>
             </div>
+            <Field label="Live TV sources with the same channels" hint="E.g. two HDHomeRuns on one aerial. Fallback lists each channel once and tunes the next source when the first one's tuners are all busy. Separate lists every source's channels.">
+              <select className="select" value={s.liveTvSourceMode ?? 'failover'} onChange={(e) => set({ liveTvSourceMode: e.target.value as 'failover' | 'separate' })}>
+                <option value="failover">Fallback: one channel list, backup tuners</option>
+                <option value="separate">Separate: list each source's channels</option>
+              </select>
+            </Field>
             <Switch checked={s.signInScreen?.showUsers ?? true} onChange={(v) => set({ signInScreen: { showUsers: v, homeNetworkOnly: s.signInScreen?.homeNetworkOnly ?? true } })} label="List users on the sign-in screen" hint="Only users with “Show on sign-in screen” (Users → Edit) are ever listed; everyone else signs in with their username." />
             <Switch checked={s.signInScreen?.homeNetworkOnly ?? true} disabled={!(s.signInScreen?.showUsers ?? true)} onChange={(v) => set({ signInScreen: { showUsers: s.signInScreen?.showUsers ?? true, homeNetworkOnly: v } })} label="Only on the home network" hint="Devices outside your local network never see user names before signing in." />
             <Switch checked={s.allowPasswordlessProfiles} onChange={(v) => set({ allowPasswordlessProfiles: v })} label="Allow passwordless profiles" hint="Profiles without a password can be entered from the profile picker (optionally with a PIN)." />

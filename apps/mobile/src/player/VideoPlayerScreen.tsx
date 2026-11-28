@@ -46,6 +46,9 @@ import { Scrubber } from './Scrubber';
 import { useTrickplay } from './Trickplay';
 import { WatchTogetherSheet } from './WatchTogether';
 import { createNumberEntry, matchDisplayFor, useNativeRemoteKeys } from './remoteKeys';
+import { ChannelBanner } from './ChannelBanner';
+import { BANNER_MS, SURF_TUNE_MS, channelLabel, matchNumber, stepChannel, surfList } from './surf';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { activeCues, parseVtt, type Cue } from './vtt';
 import { measureBandwidth } from './bandwidth';
 import { useMarathon } from './marathon';
@@ -57,6 +60,10 @@ export type PlayerTarget =
 
 /** Server tracks are drawn by our own overlay; `embedded` (the platform renderer) is only offered offline / for live captions; `burn` = bitmap subtitles burned in by the server. */
 type SubChoice = { kind: 'off' } | { kind: 'server'; track: SubtitleTrack } | { kind: 'embedded'; track: NativeSubtitleTrack } | { kind: 'burn'; index: number };
+const FAV_ONLY_KEY = 'vibe.live.favOnly';
+const FAV_TOGGLE = '__favOnly';
+const LAST_CHANNEL = '__last';
+
 type SheetKind = 'audio' | 'subs' | 'online' | 'quality' | 'channels' | 'together' | 'playon' | 'sleep' | 'songid' | null;
 
 const langMatch = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.slice(0, 2).toLowerCase() === b.slice(0, 2).toLowerCase();
@@ -125,6 +132,14 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   const [upNextDismissed, setUpNextDismissed] = useState(false);
   const [channel, setChannel] = useState<Channel | null>(null);
   const [channelList, setChannelList] = useState<Channel[]>([]);
+  // Surfing: the channel up/down landed on (tuned once you rest on it), the banner, digits typed so far, favourites-only.
+  const [surfPreview, setSurfPreview] = useState<Channel | null>(null);
+  const [banner, setBanner] = useState(false);
+  const [typed, setTyped] = useState<string | null>(null);
+  const [favOnly, setFavOnly] = useState(false);
+  const lastChannelRef = useRef<string | null>(null);
+  const surfTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [offlineItem] = useState<Item | null>(offlineRec?.item ?? null);
   const vodItemId = target.kind === 'vod' ? target.itemId : null;
   const trickplay = useTrickplay(vodItemId, {
@@ -567,12 +582,59 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   }, [isLive, channelId, api]);
   useEffect(() => {
     if (target.kind !== 'live') return;
-    api
-      .channels({ categoryId: target.categoryId, limit: 2000, withEpg: false })
-      .then((r) => setChannelList(r.items))
-      .catch(() => undefined);
+    // With now/next, for the surfing banner and the channel list; refreshed as programmes change.
+    const load = () =>
+      api
+        .channels({ categoryId: target.categoryId, limit: 2000, withEpg: true })
+        .then((r) => setChannelList(r.items))
+        .catch(() => undefined);
+    void load();
+    const timer = setInterval(load, 5 * 60000);
+    void AsyncStorage.getItem(FAV_ONLY_KEY).then((v) => setFavOnly(v === '1')).catch(() => undefined);
+    return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  /** What's on the tuned channel: the live details once they're in, else its entry in the list. */
+  const tunedChannel = channel?.id === channelId ? channel : channelList.find((c) => c.id === channelId) ?? null;
+  const surfChannels = useMemo(() => surfList(channelList, tunedChannel, favOnly), [channelList, tunedChannel?.id, tunedChannel?.radio, favOnly]);
+  const showBanner = useCallback((ms: number | null = BANNER_MS) => {
+    setBanner(true);
+    if (bannerTimer.current) clearTimeout(bannerTimer.current);
+    bannerTimer.current = ms == null ? null : setTimeout(() => setBanner(false), ms);
+  }, []);
+  const tune = useCallback((id: string) => {
+    if (surfTimer.current) clearTimeout(surfTimer.current);
+    surfTimer.current = null;
+    if (id !== channelIdRef.current) {
+      lastChannelRef.current = channelIdRef.current;
+      setCatchup(null);
+      setChannelId(id);
+    }
+    setSurfPreview(null);
+    setTyped(null);
+    showBanner();
+  }, [showBanner]);
+  const cancelSurf = useCallback(() => {
+    if (surfTimer.current) clearTimeout(surfTimer.current);
+    surfTimer.current = null;
+    setSurfPreview(null);
+    setTyped(null);
+    setBanner(false);
+  }, []);
+  // Every channel change brings the banner up for a few seconds, like a TV.
+  useEffect(() => {
+    if (isLive && channelId) showBanner();
+  }, [isLive, channelId, showBanner]);
+  useEffect(() => () => {
+    if (surfTimer.current) clearTimeout(surfTimer.current);
+    if (bannerTimer.current) clearTimeout(bannerTimer.current);
+  }, []);
+  const toggleFavOnly = () => {
+    setFavOnly((v) => {
+      void AsyncStorage.setItem(FAV_ONLY_KEY, v ? '0' : '1').catch(() => undefined);
+      return !v;
+    });
+  };
 
   // ----- controls visibility -----
   const poke = useCallback(() => {
@@ -706,16 +768,19 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
     syncAfterLoadRef.current(startMs);
   }
 
+  /** Up/down: show the next channel in the banner and tune it once you rest on it (OK tunes it straight away). */
   const zap = useCallback(
     (dir: 1 | -1) => {
-      if (!isLive || channelList.length < 2) return;
-      const i = channelList.findIndex((c) => c.id === channelId);
-      const next = channelList[(i + dir + channelList.length) % channelList.length];
-      setCatchup(null);
-      setChannelId(next.id);
-      flash(`${next.number != null ? `${next.number}  ` : ''}${next.name}`);
+      if (!isLive || surfChannels.length < 2) return;
+      const next = stepChannel(surfChannels, surfPreview?.id ?? channelId, dir);
+      if (!next) return;
+      if (next.id === channelId) return tune(next.id);
+      setSurfPreview(next);
+      showBanner(null);
+      if (surfTimer.current) clearTimeout(surfTimer.current);
+      surfTimer.current = setTimeout(() => tune(next.id), SURF_TUNE_MS);
     },
-    [isLive, channelList, channelId, flash],
+    [isLive, surfChannels, surfPreview, channelId, tune, showBanner],
   );
 
   // ----- markers & up next -----
@@ -770,8 +835,8 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   // ----- remote control (TV) -----
   const lastZap = useRef(0);
   const zapOnce = useCallback((dir: 1 | -1) => {
-    // Channel keys can arrive both from react-native-tvos and from the native key hook.
-    if (Date.now() - lastZap.current < 300) return;
+    // Channel keys can arrive both from react-native-tvos and from the native key hook (within a few ms of each other).
+    if (Date.now() - lastZap.current < 120) return;
     lastZap.current = Date.now();
     zap(dir);
   }, [zap]);
@@ -784,6 +849,20 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       return poke();
     }
     if (sheet) return;
+    if (!controls && isLive) {
+      // Live TV, like a TV remote: OK tunes the channel you're surfing to, else opens the channel list;
+      // left jumps back to the last channel, right shows what's on.
+      if (type === 'select') {
+        if (surfPreview) return tune(surfPreview.id);
+        if (surfChannels.length > 1) return setSheet('channels');
+        togglePlay();
+        return poke();
+      }
+      if (!canSeek && (type === 'left' || type === 'right')) {
+        if (type === 'left' && lastChannelRef.current) return tune(lastChannelRef.current);
+        return showBanner();
+      }
+    }
     if (!controls) {
       if (type === 'select') {
         // A visible Skip / Up Next button has focus and handles select itself.
@@ -827,15 +906,21 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   // ----- extra remote keys (Android TV: digits, colour keys, Info, Guide, channel/track keys) -----
   const numberEntry = useMemo(() => createNumberEntry(
     (num) => {
-      const ch = channelList.find((c) => String(c.number) === num);
-      if (ch) {
-        setCatchup(null);
-        setChannelId(ch.id);
-        flash(`${ch.number}  ${ch.name}`);
-      } else flash(`No channel ${num}`);
+      const { exact } = matchNumber(channelList, num);
+      if (exact) tune(exact.id);
+      else {
+        cancelSurf();
+        flash(`No channel ${num}`);
+      }
     },
-    (typed) => flash(`${typed}_`),
-  ), [channelList, flash]);
+    // Show the channel you're heading for as you type.
+    (digits) => {
+      if (surfTimer.current) clearTimeout(surfTimer.current);
+      setTyped(digits);
+      setSurfPreview(matchNumber(channelList, digits).preview);
+      showBanner(null);
+    },
+  ), [channelList, flash, tune, cancelSurf, showBanner]);
   useEffect(() => () => numberEntry.cancel(), [numberEntry]);
   useNativeRemoteKeys((key) => {
     if (/^[0-9]$/.test(key)) {
@@ -862,6 +947,11 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   useEffect(() => (Platform.isTV ? matchDisplayFor(info) : undefined), [info?.sessionId]);
 
   useBackHandler(() => {
+    if (surfPreview || typed) {
+      numberEntry.cancel();
+      cancelSurf();
+      return true;
+    }
     if (sheet) {
       setSheet(null);
       return true;
@@ -1011,6 +1101,12 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       : { backgroundColor: 'transparent', textShadowColor: 'rgba(0,0,0,0.95)', textShadowRadius: ss?.edge === 'shadow' ? 3 : 6, textShadowOffset: { width: ss?.edge === 'shadow' ? 2 : 0, height: ss?.edge === 'shadow' ? 2 : 1 } },
   };
   const subLift = ss?.verticalOffset ? (t.isTV ? t.s(1080) : 600) * (ss.verticalOffset / 100) : ss?.position === 'raised' ? (t.isTV ? t.s(80) : 50) : 0;
+  const lastChannel = lastChannelRef.current ? channelList.find((c) => c.id === lastChannelRef.current) : undefined;
+  const channelSheetOptions: SheetOption<string>[] = !isLive ? [] : [
+    ...(lastChannel ? [{ key: LAST_CHANNEL, label: `Back to ${channelLabel(lastChannel)}`, icon: 'return-up-back' as const }] : []),
+    ...(channelList.some((c) => c.favorite) ? [{ key: FAV_TOGGLE, label: favOnly ? 'Show all channels' : 'Favourites only', icon: (favOnly ? 'list' : 'star') as 'list' | 'star' }] : []),
+    ...surfChannels.map((c) => ({ key: c.id, label: `${c.number != null ? `${c.number}  ` : ''}${c.name}`, description: c.nowPlaying?.title, selected: c.id === channelId })),
+  ];
   const title = info?.title ?? offlineItem?.title ?? channel?.name ?? '';
   const subtitle = isLive ? (catchup ? `Catch-up · ${formatTime(catchup.start)}` : channel?.nowPlaying?.title ?? null) : info?.subtitle ?? null;
   // ----- remote control (other devices) -----
@@ -1128,6 +1224,24 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
           <ActivityIndicator size="large" color={t.colors.primary} />
         </View>
+      ) : null}
+
+      {/* Radio: the station's logo and what's on, instead of a black screen. */}
+      {isLive && tunedChannel?.radio && !casting ? (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', gap: t.space.md }]}>
+          {tunedChannel.logoUrl ? (
+            <Img path={tunedChannel.logoUrl} width={600} contentFit="contain" style={{ width: t.isTV ? t.s(320) : 200, height: t.isTV ? t.s(200) : 120 }} />
+          ) : (
+            <Icon name="radio-outline" size={t.isTV ? t.s(120) : 80} color="rgba(255,255,255,0.6)" />
+          )}
+          <T variant={t.isTV ? 'title' : 'heading'} color="#fff">{tunedChannel.name}</T>
+          {tunedChannel.nowPlaying ? <T color="rgba(255,255,255,0.75)">{tunedChannel.nowPlaying.title}</T> : null}
+        </View>
+      ) : null}
+
+      {/* Channel banner: after a change, while surfing or typing a number, or on demand (right / Info). */}
+      {isLive && (banner || surfPreview || typed) && !showControls && !sheet ? (
+        <ChannelBanner channel={surfPreview ?? (typed ? null : tunedChannel)} preview={!!surfPreview && !typed} typed={typed} bottom={insets.bottom} />
       ) : null}
 
       {/* OSD toast (seek amount, channel banner) */}
@@ -1370,12 +1484,12 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
       <OptionSheet visible={sheet === 'quality'} title="Quality" options={qualityOptions} onSelect={selectQuality} onClose={() => setSheet(null)} />
       <OptionSheet
         visible={sheet === 'channels'}
-        title="Channels"
-        options={channelList.map((c) => ({ key: c.id, label: `${c.number != null ? `${c.number}  ` : ''}${c.name}`, selected: c.id === channelId }))}
+        title={tunedChannel?.radio ? 'Radio stations' : 'Channels'}
+        options={channelSheetOptions}
         onSelect={(id) => {
+          if (id === FAV_TOGGLE) return toggleFavOnly();
           setSheet(null);
-          setCatchup(null);
-          setChannelId(id);
+          tune(id === LAST_CHANNEL ? lastChannelRef.current ?? channelId : id);
         }}
         onClose={() => setSheet(null)}
       />
