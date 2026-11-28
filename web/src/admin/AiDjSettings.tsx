@@ -109,7 +109,7 @@ export function ProviderChainEditor<P extends AnyProvider>({ kind, list, onChang
                   </div>
                   {kind === 'tts' && tp.kind === 'piper' && !tp.url && (
                     <div className="form-row">
-                      <Field label="piper program"><input className="input mono" value={tp.piperPath ?? ''} placeholder="piper" onChange={(e) => set(i, { piperPath: e.target.value || null })} /></Field>
+                      <Field label="piper program" hint="piper on the server's PATH, or the VIBE_PIPER environment variable. Programs can't be chosen here, for security."><input className="input mono" value="piper" readOnly disabled /></Field>
                       <Field label="Voice model (.onnx)"><input className="input mono" value={tp.voiceModel ?? ''} onChange={(e) => set(i, { voiceModel: e.target.value || null })} /></Field>
                       <Field label="Speaker #"><input className="input" type="number" min={0} value={tp.speaker ?? ''} onChange={(e) => set(i, { speaker: e.target.value === '' ? null : Number(e.target.value) })} /></Field>
                     </div>

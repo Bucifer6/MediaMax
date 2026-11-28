@@ -28,7 +28,7 @@ export const LLM_PRESETS: LlmPreset[] = [
 
 export type TtsPreset = { id: string; label: string; group: ProviderGroup; patch: Omit<AiTtsProvider, 'id' | 'name' | 'enabled'>; key: boolean; note: string };
 export const TTS_PRESETS: TtsPreset[] = [
-  { id: 'piper', label: 'Piper (program on this server)', group: 'local', patch: { kind: 'piper', url: '', piperPath: 'piper', voiceModel: '/config/voices/en_GB-alan-medium.onnx' }, key: false, note: 'Open-source neural voices that run on a CPU. Install piper and download a voice (.onnx + .onnx.json).' },
+  { id: 'piper', label: 'Piper (program on this server)', group: 'local', patch: { kind: 'piper', url: '', voiceModel: '/config/voices/en_GB-alan-medium.onnx' }, key: false, note: 'Open-source neural voices that run on a CPU. Install piper and download a voice (.onnx + .onnx.json).' },
   { id: 'piper-http', label: 'Piper HTTP server', group: 'local', patch: { kind: 'piper', url: 'http://localhost:5000' }, key: false, note: 'Piper\'s own web server (python -m piper.http_server): the text is POSTed, WAV comes back.' },
   { id: 'kokoro', label: 'Kokoro-FastAPI', group: 'local', patch: { kind: 'kokoro', url: 'http://localhost:8880/v1', model: 'kokoro', voice: 'af_heart' }, key: false, note: 'Natural open-source voices with an OpenAI-compatible API; runs in Docker (CPU or GPU).' },
   { id: 'openai-local', label: 'OpenAI-compatible (self-hosted)', group: 'local', patch: { kind: 'openai', url: 'http://localhost:8000/v1', model: 'tts-1', voice: 'alloy' }, key: false, note: 'openedai-speech, LocalAI or any other /audio/speech server.' },

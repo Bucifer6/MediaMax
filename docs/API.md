@@ -781,7 +781,7 @@ Guides are their own entity, `EpgSource` (all endpoints 🛡️ admin). Kinds: `
 `Marker.type` can also be `preview` ("next time on" scenes) or `commercial` (ad breaks). Players show "Skip ad break" or "Skip preview". When auto-skip is on, intros, recaps and ad breaks are skipped automatically.
 
 - **Sidecar EDL:** a Kodi/MythTV/comskip `.edl` file next to any video (same base name) is imported on every scan. Each line is `start end action`, in seconds. Actions `0` (cut) and `3` (commercial) become `commercial` markers.
-- **DVR:** with `settings.dvr.commercialDetection` on, finished recordings are passed to comskip (`dvr.comskipPath`, default `comskip` on PATH). If `dvr.comskipIni` is not set, Vibe supplies an EDL-only ini. The resulting `.edl` is imported straight away and deleted along with the recording.
+- **DVR:** with `settings.dvr.commercialDetection` on, finished recordings are passed to comskip (the `VIBE_COMSKIP` environment variable, default `comskip` on PATH; `dvr.comskipPath` is no longer used). If `dvr.comskipIni` is not set, Vibe supplies an EDL-only ini. The resulting `.edl` is imported straight away and deleted along with the recording.
 
 ## IPTV multiview
 

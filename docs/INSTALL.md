@@ -592,4 +592,6 @@ Then:
 **Piper** (another free, offline voice) runs inside the Vibe container:
 
 1. Download the `piper` release for your CPU and a voice (`.onnx` plus `.onnx.json`) into `/config/voices/`.
-2. Choose **Piper** in the AI DJ settings.
+2. Put `piper` on the PATH, or set the `VIBE_PIPER` environment variable to its full path (for example
+   `VIBE_PIPER=/config/voices/piper/piper`) and restart Vibe. For security the admin pages can't choose a program.
+3. Choose **Piper** in the AI DJ settings.

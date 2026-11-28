@@ -266,8 +266,8 @@ export function AiSettingsAdmin() {
               </Field>
             </div>
             <div className="form-row">
-              <Field label="whisper.cpp program (optional)" hint="Empty = the downloaded copy, else whisper-cli on the PATH. Older builds call it main(.exe).">
-                <input className="input mono" value={a.whisperPath ?? ''} placeholder={'C:\\whisper\\whisper-cli.exe'} onChange={(e) => setSub({ whisperPath: e.target.value || null })} />
+              <Field label="whisper.cpp program" hint="The downloaded copy, else whisper-cli on the PATH. To use another one, set the VIBE_WHISPER environment variable to its path and restart Vibe (programs can't be chosen here, for security).">
+                <input className="input mono" value="Downloaded copy or PATH" readOnly disabled />
               </Field>
               <Field label="Own model file (optional)" hint="A ggml .bin of your own (e.g. a quantised large-v3-turbo); overrides the model above.">
                 <input className="input mono" value={a.modelPath ?? ''} onChange={(e) => setSub({ modelPath: e.target.value || null })} />

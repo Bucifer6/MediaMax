@@ -12,7 +12,8 @@ import type { AiTtsProvider } from '@mediamax/shared';
 import { config } from '../../config.js';
 import { getSettings } from '../settings.js';
 import { checkResponse, ProviderError, runChain } from './chain.js';
-import { openaiUrl } from './llm.js';
+import { openaiUrl, trimTrailingSlashes } from './llm.js';
+import { warnIgnoredProgramSetting } from '../../util/programSettings.js';
 
 export const voiceDir = () => {
   const d = path.join(config.cacheDir, 'dj-voice');
@@ -84,7 +85,8 @@ async function renderOnce(p: AiTtsProvider, text: string, out: string): Promise<
       } else {
         const args = ['--model', p.voiceModel!, '--output_file', wav];
         if (p.speaker != null) args.push('--speaker', String(p.speaker));
-        await run(p.piperPath || 'piper', args, input, 60000);
+        warnIgnoredProgramSetting('Piper program path', p.piperPath, 'VIBE_PIPER', 'piper');
+        await run(config.piper, args, input, 60000);
       }
       await toMp3(wav, out);
     } finally {
@@ -94,7 +96,7 @@ async function renderOnce(p: AiTtsProvider, text: string, out: string): Promise<
   }
   let res: Response;
   if (p.kind === 'elevenlabs') {
-    const b = (p.url || 'https://api.elevenlabs.io').replace(/\/+$/, '').replace(/\/v1$/, '');
+    const b = trimTrailingSlashes(p.url || 'https://api.elevenlabs.io').replace(/\/v1$/, '');
     const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'audio/mpeg' };
     if (p.apiKey) headers['xi-api-key'] = p.apiKey;
     res = await fetch(`${b}/v1/text-to-speech/${encodeURIComponent(p.voice!)}?output_format=mp3_44100_128`, {
