@@ -97,10 +97,10 @@ jobs:
           dir="$RUNNER_TEMP/smoke"; mkdir -p "$dir"
           tar -xzf "release/vibe-$VERSION-${{ matrix.target }}.tar.gz" -C "$dir"
           app="$dir/vibe-$VERSION-${{ matrix.target }}"
-          file "$app/kinora" "$app/ffmpeg"
+          file "$app/vibe" "$app/ffmpeg"
           "$app/ffmpeg" -hide_banner -version | head -1
-          # No MEDIAMAX_DATA: must default to ~/.local/share/kinora and use the bundled ffmpeg.
-          (cd / && MEDIAMAX_PORT=18484 "$app/kinora" > "$dir/server.log" 2>&1 &)
+          # No MEDIAMAX_DATA: must default to ~/.local/share/vibe and use the bundled ffmpeg.
+          (cd / && MEDIAMAX_PORT=18484 "$app/vibe" > "$dir/server.log" 2>&1 &)
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:18484/api/v1/system/info && break; sleep 1; done
           echo
           curl -sf http://127.0.0.1:18484/api/v1/system/info | grep -q '"setupRequired":true'
@@ -108,8 +108,8 @@ jobs:
           curl -sf http://127.0.0.1:18484/ | grep -qi '<div id="root"'
           asset=$(curl -sf http://127.0.0.1:18484/ | grep -o '/assets/index-[^"]*\.js' | head -1)
           curl -sf -o /dev/null "http://127.0.0.1:18484$asset"
-          test -f "$HOME/.local/share/kinora/mediamax.db"
-          pkill -f "$app/kinora" || true
+          test -f "$HOME/.local/share/vibe/vibe.db"
+          pkill -f "$app/vibe" || true
           cat "$dir/server.log"
           if grep -q 'ffmpeg was not found' "$dir/server.log"; then echo "::error::bundled ffmpeg not used"; exit 1; fi
           if grep -q 'ExperimentalWarning' "$dir/server.log"; then echo "::error::ExperimentalWarning not hidden"; exit 1; fi
@@ -120,19 +120,19 @@ jobs:
         run: |
           set -euo pipefail
           app="$RUNNER_TEMP/smoke/vibe-$VERSION-${{ matrix.target }}"
-          sudo mkdir -p /opt/kinora && sudo cp -r "$app"/* /opt/kinora/
-          sudo useradd --system --home-dir /var/lib/kinora --shell /usr/sbin/nologin kinora
-          sudo cp /opt/kinora/kinora.service /etc/systemd/system/
-          sudo systemd-analyze verify /etc/systemd/system/kinora.service
+          sudo mkdir -p /opt/vibe && sudo cp -r "$app"/* /opt/vibe/
+          sudo useradd --system --home-dir /var/lib/vibe --shell /usr/sbin/nologin vibe
+          sudo cp /opt/vibe/vibe.service /etc/systemd/system/
+          sudo systemd-analyze verify /etc/systemd/system/vibe.service
           sudo systemctl daemon-reload
-          sudo systemctl start kinora
+          sudo systemctl start vibe
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8484/api/v1/system/info && break; sleep 1; done
           echo
           curl -sf http://127.0.0.1:8484/api/v1/system/info | grep -q setupRequired
-          sudo test -f /var/lib/kinora/mediamax.db
-          test "$(sudo stat -c %U /var/lib/kinora/mediamax.db)" = kinora
-          sudo systemctl stop kinora
-          sudo journalctl -u kinora --no-pager | tail -20
+          sudo test -f /var/lib/vibe/vibe.db
+          test "$(sudo stat -c %U /var/lib/vibe/vibe.db)" = vibe
+          sudo systemctl stop vibe
+          sudo journalctl -u vibe --no-pager | tail -20
 
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
@@ -142,13 +142,13 @@ jobs:
           $dir = Join-Path $env:RUNNER_TEMP 'smoke'
           Expand-Archive "release/vibe-$env:VERSION-windows-x64.zip" -DestinationPath $dir
           Get-ChildItem $dir | Format-Table Name, Length
-          foreach ($f in 'kinora.exe','ffmpeg.exe','ffprobe.exe','Vibe.cmd','install-service.ps1','update-vibe.ps1','README.txt','web\index.html') {
+          foreach ($f in 'vibe.exe','ffmpeg.exe','ffprobe.exe','Vibe.cmd','install-service.ps1','update-vibe.ps1','README.txt','web\index.html') {
             if (-not (Test-Path (Join-Path $dir $f))) { throw "$f missing from the zip" }
           }
           & (Join-Path $dir 'ffmpeg.exe') -hide_banner -version | Select-Object -First 1
-          # No MEDIAMAX_DATA: must default to %ProgramData%\Kinora and use the bundled ffmpeg.exe.
+          # No MEDIAMAX_DATA: must default to %ProgramData%\Vibe and use the bundled ffmpeg.exe.
           $env:MEDIAMAX_PORT = '18484'
-          $p = Start-Process -FilePath (Join-Path $dir 'kinora.exe') -WorkingDirectory $env:SystemRoot -PassThru `
+          $p = Start-Process -FilePath (Join-Path $dir 'vibe.exe') -WorkingDirectory $env:SystemRoot -PassThru `
             -RedirectStandardOutput "$dir\out.log" -RedirectStandardError "$dir\err.log"
           $info = $null
           for ($i = 0; $i -lt 30 -and -not $info; $i++) {
@@ -162,7 +162,7 @@ jobs:
           if ($html -notmatch '<div id="root"') { throw 'web app not served' }
           $asset = [regex]::Match($html, '/assets/index-[^"]*\.js').Value
           Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:18484$asset" | Out-Null
-          if (-not (Test-Path "$env:ProgramData\Kinora\mediamax.db")) { throw 'database not created in %ProgramData%\Kinora' }
+          if (-not (Test-Path "$env:ProgramData\Vibe\vibe.db")) { throw 'database not created in %ProgramData%\Vibe' }
           Stop-Process -Id $p.Id -Force
           Start-Sleep 2
           $log = (Get-Content -Raw "$dir\out.log") + (Get-Content -Raw "$dir\err.log")
@@ -179,20 +179,20 @@ jobs:
           Remove-Item Env:\MEDIAMAX_PORT -ErrorAction SilentlyContinue
           & powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\install-service.ps1"
           if ($LASTEXITCODE) { throw "install failed ($LASTEXITCODE)" }
-          $task = Get-ScheduledTask -TaskName Kinora
+          $task = Get-ScheduledTask -TaskName Vibe
           $task.Principal | Format-List UserId, LogonType, RunLevel
           if ($task.Principal.UserId -notmatch 'SYSTEM') { throw 'task should run as SYSTEM' }
-          if (-not (Get-NetFirewallRule -DisplayName 'Kinora (HTTP 8484)')) { throw 'firewall rule missing' }
+          if (-not (Get-NetFirewallRule -DisplayName 'Vibe (HTTP 8484)')) { throw 'firewall rule missing' }
           $info = $null
           for ($i = 0; $i -lt 30 -and -not $info; $i++) {
             try { $info = Invoke-RestMethod http://127.0.0.1:8484/api/v1/system/info } catch { Start-Sleep 1 }
           }
-          if (-not $info) { throw 'scheduled task did not start Kinora' }
-          (Get-Process kinora).Path
+          if (-not $info) { throw 'scheduled task did not start Vibe' }
+          (Get-Process vibe).Path
           & powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\install-service.ps1" -Uninstall
           if ($LASTEXITCODE) { throw "uninstall failed ($LASTEXITCODE)" }
-          if (Get-ScheduledTask -TaskName Kinora -ErrorAction SilentlyContinue) { throw 'task still registered' }
-          if (Get-NetFirewallRule -DisplayName 'Kinora*' -ErrorAction SilentlyContinue) { throw 'firewall rules left behind' }
+          if (Get-ScheduledTask -TaskName Vibe -ErrorAction SilentlyContinue) { throw 'task still registered' }
+          if (Get-NetFirewallRule -DisplayName 'Vibe (*' -ErrorAction SilentlyContinue) { throw 'firewall rules left behind' }
           if (Test-Path "$env:ProgramFiles\Vibe") { throw 'install folder left behind' }
 
           # Service as a Windows account (network shares that need a password): runs as it, keeps it on upgrade,
@@ -209,17 +209,17 @@ jobs:
           & powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\install-service.ps1" -User $account -PasswordFile $pwFile
           if ($LASTEXITCODE) { throw "install as $account failed ($LASTEXITCODE)" }
           if (Test-Path $pwFile) { throw 'password file left behind' }
-          if ((Get-ScheduledTask -TaskName Kinora).Principal.UserId -notmatch 'vibesvc') { throw 'task should run as vibesvc' }
+          if ((Get-ScheduledTask -TaskName Vibe).Principal.UserId -notmatch 'vibesvc') { throw 'task should run as vibesvc' }
           $info = $null
           for ($i = 0; $i -lt 30 -and -not $info; $i++) {
             try { $info = Invoke-RestMethod http://127.0.0.1:8484/api/v1/system/info } catch { Start-Sleep 1 }
           }
           if (-not $info) { throw 'the task did not start Vibe as vibesvc' }
-          $owner = (Get-Process kinora -IncludeUserName).UserName
-          if ($owner -notmatch 'vibesvc') { throw "kinora.exe runs as $owner, not vibesvc" }
+          $owner = (Get-Process vibe -IncludeUserName).UserName
+          if ($owner -notmatch 'vibesvc') { throw "vibe.exe runs as $owner, not vibesvc" }
           & powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\install-service.ps1"
           if ($LASTEXITCODE) { throw "upgrade failed ($LASTEXITCODE)" }
-          if ((Get-ScheduledTask -TaskName Kinora).Principal.UserId -notmatch 'vibesvc') { throw 'an upgrade must keep the account' }
+          if ((Get-ScheduledTask -TaskName Vibe).Principal.UserId -notmatch 'vibesvc') { throw 'an upgrade must keep the account' }
           Set-Content -NoNewline -LiteralPath $pwFile -Value 'not-the-password'
           & powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\install-service.ps1" -User $account -PasswordFile $pwFile
           if ($LASTEXITCODE -ne 2) { throw "a wrong password should exit with 2, got $LASTEXITCODE" }
@@ -253,39 +253,72 @@ jobs:
 
           # 1. Fresh install, default "tray app" mode: the tray app starts the server as this user.
           Install @() 'tray'
-          foreach ($f in 'kinora.exe', 'VibeTray.exe', 'ffmpeg.exe', 'web\index.html', 'unins000.exe') {
+          foreach ($f in 'vibe.exe', 'VibeTray.exe', 'ffmpeg.exe', 'web\index.html', 'unins000.exe') {
             if (-not (Test-Path (Join-Path $app $f))) { throw "$f not installed" }
           }
           $info = WaitUp 8484
           if ($info.version -ne $env:VERSION) { throw "version $($info.version) != $env:VERSION" }
           if (-not (Get-Process VibeTray -ErrorAction SilentlyContinue)) { throw 'tray app not running' }
           if (-not (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name Vibe -ErrorAction SilentlyContinue)) { throw 'sign-in start not set' }
-          if (-not (Get-NetFirewallRule -DisplayName 'Kinora (HTTP 8484)' -ErrorAction SilentlyContinue)) { throw 'firewall rule missing' }
-          if (Get-ScheduledTask -TaskName Kinora -ErrorAction SilentlyContinue) { throw 'tray mode must not register the task' }
-          if (-not (Test-Path "$env:ProgramData\Kinora\mediamax.db")) { throw 'database not created' }
+          if (-not (Get-NetFirewallRule -DisplayName 'Vibe (HTTP 8484)' -ErrorAction SilentlyContinue)) { throw 'firewall rule missing' }
+          if (Get-ScheduledTask -TaskName Vibe -ErrorAction SilentlyContinue) { throw 'tray mode must not register the task' }
+          if (-not (Test-Path "$env:ProgramData\Vibe\vibe.db")) { throw 'database not created' }
+          Set-Content "$env:RUNNER_TEMP\server-id.txt" $info.id
 
           # 2. Upgrade in place to "background service" mode on another port.
           Install @('/TASKS="service"', '/PORT=18486') 'service'
           Start-Sleep 3
           if (Get-Process VibeTray -ErrorAction SilentlyContinue) { throw 'tray app still running in service mode' }
-          $task = Get-ScheduledTask -TaskName Kinora
+          $task = Get-ScheduledTask -TaskName Vibe
           if ($task.Principal.UserId -notmatch 'SYSTEM') { throw 'task should run as SYSTEM' }
           WaitUp 18486 | Out-Null
-          if ((Get-ItemProperty $envKey).KINORA_PORT -ne '18486') { throw 'port not stored' }
-          if ((Get-ItemProperty 'HKLM:\SOFTWARE\Kinora').ServiceMode -ne 1) { throw 'service mode not recorded' }
+          if ((Get-ItemProperty $envKey).VIBE_PORT -ne '18486') { throw 'port not stored' }
+          if ((Get-ItemProperty 'HKLM:\SOFTWARE\Vibe').ServiceMode -ne 1) { throw 'service mode not recorded' }
           if (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name Vibe -ErrorAction SilentlyContinue) { throw 'sign-in start left on' }
-          if (-not (Get-NetFirewallRule -DisplayName 'Kinora (HTTP 18486)' -ErrorAction SilentlyContinue)) { throw 'firewall rule missing' }
+          if (-not (Get-NetFirewallRule -DisplayName 'Vibe (HTTP 18486)' -ErrorAction SilentlyContinue)) { throw 'firewall rule missing' }
 
           # 3. Uninstall (silent: keeps the data). unins000.exe hands over to a temp copy, so wait for the folder to go.
           (Start-Process (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -PassThru).WaitForExit(120000) | Out-Null
-          for ($i = 0; $i -lt 60 -and (Test-Path (Join-Path $app 'kinora.exe')); $i++) { Start-Sleep 1 }
-          if (Test-Path (Join-Path $app 'kinora.exe')) { throw 'program files left behind' }
-          if (Get-ScheduledTask -TaskName Kinora -ErrorAction SilentlyContinue) { throw 'task still registered' }
-          if (Get-NetFirewallRule -DisplayName 'Kinora*' -ErrorAction SilentlyContinue) { throw 'firewall rules left behind' }
-          if ((Get-ItemProperty $envKey).KINORA_PORT) { throw 'port variable left behind' }
-          if (Get-Process kinora -ErrorAction SilentlyContinue) { throw 'kinora.exe still running' }
-          if (-not (Test-Path "$env:ProgramData\Kinora\mediamax.db")) { throw 'uninstall must keep the data' }
+          for ($i = 0; $i -lt 60 -and (Test-Path (Join-Path $app 'vibe.exe')); $i++) { Start-Sleep 1 }
+          if (Test-Path (Join-Path $app 'vibe.exe')) { throw 'program files left behind' }
+          if (Get-ScheduledTask -TaskName Vibe -ErrorAction SilentlyContinue) { throw 'task still registered' }
+          if (Get-NetFirewallRule -DisplayName 'Vibe (*' -ErrorAction SilentlyContinue) { throw 'firewall rules left behind' }
+          if ((Get-ItemProperty $envKey).VIBE_PORT) { throw 'port variable left behind' }
+          if (Get-Process vibe -ErrorAction SilentlyContinue) { throw 'vibe.exe still running' }
+          if (-not (Test-Path "$env:ProgramData\Vibe\vibe.db")) { throw 'uninstall must keep the data' }
           if (Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' | Where-Object { $_.PSChildName -like '*6F1C3B52*' }) { throw 'Apps & features entry left behind' }
+
+          # 4. Upgrade of an install made before the rename to Vibe: data in %ProgramData%\Kinora with mediamax.db (and
+          #    its write-ahead log), SOFTWARE\Kinora, KINORA_PORT, a "Kinora" firewall rule and kinora.exe.
+          $data = Join-Path $env:ProgramData 'Vibe'
+          $legacy = Join-Path $env:ProgramData 'Kinora'
+          $serverId = (Get-Content -Raw "$env:RUNNER_TEMP\server-id.txt" -ErrorAction SilentlyContinue)
+          foreach ($x in '', '-wal', '-shm') { if (Test-Path "$data\vibe.db$x") { Rename-Item "$data\vibe.db$x" "mediamax.db$x" } }
+          Set-Content "$data\legacy-marker.txt" 'kept'
+          Rename-Item $data 'Kinora'
+          New-Item -Force 'HKLM:\SOFTWARE\Kinora' | Out-Null
+          New-ItemProperty -Force 'HKLM:\SOFTWARE\Kinora' -Name UpdateRepo -Value 'Bucifer6/MediaMax' | Out-Null
+          New-ItemProperty -Force 'HKLM:\SOFTWARE\Kinora' -Name ServiceMode -PropertyType DWord -Value 0 | Out-Null
+          [Environment]::SetEnvironmentVariable('KINORA_PORT', '18487', 'Machine')
+          New-NetFirewallRule -DisplayName 'Kinora (HTTP 18487)' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 18487 | Out-Null
+          New-Item -ItemType Directory -Force $app | Out-Null
+          Set-Content (Join-Path $app 'kinora.exe') 'old'
+          Install @() 'legacy'
+          if (Test-Path $legacy) { throw '%ProgramData%\Kinora was not moved' }
+          if (-not (Test-Path "$data\legacy-marker.txt")) { throw 'the data folder was not moved to %ProgramData%\Vibe' }
+          $info = WaitUp 18487
+          if ($serverId -and $info.id -ne $serverId.Trim()) { throw "server id changed: $($info.id) != $serverId" }
+          if (-not (Test-Path "$data\vibe.db") -or (Test-Path "$data\mediamax.db")) { throw 'mediamax.db was not renamed to vibe.db' }
+          if (Test-Path (Join-Path $app 'kinora.exe')) { throw 'kinora.exe left behind' }
+          if (Test-Path 'HKLM:\SOFTWARE\Kinora') { throw 'SOFTWARE\Kinora left behind' }
+          if ((Get-ItemProperty 'HKLM:\SOFTWARE\Vibe').UpdateRepo -ne 'Bucifer6/MediaMax') { throw 'UpdateRepo not moved' }
+          $machineEnv = Get-ItemProperty $envKey
+          if ($machineEnv.KINORA_PORT -or $machineEnv.VIBE_PORT -ne '18487') { throw 'port not moved to VIBE_PORT' }
+          if (Get-NetFirewallRule -DisplayName 'Kinora*' -ErrorAction SilentlyContinue) { throw 'old firewall rules left behind' }
+          if (-not (Get-NetFirewallRule -DisplayName 'Vibe (HTTP 18487)' -ErrorAction SilentlyContinue)) { throw 'firewall rule missing' }
+          (Start-Process (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -PassThru).WaitForExit(120000) | Out-Null
+          for ($i = 0; $i -lt 60 -and (Test-Path (Join-Path $app 'vibe.exe')); $i++) { Start-Sleep 1 }
+          Write-Host 'Setup program: upgrade from the Kinora names passed.'
           Write-Host 'Setup program: install, upgrade to service and uninstall all passed.'
 
       - uses: actions/upload-artifact@v7
@@ -384,7 +417,7 @@ jobs:
           echo
           curl -sf http://localhost:8484/api/v1/system/info | grep -q setupRequired
           curl -sf http://localhost:8484/ | grep -qi '<html'
-          test "$(stat -c %u:%g "$RUNNER_TEMP/config/mediamax.db")" = "1234:2345"
+          test "$(stat -c %u:%g "$RUNNER_TEMP/config/vibe.db")" = "1234:2345"
           test "$(docker exec mm sh -c 'stat -c %u /proc/1')" = "1234"
           docker exec mm ffmpeg -version | head -1
           docker logs mm | tail -20

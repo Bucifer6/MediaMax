@@ -10,7 +10,7 @@
 #   update-vibe.ps1                what the task runs: install the release asked for, if it is newer
 #
 # What a user can influence is only WHICH version to install: the version in <data folder>\update-request.json.
-# This script fetches that release from the GitHub repository (HKLM\SOFTWARE\Kinora UpdateRepo, which only an
+# This script fetches that release from the GitHub repository (HKLM\SOFTWARE\Vibe UpdateRepo, which only an
 # administrator can set, else Bucifer6/MediaMax), only from GitHub's own download host, downloads its setup program
 # into this program folder (writable by administrators only), checks it against the release's SHA256SUMS.txt and
 # runs it silently. It never installs an older or the same version. The outcome is written to updates\result.json
@@ -93,13 +93,16 @@ function Compare-Semver([string]$A, [string]$B) {
 # Same data folder rule as the server and install-service.ps1.
 function Get-DataDir {
   $envKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
-  foreach ($n in 'KINORA_DATA', 'MEDIAMAX_DATA') {
+  foreach ($n in 'VIBE_DATA', 'KINORA_DATA', 'MEDIAMAX_DATA') {
     $v = (Get-ItemProperty -Path $envKey -Name $n -ErrorAction SilentlyContinue).$n
     if ($v) { return [Environment]::ExpandEnvironmentVariables($v) }
   }
-  $new = Join-Path $env:ProgramData 'Kinora'
-  $old = Join-Path $env:ProgramData 'MediaMax'
-  if (-not (Test-Path $new) -and (Test-Path $old)) { $old } else { $new }
+  # %ProgramData%\Vibe; a folder still named Kinora or MediaMax (not yet moved by setup) is used as it is.
+  foreach ($n in 'Vibe', 'Kinora', 'MediaMax') {
+    $d = Join-Path $env:ProgramData $n
+    if (Test-Path $d) { return $d }
+  }
+  Join-Path $env:ProgramData 'Vibe'
 }
 
 $requested = ''
@@ -109,7 +112,10 @@ try {
   $installed = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$AppId" -Name DisplayVersion -ErrorAction SilentlyContinue).DisplayVersion
   if (-not $installed) { throw 'Vibe is not installed by the setup program on this computer.' }
 
-  $repo = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Kinora' -Name UpdateRepo -ErrorAction SilentlyContinue).UpdateRepo
+  $repo = $null
+  foreach ($k in 'HKLM:\SOFTWARE\Vibe', 'HKLM:\SOFTWARE\Kinora') {
+    if (-not $repo) { $repo = (Get-ItemProperty -Path $k -Name UpdateRepo -ErrorAction SilentlyContinue).UpdateRepo }
+  }
   if (-not $repo -or $repo -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { $repo = 'Bucifer6/MediaMax' }
 
   # The version the server asked for (only a version number is taken from this user-writable file).

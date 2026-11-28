@@ -12,7 +12,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // The watchdog starts once per process: every stall test reads the same log file.
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kinora-watchdog-'));
-const file = path.join(dir, 'mediamax.log');
+const file = path.join(dir, 'vibe.log');
 const logText = () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
 after(() => fs.rmSync(dir, { recursive: true, force: true }));
 

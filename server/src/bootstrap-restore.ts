@@ -4,7 +4,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { config } from './config.js';
+import { config, DB_FILE, LEGACY_DB_FILES } from './config.js';
 import { extractTarGz } from './util/tar.js';
 
 const pending = path.join(config.dataDir, 'restore-pending.tar.gz');
@@ -14,8 +14,11 @@ if (fs.existsSync(pending)) {
     fs.rmSync(staging, { recursive: true, force: true });
     extractTarGz(fs.readFileSync(pending), staging, { maxFiles: 200000, maxBytes: 8 * 1024 * 1024 * 1024 });
     const dbFile = process.env.MEDIAMAX_DB ?? config.dbPath;
+    // Backups made before the database was renamed hold it as mediamax.db. Checked before the current one is removed.
+    const inside = [DB_FILE, ...LEGACY_DB_FILES].map((f) => path.join(staging, f)).find((f) => fs.existsSync(f));
+    if (!inside) throw new Error('the backup has no database');
     for (const suffix of ['', '-wal', '-shm']) fs.rmSync(dbFile + suffix, { force: true });
-    fs.renameSync(path.join(staging, 'mediamax.db'), dbFile);
+    fs.renameSync(inside, dbFile);
     for (const d of ['assets', 'avatars', 'artwork', 'plugins', 'plugin-data', 'subtitles']) {
       const target = path.join(config.dataDir, d);
       fs.rmSync(target, { recursive: true, force: true });

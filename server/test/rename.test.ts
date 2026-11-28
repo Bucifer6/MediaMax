@@ -1,6 +1,6 @@
 /**
- * The MediaMax -> Kinora -> Vibe renames keep old names working: KINORA_* environment variables override their
- * MEDIAMAX_* twins (both work), X-Kinora-* and X-MediaMax-* request headers are both accepted, the former stock server
+ * The MediaMax -> Kinora -> Vibe renames keep old names working: VIBE_* and KINORA_* environment variables override
+ * their MEDIAMAX_* twins (all work, the newest wins), a database still named mediamax.db is renamed to vibe.db, X-Kinora-* and X-MediaMax-* request headers are both accepted, the former stock server
  * names show as "Vibe", standalone installs keep an existing MediaMax data folder, and both app URL schemes are valid
  * sign-in redirects.
  */
@@ -13,7 +13,8 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const { applyEnvAliases, envVar } = await import('../src/env.ts');
-const { pickDataDir } = await import('../src/config.ts');
+const { pickDataDir, migrateDbFile } = await import('../src/config.ts');
+const { DatabaseSync } = await import('node:sqlite');
 const { clientHeader, deviceFromRequest } = await import('../src/http.ts');
 const { productName, PRODUCT_NAME } = await import('../src/util/product.ts');
 const { validateRedirect } = await import('../src/services/oidc.ts');
@@ -33,7 +34,13 @@ test('KINORA_* overrides MEDIAMAX_*; either alone works', () => {
   assert.equal(env.MEDIAMAX_HWACCEL, 'vaapi', 'new name alone reaches code that reads the old name');
   assert.equal(env.MEDIAMAX_, undefined, 'a bare prefix is not an alias');
   assert.equal(env.OTHER, 'x');
+  const all: NodeJS.ProcessEnv = { MEDIAMAX_PORT: '9000', KINORA_PORT: '9100', VIBE_PORT: '9200', VIBE_HWACCEL: 'qsv' };
+  applyEnvAliases(all);
+  assert.equal(all.MEDIAMAX_PORT, '9200', 'VIBE_ wins over KINORA_ and MEDIAMAX_');
+  assert.equal(all.MEDIAMAX_HWACCEL, 'qsv');
   assert.equal(envVar('PORT', { MEDIAMAX_PORT: '1', KINORA_PORT: '2' }), '2');
+  assert.equal(envVar('PORT', { MEDIAMAX_PORT: '1', KINORA_PORT: '2', VIBE_PORT: '3' }), '3');
+  assert.equal(envVar('PORT', { VIBE_PORT: '3' }), '3');
   assert.equal(envVar('PORT', { MEDIAMAX_PORT: '1' }), '1');
   assert.equal(envVar('PORT', {}), undefined);
 });
@@ -50,19 +57,55 @@ test('config picks up KINORA_* at start-up, ahead of MEDIAMAX_*', () => {
   try {
     assert.deepEqual(JSON.parse(run({ KINORA_PORT: '9100', MEDIAMAX_PORT: '9000', KINORA_LOG_LEVEL: 'debug', MEDIAMAX_DATA: dir })), [9100, 'debug', dir]);
     assert.deepEqual(JSON.parse(run({ MEDIAMAX_PORT: '9000', KINORA_DATA: dir })), [9000, 'info', dir]);
+    assert.deepEqual(JSON.parse(run({ VIBE_PORT: '9300', KINORA_PORT: '9100', VIBE_DATA: dir })), [9300, 'info', dir]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('standalone data folder: Kinora by default, an existing MediaMax folder is kept', () => {
+test('standalone data folder: Vibe by default, a folder not yet moved from Kinora or MediaMax is used', () => {
   const has = (...dirs: string[]) => (p: string) => dirs.includes(p);
+  const v = path.join('/data', 'vibe');
   const k = path.join('/data', 'kinora');
   const m = path.join('/data', 'mediamax');
-  assert.equal(pickDataDir(k, m, has()), k, 'fresh install');
-  assert.equal(pickDataDir(k, m, has(m)), m, 'upgrade from MediaMax');
-  assert.equal(pickDataDir(k, m, has(k, m)), k, 'Kinora folder wins once it exists');
-  assert.equal(pickDataDir(k, m, has(k)), k);
+  const order = [v, k, m];
+  assert.equal(pickDataDir(order, has()), v, 'fresh install');
+  assert.equal(pickDataDir(order, has(k)), k, 'Kinora install not moved yet');
+  assert.equal(pickDataDir(order, has(m)), m, 'MediaMax install not moved yet');
+  assert.equal(pickDataDir(order, has(k, m)), k, 'the newer former name wins');
+  assert.equal(pickDataDir(order, has(v, k, m)), v, 'the Vibe folder wins once it exists');
+});
+
+test('a database still named mediamax.db is renamed to vibe.db with every committed change', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-db-'));
+  try {
+    const legacy = path.join(dir, 'mediamax.db');
+    // Leave changes in the write-ahead log, as a server that was killed would.
+    const d = new DatabaseSync(legacy);
+    d.exec('PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0; CREATE TABLE t (v TEXT);');
+    d.exec("INSERT INTO t VALUES ('kept')");
+    const other = new DatabaseSync(legacy);
+    assert.ok(fs.statSync(legacy + '-wal').size > 0, 'the test needs changes still in the WAL');
+    // While another connection has it open the WAL cannot be folded in: nothing is renamed.
+    assert.equal(migrateDbFile(dir), legacy);
+    assert.ok(fs.existsSync(legacy) && !fs.existsSync(path.join(dir, 'vibe.db')));
+    other.close();
+    d.close();
+
+    const target = migrateDbFile(dir);
+    assert.equal(target, path.join(dir, 'vibe.db'));
+    assert.ok(!fs.existsSync(legacy) && !fs.existsSync(legacy + '-wal') && !fs.existsSync(legacy + '-shm'));
+    const r = new DatabaseSync(target);
+    assert.deepEqual(r.prepare('SELECT v FROM t').all().map((x) => x.v), ['kept']);
+    r.close();
+    // Already renamed: left alone. A fresh folder gets vibe.db.
+    assert.equal(migrateDbFile(dir), target);
+    const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-db-'));
+    assert.equal(migrateDbFile(fresh), path.join(fresh, 'vibe.db'));
+    fs.rmSync(fresh, { recursive: true, force: true });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('X-Kinora-* and X-MediaMax-* headers are both accepted; the new one wins', () => {

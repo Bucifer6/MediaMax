@@ -210,7 +210,7 @@ test('diagnostics.zip: admin only, rate limited, and no planted secret leaks', a
   assert.equal(res.headers['content-type'], 'application/zip');
   assert.match(String(res.headers['content-disposition']), /attachment; filename="diagnostics-\d{8}-\d{4}\.zip"/);
   const files = readZip(res.rawPayload);
-  for (const name of ['README.txt', 'system.json', 'ffmpeg.txt', 'hardware.json', 'network.json', 'library.json', 'settings.json', 'tasks.json', 'logs/mediamax.log']) {
+  for (const name of ['README.txt', 'system.json', 'ffmpeg.txt', 'hardware.json', 'network.json', 'library.json', 'settings.json', 'tasks.json', 'logs/vibe.log']) {
     assert.ok(files.has(name), `missing ${name}`);
   }
   const all = [...files.values()].map((b) => b.toString('utf8')).join('\n');
@@ -220,7 +220,7 @@ test('diagnostics.zip: admin only, rate limited, and no planted secret leaks', a
   assert.ok(sys.version && sys.os.platform && sys.cpu.cores >= 1);
   const settings = JSON.parse(files.get('settings.json')!.toString());
   assert.equal(settings.server.transcoding.enabled, true);
-  assert.ok(files.get('logs/mediamax.log')!.toString().includes('[redacted]'));
+  assert.ok(files.get('logs/vibe.log')!.toString().includes('[redacted]'));
   // Rate limit.
   const again = await app.inject({ url: '/api/v1/admin/diagnostics.zip', headers: auth(adminTok) });
   assert.equal(again.statusCode, 429);

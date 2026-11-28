@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { BackupInfo, User } from '@mediamax/shared';
-import { config } from '../config.js';
+import { config, DB_FILE, LEGACY_DB_FILES } from '../config.js';
 import { db } from '../db.js';
 import { getSettings, serverId } from './settings.js';
 import { createTarGz, extractTarGz, walkFiles } from '../util/tar.js';
@@ -46,7 +46,7 @@ export function createBackup(reason: 'manual' | 'scheduled' | 'pre-restore' = 'm
   try {
     const entries = [
       { name: 'backup.json', file: manifest },
-      { name: 'mediamax.db', file: tmpDb },
+      { name: DB_FILE, file: tmpDb },
       ...BACKUP_DIRS.flatMap((d) => walkFiles(path.join(config.dataDir, d), d)),
     ];
     const id = `vibe-${stamp}-${reason}.tar.gz`;
@@ -77,7 +77,7 @@ export function stageRestore(archive: Buffer, actor: User): { restartRequired: t
   try {
     extractTarGz(archive, check, { maxFiles: 200000, maxBytes: 8 * 1024 * 1024 * 1024 });
     const mf = path.join(check, 'backup.json');
-    if (!fs.existsSync(mf) || !fs.existsSync(path.join(check, 'mediamax.db'))) throw badRequest('That file is not a Vibe backup');
+    if (!fs.existsSync(mf) || ![DB_FILE, ...LEGACY_DB_FILES].some((f) => fs.existsSync(path.join(check, f)))) throw badRequest('That file is not a Vibe backup');
     const m = JSON.parse(fs.readFileSync(mf, 'utf8'));
     if (m.format !== 1) throw badRequest('Unsupported backup format');
   } finally {

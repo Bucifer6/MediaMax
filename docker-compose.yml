@@ -11,7 +11,7 @@ services:
       # - PUID=1000                         # run as this user/group instead of root, so files written to
       # - PGID=1000                         #   /config and /recordings get your owner (set both)
       # - TMDB_API_KEY=your_tmdb_key        # or set it in Admin → Settings
-      # - KINORA_HWACCEL=vaapi            # none | vaapi | qsv | nvenc | videotoolbox | v4l2m2m
+      # - VIBE_HWACCEL=vaapi            # none | vaapi | qsv | nvenc | videotoolbox | v4l2m2m
     volumes:
       - ./config:/config                    # database, artwork cache, branding assets
       - ./recordings:/recordings            # DVR recordings

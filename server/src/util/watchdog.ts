@@ -10,7 +10,7 @@ import { dbTrace } from '../db.js';
  * Leaves a trace when the server stops answering or dies, which the normal log can't do by itself: a blocked main
  * thread writes nothing, and a fatal error (out of memory) ends the process before the buffered log reaches disk.
  *
- * - A watchdog thread notices when the main thread misses its heartbeat and writes, straight to mediamax.log, how
+ * - A watchdog thread notices when the main thread misses its heartbeat and writes, straight to vibe.log, how
  *   long it has been stuck, the last known memory use, which requests were in progress and the main thread's
  *   JavaScript stack at that moment (read through the inspector), and the database query running, if any.
  * - Database queries slower than 2 s are logged with their SQL when they finish.
@@ -126,7 +126,7 @@ let started = false;
 export function startWatchdog(logDir: string, stallMs = STALL_REPORT_MS) {
   if (started) return;
   started = true;
-  const logFile = path.join(logDir, 'mediamax.log');
+  const logFile = path.join(logDir, 'vibe.log');
 
   // Fatal errors (out of memory, native crashes) write a diagnostic report: the only record of why the process died.
   try {

@@ -99,4 +99,4 @@ Admin → Channels marks channels with no guide data with a **Missing guide** ba
 - the HDHomeRun `discover.json`, `lineup.json` and `guide.php` calls
 - gzip and xz XMLTV
 
-`KINORA_SD_URL` and `KINORA_HDHR_GUIDE_URL` point Vibe at other endpoints, for example a mock or a mirror.
+`VIBE_SD_URL` and `VIBE_HDHR_GUIDE_URL` point Vibe at other endpoints, for example a mock or a mirror.

@@ -168,7 +168,7 @@ volumes:
 ```
 
 Remove the `ports:` of the Vibe service (or bind it to `127.0.0.1`) so the only way in is through Caddy, and
-set `KINORA_TRUSTED_PROXIES` on Vibe to the Docker network (see [Hardening defaults](#hardening-defaults)).
+set `VIBE_TRUSTED_PROXIES` on Vibe to the Docker network (see [Hardening defaults](#hardening-defaults)).
 For the e-mail address, put `email you@example.com` in `caddy/conf.d/acme.global`.
 
 **Behind Cloudflare (orange cloud)?** Uncomment the `servers { trusted_proxies ... }` block in the global options
@@ -452,7 +452,7 @@ sudo systemctl restart fail2ban && sudo fail2ban-client status mediamax
 
 Start fail2ban after Docker (the `DOCKER-USER` chain must exist): `systemctl edit fail2ban` and add
 `After=docker.service`. With the Windows or Linux builds of Vibe (no Docker), remove the `DOCKER-USER`
-action line and use `/var/lib/kinora/logs/security.log` (or wherever your data folder is).
+action line and use `/var/lib/vibe/logs/security.log` (or wherever your data folder is).
 
 ## Unbanning an address
 
@@ -476,7 +476,7 @@ The generated `docker-compose.yml`:
 
 - **Vibe is not reachable from outside when a proxy is used**: it publishes no port, or only
   `127.0.0.1:8484`. Without a proxy it listens on `0.0.0.0:8484`.
-- **`KINORA_TRUSTED_PROXIES`** is set to `loopback` plus the fixed `mediamax` network (`172.30.84.0/24`, change
+- **`VIBE_TRUSTED_PROXIES`** is set to `loopback` plus the fixed `mediamax` network (`172.30.84.0/24`, change
   `MEDIAMAX_SUBNET` in `.env` if it clashes with your LAN), so only the proxy can tell Vibe a client address.
   Without a proxy it is `loopback` only: nobody can fake an address with `X-Forwarded-For`.
 - Media folders are mounted **read-only** unless you asked for `:rw`.
@@ -581,7 +581,7 @@ When Vibe is installed with `deploy/install.sh`, the admin area gets a **Securit
 - **CrowdSec:** Vibe signs in to CrowdSec's Local API as the machine `mediamax-dashboard`. The password is generated into `.env` (`CROWDSEC_DASHBOARD_PASSWORD`) and registered with `cscli machines add`.
 - **fail2ban:** fail2ban's control socket is root-only, so a small relay, the `fail2ban-bridge` service running `deploy/fail2ban/bridge.py`, exposes a socket that only Vibe's group can open. It allows exactly four commands: ping, status, ban and unban. Requests are decoded with an unpickler that refuses every class, and Vibe's own decoder refuses anything but plain data.
 - **Proxy logs:** mounted into Vibe read-only at `/var/log/proxy`.
-- **Settings:** come from `KINORA_PROXY_KIND`, `KINORA_PROXY_LOG`, `KINORA_PUBLIC_HOST`, `KINORA_CROWDSEC_URL`, `KINORA_CROWDSEC_MACHINE_ID`, `KINORA_CROWDSEC_PASSWORD` and `KINORA_FAIL2BAN_SOCKET`.
+- **Settings:** come from `VIBE_PROXY_KIND`, `VIBE_PROXY_LOG`, `VIBE_PUBLIC_HOST`, `VIBE_CROWDSEC_URL`, `VIBE_CROWDSEC_MACHINE_ID`, `VIBE_CROWDSEC_PASSWORD` and `VIBE_FAIL2BAN_SOCKET`.
 
 Set up by hand? Enter the same values under **Admin → Security → Connections**. For CrowdSec, register the machine with:
 
@@ -600,12 +600,12 @@ Admin → **Network & HTTPS** decides how people reach the server. Changes apply
 | **Built-in HTTPS** | no proxy, but you want a certificate | runs a bundled [Caddy](https://caddyserver.com) as a child process: Let's Encrypt certificate, HTTP→HTTPS, HTTP/2 and 3, HSTS, compression of text only, unbuffered streaming. Off until you choose it |
 
 The page's **Connection check** shows how your own request arrived (socket address, `X-Forwarded-For`, protocol),
-so you can see straight away whether the proxy is trusted. `KINORA_TRUSTED_PROXIES` in the environment still
+so you can see straight away whether the proxy is trusted. `VIBE_TRUSTED_PROXIES` in the environment still
 overrides the list (the installer sets it for its own Caddy/Nginx; it is left empty with `--proxy none`).
 
 **Built-in HTTPS needs:** a domain whose DNS points at the server, ports 80 and 443 reachable from the internet,
 and nothing else listening on them. Caddy is bundled in the Docker image and the release downloads; elsewhere
-install it or set `KINORA_CADDY=/path/to/caddy`. Its certificates live in `<data>/caddy`, its access log is
+install it or set `VIBE_CADDY=/path/to/caddy`. Its certificates live in `<data>/caddy`, its access log is
 `<logs>/caddy-access.log` (tokens redacted), and its messages show on the page. Use *Test mode* (Let's Encrypt
 staging) while you get DNS and ports right, to stay clear of rate limits.
 

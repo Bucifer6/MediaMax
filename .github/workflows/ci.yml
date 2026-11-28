@@ -99,7 +99,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/config"
           docker run -d --name mm-puid -p 8485:8484 -e PUID=1234 -e PGID=2345 -v "$RUNNER_TEMP/config:/config" vibe:ci
           for i in $(seq 1 30); do curl -sf http://localhost:8485/api/v1/system/info && break; sleep 2; done
-          test "$(stat -c %u:%g "$RUNNER_TEMP/config/mediamax.db")" = "1234:2345"
+          test "$(stat -c %u:%g "$RUNNER_TEMP/config/vibe.db")" = "1234:2345"
           test "$(docker exec mm-puid stat -c %u /proc/1)" = "1234"
 
   standalone:
@@ -118,7 +118,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/smoke" && tar -xzf release/vibe-*-linux-x64.tar.gz -C "$RUNNER_TEMP/smoke"
           app=$(echo "$RUNNER_TEMP"/smoke/vibe-*-linux-x64)
-          MEDIAMAX_DATA="$RUNNER_TEMP/data" "$app/kinora" &
+          MEDIAMAX_DATA="$RUNNER_TEMP/data" "$app/vibe" &
           pid=$!
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8484/api/v1/system/info && break; sleep 1; done
           curl -sf http://127.0.0.1:8484/api/v1/system/info | grep -q setupRequired

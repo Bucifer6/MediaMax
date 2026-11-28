@@ -668,7 +668,7 @@ Repositories: `ServerSettings.plugins.repositories`. Plugin routes: `/api/v1/plu
 * `GET /admin/updates` → `UpdateStatus` (current and latest version, release notes, install kind, whether Update now works here,
   manual steps otherwise). `POST /admin/updates/check` asks GitHub now. `POST /admin/updates/install` (Windows setup installs only)
   downloads the release's setup program, verifies it against `SHA256SUMS.txt` and runs it; `409` elsewhere. Admin sockets get
-  `update.status` events with download progress. Releases come from `KINORA_UPDATE_REPO` (default `Bucifer6/MediaMax`).
+  `update.status` events with download progress. Releases come from `VIBE_UPDATE_REPO` (default `Bucifer6/MediaMax`).
   Scheduled backups: `ServerSettings.backups`.
 * `GET /admin/remote-access` → `RemoteAccessStatus` · `POST /admin/remote-access/refresh`. UPnP port mapping: `ServerSettings.remoteAccess`
   (needs host networking in Docker).
@@ -966,9 +966,9 @@ AI DJ is switched off.
 ## Security dashboard (admin)
 
 - `GET /admin/security[?refresh=1]` returns a `SecurityOverview`, cached for 15 s. It covers sign-in failures from Vibe's security log (24 h and 7 d, by reason, top IPs, targeted users, an hourly histogram and recent events), proxy stats from the Caddy JSON or Nginx combined access log (24 h), the HTTPS certificate (expiry, issuer, trust), CrowdSec active decisions and alerts, and fail2ban jails with their banned IPs. Any part that isn't configured is `null`.
-- `GET/PUT /admin/security/settings` reads and writes `SecurityDashboardSettings`. Defaults come from the `KINORA_PROXY_KIND`, `KINORA_PROXY_LOG`, `KINORA_PUBLIC_HOST`, `KINORA_CROWDSEC_URL`, `KINORA_CROWDSEC_MACHINE_ID`, `KINORA_CROWDSEC_PASSWORD` and `KINORA_FAIL2BAN_SOCKET` environment variables. The CrowdSec password is write-only.
+- `GET/PUT /admin/security/settings` reads and writes `SecurityDashboardSettings`. Defaults come from the `VIBE_PROXY_KIND`, `VIBE_PROXY_LOG`, `VIBE_PUBLIC_HOST`, `VIBE_CROWDSEC_URL`, `VIBE_CROWDSEC_MACHINE_ID`, `VIBE_CROWDSEC_PASSWORD` and `VIBE_FAIL2BAN_SOCKET` environment variables. The CrowdSec password is write-only.
 - `POST /admin/security/ban {ip, tool: 'crowdsec'|'fail2ban', jail?, duration?, reason?}` bans an IP or CIDR. Your own address is refused.
-- `GET /admin/network` returns `NetworkStatus`: the saved `NetworkSettings` (mode `direct`|`proxy`|`builtin`, trusted proxies, built-in HTTPS domain/email/ports/staging/HSTS), any `KINORA_TRUSTED_PROXIES` override, how this request arrived (`you`), and the built-in Caddy status (binary, version, running, last error, recent log, certificate).
+- `GET /admin/network` returns `NetworkStatus`: the saved `NetworkSettings` (mode `direct`|`proxy`|`builtin`, trusted proxies, built-in HTTPS domain/email/ports/staging/HSTS), any `VIBE_TRUSTED_PROXIES` override, how this request arrived (`you`), and the built-in Caddy status (binary, version, running, last error, recent log, certificate).
 - `PUT /admin/network` saves a partial `NetworkSettings`. Trusted-proxy changes apply immediately; choosing `builtin` validates the domain and starts Caddy (400 if no Caddy binary is found).
 - `POST /admin/security/unban {ip, tool?, jail?}` unbans an address. Without `tool` it removes the address from CrowdSec and every fail2ban jail, and returns `removedFrom`.
 

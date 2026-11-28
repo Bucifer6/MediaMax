@@ -164,7 +164,7 @@ export function NetworkAdmin() {
           to dodge sign-in limits and bans. <span className="mono">loopback</span>, <span className="mono">linklocal</span> and <span className="mono">uniquelocal</span> cover
           this machine and private networks (Docker networks included), which suits most setups.
         </p>
-        {data.envTrustedProxies && <p className="small warn">Set by KINORA_TRUSTED_PROXIES (or MEDIAMAX_TRUSTED_PROXIES) in the environment; remove that variable to edit the list here.</p>}
+        {data.envTrustedProxies && <p className="small warn">Set by VIBE_TRUSTED_PROXIES (or MEDIAMAX_TRUSTED_PROXIES) in the environment; remove that variable to edit the list here.</p>}
         <TrustEditor value={data.envTrustedProxies ?? draft.trustedProxies} onChange={(v) => set({ trustedProxies: v })} locked={!!data.envTrustedProxies} />
         {!data.envTrustedProxies && (
           <div className="form-row">

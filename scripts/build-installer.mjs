@@ -77,7 +77,7 @@ function main() {
   // 1. The same files as the zip.
   // Windows' own bsdtar reads zips (Expand-Archive breaks when Windows PowerShell inherits PowerShell 7's module path).
   run(path.join(winDir, 'System32', 'tar.exe'), ['-xf', zip, '-C', app]);
-  if (!fs.existsSync(path.join(app, 'kinora.exe'))) throw new Error('kinora.exe missing from the zip');
+  if (!fs.existsSync(path.join(app, 'vibe.exe'))) throw new Error('vibe.exe missing from the zip');
 
   // 2. Tray app (x64, so it sees the same registry view as the 64-bit installer).
   const tray = path.join(work, 'VibeTray.exe');

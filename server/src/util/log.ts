@@ -6,7 +6,7 @@ type Level = 'debug' | 'info' | 'warn' | 'error';
 const order: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 const min = order[(config.logLevel as Level) ?? 'info'] ?? 20;
 const ring: string[] = [];
-const logFile = path.join(config.logDir, 'mediamax.log');
+const logFile = path.join(config.logDir, 'vibe.log');
 let stream: fs.WriteStream | null = null;
 try {
   stream = fs.createWriteStream(logFile, { flags: 'a' });

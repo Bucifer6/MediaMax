@@ -214,7 +214,7 @@ function redactUrlsDeep(v: unknown): unknown {
   return v;
 }
 
-const LOG_LIMITS: Record<string, number> = { 'mediamax.log': 5 * 1024 * 1024 };
+const LOG_LIMITS: Record<string, number> = { 'vibe.log': 5 * 1024 * 1024, 'mediamax.log': 5 * 1024 * 1024 };
 const OTHER_LOG_LIMIT = 1024 * 1024;
 
 function logEntries(): ZipEntry[] {

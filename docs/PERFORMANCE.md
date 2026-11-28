@@ -12,7 +12,7 @@ All the tools live in `scripts/perf/` and use the built server (`npm run build` 
 
 | Command | What it does |
 |---|---|
-| `npm run perf` (`node scripts/perf/run.mjs`) | Seeds a synthetic large library straight into SQLite (once; it is cached in your temp folder), boots the server with `KINORA_PERF=1` and times the hot API endpoints: a sequential pass (latency and SQL statements per request), then 1, 10 and 50 concurrent clients spread over the 80 seeded users. Writes `scripts/perf/results/<label>.json`. |
+| `npm run perf` (`node scripts/perf/run.mjs`) | Seeds a synthetic large library straight into SQLite (once; it is cached in your temp folder), boots the server with `VIBE_PERF=1` and times the hot API endpoints: a sequential pass (latency and SQL statements per request), then 1, 10 and 50 concurrent clients spread over the 80 seeded users. Writes `scripts/perf/results/<label>.json`. |
 | `node scripts/perf/compare.mjs before.json after.json --level=10` | Markdown before/after table of two runs. |
 | `node scripts/perf/web.mjs` | Playwright and Chromium against the seeded server, CPU throttled 4×: Home first paint and time to the first rows, bytes downloaded, library grid and TV guide scroll frame rate and long tasks, Home → title → player. |
 | `node scripts/perf/playback.mjs` | Generates short test files with ffmpeg and measures `POST /playback` → first media bytes for direct play, remux and transcode. |
@@ -21,8 +21,8 @@ All the tools live in `scripts/perf/` and use the built server (`npm run build` 
 Useful options: `--label=name`, `--repo=<other checkout>` (benchmark an older build side by side, which is how the
 "before" numbers below were taken), `--scale=0.25` (smaller seed), `--quick`, `--only=home,search`.
 
-Perf mode (`KINORA_PERF=1`) adds `X-MM-Queries` and `X-MM-Time` headers to every response and logs statements slower
-than `KINORA_PERF_SLOW_MS` (default 20 ms). It is off by default and costs nothing when off.
+Perf mode (`VIBE_PERF=1`) adds `X-MM-Queries` and `X-MM-Time` headers to every response and logs statements slower
+than `VIBE_PERF_SLOW_MS` (default 20 ms). It is off by default and costs nothing when off.
 
 ### The seeded library
 
