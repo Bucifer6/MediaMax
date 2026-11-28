@@ -61,6 +61,13 @@ import type {
   LoginRequest,
   MediaRequest,
   Paged,
+  CalendarResponse,
+  HelpArticle,
+  PairStartResponse,
+  NotificationsResponse,
+  Pairing,
+  HelpIndex,
+  HelpSearchResponse,
   PinLoginRequest,
   PlaybackInfo,
   PlaybackRequest,
@@ -412,6 +419,55 @@ export class MediaMaxClient {
   setFavorite(id: string, favorite: boolean) {
     return favorite ? this.post<UserItemData>(`/items/${encodeURIComponent(id)}/favorite`) : this.del<UserItemData>(`/items/${encodeURIComponent(id)}/favorite`);
   }
+  /** My List (watchlist). */
+  setWatchlist(id: string, on: boolean) {
+    return on ? this.post<UserItemData>(`/items/${encodeURIComponent(id)}/watchlist`) : this.del<UserItemData>(`/items/${encodeURIComponent(id)}/watchlist`);
+  }
+  /** "Not interested": hidden from recommendation, because-you-watched and trending rows. */
+  setNotInterested(id: string, on: boolean) {
+    return on ? this.post<UserItemData>(`/items/${encodeURIComponent(id)}/not-interested`) : this.del<UserItemData>(`/items/${encodeURIComponent(id)}/not-interested`);
+  }
+  /** In-app notifications (new episodes of followed shows, request and issue updates), newest first. */
+  notifications(q: { limit?: number; unread?: boolean } = {}) {
+    return this.get<NotificationsResponse>('/notifications', q as Query);
+  }
+  /** Mark these (or, with no ids, all) as read; returns the new unread count. */
+  markNotificationsRead(ids?: string[]) {
+    return this.post<{ unread: number }>('/notifications/read', ids ? { ids } : {});
+  }
+  /** TV side of phone pairing: a fresh QR code / 6-character code (expires after a few minutes). */
+  pairStart() {
+    return this.post<PairStartResponse>('/pair/start');
+  }
+  /** Phones paired with this device (role 'tv': phones that control it). */
+  pairings() {
+    return this.get<Pairing[]>('/pair/pairings');
+  }
+  unpair(id: string) {
+    return this.del<{ ok: true }>(`/pair/pairings/${encodeURIComponent(id)}`);
+  }
+  /** A guest (other account) asked to control this TV: accept or decline. */
+  respondPair(id: string, accept: boolean) {
+    return this.post<{ status: string }>(`/pair/requests/${encodeURIComponent(id)}`, { accept });
+  }
+  /** Help Centre: sections and article titles the caller may read. */
+  helpIndex(signal?: AbortSignal) {
+    return this.get<HelpIndex>('/help', undefined, signal);
+  }
+  helpSearch(q: string, signal?: AbortSignal) {
+    return this.get<HelpSearchResponse>('/help/search', { q }, signal);
+  }
+  helpArticle(slug: string, signal?: AbortSignal) {
+    return this.get<HelpArticle>(`/help/${encodeURIComponent(slug)}`, undefined, signal);
+  }
+  /** Upcoming episodes (TMDB) and recently added ones, by day (default: the last 7 days to 30 days ahead). */
+  calendar(q: { from?: string; to?: string } = {}, signal?: AbortSignal) {
+    return this.get<CalendarResponse>('/calendar', q, signal);
+  }
+  /** The viewer's My List, newest first. */
+  watchlist(q: { limit?: number; offset?: number } = {}) {
+    return this.get<Paged<Item>>('/watchlist', q);
+  }
   rate(id: string, rating: number | null) {
     return this.post<UserItemData>(`/items/${encodeURIComponent(id)}/rating`, { rating });
   }
@@ -506,6 +562,10 @@ export class MediaMaxClient {
   }
   searchPodcasts(q: string, signal?: AbortSignal) {
     return this.request<PodcastSearchResult[]>('GET', '/podcasts/search', { query: { q }, signal, timeoutMs: 30000 });
+  }
+  /** Subscribe to every feed in an OPML export from another podcast app. */
+  importOpml(opml: string) {
+    return this.post<{ added: number; skipped: number; failed: string[] }>('/podcasts/import', { opml }, { timeoutMs: 180000 });
   }
   subscribePodcast(feedUrl: string, autoDownload = false) {
     return this.post<PodcastSubscription>('/podcasts', { feedUrl, autoDownload }, { timeoutMs: 60000 });

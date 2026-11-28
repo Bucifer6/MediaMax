@@ -61,6 +61,9 @@ export default function NowPlaying() {
   const size = t.isTV ? t.s(panel === 'queue' ? 420 : 300) : Math.min(t.width - 64, t.height * (panel === 'queue' || t.wide ? 0.42 : 0.22), 420);
   /** TV artwork: its own column, so it may use most of the height but must leave room for the controls and the queue. */
   const tvArt = Math.round(Math.min(t.s(420), t.height * 0.55, t.width * 0.24));
+  /** TV side panel height. Lists and scroll views there get it explicitly: on Fire TV a FlatList / ScrollView measured
+   *  itself 2 px tall under flex alone (its content rendered, clipped), while plain views filled the panel. */
+  const tvPanelH = t.height - t.space.gutter * 2;
   const transportIcon = t.isTV ? t.s(34) : 32;
   const canPlayOn = remote.enabled && status === 'signed-in';
   const sleepLabel = m.sleep ? (m.sleepRemainingMs != null ? `Sleep ${formatClock(m.sleepRemainingMs)}` : m.sleep.mode === 'time' ? 'Sleep' : 'Sleep · end') : 'Sleep';
@@ -151,7 +154,7 @@ export default function NowPlaying() {
     <FlatList
       data={m.chapters}
       keyExtractor={(c, i) => `${c.startMs}-${i}`}
-      style={{ flex: 1 }}
+      style={t.isTV ? { height: tvPanelH } : { flex: 1 }}
       contentContainerStyle={{ paddingBottom: insets.bottom + t.space.lg }}
       ListHeaderComponent={<T variant="heading" color="#fff" style={{ marginBottom: t.space.sm }}>Chapters</T>}
       renderItem={({ item: c, index }) => (
@@ -163,9 +166,9 @@ export default function NowPlaying() {
       )}
     />
   );
-  const lyricsPanel = <LyricsView lyrics={lyrics} positionMs={m.positionMs} onSeek={m.seek} />;
+  const lyricsPanel = <LyricsView lyrics={lyrics} positionMs={m.positionMs} onSeek={m.seek} height={t.isTV ? tvPanelH : undefined} />;
   const djPanel = (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + t.space.lg }} keyboardShouldPersistTaps="handled">
+    <ScrollView style={t.isTV ? { height: tvPanelH } : { flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + t.space.lg }} keyboardShouldPersistTaps="handled">
       <YourDjPanel />
     </ScrollView>
   );
@@ -175,7 +178,7 @@ export default function NowPlaying() {
     <FlatList
       data={m.queue}
       keyExtractor={(x, i) => `${x.id}-${i}`}
-      style={{ flex: 1 }}
+      style={t.isTV ? { height: tvPanelH } : { flex: 1 }}
       contentContainerStyle={{ paddingBottom: insets.bottom + t.space.lg }}
       ListHeaderComponent={<T variant="heading" color="#fff" style={{ marginBottom: t.space.sm }}>Up next</T>}
       renderItem={({ item, index }) => (
@@ -226,13 +229,18 @@ export default function NowPlaying() {
         // Children stretch to the full height (the side panel needs it: with alignSelf 'stretch' in a centred row it
         // collapsed to 2 px on Android TV, invisible but still taking the focus); art and controls centre themselves.
         <View style={{ flex: 1, flexDirection: 'row', padding: t.space.gutter, gap: t.space.xl, alignItems: 'stretch' }}>
+          {panel !== 'visualizer' ? (
           <View style={{ justifyContent: 'center' }}>
             <View style={{ width: tvArt, height: tvArt, borderRadius: t.radius, overflow: 'hidden', backgroundColor: '#222', shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 30 }}>
               {art ? <Img path={art} width={tvArt} style={{ width: '100%', height: '100%' }} /> : null}
             </View>
           </View>
+          ) : null}
           <View style={{ justifyContent: 'center' }}>{controls}</View>
-          <View style={{ flex: 1 }}>{sidePanel ?? queue}</View>
+          {/* Pinned to the row's edges: flex stretching and an explicit height both still left this panel 2 px tall on
+              Fire TV (seen in the view hierarchy), so it is positioned absolutely, right of the controls. */}
+          <View style={{ flex: 1 }} />
+          <View style={{ position: 'absolute', top: t.space.gutter, bottom: t.space.gutter, right: t.space.gutter, left: t.space.gutter + (panel === 'visualizer' ? 0 : tvArt + t.space.xl) + t.s(520) + t.space.xl }}>{sidePanel ?? queue}</View>
         </View>
       ) : t.wide ? (
         <View style={{ flex: 1, flexDirection: 'row', padding: t.space.gutter, gap: t.space.xxl, alignItems: 'center' }}>

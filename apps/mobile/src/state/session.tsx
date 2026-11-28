@@ -254,6 +254,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         case 'session.terminated':
           emit('sessionTerminated', { sessionId: evt.sessionId, reason: evt.reason });
           break;
+        case 'notification':
+          emit('notification', { unread: evt.unread });
+          break;
+        case 'pair.updated':
+          emit('pairUpdated', { status: evt.status });
+          break;
+        case 'pair.request': {
+          // Someone signed in with another account wants to use their phone as this TV's remote: ask here.
+          const req = evt.request;
+          Alert.alert(`${req.fromUserName} wants to control this TV`, `From ${req.fromDeviceName}. They can control playback and browse what you're allowed to watch.`, [
+            { text: 'Decline', style: 'cancel', onPress: () => void api.respondPair(req.id, false).catch(() => undefined) },
+            { text: 'Allow', onPress: () => void api.respondPair(req.id, true).catch(() => undefined) },
+          ]);
+          break;
+        }
         case 'session.message':
           // A message from the server administrator (dashboard "Send message").
           Alert.alert(evt.header || `Message from ${evt.from}`, evt.text);

@@ -103,14 +103,8 @@ export default function SettingsScreen() {
     ]);
   };
 
-  // The server's Help Centre (/help works without signing in): in-app browser on phones; TVs have no browser.
-  const helpUrl = `${(info?.publicUrl ?? server?.url ?? '').replace(/\/+$/, '')}/help`;
-  const openHelp = () => {
-    const wb = webBrowser();
-    if (wb) return void wb.openBrowserAsync(helpUrl).catch(() => Linking.openURL(helpUrl));
-    if (t.isTV) return Alert.alert('Help Centre', `On your phone or computer, open:\n\n${helpUrl}`);
-    void Linking.openURL(helpUrl).catch(() => Alert.alert('Help Centre', helpUrl));
-  };
+  // The server's Help Centre, read in the app (phones and TVs: TVs have no browser).
+  const openHelp = () => router.push('/help' as never);
 
   const maxW = t.isTV ? t.s(820) : undefined;
   return (
@@ -166,6 +160,7 @@ export default function SettingsScreen() {
           </SettingSection>
 
           <SettingSection title="Devices">
+            {t.isTV ? <SettingRow icon="phone-portrait-outline" label="Use your phone as remote" value="Scan a QR code" onPress={() => router.push('/pair-phone' as never)} /> : null}
             {caps.linkCodes && !t.isTV ? <SettingRow icon="tv-outline" label="Link a TV" value="Enter a code" onPress={() => router.push('/link-tv' as never)} /> : null}
             <SettingRow icon="phone-portrait-outline" label="Signed-in devices" onPress={() => router.push('/settings/devices' as never)} />
             {downloads.supported && (caps.downloads || downloads.records.length) ? <SettingRow icon="download-outline" label="Downloads" value={formatBytes(downloads.totalBytes) || 'None'} onPress={() => router.push('/(tabs)/downloads')} /> : null}

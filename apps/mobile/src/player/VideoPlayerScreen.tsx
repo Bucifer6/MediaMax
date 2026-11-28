@@ -22,7 +22,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { QUALITY_OPTIONS, castDeviceProfile } from '@/api/profiles';
-import type { Channel, Chapter, Item, Marker, PlaybackInfo, ProgressReport, RemoteSubtitle, SubtitleTrack } from '@/api/types';
+import type { Channel, Chapter, Item, Marker, PlaybackInfo, ProgressReport, RemoteSubtitle, SongIdResponse, SubtitleTrack } from '@/api/types';
 import { CastButton, castMediaInfo, isOurMedia, useCast } from '@/cast';
 import { Button } from '@/components/Button';
 import { Focusable } from '@/components/Focusable';
@@ -57,7 +57,7 @@ export type PlayerTarget =
 
 /** Server tracks are drawn by our own overlay; `embedded` (the platform renderer) is only offered offline / for live captions; `burn` = bitmap subtitles burned in by the server. */
 type SubChoice = { kind: 'off' } | { kind: 'server'; track: SubtitleTrack } | { kind: 'embedded'; track: NativeSubtitleTrack } | { kind: 'burn'; index: number };
-type SheetKind = 'audio' | 'subs' | 'online' | 'quality' | 'channels' | 'together' | 'playon' | 'sleep' | null;
+type SheetKind = 'audio' | 'subs' | 'online' | 'quality' | 'channels' | 'together' | 'playon' | 'sleep' | 'songid' | null;
 
 const langMatch = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.slice(0, 2).toLowerCase() === b.slice(0, 2).toLowerCase();
 
@@ -115,6 +115,8 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
   const [playing, setPlaying] = useState(false);
   const [controls, setControls] = useState(true);
   const [sheet, setSheet] = useState<SheetKind>(null);
+  /** "What's this song?" (POST /songid/items/:id): null = not asked, 'busy' while the server fingerprints the snippet. */
+  const [song, setSong] = useState<SongIdResponse | 'busy' | null>(null);
   const [scrubbing, setScrubbing] = useState(false);
   const [scrubFocused, setScrubFocused] = useState(false);
   const [pendingSeek, setPendingSeek] = useState<number | null>(null);
@@ -1255,6 +1257,21 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
               {isLive ? <CtrlButton icon="grid-outline" label={t.isTV || t.wide ? 'Guide' : undefined} onPress={() => router.push('/live/guide' as never)} size={iconSize} /> : null}
               {isLive && caps.dvr && channel?.nowPlaying && !catchup ? <CtrlButton icon="radio-button-on" label={t.isTV || t.wide ? 'Record' : undefined} onPress={recordNow} size={iconSize} color={t.colors.danger} /> : null}
               {syncOn ? <CtrlButton icon={inRoom ? 'people' : 'people-outline'} label={t.isTV || t.wide ? (inRoom ? `Together · ${sync.room!.members.length}` : 'Watch together') : undefined} onPress={() => setSheet('together')} size={iconSize} color={inRoom ? t.colors.primary : undefined} /> : null}
+              {!isLive && !offlineUri && target.kind === 'vod' ? (
+                <CtrlButton
+                  icon="musical-notes-outline"
+                  label={t.isTV || t.wide ? 'Song?' : undefined}
+                  onPress={() => {
+                    setSong('busy');
+                    setSheet('songid');
+                    api
+                      .post<SongIdResponse>(`/songid/items/${encodeURIComponent(target.itemId)}`, { positionMs: Math.round(posRef.current), audioIndex: audioIndex ?? null })
+                      .then(setSong)
+                      .catch((e) => setSong({ available: false, reason: e instanceof Error ? e.message : String(e), source: 'file', match: null, positionMs: null, cached: false }));
+                  }}
+                  size={iconSize}
+                />
+              ) : null}
               {!isLive ? <CtrlButton icon={marathon.sleepOn ? 'moon' : 'moon-outline'} label={t.isTV || t.wide ? 'Sleep' : undefined} onPress={() => setSheet('sleep')} size={iconSize} color={marathon.sleepOn ? t.colors.primary : undefined} /> : null}
               {nextId && !isLive ? <CtrlButton icon="play-skip-forward" label={t.isTV || t.wide ? 'Next' : undefined} onPress={() => goNext(nextId)} size={iconSize} /> : null}
               {canPlayOn && t.isTV ? <CtrlButton icon="phone-portrait-outline" label="Play on…" onPress={() => setSheet('playon')} size={iconSize} /> : null}
@@ -1326,6 +1343,27 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
         />
       ) : null}
       {syncOn && vodItemId ? <WatchTogetherSheet visible={sheet === 'together'} itemId={vodItemId} onClose={() => setSheet(null)} /> : null}
+      <OptionSheet
+        visible={sheet === 'songid'}
+        title="What's this song?"
+        options={
+          song === 'busy' || !song
+            ? [{ key: 'busy', label: 'Listening…', description: 'Identifying the music at this point of the film', icon: 'musical-notes-outline', disabled: true }]
+            : song.match
+              ? [
+                  { key: 'match', label: song.match.title, description: [song.match.artists.join(', '), song.match.album].filter(Boolean).join(' · '), icon: 'musical-note' },
+                  ...(song.match.libraryTrack?.albumId ? [{ key: 'album', label: 'Open the album', description: 'It is in your music library', icon: 'albums-outline' as const }] : []),
+                ]
+              : [{ key: 'none', label: song.available ? 'No match' : "Can't identify songs here", description: song.reason ?? 'Try again during a clearer part of the song.', icon: 'help-circle-outline', disabled: true }]
+        }
+        onSelect={(k) => {
+          if (k === 'album' && song && song !== 'busy' && song.match?.libraryTrack?.albumId) {
+            setSheet(null);
+            router.push(`/item/${song.match.libraryTrack.albumId}` as never);
+          }
+        }}
+        onClose={() => setSheet(null)}
+      />
       <OptionSheet visible={sheet === 'sleep'} title="Sleep timer" options={marathon.sleepOptions} onSelect={(k) => { setSheet(null); marathon.selectSleep(k); }} onClose={() => setSheet(null)} />
       {marathon.card && !error ? <UpNextCard item={marathon.card.item} seconds={marathon.card.seconds} onPlay={marathon.play} onCancel={marathon.cancel} /> : null}
       {marathon.stillWatching}

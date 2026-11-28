@@ -70,27 +70,35 @@ export function glideMs(bars: number, bpm: number | null | undefined, rate: numb
 
 /**
  * Volume shape of a transition effect, 0–1 for the outgoing and incoming player at progress `p`. expo-audio has no
- * EQ, filters or delay, so each effect is approximated with the two volumes, timed like the web mixer: bass swap =
- * the new track comes up to the phrase line, then the old one leaves; filter fade = old track holds, then fades
- * over the second half while the new one eases in; echo-out = the new track sneaks in, the old one drops out on
- * the beat at ~3/4 (no echo tail). 'none' = equal-power crossfade (cos / sin). Also used by the advanced DJ.
+ * EQ, filters or delay, so the effects can't be played as such. Imitating them with volume (the new track up at
+ * full level while the old one holds, then the old one leaves) sounded like two songs stacked and then a cut, not
+ * a mix (measured on a Fire TV). So every effect is an equal-power crossfade (cos / sin, constant loudness) that
+ * keeps the effect's timing: bass swap = the tracks cross on the swap line; filter fade = a slower, eased crossing;
+ * echo-out = the old track is gone a little before the end (~1/5 of the transition, was 8 %); 'none' = plain.
+ * The web mixer plays the real effects. Also used by the advanced DJ.
  */
 export function fxGains(fx: DjTransition['fx'], p: number, kSwap = 0.5, kCut = 0.75): { out: number; inc: number } {
   const c = (x: number) => Math.max(0, Math.min(1, x));
   const ease = (x: number) => x * x * (3 - 2 * x);
   p = c(p);
+  let q: number;
   switch (fx) {
     case 'bassSwap': {
+      // Half-way (equal level) exactly on the swap line.
       const k = Math.max(0.05, Math.min(0.95, kSwap));
-      return { inc: Math.sin((c(p / k) * Math.PI) / 2), out: p < k ? 1 : Math.cos((c((p - k) / (1 - k)) * Math.PI) / 2) };
+      q = p < k ? (0.5 * p) / k : 0.5 + (0.5 * (p - k)) / (1 - k);
+      break;
     }
     case 'filter':
-      return { inc: ease(c(p / 0.66)), out: p < 0.5 ? 1 : Math.cos((c((p - 0.5) / 0.5) * Math.PI) / 2) };
+      q = ease(p);
+      break;
     case 'echo':
-      return { inc: p < kCut ? 0.35 * ease(c(p / kCut)) : 1, out: p < kCut ? 1 : Math.max(0, 1 - (p - kCut) / 0.08) };
+      q = c(p / Math.min(1, Math.max(0.3, kCut) + 0.2));
+      break;
     default:
-      return { inc: Math.sin((p * Math.PI) / 2), out: Math.cos((p * Math.PI) / 2) };
+      q = p;
   }
+  return { inc: Math.sin((q * Math.PI) / 2), out: Math.cos((q * Math.PI) / 2) };
 }
 
 /** Automix default for music when the listener hasn't chosen (audiobooks and podcasts never automix). */

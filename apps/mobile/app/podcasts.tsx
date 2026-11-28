@@ -1,4 +1,6 @@
 /** Podcasts: directory search (or paste a feed URL), subscribe, and manage subscriptions. */
+import * as DocumentPicker from 'expo-document-picker';
+import { File } from 'expo-file-system';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Keyboard, RefreshControl, ScrollView, View } from 'react-native';
@@ -31,6 +33,26 @@ export default function PodcastsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<PodcastSubscription | null>(null);
+
+  /** Phones only (a TV has no files to pick): subscribe to every feed in an OPML export from another podcast app. */
+  const importOpml = async () => {
+    setError(null);
+    setNotice(null);
+    const pick = await DocumentPicker.getDocumentAsync({ type: ['text/x-opml', 'text/xml', 'application/xml', '*/*'], copyToCacheDirectory: true }).catch(() => null);
+    const asset = pick && !pick.canceled ? pick.assets[0] : null;
+    if (!asset) return;
+    setBusy('opml');
+    try {
+      const text = await new File(asset.uri).text();
+      const r = await api.importOpml(text);
+      setNotice(`Imported ${r.added} podcast${r.added === 1 ? '' : 's'}${r.skipped ? `, ${r.skipped} already subscribed` : ''}${r.failed.length ? `, ${r.failed.length} couldn't be added` : ''}.`);
+      await loadSubs();
+    } catch (e) {
+      setError(msg(e, 'Could not import that OPML file'));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const loadSubs = useCallback(async () => {
     try {
@@ -147,6 +169,10 @@ export default function PodcastsScreen() {
               <Button label="Search" icon="search" onPress={() => void search()} loading={searching} disabled={!q.trim()} hasTVPreferredFocus />
             )}
           </View>
+
+          {!t.isTV ? (
+            <Button label="Import OPML" icon="cloud-upload-outline" variant="ghost" size="sm" onPress={() => void importOpml()} loading={busy === 'opml'} accessibilityLabel="Import podcasts from an OPML file" />
+          ) : null}
 
           {notice ? (
             <View style={{ flexDirection: 'row', gap: t.space.sm, alignItems: 'center' }}>

@@ -10,6 +10,7 @@ import { setTabBarFocused } from '@/tv/focusGate';
 import { Focusable, type FocusableRef } from './Focusable';
 import { Icon, type IconName } from './Icon';
 import { BrandWordmark } from './BrandWordmark';
+import { NotificationBell } from './NotificationBell';
 import { Img } from './Img';
 import { MiniPlayer } from './MiniPlayer';
 import { T } from './Text';
@@ -128,6 +129,7 @@ export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
           })}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.md }}>
+          <NotificationBell />
           <Clock />
           {user?.avatarUrl ? <Img path={user.avatarUrl} width={t.s(40)} style={{ width: t.s(40), height: t.s(40), borderRadius: t.s(20) }} /> : null}
         </View>

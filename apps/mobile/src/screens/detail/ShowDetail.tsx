@@ -37,7 +37,7 @@ export function ShowDetail({ show, initialSeasonId, onUserData }: { show: Item; 
 
   const episodes = useQuery(seasonId ? `children:${seasonId}` : null, (a) => a.children(seasonId!, { sort: 'index', order: 'asc', limit: 500 }));
   const eps = episodes.data?.items ?? [];
-  const { togglePlayed, toggleFavorite, setRating } = useUserDataActions(show, onUserData);
+  const { togglePlayed, toggleFavorite, toggleWatchlist, toggleNotInterested, setRating } = useUserDataActions(show, onUserData);
 
   const next = useMemo(() => nextUp.data ?? eps.find((e) => !e.userData.played) ?? eps[0] ?? null, [nextUp.data, eps]);
   const nextP = next ? progressFraction(next) : 0;
@@ -64,6 +64,8 @@ export function ShowDetail({ show, initialSeasonId, onUserData }: { show: Item; 
       playOn={{ itemId: show.id, title: show.title }}
       playLabel={playLabel}
       togglePlayed={togglePlayed}
+      toggleWatchlist={toggleWatchlist}
+      toggleNotInterested={toggleNotInterested}
       toggleFavorite={toggleFavorite}
       downloadable={!!seasonId}
       downloadItems={async () => (await api.children(seasonId!, { sort: 'index', order: 'asc', limit: 500 })).items}

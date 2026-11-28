@@ -36,6 +36,7 @@
  * silent and never touches playback.
  */
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus, type AudioPlayer } from 'expo-audio';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import { audioDeviceProfile, castDeviceProfile } from '@/api/profiles';
@@ -1299,6 +1300,16 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
 
   // Progress every 10s (from the receiver's position while casting).
   const playing = castOn ? castPlaying : status.playing;
+  // TVs: no screensaver while music plays here (Fire TV / Android TV dim to their ambient screen otherwise);
+  // paused, stopped or casting elsewhere, the TV's own screensaver comes back. Phones keep their normal sleep.
+  const keepAwake = Platform.isTV && !castOn && status.playing;
+  useEffect(() => {
+    if (!keepAwake) return;
+    void activateKeepAwakeAsync('vibe-music').catch(() => undefined);
+    return () => {
+      void deactivateKeepAwake('vibe-music').catch(() => undefined);
+    };
+  }, [keepAwake]);
   useEffect(() => {
     if (!playing) return;
     const timer = setInterval(() => report('playing'), 10000);
