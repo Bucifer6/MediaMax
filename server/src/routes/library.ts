@@ -18,6 +18,7 @@ import { newId } from '../util/ids.js';
 import { nowIso, toInt } from '../util/misc.js';
 import { detectSeason } from '../services/introdetect.js';
 import { similarTo } from '../services/recommend.js';
+import { fileExists } from '../util/fileAsync.js';
 
 const LIB_TYPES = ['movies', 'shows', 'music', 'photos', 'videos', 'audiobooks'];
 
@@ -47,7 +48,7 @@ export default async function libraryRoutes(app: FastifyInstance) {
     if (!LIB_TYPES.includes(b.type)) throw badRequest('Invalid library type');
     const paths = (b.paths ?? []).map((p) => path.resolve(p.trim())).filter(Boolean);
     if (!paths.length) throw badRequest('At least one folder is required');
-    for (const p of paths) if (!fs.existsSync(p)) throw badRequest(`Folder not found on the server: ${p}.${networkPathHint(p)}`);
+    for (const p of paths) if (!(await fileExists(p))) throw badRequest(`Folder not found on the server: ${p}.${networkPathHint(p)}`);
     if (b.dateAdded !== undefined && !isDateAddedSource(b.dateAdded)) throw badRequest('Invalid "date added" option');
     const fallback = getSettings().defaultDateAdded;
     const dateAdded = b.dateAdded ?? (isDateAddedSource(fallback) ? fallback : 'created');
@@ -74,7 +75,7 @@ export default async function libraryRoutes(app: FastifyInstance) {
     }
     if (b.paths && !String(lib.type).startsWith('iptv-')) {
       const paths = b.paths.map((p) => path.resolve(p.trim()));
-      for (const p of paths) if (!fs.existsSync(p)) throw badRequest(`Folder not found on the server: ${p}.${networkPathHint(p)}`);
+      for (const p of paths) if (!(await fileExists(p))) throw badRequest(`Folder not found on the server: ${p}.${networkPathHint(p)}`);
       patch.paths = JSON.stringify(paths);
     }
     db.update('libraries', req.params.id, patch);

@@ -128,11 +128,17 @@ export async function finishLogin(state: string, code: string, cookieState: stri
       if (typeof claims.iss !== 'string' || claims.iss.replace(/\/+$/, '') !== d.issuer.replace(/\/+$/, '')) throw new Error('ID token issuer mismatch');
       if (!aud.includes(o.clientId)) throw new Error('ID token audience mismatch');
       if (claims.nonce !== p.nonce) throw new Error('ID token nonce mismatch');
-      if (claims.exp && claims.exp * 1000 < Date.now() - 60000) throw new Error('ID token expired');
+      if (typeof claims.exp !== 'number' || !Number.isFinite(claims.exp)) throw new Error('ID token has no valid expiry');
+      if (claims.exp * 1000 < Date.now() - 60000) throw new Error('ID token expired');
     }
     if (d.userinfo_endpoint && tok.access_token) {
       const ui = await fetch(d.userinfo_endpoint, { headers: { Authorization: `Bearer ${tok.access_token}` }, signal: AbortSignal.timeout(10000) });
-      if (ui.ok) Object.assign(claims, await ui.json());
+      if (ui.ok) {
+        const info = await ui.json() as Record<string, unknown>;
+        // OIDC Core 5.3.2: profile data must describe the same authenticated subject.
+        if (tok.id_token && (typeof claims.sub !== 'string' || !claims.sub || info.sub !== claims.sub)) throw new Error('UserInfo subject mismatch');
+        Object.assign(claims, info);
+      }
     }
     const sub = claims.sub ? `${d.issuer}|${claims.sub}` : null;
     if (!sub) throw new Error('The provider did not return a user id');

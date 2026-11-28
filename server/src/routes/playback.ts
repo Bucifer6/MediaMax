@@ -7,7 +7,7 @@ import { db } from '../db.js';
 import { clientHints, requireAdmin, requireUser, remoteAddr } from '../http.js';
 import { assertRemoteAllowed, preparePlayback, remoteInputArgs, reclaimWarmTranscodes, transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, touchSession } from '../services/playback.js';
 import { assertCanSee } from '../services/items.js';
-import { liveJobBySession } from '../services/livetv/livetv.js';
+import { accessibleChannelRow, liveJobBySession } from '../services/livetv/livetv.js';
 import { badRequest, forbidden, notFound, HttpError } from '../util/errors.js';
 import { getSettings } from '../services/settings.js';
 import { spawn } from 'node:child_process';
@@ -202,7 +202,10 @@ export default async function playbackRoutes(app: FastifyInstance) {
     const m = db.get('SELECT * FROM media WHERE id = ?', req.params.mediaId);
     if (!m) throw notFound('Media not found');
     assertCanSee(user, m.item_id);
-    if (req.query.session) touchSession(req.query.session);
+    if (req.query.session) {
+      const s = getSession(req.query.session);
+      if (s?.ctx.user.id === user.id && s.mediaId === m.id) touchSession(s.id);
+    }
     const mime = MIME[(m.container ?? path.extname(m.path ?? '').slice(1)).toLowerCase()] ?? 'application/octet-stream';
     if (m.path) {
       return sendFileRange(req, reply, m.path, mime);
@@ -213,9 +216,14 @@ export default async function playbackRoutes(app: FastifyInstance) {
 
   const hlsHandler = async (req: FastifyRequest<{ Params: { sessionId: string; file: string } }>, reply: FastifyReply) => {
     const a = requireUser(req);
-    const s = touchSession(req.params.sessionId);
+    const s = getSession(req.params.sessionId);
     if (!s) throw notFound('Playback session has ended');
     if (s.ctx.user.id !== a.user.id) throw forbidden();
+    // Permissions can change after playback starts, or the client can move off the home network.
+    assertRemoteAllowed(a.user, remoteAddr(req));
+    if (s.itemId) assertCanSee(a.user, s.itemId);
+    if (s.channelId) accessibleChannelRow(a.user, s.channelId);
+    touchSession(s.id);
     const file = req.params.file;
     const q = `?token=${encodeURIComponent(a.token)}`;
     // Adaptive transcode: master playlist of renditions + per-rendition playlists/segments (abr.ts).
