@@ -16,7 +16,16 @@ export type Block =
   | { type: 'code'; text: string }
   | { type: 'table'; header: Span[][]; rows: Span[][][] };
 
-const slug = (s: string) => s.toLowerCase().replace(/<[^>]+>/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+/** Strips tags until none are left (one pass could leave a tag rebuilt from the pieces, e.g. `<<b>kbd>`). */
+const stripTags = (s: string) => {
+  let prev: string;
+  do {
+    prev = s;
+    s = s.replace(/<[^>]*>/g, '');
+  } while (s !== prev);
+  return s;
+};
+const slug = (s: string) => stripTags(s.toLowerCase()).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 /** Inline Markdown → spans. Unknown HTML is dropped; <kbd>X</kbd> becomes inline code. */
 export function parseInline(src: string): Span[] {
