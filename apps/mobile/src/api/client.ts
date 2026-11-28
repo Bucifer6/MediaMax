@@ -4,7 +4,10 @@
  */
 import type {
   ApiError as ApiErrorBody,
+  EpisodeRatings,
   ParentalGuide,
+  TraktComment,
+  TrackingSyncResult,
   BuiltinAvatar,
   CreateProfileRequest,
   Profile,
@@ -738,6 +741,23 @@ export class MediaMaxClient {
   }
   traktDisconnect() {
     return this.del<TraktStatus>('/trakt');
+  }
+  traktSetPush(push: boolean) {
+    return this.patch<TraktStatus>('/trakt', { push });
+  }
+  traktSetPull(pull: boolean) {
+    return this.patch<TraktStatus>('/trakt', { pull });
+  }
+  /** Pull history, resume points, watchlist and ratings from Trakt now. */
+  traktSync() {
+    return this.post<TrackingSyncResult>('/trakt/sync');
+  }
+  /** Trakt community comments (spoilers flagged). */
+  comments(itemId: string, signal?: AbortSignal) {
+    return this.get<TraktComment[]>(`/items/${encodeURIComponent(itemId)}/comments`, undefined, signal);
+  }
+  episodeRatings(showId: string, signal?: AbortSignal) {
+    return this.get<EpisodeRatings>(`/items/${encodeURIComponent(showId)}/episode-ratings`, undefined, signal);
   }
   /** Also completes a pending connection after the user approved in the browser. */
   lastfm() {

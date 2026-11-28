@@ -1,4 +1,7 @@
 import fs from 'node:fs';
+import { pullAllTrakt } from './trakt.js';
+import { pullAllSimkl } from './simkl.js';
+import { refreshAllMdbRatings } from './mdblist.js';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { ScheduledTask } from '@mediamax/shared';
@@ -237,6 +240,21 @@ const DEFS: TaskDef[] = [
     interval: () => (getMusicSettings().acoustid.autoIdentify ? 24 * 60 : null),
     run: async (progress) => {
       await identifyUntagged(progress, 2000);
+    },
+  },
+  {
+    id: 'tracking-sync', name: 'Sync Trakt and SIMKL', description: 'Pull watched history, resume points, watchlists and ratings from connected Trakt and SIMKL accounts.',
+    interval: () => 360,
+    run: async () => {
+      await pullAllTrakt();
+      await pullAllSimkl();
+    },
+  },
+  {
+    id: 'mdblist-ratings', name: 'Fetch MDBList ratings', description: 'Add IMDb, Rotten Tomatoes, Metacritic, Trakt, Letterboxd and MyAnimeList ratings to movies and shows (needs an MDBList key; at most 900 titles a day).',
+    interval: () => 24 * 60,
+    run: async (progress) => {
+      await refreshAllMdbRatings(progress);
     },
   },
   {

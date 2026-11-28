@@ -96,6 +96,10 @@ How Vibe compares with the features people use most in Plex, Jellyfin and Emby.
 | HDR subtitle comfort (dimmed colour / controls while HDR plays), SDH stripping, RTL punctuation fix, free-form subtitle styling | ❌ | ❌ | ❌ | ✅ |
 | Primary + secondary audio / subtitle languages and an "Original language" audio choice | 🟡 | 🟡 | ❌ | ✅ |
 | Spoiler blur for unwatched episodes and Next up; parental guide card at playback start | ❌ | ❌ | ❌ | ✅ |
+| Two-way Trakt sync (history, resume points, watchlist, ratings) + Trakt comments on detail pages | 🟡 | Plugin | 🟡 | ✅ |
+| SIMKL two-way tracking (movies, shows, anime) | ❌ | Plugin | ❌ | ✅ |
+| MDBList ratings (IMDb, RT critics + audience, Metacritic, Trakt, Letterboxd, MAL) and MDBList Home rows | ❌ | Plugin | ❌ | ✅ |
+| Season × episode ratings grid, studio / network logos linking to Discover, rating-badge posters (RPDB / Top Posters) | ❌ | ❌ | ❌ | ✅ |
 | Skip recaps, previews and ad breaks (comskip / `.edl` markers) | 🟡 | 🟡 (plugins) | 🟡 | ✅ |
 | Cinema mode (trailers + pre-roll before a movie) | ✅ (Pass) | ✅ (plugin) | ✅ | ✅ |
 | Remote control: "Play on…" another device | ✅ | ✅ | ✅ | ✅ |

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { DeviceCapabilitiesCard } from '../components/DeviceCapabilities';
 import { AudioSettingsCard } from '../components/AudioSettings';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import type { SimklPin, TrackingSyncResult } from '@mediamax/shared';
 import type { Device, SubtitleStyle, Theme, TraktDeviceCode, UserPreferences } from '@mediamax/shared';
 import { api } from '../api/endpoints';
 import { useApp } from '../state/app';
@@ -709,6 +710,12 @@ function TraktCard() {
         <>
           <p>Signed in as <strong>{st.username ?? 'your Trakt account'}</strong>.</p>
           <Switch checked={st.scrobble} onChange={setScrobble} label="Scrobble what I watch" hint="Starting, pausing and finishing movies and episodes is sent to Trakt, and marking something watched adds it to your history." />
+          <Switch checked={!!st.push} onChange={(push) => void api.trakt.update({ push }).then(status.setData).catch((e) => toast.error(e))} label="Send My List and ratings to Trakt" hint="Adding to or removing from My List updates your Trakt watchlist; your ratings go to Trakt too." />
+          <PullSync
+            on={!!st.pull} lastAt={st.lastPullAt ?? null} last={st.lastPull ?? null} service="Trakt"
+            onToggle={async (pull) => status.setData(await api.trakt.update({ pull }))}
+            onSync={async () => { const r = await api.trakt.sync(); status.setData(await api.trakt.status()); return r; }}
+          />
           <div className="form-actions">
             <button className="btn btn-ghost" onClick={disconnect} disabled={busy}>{busy ? <Spinner size={16} /> : <Icon name="logout" size={16} />} Disconnect</button>
           </div>
@@ -730,6 +737,109 @@ function TraktCard() {
             <button className="btn btn-primary" onClick={connect} disabled={busy}>{busy ? <Spinner size={16} /> : <Icon name="link" size={16} />} Connect Trakt</button>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+/** "Bring my watches in from <service>": the pull switch, Sync now and what the last sync changed. */
+function PullSync({ on, lastAt, last, service, onToggle, onSync }: {
+  on: boolean; lastAt: string | null; last: TrackingSyncResult | null; service: string;
+  onToggle: (on: boolean) => Promise<void>; onSync: () => Promise<TrackingSyncResult>;
+}) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const sync = async () => {
+    setBusy(true);
+    try {
+      const r = await onSync();
+      toast.success(`Synced from ${service}: ${r.watched} watched, ${r.resumed} resumed, ${r.watchlist} added to My List, ${r.rated} rated`);
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="pull-sync">
+      <Switch checked={on} onChange={(v) => void onToggle(v).catch((e) => toast.error(e))} label={`Bring my ${service} history in`}
+        hint={`Every 6 hours: watched titles, resume points, watchlist and ratings for titles in your libraries. Nothing here is ever removed or un-watched.`} />
+      <div className="row gap-sm">
+        <button className="btn btn-ghost btn-sm" onClick={() => void sync()} disabled={busy}>{busy ? <Spinner size={14} /> : <Icon name="refresh" size={14} />} Sync now</button>
+        {lastAt && <span className="muted small">Last sync {relativeTime(lastAt)}{last ? ` · ${last.notInLibrary} not in your libraries` : ''}</span>}
+      </div>
+    </div>
+  );
+}
+
+function SimklCard() {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const status = useAsync(() => api.simkl.status(), []);
+  const [pin, setPin] = useState<SimklPin | null>(null);
+  const [busy, setBusy] = useState(false);
+  const st = status.data;
+  useEffect(() => {
+    if (!pin) return;
+    const t = window.setInterval(async () => {
+      if (Date.now() >= new Date(pin.expiresAt).getTime()) {
+        setPin(null);
+        return;
+      }
+      const s = await api.simkl.status().catch(() => null);
+      if (s?.connected) {
+        setPin(null);
+        status.setData(s);
+        toast.success('Connected to SIMKL');
+      }
+    }, Math.max(5, pin.intervalSeconds) * 1000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pin]);
+  if (!st?.available) return null;
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await fn();
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="settings-card service-card">
+      <div className="service-head">
+        <span className="service-logo simkl-logo" aria-hidden="true">S</span>
+        <div className="service-title">
+          <h2>SIMKL</h2>
+          <p className="muted">Track movies, shows and anime with SIMKL.</p>
+        </div>
+        {st.connected && <Badge tone="success"><Icon name="check" size={12} /> Connected</Badge>}
+      </div>
+      {st.connected ? (
+        <>
+          <Switch checked={st.push} onChange={(push) => void run(async () => status.setData(await api.simkl.update({ push })))} label="Send what I watch" hint="Finished titles go to your SIMKL history; My List additions to Plan to watch." />
+          <PullSync on={st.pull} lastAt={st.lastPullAt} last={st.lastPull} service="SIMKL"
+            onToggle={async (pull) => status.setData(await api.simkl.update({ pull }))}
+            onSync={async () => { const r = await api.simkl.sync(); status.setData(await api.simkl.status()); return r; }} />
+          <div className="form-actions">
+            <button className="btn btn-ghost" disabled={busy} onClick={async () => {
+              if (await confirm({ title: 'Disconnect SIMKL?', message: 'Vibe will stop syncing with your SIMKL account.', confirmLabel: 'Disconnect', danger: true })) void run(async () => status.setData(await api.simkl.disconnect()));
+            }}><Icon name="logout" size={16} /> Disconnect</button>
+          </div>
+        </>
+      ) : pin ? (
+        <div className="device-code">
+          <p>Go to <a href={pin.verificationUrl} target="_blank" rel="noreferrer" className="link-strong">{pin.verificationUrl.replace(/^https?:\/\//, '')} <Icon name="external" size={14} /></a> and enter:</p>
+          <div className="device-code-value" aria-live="polite">{pin.userCode}</div>
+          <p className="muted device-code-wait"><Spinner size={14} /> Waiting for you to approve Vibe on SIMKL…</p>
+          <div className="form-actions"><button className="btn btn-ghost" onClick={() => { setPin(null); void api.simkl.cancelConnect().catch(() => undefined); }}>Cancel</button></div>
+        </div>
+      ) : (
+        <div className="form-actions">
+          <button className="btn btn-primary" disabled={busy} onClick={() => void run(async () => setPin(await api.simkl.connect()))}><Icon name="link" size={16} /> Connect SIMKL</button>
+        </div>
       )}
     </div>
   );
@@ -857,6 +967,7 @@ function Services() {
   return (
     <>
       <TraktCard />
+      <SimklCard />
       <LastfmCard />
       <ListenBrainzCard />
       <Link to="/wrapped" className="settings-card wrapped-promo">

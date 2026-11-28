@@ -18,7 +18,7 @@ import { AdminHeader } from './AdminRoutes';
 import { NotificationAgentsPanel } from './NotificationAgents';
 import { QuotaEditor, DEFAULT_QUOTAS } from './RequestPermissionsEditor';
 
-const TABS = ['general', 'transcoding', 'cinema', 'segments', 'aidj', 'karaoke', 'dvr', 'requests', 'notifications', 'arr', 'sso', 'trickplay', 'subtitles', 'trakt', 'lastfm', 'dlna', 'webhooks', 'metadata'] as const;
+const TABS = ['general', 'transcoding', 'cinema', 'segments', 'ratings', 'aidj', 'karaoke', 'dvr', 'requests', 'notifications', 'arr', 'sso', 'trickplay', 'subtitles', 'trakt', 'lastfm', 'dlna', 'webhooks', 'metadata'] as const;
 type Tab = (typeof TABS)[number];
 const asTab = (t: string | null): Tab => (TABS as readonly string[]).includes(t ?? '') ? (t as Tab) : 'general';
 const HW: { value: HwAccel; label: string }[] = [
@@ -162,6 +162,7 @@ export function ServerSettingsAdmin() {
         { value: 'transcoding', label: 'Transcoding' },
         { value: 'cinema', label: 'Cinema mode' },
         { value: 'segments', label: 'Skip segments' },
+        { value: 'ratings', label: 'Ratings & posters' },
         { value: 'aidj', label: 'AI DJ' },
         { value: 'karaoke', label: 'Karaoke & lyrics' },
         { value: 'dvr', label: 'DVR' },
@@ -448,8 +449,33 @@ export function ServerSettingsAdmin() {
               <Field label="Client ID"><input className="input mono" value={tk.clientId ?? ''} onChange={(e) => setTk({ clientId: e.target.value.trim() || null })} autoComplete="off" spellCheck={false} /></Field>
               <Field label="Client secret"><input className="input mono" type="password" value={tk.clientSecret ?? ''} onChange={(e) => setTk({ clientSecret: e.target.value.trim() || null })} autoComplete="new-password" spellCheck={false} /></Field>
             </div>
+            <h3>SIMKL</h3>
+            <p className="muted">Create an app at <Ext href="https://simkl.com/settings/developer/">simkl.com/settings/developer</Ext> (redirect URI <code>urn:ietf:wg:oauth:2.0:oob</code>) and paste its Client ID. Users then connect their own SIMKL account in Settings → Connected services.</p>
+            <Field label="SIMKL client ID"><input className="input mono" value={s.simkl?.clientId ?? ''} onChange={(e) => set({ simkl: { clientId: e.target.value.trim() || null } })} autoComplete="off" spellCheck={false} /></Field>
           </div>
         )}
+        {tab === 'ratings' && (() => {
+          const mdb = { apiKey: null, ratings: false, ...(s.mdblist ?? {}) };
+          const rp = { urlTemplate: null, home: false, search: false, detail: false, ...(s.ratingPosters ?? {}) };
+          return (
+            <div className="form-grid">
+              <h3>MDBList</h3>
+              <p className="muted">Ratings from IMDb, Rotten Tomatoes (critics and audience), Metacritic, Trakt, Letterboxd and MyAnimeList on movie and show pages, and MDBList lists as Home rows (Branding → Home rows). Free key at <Ext href="https://mdblist.com/preferences/">mdblist.com/preferences</Ext> (1,000 requests a day; the daily task uses at most 900).</p>
+              <Field label="MDBList API key"><input className="input mono" type="password" value={mdb.apiKey ?? ''} onChange={(e) => set({ mdblist: { ...mdb, apiKey: e.target.value.trim() || null } })} autoComplete="new-password" spellCheck={false} /></Field>
+              <Switch checked={mdb.ratings} onChange={(v) => set({ mdblist: { ...mdb, ratings: v } })} label="Add MDBList ratings to movies and shows" hint="The “Fetch MDBList ratings” task runs daily (Admin → Tasks)." />
+              <h3>Rating posters</h3>
+              <p className="muted">Posters with rating badges from a poster service such as RPDB or Top Posters. The server fetches and caches them, so the key in the URL never reaches viewers' devices.</p>
+              <Field label="Poster URL" hint="Use {imdb} or {tmdb} (and {type} = movie / tv), e.g. https://api.ratingposterdb.com/KEY/imdb/poster-default/{imdb}.jpg">
+                <input className="input mono" type="password" value={rp.urlTemplate ?? ''} onChange={(e) => set({ ratingPosters: { ...rp, urlTemplate: e.target.value.trim() || null } })} autoComplete="new-password" spellCheck={false} />
+              </Field>
+              <div className="switch-group">
+                <Switch checked={rp.home} onChange={(v) => set({ ratingPosters: { ...rp, home: v } })} label="Home rows" />
+                <Switch checked={rp.search} onChange={(v) => set({ ratingPosters: { ...rp, search: v } })} label="Search results" />
+                <Switch checked={rp.detail} onChange={(v) => set({ ratingPosters: { ...rp, detail: v } })} label="Detail pages" />
+              </div>
+            </div>
+          );
+        })()}
         {tab === 'lastfm' && (
           <div className="form-grid">
             <div className="howto">

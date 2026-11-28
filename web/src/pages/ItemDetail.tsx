@@ -19,6 +19,7 @@ import { SmartListModal } from '../components/SmartListModal';
 import { BookmarksSection } from '../components/Bookmarks';
 import { AddToContainerModal, EditMetadataModal, UploadArtworkModal } from '../components/ItemModals';
 import { RatingBadges } from '../components/RatingBadges';
+import { CompanyLogos, EpisodeRatingsGrid, TraktComments } from '../components/Community';
 import { MediaRangeBadge, rangeDetails } from '../components/HdrBadge';
 import { AudioBadges, audioFormat, channelText } from '../components/AudioBadge';
 import { ArrItemActions } from '../components/ArrItemActions';
@@ -548,7 +549,7 @@ function RateButton({ item, onRate, onNotInterested }: { item: Item; onRate: (r:
 /* ---------------- Page ---------------- */
 export function ItemPage() {
   const { itemId = '' } = useParams();
-  const { user, features } = useApp();
+  const { user, features, system } = useApp();
   const playAsMix = usePlayAsMix();
   const advancedDj = advancedDjEnabled(user);
   const toast = useToast();
@@ -803,7 +804,7 @@ export function ItemPage() {
         {showPoster && (
           <div className={`tp-poster ${posterShape}`} style={{ viewTransitionName: POSTER_VT } as React.CSSProperties}>
             {/* 260 px: the same image the poster cards load, so it is already decoded when the page opens. */}
-            <Img src={item.type === 'episode' || item.type === 'video' ? item.thumbUrl ?? item.posterUrl : item.posterUrl ?? item.thumbUrl} width={posterShape === 'landscape' ? 400 : 260} alt="" fallback={<Icon name={item.type === 'audiobook' || item.type === 'bookpart' ? 'book' : item.type === 'podcast' || item.type === 'podcastepisode' ? 'podcast' : square ? 'music' : item.type === 'show' || item.type === 'season' || item.type === 'episode' ? 'shows' : 'film'} size={40} />} />
+            <Img src={item.type === 'episode' || item.type === 'video' ? item.thumbUrl ?? item.posterUrl : (system?.ratingPosterScreens?.detail && item.ratingPosterUrl) || item.posterUrl || item.thumbUrl} width={posterShape === 'landscape' ? 400 : 260} alt="" fallback={<Icon name={item.type === 'audiobook' || item.type === 'bookpart' ? 'book' : item.type === 'podcast' || item.type === 'podcastepisode' ? 'podcast' : square ? 'music' : item.type === 'show' || item.type === 'season' || item.type === 'episode' ? 'shows' : 'film'} size={40} />} />
             {item.type === 'photo' && <button className="tp-poster-zoom" onClick={() => setModal('photo')} aria-label="View full size"><Icon name="fullscreen" /></button>}
           </div>
         )}
@@ -832,6 +833,7 @@ export function ItemPage() {
             {item.media?.[0]?.remote && <Badge tone="accent">IPTV</Badge>}
             <RatingBadges ratings={item.ratings} />
           </div>
+          <CompanyLogos item={item} />
           {item.genres.length > 0 && (
             <p className="tp-genres">
               {item.genres.slice(0, 4).map((g) => <Link key={g} to={genreLink(g)}>{g}</Link>)}
@@ -949,6 +951,7 @@ export function ItemPage() {
 
       <div className="tp-body detail-sections">
         {item.type === 'show' && <SeasonsBody key={item.id} show={item} upNext={nextEp?.type === 'episode' ? nextEp : null} />}
+        {item.type === 'show' && <EpisodeRatingsGrid showId={item.id} />}
         {item.type === 'season' && (
           <section className="tp-seasons" aria-labelledby="tp-episodes-h">
             <div className="tp-section-head"><h2 className="tp-h2" id="tp-episodes-h">Episodes</h2></div>
@@ -965,6 +968,7 @@ export function ItemPage() {
         {item.type === 'artist' && <RelatedArtists artist={item} />}
         {item.type === 'collection' && <ChildrenGrid key={item.smart ? JSON.stringify(item.smart) : 'manual'} parent={item} removable={isAdmin && !item.smart} onRemove={removeFromContainer} />}
         <CastRow item={item} />
+        {(item.type === 'movie' || item.type === 'show' || item.type === 'episode') && <TraktComments item={item} />}
         <ExtrasRow extras={extras.data ?? []} />
         {(hasCredits || hasMedia || isAdmin) && (
           <section className="tp-details" aria-labelledby="tp-details-h">

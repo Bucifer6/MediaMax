@@ -12,3 +12,9 @@ One line per decision: date — decision — why — who decided.
 - 2026-11-28 — AutoSync returns a time map applied by the players (nothing saved) — no stream restart, works on every client, easy to undo — Claude.
 - 2026-11-28 — `skipIntros` stays; `autoSkip` keys override it per segment, credits default off — older apps keep working — Claude.
 - 2026-11-28 — "Original" audio uses TMDB `original_language` stored in `items.extra` (no schema change); unknown → the file's default track — Claude.
+- 2026-11-28 — Phase PRs are stacked: each targets the previous phase's branch until that one merges — keeps each PR's diff to its own phase — Claude.
+- 2026-11-28 — Trakt / SIMKL imports only add (watched, resume, My List, rating where unset) and never echo back — a sync can never lose or duplicate someone's data — Claude.
+- 2026-11-28 — MDBList list rows are admin Home rows (Branding), not per-profile pins — same model as every other Home row; viewers can still hide them in Customize Home — Claude.
+- 2026-11-28 — Rating posters are proxied through the server's image cache — the poster service's key would otherwise be visible to every viewer — Claude.
+- 2026-11-28 — Episode ratings: IMDb via OMDb when the admin enabled OMDb, else TMDB — no new outside service; IMDb has no public API — Claude.
+- 2026-11-28 — Trakt pull and push are separate opt-in switches, off for existing and new accounts; SIMKL sync is on once a viewer connects (connecting SIMKL is asking for sync) — PRIVACY.md consent wording — Claude.

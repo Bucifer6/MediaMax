@@ -26,7 +26,12 @@ export default async function systemRoutes(app: FastifyInstance) {
   app.get('/system/info', async (_req, reply): Promise<SystemInfo> => {
     noCache(reply);
     return { id: serverId(), name: getBranding().serverName, version: config.version, setupRequired: userCount() === 0, publicUrl: getSettings().publicUrl, features: getBranding().features,
-      oidc: oidcEnabled() ? { enabled: true, buttonLabel: getSettings().oidc.buttonLabel || 'Sign in with SSO' } : null };
+      oidc: oidcEnabled() ? { enabled: true, buttonLabel: getSettings().oidc.buttonLabel || 'Sign in with SSO' } : null,
+      ...(() => {
+        // Where clients swap in rating posters (only when a poster service is configured).
+        const rp = getSettings().ratingPosters;
+        return rp?.urlTemplate ? { ratingPosterScreens: { home: !!rp.home, search: !!rp.search, detail: !!rp.detail } } : {};
+      })() };
   });
 
   app.post<{ Body: SetupRequest }>('/setup', async (req) => {

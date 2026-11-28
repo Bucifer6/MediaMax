@@ -663,6 +663,17 @@ const MIGRATIONS: string[] = [
   /* Live TV: radio stations (audio-only services from a tuner lineup or radio="true" in an M3U) are listed apart from TV. */ `
   ALTER TABLE channels ADD COLUMN radio INTEGER NOT NULL DEFAULT 0;
   `,
+  /* Two-way tracking: Trakt pull sync state; SIMKL accounts. */ `
+  ALTER TABLE trakt_accounts ADD COLUMN pull INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE trakt_accounts ADD COLUMN push INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE trakt_accounts ADD COLUMN last_pull_at TEXT;
+  ALTER TABLE trakt_accounts ADD COLUMN last_pull TEXT;
+  CREATE TABLE IF NOT EXISTS simkl_accounts (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    access_token TEXT NOT NULL, push INTEGER NOT NULL DEFAULT 1, pull INTEGER NOT NULL DEFAULT 1,
+    last_pull_at TEXT, last_pull TEXT
+  );
+  `,
 ];
 
 function migrate(db: Database) {

@@ -32,7 +32,7 @@ export function omdbRatings(j: any): ItemRatings {
   return out;
 }
 
-async function lookup(cfg: MetadataProviderConfig, q: Record<string, string | undefined>, ttlHours?: number): Promise<any | null> {
+export async function omdbLookup(cfg: MetadataProviderConfig, q: Record<string, string | undefined>, ttlHours?: number): Promise<any | null> {
   if (!cfg.apiKey) throw new ProviderError('OMDb needs an API key');
   let r;
   try {
@@ -52,8 +52,8 @@ async function lookup(cfg: MetadataProviderConfig, q: Record<string, string | un
 async function fetchOmdb(item: ProviderItem, cfg: MetadataProviderConfig): Promise<ProviderResult | null> {
   if (item.type !== 'movie' && item.type !== 'show') return null;
   const j = item.ids.imdb
-    ? await lookup(cfg, { i: item.ids.imdb })
-    : await lookup(cfg, { t: item.title, y: item.year ? String(item.year) : undefined, type: item.type === 'show' ? 'series' : 'movie' });
+    ? await omdbLookup(cfg, { i: item.ids.imdb })
+    : await omdbLookup(cfg, { t: item.title, y: item.year ? String(item.year) : undefined, type: item.type === 'show' ? 'series' : 'movie' });
   if (!j) return null;
   const ratings = omdbRatings(j);
   return {
@@ -82,7 +82,7 @@ export const omdb: BuiltinProvider = {
   artwork: ['movie', 'show'],
   fetch: fetchOmdb,
   async test(cfg) {
-    const j = await lookup(cfg, { i: 'tt0133093' }, 0);
+    const j = await omdbLookup(cfg, { i: 'tt0133093' }, 0);
     if (!j) throw new ProviderError('OMDb returned no data for a known title');
     const r = omdbRatings(j);
     return `OMDb key works (${j.Title}: IMDb ${r.imdb ?? '–'}, RT ${r.rottenTomatoes ?? '–'}%, MC ${r.metacritic ?? '–'})`;

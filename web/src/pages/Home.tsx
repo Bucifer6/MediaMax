@@ -36,7 +36,8 @@ function rowLink(row: HomeRow): string | undefined {
 }
 
 function HomeRowView({ row }: { row: HomeRow }) {
-  const { user } = useApp();
+  const { user, system } = useApp();
+  const ratingPosters = !!system?.ratingPosterScreens?.home;
   if (row.type === 'live-now' || row.type === 'favorite-channels') {
     const channels = row.channels ?? [];
     if (!channels.length) return null;
@@ -68,7 +69,7 @@ function HomeRowView({ row }: { row: HomeRow }) {
   const spoiler = (row.type === 'continue' || row.type === 'nextup') && !!user?.preferences.blurNextUp;
   return (
     <Row title={row.title} link={rowLink(row)} id={row.id} className={`${wide ? 'row-wide' : ''} home-row-${row.type} ${spoiler ? 'row-spoiler' : ''}`}>
-      {row.items.map((it) => (wide ? <LandscapeCard key={it.id} item={it} /> : <PosterCard key={it.id} item={it} />))}
+      {row.items.map((it) => (wide ? <LandscapeCard key={it.id} item={it} /> : <PosterCard key={it.id} item={it} ratingPoster={ratingPosters} />))}
     </Row>
   );
 }

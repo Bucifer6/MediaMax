@@ -186,7 +186,9 @@ export type HomeRowType =
   /** "Coming soon": next airing episodes of shows in the viewer's libraries (needs TMDB). */
   | 'upcoming'
   /** "Random spotlight": random movies/shows from chosen libraries (e.g. "Random Movie", "Kids Spotlight"). Add several. */
-  | 'spotlight';
+  | 'spotlight'
+  /** A public MDBList list: the titles from it that are in the viewer's libraries (needs an MDBList key). */
+  | 'mdblist';
 
 export interface HomeRowConfig {
   id: string;
@@ -6033,4 +6035,124 @@ export interface AutoSyncResponse {
   score: number;
   /** Score before the fix, for comparison. */
   scoreBefore: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tracking, ratings & discovery integrations (0.8, phase 2)           */
+/* ------------------------------------------------------------------ */
+
+export interface TraktStatus {
+  /** Pull watched history, resume points, watchlist and ratings from Trakt (every 6 h). Off until the viewer turns it on. */
+  pull?: boolean;
+  /** Send My List and rating changes to Trakt (scrobbling covers playback only). Off until the viewer turns it on. */
+  push?: boolean;
+  lastPullAt?: string | null;
+  lastPull?: TrackingSyncResult | null;
+}
+
+/** What a pull from Trakt / SIMKL changed in the library (only titles you have). */
+export interface TrackingSyncResult {
+  watched: number;
+  resumed: number;
+  watchlist: number;
+  rated: number;
+  /** Titles on the service that aren't in your libraries (not counted above). */
+  notInLibrary: number;
+}
+
+/** Trakt community comment (GET /items/:id/comments). */
+export interface TraktComment {
+  id: number;
+  comment: string;
+  spoiler: boolean;
+  review: boolean;
+  likes: number;
+  createdAt: string;
+  user: string;
+  /** The writer's own rating of the title (1–10), when given. */
+  rating: number | null;
+}
+
+export interface SimklStatus {
+  /** The admin has set a SIMKL client id. */
+  available: boolean;
+  connected: boolean;
+  /** Send plays and My List changes to SIMKL. */
+  push: boolean;
+  /** Pull watched state and plan-to-watch from SIMKL. */
+  pull: boolean;
+  lastPullAt: string | null;
+  lastPull: TrackingSyncResult | null;
+}
+
+export interface SimklPin {
+  userCode: string;
+  verificationUrl: string;
+  expiresAt: string;
+  intervalSeconds: number;
+}
+
+export interface ItemRatings {
+  /** From MDBList (0–100 unless noted). */
+  trakt?: number;
+  /** Rotten Tomatoes audience score. */
+  audience?: number;
+  /** Letterboxd, 0–5. */
+  letterboxd?: number;
+  /** MyAnimeList, 0–10. */
+  mal?: number;
+}
+
+/** A production company or TV network with its logo (TMDB), linking to Discover. */
+export interface ItemCompany {
+  id: string;
+  name: string;
+  kind: 'studio' | 'network';
+  logoUrl: string | null;
+}
+
+export interface Item {
+  /** Studios (movies) or networks (shows) with logos, from TMDB. */
+  companies?: ItemCompany[];
+  /** Poster with rating badges from the admin's poster service (RPDB / Top Posters), when configured. */
+  ratingPosterUrl?: string | null;
+}
+
+/** GET /items/:id/episode-ratings (shows). */
+export interface EpisodeRatings {
+  source: 'imdb' | 'tmdb';
+  seasons: { season: number; episodes: { episode: number; title: string | null; rating: number | null; itemId: string | null }[] }[];
+}
+
+export interface MdbListSettings {
+  /** Write-only MDBList API key (free tier: 1,000 requests a day). */
+  apiKey: string | null;
+  /** Add IMDb, TMDB, Trakt, Rotten Tomatoes, Metacritic, Letterboxd and MyAnimeList ratings to movies and shows. */
+  ratings: boolean;
+}
+
+/** Posters with rating badges from a poster service; the server fetches and caches them (the key never reaches clients). */
+export interface RatingPosterSettings {
+  /** URL with {imdb} and/or {tmdb} (and {type} = movie|tv), e.g. https://api.ratingposterdb.com/KEY/imdb/poster-default/{imdb}.jpg. null = off. */
+  urlTemplate: string | null;
+  home: boolean;
+  search: boolean;
+  detail: boolean;
+}
+
+export interface ServerSettings {
+  /** SIMKL app (client id from simkl.com/settings/developer). */
+  simkl?: { clientId: string | null };
+  mdblist?: MdbListSettings;
+  ratingPosters?: RatingPosterSettings;
+}
+
+export interface SystemInfo {
+  /** Where clients show rating posters (from ServerSettings.ratingPosters); absent = nowhere. */
+  ratingPosterScreens?: { home: boolean; search: boolean; detail: boolean };
+}
+
+export interface HomeRowConfig {
+  /** mdblist: the list's URL (https://mdblist.com/lists/<user>/<list>) or numeric id. */
+  mdblistList?: string;
 }
