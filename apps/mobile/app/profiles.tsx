@@ -180,7 +180,7 @@ export default function ProfilesScreen() {
             {canAdd && !managing ? <AddTile size={size} onPress={() => router.push('/profile-edit' as never)} /> : null}
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.space.sm, justifyContent: 'center' }}>
-            {isOwner && (list?.length ?? 0) > 1 ? (
+            {managing || (isOwner && (list?.length ?? 0) > 1) ? (
               <Button label={managing ? 'Done' : 'Manage profiles'} variant="secondary" icon={managing ? 'checkmark' : 'pencil'} onPress={() => setManaging((m) => !m)} />
             ) : null}
             <Button label="Sign out" variant="ghost" icon="log-out-outline" onPress={() => void signOut()} />

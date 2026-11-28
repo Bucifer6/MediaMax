@@ -53,6 +53,9 @@ const keysOf = (s: string) => {
   return bare && bare !== k ? [k, bare] : [k];
 };
 
+/** Channel names as IPTV lists write them: "RO: PRO TV HD", "RO | Antena 1" → without the country prefix. */
+const stripPrefix = (s: string) => s.replace(/^\s*[A-Z]{2,3}\s*[:|\-]\s*/, '');
+
 /** How many of `channelNames` a guide's channel list (the .txt) carries. */
 export function scoreList(channelNames: string[], listText: string): number {
   const ids = new Set<string>();
@@ -62,14 +65,15 @@ export function scoreList(channelNames: string[], listText: string): number {
     for (const k of keysOf(l)) ids.add(k);
   }
   let n = 0;
-  for (const name of new Set(channelNames)) if (keysOf(name).some((k) => ids.has(k))) n++;
+  for (const name of new Set(channelNames)) if ([...keysOf(name), ...keysOf(stripPrefix(name))].some((k) => ids.has(k))) n++;
   return n;
 }
 
 /** The files worth adding: enough matches, and close to the best one (a country often has two files). */
 export function pickFiles(scores: { file: string; score: number }[], channelCount: number): string[] {
   const best = Math.max(0, ...scores.map((s) => s.score));
-  const min = Math.max(3, Math.ceil(channelCount * 0.05));
+  // 5% of the channels, but at most 15: a big IPTV list (thousands of channels) never reaches 5% in one country file.
+  const min = Math.max(3, Math.min(15, Math.ceil(channelCount * 0.05)));
   if (best < min) return [];
   return scores.filter((s) => s.score >= min && s.score >= best * 0.25).sort((a, b) => b.score - a.score).slice(0, 4).map((s) => s.file);
 }
@@ -109,13 +113,29 @@ const hasEpgshareSource = () => db.all<{ config: string }>("SELECT config FROM e
  * Add the epgshare01 files that carry the live channels as guide sources. `auto`: only once per server (after the
  * first live source sync with channels) and never while an epgshare01 guide exists; manual runs always look.
  */
-export async function setupEpgshare(
-  create: (preset: EpgPreset) => Promise<unknown>,
-  opts: { auto?: boolean; fetcher?: Fetcher } = {},
-): Promise<{ added: string[]; scores: { file: string; score: number }[] }> {
-  if (opts.auto && (getKv<{ done?: boolean }>(KV, {}).done || hasEpgshareSource())) return { added: [], scores: [] };
+type SetupResult = { added: string[]; scores: { file: string; score: number }[] };
+/** One run at a time: two live sources refreshing together (or the admin's button during an automatic run) share it. */
+let running: Promise<SetupResult> | null = null;
+/** An automatic run that found nothing (or couldn't reach the site) waits this long before trying again. */
+const RETRY_MS = 24 * 3600000;
+
+export function setupEpgshare(create: (preset: EpgPreset) => Promise<unknown>, opts: { auto?: boolean; fetcher?: Fetcher } = {}): Promise<SetupResult> {
+  if (running) return running;
+  running = runSetup(create, opts).finally(() => {
+    running = null;
+  });
+  return running;
+}
+
+async function runSetup(create: (preset: EpgPreset) => Promise<unknown>, opts: { auto?: boolean; fetcher?: Fetcher }): Promise<SetupResult> {
+  const state = getKv<{ done?: boolean; triedAt?: number }>(KV, {});
+  if (opts.auto && (state.done || hasEpgshareSource() || (state.triedAt && Date.now() - state.triedAt < RETRY_MS))) return { added: [], scores: [] };
   const scores = await detectFiles(opts.fetcher);
-  if (opts.auto && !scores.length) return { added: [], scores }; // nothing matched (yet): try again after the next sync
+  if (opts.auto && !scores.length) {
+    // Nothing matched (or the site was unreachable): look again after a day, not on every refresh.
+    setKv(KV, { ...state, triedAt: Date.now() });
+    return { added: [], scores };
+  }
   const existing = db.all<{ config: string }>("SELECT config FROM epg_sources WHERE kind = 'xmltv'").map((r) => r.config);
   const added: string[] = [];
   for (const { file } of scores) {

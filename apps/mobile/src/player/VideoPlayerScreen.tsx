@@ -867,7 +867,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
     if (!controls) {
       if (type === 'select') {
         // A visible Skip / Up Next button has focus and handles select itself.
-        if ((activeMarker && (activeMarker.type !== 'credits' || !nextId)) || upNext) return;
+        if ((activeMarker && (activeMarker.type !== 'credits' || !nextId)) || upNext || intro || marathon.card) return;
         togglePlay();
         return poke();
       }
@@ -1207,7 +1207,7 @@ export function VideoPlayerScreen({ target, intro, marathonId = null }: { target
 
       {/* TV: with the controls hidden nothing else can hold focus, and react-native-tvos only reports remote keys
           (D-pad, OK) while a view has it: surfing, seeking and OK did nothing. This invisible layer holds it. */}
-      {t.isTV && !showControls && !sheet && !upNext && !skipShown && !error ? (
+      {t.isTV && !showControls && !sheet && !upNext && !skipShown && !error && !intro && !marathon.card ? (
         <Pressable
           style={StyleSheet.absoluteFill}
           focusable

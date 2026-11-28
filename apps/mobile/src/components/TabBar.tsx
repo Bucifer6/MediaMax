@@ -87,8 +87,8 @@ export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
                   itemRefs.current[route.key] = v;
                 }}
                 onPress={() => {
-                  lastSwitch.current = Date.now();
                   if (!focused) {
+                    lastSwitch.current = Date.now();
                     setSettling(true);
                     if (settleTimer.current) clearTimeout(settleTimer.current);
                     settleTimer.current = setTimeout(() => setSettling(false), 1200);

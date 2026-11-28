@@ -22,6 +22,8 @@ test('the files that carry the channels are picked, near-empty ones are not', ()
   assert.deepEqual(es.pickFiles([{ file: 'RO1', score: 40 }, { file: 'RO2', score: 12 }, { file: 'UK1', score: 2 }], 160), ['RO1', 'RO2']);
   assert.deepEqual(es.pickFiles([{ file: 'RO1', score: 2 }], 160), [], 'too few matches: nothing');
   assert.deepEqual(es.pickFiles([{ file: 'RO1', score: 40 }, { file: 'HU1', score: 9 }], 100), ['RO1'], 'far below the best: left out');
+  assert.deepEqual(es.pickFiles([{ file: 'RO1', score: 60 }], 15000), ['RO1'], 'a huge IPTV list still qualifies');
+  assert.equal(es.scoreList(['RO: PRO TV HD', 'RO | Antena 1'], RO1), 2, 'provider prefixes are ignored');
   assert.ok(EPG_PRESETS.some((p) => p.id === 'epgshare01-ro1' && p.url === 'https://epgshare01.online/epgshare01/epg_ripper_RO1.xml.gz'));
 });
 
@@ -40,8 +42,9 @@ test('setup adds the matching files once, then leaves the admin in charge', asyn
     created.push(p.id);
     db.run("INSERT INTO epg_sources (id, name, kind, config, state, priority, enabled, refresh_hours, created_at) VALUES (?, ?, 'xmltv', ?, '{}', 50, 1, 12, ?)", p.id, p.id, JSON.stringify({ preset: p.id, url: p.url }), new Date().toISOString());
   };
-  const r = await es.setupEpgshare(create, { auto: true, fetcher });
+  const [r, twin] = await Promise.all([es.setupEpgshare(create, { auto: true, fetcher }), es.setupEpgshare(create, { auto: true, fetcher })]);
   assert.deepEqual(r.added, ['RO1', 'RO2']);
+  assert.equal(twin, r, 'two sources refreshing at once share one run');
   assert.deepEqual(created, ['epgshare01-ro1', 'epgshare01-ro2']);
   // Automatic setup runs once: deleted guides are not brought back.
   db.run("DELETE FROM epg_sources WHERE id LIKE 'epgshare01-%'");
