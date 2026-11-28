@@ -123,15 +123,18 @@ export function ShowDetail({ show, initialSeasonId, onUserData }: { show: Item; 
 
 function EpisodeRow({ ep }: { ep: Item }) {
   const t = useTheme();
+  const { user } = useSession();
   const downloads = useDownloads();
   const rec = downloads.get(ep.id);
   const p = progressFraction(ep);
   const w = t.wide ? 200 : 140;
   const h = Math.round((w * 9) / 16);
+  // Spoiler protection: unwatched episodes keep their still blurred and their description hidden.
+  const spoiler = !!user?.preferences.blurUnwatchedEpisodes && !ep.userData.played && p <= 0.01;
   return (
     <Focusable onPress={() => openItem(ep)} style={{ flexDirection: 'row', gap: t.space.md }}>
       <View style={{ width: w, height: h, borderRadius: t.shapeRadius(w, h), overflow: 'hidden', backgroundColor: t.colors.surfaceAlt }}>
-        <Img path={ep.thumbUrl ?? ep.backdropUrl} width={w} style={{ width: '100%', height: '100%' }} />
+        <Img path={ep.thumbUrl ?? ep.backdropUrl} width={w} style={{ width: '100%', height: '100%' }} blurRadius={spoiler ? 24 : undefined} />
         <Focusable onPress={() => playItem(ep.id, { startMs: p > 0.01 && p < 0.95 ? ep.userData.positionMs : 0 })} containerStyle={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel={`Play ${ep.title}`}>
           <View style={{ backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 999, padding: 8 }}>
             <Icon name="play" size={18} color="#fff" />
@@ -152,7 +155,7 @@ function EpisodeRow({ ep }: { ep: Item }) {
           {rec?.state === 'done' ? <Icon name="arrow-down-circle" size={14} color={t.colors.success} /> : null}
         </View>
         <T variant="caption" tone="muted" weight="400" numberOfLines={3} style={{ letterSpacing: 0 }}>
-          {ep.overview ?? ''}
+          {spoiler && ep.overview ? 'Description hidden until you watch it.' : ep.overview ?? ''}
         </T>
       </View>
     </Focusable>

@@ -346,6 +346,23 @@ When Settings → DLNA is on, the server announces itself over SSDP and serves U
 * Configure `ServerSettings.openSubtitles` (API key, optional account) and `ServerSettings.subtitles` (provider order, Subs.ro key
   and base URL, automatic languages, `minScore` for the automatic task, `sync`, `saveMode`). Plugins add providers with
   `ctx.subtitles.registerProvider` (see PLUGINS.md).
+* `POST /items/:id/subtitles/autosync` `{ mediaId, subtitleIndex, referenceIndex }` → `AutoSyncResponse` (`map`, `score`, `scoreBefore`):
+  lines `subtitleIndex` up with a correctly timed text track of the same file (`referenceIndex`, any language) — constant delay,
+  frame-rate drift (23.976/24/25/29.97/30) and per-cue-group drift (±3 s after a long gap). Nothing is saved: players apply `map`
+  to the cue times in place (`t' = t·ratio + offsetMs`, then the last group with `fromMs ≤ t'` adds its `offsetMs`). A `score` below
+  ~0.3 means no reliable match. Both tracks must be text (400 otherwise).
+
+## Skip segments & parental guide
+* Playback: `PlaybackInfo.markers` include crowdsourced segments (`source: 'introdb' | 'aniskip'`) for the types the file has no
+  marker for, when the admin enabled `ServerSettings.skipSegments.introDb` / `.aniSkip` (both off by default). Lookups wait ≤1.2 s;
+  answers are cached for a week (misses a day). IntroDB is keyed by the movie's / series' IMDb id (+ season / episode); AniSkip by a
+  MyAnimeList id from the NFO (`<uniqueid type="mal">`, season-level, or show-level for season 1).
+* `POST /items/:id/markers` 🛡️ `{ type: 'intro'|'recap'|'credits', startMs, endMs, upstream? }` → `SubmitMarkerResponse`: replaces that
+  type's marker for everyone (`source: 'user'`); with `upstream` it is also sent to IntroDB using `skipSegments.introDbApiKey`
+  (write-only). Lengths: intro 5–300 s, recap 5–480 s, credits 5–900 s.
+* `GET /items/:id/parental-guide` → `ParentalGuide` (`contentRating`, `categories[]` of violence / nudity / profanity / alcohol /
+  frightening with `none|mild|moderate|severe`). Severities come from `skipSegments.parentalGuideUrl` (a URL template with `{imdb}`
+  answering like imdbapi.dev's `/titles/{id}/parentsGuide`); without it `categories` is empty.
 
 ## AI: language model, automatic subtitles, Ask, recaps
 * `ServerSettings.ai` (`AiSettings`, via `GET`/`PUT /settings` 🛡️): `llm` (shared model; `apiKey` write-only, mirrored to

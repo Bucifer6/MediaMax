@@ -18,7 +18,7 @@ import { AdminHeader } from './AdminRoutes';
 import { NotificationAgentsPanel } from './NotificationAgents';
 import { QuotaEditor, DEFAULT_QUOTAS } from './RequestPermissionsEditor';
 
-const TABS = ['general', 'transcoding', 'cinema', 'aidj', 'karaoke', 'dvr', 'requests', 'notifications', 'arr', 'sso', 'trickplay', 'subtitles', 'trakt', 'lastfm', 'dlna', 'webhooks', 'metadata'] as const;
+const TABS = ['general', 'transcoding', 'cinema', 'segments', 'aidj', 'karaoke', 'dvr', 'requests', 'notifications', 'arr', 'sso', 'trickplay', 'subtitles', 'trakt', 'lastfm', 'dlna', 'webhooks', 'metadata'] as const;
 type Tab = (typeof TABS)[number];
 const asTab = (t: string | null): Tab => (TABS as readonly string[]).includes(t ?? '') ? (t as Tab) : 'general';
 const HW: { value: HwAccel; label: string }[] = [
@@ -43,6 +43,7 @@ const EVENTS: WebhookEvent[] = ['playback.start', 'playback.pause', 'playback.re
 const TRICKPLAY_DEFAULTS: ServerSettings['trickplay'] = { enabled: false, intervalSeconds: 10, width: 320 };
 const OPENSUBS_DEFAULTS: ServerSettings['openSubtitles'] = { apiKey: null, username: null, password: null, autoLanguages: [] };
 const TRAKT_DEFAULTS: ServerSettings['trakt'] = { clientId: null, clientSecret: null };
+const SEGMENT_DEFAULTS: NonNullable<ServerSettings['skipSegments']> = { introDb: false, aniSkip: false, introDbApiKey: null, parentalGuideUrl: null };
 const LASTFM_DEFAULTS: ServerSettings['lastfm'] = { apiKey: null, sharedSecret: null };
 const OIDC_DEFAULTS: ServerSettings['oidc'] = {
   enabled: false, issuer: null, clientId: null, clientSecret: null, buttonLabel: 'Sign in with SSO',
@@ -160,6 +161,7 @@ export function ServerSettingsAdmin() {
         { value: 'metadata', label: 'Metadata' },
         { value: 'transcoding', label: 'Transcoding' },
         { value: 'cinema', label: 'Cinema mode' },
+        { value: 'segments', label: 'Skip segments' },
         { value: 'aidj', label: 'AI DJ' },
         { value: 'karaoke', label: 'Karaoke & lyrics' },
         { value: 'dvr', label: 'DVR' },
@@ -290,6 +292,27 @@ export function ServerSettingsAdmin() {
             <Switch checked={s.cinema.unwatchedOnly} onChange={(v) => set({ cinema: { ...s.cinema, unwatchedOnly: v } })} label="Only trailers for movies the viewer hasn't seen" />
           </div>
         )}
+        {tab === 'segments' && (() => {
+          const seg = { ...SEGMENT_DEFAULTS, ...(s.skipSegments ?? {}) };
+          const setSeg = (p: Partial<typeof seg>) => set({ skipSegments: { ...seg, ...p } });
+          return (
+            <div className="form-grid">
+              <p className="muted">
+                Crowdsourced intro, recap and credits timestamps fill in what the file's own markers (audio fingerprinting, chapters, .edl) don't have,
+                so a single episode or a movie gets a Skip button straight away. The server looks them up with the title's public IMDb or MyAnimeList id;
+                nothing about your viewers is sent. Answers are cached for a week.
+              </p>
+              <Switch checked={seg.introDb} onChange={(v) => setSeg({ introDb: v })} label="IntroDB" hint="Movies and TV by IMDb id (api.introdb.app)." />
+              <Switch checked={seg.aniSkip} onChange={(v) => setSeg({ aniSkip: v })} label="AniSkip" hint={'Anime openings and endings by MyAnimeList id: add <uniqueid type="mal"> to the show (or season) NFO.'} />
+              <Field label="IntroDB API key" hint={<>Optional. Lets admins send their own timestamps (player → Sync &amp; delay → Mark segment) back to IntroDB. Create one in your <Ext href="https://introdb.app">introdb.app</Ext> account.</>}>
+                <input className="input mono" type="password" value={seg.introDbApiKey ?? ''} onChange={(e) => setSeg({ introDbApiKey: e.target.value.trim() || null })} autoComplete="new-password" spellCheck={false} placeholder="idb_…" />
+              </Field>
+              <Field label="Parental guide source" hint="Optional URL with {imdb}, answering like imdbapi.dev's /titles/{id}/parentsGuide. Without it the start-of-title card shows the content rating only.">
+                <input className="input mono" value={seg.parentalGuideUrl ?? ''} onChange={(e) => setSeg({ parentalGuideUrl: e.target.value.trim() || null })} placeholder="https://…/titles/{imdb}/parentsGuide" spellCheck={false} />
+              </Field>
+            </div>
+          );
+        })()}
         {tab === 'dvr' && (
           <div className="form-grid">
             <Field label="Recordings folder"><input className="input mono" value={s.dvr.recordingsPath} onChange={(e) => setD({ recordingsPath: e.target.value })} /></Field>

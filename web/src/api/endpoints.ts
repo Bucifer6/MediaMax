@@ -11,6 +11,7 @@ import type {
   CalendarResponse, NotificationsResponse,
   BackupInfo, UpdateStatus, RemoteAccessStatus, Bookmark, PluginCatalogEntry, PluginInfo, CreateSmartListRequest, DiscoverResponse, MediaRequest, RequestStatus, SmartFilter,
 } from '@mediamax/shared';
+import type { AutoSyncRequest, AutoSyncResponse, ParentalGuide, SubmitMarkerRequest, SubmitMarkerResponse } from '@mediamax/shared';
 import type { DjOrderRequest, DjOrderResponse, DjTransitionsRequest, DjTransitionsResponse } from '@mediamax/shared';
 import type { ManualRendererRequest, Renderer, RendererAction, RendererAdminView, RendererCommandRequest, RendererPlayRequest, RendererSettings, RendererState } from '@mediamax/shared';
 import type { ApplyMatchRequest, MatchSearchResponse, MetadataProviderId, MetadataSettings, MetadataSettingsResponse, MetadataTestResult } from '@mediamax/shared';
@@ -144,6 +145,14 @@ export const api = {
     download: (itemId: string, body: { fileId: string; language: string; provider?: string; hearingImpaired?: boolean; forced?: boolean; release?: string | null; score?: number | null }) =>
       http.post<Item>(`/items/${enc(itemId)}/subtitles/download`, body),
     remove: (itemId: string, index: number) => http.del<Item>(`/items/${enc(itemId)}/subtitles/${index}`),
+    /** Retime a track against a correctly timed one of the same file; the players apply the returned map in place. */
+    autoSync: (itemId: string, body: AutoSyncRequest) => http.post<AutoSyncResponse>(`/items/${enc(itemId)}/subtitles/autosync`, body),
+  },
+
+  segments: {
+    /** Admins: save this segment's timestamps for everyone (optionally sent on to IntroDB). */
+    submit: (itemId: string, body: SubmitMarkerRequest) => http.post<SubmitMarkerResponse>(`/items/${enc(itemId)}/markers`, body),
+    parentalGuide: (itemId: string, signal?: AbortSignal) => http.get<ParentalGuide>(`/items/${enc(itemId)}/parental-guide`, undefined, signal),
   },
 
   podcasts: {

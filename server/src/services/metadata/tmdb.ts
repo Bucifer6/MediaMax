@@ -13,6 +13,8 @@ export interface RemoteMeta {
   tvdbId?: string | null;
   title: string;
   originalTitle?: string | null;
+  /** ISO 639-1, e.g. "ja" (TMDB original_language). */
+  originalLanguage?: string | null;
   overview?: string | null;
   tagline?: string | null;
   year?: number | null;
@@ -165,6 +167,7 @@ export async function movieDetails(id: string): Promise<RemoteMeta | null> {
     imdbId: m.imdb_id ?? null,
     title: m.title,
     originalTitle: m.original_title !== m.title ? m.original_title : null,
+    originalLanguage: m.original_language || null,
     overview: m.overview || null,
     tagline: m.tagline || null,
     year: m.release_date ? +m.release_date.slice(0, 4) : null,
@@ -208,6 +211,7 @@ export async function tvDetails(id: string): Promise<RemoteMeta | null> {
     tvdbId: t.external_ids?.tvdb_id ? String(t.external_ids.tvdb_id) : null,
     title: t.name,
     originalTitle: t.original_name !== t.name ? t.original_name : null,
+    originalLanguage: t.original_language || null,
     overview: t.overview || null,
     tagline: t.tagline || null,
     year: t.first_air_date ? +t.first_air_date.slice(0, 4) : null,

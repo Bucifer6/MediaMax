@@ -34,6 +34,7 @@ export const ItemRow = memo(function ItemRow({
   onSeeAll,
   onFocusItem,
   firstPreferred,
+  spoiler,
 }: {
   title: string;
   items: Item[];
@@ -41,13 +42,15 @@ export const ItemRow = memo(function ItemRow({
   onSeeAll?: () => void;
   onFocusItem?: (i: Item) => void;
   firstPreferred?: boolean;
+  /** Blur episode stills (spoiler protection). */
+  spoiler?: boolean;
 }) {
   const t = useTheme();
   const renderItem = useCallback(
     ({ item, index }: { item: Item; index: number }) => (
-      <MediaCard item={item} variant={variant} onFocusItem={onFocusItem} hasTVPreferredFocus={firstPreferred && index === 0} />
+      <MediaCard item={item} variant={variant} onFocusItem={onFocusItem} hasTVPreferredFocus={firstPreferred && index === 0} spoiler={spoiler} />
     ),
-    [variant, onFocusItem, firstPreferred],
+    [variant, onFocusItem, firstPreferred, spoiler],
   );
   if (!items.length) return null;
   return (

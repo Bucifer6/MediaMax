@@ -1,7 +1,8 @@
-import type { ArrInstance, ArrKind, ArrService, ServerSettings, SignInScreenSettings, SubtitleSettings } from '@mediamax/shared';
+import type { ArrInstance, ArrKind, ArrService, ServerSettings, SignInScreenSettings, SkipSegmentSettings, SubtitleSettings } from '@mediamax/shared';
 import { db } from '../db.js';
 import { config } from '../config.js';
 import { newId } from '../util/ids.js';
+import { badRequest } from '../util/errors.js';
 import { productName } from '../util/product.js';
 import { maskAgents, mergeAgents } from './notify/kinds.js';
 import { aiFromStored, mergeAi, publicProviders, resolveProviderKeys, DEFAULT_AI } from './ai/settings.js';
@@ -80,6 +81,7 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   defaultDateAdded: 'created',
   signInScreen: { showUsers: true, homeNetworkOnly: true },
   karaoke: { stemsEnabled: false, stemsModelUrl: null, stemsModelSha256: null, writeLrcSidecars: false },
+  skipSegments: { introDb: false, aniSkip: false, introDbApiKey: null, parentalGuideUrl: null },
   ai: DEFAULT_AI,
 };
 
@@ -174,6 +176,7 @@ export function getSettings(): ServerSettings {
     updates: { ...DEFAULT_SETTINGS.updates, ...(stored.updates ?? {}) },
     oidc: { ...DEFAULT_SETTINGS.oidc, ...(stored.oidc ?? {}) },
     karaoke: { ...DEFAULT_SETTINGS.karaoke!, ...(stored.karaoke ?? {}) },
+    skipSegments: { ...DEFAULT_SETTINGS.skipSegments!, ...(stored.skipSegments ?? {}) },
     webhooks: stored.webhooks ?? [],
     arr: Array.isArray(stored.arr) ? stored.arr : legacyArrInstances(stored.requests),
     notificationAgents: Array.isArray(stored.notificationAgents) ? stored.notificationAgents : [],
@@ -191,6 +194,7 @@ export const SECRET_MASK = '••••';
 /** Other write-only secrets: [section, key] (section null = top level). Sent masked, a masked value back keeps them. */
 const SECRET_FIELDS: [keyof ServerSettings | null, string][] = [
   [null, 'tmdbApiKey'], ['openSubtitles', 'apiKey'], ['openSubtitles', 'password'], ['trakt', 'clientSecret'], ['lastfm', 'sharedSecret'], ['oidc', 'clientSecret'],
+  ['skipSegments', 'introDbApiKey'],
 ];
 
 /** Settings as sent to the admin UI: service keys, passwords and client secrets are write-only. */
@@ -264,6 +268,7 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
     oidc: { ...cur.oidc, ...(patch.oidc ?? {}) },
     signInScreen: signInScreenOf({ ...cur.signInScreen, ...(patch.signInScreen ?? {}) }),
     karaoke: { ...DEFAULT_SETTINGS.karaoke!, ...(cur.karaoke ?? {}), ...(patch.karaoke ?? {}) },
+    skipSegments: normaliseSkipSegments(cur.skipSegments ?? DEFAULT_SETTINGS.skipSegments!, patch.skipSegments),
     webhooks: (patch.webhooks ?? cur.webhooks).map((w) => ({ ...w, id: w.id || newId() })),
     arr: patch.arr !== undefined ? normaliseArr(patch.arr, cur.arr) : cur.arr,
     notificationAgents: patch.notificationAgents !== undefined ? mergeAgents(patch.notificationAgents, cur.notificationAgents, newId) : cur.notificationAgents ?? [],
@@ -278,6 +283,28 @@ export function updateSettings(patch: Partial<ServerSettings>): ServerSettings {
   setKv('server', next);
   cache = next;
   return next;
+}
+
+/**
+ * Crowdsourced skip segments: switches, a write-only IntroDB key and an http(s) parental-guide URL template that
+ * must contain {imdb}. A bad template is refused rather than silently stored.
+ */
+export function normaliseSkipSegments(cur: SkipSegmentSettings, patch: Partial<SkipSegmentSettings> | undefined | null): SkipSegmentSettings {
+  const p = patch && typeof patch === 'object' ? patch : {};
+  const key = p.introDbApiKey === undefined ? cur.introDbApiKey : typeof p.introDbApiKey === 'string' && p.introDbApiKey.trim() ? p.introDbApiKey.trim().slice(0, 200) : null;
+  let url = cur.parentalGuideUrl;
+  if (p.parentalGuideUrl !== undefined) {
+    const v = typeof p.parentalGuideUrl === 'string' ? p.parentalGuideUrl.trim() : '';
+    if (!v) url = null;
+    else if (/^https?:\/\/[^\s]+$/i.test(v) && v.includes('{imdb}') && v.length <= 500) url = v;
+    else throw badRequest('The parental guide URL must start with http:// or https:// and contain {imdb}');
+  }
+  return {
+    introDb: typeof p.introDb === 'boolean' ? p.introDb : !!cur.introDb,
+    aniSkip: typeof p.aniSkip === 'boolean' ? p.aniSkip : !!cur.aniSkip,
+    introDbApiKey: key,
+    parentalGuideUrl: url,
+  };
 }
 
 /** Whole number in [min, max]; anything else (NaN, '', a cleared form field) keeps the current value or the default. */

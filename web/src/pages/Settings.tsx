@@ -15,7 +15,8 @@ import { autoLiteReason, getFxPref, isLite, onFxChange, setFxPref, type FxPref }
 import { QUALITY_OPTIONS } from '../player/deviceProfile';
 import { AUTOMIX_DEFAULT } from '../player/automix';
 import { advancedDjEnabled } from '../player/djAccess';
-import { DEFAULT_SUBTITLE_STYLE, SUBTITLE_FIELD_LABELS, SUBTITLE_OPTIONS, subtitlePreviewStyle, subtitleStyleOf } from '../player/subtitleStyle';
+import { shouldAutoSkip, type SkipType } from '../player/playerPrefs';
+import { DEFAULT_SUBTITLE_STYLE, RESET_SUBTITLE_STYLE, SUBTITLE_FIELD_LABELS, SUBTITLE_FREE_FIELDS, SUBTITLE_OPTIONS, subtitlePreviewStyle, subtitleStyleOf, type SubtitlePresetField } from '../player/subtitleStyle';
 import { relativeTime } from '../utils/format';
 import { LinkDeviceForm } from './LinkDevice';
 import { ApiKeysCard, SubsonicCard, TwoFactorCard } from './SecuritySettings';
@@ -32,6 +33,8 @@ const LANGS = [
   ['nl', 'Dutch'], ['sv', 'Swedish'], ['no', 'Norwegian'], ['da', 'Danish'], ['fi', 'Finnish'], ['pl', 'Polish'], ['ru', 'Russian'],
   ['tr', 'Turkish'], ['ar', 'Arabic'], ['hi', 'Hindi'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese'],
 ] as const;
+/** Audio adds "Original": the title's own language (from TMDB), e.g. Japanese for anime. */
+const AUDIO_LANGS = [LANGS[0], ['original', 'Original language'], ...LANGS.slice(1)] as const;
 
 function usePrefs() {
   const { user, setUser } = useApp();
@@ -325,12 +328,24 @@ function Playback() {
       <div className="form-row">
         <Field label="Preferred audio language">
           <select className="select" value={prefs.audioLanguage ?? ''} onChange={(e) => save({ audioLanguage: e.target.value || null })}>
-            {LANGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            {AUDIO_LANGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </Field>
         <Field label="Preferred subtitle language">
           <select className="select" value={prefs.subtitleLanguage ?? ''} onChange={(e) => save({ subtitleLanguage: e.target.value || null })}>
             {LANGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div className="form-row">
+        <Field label="Second audio language" hint="Used when the first isn't in the file.">
+          <select className="select" value={prefs.secondaryAudioLanguage ?? ''} onChange={(e) => save({ secondaryAudioLanguage: e.target.value || null })}>
+            {AUDIO_LANGS.map(([v, l]) => <option key={v} value={v}>{v ? l : 'None'}</option>)}
+          </select>
+        </Field>
+        <Field label="Second subtitle language" hint="Used when the first isn't available.">
+          <select className="select" value={prefs.secondarySubtitleLanguage ?? ''} onChange={(e) => save({ secondarySubtitleLanguage: e.target.value || null })}>
+            {LANGS.map(([v, l]) => <option key={v} value={v}>{v ? l : 'None'}</option>)}
           </select>
         </Field>
       </div>
@@ -356,18 +371,40 @@ function Playback() {
       </div>
       <div className="switch-group">
         <Switch checked={prefs.autoplayNext} onChange={(v) => save({ autoplayNext: v })} label="Autoplay next episode" hint="Shows an Up Next card with a countdown." />
-        <Switch checked={prefs.skipIntros} onChange={(v) => save({ skipIntros: v })} label="Automatically skip intros" hint="Uses intro markers when available." />
+        <Switch checked={!!prefs.showOnlyPreferredSubtitles} onChange={(v) => save({ showOnlyPreferredSubtitles: v })} label="Only list subtitles in my languages" hint="The subtitle menu hides other languages (all are shown when none match)." />
+        <Switch checked={!!prefs.parentalGuideOverlay} onChange={(v) => save({ parentalGuideOverlay: v })} label="Show the parental guide when a title starts" hint="Rating and content advice for a few seconds." />
+      </div>
+      <h3>Skip automatically</h3>
+      <p className="muted small">Uses the file's markers, plus crowdsourced segments (IntroDB, AniSkip) when your admin has turned them on. A Skip button shows for anything left off.</p>
+      <div className="switch-group">
+        {SKIP_SEGMENTS.map(([type, label, hint]) => (
+          <Switch key={type} checked={shouldAutoSkip(prefs, type)} onChange={(v) => save({ autoSkip: { [type]: v } })} label={label} hint={hint} />
+        ))}
+      </div>
+      <h3>Spoilers</h3>
+      <div className="switch-group">
+        <Switch checked={!!prefs.blurUnwatchedEpisodes} onChange={(v) => save({ blurUnwatchedEpisodes: v })} label="Blur unwatched episodes" hint="Episode stills and descriptions stay hidden until you've watched them." />
+        <Switch checked={!!prefs.blurNextUp} onChange={(v) => save({ blurNextUp: v })} label="Blur Continue watching and Next up" hint="Blurs the episode stills in those rows." />
       </div>
     </div>
   );
 }
+
+const SKIP_SEGMENTS: [SkipType, string, string][] = [
+  ['intro', 'Intros', 'Opening titles and theme songs.'],
+  ['recap', 'Recaps', 'Previously on...'],
+  ['commercial', 'Ad breaks', 'From recordings (comskip / .edl).'],
+  ['preview', 'Previews', 'Next time on... scenes.'],
+  ['credits', 'End credits', 'Goes straight to the next episode.'],
+];
 
 /** Subtitle appearance with a live preview (applies to the video and live TV players). */
 function SubtitleSettings() {
   const { prefs, save } = usePrefs();
   const style = subtitleStyleOf(prefs.subtitleStyle);
   const set = (patch: Partial<SubtitleStyle>) => save({ subtitleStyle: { ...style, ...patch } });
-  const isDefault = (Object.keys(DEFAULT_SUBTITLE_STYLE) as (keyof SubtitleStyle)[]).every((k) => style[k] === DEFAULT_SUBTITLE_STYLE[k]);
+  const isDefault = (Object.keys(DEFAULT_SUBTITLE_STYLE) as (keyof SubtitleStyle)[]).every((k) => style[k] === DEFAULT_SUBTITLE_STYLE[k])
+    && SUBTITLE_FREE_FIELDS.every((k) => style[k] === undefined);
   return (
     <div className="settings-card" id="subtitles">
       <h2>Subtitles <HelpLink slug="subtitles" label="Subtitles" /></h2>
@@ -376,7 +413,7 @@ function SubtitleSettings() {
         <span className="subtitle-preview-text" style={subtitlePreviewStyle(style, 22)}>{'I never said she stole my money.\nSomeone else did.'}</span>
       </div>
       <div className="subtitle-fields">
-        {(Object.keys(SUBTITLE_OPTIONS) as (keyof SubtitleStyle)[]).map((field) => (
+        {(Object.keys(SUBTITLE_OPTIONS) as SubtitlePresetField[]).map((field) => (
           <Field key={field} label={SUBTITLE_FIELD_LABELS[field]}>
             <select
               className="select"
@@ -388,11 +425,65 @@ function SubtitleSettings() {
           </Field>
         ))}
       </div>
+      <SubtitleFineTuning style={style} set={set} />
       <p className="muted small">
         Applies to text subtitles and live TV captions. While watching, the subtitle menu has the same options, and <kbd>G</kbd> / <kbd>H</kbd> shift subtitle timing by 0.1 s.
-        {!isDefault && <> <button type="button" className="btn btn-ghost btn-sm" onClick={() => save({ subtitleStyle: DEFAULT_SUBTITLE_STYLE })}>Reset to default</button></>}
+        {!isDefault && <> <button type="button" className="btn btn-ghost btn-sm" onClick={() => save({ subtitleStyle: RESET_SUBTITLE_STYLE })}>Reset to default</button></>}
       </p>
     </div>
+  );
+}
+
+type RangeField = 'fontScale' | 'backgroundOpacity' | 'outlineWidth' | 'shadowOpacity' | 'shadowBlur' | 'cornerRadius' | 'hdrBrightness';
+type ColourField = 'textColor' | 'backgroundColor' | 'outlineColor' | 'hdrTextColor';
+
+/** Free-form subtitle look, hearing-impaired / right-to-left text and HDR comfort. */
+function SubtitleFineTuning({ style, set }: { style: SubtitleStyle; set: (p: Partial<SubtitleStyle>) => void }) {
+  const range = (k: RangeField, label: string, min: number, max: number, def: number, unit = '') => (
+    <Field label={`${label}: ${style[k] ?? def}${unit}`}>
+      <input type="range" min={min} max={max} value={style[k] ?? def} aria-label={label} onChange={(e) => set({ [k]: Number(e.target.value) })} />
+    </Field>
+  );
+  const colour = (k: ColourField, label: string, def: string) => (
+    <Field label={label}>
+      <span className="row gap-sm">
+        <input type="color" value={style[k] ?? def} aria-label={label} onChange={(e) => set({ [k]: e.target.value })} />
+        {style[k] && k !== 'hdrTextColor' && <button type="button" className="btn btn-ghost btn-sm" onClick={() => set({ [k]: null } as never)}>Use preset</button>}
+      </span>
+    </Field>
+  );
+  return (
+    <details className="subtitle-fine">
+      <summary>Fine-tune</summary>
+      <div className="subtitle-fields">
+        {range('fontScale', 'Text size', 50, 200, 100, ' %')}
+        {colour('textColor', 'Text colour', '#ffffff')}
+        {colour('outlineColor', 'Outline colour', '#000000')}
+        {range('outlineWidth', 'Outline width', 1, 5, 2)}
+        {colour('backgroundColor', 'Box colour', '#000000')}
+        {range('backgroundOpacity', 'Box opacity', 0, 100, style.background === 'boxSolid' ? 100 : 62, ' %')}
+        {range('cornerRadius', 'Box corners', 0, 16, 0, ' px')}
+        {range('shadowOpacity', 'Shadow opacity', 0, 100, 90, ' %')}
+        {range('shadowBlur', 'Shadow blur', 0, 10, 5)}
+      </div>
+      <div className="switch-group">
+        <Switch checked={style.bold !== false} onChange={(v) => set({ bold: v })} label="Bold text" />
+        <Switch checked={!!style.stripSdh} onChange={(v) => set({ stripSdh: v })} label="Hide hearing-impaired cues" hint="Removes [music], (sighs) and speaker names like JOHN:." />
+        <Switch checked={style.rtlFix !== false} onChange={(v) => set({ rtlFix: v })} label="Fix right-to-left punctuation" hint="Arabic, Hebrew and Persian lines keep their punctuation at the right end." />
+      </div>
+      <h3>HDR comfort</h3>
+      <p className="muted small">Bright white subtitles can glare on HDR and Dolby Vision screens. These apply only while HDR reaches your display.</p>
+      <div className="switch-group">
+        <Switch checked={!!style.hdrStyleEnabled} onChange={(v) => set({ hdrStyleEnabled: v })} label="Dim subtitles during HDR" />
+        {style.hdrStyleEnabled && <Switch checked={!!style.hdrDimPlayerControls} onChange={(v) => set({ hdrDimPlayerControls: v })} label="Dim the player controls too" />}
+      </div>
+      {style.hdrStyleEnabled && (
+        <div className="subtitle-fields">
+          {colour('hdrTextColor', 'HDR subtitle colour', '#ffffff')}
+          {range('hdrBrightness', 'HDR brightness', 0, 100, 70, ' %')}
+        </div>
+      )}
+    </details>
   );
 }
 

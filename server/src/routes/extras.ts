@@ -20,7 +20,9 @@ import * as smart from '../services/smart.js';
 import { createContainer } from '../services/items.js';
 import { getSettings } from '../services/settings.js';
 import type { CreateSmartListRequest, SmartFilter } from '@mediamax/shared';
-import type { SubscribePodcastRequest } from '@mediamax/shared';
+import type { AutoSyncRequest, SubmitMarkerRequest, SubscribePodcastRequest } from '@mediamax/shared';
+import { autoSync } from '../services/autosync.js';
+import { parentalGuide, submitMarker } from '../services/skipSegments.js';
 
 export default async function extraRoutes(app: FastifyInstance) {
   /* ------------------------------ trickplay ------------------------- */
@@ -287,6 +289,27 @@ export default async function extraRoutes(app: FastifyInstance) {
     if (!m) throw notFound();
     deleteDownloadedSubtitle(m.id, toInt(req.params.index, -1));
     return getItem(a.user, req.params.id, true);
+  });
+
+  /** AutoSync: retime a subtitle track against a correctly timed text track of the same file (time map, no restart). */
+  app.post<{ Params: { id: string }; Body: AutoSyncRequest }>('/items/:id/subtitles/autosync', async (req) => {
+    const { user } = requireUser(req);
+    assertCanSee(user, req.params.id);
+    if (!req.body || typeof req.body !== 'object') throw badRequest('mediaId, subtitleIndex and referenceIndex are required');
+    return autoSync(req.params.id, req.body);
+  });
+
+  /* --------------------------- skip segments ------------------------ */
+  /** An admin's own segment timestamps ("Submit intro"), optionally sent on to IntroDB. */
+  app.post<{ Params: { id: string }; Body: SubmitMarkerRequest }>('/items/:id/markers', async (req) => {
+    const { user } = requireUser(req);
+    assertCanSee(user, req.params.id);
+    return submitMarker(user, req.params.id, req.body);
+  });
+  app.get<{ Params: { id: string } }>('/items/:id/parental-guide', async (req) => {
+    const { user } = requireUser(req);
+    assertCanSee(user, req.params.id);
+    return parentalGuide(req.params.id);
   });
 
   /* -------------------------------- trakt --------------------------- */

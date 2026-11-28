@@ -9,6 +9,11 @@ for (const dest of ['server/src/services/lrc.ts', 'web/src/lyrics/lrc.ts', 'apps
   copyFileSync('shared/src/lrc.ts', dest);
   console.log(`Synced shared/src/lrc.ts -> ${dest}`);
 }
+// Playback preferences (track choice, auto-skip, subtitle clean-up, HDR colours, AutoSync maps) for every player.
+for (const dest of ['server/src/services/playerPrefs.ts', 'web/src/player/playerPrefs.ts', 'apps/mobile/src/player/playerPrefs.ts']) {
+  copyFileSync('shared/src/playerPrefs.ts', dest);
+  console.log(`Synced shared/src/playerPrefs.ts -> ${dest}`);
+}
 // The stem separation DSP and model runner (shared/src/stems/) for the browser worker and the server's separation process.
 for (const dir of ['web/src/stems', 'server/src/services/separation']) {
   mkdirSync(dir, { recursive: true });

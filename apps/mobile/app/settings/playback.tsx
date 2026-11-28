@@ -21,12 +21,15 @@ import { useMusic } from '@/state/music';
 import { EXTERNAL_PLAYERS, externalPlayerLabel } from '@/player/external';
 import { externalPlayerSupported, frameRateMatchingSupported, setExternalPlayer, setMatchFrameRate, useExternalPlayer, useMatchFrameRate } from '@/player/deviceSettings';
 import { MediaMaxMedia } from '../../modules/mediamax-media';
+import { shouldAutoSkip, type SkipType } from '@/player/playerPrefs';
 
 const TRICKPLAY_MODES: { key: TrickplayMode; label: string; description: string }[] = [
   { key: 'always', label: 'Always', description: 'Load preview images when a video starts (data saver kicks in on slow connections)' },
   { key: 'saver', label: 'Data saver', description: 'Only load previews once you start scrubbing' },
   { key: 'off', label: 'Off', description: 'No preview images on the seek bar' },
 ];
+
+const SKIP_SEGMENTS: [SkipType, string][] = [['intro', 'intros'], ['recap', 'recaps'], ['commercial', 'ad breaks'], ['preview', 'previews'], ['credits', 'end credits']];
 
 const LANGS = ['en', 'fr', 'de', 'es', 'it', 'pt', 'nl', 'sv', 'da', 'no', 'fi', 'pl', 'ru', 'ja', 'ko', 'zh', 'ar', 'hi', 'tr'];
 const SUB_MODES: { key: UserPreferences['subtitleMode']; label: string; description: string }[] = [
@@ -72,7 +75,7 @@ const COMMENTARY: { key: YourDjCommentary; label: string; description: string }[
   { key: 'full', label: 'Full', description: 'Intros, plus a little between songs' },
 ];
 
-type Sheet = 'quality' | 'subMode' | 'audioLang' | 'subLang' | 'rg' | 'lipSync' | 'trickplay' | 'mixStyle' | 'hostLevel' | 'hostVoice' | 'commentary' | 'externalPlayer' | null;
+type Sheet = 'quality' | 'subMode' | 'audioLang' | 'audioLang2' | 'subLang' | 'subLang2' | 'rg' | 'lipSync' | 'trickplay' | 'mixStyle' | 'hostLevel' | 'hostVoice' | 'commentary' | 'externalPlayer' | null;
 
 /** External players offered: "Ask every time" plus the ones installed (all of them on builds that can't tell). */
 function externalChoices(): typeof EXTERNAL_PLAYERS {
@@ -120,7 +123,12 @@ export default function PlaybackSettings() {
   const audio = p.audio ?? {};
   const deviceId = deviceInfoSync()?.deviceId ?? null;
   const lipSync = (deviceId && p.audioDevices?.[deviceId]?.delayMs) || 0;
-  const langOptions = (sel: string | null) => [{ key: '__none', label: 'No preference', selected: !sel }, ...LANGS.map((l) => ({ key: l, label: languageName(l), selected: sel === l }))];
+  const langOptions = (sel: string | null, original = false) => [
+    { key: '__none', label: 'No preference', selected: !sel },
+    ...(original ? [{ key: 'original', label: 'Original language', description: "The title's own language, e.g. Japanese for anime", selected: sel === 'original' }] : []),
+    ...LANGS.map((l) => ({ key: l, label: languageName(l), selected: sel === l })),
+  ];
+  const langLabel = (v: string | null, none = 'Default') => (v === 'original' ? 'Original language' : v ? languageName(v) : none);
 
   return (
     <Screen>
@@ -133,7 +141,12 @@ export default function PlaybackSettings() {
           </SettingSection>
           <SettingSection title="Watching">
             <SettingRow icon="play-skip-forward-outline" label="Autoplay next episode" toggle={p.autoplayNext} onToggle={(v) => set({ autoplayNext: v })} />
-            <SettingRow icon="flash-outline" label="Skip intros automatically" toggle={p.skipIntros} onToggle={(v) => set({ skipIntros: v })} />
+            {SKIP_SEGMENTS.map(([type, label]) => (
+              <SettingRow key={type} icon="flash-outline" label={`Skip ${label} automatically`} toggle={shouldAutoSkip(p, type)} onToggle={(v) => set({ autoSkip: { [type]: v } })} />
+            ))}
+            <SettingRow icon="eye-off-outline" label="Blur unwatched episodes" toggle={!!p.blurUnwatchedEpisodes} onToggle={(v) => set({ blurUnwatchedEpisodes: v })} />
+            <SettingRow icon="eye-off-outline" label="Blur Continue watching / Next up" toggle={!!p.blurNextUp} onToggle={(v) => set({ blurNextUp: v })} />
+            <SettingRow icon="shield-checkmark-outline" label="Parental guide when a title starts" toggle={!!p.parentalGuideOverlay} onToggle={(v) => set({ parentalGuideOverlay: v })} />
             <SettingRow icon="film-outline" label="Cinema mode (trailers before movies)" toggle={p.cinemaMode !== false} onToggle={(v) => set({ cinemaMode: v })} />
             <SettingRow icon="images-outline" label="Scrub previews" value={TRICKPLAY_MODES.find((m) => m.key === trickMode)?.label} onPress={() => setSheet('trickplay')} />
             {frameRateMatchingSupported ? (
@@ -209,9 +222,14 @@ export default function PlaybackSettings() {
             </View>
           </SettingSection>
           <SettingSection title="Languages">
-            <SettingRow icon="musical-note-outline" label="Audio language" value={p.audioLanguage ? languageName(p.audioLanguage) : 'Default'} onPress={() => setSheet('audioLang')} />
+            <SettingRow icon="musical-note-outline" label="Audio language" value={langLabel(p.audioLanguage)} onPress={() => setSheet('audioLang')} />
+            <SettingRow icon="musical-notes-outline" label="Second audio language" value={langLabel(p.secondaryAudioLanguage ?? null, 'None')} onPress={() => setSheet('audioLang2')} />
             <SettingRow icon="chatbox-outline" label="Subtitles" value={SUB_MODES.find((m) => m.key === p.subtitleMode)?.label} onPress={() => setSheet('subMode')} />
-            <SettingRow icon="language-outline" label="Subtitle language" value={p.subtitleLanguage ? languageName(p.subtitleLanguage) : 'Default'} onPress={() => setSheet('subLang')} />
+            <SettingRow icon="language-outline" label="Subtitle language" value={langLabel(p.subtitleLanguage)} onPress={() => setSheet('subLang')} />
+            <SettingRow icon="language-outline" label="Second subtitle language" value={langLabel(p.secondarySubtitleLanguage ?? null, 'None')} onPress={() => setSheet('subLang2')} />
+            <SettingRow icon="filter-outline" label="Only list subtitles in my languages" toggle={!!p.showOnlyPreferredSubtitles} onToggle={(v) => set({ showOnlyPreferredSubtitles: v })} />
+            <SettingRow icon="ear-outline" label="Hide hearing-impaired cues" toggle={!!p.subtitleStyle?.stripSdh} onToggle={(v) => set({ subtitleStyle: { ...p.subtitleStyle!, stripSdh: v } })} />
+            <SettingRow icon="sunny-outline" label="Dim subtitles during HDR" toggle={!!p.subtitleStyle?.hdrStyleEnabled} onToggle={(v) => set({ subtitleStyle: { ...p.subtitleStyle!, hdrStyleEnabled: v } })} />
           </SettingSection>
         </View>
       </ScrollView>
@@ -249,8 +267,10 @@ export default function PlaybackSettings() {
       <PlayRulesSheet visible={rulesOpen} onClose={() => setRulesOpen(false)} />
       <OptionSheet visible={sheet === 'rg'} title="Volume levelling" options={RG_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === (p.replayGain ?? 'auto') }))} onSelect={(k) => set({ replayGain: k })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'subMode'} title="Subtitles" options={SUB_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description, selected: m.key === p.subtitleMode }))} onSelect={(k) => set({ subtitleMode: k })} onClose={() => setSheet(null)} />
-      <OptionSheet visible={sheet === 'audioLang'} title="Audio language" options={langOptions(p.audioLanguage)} onSelect={(k) => set({ audioLanguage: k === '__none' ? null : k })} onClose={() => setSheet(null)} />
+      <OptionSheet visible={sheet === 'audioLang'} title="Audio language" options={langOptions(p.audioLanguage, true)} onSelect={(k) => set({ audioLanguage: k === '__none' ? null : k })} onClose={() => setSheet(null)} />
+      <OptionSheet visible={sheet === 'audioLang2'} title="Second audio language" options={langOptions(p.secondaryAudioLanguage ?? null, true)} onSelect={(k) => set({ secondaryAudioLanguage: k === '__none' ? null : k })} onClose={() => setSheet(null)} />
       <OptionSheet visible={sheet === 'subLang'} title="Subtitle language" options={langOptions(p.subtitleLanguage)} onSelect={(k) => set({ subtitleLanguage: k === '__none' ? null : k })} onClose={() => setSheet(null)} />
+      <OptionSheet visible={sheet === 'subLang2'} title="Second subtitle language" options={langOptions(p.secondarySubtitleLanguage ?? null)} onSelect={(k) => set({ secondarySubtitleLanguage: k === '__none' ? null : k })} onClose={() => setSheet(null)} />
     </Screen>
   );
 }

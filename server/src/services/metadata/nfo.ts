@@ -19,7 +19,8 @@ export interface NfoData {
   runtimeMin?: number;
   season?: number;
   episode?: number;
-  ids: { tmdb?: string; imdb?: string; tvdb?: string };
+  /** mal: MyAnimeList id (`<uniqueid type="mal">`), used for AniSkip segments. */
+  ids: { tmdb?: string; imdb?: string; tvdb?: string; mal?: string };
   trailer?: string;
 }
 
@@ -73,6 +74,7 @@ export function parseNfo(xml: string): NfoData | null {
     const type = (u['@type'] ?? '').toLowerCase();
     const val = text(u);
     if (val && (type === 'tmdb' || type === 'imdb' || type === 'tvdb')) ids[type as 'tmdb'] = val;
+    else if (val && (type === 'mal' || type === 'myanimelist') && /^\d{1,9}$/.test(val)) ids.mal = val;
   }
   if (!ids.imdb && text(root.imdbid)) ids.imdb = text(root.imdbid);
   if (!ids.tmdb && text(root.tmdbid)) ids.tmdb = text(root.tmdbid);

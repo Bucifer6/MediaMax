@@ -3,7 +3,7 @@ import { normaliseHostPrefs } from './dj/rulesNormalise.js';
 import crypto from 'node:crypto';
 import type {
   ApiKey, AuthResponse, CreatedApiKey, CreateUserRequest, TotpEnabled, TotpSetup, Device, DeviceInfo, LinkCodeResponse, LinkPollResponse, Platform,
-  AudioComforts, ProfileSettings, PublicProfile, SubtitleStyle, UpdateMeRequest, UpdateUserRequest, User, UserPreferences,
+  AudioComforts, AutoSkipPrefs, ProfileSettings, PublicProfile, SubtitleStyle, UpdateMeRequest, UpdateUserRequest, User, UserPreferences,
 } from '@mediamax/shared';
 import { db, type Row } from '../db.js';
 import { newId, newToken, sha256, shortCode } from '../util/ids.js';
@@ -18,6 +18,7 @@ import { bus } from './events.js';
 import { imageUrl, registerImage } from './images.js';
 import { defaultPermissions, defaultQuotas, normalizePermissions, normalizeQuotas, storedPermissions, storedQuotas } from './requestPerms.js';
 import { builtinAvatarUrl, isBuiltinAvatar } from './avatars.js';
+import { isHexColor } from './playerPrefs.js';
 import { normalizeComforts } from './audio.js';
 import { Pending, sweepExpired, type Failure } from '../util/lockout.js';
 
@@ -75,22 +76,70 @@ const SUBTITLE_CHOICES: { [K in keyof SubtitleStyle]: readonly SubtitleStyle[K][
   assStyles: ['auto', 'file', 'user'],
 };
 
-/** Fill in / validate a (possibly partial) subtitle style; unknown values fall back to the current or default value. */
+/** Free-form subtitle style fields: whole-number ranges, colours (#rrggbb) and switches. */
+const SUBTITLE_RANGES: Partial<Record<keyof SubtitleStyle, [number, number]>> = {
+  fontScale: [50, 200], backgroundOpacity: [0, 100], outlineWidth: [1, 5], shadowOpacity: [0, 100], shadowBlur: [0, 10], cornerRadius: [0, 16], hdrBrightness: [0, 100],
+};
+const SUBTITLE_COLOURS: (keyof SubtitleStyle)[] = ['textColor', 'backgroundColor', 'outlineColor', 'hdrTextColor'];
+const SUBTITLE_SWITCHES: (keyof SubtitleStyle)[] = ['bold', 'rtlFix', 'stripSdh', 'hdrStyleEnabled', 'hdrDimPlayerControls'];
+
+/**
+ * Fill in / validate a (possibly partial) subtitle style; unknown values fall back to the current or default value.
+ * A free-form field sent as null is cleared (back to the preset look).
+ */
 export function normalizeSubtitleStyle(input: unknown, base: SubtitleStyle = DEFAULT_SUBTITLE_STYLE): SubtitleStyle {
   const src = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
-  const out = { ...DEFAULT_SUBTITLE_STYLE, ...base };
+  const out = { ...DEFAULT_SUBTITLE_STYLE, ...base } as Record<string, unknown>;
   for (const k of Object.keys(SUBTITLE_CHOICES) as (keyof SubtitleStyle)[]) {
     const v = src[k];
-    if ((SUBTITLE_CHOICES[k] as readonly unknown[]).includes(v)) (out as Record<string, unknown>)[k] = v;
+    if ((SUBTITLE_CHOICES[k] as readonly unknown[]).includes(v)) out[k] = v;
   }
-  return out;
+  const clear = (k: string) => src[k] === null && delete out[k];
+  for (const [k, [lo, hi]] of Object.entries(SUBTITLE_RANGES) as [string, [number, number]][]) {
+    const v = src[k];
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = Math.max(lo, Math.min(hi, Math.round(v)));
+    else clear(k);
+    if (out[k] !== undefined && (typeof out[k] !== 'number' || !Number.isFinite(out[k] as number))) delete out[k];
+  }
+  for (const k of SUBTITLE_COLOURS) {
+    if (isHexColor(src[k])) out[k] = (src[k] as string).toLowerCase();
+    else clear(k);
+    if (out[k] !== undefined && !isHexColor(out[k])) delete out[k];
+  }
+  for (const k of SUBTITLE_SWITCHES) {
+    if (typeof src[k] === 'boolean') out[k] = src[k];
+    else clear(k);
+    if (out[k] !== undefined && typeof out[k] !== 'boolean') delete out[k];
+  }
+  return out as unknown as SubtitleStyle;
 }
+
+const LANGUAGE_PREF = /^(original|[a-z]{2,3}(-[a-z0-9]{2,8})?)$/i;
+/** A language preference: an ISO code, 'original' where allowed, or null; anything else → null. */
+const languagePref = (v: unknown, allowOriginal: boolean): string | null =>
+  typeof v === 'string' && LANGUAGE_PREF.test(v) && (allowOriginal || v.toLowerCase() !== 'original') ? v.toLowerCase() : null;
+const SKIP_KEYS = ['intro', 'recap', 'preview', 'commercial', 'credits'] as const;
 
 /** Stored preferences merged over the defaults (nested objects merged field by field). */
 function mergePrefs(stored: Partial<UserPreferences>, patch: Partial<UserPreferences> = {}): UserPreferences {
   const prefs: UserPreferences = { ...DEFAULT_PREFS, ...stored, ...patch };
   const base = normalizeSubtitleStyle(stored.subtitleStyle);
   prefs.subtitleStyle = patch.subtitleStyle ? normalizeSubtitleStyle(patch.subtitleStyle, base) : base;
+  // Track languages: primary + secondary, 'original' (the title's own language) for audio only.
+  // Checked when they change, so a value stored by an older version is never dropped on read.
+  for (const [k, original] of [['audioLanguage', true], ['secondaryAudioLanguage', true], ['subtitleLanguage', false], ['secondarySubtitleLanguage', false]] as const) {
+    if (k in patch) prefs[k] = languagePref(patch[k], original);
+  }
+  // Per-segment auto-skip: merged key by key, only booleans kept.
+  if (prefs.autoSkip !== undefined) {
+    const merged: AutoSkipPrefs = {};
+    const src = { ...(stored.autoSkip ?? {}), ...(patch.autoSkip && typeof patch.autoSkip === 'object' ? patch.autoSkip : {}) } as Record<string, unknown>;
+    for (const k of SKIP_KEYS) if (typeof src[k] === 'boolean') merged[k] = src[k] as boolean;
+    prefs.autoSkip = merged;
+  }
+  for (const k of ['showOnlyPreferredSubtitles', 'blurUnwatchedEpisodes', 'blurNextUp', 'parentalGuideOverlay'] as const) {
+    if (prefs[k] !== undefined && typeof prefs[k] !== 'boolean') delete prefs[k];
+  }
   const xf = Number(prefs.musicCrossfadeSec);
   prefs.musicCrossfadeSec = Number.isFinite(xf) ? Math.max(0, Math.min(12, Math.round(xf))) : 0;
   if (!['off', 'track', 'album', 'auto'].includes(prefs.replayGain as string)) prefs.replayGain = 'auto';

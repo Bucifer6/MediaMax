@@ -42,6 +42,11 @@ function applyMeta(item: Row, meta: tmdb.RemoteMeta, touched?: Set<string>) {
   if (takeArt(item, 'poster', locked, meta.poster)) patch.poster = registerImage(meta.poster);
   if (takeArt(item, 'backdrop', locked, meta.backdrop)) patch.backdrop = registerImage(meta.backdrop);
   if (takeArt(item, 'logo', locked, meta.logo)) patch.logo = registerImage(meta.logo);
+  // The original language drives the "Original" audio preference (kept in the extra JSON: no column needed).
+  if (meta.originalLanguage && /^[a-z]{2,3}$/i.test(meta.originalLanguage)) {
+    const extra = parseJson<Record<string, unknown>>(item.extra, {});
+    if (extra.originalLanguage !== meta.originalLanguage.toLowerCase()) patch.extra = JSON.stringify({ ...extra, originalLanguage: meta.originalLanguage.toLowerCase() });
+  }
   if (meta.rating && !locked.has('ratings')) patch.ratings = JSON.stringify({ ...parseJson<Record<string, number>>(item.ratings, {}), tmdb: meta.rating });
   db.update('items', item.id, patch);
   Object.assign(item, patch);

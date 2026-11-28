@@ -91,6 +91,11 @@ How Vibe compares with the features people use most in Plex, Jellyfin and Emby.
 | Audio track selection & language preferences | ✅ | ✅ | ✅ | ✅ |
 | Resume, watched state, continue watching, next up | ✅ | ✅ | ✅ | ✅ |
 | Skip intro / credits (audio-fingerprint detection) | Pass | Plugin | Premiere | ✅ built in |
+| Crowdsourced skip segments (IntroDB, AniSkip) with per-segment auto-skip (intro, recap, ads, previews, credits) | ❌ | Plugin | ❌ | ✅ |
+| Subtitle AutoSync against an embedded track (delay, frame-rate drift, per-scene drift), applied without restarting | ❌ | ❌ | ❌ | ✅ |
+| HDR subtitle comfort (dimmed colour / controls while HDR plays), SDH stripping, RTL punctuation fix, free-form subtitle styling | ❌ | ❌ | ❌ | ✅ |
+| Primary + secondary audio / subtitle languages and an "Original language" audio choice | 🟡 | 🟡 | ❌ | ✅ |
+| Spoiler blur for unwatched episodes and Next up; parental guide card at playback start | ❌ | ❌ | ❌ | ✅ |
 | Skip recaps, previews and ad breaks (comskip / `.edl` markers) | 🟡 | 🟡 (plugins) | 🟡 | ✅ |
 | Cinema mode (trailers + pre-roll before a movie) | ✅ (Pass) | ✅ (plugin) | ✅ | ✅ |
 | Remote control: "Play on…" another device | ✅ | ✅ | ✅ | ✅ |

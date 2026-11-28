@@ -15,7 +15,9 @@ import { logger } from '../util/log.js';
 import { TranscodeJob, encoderWorks, hasEncoder, type TranscodeOptions } from './transcoder.js';
 import { chooseVideoCodec } from './hwaccel.js';
 import { getSettings } from './settings.js';
-import { assertCanSee, getItem, mediaRowToSource, nextItem, reportProgress } from './items.js';
+import { assertCanSee, getItem, mediaRowToSource, nextItem, originalLanguageOf, reportProgress } from './items.js';
+import { pickAudio } from './playerPrefs.js';
+import { markersForPlayback } from './skipSegments.js';
 import type { AuthContext } from './auth.js';
 import { events, bus } from './events.js';
 import { TEXT_SUB_CODECS } from './probe.js';
@@ -440,6 +442,7 @@ export function playbackPlanKey(ctx: AuthContext, itemId: string, req: PlaybackR
     ap: req.audioProcessing ?? null, fap: !!req.forceAudioProcessing, sf: req.subtitleFormats ?? null, pv: !!req.preview, l: isLocal,
     // User-level inputs of the decision: a changed preference or permission must not reuse an old plan.
     ut: u.allowTranscode, ub: u.preferences.maxBitrate ?? null, ul: u.preferences.audioLanguage ?? null,
+    ul2: u.preferences.secondaryAudioLanguage ?? null,
   });
 }
 
@@ -501,10 +504,10 @@ export async function planPlayback(ctx: AuthContext, itemId: string, req: Playba
   const rawSubs = parseJson<(SubtitleStream & { path?: string })[]>(mediaRow.subs, []);
   const prefs = ctx.user.preferences;
 
-  // Pick audio track: explicit → preferred language → default.
+  // Pick audio track: explicit → preferred languages (primary, secondary; 'original' = the title's own) → default.
   let audio: AudioStream | null = null;
   if (req.audioStreamIndex != null) audio = media.audioStreams.find((a) => a.index === req.audioStreamIndex) ?? null;
-  if (!audio && prefs.audioLanguage) audio = media.audioStreams.find((a) => a.language === prefs.audioLanguage) ?? null;
+  if (!audio) audio = pickAudio(media.audioStreams, prefs, originalLanguageOf(item));
   if (!audio) audio = media.audioStreams.find((a) => a.default) ?? media.audioStreams[0] ?? null;
 
   const burnSub = req.burnSubtitles && req.subtitleStreamIndex != null ? rawSubs.find((s) => s.index === req.subtitleStreamIndex) ?? null : null;
@@ -763,7 +766,8 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
   }
   const startMs = Math.max(0, req.startMs ?? item.userData.positionMs ?? 0);
   const next = item.type === 'episode' || item.type === 'track' ? nextItem(ctx.user, itemId) : null;
-  const markers: Marker[] = item.markers ?? [];
+  // Crowd segments (IntroDB / AniSkip) fill the types the file has no marker for; never holds playback up long.
+  const markers: Marker[] = preview ? item.markers ?? [] : await markersForPlayback(itemId, item.markers ?? []);
   const subtitleText = item.type === 'episode'
     ? `${item.grandparentTitle ?? ''} · S${item.parentIndex ?? 0}E${item.index ?? 0}`
     : item.type === 'track' ? [item.grandparentTitle, item.parentTitle].filter(Boolean).join(' — ') : item.year ? String(item.year) : null;
@@ -848,6 +852,8 @@ export async function startPlayback(ctx: AuthContext, itemId: string, req: Playb
     isLocal,
     bandwidthLimited: plan.bandwidthLimited,
     markers,
+    originalLanguage: originalLanguageOf(item),
+    mediaId: media.id,
     nextItemId: next?.id ?? null,
     title: item.title,
     subtitle: subtitleText,

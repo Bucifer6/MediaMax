@@ -236,6 +236,7 @@ export const LandscapeCard = memo(function LandscapeCard({ item }: { item: Item 
     <Link
       to={itemLink(item)}
       className="card card-landscape card-continue"
+      data-type={item.type}
       data-nav
       title={title}
       aria-label={`${pct > 0 ? 'Resume ' : ''}${title}${isEp ? `, ${sub}` : ''}${left ? `, ${left}` : ''}`}
