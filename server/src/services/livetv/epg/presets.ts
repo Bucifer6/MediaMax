@@ -1,9 +1,11 @@
 import type { EpgPreset } from '@mediamax/shared';
+import { EPGSHARE_PRESETS } from './epgshare.js';
 
 /**
  * Free community XMLTV guides. These are third-party, community-run services: URLs can move or go stale,
  * so admins can always paste any other XMLTV URL instead.
  *  - epg.pw publishes one XMLTV file per country: https://epg.pw/xmltv/epg_<CC>.xml
+ *  - epgshare01 (the default, see epgshare.ts): one or more files per country
  *  - iptv-org/epg guides, as published on GitHub Pages: https://iptv-org.github.io/epg/guides/<cc>/<site>.epg.xml
  */
 const EPG_PW: [string, string][] = [
@@ -21,6 +23,7 @@ const IPTV_ORG: [string, string, string][] = [
 ];
 
 export const EPG_PRESETS: EpgPreset[] = [
+  ...EPGSHARE_PRESETS,
   ...EPG_PW.map(([cc, name]) => ({ id: `epgpw-${cc.toLowerCase()}`, provider: 'epg.pw' as const, country: cc, countryName: name, name: `epg.pw · ${name}`, url: `https://epg.pw/xmltv/epg_${cc}.xml` })),
   ...IPTV_ORG.map(([cc, name, site]) => ({ id: `iptvorg-${cc}-${site}`, provider: 'iptv-org' as const, country: cc.toUpperCase() === 'UK' ? 'GB' : cc.toUpperCase(), countryName: name, name: `iptv-org · ${name} (${site})`, url: `https://iptv-org.github.io/epg/guides/${cc}/${site}.epg.xml` })),
 ];

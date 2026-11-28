@@ -75,7 +75,7 @@ function useAuthGuard() {
       if (!first || !PUBLIC.has(first)) router.replace('/login');
     } else if (status === 'signed-in') {
       if (needsProfilePick) {
-        if (first !== 'profiles') router.replace('/profiles');
+        if (first !== 'profiles' && first !== 'profile-edit') router.replace('/profiles');
       } else if (atRoot || first === 'login' || first === 'profiles') router.replace('/(tabs)');
     } else if (status === 'offline') {
       if (atRoot || first === 'login') router.replace('/(tabs)/downloads');

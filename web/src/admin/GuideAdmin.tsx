@@ -81,11 +81,27 @@ function SourcesTab({ liveSources }: { liveSources: LiveSource[] }) {
     }
   };
   const liveName = (id: string) => liveSources.find((l) => l.id === id)?.name ?? 'removed source';
+  const [finding, setFinding] = useState(false);
+  const findGuides = async () => {
+    setFinding(true);
+    try {
+      const r = await epgApi.auto();
+      toast.show(r.added.length ? `Added epgshare01 guides: ${r.added.join(', ')}. Channels are matched as they load.` : r.scores.length ? 'The matching epgshare01 guides are already added.' : 'No epgshare01 guide carries enough of your channels.');
+      sources.reload();
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setFinding(false);
+    }
+  };
 
   return (
     <div>
       <div className="toolbar epg-toolbar">
         <p className="muted epg-note">Each channel takes its guide from the highest-priority source that has it; lower ones fill the gaps. A guide that fails to load keeps its previous data.</p>
+        <button className="btn" onClick={findGuides} disabled={finding} title="Compare your channels with the epgshare01 guides and add the ones that carry them">
+          <Icon name="sparkles" size={16} /> {finding ? 'Looking…' : 'Find guides automatically'}
+        </button>
         <button className="btn btn-primary" onClick={() => setEdit('new')}><Icon name="plus" size={16} /> Add guide</button>
       </div>
       {sources.loading && !sources.data ? <Skeleton h={200} /> : sources.error ? <ErrorState message={sources.error} onRetry={sources.reload} /> : !sources.data?.length ? (
@@ -224,7 +240,7 @@ function GuideForm({ initial, liveSources, onCancel, onSaved }: { initial?: EpgS
 
   const kinds: { k: FormKind; label: string; icon: IconName; hint: string }[] = [
     { k: 'xmltv', label: 'XMLTV', icon: 'list', hint: 'Any XMLTV URL or local file (.xml, .gz, .xz)' },
-    { k: 'preset', label: 'Free community guide', icon: 'globe', hint: 'iptv-org and epg.pw guides by country' },
+    { k: 'preset', label: 'Free community guide', icon: 'globe', hint: 'epgshare01, iptv-org and epg.pw guides by country' },
     { k: 'schedulesdirect', label: 'Schedules Direct', icon: 'calendar', hint: 'Paid, accurate US/Canada and more' },
     { k: 'hdhomerun', label: 'HDHomeRun', icon: 'antenna', hint: 'Free for HDHomeRun owners' },
   ];

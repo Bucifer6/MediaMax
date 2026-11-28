@@ -54,6 +54,11 @@ export default async function epgRoutes(app: FastifyInstance) {
     return epg.sdChangeLineup(req.params.id, req.params.lineup, false);
   });
 
+  /** Find epgshare01 guides that carry the live channels and add them (they then match automatically). */
+  app.post('/livetv/epg-sources/auto', async (req) => {
+    requireAdmin(req);
+    return epg.autoGuides();
+  });
   app.get('/livetv/epg-presets', async (req) => {
     requireAdmin(req);
     return EPG_PRESETS;

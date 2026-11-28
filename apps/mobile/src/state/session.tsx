@@ -49,7 +49,8 @@ interface SessionValue {
    * Accounts with profiles: open "Who's watching?" (keeps the session). Otherwise drop the token but keep the
    * server, returning to the server-wide profile picker on the login screen.
    */
-  switchProfile: () => Promise<void>;
+  /** Open "Who's watching?". `manage`: also when the account has no profiles yet (to add one) instead of signing out. */
+  switchProfile: (opts?: { manage?: boolean }) => Promise<void>;
   /** True while the "Who's watching?" picker should be shown (after signing in to an account with profiles). */
   needsProfilePick: boolean;
   /** Finish the picker: optionally with the session of the chosen profile. */
@@ -367,10 +368,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     await clearToken();
   }, [api, clearToken]);
 
-  const switchProfile = useCallback(async () => {
-    if (user?.parentUserId || user?.profileCount) setNeedsProfilePick(true);
-    else await signOut();
-  }, [user, signOut]);
+  // Always the picker (it has Add profile, and Sign out to change account): signing straight out of an account
+  // without profiles lost the TV's sign-in for anyone looking for where to add one.
+  const switchProfile = useCallback(async (_opts?: { manage?: boolean }) => {
+    setNeedsProfilePick(true);
+  }, []);
 
   const completeProfilePick = useCallback(
     async (auth?: AuthResponse) => {

@@ -2,7 +2,6 @@
  * The TV-style channel banner along the bottom of live TV: number, logo and name, what's on now (with progress) and
  * next. While surfing (`preview`) it shows the channel you'd land on before it is tuned, with "OK to watch".
  */
-import { LinearGradient } from 'expo-linear-gradient';
 import { View } from 'react-native';
 import type { Channel } from '@/api/types';
 import { Icon } from '@/components/Icon';
@@ -18,10 +17,13 @@ export function ChannelBanner({ channel, preview, typed, bottom = 0 }: { channel
   const next = channel?.next ?? null;
   const logo = t.isTV ? t.s(120) : 72;
   return (
-    <LinearGradient
+    <View
       pointerEvents="none"
-      colors={['transparent', 'rgba(0,0,0,0.85)']}
-      style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: t.space.xxl, paddingBottom: bottom + (t.isTV ? t.s(40) : t.space.lg), paddingHorizontal: t.isTV ? t.space.gutter : t.space.lg }}
+      style={{
+        position: 'absolute', left: t.isTV ? t.space.gutter : t.space.md, right: t.isTV ? t.space.gutter : t.space.md, bottom: bottom + (t.isTV ? t.s(36) : t.space.md),
+        backgroundColor: 'rgba(10,10,14,0.88)', borderRadius: t.radius * 1.4, paddingVertical: t.isTV ? t.s(20) : t.space.md, paddingHorizontal: t.isTV ? t.s(28) : t.space.md,
+        borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+      }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space.lg }}>
         <View style={{ minWidth: t.isTV ? t.s(110) : 64, alignItems: 'center' }}>
@@ -71,6 +73,6 @@ export function ChannelBanner({ channel, preview, typed, bottom = 0 }: { channel
           </View>
         ) : null}
       </View>
-    </LinearGradient>
+    </View>
   );
 }
