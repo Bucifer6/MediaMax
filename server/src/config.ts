@@ -118,6 +118,10 @@ export const config = {
   helpDir: process.env.MEDIAMAX_HELP_DIR ?? (standalone ? path.join(exeDir, 'help') : path.resolve(here, '../help')),
   ffmpeg: process.env.MEDIAMAX_FFMPEG ?? bundledTool('ffmpeg'),
   ffprobe: process.env.MEDIAMAX_FFPROBE ?? bundledTool('ffprobe'),
+  // Optional helper programs, set only through the environment (VIBE_PIPER, VIBE_WHISPER, VIBE_COMSKIP) like FFmpeg,
+  // never through web settings: a Vibe admin account must not be able to make the server start a program of its choice.
+  piper: process.env.MEDIAMAX_PIPER || 'piper',
+  comskip: process.env.MEDIAMAX_COMSKIP || 'comskip',
   logLevel: process.env.MEDIAMAX_LOG_LEVEL ?? 'info',
   startedAt: Date.now(),
 };

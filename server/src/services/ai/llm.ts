@@ -14,11 +14,21 @@ const log = logger('ai');
 
 export const aiSettings = (): AiSettings => getSettings().ai ?? DEFAULT_AI;
 
+/**
+ * `s` without trailing slashes. A loop rather than /\/+$/, which backtracks quadratically on a long run of slashes
+ * followed by something else.
+ */
+export function trimTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47) end--;
+  return s.slice(0, end);
+}
+
 /** OpenAI-compatible endpoint for `path` (e.g. "chat/completions") from whatever base URL the admin pasted. */
 export function openaiUrl(base: string, pathPart: string): string {
-  const b = base.replace(/\/+$/, '').replace(/\/(chat\/completions|audio\/speech|audio\/transcriptions|embeddings)$/, '');
+  const b = trimTrailingSlashes(base).replace(/\/(chat\/completions|audio\/speech|audio\/transcriptions|embeddings)$/, '');
   // Bases that already carry an API version or an /openai prefix: Groq …/openai/v1, Gemini …/v1beta/openai, OpenRouter …/api/v1.
-  return /\/(v\d+[a-z0-9]*|openai)$/i.test(b) ? `${b}/${pathPart}` : `${b}/v1/${pathPart}`;
+  return /\/(v\d[a-z0-9]*|openai)$/i.test(b) ? `${b}/${pathPart}` : `${b}/v1/${pathPart}`;
 }
 
 /** Chain providers that can be called (enabled, with a URL where the kind needs one, and a model). */
@@ -67,7 +77,7 @@ export interface ChatOptions {
   validate?: (text: string) => boolean;
 }
 
-const base = (u: string) => u.replace(/\/+$/, '');
+const base = (u: string) => trimTrailingSlashes(u);
 
 /** Anthropic Messages endpoint from a pasted base (https://api.anthropic.com, …/v1 or …/v1/messages). */
 export function anthropicUrl(u: string): string {
@@ -77,7 +87,11 @@ export function anthropicUrl(u: string): string {
 
 /** Gemini generateContent endpoint from a pasted base (https://generativelanguage.googleapis.com, …/v1beta). */
 export function geminiUrl(u: string, model: string): string {
-  let b = base(u || 'https://generativelanguage.googleapis.com').replace(/\/models\/.*$/, '').replace(/\/openai$/, '');
+  let b = base(u || 'https://generativelanguage.googleapis.com');
+  // Drop a pasted "/models/…" tail (indexOf: a /\/models\/.*$/ replace rescans the rest of the string at every "/models/").
+  const models = b.indexOf('/models/');
+  if (models >= 0) b = b.slice(0, models);
+  b = b.replace(/\/openai$/, '');
   if (!/\/v1(beta|alpha)?\d*$/.test(b)) b += '/v1beta';
   return `${b}/models/${encodeURIComponent(model.replace(/^models\//, ''))}:generateContent`;
 }
@@ -156,7 +170,7 @@ export function extractJson(text: string): Record<string, unknown> | null {
 export async function llmEmbed(texts: string[], model: string | null): Promise<Float32Array[] | null> {
   const cfg = aiSettings().llm;
   if (cfg.provider === 'none' || !cfg.url || !model || !texts.length) return null;
-  const base = cfg.url.replace(/\/+$/, '');
+  const base = trimTrailingSlashes(cfg.url);
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (cfg.apiKey) headers.authorization = `Bearer ${cfg.apiKey}`;
   try {

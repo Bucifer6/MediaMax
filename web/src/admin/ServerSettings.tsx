@@ -301,7 +301,7 @@ export function ServerSettingsAdmin() {
               hint="Runs comskip on finished recordings and adds “Skip ad break” markers. comskip must be installed on the server. Any video with a .edl file next to it gets markers too." />
             {s.dvr.commercialDetection && (
               <div className="form-row">
-                <Field label="comskip binary"><input className="input mono" placeholder="comskip" value={s.dvr.comskipPath ?? ''} onChange={(e) => setD({ comskipPath: e.target.value || null })} /></Field>
+                <Field label="comskip program" hint="comskip on the server's PATH, or the VIBE_COMSKIP environment variable. Programs can't be chosen here, for security."><input className="input mono" value="comskip" readOnly disabled /></Field>
                 <Field label="comskip.ini (optional)"><input className="input mono" placeholder="Built-in EDL-only settings" value={s.dvr.comskipIni ?? ''} onChange={(e) => setD({ comskipIni: e.target.value || null })} /></Field>
               </div>
             )}

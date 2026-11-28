@@ -45,8 +45,9 @@ player as **Auto-generated (AI)**, listed after downloaded and embedded subtitle
 
 - **whisper.cpp on this server** (free). On Windows press **Download whisper.cpp** for the official release program,
   then **Download the model** you chose. On Linux or macOS install whisper.cpp from your package manager (for example
-  `brew install whisper-cpp`) or build it, and enter its path if `whisper-cli` is not on the PATH. Older builds call
-  the program `main`.
+  `brew install whisper-cpp`) or build it. If `whisper-cli` is not on the PATH, set the `VIBE_WHISPER` environment
+  variable to its full path and restart {{product}} (for security, admin pages can't choose a program to run). Older
+  builds call the program `main`.
 - **Speech-to-text API**: any OpenAI-compatible `/audio/transcriptions` endpoint, for example a self-hosted
   faster-whisper server (`http://localhost:8000/v1`) or OpenAI.
 

@@ -12,6 +12,7 @@ const log = logger('edl');
 
 export { parseEdl } from '../util/edl.js';
 import { parseEdl } from '../util/edl.js';
+import { warnIgnoredProgramSetting } from '../util/programSettings.js';
 
 export const edlPathFor = (mediaPath: string) => path.join(path.dirname(mediaPath), `${path.basename(mediaPath, path.extname(mediaPath))}.edl`);
 
@@ -60,7 +61,8 @@ function applyEdl(itemId: string, text: string): number {
 export function runComskip(file: string): Promise<boolean> {
   const cfg = getSettings().dvr;
   if (!cfg.commercialDetection) return Promise.resolve(false);
-  const bin = cfg.comskipPath || 'comskip';
+  warnIgnoredProgramSetting('comskip program path', cfg.comskipPath, 'VIBE_COMSKIP', 'comskip');
+  const bin = config.comskip;
   const args = ['--quiet', `--output=${path.dirname(file)}`];
   let ini = cfg.comskipIni;
   if (!ini) {

@@ -17,6 +17,7 @@ import { readZip } from '../../util/zip.js';
 import { findOnPath } from '../subtitleProviders/tools.js';
 import { openaiUrl } from '../ai/llm.js';
 import { buildWhisperArgs, parseVerboseJson, parseWhisperJson, type Cue } from './srt.js';
+import { warnIgnoredProgramSetting } from '../../util/programSettings.js';
 
 const log = logger('auto-subtitles');
 
@@ -35,14 +36,19 @@ export const modelUrl = (size: WhisperModelSize) => `https://huggingface.co/gger
 
 const exe = (name: string) => (process.platform === 'win32' ? `${name}.exe` : name);
 
-/** whisper.cpp program: configured path → downloaded copy → PATH. */
+/**
+ * whisper.cpp program: VIBE_WHISPER → the copy "Download whisper.cpp" fetched → PATH. Only the environment can name a
+ * program (like FFmpeg); a path saved in the web settings by earlier versions is ignored, with a log line.
+ */
 export function resolveWhisperBinary(s: AutoSubtitleSettings): string | null {
-  if (s.whisperPath) return fs.existsSync(s.whisperPath) ? s.whisperPath : null;
+  warnIgnoredProgramSetting('whisper.cpp program path', s.whisperPath, 'VIBE_WHISPER', 'whisper-cli');
+  const fromEnv = process.env.MEDIAMAX_WHISPER;
+  if (fromEnv) return fs.existsSync(fromEnv) ? fromEnv : findOnPath([fromEnv]);
   for (const n of ['whisper-cli', 'main']) {
     const p = path.join(binDir(), exe(n));
     if (fs.existsSync(p)) return p;
   }
-  return process.env.MEDIAMAX_WHISPER || findOnPath(['whisper-cli', 'whisper-cpp', 'whisper.cpp']);
+  return findOnPath(['whisper-cli', 'whisper-cpp', 'whisper.cpp']);
 }
 
 export function resolveModel(s: AutoSubtitleSettings): string {
@@ -58,7 +64,7 @@ export function engineReport(s: AutoSubtitleSettings): WhisperEngineReport {
   const binary = resolveWhisperBinary(s);
   const model = resolveModel(s);
   const modelPresent = fs.existsSync(model);
-  if (!binary) problems.push(s.whisperPath ? `whisper.cpp was not found at ${s.whisperPath}.` : process.platform === 'win32' ? 'whisper.cpp is not installed: use "Download whisper.cpp" or set its path.' : 'whisper.cpp is not installed: install it (e.g. "brew install whisper-cpp", or build it) or set its path.');
+  if (!binary) problems.push(process.env.MEDIAMAX_WHISPER ? `whisper.cpp was not found at ${process.env.MEDIAMAX_WHISPER} (VIBE_WHISPER).` : process.platform === 'win32' ? 'whisper.cpp is not installed: use "Download whisper.cpp", or set the VIBE_WHISPER environment variable to its path.' : 'whisper.cpp is not installed: install it (e.g. "brew install whisper-cpp", or build it), or set the VIBE_WHISPER environment variable to its path.');
   if (!modelPresent) problems.push(s.modelPath ? `The model file ${s.modelPath} does not exist.` : `The ${s.model} model is not downloaded yet.`);
   return { engine: 'whisper-cpp', ready: !problems.length, binary, model, modelPresent, problems };
 }

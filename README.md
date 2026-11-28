@@ -242,6 +242,7 @@ The server listens on port **8484** and serves the web app and API. For developm
 | `VIBE_TRANSCODE_DIR` | `$DATA/transcodes` | HLS segment scratch space (a RAM disk is ideal) |
 | `VIBE_RECORDINGS` | `$DATA/recordings` | DVR output folder |
 | `VIBE_FFMPEG` / `VIBE_FFPROBE` | bundled, else on the PATH | Custom binaries (e.g. jellyfin-ffmpeg) |
+| `VIBE_PIPER` / `VIBE_WHISPER` / `VIBE_COMSKIP` | `piper` / the downloaded whisper.cpp, else `whisper-cli` / `comskip` on the PATH | Helper programs for the Piper voice, automatic subtitles and DVR ad detection. Only settable here: admin pages can't choose a program for the server to run |
 | `VIBE_HWACCEL` | `none` | Initial hardware accelerator |
 | `VIBE_TRUSTED_PROXIES` | loopback + private ranges | Proxies whose `X-Forwarded-*` headers are trusted |
 | `TMDB_API_KEY` | | Online metadata (also settable in the admin UI) |
