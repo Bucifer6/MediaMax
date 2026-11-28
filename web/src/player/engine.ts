@@ -1,6 +1,7 @@
 import type { PlaybackInfo } from '@mediamax/shared';
 import { getToken } from '../api/client';
 import { supportsMse, supportsNativeHls } from './deviceProfile';
+import { hlsRecovery } from './hlsRecovery';
 
 export interface AttachOptions {
   /** Called on unrecoverable errors. `kind` lets callers decide on fallbacks. */
@@ -73,18 +74,14 @@ export async function attachStream(el: HTMLMediaElement, info: PlaybackInfo, opt
           if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         },
       });
-      let recovered = 0;
+      const recovery = hlsRecovery({
+        media: () => hls.recoverMediaError(),
+        network: () => hls.startLoad(),
+        fatal: (message) => opts.onFatal('hls', message),
+      });
       hls.on(Hls.Events.ERROR, (_e, data) => {
         if (!data.fatal) return;
-        if (data.type === Hls.ErrorTypes.MEDIA_ERROR && recovered < 2) {
-          recovered++;
-          hls.recoverMediaError();
-        } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR && recovered < 3) {
-          recovered++;
-          window.setTimeout(() => hls.startLoad(), 1000 * recovered);
-        } else {
-          opts.onFatal('hls', data.details || 'Playback error');
-        }
+        recovery.error(data.type, data.details || 'Playback error');
       });
       if (opts.manualLevels) {
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -112,7 +109,10 @@ export async function attachStream(el: HTMLMediaElement, info: PlaybackInfo, opt
       hls.attachMedia(el);
       return {
         engine: 'hls.js',
-        destroy: () => hls.destroy(),
+        destroy: () => {
+          recovery.destroy();
+          hls.destroy();
+        },
         levels: () => hls.levels.map((l) => ({ bitrate: l.bitrate, width: l.width, height: l.height })),
         setLevel: (level: number, immediate?: boolean) => {
           if (level < 0 || level >= hls.levels.length) return;
