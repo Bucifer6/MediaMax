@@ -7,7 +7,7 @@ import { db } from '../db.js';
 import { clientHints, requireAdmin, requireUser, remoteAddr } from '../http.js';
 import { assertRemoteAllowed, preparePlayback, remoteInputArgs, reclaimWarmTranscodes, transcodeCount, getSession, listSessions, sessionProgress, startPlayback, stopSession, touchSession } from '../services/playback.js';
 import { assertCanSee } from '../services/items.js';
-import { liveJobBySession } from '../services/livetv/livetv.js';
+import { accessibleChannelRow, liveJobBySession } from '../services/livetv/livetv.js';
 import { badRequest, forbidden, notFound, HttpError } from '../util/errors.js';
 import { getSettings } from '../services/settings.js';
 import { spawn } from 'node:child_process';
@@ -21,6 +21,7 @@ import { pollDelay } from '../services/transcoder.js';
 import { confinedPath } from '../util/servablePaths.js';
 import { doviMasterForJob } from '../services/dovi.js';
 import { serveSubtitle } from './streaming.js';
+import { byteRange } from '../util/byteRange.js';
 
 const MIME: Record<string, string> = {
   mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska', ts: 'video/mp2t', m2ts: 'video/mp2t', avi: 'video/x-msvideo',
@@ -36,27 +37,30 @@ export async function sendFileRange(req: FastifyRequest, reply: FastifyReply, re
   const file = confinedPath(requested, extraRoots);
   if (!file) throw notFound('File is missing from disk');
   const stat = await fs.promises.stat(file).catch(() => null);
-  if (!stat) throw notFound('File is missing from disk');
+  if (!stat?.isFile()) throw notFound('File is missing from disk');
   const size = stat.size;
   reply.header('Accept-Ranges', 'bytes').header('Content-Type', mime).header('Cache-Control', 'private, max-age=3600');
+  reply.header('Last-Modified', stat.mtime.toUTCString());
   if (download) reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(download)}`);
-  const range = req.headers.range;
+  // Range only applies to GET. No ETag is issued, so an ETag If-Range cannot match.
+  const ifRange = req.headers['if-range'];
+  const matches = ifRange === undefined || (
+    typeof ifRange === 'string' && !ifRange.startsWith('"') && !ifRange.startsWith('W/') &&
+    Date.parse(ifRange) === Math.floor(stat.mtimeMs / 1000) * 1000
+  );
+  const range = req.method === 'GET' && matches ? byteRange(req.headers.range, size) : null;
+  if (range === 'unsatisfiable') {
+    reply.status(416).header('Content-Range', `bytes */${size}`);
+    return reply.send();
+  }
   if (range) {
-    const m = range.match(/bytes=(\d*)-(\d*)/);
-    if (m) {
-      let start = m[1] ? parseInt(m[1], 10) : size - parseInt(m[2], 10);
-      let end = m[1] && m[2] ? parseInt(m[2], 10) : size - 1;
-      if (Number.isNaN(start) || start < 0) start = 0;
-      if (end >= size) end = size - 1;
-      if (start >= size || start > end) {
-        reply.status(416).header('Content-Range', `bytes */${size}`);
-        return reply.send();
-      }
-      reply.status(206).header('Content-Range', `bytes ${start}-${end}/${size}`).header('Content-Length', end - start + 1);
-      return reply.send(fs.createReadStream(file, { start, end }));
-    }
+    const { start, end } = range;
+    reply.status(206).header('Content-Range', `bytes ${start}-${end}/${size}`).header('Content-Length', end - start + 1);
+    return reply.send(fs.createReadStream(file, { start, end }));
   }
   reply.header('Content-Length', size);
+  // An empty stream preserves Fastify's explicit Content-Length; send() would replace it with zero.
+  if (req.method === 'HEAD') return reply.send(Readable.from([]));
   return reply.send(fs.createReadStream(file));
 }
 
@@ -198,7 +202,10 @@ export default async function playbackRoutes(app: FastifyInstance) {
     const m = db.get('SELECT * FROM media WHERE id = ?', req.params.mediaId);
     if (!m) throw notFound('Media not found');
     assertCanSee(user, m.item_id);
-    if (req.query.session) touchSession(req.query.session);
+    if (req.query.session) {
+      const s = getSession(req.query.session);
+      if (s?.ctx.user.id === user.id && s.mediaId === m.id) touchSession(s.id);
+    }
     const mime = MIME[(m.container ?? path.extname(m.path ?? '').slice(1)).toLowerCase()] ?? 'application/octet-stream';
     if (m.path) {
       return sendFileRange(req, reply, m.path, mime);
@@ -209,9 +216,14 @@ export default async function playbackRoutes(app: FastifyInstance) {
 
   const hlsHandler = async (req: FastifyRequest<{ Params: { sessionId: string; file: string } }>, reply: FastifyReply) => {
     const a = requireUser(req);
-    const s = touchSession(req.params.sessionId);
+    const s = getSession(req.params.sessionId);
     if (!s) throw notFound('Playback session has ended');
     if (s.ctx.user.id !== a.user.id) throw forbidden();
+    // Permissions can change after playback starts, or the client can move off the home network.
+    assertRemoteAllowed(a.user, remoteAddr(req));
+    if (s.itemId) assertCanSee(a.user, s.itemId);
+    if (s.channelId) accessibleChannelRow(a.user, s.channelId);
+    touchSession(s.id);
     const file = req.params.file;
     const q = `?token=${encodeURIComponent(a.token)}`;
     // Adaptive transcode: master playlist of renditions + per-rendition playlists/segments (abr.ts).

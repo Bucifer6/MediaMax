@@ -23,9 +23,13 @@ export function extractTarGz(archive: Buffer, dest: string, limits = { maxFiles:
     let name = str(0, 100);
     const prefix = str(345, 155);
     if (prefix) name = `${prefix}/${name}`;
-    const size = parseInt(str(124, 12).trim() || '0', 8) || 0;
+    const sizeField = str(124, 12).trim();
+    if (sizeField && !/^[0-7]+$/.test(sizeField)) throw new Error('Invalid size in archive');
+    const size = parseInt(sizeField || '0', 8);
+    if (!Number.isSafeInteger(size) || size < 0) throw new Error('Invalid size in archive');
     const type = String.fromCharCode(header[156] || 48);
     const dataStart = offset + 512;
+    if (dataStart + size > tar.length) throw new Error('Truncated entry in archive');
     const data = tar.subarray(dataStart, dataStart + size);
     offset = dataStart + Math.ceil(size / 512) * 512;
     if (type === 'L') {
